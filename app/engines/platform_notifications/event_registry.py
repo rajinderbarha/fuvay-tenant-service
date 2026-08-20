@@ -50,12 +50,26 @@ class NotificationEventConfig:
     is_enabled:         bool = True
     is_mandatory:       bool = False         # user cannot disable this event's in_app delivery
     also_notify:        list[str] = field(default_factory=list)  # additional recipient types
+    vertical_key:       str | None = None
 
 
 _REGISTRY: dict[str, NotificationEventConfig] = {}
 
 
 def _reg(cfg: NotificationEventConfig) -> None:
+    # Keep vertical ownership in one canonical registry.  Older registrations
+    # pre-date the vertical field, so infer it from the source engine instead of
+    # requiring dozens of duplicated literals at every call site.
+    if cfg.vertical_key is None:
+        if cfg.source_engine in {
+            "home_service", "quote_checklist", "invoice_payment", "customer_reviews",
+            "complaints", "home_service_assignment",
+        }:
+            cfg.vertical_key = "home_services"
+        elif cfg.source_engine == "coaching_appointment":
+            cfg.vertical_key = "coaching"
+        elif cfg.source_engine == "real_estate":
+            cfg.vertical_key = "real_estate"
     _REGISTRY[cfg.event_key] = cfg
 
 
@@ -291,6 +305,39 @@ _reg(NotificationEventConfig(EVT_DOCUMENT_CHANGES_REQUESTED, "Document Changes R
 _reg(NotificationEventConfig(EVT_DOCUMENT_REJECTED, "Document Rejected",
      "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
      "document.rejected.in_app", SEV_WARNING))
+
+# ── Tenant Help & Support ─────────────────────────────────────────────────────
+# The support engine has fired these since it was written, but none of them
+# were registered here, so fire_event() returned None and no tenant ever
+# received a support notification. Registered with email alongside in_app so an
+# admin reply reaches the business even when nobody has the portal open.
+_reg(NotificationEventConfig("support.request.submitted", "Support Request Received",
+     "support", [CHANNEL_IN_APP, CHANNEL_EMAIL], RECIP_PROVIDER,
+     "support.request.submitted.in_app", SEV_INFO))
+_reg(NotificationEventConfig("support.request.replied", "Support Replied",
+     "support", [CHANNEL_IN_APP, CHANNEL_EMAIL], RECIP_PROVIDER,
+     "support.request.replied.in_app", SEV_INFO, is_mandatory=True))
+_reg(NotificationEventConfig("support.request.info_requested", "Support Needs Information",
+     "support", [CHANNEL_IN_APP, CHANNEL_EMAIL], RECIP_PROVIDER,
+     "support.request.info_requested.in_app", SEV_WARNING, is_mandatory=True))
+_reg(NotificationEventConfig("support.request.priority_changed", "Support Priority Changed",
+     "support", [CHANNEL_IN_APP], RECIP_PROVIDER,
+     "support.request.priority_changed.in_app", SEV_INFO))
+_reg(NotificationEventConfig("support.request.sla_breached", "Support SLA Breached",
+     "support", [CHANNEL_IN_APP], RECIP_ADMIN,
+     "support.request.sla_breached.in_app", SEV_WARNING))
+_reg(NotificationEventConfig("support.request.resolved", "Support Request Resolved",
+     "support", [CHANNEL_IN_APP, CHANNEL_EMAIL], RECIP_PROVIDER,
+     "support.request.resolved.in_app", SEV_SUCCESS))
+_reg(NotificationEventConfig("support.request.reopened", "Support Request Reopened",
+     "support", [CHANNEL_IN_APP], RECIP_ADMIN,
+     "support.request.reopened.in_app", SEV_WARNING))
+_reg(NotificationEventConfig("support.incident.critical_reported", "Critical Incident Reported",
+     "support", [CHANNEL_IN_APP], RECIP_ADMIN,
+     "support.incident.critical_reported.in_app", SEV_WARNING))
+_reg(NotificationEventConfig("support.announcement.published", "Announcement Published",
+     "support", [CHANNEL_IN_APP], RECIP_PROVIDER,
+     "support.announcement.published.in_app", SEV_INFO))
 
 
 class NotificationEventRegistry:

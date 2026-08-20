@@ -13,6 +13,7 @@ from app.engines.complaints.eligibility_service import ComplaintEligibilityServi
 from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.rework_service import ServiceReworkService
 from app.engines.complaints.refund_service import RefundRequestService
+from app.exceptions import ServiceOSException
 
 customer_complaint_router = APIRouter(prefix="/v1/customer/complaints", tags=["customer-complaints"])
 
@@ -50,6 +51,15 @@ class CreateRefundIn(BaseModel):
     reason:           str
     requested_amount: Optional[Decimal] = None
     refund_method:    Optional[str]     = None
+
+
+class CreateJobRefundIn(BaseModel):
+    job_id:           uuid.UUID
+    reason:           str
+    requested_amount: Decimal
+
+class EscalateRefundIn(BaseModel):
+    reason: str
 
 
 class CreateReworkIn(BaseModel):
@@ -295,6 +305,52 @@ async def request_refund(
         request_id=rid,
     )
     return ok(refund.to_customer_dict(), rid, "refund.requested")
+
+@customer_complaint_router.post("/refunds/{refund_id}/escalate")
+async def escalate_refund(
+    refund_id: uuid.UUID, body: EscalateRefundIn, r: Request = None,
+    u: UserContext = Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    refund = await _refund.escalate_refund(db, refund_id, u.user_id, body.reason, request_id=rid)
+    return ok(refund.to_customer_dict(), rid, "refund.escalated")
+
+@customer_complaint_router.get("/records/refunds")
+async def list_customer_refunds(
+    status: Optional[str] = None, r: Request = None,
+    u: UserContext = Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    refunds = await _refund.list_refund_requests(db, customer_id=u.user_id, status=status)
+    return ok([refund.to_customer_dict() for refund in refunds], rid, "refund.customer.list")
+
+
+@customer_complaint_router.post("/records/refunds/from-job")
+async def create_job_refund(
+    body: CreateJobRefundIn, r: Request = None,
+    u: UserContext = Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    refund = await _refund.create_job_refund_request(
+        db,
+        customer_id=u.user_id,
+        job_id=body.job_id,
+        reason=body.reason,
+        requested_amount=body.requested_amount,
+        request_id=rid,
+    )
+    return ok(refund.to_customer_dict(), rid, "refund.requested")
+
+@customer_complaint_router.get("/records/refunds/{refund_id}")
+async def get_customer_refund(
+    refund_id: uuid.UUID, r: Request = None,
+    u: UserContext = Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    refund = await _refund.get_refund(db, refund_id)
+    if str(refund.customer_id) != str(u.user_id):
+        raise ServiceOSException("REFUND_NOT_FOUND", "Refund request not found.", status_code=404)
+    return ok(refund.to_customer_dict(), rid, "refund.customer.get")
 
 
 # ── Settlement proposals (Sprint 75) ──────────────────────────────────────────

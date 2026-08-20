@@ -26,6 +26,8 @@ class CreditTopupOrder(ServiceOSBase):
         Index("ix_cto_tenant_id", "tenant_id"),
         Index("ix_cto_payment_status", "payment_status"),
         Index("ix_cto_order_ref", "order_ref"),
+        Index("ix_cto_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_cto_status_created_at", "payment_status", "created_at"),
     )
 
     tenant_id:            Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), nullable=False)

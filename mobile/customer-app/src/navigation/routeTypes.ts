@@ -95,6 +95,7 @@ export type CustomerAppStackParamList = {
   BookingReview: ReviewServiceRequestParams;
   BookingConfirmation: BookingConfirmationParams;
   BookingDetails: BookingDetailsParams;
+  ServiceRemedies: { bookingId: string; mode: "warranty" | "refund" };
   Notifications: undefined;
   EditProfile: undefined;
   Security: undefined;

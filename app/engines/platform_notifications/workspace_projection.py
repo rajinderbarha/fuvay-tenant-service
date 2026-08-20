@@ -191,3 +191,16 @@ async def get_workspace_summary(db: AsyncSession, user_id: uuid.UUID) -> dict:
         "total_active": len(rows),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+async def get_workspace_items(db: AsyncSession, user_id: uuid.UUID,
+                              limit: int = 30, offset: int = 0) -> dict:
+    base = select(InAppNotification).where(
+        InAppNotification.user_id == user_id,
+        InAppNotification.read_status != READ_ARCHIVED,
+    )
+    total = await db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = (await db.execute(base.order_by(InAppNotification.created_at.desc())
+                             .limit(limit).offset(offset))).scalars().all()
+    return {"items": [project_item(row) for row in rows], "total": int(total),
+            "limit": limit, "offset": offset}

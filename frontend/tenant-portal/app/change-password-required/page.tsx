@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { authApi } from "../../lib/api";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 
 const RULES = [
   { re: /.{8,}/, label: "At least 8 characters" },
@@ -68,12 +69,7 @@ export default function ChangePasswordRequiredPage() {
 
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 13, background: "var(--brand)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 14px", boxShadow: "var(--shadow-md)" }}>
-            <span style={{ color: "white", fontWeight: 800, fontSize: 20 }}>S</span>
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>ServiceOS</h1>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:12 }}><FuvayLogo height={44}/></div>
           <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Tenant Owner Portal</p>
         </div>
 

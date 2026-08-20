@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 //   /admin/types-brands     — Types & Brands
 //   /admin/pricing-rules    — Pricing Rules
 //   /admin/categories       — Categories (was already standalone)
-//   /admin/pricing-tiers    — Pricing Tiers (was already standalone)
 
 export default function CatalogRedirect() {
   const router = useRouter();

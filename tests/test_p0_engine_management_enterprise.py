@@ -470,41 +470,40 @@ class TestFrontendPages:
 
     def test_engines_page_eight_tabs(self):
         src = _read(ENGINES_PAGE)
-        tab_count = src.count('"all"') + src.count('"category-matrix"') + \
-                    src.count('"dependencies"') + src.count('"package-entitlements"') + \
-                    src.count('"tenant-overrides"') + src.count('"health"') + \
-                    src.count('"permissions"') + src.count('"audit-logs"')
-        # Each tab id appears in TABS definition + conditional render = at least 8
-        assert tab_count >= 8, f"Expected 8 tabs, found {tab_count}"
+        for tab_id in ("overview", "runtime", "verticals", "dependencies",
+                       "overrides", "health", "access", "audit"):
+            assert f'"{tab_id}"' in src
 
     def test_engines_page_uses_engine_mgmt_api(self):
         src = _read(ENGINES_PAGE)
         assert "engineMgmtApi" in src
 
-    def test_engines_page_impact_modal(self):
+    def test_engines_page_runtime_truth(self):
         src = _read(ENGINES_PAGE)
-        assert "ImpactModal" in src or "impactPreview" in src
+        assert "getControlPlane" in src
+        assert "runtime_state" in src
 
-    def test_engines_page_enable_disable_buttons(self):
+    def test_engines_page_routes_mutations_to_detail(self):
         src = _read(ENGINES_PAGE)
-        assert "enableGlobally" in src or "openImpact" in src
-        assert "disableGlobally" in src or "disable" in src.lower()
+        assert "/admin/engines/${i.database_key}" in src
+        assert "Inspect" in src
 
-    def test_engines_page_all_engines_tab(self):
+    def test_engines_page_runtime_inventory_tab(self):
         src = _read(ENGINES_PAGE)
-        assert "AllEnginesTab" in src
+        assert "function Runtime" in src
 
     def test_engines_page_health_tab(self):
         src = _read(ENGINES_PAGE)
-        assert "HealthTab" in src
+        assert "function Health" in src
 
-    def test_engines_page_permissions_tab(self):
+    def test_engines_page_uses_canonical_rbac(self):
         src = _read(ENGINES_PAGE)
-        assert "PermissionsTab" in src
+        assert "rolesPermissionsApi" in src
+        assert "function Access" in src
 
     def test_engines_page_audit_logs_tab(self):
         src = _read(ENGINES_PAGE)
-        assert "AuditLogsTab" in src
+        assert "function Audit" in src
 
     def test_detail_page_engine_key_param(self):
         src = _read(DETAIL_PAGE)

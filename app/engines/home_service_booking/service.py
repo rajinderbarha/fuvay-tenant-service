@@ -925,11 +925,10 @@ class HomeServiceChatbotBookingService:
         estate, education, listing/menu/subscription businesses)."""
         from app.engines.home_service_booking.matching_engine import (
             select_best_provider, get_area_market_comparison,
-            build_customer_safe_provider, build_admin_provider, compute_price_tiers,
+            build_customer_safe_provider, build_admin_provider,
             assert_home_services_vertical, _round2,
         )
-        from app.engines.admin_catalog.bargain_engine import BargainValidationError
-        from app.engines.admin_catalog.models import BargainRule, ServicePricingRule, ServiceCategory
+        from app.engines.admin_catalog.models import ServiceCategory
 
         category = await self.db.get(ServiceCategory, category_id)
         assert_home_services_vertical(category.vertical_type if category else None)
@@ -994,161 +993,50 @@ class HomeServiceChatbotBookingService:
         # and lives in `draft.price_snapshot` -- this function must leave it
         # untouched, not overwrite it with a spurious fixed number.
         offering = await self._get_offering(master_service_id)
-        inspection_mode = offering.pricing_model == PRICING_MODEL_VISIT_FEE
+        pricing_model = await self._effective_pricing_model(offering, job_type_id)
+        inspection_mode = pricing_model == PRICING_MODEL_VISIT_FEE
 
         bargain_available = False
         price_options: dict | None = None
         standard_price: Decimal | None = None
 
-        if inspection_mode:
-            pass  # bargain_available/price_options/standard_price stay None/False.
-        else:
-            # Resolve the selected provider's bargain rule (customer range + fee)
-            # and its linked pricing rule (admin range) — real, tenant-scoped data.
-            #
-            # HS6 fix: previously matched ONLY on master_service_id, completely
-            # ignoring offering_type_id/brand_id even though they were already
-            # passed into select_best_provider() for eligibility filtering — the
-            # exact "Window AC brand price used for Split AC" bug this whole
-            # Home Services pricing lineage exists to prevent, except it was
-            # still live in the actual matching/booking price-resolution path.
-            # Fixed: join the linked ServicePricingRule and prefer the most
-            # specific match — type+brand > type-only > service-only — mirroring
-            # the hierarchy already used by _find_admin_pricing_rule elsewhere.
-            bargain_candidates = (await self.db.execute(
-                select(BargainRule, ServicePricingRule)
-                .join(ServicePricingRule, ServicePricingRule.id == BargainRule.pricing_rule_id, isouter=True)
-                .where(
-                    BargainRule.master_service_id == master_service_id,
-                    BargainRule.status == "active", BargainRule.deleted_at.is_(None),
-                )
-            )).all()
-
-            def _specificity(row) -> int:
-                spr = row[1]
-                if spr is None:
-                    return 0
-                has_type = offering_type_id is not None and spr.service_type_id == offering_type_id
-                has_brand = brand_id is not None and spr.brand_id == brand_id
-                if has_type and has_brand:
-                    return 3
-                if has_type:
-                    return 2
-                if spr.service_type_id is None and spr.brand_id is None:
-                    return 1
-                return -1  # a type/brand-scoped rule that doesn't match this request — never usable here
-
-            eligible_candidates = [row for row in bargain_candidates if _specificity(row) >= 0]
-            eligible_candidates.sort(key=lambda row: (_specificity(row), row[0].created_at), reverse=True)
-            bargain_rule = eligible_candidates[0][0] if eligible_candidates else None
-
-            bargain_available = bool(
-                bargain_rule and bargain_rule.customer_min_price is not None
-                and bargain_rule.customer_max_price is not None
-            )
-
-        if inspection_mode:
-            pass
-        elif bargain_available:
-            pricing_rule = None
-            if bargain_rule.pricing_rule_id:
-                pricing_rule = await self.db.get(ServicePricingRule, bargain_rule.pricing_rule_id)
-            try:
-                price_options = compute_price_tiers(
-                    admin_min_price=pricing_rule.min_price if pricing_rule else None,
-                    admin_max_price=pricing_rule.max_price if pricing_rule else None,
-                    admin_base_price=pricing_rule.base_price if pricing_rule else None,
-                    customer_min_price=bargain_rule.customer_min_price,
-                    customer_max_price=bargain_rule.customer_max_price,
-                    platform_fee_percent=bargain_rule.platform_fee_percent or (pricing_rule.platform_fee_percent if pricing_rule else 0),
-                    platform_fee_fixed_amount=bargain_rule.platform_fee_fixed_amount,
-                )
-            except BargainValidationError as e:
-                raise ServiceOSException(e.code, e.message, status_code=422) from e
-        else:
-            # Optional-bargain path (fix/bargain-optional-price-path): no active
-            # BargainRule is configured for this offering/type/brand. Per product
-            # policy, bargaining is ALLOWED but never MANDATORY — the customer
-            # must still be able to book at the ordinary, server-authoritative
-            # price. Resolve that price the same way the admin/tenant pricing
-            # console already does (_find_admin_pricing_rule's hierarchy:
-            # type+brand > type-only > service-only), then apply the SAME
-            # fee-inclusive formula used elsewhere (fee on top of the raw
-            # provider-facing base price) so the customer-facing number is
-            # computed identically regardless of whether a BargainRule exists.
-            # NOTE: unlike _find_admin_pricing_rule (which only reads the
-            # global, city=NULL admin-console rule), real tenant pricing here
-            # may be city-scoped — confirmed live: ac_repair's seeded rules
-            # carry city='Ludhiana', not NULL. Accept both a city-exact match
-            # and a global (city IS NULL) rule, preferring the city-exact one.
-            spr_candidates = (await self.db.execute(
-                select(ServicePricingRule).where(
-                    ServicePricingRule.master_service_id == master_service_id,
-                    ServicePricingRule.deleted_at.is_(None),
-                    ServicePricingRule.is_active == True,
-                    ServicePricingRule.tier_id.is_(None),
-                    or_(ServicePricingRule.city.is_(None), ServicePricingRule.city == city),
-                )
-            )).scalars().all()
-
-            def _spr_specificity(spr) -> int:
-                # A row is only usable if every scoping column it DOES set
-                # actually matches this request — a type/brand-scoped rule for
-                # a different type/brand must never be selected. Rows whose
-                # scoping columns are all None are the global fallback.
-                if spr.service_type_id is not None and spr.service_type_id != offering_type_id:
-                    return -1
-                if spr.brand_id is not None and spr.brand_id != brand_id:
-                    return -1
-                has_type = offering_type_id is not None and spr.service_type_id == offering_type_id
-                has_brand = brand_id is not None and spr.brand_id == brand_id
-                has_city  = bool(city) and spr.city == city
-                if has_type and has_brand:
-                    base = 4
-                elif has_type:
-                    base = 3
-                elif has_brand:
-                    base = 2
-                else:
-                    base = 1  # global rule: no type/brand scoping at all
-                return base * 2 + (1 if has_city else 0)
-
-            eligible_sprs = [s for s in spr_candidates if _spr_specificity(s) >= 0]
-            eligible_sprs.sort(key=lambda s: _spr_specificity(s), reverse=True)
-            pricing_rule = eligible_sprs[0] if eligible_sprs else None
-
-            # The selected tenant's OWN configured price takes precedence
-            # over the tenant-agnostic global ServicePricingRule fallback --
-            # a tenant with a real min/max range configured (e.g. Guramrit's
-            # own TenantService.tenant_min_price/max_price) must never be
-            # priced off an unrelated, possibly-unconfigured global rule.
+        if not inspection_mode:
+            # Provider-owned pricing only. The retired BargainRule/Low-Mid-High
+            # tier path and tenant-agnostic admin ServicePricingRule fallback are
+            # intentionally bypassed here. The selected provider's published
+            # TenantService price is the only fixed-price authority; customer
+            # charges are added later by the Home Services Finance policy in the
+            # normal price snapshot flow.
             tenant_price = await self._resolve_tenant_price_for(
                 selected_tenant_id, master_service_id, offering_type_id, brand_id,
+                job_type_id=job_type_id,
             )
-            if tenant_price is not None:
-                base = Decimal(str(tenant_price["minimum_price"]))
-                fee_amount = Decimal("0")
-                standard_price = _round2(base + fee_amount)
-            elif pricing_rule is not None and pricing_rule.base_price is not None and pricing_rule.base_price > 0:
-                fee_percent = pricing_rule.platform_fee_percent or Decimal("0")
-                fee_fixed = Decimal("0")  # ServicePricingRule has no separate fixed-fee column; only BargainRule does.
-                base = pricing_rule.base_price
-                fee_amount = _round2(base * fee_percent / Decimal("100") + fee_fixed)
-                standard_price = _round2(base + fee_amount)
-            else:
-                # Genuinely no valid pricing configuration for this offering
-                # -- not a bargain-specific gap, a real absence of any usable
-                # price (a `base_price` of exactly 0 counts as absent, never
-                # as a real free/zero price). This is the one case that must
-                # still fail; there is no authoritative number to show the
-                # customer, and Review must never proceed with an invalid
-                # price (spec: "Zero or missing price makes the offering
-                # temporarily unbookable").
+            if tenant_price is None:
                 raise ServiceOSException(
-                    "PRICE_OPTIONS_UNAVAILABLE",
-                    "This service does not have valid pricing configured yet.",
+                    "PRICE_UNAVAILABLE",
+                    "This provider has not published a valid price for the selected service yet.",
                     status_code=422,
                 )
+            from app.engines.vertical_monetization.calculation_service import (
+                calculate_customer_platform_fee, get_active_job_type_rule,
+                get_current_policy_by_vertical_key, to_minor,
+            )
+            monetization_policy = await get_current_policy_by_vertical_key(self.db, "home_services")
+            job_type_rule = (
+                await get_active_job_type_rule(self.db, monetization_policy.id, job_type_id)
+                if monetization_policy is not None and job_type_id is not None else None
+            )
+            customer_fee_policy = (
+                None if job_type_rule is not None and not job_type_rule.customer_charge_enabled
+                else monetization_policy
+            )
+            base = Decimal(str(tenant_price["minimum_price"]))
+            customer_total = calculate_customer_platform_fee(
+                policy=customer_fee_policy,
+                service_subtotal_minor=to_minor(base),
+                calculation_basis="home_services_match_and_price",
+            )["total_payable"]
+            standard_price = _round2(Decimal(str(customer_total)))
 
         area_comparison = await get_area_market_comparison(
             self.db, category_id=category_id, offering_id=master_service_id,
@@ -1202,11 +1090,7 @@ class HomeServiceChatbotBookingService:
             # older /price-estimate endpoint ran first. Doing so left the
             # snapshot with three null bargain fields and made every
             # inspection booking impossible to confirm.
-            base_snapshot = (
-                await self._compute_price_snapshot(draft, offering)
-                if inspection_mode
-                else (draft.price_snapshot or {})
-            )
+            base_snapshot = await self._compute_price_snapshot(draft, offering)
             draft.price_snapshot = {
                 **base_snapshot,
                 "bargain_available": bargain_available,
@@ -1234,45 +1118,30 @@ class HomeServiceChatbotBookingService:
         price_tier: str,
         customer_id: uuid.UUID | None = None,
     ) -> dict:
-        """Customer chooses Low/Mid/High when bargain is available, or
-        'standard' to continue at the ordinary server-authoritative price
-        when no BargainRule is configured (fix/bargain-optional-price-path).
-        Never a raw amount, never a provider-set price. Re-validates the
-        stored price snapshot before storing the offer (hard gate 10: no
-        assignment change without revalidation)."""
-        from app.engines.home_service_booking.matching_engine import resolve_customer_offer_for_tier
+        """Customer confirms the single server-authoritative fixed price.
+
+        The retired Low/Mid/High tier path is no longer accepted. Inspection
+        jobs do not call this step; they proceed after visit/estimate approval.
+        """
 
         draft = await self._require_draft(draft_id, customer_id)
         self._assert_not_terminal(draft)
 
-        if price_tier not in ("low", "mid", "high", "standard"):
+        if price_tier != "standard":
             raise ServiceOSException("INVALID_PRICE_TIER",
-                "price_tier must be 'low', 'mid', 'high', or 'standard'.", status_code=422)
+                "Only price_tier='standard' is supported for fixed-price bookings.", status_code=422)
         if not draft.selected_tenant_id or not draft.price_snapshot:
             raise ServiceOSException(ERR_NO_PROVIDER_AVAILABLE,
                 "No matched provider/price found for this draft. Run provider matching first.",
                 status_code=422)
 
-        bargain_available = draft.price_snapshot.get("bargain_available", "price_options" in draft.price_snapshot)
-
-        if price_tier == "standard":
-            if bargain_available or draft.price_snapshot.get("standard_price") is None:
-                raise ServiceOSException("INVALID_PRICE_TIER",
-                    "'standard' is only valid when bargain is unavailable for this offering.",
-                    status_code=422)
-            customer_offer = Decimal(str(draft.price_snapshot["standard_price"]))
-            allowed_min = allowed_max = float(customer_offer)
-            platform_fee_amount = 0.0  # already folded into standard_price server-side; no separate fee shown
-        else:
-            if not bargain_available or "price_options" not in draft.price_snapshot:
-                raise ServiceOSException(ERR_NO_PROVIDER_AVAILABLE,
-                    "Bargain is not available for this offering. Use price_tier='standard' instead.",
-                    status_code=422)
-            price_options = draft.price_snapshot["price_options"]
-            customer_offer = resolve_customer_offer_for_tier(price_options, price_tier)
-            allowed_min = price_options["allowed_offer_min"]
-            allowed_max = price_options["allowed_offer_max"]
-            platform_fee_amount = price_options["platform_fee_amount"]
+        if draft.price_snapshot.get("standard_price") is None:
+            raise ServiceOSException("INVALID_PRICE_TIER",
+                "'standard' is only valid for fixed-price bookings with a resolved price.",
+                status_code=422)
+        customer_offer = Decimal(str(draft.price_snapshot["standard_price"]))
+        allowed_min = allowed_max = float(customer_offer)
+        platform_fee_amount = float(draft.price_snapshot.get("platform_fee") or 0)
 
         # HS7 fix: matching_score_snapshot (internal per-signal scoring) was
         # being copied into booking_summary and returned verbatim to the
@@ -1286,7 +1155,7 @@ class HomeServiceChatbotBookingService:
             "selected_provider_name": (draft.selected_provider_snapshot or {}).get("provider_name"),
             "selected_zipcode": draft.zipcode,
             "selected_price_tier": price_tier,
-            "bargain_available": bargain_available,
+            "bargain_available": False,
             "customer_offer": float(customer_offer),
             "allowed_offer_min": allowed_min,
             "allowed_offer_max": allowed_max,
@@ -1374,7 +1243,7 @@ class HomeServiceChatbotBookingService:
         # positive visit fee has been resolved into `draft.price_snapshot`
         # by `resolve_price_estimate`.
         price_snapshot = draft.price_snapshot or {}
-        pricing_ready = bool(existing.get("selected_price_tier") in ("low", "mid", "high", "standard")) or bool(
+        pricing_ready = bool(existing.get("selected_price_tier") == "standard") or bool(
             price_snapshot.get("requires_inspection_estimate")
             and price_snapshot.get("visit_fee")
             and price_snapshot.get("visit_fee") > 0
@@ -1397,6 +1266,7 @@ class HomeServiceChatbotBookingService:
             try:
                 promised_slot = await find_earliest_available_slot(
                     self.db, tenant_id=draft.selected_tenant_id,
+                    master_service_id=draft.offering_id,
                 )
             except Exception as exc:  # noqa: BLE001 -- never block the summary
                 logger.warning("home_service.promised_slot_failed", error=str(exc))
@@ -1500,6 +1370,7 @@ class HomeServiceChatbotBookingService:
         # settings -- see provider_slot_service.booking_window_settings.
         slots = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id, emergency=emergency,
+            master_service_id=draft.offering_id,
         )
         return {"slots": slots}
 
@@ -1529,7 +1400,10 @@ class HomeServiceChatbotBookingService:
             raise ValueError("NO_PROVIDER_ASSIGNED_YET")
 
         day = _dt.date.fromisoformat(date_iso)
-        if not await slot_has_capacity(self.db, tenant_id=draft.selected_tenant_id, day=day, time_window=time_window):
+        if not await slot_has_capacity(
+            self.db, tenant_id=draft.selected_tenant_id, day=day,
+            time_window=time_window, master_service_id=draft.offering_id,
+        ):
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")
 
         # Re-fetch the full slot dict (date/time_window/starts_at/ends_at/
@@ -1554,7 +1428,7 @@ class HomeServiceChatbotBookingService:
         candidates = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id,
             from_datetime=now, search_days=days_needed, max_days=days_needed,
-            emergency=emergency,
+            emergency=emergency, master_service_id=draft.offering_id,
         )
         promised_slot = next(
             (s for s in candidates if s["date"] == day.isoformat() and s["time_window"] == time_window),
@@ -1675,9 +1549,8 @@ class HomeServiceChatbotBookingService:
             )
 
         # A draft may have reached a genuinely priced, matched state through
-        # THREE distinct paths -- bargain-available ("price_options" in the
-        # snapshot), standard fixed-price ("standard_price" in the snapshot,
-        # bargain_available: False), or inspection-first (no tier at all;
+        # TWO distinct paths -- standard fixed-price ("standard_price" in the
+        # snapshot, bargain_available: False), or inspection-first (no tier at all;
         # `requires_inspection_estimate` + a real positive `visit_fee` is
         # the whole story -- see `_compute_price_snapshot`/`match_provider_
         # and_price`). Only a draft with NONE of the three has genuinely not
@@ -1693,8 +1566,7 @@ class HomeServiceChatbotBookingService:
             and price_snapshot.get("visit_fee") > 0
         )
         if not draft.selected_tenant_id or not price_snapshot or (
-            "price_options" not in price_snapshot
-            and price_snapshot.get("standard_price") is None
+            price_snapshot.get("standard_price") is None
             and not is_inspection_priced
         ):
             raise ServiceOSException(
@@ -1704,7 +1576,7 @@ class HomeServiceChatbotBookingService:
             )
 
         selected_tier = (draft.booking_summary or {}).get("selected_price_tier")
-        if selected_tier not in ("low", "mid", "high", "standard") and not is_inspection_priced:
+        if selected_tier != "standard" and not is_inspection_priced:
             raise ServiceOSException(
                 "INVALID_SELECTED_PRICE_OPTION",
                 "Selected price option is no longer valid.",
@@ -2078,11 +1950,13 @@ class HomeServiceChatbotBookingService:
             return None
         return await self._resolve_tenant_price_for(
             draft.selected_tenant_id, draft.offering_id, draft.offering_type_id, draft.brand_id,
+            job_type_id=draft.job_type_id,
         )
 
     async def _resolve_tenant_price_for(
         self, tenant_id: uuid.UUID, master_service_id: uuid.UUID,
         offering_type_id: uuid.UUID | None, brand_id: uuid.UUID | None,
+        *, job_type_id: uuid.UUID | None,
     ) -> dict | None:
         """Tenant-id-based counterpart to `_resolve_selected_tenant_price`,
         for call sites (e.g. `match_provider_and_price`) that resolve a
@@ -2090,13 +1964,21 @@ class HomeServiceChatbotBookingService:
         from app.engines.admin_catalog.models import TenantService
         from app.engines.admin_catalog.tenant_service import TenantCatalogService
 
-        ts = (await self.db.execute(
-            select(TenantService).where(
-                TenantService.tenant_id == tenant_id,
-                TenantService.master_service_id == master_service_id,
-                TenantService.is_active.is_(True),
-            )
-        )).scalars().first()
+        conditions = [
+            TenantService.tenant_id == tenant_id,
+            TenantService.master_service_id == master_service_id,
+            TenantService.is_active.is_(True),
+            TenantService.is_enabled.is_(True),
+            TenantService.setup_status == "published",
+        ]
+        if job_type_id:
+            conditions.append(TenantService.job_type_id == job_type_id)
+        candidates = (await self.db.execute(
+            select(TenantService).where(*conditions).limit(2)
+        )).scalars().all()
+        # A pre-job-type caller is supported only when the provider has one
+        # unambiguous published offering. Never choose the first of multiple.
+        ts = candidates[0] if len(candidates) == 1 else None
         if ts is None:
             return None
         svc = TenantCatalogService(db=self.db)
@@ -2119,12 +2001,69 @@ class HomeServiceChatbotBookingService:
             select(TenantService).where(
                 TenantService.tenant_id == draft.selected_tenant_id,
                 TenantService.master_service_id == draft.offering_id,
+                TenantService.job_type_id == draft.job_type_id,
                 TenantService.is_active.is_(True),
+                TenantService.is_enabled.is_(True),
+                TenantService.setup_status == "published",
             )
         )).scalars().first()
         if ts is None or ts.tenant_visit_fee is None:
             return None
         return float(ts.tenant_visit_fee)
+
+    async def _resolve_provider_consultation_fee(self, draft: HomeServiceBookingDraft) -> float | None:
+        """Return the one provider-wide Home Services consultation fee.
+
+        Consultation is not a Type/Brand priced service. Keeping this in the
+        tenant operational policy makes every consultation for the provider
+        consistent and avoids one fee row per catalog offering.
+        """
+        if not draft.selected_tenant_id or not draft.job_type_id:
+            return None
+        from app.engines.admin_catalog.models import JobTypeDefinition
+        from app.engines.tenant_engine.models import TenantSettings
+
+        job_type_key = (await self.db.execute(
+            select(JobTypeDefinition.key).where(JobTypeDefinition.id == draft.job_type_id)
+        )).scalar_one_or_none()
+        if str(job_type_key or "").lower() != "consultation":
+            return None
+
+        settings = (await self.db.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == draft.selected_tenant_id)
+        )).scalar_one_or_none()
+        fee = (((settings.extra or {}).get("home_services") or {}).get("consultation_fee")
+               if settings else None)
+        if fee is None or float(fee) <= 0:
+            raise ServiceOSException(
+                "PROVIDER_CONSULTATION_FEE_NOT_CONFIGURED",
+                "This provider has not configured a consultation fee.",
+                status_code=422,
+            )
+        return float(fee)
+
+    async def _effective_pricing_model(self, offering, job_type_id: uuid.UUID | None) -> str:
+        """Resolve pricing behavior from the exact published Job-Type rules.
+
+        MasterService.pricing_model remains a compatibility default for old
+        catalog data, but normalized job-type workflow is authoritative once
+        present. Amounts remain tenant-owned; Admin only selects behavior.
+        """
+        if job_type_id:
+            from app.engines.admin_catalog.models import ServiceJobWorkflow
+            behavior = (await self.db.execute(
+                select(ServiceJobWorkflow.pricing_behavior).where(
+                    ServiceJobWorkflow.master_service_id == offering.id,
+                    ServiceJobWorkflow.job_type_id == job_type_id,
+                    ServiceJobWorkflow.is_current.is_(True),
+                    ServiceJobWorkflow.status == "published",
+                ).limit(1)
+            )).scalar_one_or_none()
+            if behavior in {"inspection_required", "custom_quote"}:
+                return PRICING_MODEL_VISIT_FEE
+            if behavior in {"fixed", "range"}:
+                return PRICING_MODEL_FIXED
+        return offering.pricing_model or PRICING_MODEL_VISIT_FEE
 
     async def _compute_price_snapshot(self, draft: HomeServiceBookingDraft, offering) -> dict:
         """
@@ -2149,7 +2088,8 @@ class HomeServiceChatbotBookingService:
         )).scalars().first()
 
         floor_price  = float(floor_row.floor_price) if floor_row else 0.0
-        pricing_model = offering.pricing_model or "visit_fee_plus_quote"
+        pricing_model = await self._effective_pricing_model(offering, draft.job_type_id)
+        consultation_fee = await self._resolve_provider_consultation_fee(draft)
 
         # Pricing MODE is decided by the offering's own `pricing_model` --
         # never by whether a tenant happens to have configured a price range.
@@ -2163,7 +2103,13 @@ class HomeServiceChatbotBookingService:
         # this fix closes. Inspection mode is checked FIRST and always wins;
         # tenant/admin numeric prices are only ever used to fill in the
         # actual number for a genuinely fixed/range offering.
-        if pricing_model == PRICING_MODEL_VISIT_FEE:
+        if consultation_fee is not None:
+            base = consultation_fee
+            min_price = consultation_fee
+            max_price = consultation_fee
+            note = "Provider consultation fee. Any later repair is quoted and booked separately."
+            tenant_price = None
+        elif pricing_model == PRICING_MODEL_VISIT_FEE:
             tenant_visit_fee = await self._resolve_selected_tenant_visit_fee(draft)
             visit_fee_value = tenant_visit_fee if tenant_visit_fee and tenant_visit_fee > 0 else float(offering.visit_fee)
             base  = max(visit_fee_value, floor_price)
@@ -2180,7 +2126,9 @@ class HomeServiceChatbotBookingService:
         else:
             tenant_price = await self._resolve_selected_tenant_price(draft)
 
-        if pricing_model == PRICING_MODEL_VISIT_FEE:
+        if consultation_fee is not None:
+            pass  # fixed provider-wide consultation fee already resolved.
+        elif pricing_model == PRICING_MODEL_VISIT_FEE:
             pass  # base/min_price/max_price/note already set above.
         elif tenant_price is not None:
             base = max(tenant_price["minimum_price"], floor_price)
@@ -2198,15 +2146,44 @@ class HomeServiceChatbotBookingService:
             max_price = float(offering.max_price) if offering.max_price else None
             note  = "Estimated price (admin estimate — no tenant assigned yet)."
 
-        # MODULE-L5-10: per-category customer charge (platform fee). The platform
-        # earns from both sides — a commission from the provider AND this charge
-        # added to what the customer pays, shown to them as an included fee.
-        # e.g. Rs.500 service + 10% = Rs.550 ("Rs.50 platform fee included").
-        charge_pct = float(cat.customer_charge_pct) if (cat and cat.customer_charge_pct is not None) else 0.0
+        # Home Services Monetization is the sole customer-fee authority.
+        # Category rows no longer carry a second, conflicting finance setup.
+        from app.engines.vertical_monetization.calculation_service import (
+            calculate_customer_platform_fee, get_active_job_type_rule,
+            get_current_policy_by_vertical_key, to_minor,
+        )
+        monetization_policy = await get_current_policy_by_vertical_key(self.db, "home_services")
+        job_type_rule = (
+            await get_active_job_type_rule(self.db, monetization_policy.id, draft.job_type_id)
+            if monetization_policy is not None else None
+        )
+        customer_fee_policy = (
+            None if job_type_rule is not None and not job_type_rule.customer_charge_enabled
+            else monetization_policy
+        )
+
         def _with_fee(x):
-            return round(x * (1 + charge_pct / 100.0), 2) if x is not None else None
-        platform_fee = round(base * charge_pct / 100.0, 2)
-        customer_total = round(base + platform_fee, 2)
+            if x is None:
+                return None
+            result = calculate_customer_platform_fee(
+                policy=customer_fee_policy,
+                service_subtotal_minor=to_minor(Decimal(str(x))),
+                calculation_basis="home_services_booking_price_snapshot",
+            )
+            return float(result["total_payable"])
+
+        base_fee_result = calculate_customer_platform_fee(
+            policy=customer_fee_policy,
+            service_subtotal_minor=to_minor(Decimal(str(base))),
+            calculation_basis="home_services_booking_price_snapshot",
+        )
+        platform_fee = float(base_fee_result["customer_platform_fee"])
+        customer_total = float(base_fee_result["total_payable"])
+        charge_pct = float(customer_fee_policy.customer_fee_percentage or 0) if (
+            customer_fee_policy is not None
+            and customer_fee_policy.customer_fee_model in ("PERCENTAGE", "PERCENTAGE_WITH_MIN_MAX")
+        ) else 0.0
+        customer_fee_model = customer_fee_policy.customer_fee_model if customer_fee_policy else "NONE"
 
         requires_inspection_estimate = pricing_model == PRICING_MODEL_VISIT_FEE
 
@@ -2256,12 +2233,16 @@ class HomeServiceChatbotBookingService:
             "note":            note,
             # ── customer-facing platform fee (inclusive) ──────────────────────
             "platform_fee_pct":       charge_pct,
+            "platform_fee_model":     customer_fee_model,
+            "monetization_policy_id": str(monetization_policy.id) if monetization_policy else None,
+            "monetization_policy_version": monetization_policy.version_number if monetization_policy else None,
+            "monetization_job_type_rule_id": str(job_type_rule.id) if job_type_rule else None,
             "platform_fee":           platform_fee,
             "customer_total":         customer_total,      # what the customer pays
             "customer_min_price":     _with_fee(min_price),
             "customer_max_price":     _with_fee(max_price),
-            "fee_included_note":      (f"Includes ₹{int(platform_fee)} platform fee ({charge_pct:g}%)"
-                                       if charge_pct else None),
+            "fee_included_note":      (f"Includes ₹{platform_fee:g} platform fee ({customer_fee_model.replace('_', ' ').title()})"
+                                       if platform_fee else None),
             # display the inclusive total the customer actually pays
             "display_price":   f"₹{int(customer_total)}",
             "source":          "backend_catalog",
@@ -2303,6 +2284,7 @@ class HomeServiceChatbotBookingService:
                 ServiceJobWorkflow.master_service_id == draft.offering_id,
                 ServiceJobWorkflow.job_type_id == draft.job_type_id,
                 ServiceJobWorkflow.is_current.is_(True),
+                ServiceJobWorkflow.status == "published",
             )
         )).scalars().first()
         if current_workflow is None:
@@ -2365,6 +2347,7 @@ class HomeServiceChatbotBookingService:
                 ServiceJobWorkflow.master_service_id == draft.offering_id,
                 ServiceJobWorkflow.job_type_id == job_type_id,
                 ServiceJobWorkflow.is_current.is_(True),
+                ServiceJobWorkflow.status == "published",
             )
         )).scalars().first()
         draft.job_type_id = job_type_id

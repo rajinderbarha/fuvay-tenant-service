@@ -72,6 +72,33 @@ async def create_order(amount_rupees: Decimal | float, receipt: str,
     return order
 
 
+async def get_order_payments(order_id: str) -> list[dict]:
+    """Fetch payments for an order directly from Razorpay.
+
+    Used to reconcile the uncommon but real case where Checkout captures a
+    payment and then fails/closes before its browser handler reaches us.
+    This call is authenticated with the server secret; no client-reported
+    status is trusted.
+    """
+    s = get_settings()
+    if not is_configured():
+        return []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(
+                f"{RAZORPAY_API_BASE}/orders/{order_id}/payments",
+                auth=(s.RAZORPAY_KEY_ID, s.RAZORPAY_KEY_SECRET),
+            )
+        except httpx.HTTPError as exc:
+            logger.error("razorpay.order_payments_network_error", order_id=order_id, error=str(exc))
+            raise RazorpayError(f"Could not reconcile Razorpay order: {exc}") from exc
+    if resp.status_code >= 400:
+        logger.error("razorpay.order_payments_failed", order_id=order_id,
+                     status=resp.status_code, body=resp.text)
+        raise RazorpayError(f"Razorpay reconciliation failed ({resp.status_code}).")
+    return list(resp.json().get("items") or [])
+
+
 def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> bool:
     """
     HMAC-SHA256("{order_id}|{payment_id}") keyed with RAZORPAY_KEY_SECRET, per Razorpay docs.

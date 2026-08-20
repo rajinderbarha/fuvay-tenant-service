@@ -33,15 +33,16 @@ import {
 // ── Btn ───────────────────────────────────────────────────────────────────
 export type PkBtnVariant = "primary" | "secondary" | "ghost" | "danger" | "success" | "warning";
 export type PkBtnSize = "xs" | "sm" | "md" | "lg";
-export function Btn({
-  children, variant = "primary", size = "md", loading, icon, iconRight,
-  fullWidth, onClick, type = "button", disabled, style = {},
-}: {
+export type PkBtnProps = {
   children?: React.ReactNode; variant?: PkBtnVariant; size?: PkBtnSize; loading?: boolean;
   icon?: React.ReactNode; iconRight?: React.ReactNode; fullWidth?: boolean;
-  onClick?: () => void; type?: "button" | "submit"; disabled?: boolean;
   style?: React.CSSProperties;
-}) {
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "size">;
+
+export function Btn({
+  children, variant = "primary", size = "md", loading, icon, iconRight,
+  fullWidth, onClick, type = "button", disabled, style = {}, ...buttonProps
+}: PkBtnProps) {
   const [hov, setHov] = useState(false);
   const V: Record<PkBtnVariant, React.CSSProperties> = {
     primary:  { background: "var(--primary-gradient)", color: "var(--text-on-brand)", border: "none", boxShadow: hov ? "var(--shadow-md)" : "var(--shadow-sm)" },
@@ -58,7 +59,7 @@ export function Btn({
     lg: { padding: "10px 22px", fontSize: 14, borderRadius: 12, height: 44, gap: 7 },
   };
   return (
-    <button className="pk-btn" type={type} onClick={onClick} disabled={disabled || loading}
+    <button {...buttonProps} className={["pk-btn", buttonProps.className].filter(Boolean).join(" ")} type={type} onClick={onClick} disabled={disabled || loading}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -854,15 +855,15 @@ export function JobStatusBadge({ status }: { status: string }) {
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────
-export function Pagination({ page, total, pageSize = 20, onPage }: {
-  page: number; total: number; pageSize?: number; onPage: (p: number) => void;
+export function Pagination({ page, total, pageSize = 20, onPage, alwaysShow = false }: {
+  page: number; total: number; pageSize?: number; onPage: (p: number) => void; alwaysShow?: boolean;
 }) {
-  const pages = Math.ceil(total / pageSize);
-  if (pages <= 1) return null;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (!alwaysShow && pages <= 1) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+    <div role="navigation" aria-label="Pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-        {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+        {total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
       </p>
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <IconBtn icon={<ChevronRight style={{ transform: "scaleX(-1)" }}/>} onClick={() => onPage(page - 1)} disabled={page <= 1} size="sm" variant="default" tooltip="Previous"/>
@@ -879,14 +880,17 @@ export function PkTextarea({ label, placeholder, value, onChange, hint, error, r
   onChange: (v: string) => void;
   hint?: string; error?: string; rows?: number; disabled?: boolean; required?: boolean;
 }) {
+  const id = React.useId();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       {label && (
-        <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>
+        <label htmlFor={id} style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", letterSpacing: "0.02em" }}>
           {label}{required ? " *" : ""}
         </label>
       )}
       <textarea
+        id={id}
+        aria-label={label ? undefined : placeholder || "Text area"}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}

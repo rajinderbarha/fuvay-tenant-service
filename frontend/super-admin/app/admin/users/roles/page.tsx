@@ -27,7 +27,7 @@ export default function RolesPage() {
   const s = roles.data?.summary;
 
   return (
-    <AdminLayout activeNav="users">
+    <AdminLayout activeNav="roles">
       <RequirePermission requiredPermission="platform:roles:read" parentLabel="Dashboard">
       {detailRole && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200,

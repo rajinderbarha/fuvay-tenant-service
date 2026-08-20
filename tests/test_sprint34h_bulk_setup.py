@@ -236,8 +236,9 @@ class TestBulkSetupService(unittest.TestCase):
     def test_has_set_commission_mappings(self):
         self.assertIn("async def set_commission_mappings", self.src)
 
-    def test_has_set_workflow_mappings(self):
+    def test_workflow_mappings_are_retired(self):
         self.assertIn("async def set_workflow_mappings", self.src)
+        self.assertIn("BULK_WORKFLOW_TEMPLATES_RETIRED", self.src)
 
     def test_has_get_available_categories(self):
         self.assertIn("async def get_available_categories", self.src)
@@ -263,8 +264,9 @@ class TestBulkSetupService(unittest.TestCase):
     def test_has_get_available_issue_types(self):
         self.assertIn("async def get_available_issue_types", self.src)
 
-    def test_has_get_available_workflow_templates(self):
+    def test_available_workflow_templates_are_retired(self):
         self.assertIn("async def get_available_workflow_templates", self.src)
+        self.assertIn("BULK_WORKFLOW_TEMPLATES_RETIRED", self.src)
 
     def test_has_get_available_pricing_templates(self):
         self.assertIn("async def get_available_pricing_templates", self.src)
@@ -359,8 +361,8 @@ class TestPreviewService(unittest.TestCase):
     def test_preview_shows_issue_mappings(self):
         self.assertIn("issue_mapping", self.src)
 
-    def test_preview_shows_workflow_mappings(self):
-        self.assertIn("workflow_mapping", self.src)
+    def test_preview_does_not_show_workflow_template_mappings(self):
+        self.assertNotIn('"workflow_mappings", "workflow_mapping"', self.src)
 
     def test_preview_notes_no_db_change(self):
         self.assertIn("Preview without mutation", self.src)
@@ -481,6 +483,7 @@ class TestBulkSetupRouter(unittest.TestCase):
 
     def test_available_workflow_templates_endpoint(self):
         self.assertIn("available-workflow-templates", self.src)
+        self.assertIn("get_available_workflow_templates", self.src)
 
     def test_set_category_endpoint(self):
         self.assertIn("set_category", self.src)
@@ -632,8 +635,8 @@ class TestFrontendApiTs34H(unittest.TestCase):
     def test_get_available_issue_types_method(self):
         self.assertIn("getAvailableIssueTypes", self.src)
 
-    def test_get_available_workflow_templates_method(self):
-        self.assertIn("getAvailableWorkflowTemplates", self.src)
+    def test_get_available_workflow_templates_method_removed(self):
+        self.assertNotIn("getAvailableWorkflowTemplates", self.src)
 
     def test_set_category_method(self):
         self.assertIn("setCategory", self.src)
@@ -665,8 +668,8 @@ class TestFrontendApiTs34H(unittest.TestCase):
     def test_set_commission_mappings_method(self):
         self.assertIn("setCommissionMappings", self.src)
 
-    def test_set_workflow_mappings_method(self):
-        self.assertIn("setWorkflowMappings", self.src)
+    def test_set_workflow_mappings_method_removed(self):
+        self.assertNotIn("setWorkflowMappings", self.src)
 
     def test_validate_draft_method(self):
         self.assertIn("validateDraft", self.src)

@@ -41,6 +41,9 @@ class ChecklistTemplate(ServiceOSBase):
     owner_scope:        Mapped[str]              = mapped_column(String(20), default="PLATFORM", nullable=False)
     tenant_id:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    archived_at:        Mapped[datetime | None]   = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    archive_reason:     Mapped[str | None]        = mapped_column(Text, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +52,9 @@ class ChecklistTemplate(ServiceOSBase):
             "status": self.status, "owner_scope": self.owner_scope,
             "tenant_id": str(self.tenant_id) if self.tenant_id else None,
             "created_by_user_id": str(self.created_by_user_id) if self.created_by_user_id else None,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "archived_by": str(self.archived_by) if self.archived_by else None,
+            "archive_reason": self.archive_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -184,6 +190,8 @@ class JobTypeChecklistMapping(ServiceOSBase):
     effective_until:                Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     created_by:                    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_by:                    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    disabled_at:                  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    disable_reason:               Mapped[str | None]      = mapped_column(Text, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -198,6 +206,8 @@ class JobTypeChecklistMapping(ServiceOSBase):
             "effective_until": self.effective_until.isoformat() if self.effective_until else None,
             "created_by": str(self.created_by) if self.created_by else None,
             "updated_by": str(self.updated_by) if self.updated_by else None,
+            "disabled_at": self.disabled_at.isoformat() if self.disabled_at else None,
+            "disable_reason": self.disable_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

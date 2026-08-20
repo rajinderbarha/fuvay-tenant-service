@@ -11,6 +11,8 @@ it's a blanket per-tenant counter across all routes, not endpoint-specific.
 import time
 import uuid
 import json
+import ipaddress
+from datetime import datetime, timezone
 from typing import Callable
 
 import structlog
@@ -107,6 +109,129 @@ class UsageQuotaMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class IPBlocklistMiddleware(BaseHTTPMiddleware):
+    """Enforce the Security workspace blocklist on the request hot path.
+
+    Redis narrows the request to an exact-IP/CIDR candidate.  Only a blocked
+    candidate touches PostgreSQL, where expiry and role/tenant scope are
+    verified and the append-only hit record is written.  Normal traffic stays
+    O(1) and does not consume a database connection.
+    """
+
+    EXEMPT_PATHS = {"/health", "/ready", "/metrics"}
+
+    @staticmethod
+    def _actor_scope(request: Request) -> tuple[str | None, str | None]:
+        auth = request.headers.get("authorization", "")
+        if not auth.lower().startswith("bearer "):
+            return None, request.headers.get("X-Tenant-ID")
+        try:
+            from app.engines.auth.utils import decode_token
+            payload = decode_token(auth.split(" ", 1)[1])
+            return payload.get("role"), payload.get("tenant_id") or request.headers.get("X-Tenant-ID")
+        except Exception:
+            return None, request.headers.get("X-Tenant-ID")
+
+    @staticmethod
+    def _scope_matches(scope: str, role: str | None, tenant_id: str | None,
+                       entry_tenant_id: str | None) -> bool:
+        if scope == "all":
+            return True
+        if scope == "admin":
+            return bool(role and (role == "super_admin" or role.startswith("admin_")))
+        if scope in {"customer", "staff"}:
+            return role == scope
+        if scope == "tenant":
+            return bool(entry_tenant_id and tenant_id == entry_tenant_id)
+        return False
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.url.path in self.EXEMPT_PATHS:
+            return await call_next(request)
+        from app.core.security import get_client_ip
+        ip = get_client_ip(request)
+        if not ip:
+            return await call_next(request)
+        try:
+            address = ipaddress.ip_address(ip)
+        except ValueError:
+            return await call_next(request)
+
+        candidates: list[str] = []
+        try:
+            from app.redis_client import get_redis
+            redis = get_redis()
+            if await redis.sismember("serviceos:security:ip_blocklist", ip):
+                candidates.append(ip)
+            for raw in await redis.smembers("serviceos:security:cidr_blocklist"):
+                cidr = raw.decode() if isinstance(raw, bytes) else str(raw)
+                try:
+                    if address in ipaddress.ip_network(cidr, strict=False):
+                        candidates.append(cidr)
+                except ValueError:
+                    continue
+        except Exception:
+            return await call_next(request)  # monitored fail-open if Redis is unavailable
+
+        if not candidates:
+            return await call_next(request)
+
+        try:
+            from sqlalchemy import select
+            from app.database import get_db_session
+            from app.engines.security.models import IPBlocklistEntry, IPBlockHit
+
+            role, tenant_id = self._actor_scope(request)
+            now = datetime.now(timezone.utc)
+            async with get_db_session() as db:
+                result = await db.execute(select(IPBlocklistEntry).where(
+                    IPBlocklistEntry.ip_or_cidr.in_(candidates),
+                    IPBlocklistEntry.status == "active",
+                ).order_by(IPBlocklistEntry.is_global.desc(), IPBlocklistEntry.created_at.desc()))
+                matched = None
+                for entry in result.scalars().all():
+                    if entry.expires_at and entry.expires_at <= now:
+                        entry.status = "expired"
+                        entry.is_active = False
+                        try:
+                            redis_set = "serviceos:security:ip_blocklist" if entry.entry_type == "ip" else "serviceos:security:cidr_blocklist"
+                            await redis.srem(redis_set, entry.ip_or_cidr)
+                        except Exception:
+                            pass
+                        continue
+                    if self._scope_matches(entry.scope, role, tenant_id,
+                                           str(entry.tenant_id) if entry.tenant_id else None):
+                        matched = entry
+                        break
+                if matched is not None:
+                    matched.hit_count += 1
+                    matched.last_hit_at = now
+                    db.add(IPBlockHit(
+                        block_id=matched.id, ip_or_cidr=matched.ip_or_cidr,
+                        hit_at=now, path=request.url.path, method=request.method,
+                        user_agent=request.headers.get("user-agent"), blocked_scope=matched.scope,
+                    ))
+                    block_reference = str(matched.id)
+            if matched is None:
+                return await call_next(request)
+        except Exception as exc:
+            logger.error("security.ip_block_enforcement_failed", error=str(exc), ip=ip)
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "error": {
+                    "error_code": "IP_BLOCKED",
+                    "detail": "This network is blocked by platform security policy.",
+                    "resolution": "Contact platform support and provide the request ID.",
+                },
+                "meta": {"block_reference": block_reference},
+            },
+        )
+
+
 class IdempotencyMiddleware(BaseHTTPMiddleware):
     """
     Idempotency key middleware for write endpoints.
@@ -183,9 +308,16 @@ def register_middleware(app: FastAPI) -> None:
             "X-Request-ID", "X-ServiceOS-Version",
             "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
             "X-Idempotency-Key", "X-Idempotency-Replayed",
+            # CSV exports are capped server-side and report the cap through
+            # these. A header the browser cannot read is a header the UI cannot
+            # act on: without exposing them, an admin whose export was truncated
+            # was told nothing and walked away believing a partial CSV was the
+            # complete record.
+            "X-Export-Total", "X-Export-Truncated",
         ],
     )
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(UsageQuotaMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)
+    app.add_middleware(IPBlocklistMiddleware)
     app.add_middleware(RequestIDMiddleware)

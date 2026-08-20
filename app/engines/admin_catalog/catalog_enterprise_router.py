@@ -55,25 +55,30 @@ async def list_types(
     status: str | None = Query(None),
     mapped: bool | None = Query(None),
     customer_visible: bool | None = Query(None),
+    type_family: str | None = Query(None),
+    has_providers: bool | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     sort_by: str = Query("name"),
     sort_dir: str = Query("asc"),
+    retired: bool = Query(False),
     s: TypesService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     return ok(
         await s.list_types(q=q, category_id=category_id, status=status, mapped=mapped,
-                           customer_visible=customer_visible, page=page, page_size=page_size,
-                           sort_by=sort_by, sort_dir=sort_dir),
+                           customer_visible=customer_visible, type_family=type_family,
+                           has_providers=has_providers, page=page, page_size=page_size,
+                           sort_by=sort_by, sort_dir=sort_dir, retired=retired),
         _rid(r), "catalog_enterprise",
     )
 
 
 @router.get("/types/{type_id}", response_model=ApiResponse[dict], summary="Get service type detail")
 async def get_type(type_id: uuid.UUID, r: Request,
+                   include_retired: bool = Query(False),
                    s: TypesService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.get_type(type_id), _rid(r), "catalog_enterprise")
+    return ok(await s.get_type(type_id, include_retired=include_retired), _rid(r), "catalog_enterprise")
 
 
 @router.post("/types", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
@@ -112,7 +117,23 @@ async def deactivate_type(type_id: uuid.UUID, r: Request,
 async def archive_type(type_id: uuid.UUID, r: Request,
                        u: UserContext = Depends(require_super_admin),
                        s: TypesService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.archive_type(type_id), _rid(r), "catalog_enterprise")
+    body = await r.json()
+    return ok(await s.archive_type(type_id, body.get("reason", "")), _rid(r), "catalog_enterprise")
+
+
+@router.post("/types/{type_id}/restore", response_model=ApiResponse[dict], summary="Restore retired service type")
+async def restore_type(type_id: uuid.UUID, r: Request,
+                       u: UserContext = Depends(require_super_admin),
+                       s: TypesService = Depends(_svc)) -> ApiResponse[dict]:
+    body = await r.json()
+    return ok(await s.restore_type(type_id, body.get("reason", "")), _rid(r), "catalog_enterprise")
+
+
+@router.get("/types/{type_id}/audit", response_model=ApiResponse[dict], summary="Service type audit history")
+async def type_audit(type_id: uuid.UUID, r: Request, limit: int = Query(100, ge=1, le=200),
+                     u: UserContext = Depends(require_super_admin),
+                     s: TypesService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_type_audit(type_id, limit), _rid(r), "catalog_enterprise")
 
 
 # ═══════════════════════════════════════════════════════════

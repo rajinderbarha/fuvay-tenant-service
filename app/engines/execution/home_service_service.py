@@ -1,7 +1,7 @@
 """Sprint 21 — Home Service Job Execution Service."""
 from __future__ import annotations
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -82,13 +82,30 @@ class HomeServiceJobExecutionService:
         # required 422 INVALID_JOB_STATUS_TRANSITION. Live-verified: calling
         # /on-the-way again after a job reached work_done (terminal, no
         # allowed transitions) now returns a clean 422.
-        allowed = JOB_TRANSITIONS.get(current, set())
-        if target not in allowed:
+        #
+        # Delegates to transition_guard so the platform graph lives in exactly
+        # one place. The workflow layer needs the job row and a session, so it
+        # is applied by `_assert_transition_for_job` below; this synchronous
+        # form remains for the callers that only have two status strings.
+        from app.engines.execution.transition_guard import is_status_move_allowed
+        if not is_status_move_allowed(current, target):
             raise ServiceOSException(
                 ERR_INVALID_TRANSITION,
                 f"This job cannot move from {current} to {target} directly.",
                 status_code=422,
             )
+
+    async def _assert_transition_for_job(self, db, job, target: str,
+                                         actor_role: str | None = None) -> None:
+        """Full gate: platform graph AND the job's own workflow.
+
+        Used where the job row is already loaded. The workflow layer can only
+        narrow what the platform graph permits, and stays silent for any job
+        whose workflow defines no transitions — so nothing changes for jobs
+        created before a journey was authored.
+        """
+        from app.engines.execution.transition_guard import assert_transition_allowed
+        await assert_transition_allowed(db, job, target, actor_role)
 
     def _assert_staff_owns_job(self, job, staff_member_id: uuid.UUID) -> None:
         if str(job.assigned_staff_id) != str(staff_member_id):
@@ -194,6 +211,18 @@ class HomeServiceJobExecutionService:
             getattr(workflow, "pricing_behavior", None)
             in {"inspection_required", "custom_quote"}
         )
+        # The booking-time price contract is also immutable authority.  If
+        # pricing resolved to inspection/estimate, a stale admin workflow
+        # boolean must never let work begin before customer approval.
+        if not requires_quote_approval:
+            from app.engines.final_records.models import ServiceBooking
+            booking = await db.get(ServiceBooking, job.booking_id)
+            if isinstance(booking, ServiceBooking):
+                snapshot = booking.price_snapshot or {}
+                requires_quote_approval = bool(snapshot.get("requires_inspection_estimate")) or (
+                    snapshot.get("pricing_mode") in {"inspection", "inspection_required", "custom_quote"}
+                    or snapshot.get("pricing_model") in {"inspection", "inspection_required", "custom_quote"}
+                )
         if not requires_quote_approval:
             return
         from app.engines.quote_checklist.models import ServiceJobQuote
@@ -257,6 +286,15 @@ class HomeServiceJobExecutionService:
             getattr(workflow, "pricing_behavior", None)
             in {"inspection_required", "custom_quote"}
         )
+        if not requires_quote_approval:
+            from app.engines.final_records.models import ServiceBooking
+            booking = await db.get(ServiceBooking, job.booking_id)
+            if isinstance(booking, ServiceBooking):
+                snapshot = booking.price_snapshot or {}
+                requires_quote_approval = bool(snapshot.get("requires_inspection_estimate")) or (
+                    snapshot.get("pricing_mode") in {"inspection", "inspection_required", "custom_quote"}
+                    or snapshot.get("pricing_model") in {"inspection", "inspection_required", "custom_quote"}
+                )
         result["quote_approval_required"] = requires_quote_approval
 
         try:
@@ -289,7 +327,11 @@ class HomeServiceJobExecutionService:
         metadata: dict | None = None,
     ) -> None:
         old = job.status
-        self._assert_transition(old, new_status)
+        # Every job status change in the home-services pipeline funnels through
+        # here, so this is where the job's own workflow gets its say. It can only
+        # narrow the platform graph, and stays silent unless the job's workflow
+        # actually describes both the current and target statuses.
+        await self._assert_transition_for_job(db, job, new_status, actor_role)
         if new_status == JS_SERVICE_STARTED:
             await self._assert_quote_approval_satisfied(db, job)
             # Customer platform fee gate (vertical_monetization).
@@ -1028,6 +1070,52 @@ class HomeServiceJobExecutionService:
         from app.engines.execution.usage_credit_deduction import deduct_for_completed_job
         from app.engines.final_records.models import ServiceBooking
         from app.engines.home_service_booking.models import HomeServiceBookingDraft
+        from app.engines.invoice_payment.models import ServiceInvoice
+
+        # Use the issued invoice snapshot as the financial basis. The amount
+        # collected from the customer can include the platform fee, so using
+        # it as the commission base would charge commission on ServiceOS's
+        # own fee and recalculating that fee would create fee-on-fee drift.
+        invoice = (await db.execute(
+            select(ServiceInvoice).where(
+                ServiceInvoice.job_id == job.id,
+                ServiceInvoice.tenant_id == tenant_id,
+                ServiceInvoice.status != "cancelled",
+            ).order_by(ServiceInvoice.created_at.desc()).limit(1)
+        )).scalars().first()
+        service_charge_basis = (
+            Decimal(str(invoice.total_amount)) if invoice is not None
+            else Decimal(str(collected_amount))
+        )
+        platform_fee_snapshot = (
+            Decimal(str(invoice.platform_fee_amount or 0)) if invoice is not None else None
+        )
+        # Snapshot the provider-owned warranty at completion. The service row
+        # is job-type scoped, just like pricing, and the platform floor is five
+        # days. This value must not drift when the live offering changes later.
+        from app.engines.admin_catalog.models import TenantService
+        tenant_service = (await db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == job.offering_id,
+                TenantService.job_type_id == job.job_type_id,
+                TenantService.is_enabled.is_(True),
+                TenantService.deleted_at.is_(None),
+            ).limit(1)
+        )).scalar_one_or_none()
+        warranty_days = max(5, int(tenant_service.warranty_days if tenant_service else 5))
+        completed_at = datetime.fromisoformat(job.completion_data["completed_at"])
+        job.warranty_days_snapshot = warranty_days
+        job.warranty_expires_at = completed_at + timedelta(days=warranty_days)
+
+        job.completion_data = {
+            **job.completion_data,
+            "provider_charge_basis": float(service_charge_basis),
+            "provider_charge_basis_source": "service_invoice.total_amount" if invoice else "collected_amount_fallback",
+            "platform_fee_snapshot": float(platform_fee_snapshot) if platform_fee_snapshot is not None else None,
+            "warranty_days": warranty_days,
+            "warranty_expires_at": job.warranty_expires_at.isoformat(),
+        }
 
         booking = await db.get(ServiceBooking, job.booking_id)
         offering_type_id = brand_id_for_deduction = None
@@ -1036,6 +1124,14 @@ class HomeServiceJobExecutionService:
             if draft:
                 offering_type_id = draft.offering_type_id
                 brand_id_for_deduction = draft.brand_id
+        chargeable_event = "job_completed"
+        if job.job_type_id is not None:
+            from app.engines.admin_catalog.models import JobTypeDefinition
+            job_type_key = (await db.execute(
+                select(JobTypeDefinition.key).where(JobTypeDefinition.id == job.job_type_id)
+            )).scalar_one_or_none()
+            if job_type_key == "consultation":
+                chargeable_event = "consultation_completed"
         try:
             async with db.begin_nested():
                 deduction = await deduct_for_completed_job(
@@ -1043,7 +1139,8 @@ class HomeServiceJobExecutionService:
                     master_service_id=job.offering_id, offering_type_id=offering_type_id,
                     brand_id=brand_id_for_deduction, category_id=job.category_id,
                     job_type_id=job.job_type_id,
-                    job_price=Decimal(str(collected_amount)), request_id=request_id,
+                    chargeable_event=chargeable_event,
+                    job_price=service_charge_basis, request_id=request_id,
                 )
         except Exception as exc:
             # A finance-side failure must not roll back genuine completed work.
@@ -1070,7 +1167,9 @@ class HomeServiceJobExecutionService:
                     job_id=job.id,
                     booking_id=job.booking_id,
                     vertical_key="home_services",
-                    chargeable_amount=Decimal(str(collected_amount)),
+                    chargeable_amount=service_charge_basis,
+                    snapshotted_fee_amount=platform_fee_snapshot,
+                    policy_reference=f"service_invoice:{invoice.id}" if invoice else None,
                     request_id=request_id,
                 )
         except Exception as exc:

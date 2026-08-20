@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ServiceOSException
 from app.engines.home_service_assignment.employment_correction_models import (
-    StaffSkillRecord, StaffCorrectionRequest,
+    StaffCorrectionRequest,
     CORRECTABLE_FIELDS, AUTO_APPLY_FIELDS,
     CORRECTION_STATUS_PENDING_REVIEW, CORRECTION_STATUS_APPROVED,
     CORRECTION_STATUS_CHANGES_REQUESTED, CORRECTION_STATUS_REJECTED,
@@ -116,10 +116,28 @@ class MobileEmploymentService:
         }
 
     async def _skills(self, db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> list[dict]:
-        res = await db.execute(select(StaffSkillRecord).where(
-            StaffSkillRecord.tenant_id == tenant_id, StaffSkillRecord.staff_member_id == staff_id,
-        ).order_by(StaffSkillRecord.skill_name))
-        return [s.to_dict() for s in res.scalars().all()]
+        # Catalog assignments are canonical. The older free-text verification
+        # rows are retained only as an optional verification overlay so staff
+        # created before the catalog migration do not lose historical proof.
+        rows = (await db.execute(text("""
+            SELECT cs.id::text, cs.code, cs.name, cs.requires_verification,
+                   COALESCE(ssr.verification_status, a.verification_status) AS verification_status,
+                   ssr.verified_at, ssr.expires_at
+              FROM provider_team_member_skills a
+              JOIN category_skills cs ON cs.id=a.skill_id
+              LEFT JOIN staff_skill_records ssr
+                ON ssr.tenant_id=a.tenant_id AND ssr.staff_member_id=a.staff_member_id
+               AND lower(ssr.skill_name)=lower(cs.name)
+             WHERE a.tenant_id=:tid AND a.staff_member_id=:sid
+             ORDER BY cs.display_order, cs.name
+        """), {"tid": str(tenant_id), "sid": str(staff_id)})).mappings().all()
+        return [{
+            "id": row["id"], "code": row["code"], "name": row["name"],
+            "requires_verification": row["requires_verification"],
+            "verification_status": row["verification_status"],
+            "verified_at": row["verified_at"].isoformat() if row["verified_at"] else None,
+            "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+        } for row in rows]
 
     def _effective_permissions(self) -> dict:
         from app.core.permissions import ROLE_PERMISSIONS

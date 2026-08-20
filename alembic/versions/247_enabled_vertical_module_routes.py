@@ -19,7 +19,6 @@ ROUTES = {
     "listing_types": "/admin/types-brands",
     "amenities": "/admin/service-options",
     "localities": "/admin/location-mapping",
-    "site_visit_workflows": "/admin/workflow-templates",
 }
 
 

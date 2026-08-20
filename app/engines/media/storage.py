@@ -1,16 +1,15 @@
 """
 MediaStorageService — pluggable storage backend.
 
-Drivers: local | cloudinary | s3_compatible
-Selected by FILE_STORAGE_DRIVER env var (defaults to 'local').
+Drivers: local | cloudinary | s3_compatible | cloudflare_r2
+Selected by FILE_STORAGE_DRIVER. When it is unset, configured Cloudinary
+credentials take precedence and local disk is only the development fallback.
 
 Local driver stores files in ./uploads/ and serves them via FastAPI StaticFiles.
 """
 from __future__ import annotations
 
-import hashlib
 import mimetypes
-import os
 import pathlib
 import secrets
 import time
@@ -48,6 +47,7 @@ class MediaStorageService:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._driver: StorageDriver = self._resolve_driver()
+        self._document_driver: StorageDriver = self._resolve_document_driver()
 
     def _resolve_driver(self) -> StorageDriver:
         explicit = getattr(self._settings, "FILE_STORAGE_DRIVER", "").strip().lower()
@@ -58,6 +58,12 @@ class MediaStorageService:
         if cloudinary_ok():
             return "cloudinary"
         return "local"
+
+    def _resolve_document_driver(self) -> StorageDriver:
+        explicit = getattr(self._settings, "FILE_STORAGE_DOCUMENT_DRIVER", "").strip().lower()
+        if explicit in ("local", "s3_compatible", "cloudflare_r2", "cloudinary"):
+            return explicit  # type: ignore[return-value]
+        return self._driver
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -74,10 +80,13 @@ class MediaStorageService:
         stored_name = f"{secrets.token_hex(12)}{ext}"
         checksum = hashlib.sha256(file_bytes).hexdigest()
 
-        if self._driver == "cloudinary":
+        driver = self._driver if mime_type.startswith(("image/", "video/")) else self._document_driver
+        if driver == "cloudinary":
             return await self._store_cloudinary(file_bytes, stored_name, media_context, owner_id, checksum)
-        if self._driver in ("s3_compatible", "cloudflare_r2"):
-            return await self._store_s3(file_bytes, stored_name, media_context, owner_id, checksum, mime_type)
+        if driver in ("s3_compatible", "cloudflare_r2"):
+            return await self._store_s3(
+                file_bytes, stored_name, media_context, owner_id, checksum, mime_type, driver
+            )
         # default: local
         return self._store_local(file_bytes, stored_name, media_context, owner_id, checksum)
 
@@ -113,15 +122,14 @@ class MediaStorageService:
 
     def validate_storage_config(self) -> None:
         """Raise ValueError if the configured driver is missing required settings."""
-        if self._driver == "local":
-            return  # always valid
-        if self._driver == "cloudinary":
+        drivers = {self._driver, self._document_driver}
+        if "cloudinary" in drivers:
             s = self._settings
             missing = [k for k in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
                        if not getattr(s, k, "")]
             if missing:
                 raise ValueError(f"Cloudinary storage configured but missing: {', '.join(missing)}")
-        if self._driver in ("s3_compatible", "cloudflare_r2"):
+        if drivers.intersection({"s3_compatible", "cloudflare_r2"}):
             s = self._settings
             missing = [k for k in ("FILE_STORAGE_BUCKET", "FILE_STORAGE_ACCESS_KEY", "FILE_STORAGE_SECRET_KEY")
                        if not getattr(s, k, "")]
@@ -251,7 +259,7 @@ class MediaStorageService:
 
     async def _store_s3(
         self, file_bytes: bytes, stored_name: str, media_context: str,
-        owner_id: str, checksum: str, mime_type: str
+        owner_id: str, checksum: str, mime_type: str, driver: StorageDriver
     ) -> StoredFile:
         """Upload to any S3-compatible endpoint (including Cloudflare R2)."""
         import httpx
@@ -283,7 +291,7 @@ class MediaStorageService:
         public_url = f"{base_url}/{storage_key}" if base_url else None
 
         return StoredFile(
-            storage_driver=self._driver,
+            storage_driver=driver,
             storage_key=storage_key,
             storage_bucket=bucket,
             public_url=public_url,

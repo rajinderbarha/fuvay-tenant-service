@@ -174,7 +174,9 @@ class TestTrustBoundariesAndPolicySource:
         src = inspect.getsource(usage_credit_deduction)
         assert "/v1/admin/pricing-rules" not in src
         assert "apiFetch" not in src
-        assert "ServicePricingRule" in src  # reads the DB model directly, not an HTTP surface
+        assert "ServicePricingRule" not in src  # no hidden per-service fallback
+        assert "VerticalMonetizationPolicy" in src
+        assert 'return Decimal("0"), None' in src  # no published policy = no charge
 
     def test_new_finance_service_never_calls_the_retired_pricing_rules_endpoint(self):
         import inspect
@@ -193,12 +195,11 @@ class TestTrustBoundariesAndPolicySource:
         credit adjustment endpoint (elevated permission, creates an
         immutable ledger entry, never edits an existing charge)."""
         import inspect
-        from app.engines.finance_hub import admin_router
-        src = inspect.getsource(admin_router)
-        section = src[src.index("HOME SERVICES FINANCE"):]
-        assert section.count("@router.post(") == 2  # reconciliation/run + manual adjustment
-        assert "reconciliation/run" in section
-        assert "home-services/adjustments" in section
+        from app.engines.finance_hub import admin_hs_finance_router
+        src = inspect.getsource(admin_hs_finance_router)
+        assert '@canonical_router.post(\n    "/adjustments"' in src
+        assert "FINANCE_HOME_SERVICES_ADJUSTMENTS_CREATE" in src
+        assert "UsageCreditLedger).update(" not in src
 
     def test_ledger_model_has_no_update_or_delete_code_path(self):
         import inspect
@@ -329,3 +330,23 @@ class TestVerticalIsolation:
         svc = HomeServicesFinanceService(db=db_session)
         summary = await svc.get_summary()
         assert summary["completed_jobs"] >= 1
+
+
+class TestSecurityDepositWorkspaceContract:
+    async def test_hs_deposit_detail_checks_nested_deposit_vertical(self):
+        """The shared detail service returns an envelope containing
+        `deposit`, `ledger` and `audit_log`; valid HS deposits must not be
+        rejected by checking for `vertical` on the outer envelope."""
+        from unittest.mock import AsyncMock, MagicMock
+        from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
+
+        deposit_id = uuid.uuid4()
+        expected = {
+            "deposit": {"deposit_id": str(deposit_id), "vertical": "home_services"},
+            "ledger": [],
+            "audit_log": [],
+        }
+        svc = HomeServicesFinanceService(db=MagicMock())
+        svc._fh.get_deposit_detail = AsyncMock(return_value=expected)
+
+        assert await svc.get_hs_deposit_detail(deposit_id) == expected

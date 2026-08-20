@@ -58,6 +58,7 @@ DYNAMIC_GUARD_NAME = "vertical_guard_dynamic"
 DYNAMIC_GATED_ROUTES = [
     ("/v1/admin/onboarding/providers/{tenant_id}/send-reminder", {"POST"}),
     ("/v1/admin/onboarding/providers/{tenant_id}", {"GET"}),
+    ("/v1/admin/onboarding/providers/{tenant_id}/documents/{document_id}/review", {"POST"}),
     ("/v1/admin/onboarding/providers/{tenant_id}/approve", {"POST"}),
     ("/v1/admin/onboarding/providers/{tenant_id}/reject", {"POST"}),
     ("/v1/admin/onboarding/providers/{tenant_id}/request-changes", {"POST"}),

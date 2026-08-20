@@ -59,6 +59,9 @@ function adaptJob(dto: ServiceJobDto | null | undefined): CustomerActiveJob | nu
           completedAt: dto.completion.completed_at,
         }
       : null,
+    warrantyDays: dto.warranty_days ?? null,
+    warrantyExpiresAt: dto.warranty_expires_at ?? null,
+    warrantyActive: dto.warranty_active ?? false,
   };
 }
 
@@ -106,5 +109,6 @@ export function adaptCustomerBookingDetails(dto: ServiceBookingDto): CustomerBoo
     activity: createdAt ? deriveBookingActivity(dto.id, dto.booking_number, createdAt) : [],
     notifications: resolveNotificationCapability(),
     job: adaptJob(dto.job),
+    workflowStages: dto.workflow_stages ?? [],
   };
 }

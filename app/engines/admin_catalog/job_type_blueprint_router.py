@@ -56,6 +56,37 @@ async def get_workflow(service_id: uuid.UUID, job_type_id: uuid.UUID, r: Request
     return ok(await s.get_workflow(service_id, job_type_id), _rid(r), ENGINE_ID)
 
 
+@router.get("/{service_id}/job-types/{job_type_id}/workflow/step-review",
+            response_model=ApiResponse[dict],
+            summary="Coherence review of this job type's cross-app step definition")
+async def review_workflow_steps(service_id: uuid.UUID, job_type_id: uuid.UUID, r: Request,
+                                u: UserContext = Depends(get_current_user),
+                                s: JobTypeBlueprintService = Depends(_svc)):
+    """Non-fatal review: structural errors are already rejected on save, so this
+    reports the judgement calls an admin may knowingly accept while drafting —
+    e.g. no step maps to a job status (the sequence can never progress), or an
+    app has no step of its own."""
+    return ok(await s.review_workflow_steps(service_id, job_type_id), _rid(r), ENGINE_ID)
+
+
+@router.get("/{service_id}/job-types/{job_type_id}/workflow/step-options",
+            response_model=ApiResponse[dict],
+            summary="Vocabularies the step builder may offer (canonical, not invented)")
+async def workflow_step_options(r: Request, service_id: uuid.UUID, job_type_id: uuid.UUID,
+                                u: UserContext = Depends(get_current_user)):
+    """The builder must only offer values the API will accept. `job_statuses` is
+    derived from the execution engine's own JOB_TRANSITIONS graph, so the picker
+    can never drift from what a job can actually be."""
+    from app.engines.admin_catalog.workflow_steps import (
+        CANONICAL_JOB_STATUSES, OWNER_APPS, OWNER_ROLES,
+    )
+    return ok({
+        "job_statuses": sorted(CANONICAL_JOB_STATUSES),
+        "owner_apps": sorted(OWNER_APPS),
+        "owner_roles": sorted(OWNER_ROLES),
+    }, _rid(r), ENGINE_ID)
+
+
 @router.put("/{service_id}/job-types/{job_type_id}/workflow", response_model=ApiResponse[dict],
             summary="Set this job type's workflow blueprint (structure/behavior, no amounts)")
 async def set_workflow(service_id: uuid.UUID, job_type_id: uuid.UUID, r: Request,

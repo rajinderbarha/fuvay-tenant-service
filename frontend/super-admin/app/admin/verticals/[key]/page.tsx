@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
@@ -12,6 +12,7 @@ import { useApi, useAction } from "../../../../hooks/useApi";
 import {
   FileText, ShieldCheck, Sparkles, RefreshCw, Users, Briefcase, Package,
   ShieldAlert, AlertTriangle, CheckCircle2, XCircle, HelpCircle, Search, Shield,
+  ArrowUpRight,
 } from "lucide-react";
 
 // HOME-SERVICES-OPERATIONS / Platform > Business Verticals > [key] >
@@ -37,7 +38,8 @@ export default function VerticalDetailPage() {
   const search = useSearchParams();
   const router = useRouter();
   const key = String(params.key);
-  const [tab, setTab] = useState<TabKey>((search.get("tab") as TabKey) || "capabilities");
+  const requestedTab = search.get("tab") as TabKey | null;
+  const [tab, setTab] = useState<TabKey>(requestedTab && TABS.includes(requestedTab) ? requestedTab : "capabilities");
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [reason, setReason] = useState("");
   const [capSearch, setCapSearch] = useState("");
@@ -56,7 +58,11 @@ export default function VerticalDetailPage() {
   const caps = capApi.data as VerticalCapabilityRegistry | null;
   const health = healthApi.data as VerticalDependencyHealth | null;
   const impact = impactApi.data as Record<string, unknown> | null;
-  const enabledModules = v?.modules?.filter(module => module.is_enabled).length ?? null;
+  const currentModules = useMemo(
+    () => (v?.modules ?? []).filter(module => module.navigation_status === "available"),
+    [v?.modules],
+  );
+  const enabledModules = currentModules.filter(module => module.is_enabled).length;
   const configurationErrors = health?.checks.filter(check => check.required && check.status !== "healthy").length ?? null;
 
   function setTabParam(t: TabKey) {
@@ -125,7 +131,7 @@ export default function VerticalDetailPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
               <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
               <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-              <Metric icon={<Package size={16}/>} value={enabledModules == null ? "—" : `${enabledModules} / ${v?.modules?.length ?? 0}`} label="Admin pages enabled"/>
+              <Metric icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
               <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
               <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
             </div>
@@ -138,10 +144,37 @@ export default function VerticalDetailPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
                 <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
                 <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-                <Metric icon={<Package size={16}/>} value={enabledModules == null ? "—" : `${enabledModules} / ${v?.modules?.length ?? 0}`} label="Admin pages enabled"/>
+                <Metric icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
                 <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
                 <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
               </div>
+            </Card>
+
+            <Card style={{ padding: 0, marginBottom: 14 }}>
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 2px", color: "var(--text-primary)" }}>Current admin workspaces</p>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+                  Only implemented, project-scoped Home Services workspaces are listed here. Retired and placeholder module routes are hidden from admin navigation.
+                </p>
+              </div>
+              {currentModules.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No current workspaces are assigned.</div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, padding: 16 }}>
+                  {currentModules.map(module => (
+                    <Link key={module.key} href={module.admin_path || "/admin/verticals/home_services?tab=capabilities"}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: module.is_enabled ? "var(--surface)" : "var(--surface-sunken)", textDecoration: "none", color: "inherit" }}>
+                      <Package size={15} style={{ color: module.is_enabled ? "var(--brand)" : "var(--text-tertiary)", flexShrink: 0 }}/>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{module.label}</span>
+                        <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{module.module_group || "Admin workspace"}{module.is_required ? " · Required" : ""}</span>
+                      </span>
+                      <Badge variant={module.is_enabled ? "success" : "muted"} size="sm">{module.is_enabled ? "Shown" : "Hidden"}</Badge>
+                      <ArrowUpRight size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </Card>
 
             <Card style={{ padding: 0, marginBottom: 14 }}>

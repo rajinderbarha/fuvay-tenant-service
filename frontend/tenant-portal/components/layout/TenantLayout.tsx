@@ -1,6 +1,8 @@
 "use client";
 import React, { useState, useEffect, createContext, useContext, useCallback } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import FuvayLogo from "../brand/FuvayLogo";
 
 const TenantShellCtx = createContext(false);
 import {
@@ -24,6 +26,7 @@ import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, clearSession, type InAppNotificationItem } from "../../lib/api";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
+import { AssistantLauncher } from "../assistant/AssistantPanel";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
 // per shell mount and refreshable after an admin entitlement mutation —
@@ -138,6 +141,7 @@ const NAV_GROUPS: NavGroup[] = [
       // UX-03 pointed "Complaints" at /reviews, which is a different
       // surface entirely -- corrected to the real complaints workspace.
       { id: "hs-complaints", href: "/home-services/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
+      { id: "hs-remedies", href: "/provider/refund-requests", label: "Refunds & Warranty", icon: <Shield size={16}/> },
       { id: "marketing",     href: "/marketing",               label: "Marketing", icon: <Megaphone size={16}/> },
     ],
   },
@@ -353,6 +357,7 @@ function TenantShellInner({ children, activeNav }: {
   const tour   = useTour();
   const tenant = useTenant();
   const setupStatus = useSetupStatus();
+  const pathname = usePathname();
   // Real bug: this always defaulted to collapsed on every fresh session,
   // so the sidebar rendered as a bare icon rail instead of the labeled,
   // grouped navigation the IA below actually defines -- reported as the
@@ -580,11 +585,7 @@ function TenantShellInner({ children, activeNav }: {
       }}>
         {/* Logo */}
         <div style={{ height: 64, padding: collapsed ? "0 16px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <div style={{ width: 34, height: 34, borderRadius: "var(--radius-lg)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ color: "var(--text-on-brand)", fontWeight: 800, fontSize: 15, lineHeight: 1 }}>
-              {tenant.tenantName?.[0]?.toUpperCase() ?? "T"}
-            </span>
-          </div>
+          <FuvayLogo compact={collapsed} height={34}/>
           {!collapsed && (
             <div style={{ minWidth: 0 }}>
               <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
@@ -725,6 +726,7 @@ function TenantShellInner({ children, activeNav }: {
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
+          <AssistantLauncher path={pathname}/>
           <div ref={bellRef} style={{ position: "relative" }}>
             <button onClick={openBell}
               aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}

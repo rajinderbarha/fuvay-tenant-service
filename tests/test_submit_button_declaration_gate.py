@@ -26,6 +26,8 @@ REVIEW_PAGE = os.path.join(
     BASE, "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/review/page.tsx"
 )
 API_TYPES = os.path.join(BASE, "frontend/tenant-portal/lib/api-tenant-workspaces.ts")
+API_CLIENT = os.path.join(BASE, "frontend/tenant-portal/lib/api-hs-finance-tenant.ts")
+SETUP_ROUTER = os.path.join(BASE, "app/engines/vertical_catalog/tenant_setup_router.py")
 
 
 def _read(path):
@@ -62,3 +64,20 @@ class TestSubmitButtonUsesFreshLocalDeclarationState:
         block = c[start:end]
         assert "onboardingDeclarationsApi.accept(keys)" in block
         assert "homeServicesSetupOverviewApi.submitForReview()" in block
+
+
+class TestDeclarationAcceptanceContract:
+    def test_client_and_server_use_same_canonical_payload_field(self):
+        client = _read(API_CLIENT)
+        router = _read(SETUP_ROUTER)
+        assert "post({ declaration_keys: declarationKeys })" in client
+        assert 'payload.get("declaration_keys")' in router
+
+    def test_empty_or_malformed_acceptance_cannot_succeed_silently(self):
+        router = _read(SETUP_ROUTER)
+        assert "if not isinstance(raw_keys, list) or not raw_keys:" in router
+        assert "Declaration keys must be non-empty strings." in router
+
+    def test_duplicate_keys_are_deduplicated_before_append_only_insert(self):
+        router = _read(SETUP_ROUTER)
+        assert "list(dict.fromkeys" in router

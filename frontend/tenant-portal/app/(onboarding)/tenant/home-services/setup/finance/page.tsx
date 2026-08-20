@@ -46,7 +46,7 @@ export default function FinanceReadinessPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [payingKind, setPayingKind] = useState<"deposit" | "credit" | null>(null);
+  const [paying, setPaying] = useState(false);
   const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
   const { open: openCheckout } = useRazorpayCheckout();
 
@@ -61,31 +61,49 @@ export default function FinanceReadinessPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function payActivation(kind: "deposit" | "credit") {
+  async function payActivation() {
     setPaymentNotice(null);
-    setPayingKind(kind);
+    setPaying(true);
+    let startedOrderId: string | null = null;
     try {
-      const order = kind === "deposit"
-        ? await activationPaymentApi.createSecurityDepositOrder()
-        : await activationPaymentApi.createCreditPackageOrder();
+      const order = await activationPaymentApi.createFundingOrder();
+      if (order.already_confirmed) {
+        setPaymentNotice("Your earlier payment was found and confirmed. Balances have been refreshed.");
+        load();
+        return;
+      }
+      startedOrderId = order.order_id;
 
-      // Same server-verified pattern as the Activation Center: Razorpay's
-      // own success callback never marks anything paid -- the backend
-      // webhook (HMAC-verified) is the only thing that updates
-      // tenant_billing. This just confirms submission; re-loading the
-      // manifest a few seconds later picks up the confirmed status.
-      await openCheckout({
+      // The signed order/payment tuple is verified by the backend. The
+      // browser never supplies an amount or a deposit/credit allocation.
+      const payment = await openCheckout({
         keyId: order.key, orderId: order.order_id, amountPaise: order.amount_paise,
-        currency: order.currency, name: "ServiceOS — Home Services Activation",
-        description: kind === "deposit" ? "Security deposit" : "Starter credit package",
+        currency: order.currency, name: "Fuvay — Home Services Activation",
+        description: order.quote?.checkout_mode === "credits_only"
+          ? "Starter usage credits"
+          : "Security deposit and starter credits",
       });
-      setPaymentNotice("Payment submitted. This section updates automatically once it's confirmed — usually within a few seconds.");
-      setTimeout(load, 3000);
+      await activationPaymentApi.confirmFunding(payment);
+      setPaymentNotice("Payment confirmed. Your deposit and usage-credit balances have been updated.");
+      load();
     } catch (e: unknown) {
+      if (startedOrderId) {
+        try {
+          const reconciled = await activationPaymentApi.reconcileFunding(startedOrderId);
+          if (reconciled.status === "captured" || reconciled.captured) {
+            setPaymentNotice("Payment was captured and has now been reconciled successfully.");
+            load();
+            return;
+          }
+        } catch {
+          // Preserve the original Checkout error below. The user can safely
+          // retry; order creation also reconciles before reusing an order.
+        }
+      }
       setPaymentNotice(e instanceof ServiceOSError ? e.message
         : (e instanceof Error ? e.message : "Payment could not be started."));
     } finally {
-      setPayingKind(null);
+      setPaying(false);
     }
   }
 
@@ -118,6 +136,8 @@ export default function FinanceReadinessPage() {
   const actionsRemaining =
     (manifest.checks.direct_methods_selected ? 0 : 1) +
     (manifest.checks.invoice_details_complete ? 0 : 1);
+  const funding = manifest.activation_requirements.funding_quote;
+  const money = (value: number) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
   return (
     <OnboardingShell activeNav="finance">
@@ -126,8 +146,25 @@ export default function FinanceReadinessPage() {
         .fin-methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .fin-policy-row { display: flex; justify-content: space-between; font-size: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); }
         .fin-policy-row:last-child { border-bottom: none; }
+        .fin-funding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .fin-funding-account { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-sunken); }
+        .fin-funding-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; color: var(--brand); border: 1px solid color-mix(in srgb, var(--brand) 32%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--brand) 10%, transparent); }
+        .fin-funding-label { margin: 0 0 3px; color: var(--text-secondary); font-size: 11.5px; font-weight: 650; }
+        .fin-funding-value { margin: 0 0 4px; color: var(--text-primary); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+        .fin-funding-value span { color: var(--text-tertiary); font-size: 10.5px; font-weight: 500; letter-spacing: 0; }
+        .fin-funding-note { margin: 0; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.45; }
+        .fin-checkout-box { margin-top: 12px; padding: 15px; border: 1px solid color-mix(in srgb, var(--brand) 34%, var(--border)); border-radius: 12px; background: linear-gradient(145deg, color-mix(in srgb, var(--brand) 8%, var(--surface)), var(--surface)); }
+        .fin-funding-line { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; color: var(--text-secondary); font-size: 12px; }
+        .fin-funding-line strong { color: var(--text-primary); font-weight: 650; }
+        .fin-funding-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 7px; padding-top: 11px; border-top: 1px solid var(--border); color: var(--text-primary); font-size: 13px; font-weight: 700; }
+        .fin-funding-total strong { color: var(--brand); font-size: 22px; letter-spacing: -0.03em; }
+        .fin-funded-banner { display: flex; gap: 10px; align-items: center; margin-top: 12px; padding: 13px 14px; color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border)); border-radius: 11px; background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
+        .fin-funded-banner div { display: flex; flex-direction: column; gap: 2px; }
+        .fin-funded-banner strong { font-size: 12.5px; }
+        .fin-funded-banner span { color: var(--text-secondary); font-size: 11px; }
+        .fin-policy-unavailable { display: flex; gap: 8px; padding: 12px; color: var(--warning); border: 1px solid var(--warning-border, var(--border)); border-radius: 10px; background: var(--warning-bg, var(--surface-sunken)); font-size: 12px; }
         @media (max-width: 1000px) { .fin-grid { grid-template-columns: 1fr; } }
-        @media (max-width: 640px) { .fin-methods { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 640px) { .fin-methods { grid-template-columns: repeat(2, 1fr); } .fin-funding-grid { grid-template-columns: 1fr; } }
       `}</style>
 
       {error && (
@@ -226,40 +263,69 @@ export default function FinanceReadinessPage() {
           </Card>
 
           <Card style={{ marginTop: 16 }}>
-            <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Activation requirements</p>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+              <div>
+                <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Activation funding</p>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>One secure checkout, with deposit and usage credits recorded separately.</p>
+              </div>
+              {funding && <Badge variant={funding.can_pay ? "warning" : "success"}>{funding.can_pay ? "Payment required" : "Fully funded"}</Badge>}
+            </div>
             {paymentNotice && (
               <div role="status" style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 12 }}>
                 <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
                 <span>{paymentNotice}</span>
               </div>
             )}
-            <ActivationRow
-              icon={<ShieldCheck size={16}/>}
-              label="Security deposit"
-              sub={manifest.activation_requirements.security_deposit.status === "not_required"
-                ? "Not required for your plan"
-                : manifest.activation_requirements.security_deposit.status === "paid"
-                ? `Paid ₹${manifest.activation_requirements.security_deposit.amount.toLocaleString("en-IN")}`
-                : `₹${manifest.activation_requirements.security_deposit.required_amount.toLocaleString("en-IN")} required`}
-              status={manifest.activation_requirements.security_deposit.status}
-              canPay={!!manifest.activation_requirements.security_deposit.can_pay}
-              paying={payingKind === "deposit"}
-              onPay={() => payActivation("deposit")}
-            />
-            <ActivationRow
-              icon={<Wallet size={16}/>}
-              label="Usage credit wallet"
-              sub={manifest.activation_requirements.usage_credit_wallet.status === "active"
-                ? `Balance ₹${manifest.activation_requirements.usage_credit_wallet.balance.toLocaleString("en-IN")}`
-                : `₹${manifest.activation_requirements.usage_credit_wallet.required_amount.toLocaleString("en-IN")} starter package`}
-              status={manifest.activation_requirements.usage_credit_wallet.status === "active" ? "paid" : "required_after_approval"}
-              canPay={!!manifest.activation_requirements.usage_credit_wallet.can_pay}
-              paying={payingKind === "credit"}
-              onPay={() => payActivation("credit")}
-            />
+            {funding ? (
+              <>
+                <div className="fin-funding-grid">
+                  <div className="fin-funding-account">
+                    <div className="fin-funding-icon"><ShieldCheck size={18}/></div>
+                    <div style={{ minWidth: 0 }}>
+                      <p className="fin-funding-label">Security deposit</p>
+                      <p className="fin-funding-value">{money(funding.deposit_held)} <span>held</span></p>
+                      <p className="fin-funding-note">{funding.qualifying_technician_count} qualifying technician{funding.qualifying_technician_count === 1 ? "" : "s"} × {money(funding.deposit_per_technician)} = {money(funding.deposit_required)} required</p>
+                    </div>
+                    <CheckCircle2 size={17} style={{ color: funding.deposit_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
+                  </div>
+                  <div className="fin-funding-account">
+                    <div className="fin-funding-icon"><Wallet size={18}/></div>
+                    <div style={{ minWidth: 0 }}>
+                      <p className="fin-funding-label">Usage credit wallet</p>
+                      <p className="fin-funding-value">{money(funding.starter_credit_balance)} <span>available</span></p>
+                      <p className="fin-funding-note">Starter balance {money(funding.starter_credit_base)} · used for job-completion charges</p>
+                    </div>
+                    <CheckCircle2 size={17} style={{ color: funding.credits_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
+                  </div>
+                </div>
+
+                {funding.can_pay ? (
+                  <div className="fin-checkout-box">
+                    <div style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{funding.checkout_label}</p>
+                      <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>Calculated live from your approved finance policy and qualifying team.</p>
+                    </div>
+                    {funding.deposit_shortfall > 0 && <FundingLine label={funding.deposit_held > 0 ? "Deposit top-up" : "Security deposit"} value={money(funding.deposit_shortfall)}/>} 
+                    {funding.credit_purchase_base > 0 && <FundingLine label="Usage credits" value={money(funding.credit_purchase_base)}/>} 
+                    {funding.credit_tax > 0 && <FundingLine label={`GST (${funding.credit_gst_percent}%)`} value={money(funding.credit_tax)}/>} 
+                    <div className="fin-funding-total"><span>Payable now</span><strong>{money(funding.total_due)}</strong></div>
+                    <Btn variant="primary" disabled={paying} onClick={payActivation} style={{ width: "100%", justifyContent: "center", marginTop: 12 }}>
+                      {paying ? "Opening secure checkout…" : `${funding.checkout_label} · ${money(funding.total_due)}`}
+                    </Btn>
+                    <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 10.5, color: "var(--text-tertiary)", margin: "9px 0 0" }}>
+                      <ShieldCheck size={12}/> Amounts are locked server-side and confirmed by the payment gateway.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="fin-funded-banner"><CheckCircle2 size={18}/><div><strong>Activation funding complete</strong><span>Your deposit is fully held and starter credits are available.</span></div></div>
+                )}
+              </>
+            ) : (
+              <div role="alert" className="fin-policy-unavailable"><AlertTriangle size={16}/><span>The activation finance policy is not available yet. Contact support before making a payment.</span></div>
+            )}
             <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", marginTop: 10 }}>
               <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
-              <span>No payout account is needed because ServiceOS does not collect customer job payments.</span>
+              <span>The security deposit is refundable subject to open jobs and claims. Usage credits are a separate spendable balance; they are never merged with the deposit.</span>
             </div>
           </Card>
         </div>
@@ -289,8 +355,8 @@ export default function FinanceReadinessPage() {
           <Card>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>What happens after activation</p>
             {[
-              { icon: <ShieldCheck size={16}/>, text: "If required by the approved policy, a security deposit must be provided after admin approval." },
-              { icon: <Wallet size={16}/>, text: "A usage credit wallet will be created on activation to run your commission model." },
+              { icon: <ShieldCheck size={16}/>, text: "Your held security deposit automatically scales with the number of qualifying technicians." },
+              { icon: <Wallet size={16}/>, text: "Usage credits stay separate and cover platform charges triggered by completed work." },
               { icon: <ClipboardList size={16}/>, text: "Commission is deducted only through the proven completion event, not at the time of booking." },
               { icon: <TrendingUp size={16}/>, text: "Direct payment records you confirm will be visible in Finance for transparency." },
             ].map((it, i) => (
@@ -355,32 +421,11 @@ function CheckLine({ ok, label, pendingLabel }: { ok: boolean; label: string; pe
   );
 }
 
-function ActivationRow({ icon, label, sub, status, canPay, paying, onPay }: {
-  icon: React.ReactNode; label: string; sub: string; status: "not_required" | "paid" | "required_after_approval";
-  canPay?: boolean; paying?: boolean; onPay?: () => void;
-}) {
-  const meta = status === "not_required"
-    ? { text: "Not required", variant: "default" as const }
-    : status === "paid"
-    ? { text: "Active", variant: "success" as const }
-    : { text: "Pending", variant: "warning" as const };
+function FundingLine({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <span style={{ color: "var(--text-tertiary)", marginTop: 1 }}>{icon}</span>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 2px" }}>{label}</p>
-          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>{sub}</p>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {canPay && onPay && (
-          <Btn variant="secondary" size="sm" disabled={paying} onClick={onPay}>
-            {paying ? "Opening…" : "Pay now"}
-          </Btn>
-        )}
-        <Badge variant={meta.variant} size="sm">{meta.text}</Badge>
-      </div>
+    <div className="fin-funding-line">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }

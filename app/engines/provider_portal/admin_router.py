@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin, get_current_user, UserContext
@@ -372,6 +373,145 @@ def _enrich_row(row: dict) -> dict:
     return row
 
 
+def _admin_document_dict(document, requirement: dict | None = None) -> dict:
+    """Stable Admin review projection for a current business document."""
+    requirement = requirement or {}
+    return {
+        "document_id": str(document.id),
+        "doc_type": document.doc_type,
+        "label": document.label or requirement.get("label") or document.doc_type.replace("_", " ").title(),
+        "required": bool(requirement.get("required", False)),
+        "status": document.status,
+        "media_asset_id": str(document.media_asset_id) if document.media_asset_id else None,
+        "document_number": document.document_number,
+        "issue_date": document.issue_date.isoformat() if document.issue_date else None,
+        "expiry_date": document.expiry_date.isoformat() if document.expiry_date else None,
+        "version": document.version,
+        "uploaded_at": document.created_at.isoformat() if document.created_at else None,
+        "verified_at": document.verified_at.isoformat() if document.verified_at else None,
+        "rejection_reason": document.rejection_reason,
+        "review_notes": document.review_notes,
+    }
+
+
+async def _build_admin_review_context(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Build the server-authoritative onboarding review checklist.
+
+    Submission is intentionally upload-gated so an Admin can review the files.
+    Approval is stricter: every required business document must be verified,
+    declarations must still be accepted, and every required setup section must
+    remain complete. Keeping this calculation server-side prevents any client
+    from bypassing the review UI.
+    """
+    tenant = (await db.execute(text("""
+        SELECT id, vertical, business_type, country, verification_status, status
+        FROM tenants
+        WHERE id=:tid AND terminated_at IS NULL AND archived_at IS NULL
+    """), {"tid": str(tenant_id)})).fetchone()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    from app.engines.tenant_engine.models import TenantDocument
+    from app.engines.vertical_catalog.document_requirements import resolve_requirements, POLICY_VERSION
+    from app.engines.vertical_catalog.home_services_setup_service import get_setup_overview
+
+    requirements = resolve_requirements(
+        vertical=tenant.vertical or "home_services",
+        business_type=tenant.business_type,
+        country=tenant.country or "India",
+    )
+    documents = list((await db.execute(
+        select(TenantDocument).where(
+            TenantDocument.tenant_id == tenant_id,
+            TenantDocument.staff_member_id.is_(None),
+            TenantDocument.is_current.is_(True),
+        ).order_by(TenantDocument.doc_type, TenantDocument.created_at.desc())
+    )).scalars().all())
+    by_type: dict[str, Any] = {}
+    for document in documents:
+        by_type.setdefault(document.doc_type, document)
+
+    review_documents: list[dict] = []
+    matched_ids: set[uuid.UUID] = set()
+    blockers: list[dict] = []
+    for requirement in requirements:
+        document = by_type.get(requirement["key"])
+        if document:
+            matched_ids.add(document.id)
+            item = _admin_document_dict(document, requirement)
+        else:
+            item = {
+                "document_id": None,
+                "doc_type": requirement["key"],
+                "label": requirement["label"],
+                "required": bool(requirement["required"]),
+                "status": "not_uploaded",
+                "media_asset_id": None,
+                "document_number": None,
+                "issue_date": None,
+                "expiry_date": None,
+                "version": None,
+                "uploaded_at": None,
+                "verified_at": None,
+                "rejection_reason": None,
+                "review_notes": None,
+            }
+        review_documents.append(item)
+        if requirement["required"] and item["status"] != "verified":
+            blockers.append({
+                "code": "REQUIRED_DOCUMENT_NOT_VERIFIED",
+                "section": "DOCUMENTS",
+                "document_type": requirement["key"],
+                "message": f'{requirement["label"]} must be verified before approval.',
+            })
+
+    for document in documents:
+        if document.id not in matched_ids:
+            review_documents.append(_admin_document_dict(document))
+
+    overview = await get_setup_overview(db, tenant_id)
+    setup_sections = [section for section in overview.get("sections", []) if section.get("key") != "REVIEW_SUBMIT"]
+    for section in setup_sections:
+        if section.get("required") and section.get("status") != "complete":
+            blockers.append({
+                "code": "SETUP_SECTION_INCOMPLETE",
+                "section": section.get("key"),
+                "message": f'{section.get("label", "Setup section")} is incomplete.',
+            })
+
+    declarations = overview.get("declarations") or {}
+    if not declarations.get("all_accepted"):
+        blockers.append({
+            "code": "DECLARATIONS_NOT_ACCEPTED",
+            "section": "REVIEW_SUBMIT",
+            "message": "All required declarations must be accepted before approval.",
+        })
+
+    if tenant.verification_status not in ("pending", "under_review"):
+        blockers.append({
+            "code": "PROVIDER_NOT_AWAITING_REVIEW",
+            "section": "SUBMISSION",
+            "message": "The provider is not currently awaiting Admin review.",
+        })
+
+    required_documents = [item for item in review_documents if item["required"]]
+    return {
+        "document_policy_version": POLICY_VERSION,
+        "documents": review_documents,
+        "document_summary": {
+            "required": len(required_documents),
+            "verified": sum(1 for item in required_documents if item["status"] == "verified"),
+            "pending_review": sum(1 for item in required_documents if item["status"] == "pending_review"),
+            "needs_changes": sum(1 for item in required_documents if item["status"] in ("changes_requested", "rejected")),
+            "missing": sum(1 for item in required_documents if item["status"] == "not_uploaded"),
+        },
+        "setup_sections": setup_sections,
+        "declarations": declarations,
+        "approval_blockers": blockers,
+        "can_approve": not blockers,
+    }
+
+
 async def _sync_home_services_enrollment_decision(
     db: AsyncSession,
     tenant_id: uuid.UUID,
@@ -513,14 +653,105 @@ async def get_provider_onboarding(
     result = await db.execute(text(_QUEUE_CTE + " AND t.id = :tid"), {"tid": str(tenant_id)})
     r = result.fetchone()
     if not r:
-        return ok({
-            "tenant_id": str(tenant_id), "review_status": "not_submitted",
-            "onboarding_status": "setup_in_progress", "readiness_status": "incomplete",
-            "bookable_status": "pending_approval", "profile_completion_percentage": 0,
-            "business_name": None, "category_name": None, "city": None,
-            "verification_status": None, "tenant_status": None,
-        }, request_id=rid)
-    return ok(_enrich_row(dict(r._mapping)), request_id=rid)
+        exists = (await db.execute(
+            text("SELECT 1 FROM tenants WHERE id=:tid AND terminated_at IS NULL AND archived_at IS NULL"),
+            {"tid": str(tenant_id)},
+        )).scalar()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        raise HTTPException(status_code=409, detail="This provider is no longer in the onboarding review queue.")
+    data = _enrich_row(dict(r._mapping))
+    data.update(await _build_admin_review_context(db, tenant_id))
+    return ok(data, request_id=rid)
+
+
+@admin_router.post("/onboarding/providers/{tenant_id}/documents/{document_id}/review")
+async def review_provider_onboarding_document(
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
+):
+    """Review one current business document from the Admin onboarding queue."""
+    decision = str(payload.get("decision") or "").strip().lower()
+    reason = str(payload.get("reason") or "").strip()
+    if decision not in ("verified", "changes_requested", "rejected"):
+        raise HTTPException(status_code=422, detail="decision must be verified, changes_requested, or rejected.")
+    if decision in ("changes_requested", "rejected") and not reason:
+        raise HTTPException(status_code=422, detail="A clear reason is required when requesting changes or rejecting a document.")
+    if len(reason) > 500:
+        raise HTTPException(status_code=422, detail="Document review reason cannot exceed 500 characters.")
+
+    from app.engines.tenant_engine.models import TenantAuditLog, TenantDocument
+    document = (await db.execute(
+        select(TenantDocument).where(
+            TenantDocument.id == document_id,
+            TenantDocument.tenant_id == tenant_id,
+            TenantDocument.staff_member_id.is_(None),
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if not document:
+        raise HTTPException(status_code=404, detail="Business document not found")
+    if not document.is_current:
+        raise HTTPException(status_code=409, detail="A newer version of this document has been submitted.")
+    if document.status not in ("pending_review", "changes_requested"):
+        raise HTTPException(status_code=409, detail=f"This document is already {document.status}.")
+
+    actor_id = uuid.UUID(str(user.user_id)) if user.user_id else None
+    before = {"status": document.status}
+    if decision == "verified":
+        document.status = "verified"
+        document.verified_at = datetime.now(timezone.utc)
+        document.verified_by = actor_id
+        document.rejection_reason = None
+        document.review_notes = None
+    elif decision == "changes_requested":
+        document.status = "changes_requested"
+        document.verified_at = None
+        document.verified_by = None
+        document.rejection_reason = None
+        document.review_notes = reason
+    else:
+        document.status = "rejected"
+        document.verified_at = None
+        document.verified_by = None
+        document.rejection_reason = reason
+        document.review_notes = None
+    document.reviewed_by = actor_id
+
+    db.add(TenantAuditLog(
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        actor_role="super_admin",
+        action_type=f"business_document.{decision}",
+        entity_type="tenant_document",
+        entity_id=str(document.id),
+        before_state=before,
+        after_state={"status": document.status, "doc_type": document.doc_type},
+        notes=reason or None,
+    ))
+    from app.core.audit import record_platform_audit
+    await record_platform_audit(
+        db,
+        operation=f"business_document.{decision}",
+        engine_id="tenant",
+        tenant_id=tenant_id,
+        entity_type="tenant_document",
+        entity_id=str(document.id),
+        actor_id=actor_id,
+        actor_role="super_admin",
+        request_id=getattr(request.state, "request_id", None),
+        before=before,
+        after={"status": document.status, "doc_type": document.doc_type},
+    )
+    await db.commit()
+    await db.refresh(document)
+    return ok(
+        _admin_document_dict(document, {"required": True}),
+        request_id=getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"),
+    )
 
 
 @admin_router.post("/onboarding/providers/{tenant_id}/approve")
@@ -530,7 +761,8 @@ async def approve_provider_onboarding(
     user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
-    # Validate: profile must be 100% complete before approval
+    # Preserve the inexpensive legacy profile projection check for a precise
+    # early error, then enforce the complete Admin review contract below.
     chk = await db.execute(
         text(_QUEUE_CTE + " AND t.id = :tid"),
         {"tid": str(tenant_id)},
@@ -543,6 +775,13 @@ async def approve_provider_onboarding(
                 status_code=422,
                 detail=f"Profile completion is {pct}%. Provider must have 100% complete profile before approval.",
             )
+    review = await _build_admin_review_context(db, tenant_id)
+    if not review["can_approve"]:
+        messages = [str(item.get("message")) for item in review["approval_blockers"]]
+        raise HTTPException(
+            status_code=422,
+            detail="Approval blocked: " + " ".join(messages),
+        )
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     result = await svc.verify_tenant(tenant_id)

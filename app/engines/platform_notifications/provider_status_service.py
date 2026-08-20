@@ -1,26 +1,7 @@
-"""NOTIFICATION-CENTER-REBUILD: Delivery & Providers tab backend.
-
-Every field here is computed from real code/data -- there is no stored
-"provider config" table to fabricate, and per the architectural rule this
-tab must "show only real delivery integrations found in the codebase":
-
-  - in_app: InAppNotificationProvider actually persists a row. Always
-    "Available" -- it has no external dependency to fail.
-  - email/sms/whatsapp/push (in THIS engine's dispatch path,
-    channel_providers.py): all four are unconditional stubs
-    (EmailNotificationProviderStub etc.) that always return
-    PROVIDER_NOT_CONFIGURED. Reported honestly as "Not Configured", never
-    as "Available" just because a toggle exists somewhere.
-  - Real Twilio/SMTP client code DOES exist, but in the OTHER notification
-    engine (app/engines/notification/dispatchers.py), which this admin
-    page and the fire_event()/outbox pipeline do not call. Surfaced as a
-    note, not silently merged into this channel's status.
-
-No credentials are ever read or returned by this service.
-"""
+"""Operational status for the canonical notification delivery providers."""
 from __future__ import annotations
 
-from sqlalchemy import select, func
+from sqlalchemy import and_, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.platform_notifications.constants import (
@@ -28,11 +9,11 @@ from app.engines.platform_notifications.constants import (
 )
 from app.engines.platform_notifications.channel_providers import CHANNEL_PROVIDERS
 from app.engines.platform_notifications.models import NotificationOutbox
+from app.engines.notification.models import NotificationChannelConfig
+from app.engines.platform_notifications.channel_config_service import channel_config_service, PLATFORM_CONFIG_TENANT_ID
 
-# Channels with a real, non-stub deliver() implementation in THIS engine's
-# dispatch path today. Kept as an explicit allow-list (not "everything
-# except in_app") so adding a genuinely-wired provider later is a one-line
-# change instead of an inferred default.
+# Always-live built-in channels. External providers are resolved dynamically
+# from encrypted database configuration.
 _LIVE_CHANNELS = {CHANNEL_IN_APP}
 
 
@@ -42,8 +23,7 @@ class ProviderStatusService:
         # One grouped aggregate keeps this admin health panel constant-query as
         # the outbox grows; the previous implementation issued three queries
         # for every configured channel.
-        result = await db.execute(
-            select(
+        aggregate_query = select(
                 NotificationOutbox.channel,
                 func.count(NotificationOutbox.id).filter(
                     NotificationOutbox.delivery_status == DELIVERY_DELIVERED
@@ -54,18 +34,39 @@ class ProviderStatusService:
                 func.max(NotificationOutbox.sent_at).filter(
                     NotificationOutbox.delivery_status == DELIVERY_DELIVERED
                 ).label("last_success"),
-            ).group_by(NotificationOutbox.channel)
-        )
-        aggregates = {
-            row.channel: row
-            for row in result.all()
-        }
+            ).group_by(NotificationOutbox.channel).subquery()
+        result = await db.execute(select(
+            NotificationChannelConfig,
+            aggregate_query.c.channel.label("aggregate_channel"),
+            aggregate_query.c.delivered,
+            aggregate_query.c.failed,
+            aggregate_query.c.last_success,
+        ).select_from(NotificationChannelConfig).join(
+            aggregate_query,
+            and_(
+                NotificationChannelConfig.channel == aggregate_query.c.channel,
+                NotificationChannelConfig.tenant_id == PLATFORM_CONFIG_TENANT_ID,
+            ),
+            full=True,
+        ).where(or_(
+            NotificationChannelConfig.tenant_id == PLATFORM_CONFIG_TENANT_ID,
+            NotificationChannelConfig.tenant_id.is_(None),
+        )))
+        aggregates, config_rows = {}, {}
+        for row in result.all():
+            config = row[0]
+            aggregate_channel = row.aggregate_channel
+            if config is not None:
+                config_rows[config.channel] = config
+            if aggregate_channel:
+                aggregates[aggregate_channel] = row
 
         rows = []
         for channel in ALL_CHANNELS:
+            channel_config = channel_config_service.public_item(channel, config_rows.get(channel))
             provider = CHANNEL_PROVIDERS.get(channel)
             provider_name = getattr(provider, "provider_name", None)
-            is_live = channel in _LIVE_CHANNELS
+            is_live = bool(channel_config["configured"])
             aggregate = aggregates.get(channel)
             delivered = int(aggregate.delivered or 0) if aggregate else 0
             failed = int(aggregate.failed or 0) if aggregate else 0
@@ -75,32 +76,35 @@ class ProviderStatusService:
 
             if is_live:
                 state = "Available"
-            elif total > 0 and failed == total:
+            elif channel_config.get("last_test_status") == "failed":
                 state = "Failed"
+            elif channel_config.get("setup_complete"):
+                state = "Ready to enable"
             else:
                 state = "Not Configured"
-
-            note = None
-            if channel != CHANNEL_IN_APP and not is_live:
-                note = ("A real Twilio/SMTP client exists in a different, unwired engine "
-                        "(app/engines/notification/dispatchers.py) -- not connected to this "
-                        "fire_event()/outbox pipeline yet.")
 
             rows.append({
                 "channel": channel,
                 "provider": provider_name,
-                "environment": "production" if is_live else None,
+                "description": channel_config["description"],
+                "managed": channel_config["managed"],
+                "environment": "platform" if is_live else None,
                 "state": state,
                 "configured": is_live,
-                "verified": is_live,
-                "last_health_check": None,   # no health-check job exists -- honest gap, not fabricated
+                "setup_complete": channel_config["setup_complete"],
+                "enabled": channel_config["enabled"],
+                "verified": channel_config["verified"],
+                "fields": channel_config["fields"],
+                "last_health_check": channel_config["last_tested_at"],
+                "last_test_status": channel_config["last_test_status"],
+                "last_test_message": channel_config["last_test_message"],
                 "last_successful_delivery": last_success.isoformat() if last_success else None,
                 "failure_rate_pct": failure_rate_pct,
-                "rate_limit": None,          # not implemented at the channel-provider level yet
+                "rate_limit": None,
                 # In-app delivery is final when persisted and has no provider
                 # callback. Stub external channels cannot receive callbacks.
                 "webhook_status": "Not required" if is_live else "Unavailable",
-                "credential_reference": None,  # never populated -- no secrets exposed by this endpoint
-                "note": note,
+                "credential_reference": None,
+                "note": None,
             })
         return rows

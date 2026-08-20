@@ -54,7 +54,8 @@ export default function ServiceGroupDetailPage() {
   ];
 
   return <AdminLayout activeNav="service-groups">
-    <Btn variant="ghost" size="sm" onClick={() => router.push(retired ? "/admin/service-groups/retired" : "/admin/service-groups")}><ArrowLeft size={13}/> Back to {retired ? "Retired Groups" : "Service Groups"}</Btn>
+    <div className="catalog-admin-page catalog-detail-page">
+    <Btn variant="ghost" size="sm" onClick={() => router.push(retired ? "/admin/service-groups?lifecycle=retired" : "/admin/service-groups")}><ArrowLeft size={13}/> Back to Service Groups</Btn>
     <SectionHeader title={group.name} subtitle={`${group.category_name} · ${group.code}`} icon={<FolderTree/>} actions={<div style={{ display:"flex", gap:8 }}>
       <Badge variant={retired ? "muted" : group.status === "active" ? "success" : "warning"}>{retired ? "Retired" : group.status}</Badge>
       {!retired && group.status !== "active" && <Btn variant="primary" size="sm" loading={statusAction.loading} onClick={() => statusAction.execute("activate")}>Activate</Btn>}
@@ -94,5 +95,6 @@ export default function ServiceGroupDetailPage() {
     </div>}
     {tab === "activity" && <Card><h3 style={{ marginTop:0 }}>Audit activity</h3>{(audit.data?.audit_log ?? []).length === 0 ? <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>No audited changes yet.</p> : (audit.data?.audit_log ?? []).map(event => <div key={event.id} style={{ display:"grid", gridTemplateColumns:"130px 1fr auto", gap:12, padding:"11px 0", borderBottom:"1px solid var(--border)", alignItems:"center" }}><Badge variant="muted">{event.action}</Badge><div><div style={{ fontSize:13 }}>{event.change_summary || "Service group changed"}</div><div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{event.actor_role || "system"}{event.request_id ? ` · ${event.request_id}`:""}</div></div><span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{event.created_at ? new Date(event.created_at).toLocaleString():"—"}</span></div>)}</Card>}
     <Modal open={restoreOpen} onClose={() => setRestoreOpen(false)} title="Restore service group"><p style={{ color:"var(--text-secondary)", fontSize:13 }}>Restored groups return as inactive so an administrator can review them before activation.</p><textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason for restoring (minimum 10 characters)" rows={3} style={{ width:"100%", boxSizing:"border-box", padding:10, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)", color:"var(--text-primary)" }}/>{restore.error && <p style={{ color:"var(--danger-text)", fontSize:12 }}>{restore.error}</p>}<div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:14 }}><Btn variant="secondary" onClick={()=>setRestoreOpen(false)}>Cancel</Btn><Btn variant="primary" disabled={reason.trim().length<10} loading={restore.loading} onClick={()=>restore.execute()}>Restore as inactive</Btn></div></Modal>
+    </div>
   </AdminLayout>;
 }

@@ -1,4 +1,4 @@
-"""Provider-First Matching + Customer Price Choice Engine.
+"""Provider-first matching engine.
 
 Corrects the prior model (provider_matching.py's find_bookable_home_service_providers,
 consumed by service.py's select_provider) where the customer was shown a LIST of
@@ -6,14 +6,13 @@ eligible providers and picked one manually. The correct flow:
 
     1. Backend resolves the full eligibility gate for every candidate tenant.
     2. Backend scores every eligible candidate and selects exactly one (the best).
-    3. Backend computes that ONE provider's Low/Mid/High price options
-       (reusing app.engines.admin_catalog.bargain_engine's customer-range +
-       platform-fee formula from the BARGAIN MODULE fix).
-    4. Backend computes a separate, non-authoritative area/competitor comparison.
-    5. Customer chooses Low/Mid/High only — never a provider.
+    3. Backend computes a separate, non-authoritative area/competitor comparison.
+    4. Booking pricing is resolved from the selected provider's published
+       TenantService price plus Home Services Finance charges.
+    5. Customer confirms the single server-resolved price contract.
 
 Two layers, matching the pure/DB-aware split used for bargain_engine.py:
-  - Pure functions (compute_provider_score, compute_price_tiers) — independently
+  - Pure functions (compute_provider_score) — independently
     unit-testable, no DB.
   - DB-aware functions (select_best_provider, get_area_market_comparison) — real
     SQL eligibility filtering + ranking + competitor stats.
@@ -29,19 +28,15 @@ import structlog
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engines.admin_catalog.bargain_engine import (
-    evaluate_customer_bargain, BargainValidationError,
-    compute_symmetric_customer_price_tiers,
-)
 from app.exceptions import ServiceOSException
 
 logger = structlog.get_logger("home_service.matching_engine")
 
 # ── Home Services scope guard ───────────────────────────────────────────────
-# Provider-First Matching + Low/Mid/High Bargain is a Home Services-only flow.
+# Provider-first matching is a Home Services-only flow.
 # Other verticals (CA/professional services, IELTS/coaching, restaurants, real
 # estate, education, listing/menu/subscription-based businesses) must never
-# run this matching logic, show Low/Mid/High cards, or apply the
+# run this matching logic or apply the
 # "customer pays provider directly" / Completed Job Deduction model unless
 # that vertical's own policy explicitly enables it later.
 HOME_SERVICES_VERTICAL = "home_services"
@@ -181,77 +176,6 @@ def build_admin_provider(signals: CandidateSignals, score: Decimal) -> dict:
 def round_to_nearest_10(value) -> Decimal:
     v = _d(value)
     return (v / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10")
-
-
-def compute_price_tiers(
-    *,
-    admin_min_price, admin_max_price, admin_base_price=None,
-    customer_min_price, customer_max_price,
-    platform_fee_percent=0, platform_fee_fixed_amount=0,
-    currency: str = "INR",
-) -> dict:
-    """Selected-provider Low/Mid/High price options.
-
-    HS6 fix: previously delegated to evaluate_customer_bargain(), whose
-    allowed_offer_max is the RAW customer_max_price with no platform fee
-    applied — high_price equaled the pre-fee provider max, violating the
-    hard gate "High must include platform fee" / "High must not equal
-    pre-fee provider max" (the same asymmetric-formula bug already found
-    and fixed on the admin preview endpoint in an earlier sprint, but
-    never fixed here since this is a separate function of the same name
-    in a different module). Fixed by delegating to
-    compute_symmetric_customer_price_tiers — the single formula already
-    certified across the admin pricing console, tenant setup wizard, and
-    customer price preview — so this module now uses the exact same
-    Low/Mid/High math as everywhere else in Home Services.
-
-    Still calls evaluate_customer_bargain first (unchanged) purely to
-    preserve its admin/customer-range configuration validation (raises
-    BargainValidationError on an invalid range/fee setup) — only the
-    final price numbers are now recomputed with the fee-inclusive formula.
-    """
-    evaluate_customer_bargain(
-        service_name=None,
-        admin_min_price=admin_min_price, admin_max_price=admin_max_price,
-        admin_base_price=admin_base_price,
-        customer_min_price=customer_min_price, customer_max_price=customer_max_price,
-        platform_fee_percent=platform_fee_percent, platform_fee_fixed_amount=platform_fee_fixed_amount,
-        customer_offer=None, currency=currency,
-    )
-    symmetric = compute_symmetric_customer_price_tiers(
-        provider_min_price=customer_min_price, provider_max_price=customer_max_price,
-        platform_fee_percent=platform_fee_percent, platform_fee_fixed_amount=platform_fee_fixed_amount,
-    )
-    low = _d(symmetric["low_price"])
-    high = _d(symmetric["high_price"])
-    mid = _d(symmetric["mid_price"])
-
-    return {
-        "currency": currency,
-        "allowed_offer_min": float(low),
-        "allowed_offer_max": float(high),
-        "low_price": float(low),
-        "mid_price": float(mid),
-        "high_price": float(high),
-        "platform_fee_percent": symmetric["platform_fee_percent"],
-        "platform_fee_amount": float(_round2(_d(high) - _d(customer_max_price))),
-        "payment_mode": "customer_pays_provider_directly",
-    }
-
-
-PRICE_TIER_TO_FIELD = {"low": "low_price", "mid": "mid_price", "high": "high_price"}
-
-
-def resolve_customer_offer_for_tier(price_options: dict, tier: str) -> Decimal:
-    """Booking-creation-time resolution: Low/Mid/High → the exact stored price.
-    Never trusts a customer-submitted numeric offer for tier selection — only
-    the tier name is customer input; the amount always comes from the backend's
-    own price_options (hard gate: customer cannot submit below Low, since there
-    is no raw-amount input at all — only a tier choice)."""
-    field_name = PRICE_TIER_TO_FIELD.get(tier)
-    if field_name is None:
-        raise ValueError(f"Invalid price tier: {tier!r}. Must be 'low', 'mid', or 'high'.")
-    return _d(price_options[field_name])
 
 
 # ── DB-aware: eligibility + ranking + area comparison ───────────────────────
@@ -541,7 +465,7 @@ async def _passes_full_eligibility_gate(
     # independently). Skipped (not guessed) when the caller has no exact
     # job_type_id yet -- never invents or assumes one.
     if job_type_id is not None:
-        from app.engines.admin_catalog.models import MasterServiceJobType
+        from app.engines.admin_catalog.models import MasterServiceJobType, TenantService
         link = (await db.execute(
             select(MasterServiceJobType.id).where(
                 MasterServiceJobType.master_service_id == offering_id,
@@ -551,6 +475,18 @@ async def _passes_full_eligibility_gate(
         )).scalar_one_or_none()
         if link is None:
             return False, "EXACT_JOB_TYPE_NOT_SUPPORTED"
+        tenant_offering = (await db.execute(
+            select(TenantService.id).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == offering_id,
+                TenantService.job_type_id == job_type_id,
+                TenantService.is_active.is_(True),
+                TenantService.is_enabled.is_(True),
+                TenantService.setup_status == "published",
+            ).limit(1)
+        )).scalar_one_or_none()
+        if tenant_offering is None:
+            return False, "EXACT_JOB_TYPE_NOT_PUBLISHED"
 
     # 1. Canonical bookability (HS4B) — single source of truth.
     bookable_row = (await db.execute(text(
@@ -657,17 +593,29 @@ async def _passes_full_eligibility_gate(
     # all -- checked first so a real inspection offering with no
     # ServicePricingRule/TenantService price row is never wrongly excluded.
     offering_row = (await db.execute(text(
-        "SELECT pricing_model, visit_fee FROM master_services WHERE id=:oid"
-    ), {"oid": str(offering_id)})).fetchone()
-    is_inspection_offering = bool(offering_row and offering_row[0] == "visit_fee_plus_quote")
+        "SELECT ms.pricing_model, ms.visit_fee, sjw.pricing_behavior "
+        "FROM master_services ms LEFT JOIN service_job_workflow sjw "
+        "ON sjw.master_service_id=ms.id AND sjw.job_type_id=:jtid "
+        "AND sjw.is_current=true AND sjw.status='published' WHERE ms.id=:oid"
+    ), {"oid": str(offering_id), "jtid": str(job_type_id) if job_type_id else None})).fetchone()
+    effective_behavior = offering_row[2] if offering_row and offering_row[2] else (offering_row[0] if offering_row else None)
+    is_inspection_offering = effective_behavior in {"visit_fee_plus_quote", "inspection_required", "custom_quote"}
     if is_inspection_offering:
         if not offering_row[1] or float(offering_row[1]) <= 0:
             return False, "NO_VALID_PRICE_RULE"
     else:
-        tenant_price_row = (await db.execute(text(
+        tenant_price_sql = (
             "SELECT tenant_base_price, tenant_min_price FROM tenant_services "
-            "WHERE tenant_id=:tid AND master_service_id=:oid AND is_active=true LIMIT 1"
-        ), {"tid": str(tenant_id), "oid": str(offering_id)})).fetchone()
+            "WHERE tenant_id=:tid AND master_service_id=:oid "
+            + ("AND job_type_id=:jtid " if job_type_id else "")
+            + "AND is_active=true AND is_enabled=true AND setup_status='published' LIMIT 1"
+        )
+        tenant_price_params = {"tid": str(tenant_id), "oid": str(offering_id)}
+        if job_type_id:
+            tenant_price_params["jtid"] = str(job_type_id)
+        tenant_price_row = (await db.execute(
+            text(tenant_price_sql), tenant_price_params,
+        )).fetchone()
         has_tenant_price = bool(
             tenant_price_row and (
                 (tenant_price_row[0] and float(tenant_price_row[0]) > 0)

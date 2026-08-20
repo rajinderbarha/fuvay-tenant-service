@@ -13,6 +13,7 @@ from app.engines.engine_mgmt.models import (
     EngineHealthCheck, EnginePermission, EngineAuditLog,
 )
 from app.exceptions import ServiceOSException
+from app.engine_registry.registry import registry as runtime_registry
 
 log = structlog.get_logger("engine_mgmt.service")
 
@@ -25,6 +26,52 @@ VALID_OVERRIDE_TYPES = {
     "grant", "revoke", "temporary_grant", "temporary_revoke",
     "force_disable", "beta_access",
 }
+
+# Historical database identifiers are retained for audit compatibility, but the
+# runtime registry is the canonical identity used by the application.  Keeping
+# the translation in one place prevents the admin console from presenting old
+# subsystem names as separate live engines.
+LEGACY_ENGINE_ALIASES: dict[str, str] = {
+    "auth_iam": "auth",
+    "ai_workflow": "workflow",
+    "badge_engine": "trust_quality",
+    "badge_rule_engine": "trust_quality",
+    "health_engine": "trust_quality",
+    "health_rule_engine": "trust_quality",
+    "risk_scoring_engine": "trust_quality",
+    "rule_simulator_engine": "trust_quality",
+    "recalculation_job_engine": "trust_quality",
+    "trust_quality_engine": "trust_quality",
+    "customer_svc_credit": "platform_commerce",
+    "finance": "platform_commerce",
+    "commission": "platform_commerce",
+    "package_credit": "platform_commerce",
+    "food_menu": "food",
+    "job_dispatch": "dispatch",
+    "leads_crm": "leads",
+    "loyalty_rewards": "loyalty",
+    "media_vault": "media",
+    "review_rating": "review",
+    "settings_config": "settings",
+    "security": "auth",
+}
+
+
+def _canonical_engine_key(engine_key: str) -> str:
+    return LEGACY_ENGINE_ALIASES.get(engine_key, engine_key)
+
+
+def _is_prefix_mounted(api_prefix: str, route_paths: set[str]) -> bool:
+    """Return whether the FastAPI application exposes an engine prefix.
+
+    Registry prefixes may include a path parameter.  Matching the stable part
+    makes the check useful for templated admin routes without executing a
+    mutating endpoint.
+    """
+    stable = api_prefix.split("{", 1)[0].rstrip("/")
+    if not stable:
+        return False
+    return any(path == stable or path.startswith(stable + "/") for path in route_paths)
 
 # ── Category Engine Matrix — recommended default templates ────────────────────
 CATEGORY_ENGINE_TEMPLATES: dict[str, dict] = {
@@ -191,6 +238,190 @@ class EngineMgmtService:
             "package_entitled": pkg_entitled or 0,
             "tenant_overrides_active": overrides or 0,
             "degraded_or_down": degraded + down,
+        }
+
+    async def get_control_plane(self, route_paths: set[str]) -> dict:
+        """Runtime-aware engine inventory used by the admin command centre.
+
+        ``platform_engines`` remains the governance/audit store.  The running
+        FastAPI route table is the truth for whether an engine is actually
+        mounted, while ``engine_registry`` supplies canonical metadata.  This
+        endpoint deliberately exposes drift instead of labelling every seeded
+        database row as healthy.
+        """
+        db_engines = (await self.db.execute(
+            select(PlatformEngine).order_by(PlatformEngine.display_name)
+        )).scalars().all()
+        db_by_canonical: dict[str, list[PlatformEngine]] = {}
+        for row in db_engines:
+            db_by_canonical.setdefault(_canonical_engine_key(row.engine_key), []).append(row)
+
+        vertical_rows = (await self.db.execute(text("""
+            SELECT v.key AS vertical_key, v.label AS vertical_label,
+                   v.is_enabled AS vertical_enabled, vem.engine_key,
+                   vem.is_required
+            FROM vertical_engine_mappings vem
+            JOIN verticals v ON v.id = vem.vertical_id
+            ORDER BY v.sort_order, vem.sort_order
+        """))).mappings().all()
+        usage_by_engine: dict[str, list[dict]] = {}
+        for row in vertical_rows:
+            canonical = _canonical_engine_key(row["engine_key"])
+            usage_by_engine.setdefault(canonical, []).append({
+                "vertical_key": row["vertical_key"],
+                "vertical_label": row["vertical_label"],
+                "vertical_enabled": bool(row["vertical_enabled"]),
+                "required": bool(row["is_required"]),
+                "source_key": row["engine_key"],
+            })
+
+        latest_health_rows = (await self.db.execute(text("""
+            SELECT DISTINCT ON (engine_key)
+                   engine_key, health_status, checked_at, error_message
+            FROM engine_health_checks
+            ORDER BY engine_key, checked_at DESC
+        """))).mappings().all()
+        health_by_canonical: dict[str, dict] = {}
+        for row in latest_health_rows:
+            health_by_canonical[_canonical_engine_key(row["engine_key"])] = dict(row)
+
+        items: list[dict] = []
+        registered_keys = set()
+        for definition in sorted(runtime_registry.all(), key=lambda item: (item.category, item.name)):
+            registered_keys.add(definition.engine_id)
+            matches = db_by_canonical.get(definition.engine_id, [])
+            primary = next((m for m in matches if m.engine_key == definition.engine_id), None)
+            primary = primary or (matches[0] if matches else None)
+            mounted = _is_prefix_mounted(definition.api_prefix, route_paths)
+            enabled_records = [m for m in matches if m.global_status in ("enabled", "locked")]
+            configured = bool(enabled_records)
+            enabled_verticals = [
+                row for row in usage_by_engine.get(definition.engine_id, [])
+                if row["vertical_enabled"]
+            ]
+            in_current_scope = bool(enabled_verticals) or definition.engine_type == "core"
+            health = health_by_canonical.get(definition.engine_id)
+            alias_keys = sorted(m.engine_key for m in matches if m.engine_key != definition.engine_id)
+            if mounted and configured:
+                runtime_state = "operational"
+            elif mounted and in_current_scope:
+                runtime_state = "unconfigured"
+            elif configured and in_current_scope:
+                runtime_state = "configured_not_mounted"
+            else:
+                runtime_state = "inactive"
+            items.append({
+                "engine_key": definition.engine_id,
+                "display_name": definition.name,
+                "description": definition.description,
+                "engine_type": definition.engine_type,
+                "category": definition.category,
+                "version": definition.version,
+                "api_prefix": definition.api_prefix,
+                "endpoint_count": definition.endpoint_count,
+                "dependencies": definition.dependencies,
+                "registered": True,
+                "mounted": mounted,
+                "configured": configured,
+                "runtime_state": runtime_state,
+                "global_status": primary.global_status if primary else "not_configured",
+                "is_core": bool(primary.is_core) if primary else definition.engine_type == "core",
+                "is_locked": bool(primary.is_locked) if primary else False,
+                "lifecycle_status": primary.lifecycle_status if primary else "registry_only",
+                "database_key": primary.engine_key if primary else None,
+                "legacy_aliases": alias_keys,
+                "vertical_usage": usage_by_engine.get(definition.engine_id, []),
+                "active_vertical_count": len(enabled_verticals),
+                "last_health": {
+                    "status": health["health_status"],
+                    "checked_at": health["checked_at"].isoformat(),
+                    "error": health["error_message"],
+                } if health else None,
+            })
+
+        orphaned = []
+        for canonical, rows in db_by_canonical.items():
+            if canonical in registered_keys:
+                continue
+            for row in rows:
+                if row.lifecycle_status in ("retired", "archived"):
+                    continue
+                orphaned.append({
+                    "engine_key": row.engine_key,
+                    "display_name": row.display_name,
+                    "global_status": row.global_status,
+                    "lifecycle_status": row.lifecycle_status,
+                    "reason": "No canonical runtime registration",
+                })
+
+        mounted_count = sum(1 for item in items if item["mounted"])
+        operational_count = sum(1 for item in items if item["runtime_state"] == "operational")
+        drift_count = sum(1 for item in items if item["runtime_state"] in {
+            "unconfigured", "configured_not_mounted"
+        }) + len(orphaned)
+        legacy_alias_count = sum(len(item["legacy_aliases"]) for item in items)
+        enabled_vertical_count = len({
+            row["vertical_key"] for row in vertical_rows if row["vertical_enabled"]
+        })
+        return {
+            "summary": {
+                "registered": len(items),
+                "mounted": mounted_count,
+                "operational": operational_count,
+                "configuration_drift": drift_count,
+                "legacy_aliases": legacy_alias_count,
+                "orphaned_records": len(orphaned),
+                "enabled_verticals": enabled_vertical_count,
+            },
+            "engines": items,
+            "orphaned_records": orphaned,
+            "generated_at": _now().isoformat(),
+        }
+
+    async def get_vertical_usage(self) -> dict:
+        rows = (await self.db.execute(text("""
+            SELECT v.id, v.key, v.label, v.is_enabled, v.lifecycle_status,
+                   v.release_stage, vem.engine_key, vem.is_required,
+                   vem.sort_order
+            FROM verticals v
+            LEFT JOIN vertical_engine_mappings vem ON vem.vertical_id = v.id
+            ORDER BY v.is_enabled DESC, v.sort_order, vem.sort_order
+        """))).mappings().all()
+        grouped: dict[str, dict] = {}
+        registered = {definition.engine_id for definition in runtime_registry.all()}
+        for row in rows:
+            vertical = grouped.setdefault(row["key"], {
+                "id": str(row["id"]),
+                "key": row["key"],
+                "label": row["label"],
+                "is_enabled": bool(row["is_enabled"]),
+                "lifecycle_status": row["lifecycle_status"],
+                "release_stage": row["release_stage"],
+                "engines": [],
+            })
+            if not row["engine_key"]:
+                continue
+            canonical = _canonical_engine_key(row["engine_key"])
+            vertical["engines"].append({
+                "engine_key": canonical,
+                "source_key": row["engine_key"],
+                "is_required": bool(row["is_required"]),
+                "registered": canonical in registered,
+                "uses_legacy_alias": canonical != row["engine_key"],
+            })
+        verticals = list(grouped.values())
+        return {
+            "verticals": verticals,
+            "summary": {
+                "total": len(verticals),
+                "enabled": sum(1 for row in verticals if row["is_enabled"]),
+                "disabled": sum(1 for row in verticals if not row["is_enabled"]),
+                "mapping_count": sum(len(row["engines"]) for row in verticals),
+                "legacy_mapping_count": sum(
+                    1 for row in verticals for item in row["engines"]
+                    if item["uses_legacy_alias"]
+                ),
+            },
         }
 
     async def get_engine(self, engine_key: str) -> dict:
@@ -1101,21 +1332,41 @@ class EngineMgmtService:
         }
 
     async def get_health_overview(self) -> dict:
-        engines = (await self.db.execute(
-            select(PlatformEngine).order_by(PlatformEngine.display_name)
-        )).scalars().all()
+        engines = (await self.db.execute(select(PlatformEngine))).scalars().all()
+        db_by_canonical: dict[str, list[PlatformEngine]] = {}
+        for row in engines:
+            db_by_canonical.setdefault(_canonical_engine_key(row.engine_key), []).append(row)
+
+        latest_rows = (await self.db.execute(text("""
+            SELECT DISTINCT ON (engine_key)
+                   engine_key, health_status, checked_at, error_message
+            FROM engine_health_checks
+            ORDER BY engine_key, checked_at DESC
+        """))).mappings().all()
+        health_by_canonical: dict[str, dict] = {}
+        for row in latest_rows:
+            health_by_canonical[_canonical_engine_key(row["engine_key"])] = dict(row)
 
         result = []
-        for e in engines:
-            latest = await self.db.scalar(
-                select(EngineHealthCheck).where(
-                    EngineHealthCheck.engine_key == e.engine_key
-                ).order_by(EngineHealthCheck.checked_at.desc()).limit(1))
+        for definition in sorted(runtime_registry.all(), key=lambda item: item.name):
+            matches = db_by_canonical.get(definition.engine_id, [])
+            primary = next((row for row in matches if row.engine_key == definition.engine_id), None)
+            primary = primary or (matches[0] if matches else None)
+            latest = health_by_canonical.get(definition.engine_id)
             result.append({
-                **e.to_dict(),
-                "health_status": latest.health_status if latest else "unknown",
-                "last_check": latest.checked_at.isoformat() if latest else None,
-                "last_error": latest.error_message if latest else None,
+                **(primary.to_dict() if primary else {
+                    "id": None,
+                    "engine_key": definition.engine_id,
+                    "global_status": "not_configured",
+                    "is_core": definition.engine_type == "core",
+                    "is_locked": False,
+                    "lifecycle_status": "registry_only",
+                }),
+                "display_name": definition.name,
+                "canonical_engine_key": definition.engine_id,
+                "health_status": latest["health_status"] if latest else "unknown",
+                "last_check": latest["checked_at"].isoformat() if latest else None,
+                "last_error": latest["error_message"] if latest else None,
             })
 
         healthy = sum(1 for r in result if r["health_status"] == "healthy")
@@ -1177,6 +1428,7 @@ class EngineMgmtService:
                                action_type: str | None = None,
                                scope_type: str | None = None,
                                scope_id: uuid.UUID | None = None,
+                               exclude_health_checks: bool = False,
                                page: int = 1, limit: int = 50) -> dict:
         stmt = select(EngineAuditLog).order_by(EngineAuditLog.created_at.desc())
         if engine_key:
@@ -1187,6 +1439,8 @@ class EngineMgmtService:
             stmt = stmt.where(EngineAuditLog.scope_type == scope_type)
         if scope_id:
             stmt = stmt.where(EngineAuditLog.scope_id == scope_id)
+        if exclude_health_checks:
+            stmt = stmt.where(~EngineAuditLog.action_type.ilike("%health_check%"))
 
         total = await self.db.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = (await self.db.execute(

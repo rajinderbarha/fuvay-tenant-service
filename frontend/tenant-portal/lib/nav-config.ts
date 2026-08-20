@@ -32,17 +32,17 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     label: "Setup",
     items: [
       { id: "profile",                  label: "Business Profile", href: "/profile",                  icon: "Building2",   group: "setup" },
-      { id: "provider-service-areas",   label: "Service Areas",   href: "/provider/service-areas",   icon: "MapPin",      group: "setup" },
-      { id: "provider-services",        label: "Service Setup",    href: "/tenant/setup/services",    icon: "Wrench",      group: "setup" },
-      { id: "provider-service-coverage",label: "Service Coverage", href: "/provider/service-coverage",icon: "Shield",      group: "setup" },
-      { id: "provider-availability",    label: "Availability",     href: "/provider/availability",    icon: "Clock",       group: "setup" },
+      { id: "provider-service-areas",   label: "Service Areas",   href: "/home-services/coverage",   icon: "MapPin",      group: "setup" },
+      { id: "provider-services",        label: "Service Setup",    href: "/home-services/services",   icon: "Wrench",      group: "setup" },
+      { id: "provider-service-coverage",label: "Service Coverage", href: "/home-services/services",   icon: "Shield",      group: "setup" },
+      { id: "provider-availability",    label: "Availability",     href: "/business/coverage-hours",  icon: "Clock",       group: "setup" },
     ],
   },
   {
     id: "team",
     label: "Team",
     items: [
-      { id: "provider-staff", label: "Staff & Technicians", href: "/provider/staff", icon: "Users", group: "team" },
+      { id: "provider-staff", label: "Staff & Technicians", href: "/home-services/team", icon: "Users", group: "team" },
     ],
   },
   {
@@ -143,7 +143,7 @@ export const TENANT_PROVIDER_PATH_TO_NAV_ID: Record<string, string> = {
   "service-invoices":   "finance-package",
   complaints:           "reviews",
   "rework-requests":    "reviews",
-  "refund-requests":    "reviews",
+  "refund-requests":    "hs-remedies",
   compliance:           "provider-compliance",
   notifications:        "notifications",
   chat:                 "chat",

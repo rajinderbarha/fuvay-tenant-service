@@ -13,18 +13,23 @@ Security rules (must stay in effect):
 """
 from __future__ import annotations
 
+import csv
+import hashlib
+import io
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import String, and_, cast, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import UserContext
 from app.engines.media.models import MediaAsset
 from app.exceptions import NotFoundException, ServiceOSException
+from app.schemas.base import decode_cursor, encode_cursor
 
 logger = structlog.get_logger("media.admin_service")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -45,45 +50,31 @@ class MediaLibraryAdminService:
     # ── Summary cards ────────────────────────────────────────────────────────
 
     async def get_summary(self) -> dict:
-        base = select(MediaAsset).where(MediaAsset.status != "deleted")
-
-        async def _count(where) -> int:
-            r = await self.db.execute(select(func.count()).select_from(where.subquery()))
-            return r.scalar_one()
-
-        total        = await _count(base)
-        active       = await _count(base.where(MediaAsset.status == "active"))
-        archived     = await _count(base.where(MediaAsset.status == "archived"))
-        flagged      = await _count(base.where(text("is_flagged = true")))
-        quarantined  = await _count(base.where(MediaAsset.status == "quarantined"))
-        public_count = await _count(base.where(MediaAsset.is_public == True))
-        private_count= await _count(base.where(MediaAsset.is_public == False))
-
-        # File type breakdowns
-        images_count = await _count(base.where(MediaAsset.mime_type.ilike("image/%")))
-        videos_count = await _count(base.where(MediaAsset.mime_type.ilike("video/%")))
-        documents_count = await _count(
-            base.where(~MediaAsset.mime_type.ilike("image/%"))
-                .where(~MediaAsset.mime_type.ilike("video/%"))
-        )
-
-        # Recent uploads (last 7 days)
-        from datetime import timedelta
         seven_days_ago = utcnow() - timedelta(days=7)
-        recent_count = await _count(base.where(MediaAsset.created_at >= seven_days_ago))
-
-        size_r = await self.db.execute(
-            select(func.coalesce(func.sum(MediaAsset.file_size_bytes), 0))
-            .select_from(base.subquery())
+        live = MediaAsset.deleted_at.is_(None)
+        aggregate = await self.db.execute(
+            select(
+                func.count(MediaAsset.id).label("total"),
+                func.count(MediaAsset.id).filter(MediaAsset.status == "active").label("active"),
+                func.count(MediaAsset.id).filter(MediaAsset.status == "archived").label("archived"),
+                func.count(MediaAsset.id).filter(MediaAsset.is_flagged.is_(True)).label("flagged"),
+                func.count(MediaAsset.id).filter(MediaAsset.status == "quarantined").label("quarantined"),
+                func.count(MediaAsset.id).filter(MediaAsset.is_public.is_(True)).label("public_count"),
+                func.count(MediaAsset.id).filter(MediaAsset.is_public.is_(False)).label("private_count"),
+                func.count(MediaAsset.id).filter(MediaAsset.mime_type.ilike("image/%")).label("images_count"),
+                func.count(MediaAsset.id).filter(MediaAsset.mime_type.ilike("video/%")).label("videos_count"),
+                func.count(MediaAsset.id).filter(
+                    and_(
+                        ~MediaAsset.mime_type.ilike("image/%"),
+                        ~MediaAsset.mime_type.ilike("video/%"),
+                    )
+                ).label("documents_count"),
+                func.count(MediaAsset.id).filter(MediaAsset.created_at >= seven_days_ago).label("recent_count"),
+                func.coalesce(func.sum(MediaAsset.file_size_bytes), 0).label("total_size_bytes"),
+                func.coalesce(func.sum(MediaAsset.file_size_bytes).filter(MediaAsset.status == "active"), 0).label("active_size_bytes"),
+            ).where(live)
         )
-        total_size_bytes = size_r.scalar_one()
-
-        # Active-only size
-        active_size_r = await self.db.execute(
-            select(func.coalesce(func.sum(MediaAsset.file_size_bytes), 0))
-            .where(MediaAsset.status == "active")
-        )
-        active_size_bytes = active_size_r.scalar_one()
+        stats = aggregate.one()
 
         ctx_r = await self.db.execute(
             select(MediaAsset.media_context, func.count())
@@ -95,21 +86,21 @@ class MediaLibraryAdminService:
         by_context = {row[0]: row[1] for row in ctx_r.fetchall()}
 
         return {
-            "total": total,
-            "active": active,
-            "archived": archived,
-            "flagged": flagged,
-            "quarantined": quarantined,
-            "public_count": public_count,
-            "private_count": private_count,
-            "images_count": images_count,
-            "videos_count": videos_count,
-            "documents_count": documents_count,
-            "recent_count": recent_count,
-            "total_size_bytes": total_size_bytes,
-            "total_size_mb": round(total_size_bytes / (1024 * 1024), 2),
-            "active_size_bytes": active_size_bytes,
-            "active_size_mb": round(active_size_bytes / (1024 * 1024), 2),
+            "total": stats.total,
+            "active": stats.active,
+            "archived": stats.archived,
+            "flagged": stats.flagged,
+            "quarantined": stats.quarantined,
+            "public_count": stats.public_count,
+            "private_count": stats.private_count,
+            "images_count": stats.images_count,
+            "videos_count": stats.videos_count,
+            "documents_count": stats.documents_count,
+            "recent_count": stats.recent_count,
+            "total_size_bytes": stats.total_size_bytes,
+            "total_size_mb": round(stats.total_size_bytes / (1024 * 1024), 2),
+            "active_size_bytes": stats.active_size_bytes,
+            "active_size_mb": round(stats.active_size_bytes / (1024 * 1024), 2),
             "by_context": by_context,
         }
 
@@ -129,11 +120,15 @@ class MediaLibraryAdminService:
         file_type: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        sort: str = "newest",
+        cursor: str | None = None,
         page: int = 1,
         page_size: int = 25,
     ) -> dict:
         page_size = min(page_size, 200)
-        offset = (page - 1) * page_size
+        allowed_sorts = {"newest", "oldest", "largest", "smallest"}
+        if sort not in allowed_sorts:
+            raise ServiceOSException("SORT_FIELD_NOT_ALLOWED", f"Unsupported media sort: {sort}.")
 
         base = select(MediaAsset).where(MediaAsset.deleted_at == None)  # noqa: E711
 
@@ -148,9 +143,9 @@ class MediaLibraryAdminService:
         if customer_id:
             base = base.where(MediaAsset.customer_id == uuid.UUID(customer_id))
         if is_flagged is not None:
-            base = base.where(text("is_flagged = true") if is_flagged else text("is_flagged = false"))
+            base = base.where(MediaAsset.is_flagged.is_(is_flagged))
         if moderation_status:
-            base = base.where(text(f"moderation_status = '{moderation_status}'"))
+            base = base.where(MediaAsset.moderation_status == moderation_status)
         if file_type:
             base = base.where(MediaAsset.mime_type.ilike(f"{file_type}/%"))
         if visibility == "public":
@@ -158,25 +153,65 @@ class MediaLibraryAdminService:
         elif visibility == "private":
             base = base.where(MediaAsset.is_public == False)
         if q:
-            base = base.where(MediaAsset.file_name_original.ilike(f"%{q}%"))
+            term = f"%{q.strip()}%"
+            base = base.where(or_(
+                MediaAsset.file_name_original.ilike(term),
+                MediaAsset.description.ilike(term),
+                MediaAsset.media_number.ilike(term),
+                MediaAsset.media_context.ilike(term),
+                MediaAsset.owner_type.ilike(term),
+                cast(MediaAsset.owner_id, String).ilike(term),
+                cast(MediaAsset.tags_json, String).ilike(term),
+            ))
         if date_from:
-            base = base.where(MediaAsset.created_at >= date_from)
+            try:
+                base = base.where(MediaAsset.created_at >= datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc))
+            except ValueError as exc:
+                raise ServiceOSException("INVALID_PAYLOAD", "date_from must use ISO format.") from exc
         if date_to:
-            base = base.where(MediaAsset.created_at <= date_to)
+            try:
+                end = datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc) + timedelta(days=1)
+                base = base.where(MediaAsset.created_at < end)
+            except ValueError as exc:
+                raise ServiceOSException("INVALID_PAYLOAD", "date_to must use ISO format.") from exc
 
         total_r = await self.db.execute(select(func.count()).select_from(base.subquery()))
         total = total_r.scalar_one()
 
-        rows_r = await self.db.execute(
-            base.order_by(MediaAsset.created_at.desc()).offset(offset).limit(page_size)
-        )
-        assets = rows_r.scalars().all()
+        sort_by_size = sort in {"largest", "smallest"}
+        sort_column = MediaAsset.file_size_bytes if sort_by_size else MediaAsset.created_at
+        descending = sort in {"newest", "largest"}
+        if cursor:
+            decoded = decode_cursor(cursor)
+            if decoded.get("sort") != sort:
+                raise ServiceOSException("INVALID_PAYLOAD", "Pagination cursor does not match the active sort.")
+            cursor_id = uuid.UUID(decoded["id"])
+            raw_value = decoded["value"]
+            cursor_value = int(raw_value) if sort_by_size else datetime.fromisoformat(raw_value)
+            comparator = sort_column < cursor_value if descending else sort_column > cursor_value
+            tie_breaker = MediaAsset.id < cursor_id if descending else MediaAsset.id > cursor_id
+            base = base.where(or_(comparator, and_(sort_column == cursor_value, tie_breaker)))
+
+        order = (sort_column.desc(), MediaAsset.id.desc()) if descending else (sort_column.asc(), MediaAsset.id.asc())
+        # Offset is retained only for older API clients. The admin UI uses cursor paging.
+        offset = 0 if cursor or page == 1 else (page - 1) * page_size
+        rows_r = await self.db.execute(base.order_by(*order).offset(offset).limit(page_size + 1))
+        assets = list(rows_r.scalars().all())
+        has_next = len(assets) > page_size
+        assets = assets[:page_size]
+        next_cursor = None
+        if has_next and assets:
+            last = assets[-1]
+            value = str(last.file_size_bytes) if sort_by_size else last.created_at.isoformat()
+            next_cursor = encode_cursor({"sort": sort, "value": value, "id": str(last.id)})
 
         return {
             "items": [self._to_admin_dict(a) for a in assets],
             "total": total,
             "page": page,
             "page_size": page_size,
+            "has_next": has_next,
+            "next_cursor": next_cursor,
         }
 
     # ── Detail ───────────────────────────────────────────────────────────────
@@ -191,17 +226,18 @@ class MediaLibraryAdminService:
 
     async def get_linked_records(self, media_id: uuid.UUID) -> list[dict]:
         """Return media_links rows for this asset; fall back to inline columns."""
-        await self._load(media_id)
+        asset = await self._load(media_id)
         try:
-            r = await self.db.execute(
-                text("""
-                    SELECT id, module_name, record_type, record_id, display_name, status, created_at
-                    FROM media_links WHERE media_id = :mid ORDER BY created_at DESC
-                """),
-                {"mid": str(media_id)},
-            )
+            async with self.db.begin_nested():
+                r = await self.db.execute(
+                    text("""
+                        SELECT id, module_name, record_type, record_id, display_name, status, created_at
+                        FROM media_links WHERE media_id = :mid ORDER BY created_at DESC
+                    """),
+                    {"mid": str(media_id)},
+                )
             rows = r.fetchall()
-            return [
+            linked = [
                 {
                     "id": str(row[0]),
                     "module_name": row[1],
@@ -213,23 +249,37 @@ class MediaLibraryAdminService:
                 }
                 for row in rows
             ]
+            if linked:
+                return linked
         except Exception:
-            return []
+            logger.exception("media.linked_records_query_failed", media_id=str(media_id))
+        if asset.linked_module and asset.linked_record_id:
+            return [{
+                "id": f"inline-{asset.id}",
+                "module_name": asset.linked_module,
+                "record_type": asset.linked_module,
+                "record_id": asset.linked_record_id,
+                "display_name": None,
+                "status": "active",
+                "created_at": asset.created_at.isoformat() if asset.created_at else None,
+            }]
+        return []
 
     # ── Audit logs ───────────────────────────────────────────────────────────
 
     async def get_audit_logs(self, media_id: uuid.UUID, limit: int = 50) -> list[dict]:
         await self._load(media_id)
         try:
-            r = await self.db.execute(
-                text("""
-                    SELECT id, actor_user_id, actor_role, action_type, request_id,
-                           metadata_json, created_at
-                    FROM media_audit_logs WHERE media_id = :mid
-                    ORDER BY created_at DESC LIMIT :lim
-                """),
-                {"mid": str(media_id), "lim": limit},
-            )
+            async with self.db.begin_nested():
+                r = await self.db.execute(
+                    text("""
+                        SELECT id, actor_user_id, actor_role, action_type, request_id,
+                               metadata_json, created_at
+                        FROM media_audit_logs WHERE media_id = :mid
+                        ORDER BY created_at DESC LIMIT :lim
+                    """),
+                    {"mid": str(media_id), "lim": limit},
+                )
             rows = r.fetchall()
             return [
                 {
@@ -244,6 +294,7 @@ class MediaLibraryAdminService:
                 for row in rows
             ]
         except Exception:
+            logger.exception("media.audit_logs_query_failed", media_id=str(media_id))
             return []
 
     # ── Signed URLs ──────────────────────────────────────────────────────────
@@ -281,13 +332,15 @@ class MediaLibraryAdminService:
         Marks token as used (single-use per spec).
         """
         try:
-            r = await self.db.execute(
-                text("""
-                    SELECT id, media_id, purpose, expires_at, status
-                    FROM media_signed_links WHERE token = :t
-                """),
-                {"t": token},
-            )
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            r = await self.db.execute(text("""
+                UPDATE media_signed_links
+                   SET status='used', used_at=now()
+                 WHERE token = :token_hash
+                   AND status = 'active'
+                   AND expires_at > now()
+                RETURNING media_id, purpose
+            """), {"token_hash": token_hash})
             row = r.fetchone()
         except Exception:
             raise ServiceOSException("SIGNED_TOKEN_INVALID", "Invalid or expired token.")
@@ -295,19 +348,7 @@ class MediaLibraryAdminService:
         if not row:
             raise ServiceOSException("SIGNED_TOKEN_INVALID", "Invalid or expired token.")
 
-        link_id, media_id, purpose, expires_at, status = row
-        if status != "active":
-            raise ServiceOSException("SIGNED_TOKEN_USED", "This link has already been used.")
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if utcnow() > expires_at:
-            raise ServiceOSException("SIGNED_TOKEN_EXPIRED", "This link has expired.")
-
-        # Mark used
-        await self.db.execute(
-            text("UPDATE media_signed_links SET status='used', used_at=now() WHERE id=:lid"),
-            {"lid": str(link_id)},
-        )
+        media_id, purpose = row
         return {"media_id": str(media_id), "purpose": purpose}
 
     # ── Archive / Restore ────────────────────────────────────────────────────
@@ -318,14 +359,8 @@ class MediaLibraryAdminService:
             return {"id": str(media_id), "status": "archived", "already_archived": True}
 
         asset.status = "archived"
+        asset.archived_at = utcnow()
         asset.updated_at = utcnow()
-        try:
-            await self.db.execute(
-                text("UPDATE media_assets SET archived_at=now() WHERE id=:mid"),
-                {"mid": str(media_id)},
-            )
-        except Exception:
-            pass
 
         await self._log_audit(media_id, "admin_archived",
                               {"reason": reason, "file_name": asset.file_name_original})
@@ -338,14 +373,8 @@ class MediaLibraryAdminService:
                                      "Only archived or quarantined assets can be restored.")
 
         asset.status = "active"
+        asset.archived_at = None
         asset.updated_at = utcnow()
-        try:
-            await self.db.execute(
-                text("UPDATE media_assets SET archived_at=null WHERE id=:mid"),
-                {"mid": str(media_id)},
-            )
-        except Exception:
-            pass
 
         await self._log_audit(media_id, "admin_restored",
                               {"file_name": asset.file_name_original})
@@ -383,6 +412,7 @@ class MediaLibraryAdminService:
         old = asset.is_public
         asset.is_public = is_public
         asset.access_level = "public" if is_public else "tenant"
+        asset.visibility = "public" if is_public else "private"
         asset.updated_at = utcnow()
 
         await self._log_audit(media_id, "admin_visibility_changed",
@@ -393,16 +423,11 @@ class MediaLibraryAdminService:
 
     async def flag_asset(self, media_id: uuid.UUID, reason: str) -> dict:
         asset = await self._load(media_id)
-        try:
-            await self.db.execute(
-                text("""UPDATE media_assets SET is_flagged=true, flag_reason=:r,
-                         flagged_at=now(), moderation_status='flagged', updated_at=now()
-                         WHERE id=:mid"""),
-                {"r": reason[:80], "mid": str(media_id)},
-            )
-        except Exception:
-            asset.status = "flagged"
-            asset.updated_at = utcnow()
+        asset.is_flagged = True
+        asset.flag_reason = reason[:80]
+        asset.flagged_at = utcnow()
+        asset.moderation_status = "flagged"
+        asset.updated_at = utcnow()
 
         await self._log_audit(media_id, "admin_flagged",
                               {"reason": reason, "file_name": asset.file_name_original})
@@ -410,15 +435,11 @@ class MediaLibraryAdminService:
 
     async def mark_clean(self, media_id: uuid.UUID) -> dict:
         asset = await self._load(media_id)
-        try:
-            await self.db.execute(
-                text("""UPDATE media_assets SET is_flagged=false, flag_reason=null,
-                         flagged_at=null, moderation_status='clean', updated_at=now()
-                         WHERE id=:mid"""),
-                {"mid": str(media_id)},
-            )
-        except Exception:
-            asset.updated_at = utcnow()
+        asset.is_flagged = False
+        asset.flag_reason = None
+        asset.flagged_at = None
+        asset.moderation_status = "clean"
+        asset.updated_at = utcnow()
 
         await self._log_audit(media_id, "admin_marked_clean",
                               {"file_name": asset.file_name_original})
@@ -427,6 +448,10 @@ class MediaLibraryAdminService:
     async def quarantine_asset(self, media_id: uuid.UUID, reason: str) -> dict:
         asset = await self._load(media_id)
         asset.status = "quarantined"
+        asset.is_flagged = True
+        asset.flag_reason = reason[:80]
+        asset.flagged_at = asset.flagged_at or utcnow()
+        asset.moderation_status = "quarantined"
         asset.updated_at = utcnow()
 
         await self._log_audit(media_id, "admin_quarantined",
@@ -437,7 +462,7 @@ class MediaLibraryAdminService:
 
     async def bulk_archive(self, media_ids: list[str]) -> dict:
         done, failed = [], []
-        for mid_str in media_ids[:50]:
+        for mid_str in media_ids[:100]:
             try:
                 mid = uuid.UUID(mid_str)
                 await self.archive_asset(mid)
@@ -448,7 +473,7 @@ class MediaLibraryAdminService:
 
     async def bulk_delete(self, media_ids: list[str], force: bool = False) -> dict:
         done, failed = [], []
-        for mid_str in media_ids[:50]:
+        for mid_str in media_ids[:100]:
             try:
                 mid = uuid.UUID(mid_str)
                 await self.delete_asset(mid, force=force)
@@ -460,23 +485,25 @@ class MediaLibraryAdminService:
     # ── Export ───────────────────────────────────────────────────────────────
 
     async def export_csv(self, **filters) -> str:
-        result = await self.list_assets_admin(**filters, page=1, page_size=2000)
-        items = result["items"]
-        lines = ["id,file_name,context,owner_type,tenant_id,status,is_public,is_flagged,size_bytes,created_at"]
-        for item in items:
-            lines.append(",".join([
-                str(item.get("id", "")),
-                str(item.get("file_name_original", "")).replace(",", " "),
-                str(item.get("media_context", "")),
-                str(item.get("owner_type", "")),
-                str(item.get("tenant_id", "") or ""),
-                str(item.get("status", "")),
-                str(item.get("is_public", "")),
-                str(item.get("is_flagged", "")),
-                str(item.get("file_size_bytes", "")),
-                str(item.get("created_at", "")),
-            ]))
-        return "\n".join(lines)
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["id", "file_name", "context", "owner_type", "tenant_id", "status", "is_public", "is_flagged", "size_bytes", "created_at"])
+        cursor = None
+        exported = 0
+        while exported < 50_000:
+            result = await self.list_assets_admin(**filters, cursor=cursor, page=1, page_size=200)
+            for item in result["items"]:
+                writer.writerow([
+                    item.get("id", ""), item.get("file_name_original", ""), item.get("media_context", ""),
+                    item.get("owner_type", ""), item.get("tenant_id", "") or "", item.get("status", ""),
+                    item.get("is_public", ""), item.get("is_flagged", ""), item.get("file_size_bytes", ""),
+                    item.get("created_at", ""),
+                ])
+                exported += 1
+            cursor = result.get("next_cursor")
+            if not cursor:
+                break
+        return output.getvalue()
 
     # ── Storage summary ──────────────────────────────────────────────────────
 
@@ -511,6 +538,7 @@ class MediaLibraryAdminService:
     # ── Filter options ───────────────────────────────────────────────────────
 
     async def get_filter_options(self) -> dict:
+        from app.engines.media.validation import CONTEXT_RULES
         ctx_r = await self.db.execute(
             select(MediaAsset.media_context, func.count())
             .where(MediaAsset.status != "deleted")
@@ -528,6 +556,14 @@ class MediaLibraryAdminService:
             "statuses": ["active", "archived", "quarantined", "replaced", "deleted"],
             "file_types": ["image", "video", "application", "text"],
             "visibilities": ["public", "private"],
+            "upload_contexts": [
+                {
+                    "value": context,
+                    "max_mb": rules["max_mb"],
+                    "allowed_types": sorted(rules["allowed_types"]),
+                }
+                for context, rules in sorted(CONTEXT_RULES.items())
+            ],
         }
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -554,43 +590,46 @@ class MediaLibraryAdminService:
 
     async def _log_audit(self, media_id: uuid.UUID, action: str, meta: dict | None = None) -> None:
         try:
-            await self.db.execute(
-                text("""
-                    INSERT INTO media_audit_logs
-                    (media_id, actor_user_id, actor_role, action_type, metadata_json)
-                    VALUES (:mid, :uid, :role, :action, :meta::jsonb)
-                """),
-                {
-                    "mid":    str(media_id),
-                    "uid":    self.actor.user_id,
-                    "role":   self.actor.role,
-                    "action": action,
-                    "meta":   str(meta or {}).replace("'", '"'),
-                },
-            )
+            async with self.db.begin_nested():
+                await self.db.execute(
+                    text("""
+                        INSERT INTO media_audit_logs
+                        (media_id, actor_user_id, actor_role, action_type, metadata_json)
+                        VALUES (:mid, :uid, :role, :action, CAST(:meta AS jsonb))
+                    """),
+                    {
+                        "mid":    str(media_id),
+                        "uid":    self.actor.user_id,
+                        "role":   self.actor.role,
+                        "action": action,
+                        "meta":   json.dumps(meta or {}, default=str),
+                    },
+                )
         except Exception:
-            pass  # Audit failures must never block the main operation
+            logger.exception("media.audit_log_failed", media_id=str(media_id), action=action)
 
     async def _insert_signed_link(
         self, media_id: uuid.UUID, token: str, expires_at: datetime, purpose: str
     ) -> None:
         try:
-            await self.db.execute(
-                text("""
-                    INSERT INTO media_signed_links
-                    (media_id, created_by_user_id, purpose, token, expires_at, status)
-                    VALUES (:mid, :uid, :purpose, :token, :expires, 'active')
-                """),
-                {
-                    "mid":     str(media_id),
-                    "uid":     self.actor.user_id,
-                    "purpose": purpose,
-                    "token":   token,
-                    "expires": expires_at,
-                },
-            )
-        except Exception:
-            pass  # Table may not exist yet; signed URL still works via token
+            async with self.db.begin_nested():
+                await self.db.execute(
+                    text("""
+                        INSERT INTO media_signed_links
+                        (media_id, created_by_user_id, purpose, token, expires_at, status)
+                        VALUES (:mid, :uid, :purpose, :token, :expires, 'active')
+                    """),
+                    {
+                        "mid":     str(media_id),
+                        "uid":     self.actor.user_id,
+                        "purpose": purpose,
+                        "token":   hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                        "expires": expires_at,
+                    },
+                )
+        except Exception as exc:
+            logger.exception("media.signed_link_create_failed", media_id=str(media_id), purpose=purpose)
+            raise ServiceOSException("SERVICE_UNAVAILABLE", "Secure media link could not be created.") from exc
 
     def _to_admin_dict(self, asset: MediaAsset) -> dict:
         d = asset.to_dict(view_url=f"/v1/media/{asset.id}/view")

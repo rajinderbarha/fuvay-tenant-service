@@ -73,6 +73,12 @@ class TestStageMapping:
         assert stage == "COMPLETED"
         assert stage in COMPLETED_STAGES
 
+    @pytest.mark.parametrize("status", ["force_closed", "voided"])
+    def test_admin_terminal_statuses_are_closed_not_unknown(self, status):
+        stage, is_unknown = map_job_stage(status, None)
+        assert stage == "CLOSED"
+        assert not is_unknown
+
     def test_quote_sent_to_customer_overrides_to_awaiting_approval(self):
         stage, _ = map_job_stage("quote_required", "sent_to_customer")
         assert stage == "AWAITING_APPROVAL"
@@ -178,6 +184,35 @@ class TestUnifiedFeedLive:
         for row in r.json()["data"]["records"]:
             assert row["current_stage"] == "UNASSIGNED"
 
+    async def test_invalid_filters_fail_with_422_not_500(self, admin):
+        bad_view = await admin.get("/v1/admin/home-services/operations", params={"view": "invented"})
+        bad_stage = await admin.get("/v1/admin/home-services/operations", params={"stage": "invented"})
+        bad_date = await admin.get("/v1/admin/home-services/operations", params={"date_from": "not-a-date"})
+        reversed_range = await admin.get("/v1/admin/home-services/operations", params={"date_from": "2026-08-15", "date_to": "2026-08-14"})
+        assert bad_view.status_code == 422
+        assert bad_stage.status_code == 422
+        assert bad_date.status_code == 422
+        assert reversed_range.status_code == 422
+
+    async def test_enterprise_filters_and_page_size_are_server_side(self, admin):
+        base = await admin.get("/v1/admin/home-services/operations", params={"page_size": 5})
+        assert base.status_code == 200
+        records = base.json()["data"]["records"]
+        assert len(records) <= 5
+        if records:
+            city = records[0]["location_summary"].split(" · ")[0]
+            filtered = await admin.get("/v1/admin/home-services/operations", params={"city": city, "page_size": 10})
+            assert filtered.status_code == 200
+            for row in filtered.json()["data"]["records"]:
+                assert row["location_summary"].split(" · ")[0] == city
+
+    async def test_request_rows_keep_canonical_draft_reference(self, admin):
+        response = await admin.get("/v1/admin/home-services/operations", params={"view": "requests", "page_size": 100})
+        assert response.status_code == 200
+        for row in response.json()["data"]["records"]:
+            assert row["work_type"] == "REQUEST"
+            assert row["draft_id"] is not None
+
     async def test_view_completed_excludes_closed_estimate_declined(self, admin):
         r = await admin.get("/v1/admin/home-services/operations", params={"view": "completed", "page_size": 50})
         for row in r.json()["data"]["records"]:
@@ -187,6 +222,9 @@ class TestUnifiedFeedLive:
         r = await admin.get("/v1/admin/home-services/operations/export")
         assert r.status_code == 200
         assert "work_id" in r.text.splitlines()[0]
+        assert r.headers["cache-control"] == "no-store"
+        assert r.headers["x-export-truncated"] in {"true", "false"}
+        assert int(r.headers["x-export-total"]) >= 0
 
     async def test_search_by_work_id(self, admin):
         base = await admin.get("/v1/admin/home-services/operations", params={"page_size": 5})

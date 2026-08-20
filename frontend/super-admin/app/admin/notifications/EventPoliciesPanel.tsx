@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback, useState } from "react";
 import {
-  Card, Badge, Btn, Select, Input,
+  Card, Badge, Btn, Select, Input, Pagination, EmptyState,
 } from "../../../components/shared/ui";
 import {
   notificationPolicyApi,
@@ -29,13 +29,14 @@ export function EventPoliciesPanel() {
   const [channelFilter, setChannelFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedKey, setSelectedKey] = useState<{ event_key: string; vertical_key: string | null } | null>(null);
-  const [tab, setTab] = useState<"table" | "history" | "audit">("table");
 
   const listApi = useApi(useCallback(() => notificationPolicyApi.list({
     vertical_key: verticalFilter || undefined, channel: channelFilter || undefined,
     status: statusFilter || undefined, search: search || undefined,
-  }), [verticalFilter, channelFilter, statusFilter, search]));
+    limit: 25, offset: (page - 1) * 25,
+  }), [verticalFilter, channelFilter, statusFilter, search, page]));
 
   const rows = listApi.data?.items ?? [];
   const summary = listApi.data?.summary;
@@ -89,7 +90,9 @@ export function EventPoliciesPanel() {
               ]}/>
             </div>
 
-            {listApi.loading ? (
+            {listApi.error ? (
+              <EmptyState title="Event policies are unavailable" description={`${listApi.error}${listApi.requestId ? ` · ${listApi.requestId}` : ""}`} action={<Btn size="sm" onClick={listApi.refetch}>Retry</Btn>}/>
+            ) : listApi.loading ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading policies…</div>
             ) : rows.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No events match this filter.</div>
@@ -131,7 +134,7 @@ export function EventPoliciesPanel() {
                 </table>
               </div>
             )}
-            <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>Showing 1 to {rows.length} of {summary?.registered_events ?? rows.length} registered events</div>
+            <Pagination page={page} total={listApi.data?.total ?? 0} pageSize={25} onPage={setPage}/>
           </Card>
         </div>
 

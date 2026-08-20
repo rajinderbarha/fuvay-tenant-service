@@ -904,3 +904,167 @@ a { color: inherit; text-decoration: none; }
 .grid-cols-2       { grid-template-columns: repeat(2, 1fr); }
 .overflow-x-auto   { overflow-x: auto; }
 
+/* Enterprise catalog directory controls */
+.enterprise-select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.enterprise-retired-link {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  box-shadow: var(--shadow-xs);
+}
+
+.enterprise-retired-link:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Home Services Finance uses the existing theme tokens with a stronger
+   command-workspace hierarchy; no light/dark palette values are overridden. */
+.hs-finance-shell { display: flex; flex-direction: column; gap: 16px; }
+.hs-finance-hero {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 18px;
+  padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--surface)) 0%, var(--surface) 58%);
+  box-shadow: var(--shadow-sm);
+}
+.hs-finance-eyebrow {
+  color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; margin-bottom: 5px;
+}
+.hs-finance-tabs {
+  display: flex; gap: 4px; padding: 5px; overflow-x: auto; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--surface-sunken); scrollbar-width: thin;
+}
+.hs-finance-tab {
+  flex: 0 0 auto; padding: 9px 13px; border: 1px solid transparent;
+  border-radius: var(--radius-md); background: transparent; color: var(--text-tertiary);
+  cursor: pointer; font-size: 12px; font-weight: 700;
+  transition: background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.hs-finance-tab:hover { color: var(--text-primary); background: var(--surface); }
+.hs-finance-tab[data-active="true"] {
+  color: var(--text-primary); border-color: var(--border); background: var(--surface); box-shadow: var(--shadow-xs);
+}
+.hs-finance-credit-tabs {
+  display: flex; gap: 4px; overflow-x: auto; padding: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken); scrollbar-width: thin;
+}
+.hs-finance-credit-tabs > button {
+  flex: 0 0 auto; border-radius: 7px; transition: background .15s ease, color .15s ease;
+}
+.hs-finance-credit-tabs > button:hover { background: var(--surface); }
+.hs-finance-credit-tabs > button[aria-selected="true"] { background: var(--surface); box-shadow: var(--shadow-xs); }
+.hs-finance-filterbar {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.hs-finance-action-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-sunken);
+}
+@media (max-width: 760px) { .hs-finance-hero { flex-direction: column; padding: 16px; } }
+
+/* Enterprise catalog pages: structure and light-mode polish for catalog scale pages. */
+.catalog-admin-page {
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.catalog-admin-page > [aria-label="Home Services catalog workflow"] {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  backdrop-filter: blur(14px);
+}
+
+.catalog-admin-page table {
+  table-layout: auto;
+}
+
+.catalog-admin-page th,
+.catalog-admin-page td {
+  white-space: nowrap;
+}
+
+.catalog-admin-page td:first-child,
+.catalog-admin-page th:first-child {
+  padding-left: 16px;
+}
+
+.catalog-admin-page td:last-child,
+.catalog-admin-page th:last-child {
+  padding-right: 16px;
+}
+
+.catalog-detail-page h3 {
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+[data-theme="light"] .catalog-admin-page > [aria-label="Home Services catalog workflow"] {
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  background: rgba(248, 251, 255, 0.88) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 30px rgba(37, 99, 235, 0.055) !important;
+}
+
+[data-theme="light"] .catalog-admin-page .ds-summary-card {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: linear-gradient(145deg, #ffffff 0%, #fbfdff 100%) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035), 0 10px 24px rgba(15, 23, 42, 0.045) !important;
+}
+
+[data-theme="light"] .catalog-admin-page table {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035), 0 12px 30px rgba(15, 23, 42, 0.035);
+}
+
+[data-theme="light"] .catalog-admin-page thead th {
+  background: #f8fafc !important;
+  color: #475569 !important;
+  border-bottom-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+[data-theme="light"] .catalog-admin-page tbody tr:hover td {
+  background: #f8fbff !important;
+}
+
+[data-theme="light"] .catalog-admin-page input,
+[data-theme="light"] .catalog-admin-page select,
+[data-theme="light"] .catalog-admin-page textarea {
+  border-color: rgba(148, 163, 184, 0.36) !important;
+  background: #ffffff !important;
+}
+
+@media (max-width: 860px) {
+  .catalog-admin-page { max-width: none; }
+  .catalog-admin-page th,
+  .catalog-admin-page td { white-space: normal; }
+}

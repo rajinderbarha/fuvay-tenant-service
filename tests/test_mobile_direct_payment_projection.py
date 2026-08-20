@@ -243,7 +243,34 @@ async def test_direct_payment_full_lifecycle_live():
                 ), {"tid": tenant_id})).scalar_one()
                 assert wallet_balance == ledger[0]["balance_after"]
 
+                # The same native lifecycle must leave one real invoice, link
+                # the payment to it, and expose it through the admin API.
+                invoice = (await db.execute(text(
+                    "SELECT id,status,payment_status,total_amount,customer_payable_amount "
+                    "FROM service_invoices WHERE job_id=:jid"
+                ), {"jid": job_id})).mappings().one()
+                assert invoice["status"] == "paid"
+                assert invoice["payment_status"] == "verified"
+                assert invoice["total_amount"] == invoice["customer_payable_amount"] == 1200
+                payment_invoice_id = (await db.execute(text(
+                    "SELECT invoice_id FROM service_payment_records WHERE job_id=:jid"
+                ), {"jid": job_id})).scalar_one()
+                assert payment_invoice_id == invoice["id"]
+
+                app.dependency_overrides[get_current_user] = lambda: UserContext(
+                    user_id=str(uuid.uuid4()), email="admin@serviceos.local",
+                    role="super_admin", tenant_id=None, full_name="Admin",
+                    is_verified=True,
+                )
+                admin_invoices = await client.get(
+                    f"/v1/admin/service-invoices?tenant_id={tenant_id}", headers=headers,
+                )
+                assert admin_invoices.status_code == 200
+                admin_rows = admin_invoices.json()["data"]
+                assert len([row for row in admin_rows if row["job_id"] == str(job_id)]) == 1
+
                 # 5. A second finalize attempt is rejected, not double-fired.
+                app.dependency_overrides[get_current_user] = lambda: make_technician_context(str(tenant_id), user_id=str(staff_user_id))
                 finalize_again = await client.post(f"/v1/staff/service-jobs/{job_id}/mobile-direct-payment/finalize", headers=headers)
                 assert finalize_again.status_code >= 400
                 ledger_count = (await db.execute(text(
@@ -252,9 +279,13 @@ async def test_direct_payment_full_lifecycle_live():
                 assert ledger_count == 1
         finally:
             app.dependency_overrides.pop(get_current_user, None)
+            await db.execute(text("DELETE FROM in_app_notifications WHERE source_record_id IN (SELECT id FROM service_invoices WHERE job_id=:jid)"), {"jid": job_id})
+            await db.execute(text("DELETE FROM financial_events WHERE record_id IN (SELECT id FROM service_invoices WHERE job_id=:jid) OR record_id IN (SELECT id FROM service_payment_records WHERE job_id=:jid)"), {"jid": job_id})
+            await db.execute(text("DELETE FROM service_invoice_items WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_job_completion_proofs WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM usage_credit_ledger WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_payment_records WHERE job_id=:jid"), {"jid": job_id})
+            await db.execute(text("DELETE FROM service_invoices WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_job_quotes WHERE id=:qid"), {"qid": quote_id})
             await db.execute(text("DELETE FROM service_job_execution_events WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_jobs WHERE id=:jid"), {"jid": job_id})

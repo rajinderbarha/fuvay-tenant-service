@@ -94,6 +94,8 @@ class MediaAssetService:
         owner_type: str,
         owner_id: str,
         is_public: bool = False,
+        description: str | None = None,
+        tags: list[str] | None = None,
         extra_metadata: dict | None = None,
     ) -> dict:
         """
@@ -150,6 +152,9 @@ class MediaAssetService:
             status="active",
             checksum=stored.checksum,
             metadata_json=self._strip_claim_key(extra_metadata),
+            description=(description or "").strip()[:500] or None,
+            tags_json=list(dict.fromkeys(tag.strip().lower()[:50] for tag in (tags or []) if tag.strip()))[:20],
+            visibility="public" if is_public else "private",
         )
         self.db.add(asset)
         await self.db.flush()

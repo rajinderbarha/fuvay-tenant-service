@@ -2,13 +2,13 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.invoice_payment.constants import (
-    INV_DRAFT, INV_ISSUED, INV_PAYMENT_COLLECTED, INV_CANCELLED,
+    INV_DRAFT, INV_ISSUED, INV_PAYMENT_COLLECTED, INV_PAID, INV_CANCELLED,
     INVOICE_TRANSITIONS, VALID_INVOICE_SOURCES,
     INV_SRC_APPROVED_QUOTE, INV_SRC_BOOKING_BASE, INV_SRC_MANUAL_FINAL,
     FEV_INVOICE_CREATED, FEV_INVOICE_ISSUED, FEV_INVOICE_CANCELLED,
@@ -16,7 +16,7 @@ from app.engines.invoice_payment.constants import (
     ERR_INVOICE_NOT_FOUND, ERR_INVOICE_ACCESS_DENIED,
     ERR_INVOICE_ALREADY_EXISTS, ERR_INVOICE_INVALID_STATUS,
     ERR_INVOICE_ALREADY_ISSUED, ERR_INVOICE_CANCELLED as CERR,
-    ERR_INVOICE_ITEM_INVALID,
+    ERR_INVOICE_ITEM_INVALID, ERR_INVOICE_TOTAL_INVALID,
 )
 from app.engines.invoice_payment.models import (
     ServiceInvoice, ServiceInvoiceItem, FinancialEvent,
@@ -35,6 +35,24 @@ def _invoice_number() -> str:
 
 
 class ServiceInvoiceService:
+
+    async def _add_issue_notification(self, db: AsyncSession, inv: ServiceInvoice) -> None:
+        if not inv.customer_id:
+            return
+        from app.engines.platform_notifications.models import InAppNotification
+        db.add(InAppNotification(
+            user_id=inv.customer_id,
+            tenant_id=inv.tenant_id,
+            notification_type="invoice.issued",
+            title="Your invoice is ready",
+            body=(f"Amount due: {inv.currency}{inv.customer_payable_amount}. "
+                  f"Pay your provider directly after the service is complete."),
+            action_url=f"/customer/invoices/{inv.id}",
+            action_label="View invoice",
+            source_record_type="service_invoices",
+            source_record_id=inv.id,
+            severity="info",
+        ))
 
     async def _get_invoice(self, db: AsyncSession, invoice_id: str) -> ServiceInvoice:
         res = await db.execute(
@@ -136,6 +154,7 @@ class ServiceInvoiceService:
         # customer_approved -- staff could fabricate an invoice from a
         # draft/rejected quote, or (if the UUID were known/guessed) a
         # DIFFERENT tenant's quote entirely.
+        quote = None
         if source == INV_SRC_APPROVED_QUOTE and quote_id:
             qres = await db.execute(
                 select(ServiceJobQuote).where(ServiceJobQuote.id == uuid.UUID(quote_id))
@@ -178,7 +197,7 @@ class ServiceInvoiceService:
         # Seed items from approved quote if source = approved_quote
         # (quote tenant/status already validated above, before persistence)
         if source == INV_SRC_APPROVED_QUOTE and quote_id:
-            await self._copy_from_quote(db, inv, quote_id)
+            await self._copy_from_quote(db, inv, quote_id, quote=quote)
         elif source == INV_SRC_BOOKING_BASE:
             await self._copy_from_booking(db, inv, str(job.booking_id))
 
@@ -190,14 +209,115 @@ class ServiceInvoiceService:
         await db.refresh(inv)
         return inv.to_dict()
 
-    async def _copy_from_quote(self, db: AsyncSession, inv: ServiceInvoice, quote_id: str) -> None:
+    async def ensure_issued_for_job(
+        self, db: AsyncSession, job_id: str, tenant_id: str, user_id: str,
+        request_id: str | None = None, *, notify_customer: bool = True,
+    ) -> ServiceInvoice:
+        """Materialize the one canonical invoice used by native job closure.
+
+        The job row is locked before the existence check, so two concurrent
+        completion/payment requests cannot create two active invoices.  This
+        method deliberately does not commit and does not change the operational
+        job status: callers keep invoice creation in the same transaction as
+        proof submission or payment declaration.
+        """
+        job_uuid = uuid.UUID(str(job_id))
+        tenant_uuid = uuid.UUID(str(tenant_id))
+        job = (await db.execute(
+            select(ServiceJob).where(ServiceJob.id == job_uuid).with_for_update()
+        )).scalars().first()
+        if job is None:
+            raise ValueError(ERR_INVOICE_NOT_FOUND)
+        if job.tenant_id != tenant_uuid:
+            raise ValueError(ERR_INVOICE_ACCESS_DENIED)
+
+        inv = (await db.execute(
+            select(ServiceInvoice).where(
+                ServiceInvoice.job_id == job.id,
+                ServiceInvoice.tenant_id == tenant_uuid,
+                ServiceInvoice.status != INV_CANCELLED,
+            ).order_by(ServiceInvoice.created_at.desc()).limit(1)
+        )).scalars().first()
+        if inv is not None:
+            if inv.status == INV_DRAFT:
+                now = _utcnow()
+                inv.status = INV_ISSUED
+                inv.issued_at = now
+                inv.updated_at = now
+                await self._log_event(
+                    db, inv, FEV_INVOICE_ISSUED, "system", user_id,
+                    old_value={"status": INV_DRAFT},
+                    new_value={"status": INV_ISSUED}, request_id=request_id,
+                )
+                if notify_customer:
+                    await self._add_issue_notification(db, inv)
+                await db.flush()
+            return inv
+
+        quote = (await db.execute(
+            select(ServiceJobQuote).where(
+                ServiceJobQuote.job_id == job.id,
+                ServiceJobQuote.tenant_id == tenant_uuid,
+                ServiceJobQuote.customer_id == job.customer_id,
+                ServiceJobQuote.is_current.is_(True),
+                ServiceJobQuote.status == "customer_approved",
+            ).order_by(ServiceJobQuote.version_number.desc()).limit(1)
+        )).scalars().first()
+        source = INV_SRC_APPROVED_QUOTE if quote is not None else INV_SRC_BOOKING_BASE
+        now = _utcnow()
+        inv = ServiceInvoice(
+            id=uuid.uuid4(), invoice_number=_invoice_number(),
+            booking_id=job.booking_id, job_id=job.id,
+            quote_id=quote.id if quote is not None else None,
+            tenant_id=tenant_uuid, customer_id=job.customer_id,
+            category_id=job.category_id, offering_id=job.offering_id,
+            status=INV_DRAFT, invoice_source=source,
+            notes="Generated from the canonical native job-completion flow.",
+            created_by_user_id=uuid.UUID(str(user_id)),
+        )
+        db.add(inv)
+        await db.flush()
+        if quote is not None:
+            await self._copy_from_quote(db, inv, str(quote.id), quote=quote)
+        else:
+            await self._copy_from_booking(db, inv, str(job.booking_id))
+        await db.flush()
+        await self._refresh_totals(db, inv)
+        await db.refresh(inv)
+        if Decimal(str(inv.customer_payable_amount or 0)) <= Decimal("0"):
+            raise ValueError(ERR_INVOICE_TOTAL_INVALID)
+
+        await self._log_event(
+            db, inv, FEV_INVOICE_CREATED, "system", user_id,
+            new_value={"status": INV_DRAFT, "source": source},
+            request_id=request_id,
+        )
+        inv.status = INV_ISSUED
+        inv.issued_at = now
+        inv.updated_at = now
+        await self._log_event(
+            db, inv, FEV_INVOICE_ISSUED, "system", user_id,
+            old_value={"status": INV_DRAFT}, new_value={"status": INV_ISSUED},
+            request_id=request_id,
+        )
+        if notify_customer:
+            await self._add_issue_notification(db, inv)
+        await db.flush()
+        await db.refresh(inv)
+        return inv
+
+    async def _copy_from_quote(
+        self, db: AsyncSession, inv: ServiceInvoice, quote_id: str,
+        *, quote: ServiceJobQuote | None = None,
+    ) -> None:
         res = await db.execute(
             select(ServiceJobQuoteItem).where(
                 ServiceJobQuoteItem.quote_id == uuid.UUID(quote_id),
                 ServiceJobQuoteItem.is_customer_visible == True,
             )
         )
-        for qi in res.scalars().all():
+        rows = list(res.scalars().all())
+        for qi in rows:
             item = ServiceInvoiceItem(
                 id=uuid.uuid4(),
                 invoice_id=inv.id,
@@ -214,6 +334,25 @@ class ServiceInvoiceService:
                 is_customer_visible=True,
             )
             db.add(item)
+        # Older imported quotes can contain an authoritative aggregate but no
+        # normalized item rows. Preserve that audited amount as one service
+        # line instead of producing a zero-value invoice.
+        if not rows:
+            if quote is None:
+                quote = await db.get(ServiceJobQuote, uuid.UUID(quote_id))
+            try:
+                amount = Decimal(str(getattr(quote, "total_amount", 0) or 0))
+            except (InvalidOperation, ValueError, TypeError):
+                amount = Decimal("0")
+            if amount > 0:
+                db.add(ServiceInvoiceItem(
+                    id=uuid.uuid4(), invoice_id=inv.id,
+                    booking_id=inv.booking_id, job_id=inv.job_id,
+                    tenant_id=inv.tenant_id, item_type="service",
+                    item_name="Approved service estimate", quantity=Decimal("1"),
+                    unit_price=amount, line_total=amount,
+                    is_customer_visible=True,
+                ))
 
     async def _copy_from_booking(self, db: AsyncSession, inv: ServiceInvoice, booking_id: str) -> None:
         res = await db.execute(
@@ -223,7 +362,10 @@ class ServiceInvoiceService:
         if not booking or not booking.price_snapshot:
             return
         price = booking.price_snapshot
-        base = Decimal(str(price.get("base_price", 0)))
+        raw_base = next((price.get(key) for key in (
+            "selected_price_amount", "standard_price", "base_price", "min_price"
+        ) if price.get(key) not in (None, "")), 0)
+        base = Decimal(str(raw_base or 0))
         if base > 0:
             item = ServiceInvoiceItem(
                 id=uuid.uuid4(),
@@ -246,13 +388,21 @@ class ServiceInvoiceService:
         )
         items = list(res.scalars().all())
         totals = self._recalculate(items)
-        # MODULE-L5-10: apply the per-category customer charge (platform fee).
+        # Apply the business vertical's published customer platform fee.
         # total_amount stays the SERVICE value (the provider-commission base); the
         # platform fee is added ON TOP so the customer is billed the inclusive
         # amount. The provider is never charged commission on the platform's fee.
         service_value = Decimal(str(totals["total_amount"]))
-        fee_pct = await self._resolve_customer_charge_pct(db, inv.category_id)
-        platform_fee = (service_value * fee_pct / Decimal("100")).quantize(Decimal("0.01"))
+        platform_fee = None
+        if inv.invoice_source == INV_SRC_BOOKING_BASE:
+            booking = await db.get(ServiceBooking, inv.booking_id)
+            snapshot = (booking.price_snapshot or {}) if booking is not None else {}
+            if snapshot.get("platform_fee") is not None:
+                platform_fee = Decimal(str(snapshot["platform_fee"] or 0))
+        if platform_fee is None:
+            platform_fee = await self._resolve_customer_platform_fee(
+                db, inv.category_id, inv.job_id, service_value,
+            )
         totals["platform_fee_amount"] = platform_fee
         totals["customer_payable_amount"] = service_value + platform_fee
         await db.execute(
@@ -261,16 +411,40 @@ class ServiceInvoiceService:
             .values(**totals, updated_at=_utcnow())
         )
 
-    async def _resolve_customer_charge_pct(self, db: AsyncSession, category_id) -> Decimal:
-        """The per-category customer charge %, or 0 when unset (migration 140)."""
+    async def _resolve_customer_platform_fee(
+        self, db: AsyncSession, category_id, job_id, service_value: Decimal,
+    ) -> Decimal:
+        """Resolve the category's business vertical, then use that vertical's
+        one published Monetization policy. Category finance columns are not
+        runtime authorities for Home Services."""
         if category_id is None:
             return Decimal("0")
         from app.engines.admin_catalog.models import ServiceCategory
-        pct = (await db.execute(
-            select(ServiceCategory.customer_charge_pct)
+        from app.engines.vertical_monetization.calculation_service import (
+            calculate_customer_platform_fee, get_active_job_type_rule,
+            get_current_policy_by_vertical_key, to_minor,
+        )
+        vertical_key = (await db.execute(
+            select(ServiceCategory.vertical_type)
             .where(ServiceCategory.id == category_id)
         )).scalar_one_or_none()
-        return Decimal(str(pct)) if pct is not None else Decimal("0")
+        if not vertical_key:
+            return Decimal("0")
+        policy = await get_current_policy_by_vertical_key(db, vertical_key)
+        if policy is not None:
+            from app.engines.final_records.models import ServiceJob
+            job_type_id = (await db.execute(
+                select(ServiceJob.job_type_id).where(ServiceJob.id == job_id)
+            )).scalar_one_or_none()
+            job_type_rule = await get_active_job_type_rule(db, policy.id, job_type_id)
+            if job_type_rule is not None and not job_type_rule.customer_charge_enabled:
+                policy = None
+        result = calculate_customer_platform_fee(
+            policy=policy,
+            service_subtotal_minor=to_minor(service_value),
+            calculation_basis="service_invoice",
+        )
+        return Decimal(str(result["customer_platform_fee"]))
 
     # ── Add item to draft invoice ──────────────────────────────────────────────
 
@@ -350,24 +524,7 @@ class ServiceInvoiceService:
         await self._log_event(db, inv, FEV_INVOICE_ISSUED, "staff", user_id,
                               old_value={"status": old_status},
                               new_value={"status": INV_ISSUED}, request_id=request_id)
-        # MODULE-L5-26: tell the customer their invoice is ready and payment is
-        # due. Issuing the invoice was silent, so the customer had no idea an
-        # amount was owed until they happened to open the booking.
-        if inv.customer_id:
-            from app.engines.platform_notifications.models import InAppNotification
-            db.add(InAppNotification(
-                user_id=inv.customer_id,
-                tenant_id=inv.tenant_id,
-                notification_type="invoice.issued",
-                title="Your invoice is ready",
-                body=(f"Amount due: {inv.currency}{inv.customer_payable_amount}. "
-                      f"Pay your provider directly after the service is complete."),
-                action_url=f"/customer/invoices/{inv.id}",
-                action_label="View invoice",
-                source_record_type="service_invoices",
-                source_record_id=inv.id,
-                severity="info",
-            ))
+        await self._add_issue_notification(db, inv)
         await db.commit()
         await db.refresh(inv)
         return inv.to_dict()
@@ -497,6 +654,8 @@ class ServiceInvoiceService:
             vals["paid_at"] = paid_at
         if payment_status == "collected":
             vals["status"] = INV_PAYMENT_COLLECTED
+        elif payment_status == "verified":
+            vals["status"] = INV_PAID
         await db.execute(update(ServiceInvoice).where(ServiceInvoice.id == invoice_id).values(**vals))
 
     async def update_commission_status(self, db: AsyncSession, invoice_id: uuid.UUID,

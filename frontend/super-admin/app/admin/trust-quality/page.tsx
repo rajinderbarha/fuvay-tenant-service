@@ -1,31 +1,37 @@
-"use client";
+﻿"use client";
 /**
- * MODULE-L5-12 — Trust & Quality (badges, provider health, recalculation).
+ * MODULE-L5-12 â€” Trust & Quality (badges, provider health, recalculation).
  *
- * The trust_quality engine was registered and live — provider badges, badge
+ * The trust_quality engine was registered and live â€” provider badges, badge
  * award rules, health-score formulas and recalculation jobs, all with real
- * seeded config — but had NO admin UI at all. This is its management console.
+ * seeded config â€” but had NO admin UI at all. This is its management console.
  *
- * The admin configures the engine here: creating badge definitions, badge award
- * rules (with metric criteria), and health-score formulas (with weighted
+ * The admin configures the engine here: the fixed trust badge catalog, badge
+ * award rules (with metric criteria), and health-score formulas (with weighted
  * components and score bands), then activating/deactivating and recalculating.
  */
 import React, { useCallback, useMemo, useState } from "react";
 import {
   Award, Star, Shield, ShieldCheck, Crown, Trophy, Medal, Gem, Sparkles,
   BadgeCheck, Flame, Zap, Heart, ThumbsUp, TrendingUp, CheckCircle2, Rocket, Target,
+  Gauge, Activity,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, SectionHeader, Btn, Badge, Spinner, Modal, Input, Select } from "../../../components/shared/ui";
+import { Card, SectionHeader, Btn, Badge, Spinner, Modal, Input, Select, StatCard } from "../../../components/shared/ui";
 import {
   trustQualityApi, TQ_ENUMS,
-  BadgeRule, HealthRule, RecalcJob, BadgeDefinition, EarnedBadge,
+  BadgeRule, HealthRule, BadgeDefinition,
   BadgeCriterionInput, HealthComponentInput, HealthBandInput,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RequirePermission } from "../../../components/shared/PermissionGate";
+import { ScoresTab } from "./ScoresTab";
+import { AuditTab } from "./AuditTab";
+import { RecalcTab } from "./RecalcTab";
+import { EarnedTab } from "./EarnedTab";
+import { BadgeRuleSimulator, HealthFormulaSimulator } from "./Simulate";
 
-type Tab = "definitions" | "badges" | "health" | "recalc" | "earned";
+type Tab = "definitions" | "badges" | "health" | "scores" | "recalc" | "earned" | "audit";
 
 const opt = (v: string) => ({ value: v, label: v.replace(/_/g, " ") });
 
@@ -38,8 +44,6 @@ const BADGE_ICONS: Record<string, React.ComponentType<{ size?: number; color?: s
   flame: Flame, zap: Zap, heart: Heart, "thumbs-up": ThumbsUp, "trending-up": TrendingUp,
   "check-circle": CheckCircle2, rocket: Rocket, target: Target,
 };
-const BADGE_ICON_NAMES = Object.keys(BADGE_ICONS);
-
 // Distinct, accessible badge colors. First entry is the default.
 const BADGE_COLORS = [
   "var(--warning)", "var(--brand)", "var(--success)", "#8b5cf6", "#ef4444",
@@ -60,17 +64,16 @@ function BadgeIcon({ icon, color, size = 16 }: { icon?: string | null; color?: s
 }
 
 export default function TrustQualityPage() {
-  const [tab, setTab] = useState<Tab>("badges");
+  const [tab, setTab] = useState<Tab>("scores");
   const badgeDefs = useApi(useCallback(() => trustQualityApi.listBadgeDefinitions(), []), []);
   const badgeRules = useApi(useCallback(() => trustQualityApi.listBadgeRules(), []), []);
   const healthRules = useApi(useCallback(() => trustQualityApi.listHealthRules(), []), []);
-  const jobs = useApi(useCallback(() => trustQualityApi.listRecalcJobs(), []), []);
+  const overview = useApi(useCallback(() => trustQualityApi.overview(), []), []);
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Which config modal is open, if any — with the record being edited (if any).
+  // Which config modal is open, if any â€” with the record being edited (if any).
   const [modal, setModal] = useState<
     | null
-    | { type: "definition"; editing?: BadgeDefinition }
     | { type: "badge-rule"; editing?: BadgeRule }
     | { type: "health-formula"; editing?: HealthRule }
   >(null);
@@ -105,12 +108,6 @@ export default function TrustQualityPage() {
     setPrompt({ kind, id: r.id, label, activating: r.status !== "active" });
   };
 
-  const runRecalc = useAction(async (kind: "badges" | "health" | "risk" | "all") => {
-    setBusy(kind);
-    try { await trustQualityApi.recalculate(kind); jobs.refetch(); }
-    finally { setBusy(null); }
-  });
-
   const statusBadge = (s: string) => (
     <Badge variant={s === "active" ? "success" : s === "completed" ? "success"
       : s === "failed" ? "danger" : s === "running" ? "info" : "muted"}>{s}</Badge>
@@ -119,41 +116,85 @@ export default function TrustQualityPage() {
   // Look up a rule's badge definition so its icon/color show on the rule row.
   const defsById = useMemo(() => {
     const m: Record<string, BadgeDefinition> = {};
-    for (const b of badgeDefs.data ?? []) m[b.id] = b;
+    for (const b of badgeDefs.data ?? []) if (b.id) m[b.id] = b;
     return m;
   }, [badgeDefs.data]);
 
+  // Output first, then the configuration that produces it: an admin opening this
+  // console almost always wants to know who scored what, not to edit a formula.
   const TABS: { id: Tab; label: string }[] = [
+    { id: "scores", label: "Health Scores" },
     { id: "badges", label: "Badge Rules" },
-    { id: "definitions", label: "Badges" },
+    { id: "definitions", label: "Badge Catalog" },
     { id: "health", label: "Health Formulas" },
-    { id: "recalc", label: "Recalculation" },
     { id: "earned", label: "Earned (by target)" },
+    { id: "recalc", label: "Recalculation" },
+    { id: "audit", label: "Audit Trail" },
   ];
 
-  // Earned-badges lookup for a specific target (provider/staff/customer/service).
-  const [lookup, setLookup] = useState({ target_type: "tenant", target_id: "" });
-  const [earned, setEarned] = useState<EarnedBadge[] | null>(null);
-  const doLookup = useAction(async () => {
-    if (!lookup.target_id.trim()) return;
-    setEarned(await trustQualityApi.listEarnedBadges(lookup.target_type, lookup.target_id.trim()));
+  const badgeGroups = useMemo(() => {
+    const labels: Record<string, string> = {
+      tenant: "Tenant / provider badges",
+      staff: "Staff badges",
+      technician: "Technician badges",
+    };
+    return TQ_ENUMS.badgeTargets.map(target => ({
+      target,
+      label: labels[target] ?? target.replace(/_/g, " "),
+      items: (badgeDefs.data ?? [])
+        .filter(b => b.target_type === target)
+        .sort((a, b) => (a.level ?? 99) - (b.level ?? 99)),
+    }));
+  }, [badgeDefs.data]);
+
+  const activeSeededBadges = useMemo(
+    () => (badgeDefs.data ?? []).filter((b): b is BadgeDefinition & { id: string } =>
+      Boolean(b.id) && b.status === "active"),
+    [badgeDefs.data],
+  );
+
+  const seedCatalog = useAction(async () => {
+    await trustQualityApi.seedDefaults();
+    badgeDefs.refetch();
+    badgeRules.refetch();
+    overview.refetch();
   });
 
   return (
     <AdminLayout activeNav="providers">
-      <RequirePermission requiredPermission="" parentLabel="Providers">
+      {/* The gate previously passed an empty string, which RequirePermission
+          treats as "always allow" â€” so this console, which changes commission
+          bands and customer-visible trust, was open to any signed-in admin. */}
+      <RequirePermission requiredPermission="trust_quality:read" parentLabel="Providers">
         <SectionHeader
           title="Trust & Quality"
-          subtitle="Configure provider badges, award rules and health-score formulas, then recalculate. Badges and health band drive provider trust and commission."
+          subtitle="Manage the customer-facing trust catalog, badge award rules and the health formulas consumed by provider matching."
           actions={
             tab === "badges" ? <Btn size="sm" onClick={() => setModal({ type: "badge-rule" })}>+ New Badge Rule</Btn>
-            : tab === "definitions" ? <Btn size="sm" onClick={() => setModal({ type: "definition" })}>+ New Badge</Btn>
             : tab === "health" ? <Btn size="sm" onClick={() => setModal({ type: "health-formula" })}>+ New Health Formula</Btn>
             : undefined
           }
         />
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {/* Headline counts across the live badge and health engines. Every figure is an aggregate
+            computed in SQL, so this row costs one query regardless of platform size. */}
+        <div style={{ display: "grid", gap: 12, marginBottom: 16,
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+          <StatCard label="Targets scored" value={(overview.data?.scored_targets ?? 0).toLocaleString()}
+            icon={<Gauge size={16} />} />
+          <StatCard label="Unbanded" value={(overview.data?.unbanded_targets ?? 0).toLocaleString()}
+            icon={<Activity size={16} />}
+            alert={(overview.data?.unbanded_targets ?? 0) > 0}
+            change="too little data to band" />
+          <StatCard label="Badges held" value={(overview.data?.badges_held ?? 0).toLocaleString()}
+            icon={<Award size={16} />}
+            change={`${overview.data?.active_badges ?? 0} badges · ${overview.data?.active_badge_rules ?? 0} rules`} />
+          <StatCard label="Sweeps in flight" value={(overview.data?.jobs_in_flight ?? 0).toLocaleString()}
+            icon={<TrendingUp size={16} />}
+            change={`${overview.data?.active_formulas ?? 0} active formulas`} />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           {TABS.map(t => (
             <Btn key={t.id} size="sm" variant={tab === t.id ? "primary" : "ghost"} onClick={() => setTab(t.id)}>
               {t.label}
@@ -201,7 +242,7 @@ export default function TrustQualityPage() {
                     </tr>
                   ))}
                   {badgeRules.data?.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badge rules — create one to start awarding badges.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badge rules — sync the fixed catalog to restore defaults.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -210,46 +251,45 @@ export default function TrustQualityPage() {
         )}
 
         {tab === "definitions" && (
-          <Card padding={0}>
-            {badgeDefs.loading ? <Spinner /> : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
-                  <th style={{ padding: "10px 16px" }}>Badge</th>
-                  <th style={{ padding: "10px 16px" }}>Key</th>
-                  <th style={{ padding: "10px 16px" }}>Target</th>
-                  <th style={{ padding: "10px 16px" }}>Visibility</th>
-                  <th style={{ padding: "10px 16px" }}>Status</th>
-                  <th style={{ padding: "10px 16px" }}></th>
-                </tr></thead>
-                <tbody>
-                  {badgeDefs.data?.map(b => (
-                    <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                      <td style={{ padding: "10px 16px", fontWeight: 600 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <BadgeIcon icon={b.icon} color={b.color} />
-                          {b.name}
-                        </span>
-                      </td>
-                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)", fontFamily: "monospace", fontSize: 12 }}>{b.badge_key}</td>
-                      <td style={{ padding: "10px 16px" }}>{b.target_type?.replace(/_/g, " ")}</td>
-                      <td style={{ padding: "10px 16px", fontSize: 12 }}>
-                        {b.customer_visible && <Badge variant="info" size="sm">customer</Badge>}
-                        {b.tenant_visible && <Badge variant="muted" size="sm">provider</Badge>}
-                        {b.admin_only && <Badge variant="warning" size="sm">admin-only</Badge>}
-                      </td>
-                      <td style={{ padding: "10px 16px" }}>{statusBadge(b.status)}</td>
-                      <td style={{ padding: "10px 16px" }}>
-                        <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "definition", editing: b })}>Edit</Btn>
-                      </td>
-                    </tr>
-                  ))}
-                  {badgeDefs.data?.length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badges defined.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            )}
-          </Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>Fixed customer trust catalog</div>
+                  <p style={{ margin: "6px 0 0", color: "var(--text-tertiary)", fontSize: 13, maxWidth: 760 }}>
+                    Badge identities are no longer free-form. Tenant, staff and technician each have four
+                    customer-safe trust levels. Admins configure the rules that award them; the visual
+                    language stays consistent for customers across the platform.
+                  </p>
+                </div>
+                <Btn size="sm" variant="secondary" disabled={seedCatalog.loading}
+                  onClick={() => seedCatalog.execute()}>
+                  {seedCatalog.loading ? "Syncing..." : "Sync fixed catalog"}
+                </Btn>
+              </div>
+              {seedCatalog.error && (
+                <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "10px 0 0" }}>{seedCatalog.error}</p>
+              )}
+            </Card>
+            {badgeDefs.loading ? <Spinner /> : badgeGroups.map(group => (
+              <Card key={group.target}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800 }}>{group.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                      {group.items.length} of 4 fixed badges configured
+                    </div>
+                  </div>
+                  <Badge variant={group.items.length === 4 ? "success" : "warning"}>
+                    {group.items.length === 4 ? "Complete" : "Needs sync"}
+                  </Badge>
+                </div>
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+                  {group.items.map(b => <TrustBadgeCard key={b.badge_key} badge={b} BadgeIcon={BadgeIcon} />)}
+                </div>
+              </Card>
+            ))}
+          </div>
         )}
 
         {tab === "health" && (
@@ -290,110 +330,21 @@ export default function TrustQualityPage() {
           </Card>
         )}
 
-        {tab === "recalc" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Card>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Run a recalculation</div>
-              <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-                Re-evaluate every provider against the active rules. Recorded as a job below.
-              </p>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {(["badges", "health", "risk", "all"] as const).map(k => (
-                  <Btn key={k} disabled={busy === k} onClick={() => runRecalc.execute(k)}>
-                    {busy === k ? "Running…" : `Recalculate ${k}`}
-                  </Btn>
-                ))}
-              </div>
-            </Card>
-            <Card padding={0}>
-              <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 14 }}>
-                Recent jobs
-              </div>
-              {jobs.loading ? <Spinner /> : (
-                <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
-                      <th style={{ padding: "8px 16px" }}>Type</th>
-                      <th style={{ padding: "8px 16px" }}>Status</th>
-                      <th style={{ padding: "8px 16px" }}>Processed</th>
-                      <th style={{ padding: "8px 16px" }}>By</th>
-                      <th style={{ padding: "8px 16px" }}>When</th>
-                    </tr></thead>
-                    <tbody>
-                      {jobs.data?.slice(0, 40).map(j => (
-                        <tr key={j.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                          <td style={{ padding: "8px 16px" }}>{j.job_type}</td>
-                          <td style={{ padding: "8px 16px" }}>{statusBadge(j.status)}</td>
-                          <td style={{ padding: "8px 16px" }}>
-                            {j.processed_count}/{j.total_count}{j.failed_count ? ` (${j.failed_count} failed)` : ""}
-                          </td>
-                          <td style={{ padding: "8px 16px", color: "var(--text-tertiary)" }}>{j.triggered_by}</td>
-                          <td style={{ padding: "8px 16px", color: "var(--text-tertiary)" }}>
-                            {String(j.completed_at ?? j.started_at ?? "").replace("T", " ").slice(0, 19)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
-          </div>
-        )}
+        {tab === "scores" && <ScoresTab formulas={healthRules.data ?? []} />}
+
+        {tab === "recalc" && <RecalcTab />}
+
+        {tab === "audit" && <AuditTab />}
 
         {tab === "earned" && (
-          <Card>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Badges held by a target</div>
-            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-              Look up the badges a specific provider, staff member, customer or service currently holds.
-              Paste the target ID (e.g. a provider/tenant ID from the Providers page).
-            </p>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <div style={{ minWidth: 180 }}>
-                <Select label="Target type" value={lookup.target_type}
-                  onChange={v => setLookup({ ...lookup, target_type: v })}
-                  options={TQ_ENUMS.badgeTargets.map(opt)} />
-              </div>
-              <div style={{ flex: 1, minWidth: 260 }}>
-                <Input label="Target ID" value={lookup.target_id}
-                  onChange={v => setLookup({ ...lookup, target_id: v })}
-                  placeholder="00000000-0000-0000-0000-000000000000" />
-              </div>
-              <Btn disabled={!lookup.target_id.trim()} onClick={() => doLookup.execute()}>Look up</Btn>
-            </div>
-            <div style={{ marginTop: 16 }}>
-              {earned === null ? (
-                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Enter a target and look up.</p>
-              ) : earned.length === 0 ? (
-                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>This target holds no badges.</p>
-              ) : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {earned.map(b => (
-                    <span key={b.assignment_id} title={b.description ?? b.name}
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px 7px 8px",
-                        borderRadius: 999, background: `${b.color || "var(--warning)"}18`,
-                        border: `1px solid ${b.color || "var(--warning)"}55`, fontSize: 13, fontWeight: 600 }}>
-                      <BadgeIcon icon={b.icon} color={b.color} size={15} />
-                      {b.name}
-                      {!b.customer_visible && <Badge variant="muted" size="sm">internal</Badge>}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Card>
+          <EarnedTab badges={activeSeededBadges} BadgeIcon={BadgeIcon} />
         )}
 
-        {/* ── Config modals ─────────────────────────────────────────────── */}
-        <BadgeDefinitionModal
-          open={modal?.type === "definition"} onClose={() => setModal(null)}
-          editing={modal?.type === "definition" ? modal.editing : undefined}
-          onSaved={() => { setModal(null); badgeDefs.refetch(); }}
-        />
+        {/* â”€â”€ Config modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <BadgeRuleModal
           open={modal?.type === "badge-rule"} onClose={() => setModal(null)}
           editing={modal?.type === "badge-rule" ? modal.editing : undefined}
-          badges={badgeDefs.data ?? []}
+          badges={activeSeededBadges}
           onSaved={() => { setModal(null); badgeRules.refetch(); }}
         />
         <HealthFormulaModal
@@ -402,7 +353,7 @@ export default function TrustQualityPage() {
           onSaved={() => { setModal(null); healthRules.refetch(); }}
         />
 
-        {/* ── Reason prompt for activate/deactivate ─────────────────────── */}
+        {/* â”€â”€ Reason prompt for activate/deactivate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {prompt && (
           <Modal open onClose={() => setPrompt(null)}
             title={`${prompt.activating ? "Activate" : "Deactivate"} ${prompt.label}`} size="sm">
@@ -418,7 +369,7 @@ export default function TrustQualityPage() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
               <Btn variant="ghost" onClick={() => setPrompt(null)}>Cancel</Btn>
               <Btn disabled={!reason.trim() || busy === prompt.id} onClick={() => applyToggle.execute()}>
-                {busy === prompt.id ? "Saving…" : prompt.activating ? "Activate" : "Deactivate"}
+                {busy === prompt.id ? "Saving..." : prompt.activating ? "Activate" : "Deactivate"}
               </Btn>
             </div>
           </Modal>
@@ -428,7 +379,7 @@ export default function TrustQualityPage() {
   );
 }
 
-// ── Shared small pieces ───────────────────────────────────────────────────────
+// â”€â”€ Shared small pieces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ErrText({ msg }: { msg: string | null }) {
   if (!msg) return null;
@@ -439,108 +390,51 @@ const rowStyle: React.CSSProperties = {
   display: "grid", gap: 8, alignItems: "end", marginBottom: 8,
 };
 
-// ── Badge Definition modal ────────────────────────────────────────────────────
-
-function BadgeDefinitionModal({ open, onClose, onSaved, editing }: {
-  open: boolean; onClose: () => void; onSaved: () => void; editing?: BadgeDefinition;
+function TrustBadgeCard({ badge, BadgeIcon }: {
+  badge: BadgeDefinition;
+  BadgeIcon: React.ComponentType<{ icon?: string | null; color?: string | null; size?: number }>;
 }) {
-  const [f, setF] = useState({
-    badge_key: "", name: "", target_type: "tenant", customer_visible: true,
-    icon: BADGE_ICON_NAMES[0], color: BADGE_COLORS[0],
-  });
-  const [err, setErr] = useState<string | null>(null);
-
-  // Prefill when opened for editing; reset when opened fresh.
-  React.useEffect(() => {
-    if (!open) return;
-    setErr(null);
-    setF(editing ? {
-      badge_key: editing.badge_key, name: editing.name, target_type: editing.target_type,
-      customer_visible: editing.customer_visible,
-      icon: editing.icon || BADGE_ICON_NAMES[0], color: editing.color || BADGE_COLORS[0],
-    } : { badge_key: "", name: "", target_type: "tenant", customer_visible: true,
-      icon: BADGE_ICON_NAMES[0], color: BADGE_COLORS[0] });
-  }, [open, editing]);
-
-  const save = useAction(async () => {
-    setErr(null);
-    try {
-      if (editing) {
-        await trustQualityApi.updateBadgeDefinition(editing.id, {
-          name: f.name.trim(), customer_visible: f.customer_visible, icon: f.icon, color: f.color });
-      } else {
-        await trustQualityApi.createBadgeDefinition({
-          badge_key: f.badge_key.trim(), name: f.name.trim(),
-          target_type: f.target_type, customer_visible: f.customer_visible,
-          icon: f.icon, color: f.color, status: "active" });
-      }
-      onSaved();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save badge."); }
-  });
-  const valid = f.badge_key.trim() && f.name.trim();
+  const color = badge.color || "var(--brand)";
   return (
-    <Modal open={open} onClose={onClose} title={editing ? "Edit badge" : "New badge"} size="md">
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* Live preview of the icon + color the badge will carry. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 10,
-          borderRadius:"var(--radius-md)", background: "var(--surface-sunken)" }}>
-          <BadgeIcon icon={f.icon} color={f.color} size={22} />
-          <span style={{ fontWeight: 600 }}>{f.name || "Badge preview"}</span>
-        </div>
-        <Input label="Badge key" required value={f.badge_key} onChange={v => setF({ ...f, badge_key: v })}
-          disabled={!!editing} hint={editing ? "Key is immutable" : "Unique machine key, e.g. top_rated_pro"} />
-        <Input label="Display name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
-        <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
-          disabled={!!editing} options={TQ_ENUMS.badgeTargets.map(opt)} />
-
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Icon</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-            {BADGE_ICON_NAMES.map(name => {
-              const Cmp = BADGE_ICONS[name];
-              const sel = f.icon === name;
-              return (
-                <button key={name} type="button" onClick={() => setF({ ...f, icon: name })}
-                  aria-label={name} style={{
-                    width: 34, height: 34, borderRadius:"var(--radius-md)", cursor: "pointer",
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    background: sel ? `${f.color}22` : "var(--surface)",
-                    border: `1px solid ${sel ? f.color : "var(--border)"}` }}>
-                  <Cmp size={16} color={sel ? f.color : "var(--text-tertiary)"} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Color</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
-            {BADGE_COLORS.map(c => (
-              <button key={c} type="button" onClick={() => setF({ ...f, color: c })}
-                aria-label={c} style={{
-                  width: 26, height: 26, borderRadius: "50%", cursor: "pointer", background: c,
-                  border: f.color === c ? "3px solid var(--text-primary)" : "2px solid var(--border)" }} />
-            ))}
-          </div>
-        </div>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-          <input type="checkbox" checked={f.customer_visible}
-            onChange={e => setF({ ...f, customer_visible: e.target.checked })} />
-          Visible to customers
-        </label>
-        <ErrText msg={err} />
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn disabled={!valid} onClick={() => save.execute()}>{editing ? "Save changes" : "Create badge"}</Btn>
-        </div>
+    <div style={{
+      position: "relative",
+      overflow: "hidden",
+      minHeight: 150,
+      padding: 16,
+      border: "1px solid var(--border)",
+      borderRadius: "var(--radius-lg)",
+      background: `linear-gradient(135deg, ${color}1f, var(--surface) 52%)`,
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ position: "absolute", top: -28, right: -24, width: 96, height: 96,
+        borderRadius: "50%", background: `${color}22` }} />
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <BadgeIcon icon={badge.icon} color={color} size={24} />
+        <Badge variant={badge.status === "active" ? "success" : badge.status === "missing" ? "warning" : "muted"} size="sm">
+          {badge.status === "missing" ? "not seeded" : badge.status}
+        </Badge>
       </div>
-    </Modal>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase",
+          color: "var(--text-tertiary)", fontWeight: 800 }}>
+          Level {badge.level ?? "-"}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 850, marginTop: 3 }}>{badge.name}</div>
+        <p style={{ margin: "6px 0 0", color: "var(--text-tertiary)", fontSize: 12, lineHeight: 1.45 }}>
+          {badge.description || "Fixed platform trust badge."}
+        </p>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+        {badge.customer_visible && <Badge variant="info" size="sm">customer visible</Badge>}
+        {badge.tenant_visible && <Badge variant="muted" size="sm">provider visible</Badge>}
+        <Badge variant="muted" size="sm">{badge.badge_key}</Badge>
+      </div>
+    </div>
   );
 }
 
-// ── Badge Rule modal (with criteria builder) ──────────────────────────────────
+
+// â”€â”€ Badge Rule modal (with criteria builder) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
   open: boolean; onClose: () => void; onSaved: () => void; badges: BadgeDefinition[];
@@ -569,6 +463,10 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
   }, [open, editing]);
 
   const selectedBadge = useMemo(() => badges.find(b => b.id === f.badge_id), [badges, f.badge_id]);
+  const selectableBadges = useMemo(
+    () => badges.filter((b): b is BadgeDefinition & { id: string } => Boolean(b.id)),
+    [badges],
+  );
 
   const setCrit = (i: number, patch: Partial<BadgeCriterionInput>) =>
     setCriteria(cs => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -608,14 +506,14 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
         {badges.length === 0 && (
           <div style={{ fontSize: 13, color: "var(--warning-text)", background: "var(--warning-bg)",
             padding: 10, borderRadius:"var(--radius-md)" }}>
-            Create a badge first (Badges tab) — a rule awards an existing badge.
+            Sync the fixed badge catalog first — a rule awards one of the approved badges.
           </div>
         )}
         <Input label="Rule key" required value={f.rule_key} onChange={v => setF({ ...f, rule_key: v })}
           disabled={!!editing} hint={editing ? "Key is immutable" : "Unique machine key, e.g. auto_top_rated"} />
         <Select label="Badge to award" value={f.badge_id} onChange={v => setF({ ...f, badge_id: v })}
-          placeholder="Select a badge…"
-          options={badges.map(b => ({ value: b.id, label: `${b.name} (${b.target_type})` }))} />
+          placeholder="Select a badge..."
+          options={selectableBadges.map(b => ({ value: b.id, label: `${b.name} (${b.target_type})` }))} />
         <Select label="Rule type" value={f.rule_type} onChange={v => setF({ ...f, rule_type: v })}
           options={TQ_ENUMS.badgeRuleTypes.map(opt)} />
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
@@ -634,7 +532,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
                 onChange={v => setCrit(i, { operator: v })} options={TQ_ENUMS.operators.map(opt)} />
               <Input label={i === 0 ? "Value" : undefined} value={String(c.value ?? "")}
                 onChange={v => setCrit(i, { value: v })} placeholder="4.5" />
-              <Btn size="sm" variant="ghost" onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Btn>
+              <Btn size="sm" variant="ghost" onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>×</Btn>
             </div>
           ))}
           <Btn size="sm" variant="secondary"
@@ -642,6 +540,13 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
             + Add criterion
           </Btn>
         </div>
+
+        {/* Simulation runs against the SAVED rule, so it is only offered when
+            editing â€” on a new rule there is nothing on the server to simulate yet. */}
+        {editing && (
+          <BadgeRuleSimulator ruleId={editing.id}
+            metricKeys={Array.from(new Set(criteria.map(c => c.metric_key.trim()).filter(Boolean)))} />
+        )}
 
         <ErrText msg={err} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
@@ -651,6 +556,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
         {!editing && (
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
             New rules are created as drafts. Activate them from the Badge Rules tab once reviewed.
+            Save first to try the rule out against sample metrics.
           </p>
         )}
       </div>
@@ -658,12 +564,12 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
   );
 }
 
-// ── Health Formula modal (components + bands builder) ─────────────────────────
+// â”€â”€ Health Formula modal (components + bands builder) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function HealthFormulaModal({ open, onClose, onSaved, editing }: {
   open: boolean; onClose: () => void; onSaved: () => void; editing?: HealthRule;
 }) {
-  const [f, setF] = useState({ formula_key: "", name: "", target_type: "tenant_provider" });
+  const [f, setF] = useState({ formula_key: "", name: "", target_type: "tenant" });
   const [components, setComponents] = useState<HealthComponentInput[]>([
     { metric_key: "", weight_percent: 100, direction: "positive", min_value: 0, max_value: 100 },
   ]);
@@ -680,7 +586,7 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
     if (!open) return;
     setErr(null);
     if (!editing) {
-      setF({ formula_key: "", name: "", target_type: "tenant_provider" });
+      setF({ formula_key: "", name: "", target_type: "tenant" });
       setComponents([{ metric_key: "", weight_percent: 100, direction: "positive", min_value: 0, max_value: 100 }]);
       setBands([{ band_key: "blocked", band_name: "Blocked", min_score: 0, max_score: 49 },
         { band_key: "healthy", band_name: "Healthy", min_score: 50, max_score: 100 }]);
@@ -761,7 +667,7 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
                 onChange={v => setComp(i, { weight_percent: Number(v) })} />
               <Select label={i === 0 ? "Direction" : undefined} value={c.direction ?? "positive"}
                 onChange={v => setComp(i, { direction: v })} options={TQ_ENUMS.directions.map(opt)} />
-              <Btn size="sm" variant="ghost" onClick={() => setComponents(cs => cs.filter((_, j) => j !== i))}>✕</Btn>
+              <Btn size="sm" variant="ghost" onClick={() => setComponents(cs => cs.filter((_, j) => j !== i))}>×</Btn>
             </div>
           ))}
           <Btn size="sm" variant="secondary"
@@ -782,7 +688,7 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
                 onChange={v => setBand(i, { min_score: Number(v) })} />
               <Input label={i === 0 ? "Max" : undefined} type="number" value={String(b.max_score)}
                 onChange={v => setBand(i, { max_score: Number(v) })} />
-              <Btn size="sm" variant="ghost" onClick={() => setBands(bs => bs.filter((_, j) => j !== i))}>✕</Btn>
+              <Btn size="sm" variant="ghost" onClick={() => setBands(bs => bs.filter((_, j) => j !== i))}>×</Btn>
             </div>
           ))}
           <Btn size="sm" variant="secondary"
@@ -791,11 +697,19 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
           </Btn>
         </div>
 
+        {/* Simulation runs against the SAVED formula, so it is only offered when
+            editing. Health bands gate commission, which makes a dry run before
+            activation the difference between a considered change and a guess. */}
+        {editing && (
+          <HealthFormulaSimulator formulaId={editing.id}
+            metricKeys={Array.from(new Set(components.map(c => c.metric_key.trim()).filter(Boolean)))} />
+        )}
+
         <ErrText msg={err} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn disabled={!valid || loading} onClick={() => save.execute()}>
-            {loading ? "Loading…" : editing ? "Save changes" : "Create formula (draft)"}
+            {loading ? "Loading..." : editing ? "Save changes" : "Create formula (draft)"}
           </Btn>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>

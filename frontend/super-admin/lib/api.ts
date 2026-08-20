@@ -1,16 +1,16 @@
-/**
- * ServiceOS Super Admin — API Client
+﻿/**
+ * ServiceOS Super Admin â€” API Client
  * PROVEN LEVEL 5:
- *   ✅ ALL API calls go through this file — no inline fetch() anywhere else
- *   ✅ Every call has typed response + error handling
- *   ✅ Auth token injected centrally — never repeated in components
- *   ✅ Request ID on every call for audit trail
- *   ✅ API_BASE from env — zero hardcoded URLs in components
+ *   âœ… ALL API calls go through this file â€” no inline fetch() anywhere else
+ *   âœ… Every call has typed response + error handling
+ *   âœ… Auth token injected centrally â€” never repeated in components
+ *   âœ… Request ID on every call for audit trail
+ *   âœ… API_BASE from env â€” zero hardcoded URLs in components
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data: T;
@@ -39,7 +39,7 @@ export class ServiceOSError extends Error {
   }
 }
 
-// ── Auth token ────────────────────────────────────────────────────────────────
+// â”€â”€ Auth token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("serviceos_admin_token");
@@ -59,7 +59,7 @@ export function clearSession() {
   }
 }
 
-// ── Core fetch wrapper ────────────────────────────────────────────────────────
+// â”€â”€ Core fetch wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /** Exported so extracted API-client modules (lib/api-*.ts) can share the
  * exact same auth/refresh/envelope behaviour instead of forking it. */
 export async function apiFetch<T>(
@@ -149,10 +149,10 @@ export async function apiFetchPaginatedRaw(
   return apiFetch<Record<string, unknown>>(`${endpoint}?${qs}`);
 }
 
-// ── Auth endpoints ─────────────────────────────────────────────────────────────
+// â”€â”€ Auth endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const authApi = {
   // Session
-  health:      () => apiFetch<{ status: string }>("/v1/health", {}, true),
+  health:      () => apiFetch<{ status: string }>("/health", {}, true),
   login:       (email: string, password: string) =>
     apiFetch<{
       access_token?: string; refresh_token?: string | null; user?: AdminUser;
@@ -315,7 +315,7 @@ export const authApi = {
     apiFetch<{ events: LoginHistoryEvent[]; total: number }>(`/v1/auth/login-history?limit=${limit}`),
 };
 
-// ── P0 Platform Users ─────────────────────────────────────────────────────────
+// â”€â”€ P0 Platform Users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PlatformUserRow {
   id: string; full_name: string; email: string; phone: string | null;
   user_group: string; role: string; platform_role: string | null;
@@ -362,9 +362,15 @@ export const platformUsersApi = {
       `/v1/admin/platform-users?${qs}`);
   },
   get: (userId: string) => apiFetch<PlatformUserDetail>(`/v1/admin/platform-users/${userId}`),
-  export: (userGroup = "platform") =>
-    apiFetch<{ rows: PlatformUserRow[]; count: number; format: string }>(
-      `/v1/admin/platform-users/export?user_group=${userGroup}`),
+  export: (params?: {
+    user_group?: string; q?: string; role?: string; platform_role?: string;
+    status?: string; mfa_status?: string; access_scope?: string; inactive_days_min?: number;
+  }) => {
+    const qs = new URLSearchParams({ user_group: params?.user_group ?? "platform" });
+    Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+    return apiFetch<{ rows: PlatformUserRow[]; count: number; format: string }>(
+      `/v1/admin/platform-users/export?${qs}`);
+  },
 
   invite: (data: {
     full_name: string; email: string; phone?: string; platform_role: string;
@@ -447,7 +453,7 @@ export const platformUsersApi = {
       { method: "POST", body: JSON.stringify({ action, user_ids: userIds, reason }) }),
 };
 
-// ── Tenant endpoints ──────────────────────────────────────────────────────────
+// â”€â”€ Tenant endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const tenantApi = {
   // Core CRUD
   list: (params?: { status?: string; vertical?: string; search?: string; limit?: number; cursor?: string }) => {
@@ -462,7 +468,7 @@ export const tenantApi = {
   update: (id: string, data: Partial<CreateTenantPayload>) =>
     apiFetch<Tenant>(`/v1/tenants/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
-  // 360° view
+  // 360Â° view
   get360: (id: string) => apiFetch<Tenant360>(`/v1/tenants/${id}/360`),
 
   // Health
@@ -545,7 +551,7 @@ export const tenantApi = {
     apiFetch<LimitCheck>(`/v1/tenants/${id}/limits/check/${limitType}${amount ? `?amount=${amount}` : ""}`),
 };
 
-// ── Platform Commerce ─────────────────────────────────────────────────────────
+// â”€â”€ Platform Commerce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const commerceApi = {
   // Platform summary
   platformSummary:        () => apiFetch<PlatformCommerceSummary>("/v1/commerce/platform/summary"),
@@ -686,7 +692,7 @@ export const commerceApi = {
     apiFetch<{ rules: Record<string, unknown> }>("/v1/commerce/bookings/preflight/rules"),
 };
 
-// ── Payment Engine (14 endpoints incl. /meta + /webhook) ──────────────────────
+// â”€â”€ Payment Engine (14 endpoints incl. /meta + /webhook) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const paymentApi = {
   // Orders
   createOrder: (tenantId: string, amount: number, paymentType = "customer_payment", bookingId?: string, customerId?: string, gateway = "razorpay") =>
@@ -739,7 +745,7 @@ export const paymentApi = {
   },
 };
 
-// ── Billing ───────────────────────────────────────────────────────────────────
+// â”€â”€ Billing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const billingApi = {
   getProfile:    (tenantId: string) => apiFetch<BillingProfile>(`/v1/billing/profiles/${tenantId}`),
   activateProfile: (tenantId: string, billingMode: string, vertical: string) =>
@@ -761,13 +767,13 @@ export const billingApi = {
       { method:"POST", body:JSON.stringify({ tenant_id: tenantId, operation, context }) }),
 };
 
-// ── Field Ops ─────────────────────────────────────────────────────────────────
+// â”€â”€ Field Ops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const jobsApi = {
   list: (params?: JobListParams) => {
     const qs = new URLSearchParams(params as Record<string,string> ?? {}).toString();
     return apiFetch<JobListResponse>(`/v1/jobs?${qs}`);
   },
-  // Cross-tenant queue for Super Admin — tenant_id is optional (omit for platform-wide).
+  // Cross-tenant queue for Super Admin â€” tenant_id is optional (omit for platform-wide).
   adminList: (params?: {
     tenant_id?: string; status?: string; limit?: string; cursor?: string;
     q?: string; job_type?: string; sla_status?: string; unassigned?: string;
@@ -812,7 +818,7 @@ export const jobsApi = {
   trackByToken: (token: string) => apiFetch<TrackedJob>(`/v1/jobs/track/${token}`),
 };
 
-// ── Bookings ──────────────────────────────────────────────────────────────────
+// â”€â”€ Bookings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const bookingsApi = {
   list: (tenantId: string, params?: Partial<{ status:string; limit:string; cursor:string }>) => {
     const qs = new URLSearchParams({ ...(params ?? {}), tenant_id: tenantId }).toString();
@@ -851,7 +857,7 @@ export const bookingsApi = {
     apiFetch<BookingSearchResponse>(`/v1/bookings/tenants/${tenantId}/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 };
 
-// ── Admin Customers (platform-wide, no tenant required) ──────────────────────
+// â”€â”€ Admin Customers (platform-wide, no tenant required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminCustomer {
   id: string;
   full_name: string;
@@ -925,7 +931,7 @@ export const adminCustomersApi = {
     return `/v1/admin/customers/export?${qs}`;
   },
 
-  // ── Customer Users Enterprise Upgrade — detail tabs ─────────────────────────
+  // â”€â”€ Customer Users Enterprise Upgrade â€” detail tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   complaints: (id: string, status?: string) => {
     const qs = new URLSearchParams();
     if (status) qs.set("status", status);
@@ -1012,7 +1018,7 @@ export interface CustomerAuditLogRow {
   is_high_risk: boolean; created_at: string;
 }
 
-// ── Admin Bookings (platform-wide, no tenant required) ────────────────────────
+// â”€â”€ Admin Bookings (platform-wide, no tenant required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminBooking {
   id: string;
   booking_number: string;
@@ -1074,11 +1080,12 @@ export interface AdminBookingListParams {
   page?: number; page_size?: number;
 }
 
-// HOME-SERVICES-OPERATIONS unified workspace — canonical
+// HOME-SERVICES-OPERATIONS unified workspace â€” canonical
 // service_bookings/service_jobs pipeline only (see backend
 // operations_service.py docstring). Read-only projection; no mutation here.
 export interface UnifiedOperationRow {
   work_id: string; work_type: "REQUEST" | "JOB";
+  draft_id: string | null;
   booking_id: string | null; job_id: string | null; booking_number: string | null;
   customer_id: string | null; customer_name: string | null; customer_contact_summary: string | null;
   master_service: string | null; job_type: string | null;
@@ -1102,6 +1109,13 @@ export interface UnifiedOperationsResponse {
 export interface UnifiedOperationsMetrics {
   active: number; new_requests: number; unassigned: number;
   in_progress: number; awaiting_approval: number; at_risk: number;
+  /** Counting every job is a full table pass, so these are cached. "fresh" =
+   *  recent cache hit, "stale" = served while a refresh runs behind it,
+   *  "computed" = calculated in this request. */
+  freshness?: "fresh" | "stale" | "computed";
+  /** When the figures were actually calculated â€” shown to the admin so the
+   *  tiles never imply they are live when they are up to a minute old. */
+  computed_at?: string | null;
 }
 export const homeServicesOperationsApi = {
   list: (params: Record<string, string | number | undefined>) => {
@@ -1109,8 +1123,16 @@ export const homeServicesOperationsApi = {
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") q.set(k, String(v)); });
     return apiFetch<UnifiedOperationsResponse>(`/v1/admin/home-services/operations?${q}`);
   },
-  summary: (tenantId?: string) =>
-    apiFetch<UnifiedOperationsMetrics>(`/v1/admin/home-services/operations/summary${tenantId ? `?tenant_id=${tenantId}` : ""}`),
+  // `refresh` forces a recompute past the cache â€” what the Refresh button sends,
+  // so an admin who explicitly asks for current numbers gets current numbers.
+  summary: (tenantId?: string, refresh = false) => {
+    const q = new URLSearchParams();
+    if (tenantId) q.set("tenant_id", tenantId);
+    if (refresh) q.set("refresh", "true");
+    const qs = q.toString();
+    return apiFetch<UnifiedOperationsMetrics>(
+      `/v1/admin/home-services/operations/summary${qs ? `?${qs}` : ""}`);
+  },
   exportUrl: (params: Record<string, string | number | undefined>) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") q.set(k, String(v)); });
@@ -1167,7 +1189,7 @@ export const adminBookingsApi = {
   },
 };
 
-// ── Admin Staff (platform-wide, no tenant required) ───────────────────────────
+// â”€â”€ Admin Staff (platform-wide, no tenant required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminStaffMember {
   user_id: string;
   full_name: string;
@@ -1248,21 +1270,8 @@ export interface AdminStaffJobRow {
   city: string; completed_at: string | null; created_at: string | null;
 }
 
-// ── Pricing ───────────────────────────────────────────────────────────────────
+// â”€â”€ Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const pricingApi = {
-  // Platform city tiers (super-admin only)
-  listCityTiers: (tier?: string, category?: string, limit = 50, cursor?: string) => {
-    const qs = new URLSearchParams({ ...(tier?{tier}:{}), ...(category?{category}:{}), limit:String(limit), ...(cursor?{cursor}:{}) }).toString();
-    return apiFetch<CityTierConfigList>(`/v1/pricing/city-tiers?${qs}`);
-  },
-  getCityTier: (configId: string) => apiFetch<CityTierConfig>(`/v1/pricing/city-tiers/${configId}`),
-  createCityTier: (data: { city_name:string; tier:string; service_category:string; floor_price:number; notes?:string }) =>
-    apiFetch<CityTierConfig>("/v1/pricing/city-tiers", { method:"POST", body:JSON.stringify(data) }),
-  updateCityTier: (configId: string, data: Partial<{ floor_price:number; is_active:boolean; notes:string }>) =>
-    apiFetch<CityTierConfig>(`/v1/pricing/city-tiers/${configId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deleteCityTier: (configId: string) =>
-    apiFetch<void>(`/v1/pricing/city-tiers/${configId}`, { method:"DELETE" }),
-
   // Tenant service prices
   listPrices: (tenantId: string, limit = 50, cursor?: string) => {
     const qs = cursor ? `?limit=${limit}&cursor=${cursor}` : `?limit=${limit}`;
@@ -1325,9 +1334,9 @@ export const pricingApi = {
   },
 };
 
-// ── Catalog Engine (Admin master catalog: tiers, categories, services, types, brands, pricing rules) ──
+// â”€â”€ Catalog Engine (Admin master catalog: tiers, categories, services, types, brands, pricing rules) â”€â”€
 export const catalogApi = {
-  // Category dropdown options (searchable — no raw UUID entry required)
+  // Category dropdown options (searchable â€” no raw UUID entry required)
   getCategoryOptions: (params?: { q?: string; vertical_type?: string; status?: string }) => {
     const qs = new URLSearchParams();
     if (params?.q) qs.set("q", params.q);
@@ -1335,106 +1344,6 @@ export const catalogApi = {
     if (params?.status) qs.set("status", params.status);
     return apiFetch<CategoryOption[]>(`/v1/admin/catalog/categories/options?${qs}`);
   },
-
-  // Tiers
-  listTiers: (isActive?: boolean, extra?: {
-    q?:string; usedInRules?:boolean; hasCityMapping?:boolean; hasZipcodeMapping?:boolean;
-    dateFrom?:string; dateTo?:string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (isActive !== undefined) qs.set("is_active", String(isActive));
-    if (extra?.q) qs.set("q", extra.q);
-    if (extra?.usedInRules !== undefined) qs.set("used_in_rules", String(extra.usedInRules));
-    if (extra?.hasCityMapping !== undefined) qs.set("has_city_mapping", String(extra.hasCityMapping));
-    if (extra?.hasZipcodeMapping !== undefined) qs.set("has_zipcode_mapping", String(extra.hasZipcodeMapping));
-    if (extra?.dateFrom) qs.set("date_from", extra.dateFrom);
-    if (extra?.dateTo) qs.set("date_to", extra.dateTo);
-    const q = qs.toString();
-    return apiFetch<{ tiers: PricingTier[] }>(`/v1/admin/tiers${q ? `?${q}` : ""}`);
-  },
-  createTier: (data: Partial<PricingTier> & { name:string; code:string; tier_type:string }) =>
-    apiFetch<PricingTier>("/v1/admin/tiers", { method:"POST", body:JSON.stringify(data) }),
-  updateTier: (tierId: string, data: Partial<PricingTier>) =>
-    apiFetch<PricingTier>(`/v1/admin/tiers/${tierId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deleteTier: (tierId: string) => apiFetch<void>(`/v1/admin/tiers/${tierId}`, { method:"DELETE" }),
-  hardDeleteTier: (tierId: string) => apiFetch<{ deleted: boolean; tier_id: string; hard_delete: boolean }>(`/v1/admin/tiers/${tierId}/hard-delete`, { method:"DELETE" }),
-  getTiersSummary: () => apiFetch<TiersSummary>("/v1/admin/tiers/summary"),
-  exportTiers: (isActive?: boolean) => {
-    const qs = isActive !== undefined ? `?is_active=${isActive}` : "";
-    return apiFetch<{ rows: PricingTier[]; count: number }>(`/v1/admin/tiers/export${qs}`);
-  },
-  getTierDetail: (tierId: string) => apiFetch<TierDetail>(`/v1/admin/tiers/${tierId}/detail`),
-
-  // Tier locations
-  listTierLocations: (tierId?: string) => {
-    const qs = tierId ? `?tier_id=${tierId}` : "";
-    return apiFetch<{ locations: TierLocation[] }>(`/v1/admin/tier-locations${qs}`);
-  },
-  listTierLocationsGrid: (params: {
-    tierId?: string; q?: string; state?: string; district?: string; city?: string; zipcode?: string;
-    isActive?: boolean; hasConflict?: boolean; page?: number; pageSize?: number; sortBy?: string; sortDir?: string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params.tierId)      qs.set("tier_id", params.tierId);
-    if (params.q)            qs.set("q", params.q);
-    if (params.state)        qs.set("state", params.state);
-    if (params.district)     qs.set("district", params.district);
-    if (params.city)         qs.set("city", params.city);
-    if (params.zipcode)      qs.set("zipcode", params.zipcode);
-    if (params.isActive !== undefined)    qs.set("is_active", String(params.isActive));
-    if (params.hasConflict !== undefined) qs.set("has_conflict", String(params.hasConflict));
-    qs.set("page", String(params.page ?? 1));
-    qs.set("page_size", String(params.pageSize ?? 50));
-    qs.set("sort_by", params.sortBy ?? "created_at");
-    qs.set("sort_dir", params.sortDir ?? "desc");
-    return apiFetch<{ items: TierLocation[]; pagination: GridPagination }>(`/v1/admin/tier-locations?${qs.toString()}`);
-  },
-  createTierLocation: (data: { tier_id:string; city?:string; zipcode?:string; state?:string; district?:string; zone_name?:string; country?:string }) =>
-    apiFetch<TierLocation>("/v1/admin/tier-locations", { method:"POST", body:JSON.stringify(data) }),
-  updateTierLocation: (locationId: string, data: Partial<{ tier_id:string; city?:string; zipcode?:string; state?:string; district?:string; country?:string; is_active:boolean }>) =>
-    apiFetch<TierLocation>(`/v1/admin/tier-locations/${locationId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deleteTierLocation: (locationId: string) =>
-    apiFetch<void>(`/v1/admin/tier-locations/${locationId}`, { method:"DELETE" }),
-  resolveLocation: (city?: string, zipcode?: string, state?: string, district?: string, zone?: string) => {
-    const qs = new URLSearchParams();
-    if (city)     qs.set("city", city);
-    if (zipcode)  qs.set("zipcode", zipcode);
-    if (state)    qs.set("state", state);
-    if (district) qs.set("district", district);
-    if (zone)     qs.set("zone", zone);
-    return apiFetch<ResolveResult>(`/v1/admin/tiers/resolve-location?${qs.toString()}`);
-  },
-  getTierLocationsSummary: () => apiFetch<TierLocationsSummary>("/v1/admin/tier-locations/summary"),
-  exportTierLocations: (filters?: { tierId?:string; state?:string; district?:string; city?:string; isActive?:boolean; hasConflict?:boolean }) => {
-    const qs = new URLSearchParams();
-    if (filters?.tierId)      qs.set("tier_id", filters.tierId);
-    if (filters?.state)       qs.set("state", filters.state);
-    if (filters?.district)    qs.set("district", filters.district);
-    if (filters?.city)        qs.set("city", filters.city);
-    if (filters?.isActive !== undefined)    qs.set("is_active", String(filters.isActive));
-    if (filters?.hasConflict !== undefined) qs.set("has_conflict", String(filters.hasConflict));
-    return apiFetch<{ rows: TierLocation[]; count: number }>(`/v1/admin/tier-locations/export?${qs.toString()}`);
-  },
-  importTierLocationsPreview: (fileName: string, csvText: string) =>
-    apiFetch<ImportPreviewResult>("/v1/admin/tier-locations/import/preview",
-      { method:"POST", body:JSON.stringify({ file_name: fileName, csv_text: csvText }) }),
-  importTierLocationsConfirm: (batchId: string, conflictResolution: "skip" | "override") =>
-    apiFetch<ImportBatch>("/v1/admin/tier-locations/import/confirm",
-      { method:"POST", body:JSON.stringify({ batch_id: batchId, conflict_resolution: conflictResolution }) }),
-  getImportBatch: (batchId: string) =>
-    apiFetch<ImportBatch>(`/v1/admin/tier-locations/imports/${batchId}`),
-  listImportBatches: (page = 1, pageSize = 20) =>
-    apiFetch<{ batches: ImportBatch[]; pagination: GridPagination }>(`/v1/admin/tier-locations/imports?page=${page}&page_size=${pageSize}`),
-  bulkChangeTierLocations: (locationIds: string[], newTierId: string) =>
-    apiFetch<{ updated: number; new_tier_id: string }>("/v1/admin/tier-locations/bulk/change-tier",
-      { method:"POST", body:JSON.stringify({ location_ids: locationIds, new_tier_id: newTierId }) }),
-  bulkDeactivateTierLocations: (locationIds: string[]) =>
-    apiFetch<{ deactivated: number }>("/v1/admin/tier-locations/bulk/deactivate",
-      { method:"POST", body:JSON.stringify({ location_ids: locationIds }) }),
-  resolveConflict: (locationId: string, resolutionType: "keep_this" | "override_tier" | "deactivate", overrideTierId?: string) =>
-    apiFetch<{ resolved: boolean; location_id: string; resolution_type: string }>(
-      `/v1/admin/tier-locations/${locationId}/resolve-conflict`,
-      { method:"POST", body:JSON.stringify({ resolution_type: resolutionType, override_tier_id: overrideTierId }) }),
 
   // Service categories
   listCategories: (isActive?: boolean) => {
@@ -1453,7 +1362,7 @@ export const catalogApi = {
     apiFetch<ServiceCategory>(`/v1/admin/service-categories/${categoryId}`, { method:"PUT", body:JSON.stringify(data) }),
   deleteCategory: (categoryId: string) =>
     apiFetch<void>(`/v1/admin/service-categories/${categoryId}`, { method:"DELETE" }),
-  // MODULE-L5-52 (migration 160) — canonical Business Vertical creation.
+  // MODULE-L5-52 (migration 160) â€” canonical Business Vertical creation.
   // Job-Type Blueprint ownership correction: no Brand/Type/Schedule/Address/
   // pricing fields -- those vary per service and belong on the Job-Type
   // Blueprint, never on the vertical itself. Backend rejects them outright.
@@ -1465,9 +1374,10 @@ export const catalogApi = {
   }) =>
     apiFetch<ServiceCategory>("/v1/admin/business-verticals", { method: "POST", body: JSON.stringify(data) }),
 
-  // MODULE-L5-10: per-category commission rate (was a hardcoded flat 10%).
-  listCategoryCommissionRates: () =>
-    apiFetch<CategoryCommissionRate[]>("/v1/admin/category-commission-rates"),
+  // Legacy per-category rates. Home Services rejects writes here and uses
+  // its published Finance > Monetization policy as the sole authority.
+  listCategoryCommissionRates: (verticalType?: string) =>
+    apiFetch<CategoryCommissionRate[]>(`/v1/admin/category-commission-rates${verticalType ? `?vertical_type=${encodeURIComponent(verticalType)}` : ""}`),
   setCategoryCommissionRate: (categoryId: string, commissionPct: number | null) =>
     apiFetch<{ id: string; commission_pct: number | null; using_default: boolean }>(
       `/v1/admin/category-commission-rates/${categoryId}`,
@@ -1503,7 +1413,7 @@ export const catalogApi = {
   },
   createMasterService: (data: Partial<MasterService> & { category_id:string; service_name:string; job_type:string; pricing_model:string; base_price:number }) =>
     apiFetch<MasterService>("/v1/admin/master-services", { method:"POST", body:JSON.stringify(data) }),
-  // MODULE-L5-52 (migration 160) — canonical Master Service creation.
+  // MODULE-L5-52 (migration 160) â€” canonical Master Service creation.
   // Job-type-agnostic: no job_type, pricing_model, prices, or Brand/Type/
   // workflow requirement fields -- those are added afterward as Job-Type
   // Blueprint child records. Backend rejects them outright if sent.
@@ -1514,10 +1424,6 @@ export const catalogApi = {
     apiFetch<MasterService>("/v1/admin/master-services-v2", { method: "POST", body: JSON.stringify(data) }),
   updateMasterService: (serviceId: string, data: Partial<MasterService>) =>
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deleteMasterService: (serviceId: string) =>
-    apiFetch<void>(`/v1/admin/master-services/${serviceId}`, { method:"DELETE" }),
-  hardDeleteMasterService: (serviceId: string) =>
-    apiFetch<{ deleted: boolean; service_id: string; hard_delete: boolean }>(`/v1/admin/master-services/${serviceId}/hard-delete`, { method:"DELETE" }),
 
   // Service types
   listServiceTypes: (categoryId?: string) => {
@@ -1533,18 +1439,23 @@ export const catalogApi = {
   hardDeleteServiceType: (typeId: string) =>
     apiFetch<{ deleted: boolean; type_id: string; hard_delete: boolean }>(`/v1/admin/service-types/${typeId}/hard-delete`, { method:"DELETE" }),
 
-  // Brands (Sprint 34D — Enterprise Brand Management)
-  listBrands: (params?: { categoryId?: string; status?: string; search?: string; page?: number; page_size?: number }) => {
+  // Brands (Sprint 34D â€” Enterprise Brand Management)
+  listBrands: (params?: { categoryId?: string; status?: string; search?: string; page?: number; page_size?: number; retired?:boolean; mapped?:boolean; has_providers?:boolean; sort_by?:string; sort_dir?:string }) => {
     const qs = new URLSearchParams();
     if (params?.categoryId) qs.set("category_id", params.categoryId);
     if (params?.status)     qs.set("status", params.status);
     if (params?.search)     qs.set("search", params.search);
     if (params?.page)       qs.set("page", String(params.page));
     if (params?.page_size)  qs.set("page_size", String(params.page_size));
+    if (params?.retired != null) qs.set("retired", String(params.retired));
+    if (params?.mapped != null) qs.set("mapped", String(params.mapped));
+    if (params?.has_providers != null) qs.set("has_providers", String(params.has_providers));
+    if (params?.sort_by) qs.set("sort_by", params.sort_by);
+    if (params?.sort_dir) qs.set("sort_dir", params.sort_dir);
     return apiFetch<{ brands: Brand34D[]; total: number; page: number; page_size: number }>(
       `/v1/admin/brands?${qs.toString()}`);
   },
-  getBrand: (brandId: string) => apiFetch<Brand34D>(`/v1/admin/brands/${brandId}`),
+  getBrand: (brandId: string, includeRetired = false) => apiFetch<Brand34D>(`/v1/admin/brands/${brandId}?include_retired=${includeRetired}`),
   createBrand: (data: Partial<Brand34D> & { name: string; force?: boolean }) =>
     apiFetch<Brand34D | BrandDuplicateWarning>("/v1/admin/brands", { method:"POST", body:JSON.stringify(data) }),
   updateBrand: (brandId: string, data: Partial<Brand34D>) =>
@@ -1553,8 +1464,11 @@ export const catalogApi = {
     apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/activate`, { method:"POST", body:"{}" }),
   deactivateBrand: (brandId: string) =>
     apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/deactivate`, { method:"POST", body:"{}" }),
-  archiveBrand: (brandId: string) =>
-    apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/archive`, { method:"POST", body:"{}" }),
+  archiveBrand: (brandId: string, reason = "Retired by administrator") =>
+    apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/archive`, { method:"POST", body:JSON.stringify({reason}) }),
+  restoreBrand: (brandId: string, reason: string) =>
+    apiFetch<{ brand_id:string; status:string }>(`/v1/admin/brands/${brandId}/restore`, { method:"POST", body:JSON.stringify({reason}) }),
+  brandAudit: (brandId:string) => apiFetch<{audit_log:AuditEntry[];total:number}>(`/v1/admin/brands/${brandId}/audit`),
   mapBrandCategories: (brandId: string, categoryIds: string[]) =>
     apiFetch<{ brand_id:string; mapped:string[] }>(`/v1/admin/brands/${brandId}/map-categories`,
       { method:"POST", body:JSON.stringify({ category_ids: categoryIds }) }),
@@ -1625,7 +1539,7 @@ export const catalogApi = {
       `/v1/admin/brand-templates/${templateId}/apply`,
       { method:"POST", body:JSON.stringify({ service_ids: serviceIds }) }),
 
-  // Master service ↔ type/brand mapping
+  // Master service â†” type/brand mapping
   listServiceTypeMappings: (serviceId: string) =>
     apiFetch<{ types: { mapping_id:string; service_type_id:string; name:string; is_required:boolean }[] }>(
       `/v1/admin/master-services/${serviceId}/types`),
@@ -1639,51 +1553,6 @@ export const catalogApi = {
     apiFetch<{ mapping_id:string }>(`/v1/admin/master-services/${serviceId}/brands`,
       { method:"POST", body:JSON.stringify({ brand_id: brandId, is_required: isRequired }) }),
 
-  // Pricing rules
-  listPricingRules: (masterServiceId?: string, extra?: {
-    isActive?:boolean; q?:string; brandId?:string; serviceTypeId?:string; tierId?:string; city?:string;
-    zipcode?:string; pricingModel?:string; expiringWithinDays?:number; ruleStatus?:string;
-    page?:number; pageSize?:number; sortBy?:string; sortDir?:string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (masterServiceId) qs.set("master_service_id", masterServiceId);
-    if (extra?.isActive !== undefined) qs.set("is_active", String(extra.isActive));
-    if (extra?.q)             qs.set("q", extra.q);
-    if (extra?.brandId)       qs.set("brand_id", extra.brandId);
-    if (extra?.serviceTypeId) qs.set("service_type_id", extra.serviceTypeId);
-    if (extra?.tierId)        qs.set("tier_id", extra.tierId);
-    if (extra?.city)          qs.set("city", extra.city);
-    if (extra?.zipcode)       qs.set("zipcode", extra.zipcode);
-    if (extra?.pricingModel)  qs.set("pricing_model", extra.pricingModel);
-    if (extra?.expiringWithinDays !== undefined) qs.set("expiring_within_days", String(extra.expiringWithinDays));
-    if (extra?.ruleStatus)    qs.set("rule_status", extra.ruleStatus);
-    qs.set("page", String(extra?.page ?? 1));
-    qs.set("page_size", String(extra?.pageSize ?? 50));
-    qs.set("sort_by", extra?.sortBy ?? "priority");
-    qs.set("sort_dir", extra?.sortDir ?? "desc");
-    // Backend returns both `items` (new, paginated) and `rules` (back-compat alias, same array).
-    return apiFetch<{ items: PricingRule[]; rules: PricingRule[]; pagination: GridPagination }>(`/v1/admin/pricing-rules?${qs.toString()}`);
-  },
-  createPricingRule: (data: Partial<PricingRule> & { master_service_id:string; job_type:string; pricing_model:string; base_price:number }) =>
-    apiFetch<PricingRule>("/v1/admin/pricing-rules", { method:"POST", body:JSON.stringify(data) }),
-  updatePricingRule: (ruleId: string, data: Partial<PricingRule>) =>
-    apiFetch<PricingRule>(`/v1/admin/pricing-rules/${ruleId}`, { method:"PUT", body:JSON.stringify(data) }),
-  deletePricingRule: (ruleId: string) =>
-    apiFetch<void>(`/v1/admin/pricing-rules/${ruleId}`, { method:"DELETE" }),
-  hardDeletePricingRule: (ruleId: string) =>
-    apiFetch<{ deleted: boolean; rule_id: string; hard_delete: boolean }>(`/v1/admin/pricing-rules/${ruleId}/hard-delete`, { method:"DELETE" }),
-  previewPricingRule: (data: { master_service_id:string; city?:string; zipcode?:string; service_type_id?:string; brand_id?:string }) =>
-    apiFetch<PricingPreviewResult>("/v1/admin/pricing-rules/preview", { method:"POST", body:JSON.stringify(data) }),
-  getPricingRulesSummary: () => apiFetch<PricingRulesSummary>("/v1/admin/pricing-rules/summary"),
-  exportPricingRules: (filters?: { masterServiceId?:string; isActive?:boolean }) => {
-    const qs = new URLSearchParams();
-    if (filters?.masterServiceId) qs.set("master_service_id", filters.masterServiceId);
-    if (filters?.isActive !== undefined) qs.set("is_active", String(filters.isActive));
-    return apiFetch<{ rows: PricingRule[]; count: number }>(`/v1/admin/pricing-rules/export?${qs.toString()}`);
-  },
-  getPricingRuleConflicts: (ruleId: string) =>
-    apiFetch<{ rule_id:string; conflicts: PricingRule[] }>(`/v1/admin/pricing-rules/${ruleId}/conflicts`),
-
   // Cache management
   invalidateCache: (tenantId: string) =>
     apiFetch<{ invalidated:boolean }>(`/v1/pricing/tenants/${tenantId}/cache/invalidate`, { method:"POST" }),
@@ -1694,7 +1563,7 @@ export const catalogApi = {
   listEnabledServices: (tenantId: string) =>
     apiFetch<{ services: EnabledService[] }>(`/v1/tenant/catalog/enabled-services?tenant_id=${tenantId}`),
 
-  // Service Groups — Enterprise (P0 upgrade)
+  // Service Groups â€” Enterprise (P0 upgrade)
   getServiceGroupsSummary: () =>
     apiFetch<ServiceGroupsSummary>("/v1/admin/service-groups/summary"),
   listServiceGroups: (params?: { categoryId?: string; status?: string; q?: string; hasServices?: boolean; retired?: boolean; sortBy?: string; sortDir?: string; limit?: number; offset?: number }) => {
@@ -1734,10 +1603,10 @@ export const catalogApi = {
     if (params?.retired !== undefined) p.set("retired", String(params.retired));
     return apiFetch<{ rows: ServiceGroupEnriched[]; count: number }>(`/v1/admin/service-groups/export?${p.toString()}`);
   },
-  // Master Services — Enterprise (P0 upgrade)
+  // Master Services â€” Enterprise (P0 upgrade)
   getMasterServicesSummary: () =>
     apiFetch<MasterServicesSummary>("/v1/admin/master-services/summary"),
-  listMasterServicesEnterprise: (params?: { q?: string; categoryId?: string; serviceGroupId?: string; jobType?: string; pricingModel?: string; isActive?: boolean; limit?: number; offset?: number }) => {
+  listMasterServicesEnterprise: (params?: { q?: string; categoryId?: string; serviceGroupId?: string; jobType?: string; pricingModel?: string; isActive?: boolean; retired?: boolean; readiness?: string; hasProviders?: boolean; sortBy?: string; sortDir?: "asc"|"desc"; limit?: number; offset?: number }) => {
     const p = new URLSearchParams();
     if (params?.q)              p.set("q", params.q);
     if (params?.categoryId)     p.set("category_id", params.categoryId);
@@ -1745,6 +1614,11 @@ export const catalogApi = {
     if (params?.jobType)        p.set("job_type", params.jobType);
     if (params?.pricingModel)   p.set("pricing_model", params.pricingModel);
     if (params?.isActive !== undefined) p.set("is_active", String(params.isActive));
+    if (params?.retired !== undefined) p.set("retired", String(params.retired));
+    if (params?.readiness) p.set("readiness", params.readiness);
+    if (params?.hasProviders !== undefined) p.set("has_providers", String(params.hasProviders));
+    if (params?.sortBy) p.set("sort_by", params.sortBy);
+    if (params?.sortDir) p.set("sort_dir", params.sortDir);
     if (params?.limit)          p.set("limit", String(params.limit));
     if (params?.offset)         p.set("offset", String(params.offset));
     return apiFetch<{ services: MasterServiceEnriched[]; total: number }>(`/v1/admin/master-services?${p.toString()}`)
@@ -1761,14 +1635,24 @@ export const catalogApi = {
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}/activate`, { method:"POST" }),
   deactivateMasterService: (serviceId: string) =>
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}/deactivate`, { method:"POST" }),
-  archiveMasterService: (serviceId: string) =>
-    apiFetch<{ archived: boolean }>(`/v1/admin/master-services/${serviceId}/archive`, { method:"POST" }),
-  exportMasterServices: (params?: { categoryId?: string; serviceGroupId?: string; jobType?: string; isActive?: boolean }) => {
+  getMasterService: (serviceId: string, includeRetired = true) =>
+    apiFetch<MasterServiceEnriched>(`/v1/admin/master-services/${serviceId}?include_retired=${includeRetired}`)
+      .then(s => ({ ...s, name: (s as unknown as { service_name?: string }).service_name ?? s.name })),
+  getMasterServiceAudit: (serviceId: string) =>
+    apiFetch<{ audit_log: MasterDataAuditEntry[]; total:number }>(`/v1/admin/master-services/${serviceId}/audit`),
+  archiveMasterService: (serviceId: string, reason: string) =>
+    apiFetch<{ archived: boolean }>(`/v1/admin/master-services/${serviceId}/archive`, { method:"POST", body:JSON.stringify({ reason }) }),
+  restoreMasterService: (serviceId: string, reason: string) =>
+    apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}/restore`, { method:"POST", body:JSON.stringify({ reason }) }),
+  bulkMasterServiceStatus: (ids: string[], action: "activate"|"deactivate") =>
+    apiFetch<{action:string;updated:string[];updated_count:number;errors:{id:string;error:string}[]}>("/v1/admin/master-services/bulk-status", { method:"POST", body:JSON.stringify({ ids, action }) }),
+  exportMasterServices: (params?: { categoryId?: string; serviceGroupId?: string; jobType?: string; isActive?: boolean; retired?: boolean }) => {
     const p = new URLSearchParams();
     if (params?.categoryId)     p.set("category_id", params.categoryId);
     if (params?.serviceGroupId) p.set("service_group_id", params.serviceGroupId);
     if (params?.jobType)        p.set("job_type", params.jobType);
     if (params?.isActive !== undefined) p.set("is_active", String(params.isActive));
+    if (params?.retired !== undefined) p.set("retired", String(params.retired));
     return apiFetch<{ rows: MasterServiceEnriched[]; count: number }>(`/v1/admin/master-services/export?${p.toString()}`)
       .then(r => ({
         ...r,
@@ -1794,7 +1678,7 @@ export interface EnabledService {
   requires_type: boolean; is_active: boolean;
 }
 
-// ── Sprint 34D Brand Types ─────────────────────────────────────────────────────
+// â”€â”€ Sprint 34D Brand Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface Brand34D {
   brand_id: string;
   name: string;
@@ -1820,6 +1704,7 @@ export interface Brand34D {
   service_mappings?: { mapping_id:string; service_id:string; service_name:string; is_required:boolean }[];
   created_at?: string;
   updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface BrandDuplicateWarning {
@@ -1857,7 +1742,7 @@ export interface BrandTemplate34D {
   created_at?: string;
 }
 
-// ── Master Data API (Sprint 34C) ──────────────────────────────────────────────
+// â”€â”€ Master Data API (Sprint 34C) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface MasterIssueType {
   id: string; category_id: string | null; master_service_id: string | null;
   code: string; name: string; slug: string; description?: string;
@@ -1876,71 +1761,6 @@ export interface MasterServiceOption {
   created_at?: string; updated_at?: string;
 }
 
-export interface WorkflowEvidenceRule {
-  evidence_type: string; required: boolean; min_count?: number; max_count?: number;
-  allowed_file_types?: string[]; max_file_size?: number;
-  visible_to_customer?: boolean; visible_to_tenant?: boolean; visible_to_admin?: boolean;
-}
-export interface WorkflowApprovalRule {
-  approval_type: string; approval_actor: string; required: boolean;
-  timeout_minutes?: number; auto_approve_after_timeout?: boolean;
-  escalation_target?: string; reject_behavior?: string;
-}
-export interface WorkflowAutomationTrigger {
-  trigger_type: string; action: string; config?: Record<string, unknown>;
-}
-export interface WorkflowStep {
-  id: string; step_code: string; step_name: string; step_type: string; actor: string;
-  description?: string | null; status_before?: string | null; status_after?: string | null;
-  is_start?: boolean; is_terminal?: boolean; is_required?: boolean; can_skip?: boolean;
-  display_order?: number; estimated_duration_minutes?: number | null; sla_minutes?: number | null;
-  warning_before_minutes?: number | null; escalation_target?: string | null;
-  auto_notify?: boolean; auto_escalate?: boolean;
-  requires_note?: boolean; requires_photo?: boolean; requires_document?: boolean;
-  requires_customer_signature?: boolean; requires_customer_approval?: boolean;
-  requires_admin_approval?: boolean; notification_trigger?: boolean;
-  evidence_rules?: WorkflowEvidenceRule[]; approval_rule?: WorkflowApprovalRule | null;
-  automation_triggers?: WorkflowAutomationTrigger[];
-}
-export interface WorkflowTransition {
-  id: string; from_step_code: string; to_step_code: string;
-  from_status?: string | null; to_status?: string | null; allowed_actor: string;
-  required_permission?: string | null; condition?: string | null;
-  requires_reason?: boolean; requires_note?: boolean; auto_transition?: boolean;
-}
-export interface MasterWorkflowTemplate {
-  id: string; category_id: string | null; master_service_id: string | null;
-  service_group_id?: string | null; service_type_id?: string | null;
-  name: string; slug: string; template_code?: string; description?: string;
-  workflow_type: string; steps: WorkflowStep[]; transitions?: WorkflowTransition[];
-  estimated_duration_minutes?: number; max_sla_hours?: number | null;
-  is_active: boolean; status: string; display_order: number;
-  requires_technician_assignment?: boolean; requires_customer_confirmation?: boolean;
-  requires_photo_proof?: boolean; requires_part_approval?: boolean;
-  requires_estimate_approval?: boolean; requires_direct_payment_confirmation?: boolean;
-  allows_reschedule?: boolean; allows_cancellation?: boolean; allows_dispute_after_completion?: boolean;
-  version_number?: number; parent_template_id?: string | null; is_latest?: boolean;
-  activated_at?: string | null; deprecated_at?: string | null;
-  created_by_user_id?: string | null;
-  created_at?: string; updated_at?: string;
-}
-export interface WorkflowTemplatesSummary {
-  total_templates: number; active_templates: number; draft_templates: number;
-  used_by_services: number; unmapped_templates: number; templates_missing_steps: number;
-  sla_enabled: number; approval_enabled: number; runtime_ready: number;
-}
-export interface WorkflowServiceMapping {
-  id: string; template_id: string; category_id: string;
-  service_group_id: string | null; master_service_id: string | null;
-  service_type_id: string | null; brand_id: string | null; tenant_id: string | null;
-  priority: number; status: string; created_at?: string; updated_at?: string;
-}
-export interface WorkflowValidationResult { template_id: string; valid: boolean; errors: string[]; warnings: string[]; }
-export interface WorkflowReadinessResult { template_id: string; readiness: string; }
-export interface WorkflowRuntimePreview {
-  resolved: boolean; message?: string; template?: MasterWorkflowTemplate;
-  readiness?: string; matched_mapping?: WorkflowServiceMapping | null;
-}
 
 export interface MasterDataAuditEntry {
   id: string; entity_type: string; entity_id: string;
@@ -1984,86 +1804,6 @@ export const masterDataApi = {
   deleteServiceOption: (id: string) =>
     apiFetch<{ deleted: boolean }>(`/v1/admin/service-options/${id}`, { method: "DELETE" }),
 
-  // Workflow Templates
-  getWorkflowTemplatesSummary: () =>
-    apiFetch<WorkflowTemplatesSummary>("/v1/admin/workflow-templates/summary"),
-  listWorkflowTemplates: (params?: {
-    category_id?: string; master_service_id?: string; workflow_type?: string; is_active?: boolean;
-    status?: string; q?: string; readiness?: string; page?: number; limit?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
-    return apiFetch<{ workflow_templates: MasterWorkflowTemplate[]; total: number;
-                       meta: { total: number; page: number; limit: number; total_pages: number } }>(
-      `/v1/admin/workflow-templates?${qs}`);
-  },
-  exportWorkflowTemplates: () =>
-    apiFetch<{ rows: MasterWorkflowTemplate[]; count: number; format: string }>("/v1/admin/workflow-templates/export"),
-  getWorkflowTemplate: (id: string) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}`),
-  createWorkflowTemplate: (data: Record<string, unknown>) =>
-    apiFetch<MasterWorkflowTemplate>("/v1/admin/workflow-templates", { method: "POST", body: JSON.stringify(data) }),
-  updateWorkflowTemplate: (id: string, data: Partial<MasterWorkflowTemplate>) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  deleteWorkflowTemplate: (id: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/workflow-templates/${id}`, { method: "DELETE" }),
-  cloneWorkflowTemplate: (id: string) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}/clone`, { method: "POST" }),
-  createWorkflowNewVersion: (id: string) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}/new-version`, { method: "POST" }),
-  activateWorkflowTemplate: (id: string) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}/activate`, { method: "POST" }),
-  deactivateWorkflowTemplate: (id: string) =>
-    apiFetch<MasterWorkflowTemplate>(`/v1/admin/workflow-templates/${id}/deactivate`, { method: "POST" }),
-  validateWorkflowTemplate: (id: string) =>
-    apiFetch<WorkflowValidationResult>(`/v1/admin/workflow-templates/${id}/validate`, { method: "POST" }),
-  getWorkflowReadiness: (id: string) =>
-    apiFetch<WorkflowReadinessResult>(`/v1/admin/workflow-templates/${id}/readiness`),
-
-  // Steps
-  addWorkflowStep: (templateId: string, data: Partial<WorkflowStep>) =>
-    apiFetch<WorkflowStep>(`/v1/admin/workflow-templates/${templateId}/steps`, { method: "POST", body: JSON.stringify(data) }),
-  updateWorkflowStep: (templateId: string, stepId: string, data: Partial<WorkflowStep>) =>
-    apiFetch<WorkflowStep>(`/v1/admin/workflow-templates/${templateId}/steps/${stepId}`, { method: "PUT", body: JSON.stringify(data) }),
-  deleteWorkflowStep: (templateId: string, stepId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/workflow-templates/${templateId}/steps/${stepId}`, { method: "DELETE" }),
-  reorderWorkflowSteps: (templateId: string, stepIds: string[]) =>
-    apiFetch<{ steps: WorkflowStep[] }>(`/v1/admin/workflow-templates/${templateId}/steps/reorder`,
-      { method: "POST", body: JSON.stringify({ step_ids: stepIds }) }),
-
-  // Transitions
-  listWorkflowTransitions: (templateId: string) =>
-    apiFetch<{ transitions: WorkflowTransition[]; total: number }>(`/v1/admin/workflow-templates/${templateId}/transitions`),
-  addWorkflowTransition: (templateId: string, data: Partial<WorkflowTransition>) =>
-    apiFetch<WorkflowTransition>(`/v1/admin/workflow-templates/${templateId}/transitions`, { method: "POST", body: JSON.stringify(data) }),
-  updateWorkflowTransition: (templateId: string, transitionId: string, data: Partial<WorkflowTransition>) =>
-    apiFetch<WorkflowTransition>(`/v1/admin/workflow-templates/${templateId}/transitions/${transitionId}`, { method: "PUT", body: JSON.stringify(data) }),
-  deleteWorkflowTransition: (templateId: string, transitionId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/workflow-templates/${templateId}/transitions/${transitionId}`, { method: "DELETE" }),
-
-  // Service mappings
-  listWorkflowMappings: (templateId: string) =>
-    apiFetch<{ mappings: WorkflowServiceMapping[]; total: number }>(`/v1/admin/workflow-templates/${templateId}/mappings`),
-  createWorkflowMapping: (templateId: string, data: Partial<WorkflowServiceMapping>) =>
-    apiFetch<WorkflowServiceMapping>(`/v1/admin/workflow-templates/${templateId}/mappings`, { method: "POST", body: JSON.stringify(data) }),
-  deleteWorkflowMapping: (templateId: string, mappingId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/workflow-templates/${templateId}/mappings/${mappingId}`, { method: "DELETE" }),
-
-  // Runtime preview
-  previewWorkflowRuntime: (data: { category_id?: string; master_service_id?: string; service_type_id?: string; tenant_id?: string }) =>
-    apiFetch<WorkflowRuntimePreview>("/v1/admin/workflow-templates/preview-runtime", { method: "POST", body: JSON.stringify(data) }),
-
-  // Seed defaults
-  seedWorkflowDefaultsPreview: () =>
-    apiFetch<{ templates: { name: string; workflow_type: string; steps: number; description: string }[]; will_create: number; already_exist: string[] }>(
-      "/v1/admin/workflow-templates/seed-defaults/preview", { method: "POST" }),
-  seedWorkflowDefaults: () =>
-    apiFetch<{ created: MasterWorkflowTemplate[]; count: number }>("/v1/admin/workflow-templates/seed-defaults", { method: "POST" }),
-
-  // Audit
-  getWorkflowTemplateAuditLogs: (templateId: string) =>
-    apiFetch<{ audit_log: MasterDataAuditEntry[]; total: number }>(`/v1/admin/workflow-templates/${templateId}/audit-logs`),
-
   // Audit Log
   listAuditLog: (params?: { entity_type?: string; entity_id?: string; limit?: number }) => {
     const qs = new URLSearchParams();
@@ -2074,7 +1814,7 @@ export const masterDataApi = {
   },
 };
 
-// ── Dispatch ──────────────────────────────────────────────────────────────────
+// â”€â”€ Dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const dispatchApi = {
   dispatchJob: (jobId: string, tenantId: string, mode: "manual"|"auto_assign"|"broadcast", staffId?: string,
                 jobLat?: number, jobLng?: number, serviceTypeId = "general") =>
@@ -2099,7 +1839,7 @@ export const dispatchApi = {
   getScoring: (jobId: string) => apiFetch<ScoringBreakdown>(`/v1/dispatch/jobs/${jobId}/scoring`),
 };
 
-// ── Geo ───────────────────────────────────────────────────────────────────────
+// â”€â”€ Geo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const geoApi = {
   listZones: (tenantId: string, activeOnly = true) =>
     apiFetch<ServiceZoneList>(`/v1/geo/tenants/${tenantId}/zones?active_only=${activeOnly}`),
@@ -2123,7 +1863,7 @@ export const geoApi = {
   getCoverage: (tenantId: string) => apiFetch<CoverageMap>(`/v1/geo/tenants/${tenantId}/coverage`),
 };
 
-// ── Analytics ─────────────────────────────────────────────────────────────────
+// â”€â”€ Analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const analyticsApi = {
   platformSummary: () => apiFetch<AnalyticsPlatformSummary>("/v1/analytics/platform/summary"),
   tenantMetrics:   (tenantId: string, days = 30) =>
@@ -2143,7 +1883,7 @@ export const analyticsApi = {
   engineMeta:     () => apiFetch<EngineMeta>("/v1/analytics/meta"),
 };
 
-// ── Security ──────────────────────────────────────────────────────────────────
+// â”€â”€ Security â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const securityApi = {
   summary:         () => apiFetch<SecuritySummary>("/v1/security/summary"),
   listActivity:    (threatLevel?: string, limit = 20) =>
@@ -2166,7 +1906,7 @@ export const securityApi = {
   },
 };
 
-// ── RAG Engine (17 usable endpoints) ──────────────────────────────────────────
+// â”€â”€ RAG Engine (17 usable endpoints) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const ragApi = {
   // Knowledge base CRUD
   createKb: (tenantId: string, name: string, description?: string, vertical?: string, chunkSize = 512, chunkOverlap = 64, topK = 5) =>
@@ -2217,7 +1957,7 @@ export const ragApi = {
   platformUsage: () => apiFetch<RagPlatformUsage>("/v1/rag/platform/usage"),
 };
 
-// ── Compliance ────────────────────────────────────────────────────────────────
+// â”€â”€ Compliance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const complianceApi = {
   // Legacy endpoints (keep for backward compat)
   summary:          () => apiFetch<ComplianceSummary>("/v1/compliance/summary"),
@@ -2346,7 +2086,7 @@ export const complianceApi = {
     apiFetch<{ task: string; expired: number; run_at: string }>(
       "/v1/admin/compliance/jobs/run-expire-exports", { method: "POST" }),
 
-  // ── DPDP Command Center upgrade (migration 107) ──────────────────────────
+  // â”€â”€ DPDP Command Center upgrade (migration 107) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getHealth: () =>
     apiFetch<DpdpHealth>("/v1/admin/compliance/dpdp/health"),
   getActionQueue: (limit = 50) =>
@@ -2418,7 +2158,7 @@ export interface DpdpEvidencePack {
   id: string; request_id: string; generated_by_user_id: string | null; created_at: string;
 }
 
-// ── Marketing ─────────────────────────────────────────────────────────────────
+// â”€â”€ Marketing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const marketingApi = {
   summary:         () => apiFetch<MarketingSummary>("/v1/marketing/summary"),
   budgetStatus:    () => apiFetch<BudgetStatus>("/v1/marketing/budget"),
@@ -2473,7 +2213,7 @@ export const marketingApi = {
       { method: "POST", body: JSON.stringify({ tenant_id: tenantId, tenant_name: tenantName, city, vertical, service_types: [] }) }),
 };
 
-// ── Review ────────────────────────────────────────────────────────────────────────────────
+// â”€â”€ Review â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const reviewApi = {
   listByTenant:  (tenantId: string, limit = 10, status?: string) => {
     const qs = new URLSearchParams(Object.assign({ tenant_id: tenantId, limit: String(limit) }, status ? { status } : {})).toString();
@@ -2491,7 +2231,7 @@ export const reviewApi = {
     apiFetch<ReviewList>(`/v1/reviews?tenant_id=${tenantId}&status=flagged&limit=${limit}`),
 };
 
-// ── Notification templates (super-admin) ──────────────────────────────────────────────────────
+// â”€â”€ Notification templates (super-admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const notificationApi = {
   listTemplates: (tenantId?: string) => {
     const qs = tenantId ? `?tenant_id=${tenantId}` : "";
@@ -2507,7 +2247,7 @@ export const notificationApi = {
     apiFetch<void>(`/v1/notifications/templates/${templateId}`, { method: "DELETE" }),
 }
 
-// ── Notification Template Center (Enterprise Upgrade) ─────────────────────────
+// â”€â”€ Notification Template Center (Enterprise Upgrade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminNotifTemplate {
   template_id: string; template_key: string; name: string; event_type: string;
   channel: string; audience: string; app_scope: string; scope_type: string;
@@ -2589,7 +2329,7 @@ export const notifTemplateAdminApi = {
       { method: "POST", body: JSON.stringify({ event_type: eventType, channel, audience, tenant_id: tenantId, vertical_key: verticalKey }) }),
 };
 
-// ── Data Science (20 endpoints) ───────────────────────────────────────────────
+// â”€â”€ Data Science (20 endpoints) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const dsApi = {
   // Churn prediction
   getChurnScore:    (tenantId: string) => apiFetch<ChurnScore>(`/v1/ds/tenants/${tenantId}/churn/score`),
@@ -2653,7 +2393,7 @@ export const dsApi = {
   platformSummary:   () => apiFetch<DsPlatformSummary>("/v1/ds/platform/summary"),
 };
 
-// ── Phase 2 types ─────────────────────────────────────────────────────────────
+// â”€â”€ Phase 2 types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface Tenant360 extends Tenant { health?: TenantHealth; engines?: TenantEngine[]; }
 export interface TenantHealth { tenant_id: string; overall_score: number; signals: Record<string,number>; computed_at: string; }
 export interface TenantHealthHistory { tenant_id: string; history: { date: string; score: number }[]; }
@@ -2712,7 +2452,7 @@ export interface RefundList { refunds: Refund[]; has_next: boolean; }
 export interface Payout { payout_id: string; tenant_id: string; amount: number; status: string; bank_account_id?: string; requested_at: string; processed_at?: string; }
 export interface PayoutList { payouts: Payout[]; has_next: boolean; }
 
-// ── Phase 3 — Data Science types ──────────────────────────────────────────────
+// â”€â”€ Phase 3 â€” Data Science types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ChurnScore {
   tenant_id: string; churn_score: number; churn_band: string;
   contributing_factors: { signal: string; value: number; weight: number; contribution: number }[];
@@ -2753,7 +2493,7 @@ export interface ModelVersion { version_id: string; model_type: string; version:
 export interface ModelVersionList { versions: ModelVersion[]; }
 export interface DsPlatformSummary { tenants_at_risk: number; open_anomalies: number; total_predictions_computed: number; models_active: number; generated_at: string; }
 
-// ── Phase 3 — Analytics types ──────────────────────────────────────────────────
+// â”€â”€ Phase 3 â€” Analytics types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface TenantMetrics { tenant_id: string; period_days: number; event_counts: Record<string,number>; generated_at: string; }
 export interface DailyMetric { date: string; value: number | Record<string,unknown>; }
 export interface DailyMetricList { metric_key: string; period_days: number; data: DailyMetric[]; }
@@ -2761,7 +2501,7 @@ export interface AnalyticsEventEntry { event_id: string; event_type: string; ten
 export interface EventStreamResponse { events: AnalyticsEventEntry[]; has_next: boolean; next_cursor?: string; }
 export interface AnalyticsPlatformSummary { active_tenants_estimate: number; events_today: number; generated_at: string; _note?: string; }
 
-// ── Phase 3 — RAG types ────────────────────────────────────────────────────────
+// â”€â”€ Phase 3 â€” RAG types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface RagKnowledgeBaseV1 {
   kb_id: string; tenant_id: string; name: string; description?: string; vertical?: string;
   embedding_model: string; chunk_size: number; chunk_overlap: number; top_k: number;
@@ -2786,14 +2526,14 @@ export interface RagQueryList { queries: RagQueryResult[]; has_next: boolean; ne
 export interface RagSearchResult { kb_id: string; question: string; results: { chunk_id: string; content: string; similarity: number }[]; }
 export interface RagPlatformUsage { kb_count: number; total_tokens_used: number; indexed_docs: number; total_queries: number; avg_latency_ms: number; total_query_tokens: number; }
 
-// ── Phase 3 — Marketing extended types ────────────────────────────────────────
+// â”€â”€ Phase 3 â€” Marketing extended types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ContentTemplate { template_id: string; post_type: string; vertical?: string; name: string; dalle_prompt: string; caption_template: string; required_vars: string[]; default_tags: string[]; is_active: boolean; created_at: string; }
 export interface ContentTemplateList { templates: ContentTemplate[]; }
 export interface GeneratedAssetList { assets: GeneratedAsset[]; has_next: boolean; next_cursor?: string; }
 export interface Delivery { delivery_id: string; post_id: string; account_id: string; status: string; meta_response?: Record<string,unknown>; created_at: string; }
 export interface DeliveryList { deliveries: Delivery[]; has_next: boolean; next_cursor?: string; }
 
-// ── Mock data for offline / development mode ──────────────────────────────────
+// â”€â”€ Mock data for offline / development mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // PROVEN: All mock data matches the real API response shape exactly.
 // Remove NEXT_PUBLIC_USE_MOCK=true in production.
 
@@ -2809,7 +2549,7 @@ export interface CreateTenantPayload {
 }
 
 
-// ── Documents ─────────────────────────────────────────────────────────────────
+// â”€â”€ Documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const documentsApi = {
   create: (tenantId: string, docType: string, entityType: string, entityId: string, customerId?: string, variables?: Record<string,string>) =>
     apiFetch<TenantDocument>("/v1/documents",
@@ -2831,7 +2571,7 @@ export const documentsApi = {
     apiFetch<DocumentTemplate>(`/v1/documents/tenants/${tenantId}/templates/${docType}`),
 };
 
-// ── Subscription ──────────────────────────────────────────────────────────────
+// â”€â”€ Subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const subscriptionApi = {
   create: (tenantId: string, planType: string, billingCycle = "monthly", trialDays = 14) =>
     apiFetch<SubscriptionInfo>("/v1/subscriptions",
@@ -2859,7 +2599,7 @@ export const subscriptionApi = {
       `/v1/subscriptions/tenants/${tenantId}/proration-preview?new_plan=${newPlan}&billing_cycle=${billingCycle}`),
 };
 
-// ── Staff (platform-wide) ─────────────────────────────────────────────────────
+// â”€â”€ Staff (platform-wide) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const staffApi = {
   listByTenant: (tenantId: string, limit = 50) =>
     apiFetch<StaffList>(`/v1/auth/staff?tenant_id=${tenantId}&limit=${limit}`),
@@ -2889,7 +2629,7 @@ export const staffApi = {
     apiFetch<void>(`/v1/auth/staff/${userId}/invite/resend`, { method: "POST" }),
 };
 
-// ── Customers (platform-wide) ─────────────────────────────────────────────────
+// â”€â”€ Customers (platform-wide) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const customersApi = {
   listByTenant: (tenantId: string, params?: { limit?: number; cursor?: string; health_band?: string }) => {
     const qs = new URLSearchParams({ tenant_id: tenantId, ...(params?.limit ? { limit: String(params.limit) } : {}), ...(params?.cursor ? { cursor: params.cursor } : {}), ...(params?.health_band ? { health_band: params.health_band } : {}) }).toString();
@@ -2900,7 +2640,7 @@ export const customersApi = {
 export interface CustomerListResponse { customers: Customer[]; total: number; has_next: boolean; next_cursor?: string; }
 export interface Customer { customer_id: string; tenant_id: string; name: string; phone?: string; email?: string; health_score: number; total_jobs: number; total_spent?: number; last_job_at?: string; created_at: string; }
 
-// ── Geo Service Zones (admin — via /v1/geo) ───────────────────────────────────
+// â”€â”€ Geo Service Zones (admin â€” via /v1/geo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const serviceAreaAdminApi = {
   listByTenant: (tenantId: string) =>
     apiFetch<{ tenant_id: string; zones: GeoZone[] }>(`/v1/geo/tenants/${tenantId}/zones`),
@@ -2919,7 +2659,7 @@ export const serviceabilityApi = {
     apiFetch<{ matched_tenants: MatchedTenant[] }>("/v1/serviceability/matching-tenants", { method:"POST", body:JSON.stringify(body) }),
 };
 
-// ── Service Area Requests / Active Coverage (replaces pricing tiers) ──────────
+// â”€â”€ Service Area Requests / Active Coverage (replaces pricing tiers) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServiceAreaRequestItem {
   id:string; request_id:string; tenant_service_id:string; master_service_id:string;
   job_type_id?:string|null; applies_to_all_job_types:boolean;
@@ -3004,7 +2744,7 @@ export interface MatchedTenant {
   estimated_sla_minutes?:number; base_price?:number; distance_km?:number;
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminUser { id: string; email: string; full_name: string; role: string; permissions?: string[]; }
 export interface Tenant {
   tenant_id: string; tenant_name: string; vertical: string; city: string; state: string;
@@ -3048,12 +2788,12 @@ export interface SlaStatusDetail { job_id: string; current_status: string; sla_h
 export interface JobCounts { tenant_id: string; counts: Record<string,number>; total: number; }
 export interface TrackedJob { job_number: string; status: string; title: string; scheduled_at?: string; staff_assigned: boolean; allowed_transitions: string[]; }
 
-// ── Booking types ─────────────────────────────────────────────────────────────
+// â”€â”€ Booking types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface Booking {
   booking_id: string; booking_number: string; tenant_id: string; customer_id: string;
   service_type_id: string; service_category: string; status: string;
   quoted_price?: number; price_snapshot_id?: string;
-  // Customer Service Credit breakdown — see BookingPaymentBreakdown.
+  // Customer Service Credit breakdown â€” see BookingPaymentBreakdown.
   credit_applied?: number; payable_amount?: number;
   payment_collection_mode?: "customer_pays_provider_directly"; platform_payment_collected?: boolean;
   preferred_date?: string; preferred_slot?: string; scheduled_at?: string;
@@ -3063,7 +2803,7 @@ export interface Booking {
   reschedule_count: number; customer_notes?: string; tags?: string[];
   created_at: string; allowed_transitions: string[]; is_terminal: boolean;
 }
-// Shared payment-breakdown shapes — Home Services rule: customer pays the
+// Shared payment-breakdown shapes â€” Home Services rule: customer pays the
 // provider directly on-site, ServiceOS never collects the service payment.
 // Kept separate from Booking/Job so any page can render a typed subset
 // (e.g. a summary card) without depending on the full entity shape.
@@ -3091,7 +2831,7 @@ export interface BookingNoteList { notes: BookingNote[]; }
 export interface SlotAvailability { date: string; slot: string; available: boolean; reason?: string; }
 export interface CancellationPolicy { tenant_id: string; policy: string; free_cancel_hours: number; max_reschedules: number; penalty_pct?: number; }
 
-// ── Pricing types ─────────────────────────────────────────────────────────────
+// â”€â”€ Pricing types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface CityTierConfig { id: string; city_name: string; tier: string; service_category: string; floor_price: number; currency: string; is_active: boolean; notes?: string; }
 export interface CityTierConfigList { configs: CityTierConfig[]; }
 export interface ServiceTypePrice { id: string; tenant_id: string; service_type_id: string; service_category: string; city_name: string; base_price: number; unit: string; valid_from: string; valid_until?: string; change_reason?: string; previous_price?: number; }
@@ -3106,14 +2846,14 @@ export interface PricePreviewResult { final_price: number; currency: string; ste
 export interface PriceSnapshot { snapshot_id: string; tenant_id: string; service_type_id: string; service_category: string; city_name: string; final_price: number; currency: string; pipeline_inputs: Record<string,unknown>; step_city_floor: PricePipelineStep; step_tenant_price: PricePipelineStep; step_brand_adj: PricePipelineStep; step_zone_surge: PricePipelineStep; step_dynamic_rule: PricePipelineStep; created_at: string; }
 export interface PriceSnapshotList { snapshots: PriceSnapshot[]; has_next: boolean; next_cursor?: string; }
 
-// ── Dispatch types ────────────────────────────────────────────────────────────
+// â”€â”€ Dispatch types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface DispatchCandidate { staff_id: string; score: number; distance_km?: number; [k: string]: unknown; }
 export interface DispatchRecord { job_id: string; tenant_id: string; dispatch_mode: string; status: string; assigned_staff_id?: string; candidates_scored: DispatchCandidate[]; score_weights: Record<string,number>; rejection_count: number; escalation_count: number; accepted_at?: string; expires_at?: string; }
 export interface DispatchRecordList { records: DispatchRecord[]; has_next: boolean; next_cursor?: string; }
 export interface DispatchQueue { tenant_id: string; queue_size: number; items: DispatchRecord[]; }
 export interface ScoringBreakdown { job_id: string; dispatch_mode: string; candidates: DispatchCandidate[]; score_weights: Record<string,number>; selected_staff_id?: string; }
 
-// ── Geo types ─────────────────────────────────────────────────────────────────
+// â”€â”€ Geo types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServiceZone { zone_id: string; tenant_id: string; zone_name: string; zone_type: string; identifiers: string[]; center_lat?: number; center_lng?: number; radius_km?: number; surcharge_pct: number; is_active: boolean; }
 export interface ServiceZoneList { zones: ServiceZone[]; }
 export interface PincodeZoneCheck { pincode: string; in_zone: boolean; zone?: ServiceZone; }
@@ -3138,7 +2878,7 @@ export interface DeletionRequestList { requests: DeletionRequest[]; has_next: bo
 export interface RetentionPolicyList { policies: RetentionPolicy[]; exempt_tables: Record<string,string>; }
 export interface RetentionPolicy { table_name: string; retention_days: number; is_exempt: boolean; exemption_reason?: string; }
 
-// ── Enterprise Compliance (DPDP Act 2023) ────────────────────────────────────
+// â”€â”€ Enterprise Compliance (DPDP Act 2023) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ComplianceEnterpriseSummary {
   pending_erasure: number; pending_export: number; pending_consent_withdrawal: number;
   pending_verification: number; sla_breached: number; sla_at_risk: number;
@@ -3214,7 +2954,7 @@ export interface ChurnPrediction { tenant_id: string; churn_probability: number;
 export interface ForecastList { forecasts: DemandForecast[]; }
 export interface DemandForecast { date: string; predicted_jobs: number; confidence: number; }
 
-// ── Auth extended types ───────────────────────────────────────────────────────
+// â”€â”€ Auth extended types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface TokenIntrospect { active: boolean; user_id?: string; role?: string; scopes?: string[]; expires_at?: string; }
 export interface MfaSetup { secret: string; qr_code_url: string; backup_codes: string[]; }
 export interface MfaConfirm { mfa_enabled: boolean; backup_codes: string[]; }
@@ -3237,13 +2977,13 @@ export interface SessionInfo { session_id: string; device_name: string; device_t
 export interface LoginHistoryEvent { event_id: string; event_type: string; failure_reason: string | null; ip_address: string | null; device_id: string | null; user_agent: string | null; created_at: string; }
 export interface RegisterCustomerPayload { full_name: string; email: string; phone: string; password: string; }
 
-// ── Media types ───────────────────────────────────────────────────────────────
+// â”€â”€ Media types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface UploadSession { session_id: string; upload_url: string; expires_at: string; }
 export interface MediaFile { file_id: string; tenant_id: string; filename: string; content_type: string; size_bytes: number; purpose: string; url?: string; created_at: string; }
 export interface MediaFileList { files: MediaFile[]; total: number; has_next: boolean; next_cursor?: string; }
 export interface MediaQuota { tenant_id: string; used_bytes: number; limit_bytes: number; file_count: number; file_limit: number; }
 
-// ── Platform Settings types ───────────────────────────────────────────────────
+// â”€â”€ Platform Settings types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PlatformSetting { key: string; value: unknown; description?: string; source: string; updated_at?: string; updated_by?: string; }
 export interface PlatformSettingsList { settings: PlatformSetting[]; }
 export interface PlanSetting { key: string; value: unknown; plan_type: string; }
@@ -3252,7 +2992,7 @@ export interface ResolvedSetting { key: string; value: unknown; source: string; 
 export interface SettingsAuditEntry { log_id: string; key: string; old_value?: unknown; new_value?: unknown; action: string; actor_id?: string; scope: string; created_at: string; }
 export interface SettingsAuditList { logs: SettingsAuditEntry[]; has_next: boolean; }
 
-// ── Media ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const mediaApi = {
   initiateUpload: (tenantId: string, filename: string, contentType: string, sizeBytes: number, entityType?: string, entityId?: string) =>
     apiFetch<UploadSession>("/v1/media/upload/initiate",
@@ -3283,7 +3023,7 @@ export const mediaApi = {
     apiFetch<{ deleted: boolean }>(`/v1/media/${mediaId}`, { method: "DELETE" }),
 };
 
-// ── Media Assets (Phase 0A/0B — multipart upload, profile photos) ─────────────
+// â”€â”€ Media Assets (Phase 0A/0B â€” multipart upload, profile photos) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface MediaAsset {
   id: string;
   media_context: string;
@@ -3378,13 +3118,14 @@ export interface MediaSignedUrl {
 export const mediaAdminApi = {
   getSummary: () => apiFetch<MediaSummary>("/v1/admin/media/summary"),
   getStorageSummary: () => apiFetch<MediaStorageSummary>("/v1/admin/media/storage-summary"),
-  getFilterOptions: () => apiFetch<{ contexts: Array<{value:string;count:number}>; owner_types: Array<{value:string;count:number}>; statuses: string[]; file_types: string[]; visibilities: string[] }>("/v1/admin/media/filter-options"),
+  getFilterOptions: () => apiFetch<{ contexts: Array<{value:string;count:number}>; owner_types: Array<{value:string;count:number}>; statuses: string[]; file_types: string[]; visibilities: string[]; upload_contexts: Array<{ value:string; max_mb:number; allowed_types:string[] }> }>("/v1/admin/media/filter-options"),
 
   listMedia: (params?: {
     q?: string; context?: string; ownerType?: string; visibility?: string;
     status?: string; moderationStatus?: string; isFlagged?: boolean;
     tenantId?: string; customerId?: string; fileType?: string;
-    dateFrom?: string; dateTo?: string; page?: number; pageSize?: number;
+    dateFrom?: string; dateTo?: string; sort?: "newest" | "oldest" | "largest" | "smallest";
+    cursor?: string; page?: number; pageSize?: number;
   }) => {
     const qs = new URLSearchParams();
     if (params?.q)                qs.set("q", params.q);
@@ -3399,9 +3140,11 @@ export const mediaAdminApi = {
     if (params?.fileType)         qs.set("file_type", params.fileType);
     if (params?.dateFrom)         qs.set("date_from", params.dateFrom);
     if (params?.dateTo)           qs.set("date_to", params.dateTo);
+    if (params?.sort)             qs.set("sort", params.sort);
+    if (params?.cursor)           qs.set("cursor", params.cursor);
     if (params?.page)             qs.set("page", String(params.page));
     if (params?.pageSize)         qs.set("page_size", String(params.pageSize));
-    return apiFetch<{ items: MediaAssetAdmin[]; total: number; page: number; page_size: number }>(`/v1/admin/media?${qs}`);
+    return apiFetch<{ items: MediaAssetAdmin[]; total: number; page: number; page_size: number; has_next: boolean; next_cursor: string | null }>(`/v1/admin/media?${qs}`);
   },
 
   getDetail:        (mediaId: string) => apiFetch<MediaAssetAdmin>(`/v1/admin/media/${mediaId}`),
@@ -3423,12 +3166,22 @@ export const mediaAdminApi = {
   bulkDelete:  (ids: string[], force = false)        => apiFetch<{ deleted: string[]; failed: Array<{id:string;error:string}> }>("/v1/admin/media/bulk/delete",  { method: "POST", body: JSON.stringify({ ids, force }) }),
   bulkChangeVisibility: (ids: string[], isPublic: boolean) => apiFetch<{ updated: string[]; failed: Array<{id:string;error:string}> }>("/v1/admin/media/bulk/change-visibility", { method: "POST", body: JSON.stringify({ ids, is_public: isPublic }) }),
 
-  uploadMedia: (file: File, mediaContext: string, ownerType = "admin", isPublic = false) => {
+  fetchSignedFile: async (signedUrl: string) => {
+    const token = getToken();
+    const target = signedUrl.startsWith("http") ? signedUrl : `${API_BASE}${signedUrl}`;
+    const res = await fetch(target, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new ServiceOSError("MEDIA_PREVIEW_FAILED", "The secure media link could not be opened.");
+    return res.blob();
+  },
+
+  uploadMedia: (file: File, mediaContext: string, ownerType = "admin", isPublic = false, description = "", tags: string[] = []) => {
     const form = new FormData();
     form.append("file", file);
     form.append("media_context", mediaContext);
     form.append("owner_type", ownerType);
     form.append("is_public", String(isPublic));
+    if (description.trim()) form.append("description", description.trim());
+    if (tags.length) form.append("tags", tags.join(","));
     return (async () => {
       const token = getToken();
       const headers: Record<string, string> = {};
@@ -3440,11 +3193,18 @@ export const mediaAdminApi = {
     })();
   },
 
-  exportCsv: async (params?: { context?: string; status?: string; isFlagged?: boolean }) => {
+  exportCsv: async (params?: { q?: string; context?: string; ownerType?: string; visibility?: string; status?: string; isFlagged?: boolean; fileType?: string; dateFrom?: string; dateTo?: string; sort?: string }) => {
     const qs = new URLSearchParams();
+    if (params?.q)                 qs.set("q", params.q);
     if (params?.context)           qs.set("context", params.context);
+    if (params?.ownerType)         qs.set("owner_type", params.ownerType);
+    if (params?.visibility)        qs.set("visibility", params.visibility);
     if (params?.status)            qs.set("status", params.status);
     if (params?.isFlagged !== undefined) qs.set("is_flagged", String(params.isFlagged));
+    if (params?.fileType)          qs.set("file_type", params.fileType);
+    if (params?.dateFrom)          qs.set("date_from", params.dateFrom);
+    if (params?.dateTo)            qs.set("date_to", params.dateTo);
+    if (params?.sort)              qs.set("sort", params.sort);
     const token = getToken();
     const res = await fetch(`${API_BASE}/v1/admin/media/export/csv?${qs}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -3504,8 +3264,8 @@ export const profilePhotoApi = {
   getAsset:    (mediaId: string) => apiFetch<MediaAsset>(`/v1/media/${mediaId}`),
 };
 
-// ── Icon Library (shared by the IconPicker used on Category / Subcategory /
-// Master Service / Type / Brand / Problem / Checklist / Question forms) ─────
+// â”€â”€ Icon Library (shared by the IconPicker used on Category / Subcategory /
+// Master Service / Type / Brand / Problem / Checklist / Question forms) â”€â”€â”€â”€â”€
 // All 6 media_context values below are pre-registered, public, image-only
 // contexts (see backend app/engines/media/validation.py CONTEXT_RULES). The
 // list endpoint is Redis-cached server-side for these contexts (app/
@@ -3525,53 +3285,7 @@ export const iconLibraryApi = {
     profilePhotoApi.uploadAsset(file, mediaContext, "platform", undefined, true),
 };
 
-// ── Global Services (migration 227) ───────────────────────────────────────────
-// Platform-owned promotional service cards shown to every customer
-// nationwide -- NOT a ServiceCategory, deliberately outside the vertical/
-// tenant-serviceability system. A customer's interest becomes a Lead an
-// admin calls back; there is no booking/job/payment here.
-export interface GlobalService {
-  id: string; name: string; tagline: string | null; description: string | null;
-  icon_url: string | null; display_order: number; is_active: boolean;
-  created_by_user_id: string | null; created_at: string; updated_at: string;
-}
-export interface GlobalServiceLead {
-  id: string; global_service_id: string; global_service_name: string;
-  customer_id: string | null; name: string; phone: string; email: string | null;
-  zipcode: string | null; message: string | null;
-  status: "new" | "contacted" | "converted" | "closed";
-  admin_notes: string | null; assigned_admin_id: string | null;
-  contacted_at: string | null; closed_at: string | null;
-  created_at: string; updated_at: string;
-}
-export interface GlobalServiceLeadsSummary {
-  new: number; contacted: number; converted: number; closed: number; total: number;
-}
-
-export const globalServicesApi = {
-  listServices: (includeInactive = true) =>
-    apiFetch<GlobalService[]>(`/v1/admin/global-services?include_inactive=${includeInactive}`),
-  createService: (data: { name: string; tagline?: string; description?: string; icon_url?: string; display_order?: number; is_active?: boolean }) =>
-    apiFetch<GlobalService>("/v1/admin/global-services", { method: "POST", body: JSON.stringify(data) }),
-  updateService: (id: string, data: Partial<GlobalService>) =>
-    apiFetch<GlobalService>(`/v1/admin/global-services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  deactivateService: (id: string) =>
-    apiFetch<{ id: string; is_active: boolean }>(`/v1/admin/global-services/${id}`, { method: "DELETE" }),
-
-  leadsSummary: () => apiFetch<GlobalServiceLeadsSummary>("/v1/admin/global-services/leads/summary"),
-  listLeads: (params?: { status?: string; global_service_id?: string; page?: number; page_size?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set("status", params.status);
-    if (params?.global_service_id) qs.set("global_service_id", params.global_service_id);
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.page_size) qs.set("page_size", String(params.page_size));
-    return apiFetch<{ items: GlobalServiceLead[]; total: number; page: number; page_size: number }>(`/v1/admin/global-services/leads?${qs}`);
-  },
-  updateLead: (id: string, data: { status?: string; admin_notes?: string }) =>
-    apiFetch<GlobalServiceLead>(`/v1/admin/global-services/leads/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-};
-
-// ── Platform Settings ─────────────────────────────────────────────────────────
+// â”€â”€ Platform Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const platformSettingsApi = {
   getAll: () => apiFetch<PlatformSettingsList>("/v1/settings/platform"),
   get:    (key: string) => apiFetch<PlatformSetting>(`/v1/settings/platform/${key}`),
@@ -3600,7 +3314,7 @@ export const platformSettingsApi = {
   },
 };
 
-// ── Onboarding Queue (Tenant Self-Registration) ───────────────────────────────
+// â”€â”€ Onboarding Queue (Tenant Self-Registration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface OnboardingRequest {
   id:                  string;
   business_name:       string;
@@ -3670,29 +3384,29 @@ export const onboardingApi = {
       { method: "PUT", body: JSON.stringify({ admin_notes: note }) }),
 };
 
-// ── Document engine types ─────────────────────────────────────────────────────
+// â”€â”€ Document engine types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface TenantDocument { id:string; document_number:string; title:string; status:string; doc_type:string; entity_type?:string; entity_id?:string; tenant_id:string; is_frozen:boolean; signed_at?:string; signing_url?:string; signing_url_expires_at?:string; variables:Record<string,string>; created_at:string; }
 export interface TenantDocumentList { documents:TenantDocument[]; has_next:boolean; next_cursor?:string; }
 export interface DocumentEvent { event_id:string; document_id:string; event_type:string; actor_id?:string; actor_ip?:string; details?:Record<string,unknown>; created_at:string; }
 export interface DocumentEventList { events:DocumentEvent[]; }
 export interface DocumentTemplate { doc_type:string; tenant_id:string; template_content?:string; required_variables:string[]; sample_variables?:Record<string,string>; }
 
-// ── Subscription engine types ─────────────────────────────────────────────────
+// â”€â”€ Subscription engine types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface SubscriptionInfo { subscription_id?:string; plan_type:string; status:string; billing_cycle?:string; started_at?:string; ends_at?:string; jobs_used?:number; jobs_included?:number; leads_used?:number; leads_included?:number; next_billing_at?:string; }
 export interface SubscriptionPeriod { tenant_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; jobs_used:number; jobs_included?:number; leads_used?:number; leads_included?:number; amount_billed?:number; }
 export interface SubscriptionHistoryEntry { period_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; amount_billed?:number; }
 export interface SubscriptionHistoryList { history:SubscriptionHistoryEntry[]; has_next:boolean; next_cursor?:string; }
 export interface ProrationPreview { tenant_id:string; current_plan:string; new_plan:string; billing_cycle:string; days_remaining:number; credit_amount:number; debit_amount:number; net_amount:number; effective_date:string; }
 
-// ── Billing router extended types ─────────────────────────────────────────────
+// â”€â”€ Billing router extended types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface BillingProfileHistoryList { tenant_id:string; profiles:BillingProfile[]; note:string; }
 export interface BillingRouteResult { billing_mode:string; operation:string; engine:string; [k:string]:unknown; }
 
-// ── Review (admin extended) + Notification template types ────────────────────
+// â”€â”€ Review (admin extended) + Notification template types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminReview { review_id:string; tenant_id:string; job_id:string; customer_id:string; staff_id?:string; signals:Record<string,number>; composite_score:number; comment?:string; status:string; tenant_reply?:string; has_reply:boolean; flagged_reason?:string; created_at:string; }
 export interface NotifTemplate { id:string; tenant_id?:string; notif_type:string; channel:string; title?:string; body:string; variables:string[]; is_active:boolean; vertical?:string; created_at:string; }
 
-// ── Catalog Engine types ──────────────────────────────────────────────────────
+// â”€â”€ Catalog Engine types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PricingTier {
   tier_id:string; name:string; code:string; tier_type:string; description?:string|null;
   base_multiplier:number; platform_fee_percent:number; default_commission_percent:number;
@@ -3817,14 +3531,17 @@ export interface MasterServiceEnriched extends MasterService {
   id: string;
   name: string;
   category_name: string;
+  category_active?: boolean;
   group_name?: string | null;
+  group_status?: string | null;
+  group_retired?: boolean;
   unit_label?: string | null;
   currency?: string | null;
-  runtime_readiness: "ready" | "inactive" | "missing_brand_mapping" | "missing_service_options" | "missing_issue_types" | "missing_pricing";
+  runtime_readiness: "ready" | "inactive" | "missing_job_types" | "missing_workflows" | "missing_brand_mapping" | "missing_service_options" | "missing_issue_types" | "missing_pricing" | "category_inactive" | "group_unavailable";
   pricing_readiness: "ready" | "fallback_only" | "missing_rules" | "inactive" | "not_required";
   linked_counts: {
     brands: number; options: number; issues: number;
-    pricing_rules: number; providers: number; service_types: number; checklists: number;
+    pricing_rules: number; providers: number; service_types: number; job_types:number; workflows:number; checklists: number;
   };
 }
 
@@ -3832,17 +3549,23 @@ export interface MasterServicesSummary {
   total: number;
   active: number;
   inactive: number;
+  retired: number;
   by_job_type: Record<string, number>;
   pricing_ready: number;
   missing_pricing: number;
   provider_enabled: number;
+  blueprint_ready:number;
+  blueprint_attention:number;
 }
 
 export interface CategoryEngineRuntime {
   category_engine_id: string; engine_id: string; engine_key: string; name: string;
+  display_name?: string;
   is_enabled: boolean; is_required: boolean; is_optional: boolean; is_primary: boolean;
   display_order: number; health_status: string; config: Record<string, unknown>;
   dependencies: string[]; status: string;
+  source?: string;
+  runtime_reason?: string | null;
 }
 
 export interface CategoryDashboardModule {
@@ -3852,6 +3575,12 @@ export interface CategoryDashboardModule {
   required_permission: string | null; frontend_component_key: string | null;
   description: string | null; is_enabled: boolean; is_required: boolean;
   display_order: number; config: Record<string, unknown>;
+  display_name?: string;
+  icon?: string | null;
+  navigation_status?: "available" | "retired" | "not_implemented";
+  navigation_status_reason?: string | null;
+  is_universal?: boolean;
+  source?: string;
 }
 
 export interface CategoryRuntime {
@@ -3875,6 +3604,13 @@ export interface CategoryReadinessItem {
   key: string;
   status: "missing" | "warning" | "ok";
   message: string;
+}
+export interface CategorySkill {
+  id: string; category_id: string; service_group_id: string | null;
+  service_group_name: string | null; code: string; name: string;
+  description: string | null; status: "active" | "retired";
+  requires_verification: boolean; display_order: number; assigned_count: number;
+  created_at: string; updated_at: string; retired_at: string | null;
 }
 export interface CategorySummaryData {
   total: number;
@@ -3959,9 +3695,23 @@ export const categoryRuntimeApi = {
     apiFetch<CategoryDashboardModule>(`/v1/admin/categories/${catId}/dashboard-modules/${moduleId}/disable`, { method: "POST" }),
   reorderModules: (catId: string, orders: { module_id: string; display_order: number }[]) =>
     apiFetch<{ reordered: number }>(`/v1/admin/categories/${catId}/dashboard-modules/reorder`, { method: "POST", body: JSON.stringify({ module_orders: orders }) }),
+  listSkills: (categoryId: string, params?: { q?: string; status?: string; page?: number; page_size?: number }) => {
+    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])
+    ))}` : "";
+    return apiFetch<{ items: CategorySkill[]; total: number; page: number; page_size: number; pages: number }>(`/v1/admin/categories/${categoryId}/skills${qs}`);
+  },
+  createSkill: (categoryId: string, payload: Partial<CategorySkill>) =>
+    apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills`, { method: "POST", body: JSON.stringify(payload) }),
+  updateSkill: (categoryId: string, skillId: string, payload: Partial<CategorySkill>) =>
+    apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills/${skillId}`, { method: "PUT", body: JSON.stringify(payload) }),
+  retireSkill: (categoryId: string, skillId: string) =>
+    apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills/${skillId}/retire`, { method: "POST" }),
+  restoreSkill: (categoryId: string, skillId: string) =>
+    apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills/${skillId}/restore`, { method: "POST" }),
 };
 
-// ── Sprint 14 — Customer Flow Config API ─────────────────────────────────────
+// â”€â”€ Sprint 14 â€” Customer Flow Config API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CustomerFlowConfig {
   id: string;
@@ -3991,7 +3741,7 @@ export const adminCustomerFlowApi = {
     apiFetch<{ deactivated: boolean }>(`/v1/admin/categories/${categoryId}/customer-flow/deactivate`, { method: "POST" }),
 };
 
-// ── Sprint 5 — Monetization types & API ──────────────────────────────────────
+// â”€â”€ Sprint 5 â€” Monetization types & API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface MonetizationConfig {
   id: string; category_id: string; monetization_model: string;
@@ -4061,23 +3811,23 @@ export interface MasterService {
   unit_label?:string|null;
   requires_checklist:boolean; is_brand_required:boolean; is_type_required:boolean;
   requires_issue_type?:boolean; requires_schedule?:boolean; requires_address?:boolean;
-  service_group_id?:string|null; image_url?:string|null; icon_url?:string|null; is_active:boolean; created_at?:string;
+  service_group_id?:string|null; image_url?:string|null; icon_url?:string|null; display_order?:number; is_active:boolean; created_at?:string; updated_at?:string|null; deleted_at?:string|null;
 }
 export interface ServiceTypeRow { type_id:string; category_id:string; name:string; slug:string; description?:string|null; is_active:boolean; icon_url?:string|null; }
 export interface BrandRow { brand_id:string; name:string; slug:string; category_id?:string|null; logo_url?:string|null; is_active:boolean; }
 
-// ── Types & Brands Enterprise (Sprint 76) ─────────────────────────────────────
+// â”€â”€ Types & Brands Enterprise (Sprint 76) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServiceTypeMaster {
   type_id:string; name:string; code?:string|null; slug:string; description?:string|null;
   type_family?:string|null; customer_visible:boolean; status:string; display_order:number;
   is_active:boolean; category_count:number; service_count:number; mapping_count:number;
-  created_at:string; updated_at:string; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null;
+  created_at:string; updated_at:string; deleted_at?:string|null; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null;
 }
 export interface ServiceTypeMapRecord {
   mapping_id:string; type_id:string; category_id?:string|null; service_group_id?:string|null;
   service_id?:string|null; customer_visible:boolean; provider_visible:boolean;
   status:string; display_order:number; created_at:string;
-  type_name?:string|null; category_name?:string|null; service_name?:string|null;
+  type_name?:string|null; category_name?:string|null; group_name?:string|null; service_name?:string|null;
 }
 export interface ServiceTypeSummary {
   total:number; active:number; inactive:number; archived:number;
@@ -4091,22 +3841,24 @@ export interface BrandMapRecord {
   mapping_id:string; brand_id:string; category_id?:string|null; service_group_id?:string|null;
   service_id?:string|null; customer_visible:boolean; provider_visible:boolean;
   status:string; display_order:number; created_at:string;
-  brand_name?:string|null; category_name?:string|null; service_name?:string|null;
+  brand_name?:string|null; category_name?:string|null; group_name?:string|null; service_name?:string|null;
 }
 
 export const typesApi = {
   // Service Types
-  list: (p?: { q?:string; category_id?:string; status?:string; mapped?:boolean; customer_visible?:boolean; page?:number; page_size?:number }) => {
+  list: (p?: { q?:string; category_id?:string; status?:string; mapped?:boolean; customer_visible?:boolean; type_family?:string; has_providers?:boolean; retired?:boolean; sort_by?:string; sort_dir?:string; page?:number; page_size?:number }) => {
     const qs = p ? "?" + new URLSearchParams(Object.entries(p).filter(([,v])=>v!=null).map(([k,v])=>[k,String(v)])).toString() : "";
     return apiFetch<{ types:ServiceTypeMaster[]; total:number; page:number; page_size:number; pages:number }>(`/v1/admin/catalog/types${qs}`);
   },
   summary: () => apiFetch<ServiceTypeSummary>("/v1/admin/catalog/types/summary"),
-  get: (id:string) => apiFetch<ServiceTypeMaster>(`/v1/admin/catalog/types/${id}`),
+  get: (id:string, includeRetired=false) => apiFetch<ServiceTypeMaster>(`/v1/admin/catalog/types/${id}?include_retired=${includeRetired}`),
   create: (data:object) => apiFetch<ServiceTypeMaster>("/v1/admin/catalog/types", { method:"POST", body:JSON.stringify(data) }),
   update: (id:string, data:object) => apiFetch<ServiceTypeMaster>(`/v1/admin/catalog/types/${id}`, { method:"PUT", body:JSON.stringify(data) }),
   activate:   (id:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/activate`,   { method:"POST" }),
   deactivate: (id:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/deactivate`, { method:"POST" }),
-  archive:    (id:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/archive`,    { method:"POST" }),
+  archive:    (id:string, reason="Retired by administrator") => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/archive`, { method:"POST", body:JSON.stringify({reason}) }),
+  restore:    (id:string, reason:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/restore`, { method:"POST", body:JSON.stringify({reason}) }),
+  audit:      (id:string) => apiFetch<{audit_log:AuditEntry[];total:number}>(`/v1/admin/catalog/types/${id}/audit`),
   exportTypes: () => apiFetch<ServiceTypeMaster[]>("/v1/admin/catalog/types/export"),
   // Type Mappings
   listMappings: (p?: { type_id?:string; category_id?:string; service_id?:string; status?:string; page?:number }) => {
@@ -4150,7 +3902,7 @@ export interface PricingPreviewResult {
   resolution_path?:string[]; warnings?:string[];
 }
 
-// ── Bargain Rules + Provider Pricing Overrides (Phase 3 / 3B / 3C) ─────────────
+// â”€â”€ Bargain Rules + Provider Pricing Overrides (Phase 3 / 3B / 3C) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface BargainRule {
   id: string; vertical_key?: string | null; category_id?: string | null;
   master_service_id?: string | null; pricing_rule_id?: string | null;
@@ -4165,7 +3917,7 @@ export interface BargainRule {
   currency?: string; pricing_source?: string | null;
   readiness?: "ready" | "missing_pricing_rule" | "invalid_floor" | "inactive" | "conflict";
   warning?: string | null;
-  // Customer Range + Platform Fee Floor Fix — customer-facing display/negotiation
+  // Customer Range + Platform Fee Floor Fix â€” customer-facing display/negotiation
   // range and fee used to derive the real bargain floor (bargain_floor =
   // customer_min_price * (1 + platform_fee_percent/100) + platform_fee_fixed_amount).
   // floor_amount above is still populated (computed from these when set) for
@@ -4198,7 +3950,7 @@ export interface BargainEvaluationResult {
   // legacy/back-compat (still populated)
   base_price?: number | null; min_price?: number | null; max_price?: number | null;
   minimum_allowed_offer: number | null;
-  // Customer Range + Platform Fee Floor Fix — the real, authoritative fields.
+  // Customer Range + Platform Fee Floor Fix â€” the real, authoritative fields.
   admin_min_price?: number | null; admin_max_price?: number | null; admin_base_price?: number | null;
   customer_min_price?: number | null; customer_max_price?: number | null;
   platform_fee_percent?: number | null; platform_fee_amount?: number | null;
@@ -4240,74 +3992,9 @@ export interface OverrideValidationResult {
   platform_min_price: number | null; platform_max_price: number | null; platform_base_price: number | null;
 }
 
-export const bargainRulesApi = {
-  summary: () => apiFetch<BargainRulesSummary>("/v1/admin/pricing/bargain-rules/summary"),
-  list: (params?: {
-    masterServiceId?: string; categoryId?: string; status?: string; search?: string;
-    bargainEnabled?: boolean; providerApprovalRequired?: boolean; belowFloorAction?: string;
-    page?: number; pageSize?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.masterServiceId) qs.set("master_service_id", params.masterServiceId);
-    if (params?.categoryId) qs.set("category_id", params.categoryId);
-    if (params?.status) qs.set("status", params.status);
-    if (params?.search) qs.set("search", params.search);
-    if (params?.bargainEnabled !== undefined) qs.set("bargain_enabled", String(params.bargainEnabled));
-    if (params?.providerApprovalRequired !== undefined) qs.set("provider_approval_required", String(params.providerApprovalRequired));
-    if (params?.belowFloorAction) qs.set("below_floor_action", params.belowFloorAction);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    return apiFetch<{ items: BargainRule[]; total: number }>(`/v1/admin/pricing/bargain-rules?${qs.toString()}`);
-  },
-  get: (ruleId: string) => apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}`),
-  audit: (ruleId: string) => apiFetch<{ items: AuditEntry[] }>(`/v1/admin/pricing/bargain-rules/${ruleId}/audit`),
-  create: (data: Partial<BargainRule> & { floor_amount: number }) =>
-    apiFetch<BargainRule>("/v1/admin/pricing/bargain-rules", { method: "POST", body: JSON.stringify(data) }),
-  update: (ruleId: string, data: Partial<BargainRule>) =>
-    apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}`, { method: "PUT", body: JSON.stringify(data) }),
-  enable: (ruleId: string) => apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}/enable`, { method: "POST" }),
-  disable: (ruleId: string) => apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}/disable`, { method: "POST" }),
-  activate: (ruleId: string) => apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}/activate`, { method: "POST" }),
-  deactivate: (ruleId: string) => apiFetch<BargainRule>(`/v1/admin/pricing/bargain-rules/${ruleId}/deactivate`, { method: "POST" }),
-  validate: (ruleId: string) => apiFetch<BargainRuleValidation>(`/v1/admin/pricing/bargain-rules/${ruleId}/validate`, { method: "POST" }),
-  evaluatePreview: (data: { master_service_id?: string; pricing_rule_id?: string; offer_price: number }) =>
-    apiFetch<BargainEvaluationResult>("/v1/admin/pricing/bargain/evaluate-preview", { method: "POST", body: JSON.stringify(data) }),
-};
-
-export const providerOverridesApi = {
-  summary: () => apiFetch<ProviderOverridesSummary>("/v1/admin/pricing/provider-overrides/summary"),
-  list: (params?: {
-    tenantId?: string; approvalStatus?: string; status?: string; search?: string;
-    page?: number; pageSize?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.tenantId) qs.set("tenant_id", params.tenantId);
-    if (params?.approvalStatus) qs.set("approval_status", params.approvalStatus);
-    if (params?.status) qs.set("status", params.status);
-    if (params?.search) qs.set("search", params.search);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    return apiFetch<{ items: ProviderPricingOverride[]; total: number }>(`/v1/admin/pricing/provider-overrides?${qs.toString()}`);
-  },
-  get: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}`),
-  audit: (overrideId: string) => apiFetch<{ items: AuditEntry[] }>(`/v1/admin/pricing/provider-overrides/${overrideId}/audit`),
-  create: (data: Partial<ProviderPricingOverride> & { tenant_id: string; master_service_id: string; override_price: number }) =>
-    apiFetch<ProviderPricingOverride>("/v1/admin/pricing/provider-overrides", { method: "POST", body: JSON.stringify(data) }),
-  update: (overrideId: string, data: Partial<ProviderPricingOverride>) =>
-    apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}`, { method: "PUT", body: JSON.stringify(data) }),
-  approve: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/approve`, { method: "POST" }),
-  reject: (overrideId: string, reason: string) =>
-    apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-  enable: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/enable`, { method: "POST" }),
-  disable: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/disable`, { method: "POST" }),
-  activate: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/activate`, { method: "POST" }),
-  deactivate: (overrideId: string) => apiFetch<ProviderPricingOverride>(`/v1/admin/pricing/provider-overrides/${overrideId}/deactivate`, { method: "POST" }),
-  validatePreview: (data: { tenant_id: string; master_service_id: string; override_price: number; reason?: string }) =>
-    apiFetch<OverrideValidationResult>("/v1/admin/pricing/provider-overrides/validate-preview", { method: "POST", body: JSON.stringify(data) }),
-};
 export interface NotifTemplateList { templates:NotifTemplate[]; total:number; }
 
-// ── Engine Management types (enterprise, migration 081) ───────────────────────
+// â”€â”€ Engine Management types (enterprise, migration 081) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PlatformEngine {
   id: string;
   engine_key: string;
@@ -4478,6 +4165,63 @@ export interface EngineAccessResolution {
   blockers: string[];
 }
 
+export interface RuntimeEngineItem {
+  engine_key: string;
+  display_name: string;
+  description: string;
+  engine_type: "core" | "plugin";
+  category: string;
+  version: string;
+  api_prefix: string;
+  endpoint_count: number;
+  dependencies: string[];
+  registered: boolean;
+  mounted: boolean;
+  configured: boolean;
+  runtime_state: "operational" | "unconfigured" | "configured_not_mounted" | "inactive";
+  global_status: string;
+  is_core: boolean;
+  is_locked: boolean;
+  lifecycle_status: string;
+  database_key: string | null;
+  legacy_aliases: string[];
+  active_vertical_count: number;
+  vertical_usage: {
+    vertical_key: string; vertical_label: string; vertical_enabled: boolean;
+    required: boolean; source_key: string;
+  }[];
+  last_health: { status: string; checked_at: string; error: string | null } | null;
+}
+
+export interface EngineControlPlane {
+  summary: {
+    registered: number; mounted: number; operational: number;
+    configuration_drift: number; legacy_aliases: number;
+    orphaned_records: number; enabled_verticals: number;
+  };
+  engines: RuntimeEngineItem[];
+  orphaned_records: {
+    engine_key: string; display_name: string; global_status: string;
+    lifecycle_status: string; reason: string;
+  }[];
+  generated_at: string;
+}
+
+export interface EngineVerticalUsage {
+  summary: {
+    total: number; enabled: number; disabled: number;
+    mapping_count: number; legacy_mapping_count: number;
+  };
+  verticals: {
+    id: string; key: string; label: string; is_enabled: boolean;
+    lifecycle_status: string; release_stage: string;
+    engines: {
+      engine_key: string; source_key: string; is_required: boolean;
+      registered: boolean; uses_legacy_alias: boolean;
+    }[];
+  }[];
+}
+
 export interface EngineDependencyItem {
   id:                    string;
   engine_key:            string;
@@ -4598,11 +4342,13 @@ export interface EngineHealthItem {
 }
 export interface EngineHealthList { engines: EngineHealthItem[]; total: number; }
 
-// ── Engine Management API ─────────────────────────────────────────────────────
+// â”€â”€ Engine Management API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Enterprise Engine Management API (migration 081)
 export const engineMgmtApi = {
   // Registry
   getSummary: () => apiFetch<EngineSummary>("/v1/admin/engines/summary"),
+  getControlPlane: () => apiFetch<EngineControlPlane>("/v1/admin/engines/control-plane"),
+  getVerticalUsage: () => apiFetch<EngineVerticalUsage>("/v1/admin/engines/vertical-usage"),
   list: (params?: { engine_type?: string; global_status?: string; lifecycle_status?: string; is_core?: boolean; q?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.engine_type) qs.set("engine_type", params.engine_type);
@@ -4757,11 +4503,12 @@ export const engineMgmtApi = {
     }),
 
   // Audit Logs
-  listAuditLogs: (params?: { engine_key?: string; action_type?: string; scope_type?: string; page?: number; limit?: number }) => {
+  listAuditLogs: (params?: { engine_key?: string; action_type?: string; scope_type?: string; exclude_health_checks?: boolean; page?: number; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params?.engine_key) qs.set("engine_key", params.engine_key);
     if (params?.action_type) qs.set("action_type", params.action_type);
     if (params?.scope_type) qs.set("scope_type", params.scope_type);
+    if (params?.exclude_health_checks !== undefined) qs.set("exclude_health_checks", String(params.exclude_health_checks));
     if (params?.page) qs.set("page", String(params.page));
     if (params?.limit) qs.set("limit", String(params.limit));
     return apiFetch<{ logs: EnterpriseEngineAuditLog[]; meta: { total: number; page: number; limit: number; total_pages: number } }>(`/v1/admin/engines/audit-logs?${qs}`);
@@ -4783,7 +4530,7 @@ export const engineMgmtApi = {
     }>(`/v1/admin/engines/tenant-overrides/${tenantId}`),
 };
 
-// ── Sprint 4: Admin Tenant CRUD + Tenant 360 sub-resources ───────────────────
+// â”€â”€ Sprint 4: Admin Tenant CRUD + Tenant 360 sub-resources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminTenantApi = {
   onboard: (data: AdminTenantOnboardPayload) =>
     apiFetch<AdminTenantOnboardResult>("/v1/admin/tenants/onboard", { method:"POST", body:JSON.stringify(data) }),
@@ -4800,13 +4547,19 @@ export const adminTenantApi = {
   verify:            (tenantId: string) => apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/verify`, { method:"POST" }),
   rejectVerification:(tenantId: string, reason: string) =>
     apiFetch<AdminTenantRow>(`/v1/admin/tenants/${tenantId}/reject-verification`, { method:"POST", body:JSON.stringify({ reason }) }),
-  listProfileChangeRequests: () =>
-    apiFetch<{ change_requests: Array<{
+  listProfileChangeRequests: (params?: { q?: string; vertical_type?: string; page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    if (params?.vertical_type) qs.set("vertical_type", params.vertical_type);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return apiFetch<{ change_requests: Array<{
       tenant_id: string; current_business_name: string | null;
       requested_fields: Record<string, unknown>; submitted_at: string | null;
       documents_to_revalidate: string[]; documents_ready: boolean;
       documents: Array<{ doc_type: string; document_id: string | null; status: string; uploaded_at: string | null; preview_url: string | null; submitted_for_request: boolean }>;
-    }>; count: number }>("/v1/admin/tenants/change-requests"),
+    }>; count: number; total: number; page: number; page_size: number }>(`/v1/admin/tenants/change-requests?${qs}`);
+  },
   approveProfileChangeRequest: (tenantId: string) =>
     apiFetch<Record<string, unknown>>(`/v1/admin/tenants/${tenantId}/change-requests/approve`, { method:"POST" }),
   rejectProfileChangeRequest: (tenantId: string, reason: string) =>
@@ -4893,7 +4646,7 @@ export interface AdminWalletTxn {
   balance_after:number; description?:string; created_at:string;
 }
 
-// ── Sprint 6 — Package types ──────────────────────────────────────────────────
+// â”€â”€ Sprint 6 â€” Package types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PackageFeature {
   feature_id: string;
   package_id: string;
@@ -5007,8 +4760,8 @@ export interface PackageAuditLog {
   created_at: string;
 }
 
-// ── packageApi ────────────────────────────────────────────────────────────────
-// ── Package Summary ───────────────────────────────────────────────────────────
+// â”€â”€ packageApi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Package Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface PackageSummary {
   total: number;
@@ -5022,7 +4775,7 @@ export interface PackageSummary {
   active_assignments: number;
 }
 
-// ── Provider Directory / New Requests ─────────────────────────────────────────
+// â”€â”€ Provider Directory / New Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ProviderDirectorySummary {
   total: number;
@@ -5093,7 +4846,7 @@ export const providersAdminApi = {
     ),
 };
 
-// ── Admin Tenants Enterprise API ─────────────────────────────────────────────
+// â”€â”€ Admin Tenants Enterprise API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface TenantListItem {
   tenant_id: string;
@@ -5156,7 +4909,7 @@ export interface TenantsInsights {
 }
 
 export const adminTenantsApi = {
-  // apiFetch<T> already unwraps {success,data} to T — don't re-wrap in { data: T }.
+  // apiFetch<T> already unwraps {success,data} to T â€” don't re-wrap in { data: T }.
   getSummary: () =>
     apiFetch<TenantsSummary>("/v1/admin/tenants/summary"),
 
@@ -5312,7 +5065,7 @@ export const packageApi = {
   },
 };
 
-// ── Sprint 10 — Admin Onboarding APIs ─────────────────────────────────────────
+// â”€â”€ Sprint 10 â€” Admin Onboarding APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface OnboardingChecklistTemplate {
   id: string;
@@ -5402,6 +5155,45 @@ export interface AdminOnboardingProviderListItem {
   package_status: string | null;
   created_at: string | null;
   updated_at: string | null;
+  documents?: AdminOnboardingDocument[];
+  document_summary?: {
+    required: number;
+    verified: number;
+    pending_review: number;
+    needs_changes: number;
+    missing: number;
+  };
+  setup_sections?: AdminOnboardingSetupSection[];
+  declarations?: { all_accepted?: boolean; [key: string]: unknown };
+  approval_blockers?: Array<{ code: string; section: string; document_type?: string; message: string }>;
+  can_approve?: boolean;
+}
+
+export interface AdminOnboardingDocument {
+  document_id: string | null;
+  doc_type: string;
+  label: string;
+  required: boolean;
+  status: string;
+  media_asset_id: string | null;
+  document_number: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+  version: number | null;
+  uploaded_at: string | null;
+  verified_at: string | null;
+  rejection_reason: string | null;
+  review_notes: string | null;
+}
+
+export interface AdminOnboardingSetupSection {
+  key: string;
+  label: string;
+  description: string;
+  required: boolean;
+  status: string;
+  blocking_reasons: Array<{ code: string; message: string }>;
+  warnings: Array<{ code: string; message: string }>;
 }
 
 export interface OnboardingProviderSummary {
@@ -5459,6 +5251,8 @@ export const adminProviderOnboardingApi = {
 };
 
 export const adminOnboardingProvidersApi = {
+  get: (tenantId: string) =>
+    apiFetch<AdminOnboardingProviderListItem>(`/v1/admin/onboarding/providers/${tenantId}`),
   list: (params?: {
     q?: string; category_id?: string; vertical_type?: string;
     review_status?: string; city?: string;
@@ -5483,6 +5277,10 @@ export const adminOnboardingProvidersApi = {
   },
   approve: (tenantId: string) =>
     apiFetch<unknown>(`/v1/admin/onboarding/providers/${tenantId}/approve`, { method: "POST" }),
+  reviewDocument: (tenantId: string, documentId: string, decision: "verified" | "changes_requested" | "rejected", reason?: string) =>
+    apiFetch<AdminOnboardingDocument>(`/v1/admin/onboarding/providers/${tenantId}/documents/${documentId}/review`, {
+      method: "POST", body: JSON.stringify({ decision, reason: reason ?? "" }),
+    }),
   reject: (tenantId: string, reason: string) =>
     apiFetch<unknown>(`/v1/admin/onboarding/providers/${tenantId}/reject`, {
       method: "POST", body: JSON.stringify({ reason }),
@@ -5498,7 +5296,7 @@ export const adminOnboardingProvidersApi = {
     ),
 };
 
-// ── Sprint 11 — Admin Provider Enablement ────────────────────────────────────
+// â”€â”€ Sprint 11 â€” Admin Provider Enablement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AdminTenantEnabledOffering {
   provider_enabled_offering_id: string;
@@ -5602,7 +5400,7 @@ export const adminProviderEnablementApi = {
 };
 
 
-// ── Sprint 12 Types ───────────────────────────────────────────────────────────
+// â”€â”€ Sprint 12 Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface BookabilityBlocker {
   code: string;
   message: string;
@@ -5757,7 +5555,7 @@ export const adminBookabilityApi = {
     apiFetch<BookabilitySummary>(`/v1/admin/bookability/summary`),
 };
 
-// ── Sprint 15 — AI Conversation Engine ────────────────────────────────────────
+// â”€â”€ Sprint 15 â€” AI Conversation Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AIConversationSession {
   id: string;
@@ -5895,7 +5693,7 @@ export const adminAIChatApi = {
     ),
 };
 
-// ── Sprint 13: Marketing Launch Types ────────────────────────────────────────
+// â”€â”€ Sprint 13: Marketing Launch Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface MarketingBlocker {
   code: string;
   message: string;
@@ -5998,7 +5796,7 @@ export interface MarketingAuditLog {
   created_at: string | null;
 }
 
-// ── Sprint 13: Admin Marketing API ────────────────────────────────────────────
+// â”€â”€ Sprint 13: Admin Marketing API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminMarketingApi = {
   // Campaigns
   listCampaigns: (params?: { status?: string; category_id?: string; search?: string; page?: number; page_size?: number }) => {
@@ -6120,7 +5918,7 @@ export const adminMarketingApi = {
     ),
 };
 
-// ── Sprint 16 — Home Service Booking Drafts ───────────────────────────────────
+// â”€â”€ Sprint 16 â€” Home Service Booking Drafts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface HomeServiceBookingDraft {
   id: string;
@@ -6199,7 +5997,7 @@ export const adminHomeServiceBookingApi = {
 };
 
 
-// ── Sprint 17 — Coaching Appointment Drafts ──────────────────────────────────
+// â”€â”€ Sprint 17 â€” Coaching Appointment Drafts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CoachingAppointmentDraft {
   id: string;
@@ -6293,7 +6091,7 @@ export const adminCoachingAppointmentApi = {
   },
 };
 
-// ── Sprint 18 — Real Estate Lead Drafts ────────────────────────────────────────
+// â”€â”€ Sprint 18 â€” Real Estate Lead Drafts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface RealEstateLeadDraft {
   id: string;
@@ -6414,7 +6212,7 @@ export const adminRealEstateLeadApi = {
 };
 
 
-// ── Sprint 20: Admin Service Job Assignment API ───────────────────────────────
+// â”€â”€ Sprint 20: Admin Service Job Assignment API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AdminServiceJob {
   id: string;
@@ -6508,7 +6306,7 @@ export const adminServiceJobAssignmentApi = {
     ),
 };
 
-// ── Sprint 21: Admin Execution Timeline API ───────────────────────────────────
+// â”€â”€ Sprint 21: Admin Execution Timeline API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminExecutionEvent {
   id: string;
   event_type: string;
@@ -6558,7 +6356,7 @@ export const adminExecutionApi = {
     apiFetch<AdminExecutionEvent[]>(`/v1/admin/real-estate-leads/${leadId}/execution-timeline`),
 };
 
-// ── Sprint 22: Admin Checklist Template + Quote Admin API ─────────────────────
+// â”€â”€ Sprint 22: Admin Checklist Template + Quote Admin API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ChecklistTemplateRecord {
   id: string; template_name: string; template_type: string; applies_to: string;
   category_id?: string; offering_id?: string; tenant_id?: string;
@@ -6596,7 +6394,7 @@ export const adminQuoteApi = {
     apiFetch<unknown[]>(`/admin/quotes/${quoteId}/events`),
 };
 
-// ── Sprint 23: Types ──────────────────────────────────────────────────────────
+// â”€â”€ Sprint 23: Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServiceInvoiceRecord {
   id: string; invoice_number?: string; job_id: string; booking_id?: string;
   tenant_id: string; customer_id?: string; source: string;
@@ -6628,7 +6426,7 @@ export interface FinancialEventRecord {
   reference_type?: string; amount?: string; description?: string; created_at?: string;
 }
 
-// ── Sprint 23: Admin invoice API ──────────────────────────────────────────────
+// â”€â”€ Sprint 23: Admin invoice API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminInvoiceApi = {
   list:  (tenant_id?: string, status?: string) => {
     const params = new URLSearchParams();
@@ -6641,7 +6439,7 @@ export const adminInvoiceApi = {
     apiFetch<ServiceInvoiceRecord>(`/v1/admin/service-invoices/${invoiceId}`),
 };
 
-// ── Sprint 23: Admin payment API ──────────────────────────────────────────────
+// â”€â”€ Sprint 23: Admin payment API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminPaymentApi = {
   list:   (tenant_id?: string) =>
     apiFetch<PaymentRecord[]>(`/v1/admin/payments${tenant_id ? `?tenant_id=${tenant_id}` : ""}`),
@@ -6649,7 +6447,7 @@ export const adminPaymentApi = {
     apiFetch<PaymentRecord>(`/v1/admin/payments/${paymentId}/verify`, { method: "POST" }),
 };
 
-// ── Sprint 23: Admin commission API ───────────────────────────────────────────
+// â”€â”€ Sprint 23: Admin commission API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminCommissionApi = {
   list:    (tenant_id?: string, status?: string) => {
     const params = new URLSearchParams();
@@ -6666,7 +6464,7 @@ export const adminCommissionApi = {
     apiFetch<CommissionRecord>(`/v1/admin/commission-records/${commissionId}/reverse`, { method: "POST", body: JSON.stringify(body) }),
 };
 
-// ── Sprint 23: Admin wallet API ───────────────────────────────────────────────
+// â”€â”€ Sprint 23: Admin wallet API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminWalletApi = {
   list:   () =>
     apiFetch<WalletRecord[]>("/v1/admin/provider-wallets"),
@@ -6678,7 +6476,7 @@ export const adminWalletApi = {
     apiFetch<Record<string, unknown>>(`/v1/admin/provider-wallets/${tenantId}/credit`, { method: "POST", body: JSON.stringify(body) }),
 };
 
-// ── Sprint 23: Admin financial events API ─────────────────────────────────────
+// â”€â”€ Sprint 23: Admin financial events API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminFinancialEventsApi = {
   list: (tenant_id?: string, event_type?: string) => {
     const params = new URLSearchParams();
@@ -6690,7 +6488,7 @@ export const adminFinancialEventsApi = {
 };
 
 
-// ── Sprint 24 / P0-upgrade: Review types ─────────────────────────────────────
+// â”€â”€ Sprint 24 / P0-upgrade: Review types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface CustomerReviewRecord {
   id: string; review_number?: string; customer_id: string; tenant_id: string;
   tenant_name?: string; customer_name?: string; customer_phone?: string;
@@ -6750,7 +6548,7 @@ export interface StaffRatingSummaryRecord {
   last_review_at?: string; updated_at?: string;
 }
 
-// ── Sprint 24 / P0-upgrade: Admin reviews API ─────────────────────────────────
+// â”€â”€ Sprint 24 / P0-upgrade: Admin reviews API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminReviewApi = {
   summary: (tenant_id?: string) => {
     const qs = tenant_id ? `?tenant_id=${tenant_id}` : "";
@@ -6778,7 +6576,7 @@ export const adminReviewApi = {
   events:  (id: string)  => apiFetch<Record<string, unknown>[]>(`/v1/admin/reviews/${id}/events`),
 };
 
-// ── Sprint 24: Admin flags API ────────────────────────────────────────────────
+// â”€â”€ Sprint 24: Admin flags API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminFlagApi = {
   list:    (status?: string) =>
     apiFetch<ReviewFlagRecord[]>(`/v1/admin/review-flags${status ? `?status=${status}` : ""}`),
@@ -6786,7 +6584,7 @@ export const adminFlagApi = {
     apiFetch<ReviewFlagRecord>(`/v1/admin/review-flags/${flagId}/resolve`, { method: "POST" }),
 };
 
-// ── Sprint 24: Admin replies API ──────────────────────────────────────────────
+// â”€â”€ Sprint 24: Admin replies API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminReplyApi = {
   list:    (status?: string) =>
     apiFetch<ReviewReplyRecord[]>(`/v1/admin/review-replies${status ? `?status=${status}` : ""}`),
@@ -6796,7 +6594,7 @@ export const adminReplyApi = {
     apiFetch<ReviewReplyRecord>(`/v1/admin/review-replies/${reviewId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
 };
 
-// ── Sprint 24: Admin policy API ───────────────────────────────────────────────
+// â”€â”€ Sprint 24: Admin policy API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminPolicyApi = {
   list:   () => apiFetch<ReviewPolicyRecord[]>("/v1/admin/review-policies"),
   get:    (id: string) => apiFetch<ReviewPolicyRecord>(`/v1/admin/review-policies/${id}`),
@@ -6804,7 +6602,7 @@ export const adminPolicyApi = {
     apiFetch<ReviewPolicyRecord>(`/v1/admin/review-policies/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 };
 
-// ── Sprint 24: Admin rating summaries API ─────────────────────────────────────
+// â”€â”€ Sprint 24: Admin rating summaries API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminRatingApi = {
   listTenants:    () => apiFetch<TenantRatingSummaryRecord[]>("/v1/admin/rating-summaries"),
   listStaff:      (tenant_id?: string) =>
@@ -6813,7 +6611,7 @@ export const adminRatingApi = {
     apiFetch<TenantRatingSummaryRecord>(`/v1/admin/rating-summaries/tenant/${tenant_id}/recompute`, { method: "POST" }),
 };
 
-// ── Sprint 25: Complaint types ────────────────────────────────────────────────
+// â”€â”€ Sprint 25: Complaint types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ComplaintRecord {
   id: string; complaint_number?: string; customer_id: string;
   tenant_id?: string; category_id?: string;
@@ -6846,13 +6644,13 @@ export interface RefundRecord {
 export interface ComplaintPolicyRecord {
   id: string; policy_key: string; policy_name?: string; category_id?: string; tenant_id?: string;
   complaint_window_hours: number; allow_duplicate_open_complaints: boolean;
-  // NOTE: the model column is `allow_rework` — `allow_rework_request` never
+  // NOTE: the model column is `allow_rework` â€” `allow_rework_request` never
   // applied to anything (MODULE-L5-02 bug #39).
   allow_rework?: boolean; allow_rework_request?: boolean; allow_refund_request: boolean;
   require_admin_review: boolean; is_active: boolean;
   created_at?: string;
 
-  // ── The AI settlement rule — the only thing the admin sets ──────────────────
+  // â”€â”€ The AI settlement rule â€” the only thing the admin sets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // AI settlement takes over automatically once the PROVIDER has failed to solve
   // the complaint; it may offer at most `ai_settlement_max_pct` of the job value,
   // in CREDIT POINTS only (never money), funded from the provider's credit wallet
@@ -6870,7 +6668,7 @@ export interface ComplaintEventRecord {
   reason?: string; created_at?: string;
 }
 
-// ── Sprint 25: Admin complaints API ──────────────────────────────────────────
+// â”€â”€ Sprint 25: Admin complaints API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminComplaintApi = {
   list: (p?: { tenant_id?: string; status?: string; priority?: string; record_type?: string }) => {
     const qs = new URLSearchParams(Object.entries(p ?? {}).filter(([,v]) => v) as [string,string][]);
@@ -6901,7 +6699,7 @@ export const adminComplaintApi = {
     apiFetch<ComplaintEventRecord[]>(`/v1/admin/complaints/${id}/events`),
 };
 
-// ── Sprint 25: Admin rework API ───────────────────────────────────────────────
+// â”€â”€ Sprint 25: Admin rework API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminReworkApi = {
   list:    (tenant_id?: string, status?: string) => {
     const p = new URLSearchParams();
@@ -6918,7 +6716,7 @@ export const adminReworkApi = {
     apiFetch<ReworkRecord>(`/v1/admin/rework-requests/${id}/assign`, { method: "POST", body: JSON.stringify({ staff_member_id }) }),
 };
 
-// ── Sprint 25: Admin refund API ───────────────────────────────────────────────
+// â”€â”€ Sprint 25: Admin refund API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminRefundApi = {
   list:    (p?: { tenant_id?: string; status?: string }) => {
     const qs = new URLSearchParams(Object.entries(p ?? {}).filter(([,v]) => v) as [string,string][]);
@@ -6934,7 +6732,7 @@ export const adminRefundApi = {
     apiFetch<RefundRecord>(`/v1/admin/refund-requests/${id}/verify`, { method: "POST" }),
 };
 
-// ── Sprint 25: Admin complaint policy API ─────────────────────────────────────
+// â”€â”€ Sprint 25: Admin complaint policy API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const adminComplaintPolicyApi = {
   list:   () => apiFetch<ComplaintPolicyRecord[]>("/v1/admin/complaint-policies"),
   create: (body: Partial<ComplaintPolicyRecord>) =>
@@ -6943,7 +6741,7 @@ export const adminComplaintPolicyApi = {
     apiFetch<ComplaintPolicyRecord>(`/v1/admin/complaint-policies/${id}`, { method: "PUT", body: JSON.stringify(body) }),
 };
 
-// ── Sprint 26: Enterprise Grid types ──────────────────────────────────────────
+// â”€â”€ Sprint 26: Enterprise Grid types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface EnterprisePagination {
   page: number; page_size: number; total_items: number;
   total_pages: number; has_next: boolean; has_previous: boolean;
@@ -6975,7 +6773,7 @@ export interface EnterpriseExportJob {
   failure_reason?: string; expires_at?: string; created_at?: string;
 }
 
-// ── Sprint 26: Enterprise API ──────────────────────────────────────────────────
+// â”€â”€ Sprint 26: Enterprise API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const enterpriseApi = {
   // Registry
   listResources: () =>
@@ -7018,7 +6816,7 @@ export const enterpriseApi = {
     apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}`),
   retryExport:  (id: string) =>
     apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}/retry`, { method: "POST" }),
-  // FINAL-L5-05AB — cancel/download were real backend endpoints (FINAL-L5-05S)
+  // FINAL-L5-05AB â€” cancel/download were real backend endpoints (FINAL-L5-05S)
   // with no frontend wrapper at all; the job-history page needs both.
   cancelExport: (id: string) =>
     apiFetch<EnterpriseExportJob>(`/v1/enterprise/exports/${id}/cancel`, { method: "POST" }),
@@ -7036,7 +6834,7 @@ export const enterpriseApi = {
   },
 };
 
-// ── Sprint 27: Platform Notifications + Chat + Audit ──────────────────────────
+// â”€â”€ Sprint 27: Platform Notifications + Chat + Audit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface InAppNotification {
   id: string;
   notification_type: string;
@@ -7050,6 +6848,9 @@ export interface InAppNotification {
   read_status: string;
   read_at: string | null;
   created_at: string;
+  tenant_id: string | null;
+  vertical_key: string | null;
+  is_mandatory: boolean;
 }
 
 export interface NotificationOutboxRecord {
@@ -7064,9 +6865,14 @@ export interface NotificationOutboxRecord {
   delivery_status: string;
   provider_name: string | null;
   failure_code: string | null;
+  failure_message: string | null;
   retry_count: number;
   max_retries: number;
   sent_at: string | null;
+  scheduled_at: string | null;
+  delivered_at: string | null;
+  tenant_id: string | null;
+  vertical_key: string | null;
   created_at: string;
 
   /** Backend sends more fields than are enumerated here; the page
@@ -7143,8 +6949,10 @@ export interface AuditLogRecord {
 
 export const sprint27AdminApi = {
   // In-app notifications
-  listNotifications: (params?: { read_status?: string; limit?: number; offset?: number }) =>
+  listNotifications: (params?: { read_status?: string; notification_type?: string; severity?: string; search?: string; limit?: number; offset?: number }) =>
     apiFetch<{ items: InAppNotification[]; total: number }>(`/v1/admin/notifications?${new URLSearchParams(params as Record<string, string>)}`),
+  getNotificationSummary: () =>
+    apiFetch<{ total: number; unread: number; read: number; high_priority: number }>("/v1/admin/notifications/summary"),
   getUnreadCount: () =>
     apiFetch<{ unread_count: number }>("/v1/admin/notifications/unread-count"),
   markRead: (id: string) =>
@@ -7156,6 +6964,9 @@ export const sprint27AdminApi = {
   getPreferences: () =>
     apiFetch<{ id: string; event_key: string; channel: string; is_enabled: boolean }[]>(
       "/v1/admin/notifications/preferences"),
+  getPreferenceCatalog: () =>
+    apiFetch<{ items: NotificationPreferenceEvent[]; providers: NotificationChannelStatus[] }>(
+      "/v1/admin/notifications/preference-catalog"),
   updatePreference: (event_key: string, channel: string, is_enabled: boolean) =>
     apiFetch<{ id: string; event_key: string; channel: string; is_enabled: boolean }>(
       "/v1/admin/notifications/preferences",
@@ -7204,18 +7015,29 @@ export const sprint27AdminApi = {
     apiFetch<{ timeline: AuditLogRecord[] }>(`/v1/admin/audit-logs/record-timeline?resource_type=${resource_type}&resource_id=${resource_id}`),
 
   /** Delivery-channel health, computed from the active providers and outbox. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getChannelStatus: () => apiFetch<{ items: Record<string, any>[] }>("/v1/admin/notification-outbox/channel-status"),
+  getChannelStatus: () => apiFetch<{ items: NotificationChannelStatus[] }>("/v1/admin/notification-outbox/channel-status"),
+  saveChannelConfiguration: (channel: string, values: Record<string, string | boolean>) =>
+    apiFetch<NotificationChannelStatus>(`/v1/admin/notification-outbox/channel-configurations/${channel}`, {
+      method: "PUT", body: JSON.stringify({ values }),
+    }),
+  testChannelConfiguration: (channel: string) =>
+    apiFetch<NotificationChannelStatus>(`/v1/admin/notification-outbox/channel-configurations/${channel}/test`, { method: "POST" }),
+  setChannelEnabled: (channel: string, enabled: boolean) =>
+    apiFetch<NotificationChannelStatus>(`/v1/admin/notification-outbox/channel-configurations/${channel}/enabled`, {
+      method: "PUT", body: JSON.stringify({ enabled }),
+    }),
+  getChannelAudit: (channel: string) =>
+    apiFetch<{ items: NotificationChannelAudit[] }>(`/v1/admin/notification-outbox/channel-configurations/${channel}/audit`),
   /** Cancels a queued outbox message. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cancelOutbox: (outboxId: string) => apiFetch<Record<string, any>>(`/v1/admin/notification-outbox/${outboxId}`, { method: "DELETE" }),
-  /** Bulk pull for CSV export -- same list route, large page. */
+  /** Bounded operational export. Larger exports belong in the async export engine. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   exportOutbox: (params?: Record<string, any>) => apiFetch<{ items: Record<string, any>[] }>(
-    `/v1/admin/notification-outbox?${new URLSearchParams({ ...(params ?? {}), limit: "5000" } as Record<string, string>)}`),
+    `/v1/admin/notification-outbox/export?${new URLSearchParams({ ...(params ?? {}), limit: "1000" } as Record<string, string>)}`),
 };
 
-// ── Sprint 28 — Analytics Types ───────────────────────────────────────────────
+// â”€â”€ Sprint 28 â€” Analytics Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AnalyticsDateRange { from: string | null; to: string | null; }
 
@@ -7259,7 +7081,7 @@ export interface ReportRun {
   completed_at:         string | null;
 }
 
-// ── Sprint 28 — Admin Analytics API ──────────────────────────────────────────
+// â”€â”€ Sprint 28 â€” Admin Analytics API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type AnalyticsParams = {
   date_from?:   string;
@@ -7323,7 +7145,7 @@ export const adminAnalyticsApi = {
     apiFetch<ReportRun>(`/v1/admin/reports/${run_id}`),
 };
 
-// ── Sprint 29 — Admin AI Monitoring API ───────────────────────────────────────
+// â”€â”€ Sprint 29 â€” Admin AI Monitoring API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AISession {
   id: string; session_key: string; customer_id: string | null;
@@ -7374,7 +7196,7 @@ export const adminAiApi = {
     apiFetch<AISession>(`/v1/admin/ai/sessions/${session_id}/close`, { method: "POST" }),
 };
 
-// ── Sprint 29 — Admin Marketing Campaigns API ─────────────────────────────────
+// â”€â”€ Sprint 29 â€” Admin Marketing Campaigns API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface MarketingCampaign {
   id: string; campaign_key: string; campaign_name: string;
@@ -7400,7 +7222,7 @@ export interface CampaignPerformance {
                  open_rate: number; click_rate: number; conversion_rate: number };
 }
 
-// ── Phase 0C — Profile Edit ───────────────────────────────────────────────────
+// â”€â”€ Phase 0C â€” Profile Edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface UserProfile {
   id: string;
@@ -7440,9 +7262,9 @@ export const profileApi = {
     }),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sprint 34E — Service Options + Issue Catalog
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sprint 34E â€” Service Options + Issue Catalog
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ServiceOptionGroup34E {
   id: string;
@@ -7650,7 +7472,7 @@ export const serviceOptionApi = {
   archiveIssueType: (issueId: string) =>
     apiFetch<IssueType34E>(`/v1/admin/issue-types-v2/${issueId}/archive`, { method: "POST" }),
 
-  // Checklist items (Phase 2 — master/admin-catalog-level)
+  // Checklist items (Phase 2 â€” master/admin-catalog-level)
   listChecklistItems: (params?: {
     status?: string; category_id?: string; master_service_id?: string;
     search?: string; page?: number; page_size?: number;
@@ -7683,7 +7505,7 @@ export const serviceOptionApi = {
   seedDefaultChecklists: () =>
     apiFetch<{ created: string[]; skipped: string[] }>("/v1/admin/checklists/seed-defaults", { method: "POST" }),
 
-  // Service ↔ option mappings
+  // Service â†” option mappings
   listServiceOptionMappings: (serviceId: string) =>
     apiFetch<ServiceOptionMapping34E[]>(`/v1/admin/master-services/${serviceId}/options`),
   addServiceOptionMapping: (serviceId: string, data: { service_option_id: string; is_required?: boolean; is_default?: boolean; display_order?: number }) =>
@@ -7699,7 +7521,7 @@ export const serviceOptionApi = {
       method: "DELETE",
     }),
 
-  // Service ↔ issue mappings
+  // Service â†” issue mappings
   listServiceIssueMappings: (serviceId: string) =>
     apiFetch<ServiceIssueMapping34E[]>(`/v1/admin/master-services/${serviceId}/issues`),
   addServiceIssueMapping: (serviceId: string, data: { issue_type_id: string; is_common?: boolean; requires_photo?: boolean; requires_description?: boolean; display_order?: number }) =>
@@ -7716,9 +7538,9 @@ export const serviceOptionApi = {
     }),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sprint 34F — Service Setup Templates
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sprint 34F â€” Service Setup Templates
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ServiceSetupTemplate34F {
   id: string;
@@ -7874,9 +7696,9 @@ export const setupTemplateApi = {
     apiFetch<ServiceSetupTemplateRun34F>(`/v1/admin/service-setup-templates/runs/${runId}`),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sprint 34H — Admin Bulk Setup Wizard
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Sprint 34H â€” Admin Bulk Setup Wizard
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface BulkSetupDraft {
   id: string;
@@ -7916,7 +7738,6 @@ export interface BulkSetupPayload {
   checklist_mappings?: BulkGenericMapping[];
   pricing_mappings?: BulkGenericMapping[];
   commission_mappings?: BulkGenericMapping[];
-  workflow_mappings?: BulkGenericMapping[];
 }
 
 export interface BulkBrandMapping {
@@ -8063,11 +7884,6 @@ export const bulkSetupApi = {
     apiFetch<unknown[]>("/v1/admin/bulk-setup/available-pricing-templates"),
   getAvailableCommissionTemplates: () =>
     apiFetch<unknown[]>("/v1/admin/bulk-setup/available-commission-templates"),
-  getAvailableWorkflowTemplates: (params?: { category_id?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.category_id) qs.set("category_id", params.category_id);
-    return apiFetch<unknown[]>(`/v1/admin/bulk-setup/available-workflow-templates?${qs}`);
-  },
 
   // Step saves
   setCategory: (draftId: string, data: { category_id?: string; vertical_type?: string; new_category_payload?: Record<string, string> }) =>
@@ -8110,11 +7926,6 @@ export const bulkSetupApi = {
     apiFetch<BulkSetupDraft>(`/v1/admin/bulk-setup/drafts/${draftId}/commission-mappings`, {
       method: "POST", body: JSON.stringify(data),
     }),
-  setWorkflowMappings: (draftId: string, data: { mappings: BulkGenericMapping[] }) =>
-    apiFetch<BulkSetupDraft>(`/v1/admin/bulk-setup/drafts/${draftId}/workflow-mappings`, {
-      method: "POST", body: JSON.stringify(data),
-    }),
-
   // Validate + Preview + Apply
   validateDraft: (draftId: string) =>
     apiFetch<{ can_apply: boolean; blocker_count: number; items: BulkBlocker[] }>(
@@ -8145,7 +7956,7 @@ export const bulkSetupApi = {
     apiFetch<BulkSetupRun>(`/v1/admin/bulk-setup/runs/${runId}`),
 };
 
-// ── Sprint 34I — Recommendation Rules Engine ──────────────────────────────────
+// â”€â”€ Sprint 34I â€” Recommendation Rules Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface RecommendationRule {
   id: string;
@@ -8288,7 +8099,7 @@ export const recommendationApi = {
     );
   },
 
-  // Engine — evaluate
+  // Engine â€” evaluate
   evaluate: (context: Record<string, unknown>) =>
     apiFetch<RecommendationEvalResult>("/v1/recommendations/evaluate", {
       method: "POST", body: JSON.stringify(context),
@@ -8329,7 +8140,7 @@ export const recommendationApi = {
     }),
 };
 
-// ── Sprint 34J — Customer Flow ────────────────────────────────────────────────
+// â”€â”€ Sprint 34J â€” Customer Flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CustomerBookingDraft {
   id: string;
@@ -8446,7 +8257,7 @@ export const customerFlowApi = {
     apiFetch<CustomerBookingDraft>(`/v1/admin/customer-flow/drafts/${draftId}`),
 };
 
-// ── Complaints (Sprint 75) ────────────────────────────────────────────────────
+// â”€â”€ Complaints (Sprint 75) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MODULE-L5-12: Trust & Quality (badges / provider health / recalculation).
 // The engine was live with real config but had no admin UI at all.
 export interface BadgeRule {
@@ -8461,21 +8272,110 @@ export interface HealthRule {
   base_score: number; min_score: number; max_score: number; status: string;
 }
 export interface RecalcJob {
-  id: string; job_type: string; scope_type: string; status: string;
+  id: string; job_type: string; scope_type: string; scope_id?: string | null; status: string;
   total_count: number; processed_count: number; failed_count: number;
   triggered_by: string; started_at: string | null; completed_at: string | null;
   error_summary: string | null;
+  /** Set when a sweep was already pending, so the console can say so. */
+  already_running?: boolean;
 }
-export interface BadgeDefinition {
-  id: string; badge_key: string; name: string; description?: string | null;
-  target_type: string; customer_visible: boolean; tenant_visible: boolean;
-  admin_only: boolean; status: string; icon?: string | null; color?: string | null;
+/** The health engine's output: one score per (target, formula). */
+export interface HealthScoreRow {
+  id: string; target_type: string; target_id: string; target_name: string | null;
+  formula_id: string; formula_name: string | null;
+  score: number; band_key: string | null; risk_level: string | null;
+  component_breakdown: { metric_key: string; raw_value: unknown; normalized: number;
+    weight_percent: number; contribution: number }[] | null;
+  penalties: { metric_key: string; penalty_points: number }[] | null;
+  bonuses: { metric_key: string; bonus_points: number }[] | null;
+  recommended_actions: string[] | null;
+  calculated_at: string | null;
 }
-export interface EarnedBadge {
-  assignment_id: string; badge_key: string; name: string; description?: string | null;
-  icon?: string | null; color?: string | null;
-  customer_visible: boolean; tenant_visible: boolean;
-  award_source: string; earned_at: string | null; expires_at: string | null;
+export interface TrustQualityAuditRow {
+  id: string; action_type: string; target_type: string | null; target_id: string | null;
+  actor_role: string | null; reason: string | null; created_at: string | null;
+  old_value: Record<string, unknown> | null; new_value: Record<string, unknown> | null;
+}
+export interface TrustQualityOverview {
+  active_badges: number; active_badge_rules: number; badges_held: number;
+  active_formulas: number; scored_targets: number; unbanded_targets: number;
+  jobs_in_flight: number;
+}
+/** Server-side page. Every Trust & Quality list is paged â€” none load a whole table. */
+export interface TQPage<T> { items: T[]; total: number; limit: number; offset: number }
+export interface SimulatedCriterion {
+  metric_key: string; operator: string; expected: unknown; actual: unknown;
+}
+export interface BadgeSimulationResult {
+  rule_id: string; eligible: boolean;
+  matched_criteria: SimulatedCriterion[];
+  failed_criteria: SimulatedCriterion[];
+  would_award_badge: boolean; would_remove_badge: boolean;
+  removal_matched: SimulatedCriterion[];
+  warnings: string[];
+}
+export interface HealthSimulationResult {
+  formula_id: string; score: number; band_key: string | null;
+  coverage_percent: number; insufficient_data: boolean;
+  component_breakdown: { metric_key: string; raw_value: unknown; normalized: number;
+    weight_percent: number; contribution: number }[];
+  penalties_applied: { metric_key: string; penalty_points: number }[];
+  bonuses_applied: { metric_key: string; bonus_points: number }[];
+  recommended_actions: string[];
+}
+  export interface BadgeDefinition {
+    id: string | null; badge_key: string; name: string; description?: string | null;
+    target_type: string; customer_visible: boolean; tenant_visible: boolean;
+    admin_only: boolean; status: string; icon?: string | null; color?: string | null;
+    level?: number; tone?: string | null;
+  }
+  export interface EarnedBadge {
+    assignment_id: string; badge_key: string; name: string; description?: string | null;
+    icon?: string | null; color?: string | null;
+    customer_visible: boolean; tenant_visible: boolean;
+    level?: number; tone?: string | null;
+    award_source: string; earned_at: string | null; expires_at: string | null;
+  }
+export interface EarnedBadgeDirectoryRow extends EarnedBadge {
+  badge_id: string;
+  target_type: "tenant" | "staff" | "technician";
+  target_id: string;
+  target_name: string;
+  target_secondary: string | null;
+}
+
+export interface NotificationPreferenceChannel {
+  channel: string; provider_state: string; supported: boolean;
+  configured_for_event: boolean; explicit_value: boolean | null;
+  effective_enabled: boolean; configurable: boolean; locked_reason: string | null;
+}
+
+export interface NotificationPreferenceEvent {
+  event_key: string; event_name: string; source_engine: string;
+  vertical_key: string | null; severity: string; is_mandatory: boolean;
+  primary_recipient: string; also_notify: string[];
+  channels: NotificationPreferenceChannel[];
+}
+
+export interface NotificationChannelStatus {
+  channel: string; provider: string | null; environment: string | null;
+  description: string; managed: boolean; state: string; configured: boolean;
+  setup_complete: boolean; enabled: boolean; verified: boolean;
+  fields: NotificationChannelField[];
+  last_health_check: string | null; last_successful_delivery: string | null;
+  last_test_status: string | null; last_test_message: string | null;
+  failure_rate_pct: number | null; rate_limit: string | null;
+  webhook_status: string | null; credential_reference: string | null; note: string | null;
+}
+export interface NotificationChannelField {
+  key: string; label: string; type: string; required: boolean; secret: boolean;
+  placeholder?: string; value: string; has_value: boolean;
+  options?: { value: string; label: string }[];
+}
+export interface NotificationChannelAudit {
+  id: string; channel: string; action: string; actor_user_id: string | null;
+  before_state: Record<string, unknown> | null; after_state: Record<string, unknown> | null;
+  created_at: string;
 }
 export interface BadgeCriterionInput {
   metric_key: string; operator: string; value: unknown;
@@ -8502,20 +8402,25 @@ export interface HealthFormulaInput {
 // Mirrors the backend VALID_* sets (app/engines/trust_quality/service.py). Kept
 // here so the config forms only ever offer values the API will accept.
 export const TQ_ENUMS = {
-  badgeTargets: ["tenant", "tenant_owner", "staff", "technician", "customer", "service", "category"],
+  badgeTargets: ["tenant", "staff", "technician"],
   badgeRuleTypes: ["auto_award", "manual_award", "hybrid", "seasonal", "quality_based",
     "performance_based", "verification_based", "subscription_based", "compliance_based"],
   scopes: ["global", "vertical", "category", "service", "plan", "tenant"],
   operators: ["equals", "not_equals", "greater_than", "greater_than_or_equal",
     "less_than", "less_than_or_equal", "between", "in", "not_in", "exists", "not_exists"],
-  healthTargets: ["tenant_provider", "tenant_staff", "technician", "customer_account",
-    "service_quality", "category_quality"],
+  healthTargets: ["tenant", "technician"],
   directions: ["positive", "negative"],
 } as const;
 const tqList = <T,>(d: unknown): T[] => {
   const x = (d as { items?: T[] })?.items;
   return Array.isArray(x) ? x : (Array.isArray(d) ? (d as T[]) : []);
 };
+/** Drop undefined/empty params so a blank filter never becomes `?band_key=`. */
+const tqQuery = (params: Record<string, string | number | undefined>): string =>
+  Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join("&");
 export const trustQualityApi = {
   listBadgeRules: () =>
     apiFetch<unknown>("/v1/admin/trust-quality/badge-rules").then(d => tqList<BadgeRule>(d)),
@@ -8535,28 +8440,68 @@ export const trustQualityApi = {
   deactivateHealthRule: (id: string, reason: string) =>
     apiFetch(`/v1/admin/trust-quality/health-rules/${id}/deactivate`, {
       method: "POST", body: JSON.stringify({ reason }) }),
-  listRecalcJobs: () =>
-    apiFetch<unknown>("/v1/admin/trust-quality/recalculation-jobs").then(d => tqList<RecalcJob>(d)),
+  // Job history is paged server-side: sweeps accumulate for the life of the
+  // platform, so the console must never ask for the whole table.
+  listRecalcJobs: (params: { status?: string; limit?: number; offset?: number } = {}) =>
+    apiFetch<TQPage<RecalcJob>>(
+      `/v1/admin/trust-quality/recalculation-jobs?${tqQuery(params)}`),
+  getRecalcJob: (id: string) =>
+    apiFetch<RecalcJob>(`/v1/admin/trust-quality/recalculation-jobs/${id}`),
+  cancelRecalcJob: (id: string) =>
+    apiFetch<RecalcJob>(`/v1/admin/trust-quality/recalculation-jobs/${id}/cancel`,
+      { method: "POST" }),
   // /recalculate/{badges,health,risk} each re-score a SINGLE target and require a
-  // target_id. The platform-wide sweep is /recalculate/all, which takes the kind
-  // as its job_type and records a recalculation job.
-  recalculate: (kind: "badges" | "health" | "risk" | "all") =>
-    apiFetch("/v1/admin/trust-quality/recalculate/all", {
-      method: "POST", body: JSON.stringify({ job_type: kind, scope_type: "all" }) }),
+  // target_id. The platform-wide sweep is /recalculate/all, which QUEUES a job â€”
+  // it returns as soon as the job is recorded, and the worker runs it. Poll
+  // getRecalcJob for progress rather than waiting on this call.
+  recalculate: (kind: "badges" | "health" | "all",
+                scope?: { scope_type: "tenant"; scope_id: string }) =>
+    apiFetch<RecalcJob>("/v1/admin/trust-quality/recalculate/all", {
+      method: "POST",
+      body: JSON.stringify({ job_type: kind, scope_type: scope?.scope_type ?? "all",
+                             scope_id: scope?.scope_id }) }),
+  // Re-score ONE target from its live metrics (metrics omitted = read them now).
+  recalculateTarget: (kind: "badges" | "health" | "risk",
+                      body: { target_type: string; target_id: string;
+                              formula_id?: string; metrics?: Record<string, unknown> }) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/recalculate/${kind}`, {
+      method: "POST", body: JSON.stringify(body) }),
 
-  // ── Configuration (admin creates the rules the engine runs) ──────────────
+  // â”€â”€ Engine output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  overview: () => apiFetch<TrustQualityOverview>("/v1/admin/trust-quality/overview"),
+  listHealthScores: (params: { target_type?: string; band_key?: string;
+                               formula_id?: string; limit?: number; offset?: number } = {}) =>
+    apiFetch<TQPage<HealthScoreRow>>(`/v1/admin/trust-quality/health-scores?${tqQuery(params)}`),
+  listAuditLogs: (params: { target_type?: string; action_type?: string;
+                            limit?: number; offset?: number } = {}) =>
+    apiFetch<TQPage<TrustQualityAuditRow>>(`/v1/admin/trust-quality/audit-logs?${tqQuery(params)}`),
+
+  // â”€â”€ Badge assignments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  listBadgeAssignments: (params: {
+    q?: string; target_type?: string; badge_key?: string; award_source?: string;
+    limit?: number; offset?: number;
+  } = {}) => apiFetch<TQPage<EarnedBadgeDirectoryRow>>(
+    `/v1/admin/trust-quality/badge-assignments?${tqQuery(params)}`),
+  manualAwardBadge: (body: { badge_id: string; target_type: string;
+                             target_id: string; reason: string }) =>
+    apiFetch<unknown>("/v1/admin/trust-quality/badges/manual-award", {
+      method: "POST", body: JSON.stringify(body) }),
+  revokeBadge: (assignmentId: string, reason: string) =>
+    apiFetch<unknown>(`/v1/admin/trust-quality/badges/${assignmentId}/revoke`, {
+      method: "POST", body: JSON.stringify({ reason }) }),
+
+  // â”€â”€ Configuration (admin creates the rules the engine runs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   listBadgeDefinitions: () =>
     apiFetch<unknown>("/v1/admin/trust-quality/badges/definitions").then(d => tqList<BadgeDefinition>(d)),
-  createBadgeDefinition: (body: Partial<BadgeDefinition>) =>
-    apiFetch("/v1/admin/trust-quality/badges/definitions", { method: "POST", body: JSON.stringify(body) }),
+  seedDefaults: () =>
+    apiFetch<{ badges: number; badge_rules: number; health_formulas: number }>(
+      "/v1/admin/trust-quality/seed-defaults", { method: "POST" }),
   updateBadgeDefinition: (id: string, body: Partial<BadgeDefinition>) =>
     apiFetch(`/v1/admin/trust-quality/badges/definitions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   createBadgeRule: (body: BadgeRuleInput) =>
     apiFetch("/v1/admin/trust-quality/badge-rules", { method: "POST", body: JSON.stringify(body) }),
   updateBadgeRule: (id: string, body: Partial<BadgeRuleInput>) =>
     apiFetch(`/v1/admin/trust-quality/badge-rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  getBadgeRule: (id: string) =>
-    apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}`),
   createHealthFormula: (body: HealthFormulaInput) =>
     apiFetch("/v1/admin/trust-quality/health-rules", { method: "POST", body: JSON.stringify(body) }),
   updateHealthFormula: (id: string, body: Partial<HealthFormulaInput>) =>
@@ -8570,10 +8515,10 @@ export const trustQualityApi = {
     ).then(d => tqList<EarnedBadge>(d)),
   // Preview a rule/formula outcome against sample metrics before activating.
   simulateBadgeRule: (id: string, metrics: Record<string, unknown>) =>
-    apiFetch<unknown>(`/v1/admin/trust-quality/badge-rules/${id}/simulate`, {
+    apiFetch<BadgeSimulationResult>(`/v1/admin/trust-quality/badge-rules/${id}/simulate`, {
       method: "POST", body: JSON.stringify({ metrics }) }),
   simulateHealthFormula: (id: string, metrics: Record<string, unknown>) =>
-    apiFetch<unknown>(`/v1/admin/trust-quality/health-rules/${id}/simulate`, {
+    apiFetch<HealthSimulationResult>(`/v1/admin/trust-quality/health-rules/${id}/simulate`, {
       method: "POST", body: JSON.stringify({ metrics }) }),
 };
 
@@ -8609,6 +8554,8 @@ export const complaintsApi = {
     const qs = new URLSearchParams(params ?? {}).toString();
     return `/v1/admin/complaints/export${qs ? `?${qs}` : ""}`;
   },
+  get: (tenantId: string) =>
+    apiFetch<AdminOnboardingProviderListItem>(`/v1/admin/onboarding/providers/${tenantId}`),
 
   adminGet: (id: string) =>
     apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}`),
@@ -8648,7 +8595,7 @@ export const complaintsApi = {
     }),
 
   // MODULE-L5-02 bug #36: the complaints list has always linked to
-  // /admin/complaints/{id}, but that page did not exist — so most of the admin
+  // /admin/complaints/{id}, but that page did not exist â€” so most of the admin
   // complaint API had no client and no UI at all. These back the new detail page.
   listMessages: (id: string) =>
     apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/messages`),
@@ -8687,7 +8634,7 @@ export const complaintsApi = {
     }),
 };
 
-// ── Finance Hub (P0 Enterprise Finance Upgrade) ───────────────────────────────
+// â”€â”€ Finance Hub (P0 Enterprise Finance Upgrade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface FinanceSummary {
   active_wallets: number; low_balance_wallets: number; credits_issued: number;
   commission_earned: number; deposit_held: number; deposit_pending: number;
@@ -8831,7 +8778,7 @@ export interface FinanceVerticalConfig {
   manual_customer_refund_enabled: boolean; config_notes?: string | null;
 }
 
-// ── HS9B — Home Services Usage Credits (admin) ────────────────────────────────
+// â”€â”€ HS9B â€” Home Services Usage Credits (admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface UsageCreditLedgerEntryAdmin {
   ledger_id: string; tenant_id: string; job_id: string | null; booking_id: string | null;
   event_type: string; credit_delta: number; balance_before: number; balance_after: number;
@@ -9147,7 +9094,7 @@ export const financeApi = {
     apiFetch<FinanceVerticalConfig>(`/v1/admin/finance/vertical-config/${verticalType}`),
 };
 
-// ── Security & Threats SOC (Security Enterprise Upgrade) ──────────────────────
+// â”€â”€ Security & Threats SOC (Security Enterprise Upgrade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface SecurityOverview {
   summary_cards: {
@@ -9208,6 +9155,8 @@ export interface SecurityPolicy {
   id: string; policy_key: string; policy_value: unknown; description: string | null;
   updated_by_user_id: string | null; updated_reason: string | null;
   created_at: string; updated_at: string;
+  value_type: "boolean" | "number"; minimum: number | null; maximum: number | null;
+  enforcement: "runtime";
 }
 
 export const securityAdminApi = {
@@ -9269,17 +9218,24 @@ export const securityAdminApi = {
     if (params?.cursor) qs.set("cursor", params.cursor);
     return apiFetch<{ entries: IPBlockEntry[]; has_next: boolean; next_cursor: string | null }>(`/v1/admin/security/ip-blocklist?${qs.toString()}`);
   },
-  createIpBlock: (data: { ipOrCidr: string; entryType?: string; reason: string; threatLevel?: string; scope?: string; tenantId?: string; expiresHours?: number; overrideSelfBlock?: boolean }) =>
+  createIpBlock: (data: { ipOrCidr: string; entryType?: string; reason: string; threatLevel?: string; scope?: string; tenantId?: string; expiresHours?: number; permanent?: boolean; overrideSelfBlock?: boolean }) =>
     apiFetch<{ entry_id: string; ip_or_cidr: string; status: string }>("/v1/admin/security/ip-blocklist", {
       method: "POST", body: JSON.stringify({
         ip_or_cidr: data.ipOrCidr, entry_type: data.entryType ?? "ip", reason: data.reason,
         threat_level: data.threatLevel ?? "medium", scope: data.scope ?? "all",
-        tenant_id: data.tenantId, expires_hours: data.expiresHours, override_self_block: data.overrideSelfBlock ?? false,
+        tenant_id: data.tenantId, expires_hours: data.expiresHours, permanent: data.permanent ?? false,
+        override_self_block: data.overrideSelfBlock ?? false,
       }),
     }),
   revokeIpBlock: (entryId: string, reason: string) =>
     apiFetch<{ entry_id: string; revoked: boolean; reason: string }>(`/v1/admin/security/ip-blocklist/${entryId}/revoke`,
       { method: "POST", body: JSON.stringify({ reason }) }),
+  updateIpBlock: (entryId: string, data: { scope?: string; threatLevel?: string; reason?: string }) =>
+    apiFetch<IPBlockEntry>(`/v1/admin/security/ip-blocklist/${entryId}`, {
+      method: "PATCH", body: JSON.stringify({
+        scope: data.scope, threat_level: data.threatLevel, reason: data.reason,
+      }),
+    }),
   getIpBlockHits: (entryId: string) =>
     apiFetch<{ entry_id: string; hits: { hit_at: string; path: string | null; method: string | null; user_agent: string | null; blocked_scope: string | null }[] }>(`/v1/admin/security/ip-blocklist/${entryId}/hits`),
 
@@ -9303,9 +9259,9 @@ export const securityAdminApi = {
     }),
   getApiKeyDetail: (keyId: string) =>
     apiFetch<SecurityApiKey>(`/v1/admin/security/api-keys/${keyId}`),
-  rotateApiKey: (keyId: string, tenantId: string) =>
+  rotateApiKey: (keyId: string, tenantId: string, reason: string) =>
     apiFetch<{ key_id: string; raw_key: string; key_prefix: string; previous_key_id: string; note: string }>(`/v1/admin/security/api-keys/${keyId}/rotate`,
-      { method: "POST", body: JSON.stringify({ tenant_id: tenantId }) }),
+      { method: "POST", body: JSON.stringify({ tenant_id: tenantId, reason }) }),
   revokeApiKey: (keyId: string, tenantId: string, reason: string) =>
     apiFetch<{ key_id: string; revoked: boolean; reason: string }>(`/v1/admin/security/api-keys/${keyId}/revoke`,
       { method: "POST", body: JSON.stringify({ tenant_id: tenantId, reason }) }),
@@ -9351,7 +9307,7 @@ export const securityAdminApi = {
 };
 
 
-// ── Vertical Catalog ──────────────────────────────────────────────────────────
+// â”€â”€ Vertical Catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VerticalItem {
   id: string;
@@ -9385,10 +9341,10 @@ export interface CategoryCommissionAuthority {
   category_override_pct: number | null;
   vertical_default_pct: number | null;
   effective_pct: number | null;
-  effective_source: "category_override" | "vertical_default" | "model_not_percentage" | "percentage_default_missing" | "platform_legacy_default";
+  effective_source: "category_override" | "vertical_default" | "model_not_percentage" | "percentage_default_missing" | "platform_legacy_default" | "policy_not_published";
   is_percentage_commission_live: boolean;
   default_editor_path: string;
-  override_editor_path: string;
+  override_editor_path: string | null;
 }
 
 export interface CatalogModuleItem {
@@ -9573,7 +9529,7 @@ export const verticalCatalogApi = {
     ),
 };
 
-// ── Platform Settings Enterprise Upgrade ──────────────────────────────────────
+// â”€â”€ Platform Settings Enterprise Upgrade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface EnterpriseSetting {
   key: string; label: string; value: unknown; type: string; description: string | null;
@@ -9712,6 +9668,12 @@ export const settingsAdminApi = {
   }) => apiFetch<{ tenant_id: string; key: string; value: unknown }>("/v1/admin/settings/tenant-overrides", {
     method: "POST", body: JSON.stringify(data),
   }),
+  updateTenantOverride: (overrideId: string, data: {
+    value: unknown; setting_type?: string; reason: string; expires_at?: string;
+  }) => apiFetch<{ tenant_id: string; key: string; value: unknown }>(
+    `/v1/admin/settings/tenant-overrides/${overrideId}`,
+    { method: "PUT", body: JSON.stringify(data) },
+  ),
   revokeTenantOverride: (overrideId: string, reason: string) =>
     apiFetch<{ tenant_id: string; key: string; deleted: boolean }>(
       `/v1/admin/settings/tenant-overrides/${overrideId}/revoke`,
@@ -9743,9 +9705,9 @@ export const settingsAdminApi = {
   },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // P0 Enterprise Service Setup Templates (migration 091)
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface SetupTemplateItem {
   id: string;
@@ -9871,7 +9833,7 @@ export const serviceSetupTemplatesApi = {
     ),
 };
 
-// ── Bulk Wizard API ───────────────────────────────────────────────────────────
+// â”€â”€ Bulk Wizard API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface BulkDraftItem {
   id: string;
@@ -9969,11 +9931,11 @@ export const bulkWizardApi = {
     apiFetch<{ items: unknown[] }>(`/v1/admin/service-setup/bulk-wizard/runs/${id}/logs`),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // P0 Marketing Automation Command Center (migration 100)
 // Platform-pays-AI-cost rule: never read/show tenant wallet or provider payout
-// data here — Platform AI Budget is entirely separate from tenant usage credits.
-// ─────────────────────────────────────────────────────────────────────────────
+// data here â€” Platform AI Budget is entirely separate from tenant usage credits.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface MarketingAutomationSummary {
   posts_published: number;
@@ -10146,7 +10108,7 @@ export const marketingCommandCenterApi = {
     apiFetch<{ items: MarketingAuditLogItem[] }>(`/v1/admin/marketing/audit-logs?limit=${limit}`),
 };
 
-// ── Platform Analytics ────────────────────────────────────────────────────────
+// â”€â”€ Platform Analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface PlatformSummary {
   active_tenants: number; total_jobs: number; platform_revenue: number;
@@ -10228,13 +10190,16 @@ export const platformAnalyticsApi = {
   exportReport: (report_type: string, params: PlatformAnalyticsParams) => apiFetch<{export_id: string; status: string}>(`/v1/admin/analytics/reports/export`, {method: 'POST', body: JSON.stringify({report_type, ...params})}),
 };
 
-// ── Intelligence Command Center ────────────────────────────────────────────────
+// â”€â”€ Intelligence Command Center â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface IntelligenceSummary {
   tenants_at_risk: number; open_anomalies: number; predictions_computed: number;
   events_today: number; rag_queries: number; indexed_documents: number;
   avg_ai_latency_ms: number | null;
   ai_cost_today: number; failed_jobs: number; active_tenants: number;
+  engine_health: Array<{ key: string; label: string; status: "healthy" | "degraded" | "idle"; detail: string }>;
+  action_items: Array<{ type: string; count: number; label: string; tab: string }>;
+  generated_at: string;
 }
 export interface RagKnowledgeBase {
   id: string; name: string; scope_type: string; vertical_key: string | null;
@@ -10244,7 +10209,7 @@ export interface RagKnowledgeBase {
 export interface RiskScore {
   id: string; entity_type: string; entity_id: string; risk_score: number;
   risk_level: string; top_reasons_json: string[]; confidence_score: number;
-  computed_at: string;
+  computed_at: string; entity_label?: string; entity_code?: string | null;
 }
 export interface IntelAnomaly {
   id: string; anomaly_type: string; severity: string; entity_type: string | null;
@@ -10263,6 +10228,7 @@ export interface PredictionJob {
 }
 export interface DataQualityCheck {
   id: string; check_key: string; check_name: string; severity: string;
+  description: string | null; is_enabled: boolean;
   last_status: string; failure_count: number; last_run_at: string | null;
 }
 
@@ -10277,45 +10243,42 @@ export const intelligenceCmdApi = {
   getKnowledgeBase: (id: string) => apiFetch<RagKnowledgeBase>(`/v1/admin/intelligence/knowledge-bases/${id}`),
   reindexKB: (id: string) => apiFetch<RagKnowledgeBase>(`/v1/admin/intelligence/knowledge-bases/${id}/reindex`, {method:'POST'}),
   testQueryKB: (id: string, query: string) => apiFetch<Record<string, unknown>>(`/v1/admin/intelligence/knowledge-bases/${id}/test-query`, {method:'POST', body: JSON.stringify({query})}),
-  getQueryLogs: () => apiFetch<{items: unknown[]; total: number}>('/v1/admin/intelligence/rag/query-logs'),
+  getQueryLogs: (p: IntelligenceListParams = {}) => apiFetch<{items: unknown[]; total: number}>(`/v1/admin/intelligence/rag/query-logs${intelligenceQs(p)}`),
   getRetrievalQuality: () => apiFetch<Record<string, unknown>>('/v1/admin/intelligence/rag/retrieval-quality'),
   getEventSummary: () => apiFetch<Record<string, unknown>>('/v1/admin/intelligence/events/summary'),
-  getEventSources: () => apiFetch<{items: unknown[]; total: number}>('/v1/admin/intelligence/events/sources'),
-  getEventFailures: () => apiFetch<{items: unknown[]; total: number}>('/v1/admin/intelligence/events/failures'),
+  getEventSources: () => apiFetch<{items: IntelligenceEventSource[]; total: number}>('/v1/admin/intelligence/events/sources'),
+  getEventFailures: (p: IntelligenceListParams = {}) => apiFetch<{items: IntelligenceEventFailure[]; total: number}>(`/v1/admin/intelligence/events/failures${intelligenceQs(p)}`),
   getRiskSummary: () => apiFetch<Record<string, number>>('/v1/admin/intelligence/risk/summary'),
-  getRiskEntities: (p: {risk_level?: string; entity_type?: string; page?: number} = {}) => {
-    const qs = new URLSearchParams(); Object.entries(p).forEach(([k,v]) => { if (v != null && v !== '') qs.set(k, String(v)); });
-    return apiFetch<{items: RiskScore[]; total: number}>(`/v1/admin/intelligence/risk/entities?${qs}`);
-  },
+  getRiskEntities: (p: IntelligenceListParams = {}) => apiFetch<{items: RiskScore[]; total: number}>(`/v1/admin/intelligence/risk/entities${intelligenceQs(p)}`),
   recomputeRisk: (entity_type: string, entity_id: string) => apiFetch<RiskScore>(`/v1/admin/intelligence/risk/${entity_type}/${entity_id}/recompute`, {method:'POST'}),
-  getAnomalies: (p: {status?: string; severity?: string} = {}) => {
-    const qs = new URLSearchParams(); Object.entries(p).forEach(([k,v]) => { if (v != null && v !== '') qs.set(k, String(v)); });
-    return apiFetch<{items: IntelAnomaly[]; total: number}>(`/v1/admin/intelligence/anomalies?${qs}`);
-  },
+  getAnomalies: (p: IntelligenceListParams = {}) => apiFetch<{items: IntelAnomaly[]; total: number}>(`/v1/admin/intelligence/anomalies${intelligenceQs(p)}`),
   runAnomalyScan: () => apiFetch<{scanned: number; new_anomalies: number; updated: number}>('/v1/admin/intelligence/anomalies/run-scan', {method:'POST'}),
   resolveAnomaly: (id: string) => apiFetch<IntelAnomaly>(`/v1/admin/intelligence/anomalies/${id}/resolve`, {method:'POST'}),
   investigateAnomaly: (id: string) => apiFetch<IntelAnomaly>(`/v1/admin/intelligence/anomalies/${id}/investigate`, {method:'POST'}),
-  getModels: () => apiFetch<{items: ModelRegistryItem[]; total: number}>('/v1/admin/intelligence/models'),
+  markAnomalyFalsePositive: (id: string) => apiFetch<IntelAnomaly>(`/v1/admin/intelligence/anomalies/${id}/false-positive`, {method:'POST'}),
+  getModels: (p: IntelligenceListParams = {}) => apiFetch<{items: ModelRegistryItem[]; total: number}>(`/v1/admin/intelligence/models${intelligenceQs(p)}`),
   activateModel: (id: string) => apiFetch<ModelRegistryItem>(`/v1/admin/intelligence/models/${id}/activate`, {method:'POST'}),
   deactivateModel: (id: string) => apiFetch<ModelRegistryItem>(`/v1/admin/intelligence/models/${id}/deactivate`, {method:'POST'}),
   evaluateModel: (id: string) => apiFetch<Record<string, unknown>>(`/v1/admin/intelligence/models/${id}/evaluate`, {method:'POST'}),
-  getPredictionJobs: () => apiFetch<{items: PredictionJob[]; total: number}>('/v1/admin/intelligence/prediction-jobs'),
+  getPredictionJobs: (p: IntelligenceListParams = {}) => apiFetch<{items: PredictionJob[]; total: number}>(`/v1/admin/intelligence/prediction-jobs${intelligenceQs(p)}`),
   createPredictionJob: (payload: Record<string, unknown>) => apiFetch<PredictionJob>('/v1/admin/intelligence/prediction-jobs', {method:'POST', body: JSON.stringify(payload)}),
   cancelPredictionJob: (id: string) => apiFetch<PredictionJob>(`/v1/admin/intelligence/prediction-jobs/${id}/cancel`, {method:'POST'}),
+  retryPredictionJob: (id: string) => apiFetch<PredictionJob>(`/v1/admin/intelligence/prediction-jobs/${id}/retry`, {method:'POST'}),
   getDQSummary: () => apiFetch<Record<string, number>>('/v1/admin/intelligence/data-quality/summary'),
   getDQChecks: () => apiFetch<{items: DataQualityCheck[]; total: number}>('/v1/admin/intelligence/data-quality/checks'),
   runDQCheck: (check_key: string) => apiFetch<DataQualityCheck>(`/v1/admin/intelligence/data-quality/checks/${check_key}/run`, {method:'POST'}),
+  getDQFailures: (check_key: string, p: IntelligenceListParams = {}) => apiFetch<{items: DataQualityFailure[]; total: number}>(`/v1/admin/intelligence/data-quality/checks/${check_key}/failures${intelligenceQs(p)}`),
   getAiUsageSummary: () => apiFetch<Record<string, unknown>>('/v1/admin/intelligence/ai-usage/summary'),
-  getAiUsageLogs: () => apiFetch<{items: unknown[]; total: number}>('/v1/admin/intelligence/ai-usage/logs'),
+  getAiUsageLogs: (p: IntelligenceListParams = {}) => apiFetch<{items: AiUsageLogItem[]; total: number}>(`/v1/admin/intelligence/ai-usage/logs${intelligenceQs(p)}`),
   getCostBreakdown: () => apiFetch<{breakdown: Array<{feature: string; cost: number}>; total_features: number}>('/v1/admin/intelligence/ai-usage/cost-breakdown'),
-  getAuditLogs: () => apiFetch<{items: unknown[]; total: number}>('/v1/admin/intelligence/audit-logs'),
+  getAuditLogs: (p: IntelligenceListParams = {}) => apiFetch<{items: IntelligenceAuditItem[]; total: number}>(`/v1/admin/intelligence/audit-logs${intelligenceQs(p)}`),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // P0 Platform Command Center Dashboard (migration 104)
 // ServiceOS finance rule: platform_revenue excludes provider_direct_service_value
 // (the amount customers pay providers directly for Home Services).
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface DashboardExecutiveSummary {
   platform_health: { score: number; status: string };
@@ -10400,8 +10363,8 @@ export interface DashboardHomeServicesSummary {
   home_services_providers: number; bookable_providers: number; not_bookable_providers: number;
   service_catalog_health: { status: string; active_services: number };
   pricing_rule_health: { status: string; active_rules: number };
-  service_area_coverage_health: { status: string; active_areas: number; tenants_without_areas: number };
-  provider_matching_health: string;
+  tenant_service_area_health: { status: string; active_areas: number; tenants_without_areas: number };
+  provider_bookability_health: { status: string; bookable_providers: number; not_bookable_providers: number };
   auto_price_options_health: string;
   completed_job_deduction_health: string;
   published_tenant_services: number;
@@ -10459,7 +10422,7 @@ export const dashboardApi = {
     apiFetch<{ snapshot_id: string; created_at: string }>("/v1/admin/dashboard/export-snapshot", { method: "POST" }),
 };
 
-// ── Knowledge Base Enterprise (migration 104) ─────────────────────────────────
+// â”€â”€ Knowledge Base Enterprise (migration 104) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface KBSummary {
   total: number; active: number; draft: number; disabled: number; archived: number;
@@ -10553,84 +10516,12 @@ export const kbApi = {
   seedDefaults: () => apiFetch<Record<string, unknown>>('/v1/admin/intelligence/knowledge-bases/seed-defaults', { method: 'POST' }),
 };
 
-// ── Workflow Templates Enterprise (migration 106) ─────────────────────────────
-export interface WorkflowTemplateSummary {
-  total: number; published: number; draft: number; missing_mapping: number;
-  runtime_ready: number; sla_enabled: number; approval_workflows: number;
-  automation_enabled: number; used_by_services: number; runtime_errors: number;
-}
-export interface WorkflowTemplate {
-  id: string; workflow_key: string; name: string; description: string | null;
-  vertical_key: string; workflow_type: string; status: string; current_version: number;
-  readiness_status: string; runtime_health: string; steps_json: unknown[];
-  transitions_json: unknown[]; sla_rules_json: unknown[]; approval_gates_json: unknown[];
-  automation_rules_json: unknown[]; service_mappings_json: unknown[];
-  validation_result_json: Record<string, unknown>; created_at: string; updated_at: string;
-  published_at: string | null; archived_at: string | null;
-}
-export interface WTStep {
-  id: string; step_key: string; step_name: string; step_type: string;
-  owner_app: string; owner_role: string; customer_visible: boolean; tenant_visible: boolean;
-  staff_visible: boolean; admin_visible: boolean; requires_notes: boolean; requires_photo: boolean;
-  requires_payment_record: boolean; requires_approval: boolean; sla_enabled: boolean;
-  audit_required: boolean; display_order: number;
-}
-export interface WTTransition {
-  id: string; from_step_key: string; to_step_key: string; action_label: string;
-  allowed_role: string; requires_reason: boolean; triggers_notification: boolean;
-}
-export interface WTValidationResult {
-  passed: boolean; errors: { field: string; message: string; severity: string }[];
-  warnings: { field: string; message: string }[]; readiness_status: string;
-}
-export interface WTSimulationResult {
-  steps: { step_key: string; step_name: string; action: string; role: string; duration_estimate: string }[];
-  notifications: string[]; sla_timers: unknown[]; finance_triggers: string[]; final_state: string;
-}
-export interface WTVersion {
-  id: string; version_number: number; status: string; change_summary: string | null;
-  published_at: string | null; is_rollback: boolean; created_at: string;
-}
+// Legacy workflow-template clients are intentionally absent.
+// Runtime job steps now live on `service_job_workflow` via the Catalog
+// Workspace / Job-Type Blueprint APIs, so tenant/customer/staff/admin jobs all
+// consume the same published workflow snapshot.
 
-export const workflowTemplateApi = {
-  getSummary: () => apiFetch<WorkflowTemplateSummary>('/admin/workflows/templates/summary'),
-  list: (params?: Record<string, string | number>) => {
-    const qs = params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '';
-    return apiFetch<{ items: WorkflowTemplate[]; pagination: Record<string, number> }>('/admin/workflows/templates' + qs);
-  },
-  create: (payload: Record<string, unknown>) => apiFetch<WorkflowTemplate>('/admin/workflows/templates', { method: 'POST', body: JSON.stringify(payload) }),
-  get: (id: string) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}`),
-  update: (id: string, payload: Record<string, unknown>) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  clone: (id: string) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}/clone`, { method: 'POST' }),
-  archive: (id: string) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}/archive`, { method: 'POST' }),
-  addStep: (id: string, payload: Record<string, unknown>) => apiFetch<WTStep>(`/admin/workflows/templates/${id}/steps`, { method: 'POST', body: JSON.stringify(payload) }),
-  updateStep: (id: string, stepId: string, payload: Record<string, unknown>) => apiFetch<WTStep>(`/admin/workflows/templates/${id}/steps/${stepId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteStep: (id: string, stepId: string) => apiFetch<void>(`/admin/workflows/templates/${id}/steps/${stepId}`, { method: 'DELETE' }),
-  addTransition: (id: string, payload: Record<string, unknown>) => apiFetch<WTTransition>(`/admin/workflows/templates/${id}/transitions`, { method: 'POST', body: JSON.stringify(payload) }),
-  updateTransition: (id: string, tid: string, payload: Record<string, unknown>) => apiFetch<WTTransition>(`/admin/workflows/templates/${id}/transitions/${tid}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteTransition: (id: string, tid: string) => apiFetch<void>(`/admin/workflows/templates/${id}/transitions/${tid}`, { method: 'DELETE' }),
-  getSla: (id: string) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/sla`),
-  updateSla: (id: string, payload: unknown[]) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/sla`, { method: 'PUT', body: JSON.stringify(payload) }),
-  getApprovals: (id: string) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/approvals`),
-  updateApprovals: (id: string, payload: unknown[]) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/approvals`, { method: 'PUT', body: JSON.stringify(payload) }),
-  getAutomation: (id: string) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/automation`),
-  updateAutomation: (id: string, payload: unknown[]) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/automation`, { method: 'PUT', body: JSON.stringify(payload) }),
-  getServiceMapping: (id: string) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/service-mapping`),
-  addServiceMapping: (id: string, payload: Record<string, unknown>) => apiFetch<unknown>(`/admin/workflows/templates/${id}/service-mapping`, { method: 'POST', body: JSON.stringify(payload) }),
-  deleteServiceMapping: (id: string, mid: string) => apiFetch<void>(`/admin/workflows/templates/${id}/service-mapping/${mid}`, { method: 'DELETE' }),
-  validate: (id: string) => apiFetch<WTValidationResult>(`/admin/workflows/templates/${id}/validate`, { method: 'POST' }),
-  simulate: (id: string, payload: Record<string, unknown>) => apiFetch<WTSimulationResult>(`/admin/workflows/templates/${id}/simulate`, { method: 'POST', body: JSON.stringify(payload) }),
-  publish: (id: string, reason: string) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}/publish`, { method: 'POST', body: JSON.stringify({ reason }) }),
-  rollback: (id: string, version: number, reason: string) => apiFetch<WorkflowTemplate>(`/admin/workflows/templates/${id}/rollback`, { method: 'POST', body: JSON.stringify({ version_number: version, reason }) }),
-  getVersions: (id: string) => apiFetch<WTVersion[]>(`/admin/workflows/templates/${id}/versions`),
-  getRuntimeAnalytics: (id: string) => apiFetch<unknown>(`/admin/workflows/templates/${id}/runtime-analytics`),
-  getRuntimeJobs: (id: string, page = 1) => apiFetch<unknown>(`/admin/workflows/templates/${id}/runtime-jobs?page=${page}`),
-  getAuditLogs: (id: string) => apiFetch<unknown[]>(`/admin/workflows/templates/${id}/audit-logs`),
-  seedDefaultsPreview: () => apiFetch<unknown[]>('/admin/workflows/templates/seed-defaults/preview', { method: 'POST' }),
-  seedDefaults: () => apiFetch<unknown>('/admin/workflows/templates/seed-defaults', { method: 'POST' }),
-};
-
-// ── Phase 1B — Roles & Permissions (read-only, code-defined RBAC) ─────────────
+// â”€â”€ Phase 1B â€” Roles & Permissions (read-only, code-defined RBAC) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface RoleListItem {
   role_id: string; role_key: string; label: string; type: "system" | "custom";
   scope: string; is_implemented: boolean; is_active: boolean;
@@ -10659,14 +10550,16 @@ export interface PermissionsSummary {
 export const rolesPermissionsApi = {
   listRoles: () => apiFetch<{ items: RoleListItem[]; summary: RolesSummary }>("/v1/admin/roles"),
   getRole: (roleId: string) => apiFetch<RoleDetail>(`/v1/admin/roles/${roleId}`),
-  listPermissions: (params?: { module?: string; app_scope?: string; risk_level?: string; search?: string }) => {
+  listPermissions: (params?: { module?: string; app_scope?: string; risk_level?: string; search?: string; page?: number; limit?: number }) => {
     const q = new URLSearchParams();
     if (params?.module) q.set("module", params.module);
     if (params?.app_scope) q.set("app_scope", params.app_scope);
     if (params?.risk_level) q.set("risk_level", params.risk_level);
     if (params?.search) q.set("search", params.search);
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.limit) q.set("limit", String(params.limit));
     const qs = q.toString();
-    return apiFetch<{ items: PermissionListItem[]; summary: PermissionsSummary }>(
+    return apiFetch<{ items: PermissionListItem[]; summary: PermissionsSummary; meta: { total: number; page: number; limit: number; total_pages: number } }>(
       `/v1/admin/permissions${qs ? `?${qs}` : ""}`);
   },
   listPermissionsGrouped: (params?: { app_scope?: string; risk_level?: string }) => {
@@ -10679,7 +10572,7 @@ export const rolesPermissionsApi = {
   },
 };
 
-// ── Deactivate Manual Bargain Module — Automatic Customer Price Options ──────
+// Home Services matching flags and diagnostics
 export interface HomeServicesPricingConfig {
   manual_bargain_rules_enabled: boolean;
   auto_price_options_enabled: boolean;
@@ -10687,33 +10580,36 @@ export interface HomeServicesPricingConfig {
   home_services_only: boolean;
 }
 
-export interface AutoPriceOptions {
-  currency: string;
-  allowed_offer_min: number;
-  allowed_offer_max: number;
-  low_price: number;
-  mid_price: number;
-  high_price: number;
-  platform_fee_percent: number;
-  platform_fee_amount: number;
-  payment_mode: string;
+export interface IntelligenceEventSource {
+  source: string; events_today: number; failure_signals: number; total_events: number;
+  last_event_at: string | null; status: "healthy" | "degraded" | "idle";
+}
+export interface IntelligenceEventFailure {
+  event_id: string; event_type: string; engine_id: string; entity_type: string | null;
+  entity_id: string | null; tenant_id: string | null; occurred_at: string;
+}
+export interface DataQualityFailure {
+  entity_id: string; entity_type: string; label: string; reason: string;
+}
+export interface AiUsageLogItem {
+  id: string; feature_key: string | null; app_scope: string | null; tenant_id: string | null;
+  model_name: string | null; tokens_in: number; tokens_out: number; cost_amount: number;
+  latency_ms: number | null; status: string; error_code: string | null; created_at: string;
+}
+export interface IntelligenceAuditItem {
+  id: string; time: string; actor: string | null; actor_role: string | null;
+  action: string; engine_id: string; target: string | null; target_id: string | null;
+  request_id: string | null; is_high_risk: boolean;
 }
 
-export interface PriceExperiencePreviewResult extends AutoPriceOptions {
-  service_name?: string | null;
-  admin_min_price?: number | null;
-  admin_max_price?: number | null;
-  admin_base_price?: number | null;
-  selected_min_price: number;
-  selected_max_price: number;
-  platform_fee_on_min: number | null;
-  platform_fee_on_max: number | null;
-  customer_low_price: number;
-  customer_mid_price: number;
-  customer_high_price: number;
-  // Backward-compatible aliases
-  customer_min_price?: number;
-  customer_max_price?: number;
+type IntelligenceListParams = Record<string, string | number | boolean | undefined | null>;
+function intelligenceQs(params: IntelligenceListParams = {}): string {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") qs.set(key, String(value));
+  });
+  const value = qs.toString();
+  return value ? `?${value}` : "";
 }
 
 export interface MatchingDiagnosticsBadge { name: string; icon: string; color: string; }
@@ -10745,7 +10641,6 @@ export interface MatchingDiagnosticsResult {
   excluded_providers: { provider_name: string; reason_code: string | null }[];
   selected_provider: MatchingDiagnosticsCandidate | null;
   top_candidates: MatchingDiagnosticsCandidate[];
-  price_options: AutoPriceOptions | null;
   area_market_comparison: {
     area: string; competitor_provider_count: number;
     area_competitor_min: number | null; area_competitor_avg: number | null; area_competitor_max: number | null;
@@ -10776,9 +10671,6 @@ export interface MatchingAuditRow {
 
 export const autoPriceOptionsApi = {
   getConfig: () => apiFetch<HomeServicesPricingConfig>("/v1/admin/home-services/config"),
-  // previewPriceExperience removed (MODULE-L5-57) -- admin does not own
-  // service price amounts; the backing endpoint no longer exists. Preview
-  // now lives tenant-side via tenantAutoPriceOptionsApi.getCustomerPricePreview.
   runMatchingDiagnostics: (data: {
     category_id: string; master_service_id: string; city: string; zipcode?: string;
     offering_type_id?: string; brand_id?: string; job_type_id?: string; requested_at?: string;
@@ -10788,18 +10680,9 @@ export const autoPriceOptionsApi = {
   getMatchingPolicy: () => apiFetch<MatchingPolicyManifest>("/v1/admin/home-services/matching/policy"),
   getMatchingAudit: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/audit?limit=${limit}`),
   getMatchingLiveDecisions: (limit = 50) => apiFetch<{ items: MatchingAuditRow[] }>(`/v1/admin/home-services/matching/decisions?limit=${limit}`),
-
-  /** Price-experience preview. No backend route exists for this yet
-   * (verified against the live OpenAPI schema), so this fails loudly rather
-   * than calling a 404 or fabricating a preview the pricing engine never
-   * produced. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  previewPriceExperience: async (_input: Record<string, any>): Promise<never> => {
-    throw new Error("Price experience preview is not available yet.");
-  },
 };
 
-// ── Home Services Catalog Setup Console ──────────────────────────────────────
+// â”€â”€ Home Services Catalog Setup Console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface HsConsoleService {
   service_id: string; category_id: string; service_name: string; slug: string;
@@ -10821,10 +10704,8 @@ export interface HsConsoleCatalogList {
   total: number; limit: number; offset: number;
 }
 
-export interface HsSymmetricPricePreview {
+export interface HsProviderPricePreview {
   provider_min_price: number; provider_max_price: number;
-  platform_fee_percent: number; platform_fee_fixed_amount: number;
-  low_price: number; mid_price: number; high_price: number;
   payment_mode: string;
 }
 
@@ -10833,7 +10714,7 @@ export interface HsConsoleType {
   is_required: boolean; is_default: boolean; pricing_rule_id: string | null;
   admin_floor_price: number | null; admin_ceiling_price: number | null;
   platform_fee_percent: number; completed_job_deduction_credits: number;
-  customer_price_preview: HsSymmetricPricePreview | null;
+  customer_price_preview: HsProviderPricePreview | null;
 }
 
 export interface HsConsoleBrand {
@@ -10843,7 +10724,7 @@ export interface HsConsoleBrand {
   pricing_rule_id: string | null;
   admin_floor_price: number | null; admin_ceiling_price: number | null;
   platform_fee_percent: number | null;
-  customer_price_preview: HsSymmetricPricePreview | null;
+  customer_price_preview: HsProviderPricePreview | null;
 }
 
 export interface HsConsoleServiceDetail extends HsConsoleService {
@@ -10889,16 +10770,11 @@ export const homeServicesCatalogConsoleApi = {
   }, serviceTypeId?: string) => apiFetch<{ brands: HsConsoleBrand[] }>(
     `/v1/admin/home-services/service-catalog/services/${serviceId}/brands/${brandId}/limits${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
     { method: "PUT", body: JSON.stringify(data) }),
-  pricePreview: (data: {
-    provider_min_price: number; provider_max_price: number;
-    platform_fee_percent?: number; platform_fee_fixed_amount?: number;
-  }) => apiFetch<HsSymmetricPricePreview>("/v1/admin/home-services/service-catalog/price-preview",
-    { method: "POST", body: JSON.stringify(data) }),
   getAudit: (serviceId: string) =>
     apiFetch<{ events: HsConsoleAuditEvent[] }>(`/v1/admin/home-services/service-catalog/services/${serviceId}/audit`),
 };
 
-// ── FINAL-L5-04B — Admin Tenant Entitlement Management ────────────────────────
+// â”€â”€ FINAL-L5-04B â€” Admin Tenant Entitlement Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface AdminModuleEntitlement {
   id: string; tenant_id: string; module_id: string; module_key: string; module_label: string;
   status: string; source: string; enabled_at: string | null; disabled_at: string | null; version: number;
@@ -10933,8 +10809,8 @@ export const adminEntitlementApi = {
     apiFetch(`/v1/admin/tenants/${tenantId}/entitlements/categories/${categoryId}/reenable`, { method: "POST" }),
 };
 
-// ── MODULE-L5-52 — Admin Catalog Workspace (dimensions / job types /
-// problems & questions / blueprint readiness + impact) ────────────────────────
+// â”€â”€ MODULE-L5-52 â€” Admin Catalog Workspace (dimensions / job types /
+// problems & questions / blueprint readiness + impact) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface CatalogJobType {
   id: string; key: string; label: string; description: string | null; requires_assessment: boolean;
   allows_quote: boolean; requires_checklist: boolean; runtime_supported: boolean;
@@ -10983,7 +10859,7 @@ export interface CatalogIssueTypeMapping {
   mapping_id: string; issue_type_id: string; name: string;
   is_common: boolean; is_default: boolean; customer_visible: boolean;
 }
-// Service Option Mapping — exact Job-Type scoping (migration 169). No
+// Service Option Mapping â€” exact Job-Type scoping (migration 169). No
 // monetary field here; price is tenant-owned per mapping.
 export interface CatalogOptionMapping {
   id: string; master_service_id: string; service_option_id: string;
@@ -10999,9 +10875,15 @@ export interface CatalogOptionMapping {
 
 export const catalogWorkspaceApi = {
   // Job types
-  listJobTypes: (includeInactive = false) =>
-    apiFetch<{ items: CatalogJobType[]; total: number }>(
-      `/v1/admin/catalog/job-types${includeInactive ? "?include_inactive=true" : ""}`),
+  listJobTypes: (params: { includeInactive?: boolean; search?: string; page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.includeInactive) qs.set("include_inactive", "true");
+    if (params.search) qs.set("search", params.search);
+    qs.set("page", String(params.page ?? 1));
+    qs.set("page_size", String(params.pageSize ?? 50));
+    return apiFetch<{ items: CatalogJobType[]; total: number; page: number; page_size: number; pages: number }>(
+      `/v1/admin/catalog/job-types?${qs}`);
+  },
   createJobType: (data: Record<string, unknown>) =>
     apiFetch<CatalogJobType>("/v1/admin/catalog/job-types", { method: "POST", body: JSON.stringify(data) }),
   updateJobType: (id: string, data: Record<string, unknown>) =>
@@ -11035,7 +10917,7 @@ export const catalogWorkspaceApi = {
   getImpactReport: (masterServiceId: string) =>
     apiFetch<BlueprintImpactReport>(`/v1/admin/catalog/blueprint-impact?master_service_id=${masterServiceId}`),
 
-  // Draft status + explicit publish (real "Draft changes · N")
+  // Draft status + explicit publish (real "Draft changes Â· N")
   getDraftStatus: (masterServiceId: string) =>
     apiFetch<BlueprintDraftStatus>(`/v1/admin/catalog/blueprint/draft-status?master_service_id=${masterServiceId}`),
   publishDraft: (masterServiceId: string) =>
@@ -11099,7 +10981,7 @@ export const catalogWorkspaceApi = {
     apiFetch<{ items: Record<string, unknown>[]; total: number }>(
       `/v1/admin/service-options?search=${encodeURIComponent(search)}&page_size=20`),
 
-  // MODULE-L5-52 (migration 160) — Job-Type Blueprint: job type as a child
+  // MODULE-L5-52 (migration 160) â€” Job-Type Blueprint: job type as a child
   // record of a master service + its workflow ownership (structure/behavior
   // only, never an amount).
   listServiceJobTypes: (masterServiceId: string) =>
@@ -11111,6 +10993,13 @@ export const catalogWorkspaceApi = {
     apiFetch<{ items: MasterServiceJobTypeLink[] }>(`/v1/admin/master-services/${masterServiceId}/job-types`),
   getJobTypeWorkflow: (masterServiceId: string, jobTypeId: string) =>
     apiFetch<ServiceJobWorkflow>(`/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow`),
+  // Cross-app step choreography (migration 274).
+  getWorkflowStepOptions: (masterServiceId: string, jobTypeId: string) =>
+    apiFetch<{ job_statuses: string[]; owner_apps: WorkflowOwnerApp[]; owner_roles: WorkflowOwnerRole[] }>(
+      `/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow/step-options`),
+  reviewWorkflowSteps: (masterServiceId: string, jobTypeId: string) =>
+    apiFetch<WorkflowStepReview>(
+      `/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow/step-review`),
   setJobTypeWorkflow: (masterServiceId: string, jobTypeId: string, data: Partial<ServiceJobWorkflow>) =>
     apiFetch<ServiceJobWorkflow>(`/v1/admin/master-services/${masterServiceId}/job-types/${jobTypeId}/workflow`,
       { method: "PUT", body: JSON.stringify(data) }),
@@ -11120,15 +11009,54 @@ export interface MasterServiceJobTypeLink {
   id: string; master_service_id: string; job_type_id: string; is_active: boolean; display_order: number;
   job_type: CatalogJobType;
 }
+/** Which app surface owns a workflow step. */
+export type WorkflowOwnerApp = "customer_app" | "tenant_app" | "staff_app" | "admin" | "system";
+export type WorkflowOwnerRole =
+  | "customer" | "tenant_owner" | "tenant_manager" | "technician"
+  | "platform_admin" | "support_admin" | "finance_admin" | "system";
+
+/** One ordered step of the cross-app journey (migration 274). */
+export interface WorkflowStepDef {
+  step_key: string; step_name: string;
+  /** A canonical service_jobs.status, or null for steps outside the job's own
+   *  lifecycle (booking-level acceptance, post-completion review). Steps with a
+   *  status can be marked done from the job's real state; steps without cannot. */
+  maps_to_status: string | null;
+  owner_app: WorkflowOwnerApp; owner_role: WorkflowOwnerRole;
+  customer_visible: boolean; tenant_visible: boolean;
+  staff_visible: boolean; admin_visible: boolean;
+  requires_note: boolean; requires_photo: boolean; requires_approval: boolean;
+  sla_minutes: number | null; display_order: number;
+}
+export interface WorkflowTransitionDef {
+  from_step_key: string; to_step_key: string;
+  action_label: string | null; allowed_role: WorkflowOwnerRole;
+  requires_reason: boolean; triggers_notification: boolean; auto_transition: boolean;
+}
+
 export interface ServiceJobWorkflow {
   id: string | null; master_service_id: string; job_type_id: string;
   inspection_required: boolean; quote_approval_required: boolean; checklist_required: boolean;
   schedule_required: boolean; address_required: boolean; technician_required: boolean;
   service_area_required: boolean; availability_required: boolean;
   pricing_behavior: "fixed" | "range" | "inspection_required" | "custom_quote";
+  // Publishing lifecycle (migration 186) â€” returned by the API but previously
+  // absent from this type, so no screen could read them.
+  version_number?: number; is_current?: boolean; status?: string;
+  allows_cancellation?: boolean; allows_reschedule?: boolean;
+  requires_direct_payment_record?: boolean;
+  published_at?: string | null; change_reason?: string | null;
+  // Cross-app step choreography (migration 274).
+  steps?: WorkflowStepDef[];
+  transitions?: WorkflowTransitionDef[];
+}
+/** Non-fatal coherence review of a step definition. */
+export interface WorkflowStepReview {
+  valid: boolean; errors: string[]; warnings: string[];
+  step_count: number; transition_count: number;
 }
 
-// ── Checklist Catalog Engine — canonical, job-type-mapped checklists ───────
+// â”€â”€ Checklist Catalog Engine â€” canonical, job-type-mapped checklists â”€â”€â”€â”€â”€â”€â”€
 export type ChecklistPurpose =
   | "PRE_ARRIVAL" | "INSPECTION" | "PRE_WORK" | "EXECUTION" | "SAFETY" | "COMPLETION" | "HANDOVER";
 export type ChecklistItemType =
@@ -11151,6 +11079,9 @@ export interface ChecklistTemplateRow {
   purpose: ChecklistPurpose; status: "active" | "archived"; owner_scope: "PLATFORM" | "TENANT";
   tenant_id: string | null; created_at: string | null; updated_at: string | null;
   latest_version: ChecklistTemplateVersionSummary | null; mapping_count: number;
+  active_mapping_count?: number; section_count?: number; item_count?: number;
+  readiness?: "ready" | "needs_attention"; archived_at?: string | null;
+  archived_by?: string | null; archive_reason?: string | null;
 }
 export interface ChecklistItemRow {
   id: string; checklist_section_id: string; item_type: ChecklistItemType; label: string;
@@ -11171,6 +11102,7 @@ export interface ChecklistTemplateVersionDetail extends ChecklistTemplateVersion
 }
 export interface ChecklistTemplateDetail extends ChecklistTemplateRow {
   versions: ChecklistTemplateVersionSummary[];
+  instance_count: number;
 }
 export interface JobTypeChecklistMappingRow {
   id: string; master_service_job_type_id: string; service_job_workflow_id: string | null;
@@ -11180,10 +11112,26 @@ export interface JobTypeChecklistMappingRow {
   status: "active" | "disabled"; effective_from: string | null; effective_until: string | null;
   created_by: string | null; updated_by: string | null;
   created_at: string | null; updated_at: string | null;
+  disabled_at?: string | null; disable_reason?: string | null;
+  template_name?: string | null; template_code?: string | null; template_version?: number | null;
+  master_service_name?: string | null; job_type_label?: string | null;
 }
 export interface ChecklistExecutionHealth {
   total_instances: number; completed_instances: number; blocked_instances: number;
   in_progress_instances: number; required_completion_rate: number | null;
+  waived_instances: number;
+}
+
+export interface ChecklistCatalogSummary {
+  active_templates: number; retired_templates: number; published_versions: number;
+  draft_versions: number; active_mappings: number; disabled_mappings: number;
+  unmapped_templates: number;
+}
+
+export interface ChecklistAuditEvent {
+  id: string; action: string; actor_role: string | null; change_summary: string | null;
+  request_id: string | null; old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null; created_at: string | null;
 }
 
 export interface ChecklistDirectoryResponse<T> {
@@ -11198,6 +11146,7 @@ export const checklistCatalogApi = {
     ))}` : "";
     return apiFetch<ChecklistDirectoryResponse<ChecklistTemplateRow>>(`/v1/admin/checklist-catalog/templates-directory${qs}`);
   },
+  getSummary: () => apiFetch<ChecklistCatalogSummary>("/v1/admin/checklist-catalog/summary"),
   createTemplate: (data: { name: string; code: string; description?: string; icon_url?: string; purpose: ChecklistPurpose; owner_scope?: string }) =>
     apiFetch<ChecklistTemplateRow>("/v1/admin/checklist-catalog/templates", { method: "POST", body: JSON.stringify(data) }),
   updateTemplate: (templateId: string, data: { name?: string; description?: string; icon_url?: string | null }) =>
@@ -11205,9 +11154,17 @@ export const checklistCatalogApi = {
   getTemplate: (templateId: string) =>
     apiFetch<ChecklistTemplateDetail>(`/v1/admin/checklist-catalog/templates/${templateId}`),
   getOrCreateDraftVersion: (templateId: string) =>
-    apiFetch<ChecklistTemplateVersionDetail>(`/v1/admin/checklist-catalog/templates/${templateId}/draft-version`),
-  archiveTemplate: (templateId: string) =>
-    apiFetch<ChecklistTemplateRow>(`/v1/admin/checklist-catalog/templates/${templateId}/archive`, { method: "POST" }),
+    apiFetch<ChecklistTemplateVersionDetail>(`/v1/admin/checklist-catalog/templates/${templateId}/draft-version`, { method: "POST" }),
+  getLatestVersion: (templateId: string) =>
+    apiFetch<ChecklistTemplateVersionDetail>(`/v1/admin/checklist-catalog/templates/${templateId}/latest-version`),
+  listPublishedTemplateOptions: (q = "", limit = 50) =>
+    apiFetch<ChecklistTemplateRow[]>(`/v1/admin/checklist-catalog/template-options?${new URLSearchParams({ q, limit: String(limit) })}`),
+  archiveTemplate: (templateId: string, reason: string) =>
+    apiFetch<ChecklistTemplateRow>(`/v1/admin/checklist-catalog/templates/${templateId}/archive`, { method: "POST", body: JSON.stringify({ reason }) }),
+  restoreTemplate: (templateId: string, reason: string) =>
+    apiFetch<ChecklistTemplateRow>(`/v1/admin/checklist-catalog/templates/${templateId}/restore`, { method: "POST", body: JSON.stringify({ reason }) }),
+  getTemplateAudit: (templateId: string, page = 1, pageSize = 25) =>
+    apiFetch<ChecklistDirectoryResponse<ChecklistAuditEvent>>(`/v1/admin/checklist-catalog/templates/${templateId}/audit?page=${page}&page_size=${pageSize}`),
 
   addSection: (versionId: string, title: string, displayOrder = 0) =>
     apiFetch<ChecklistSectionRow>(`/v1/admin/checklist-catalog/versions/${versionId}/sections`, {
@@ -11223,7 +11180,7 @@ export const checklistCatalogApi = {
     }),
 
   listMappings: () => apiFetch<JobTypeChecklistMappingRow[]>("/v1/admin/checklist-catalog/mappings"),
-  listMappingsDirectory: (params?: { status?: string; usage?: ChecklistUsage; actor?: ChecklistActor; phase?: string; page?: number; page_size?: number }) => {
+  listMappingsDirectory: (params?: { q?: string; status?: string; usage?: ChecklistUsage; actor?: ChecklistActor; phase?: string; master_service_job_type_id?: string; page?: number; page_size?: number }) => {
     const qs = params ? `?${new URLSearchParams(Object.fromEntries(
       Object.entries(params).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])
     ))}` : "";
@@ -11237,21 +11194,23 @@ export const checklistCatalogApi = {
   }) => apiFetch<JobTypeChecklistMappingRow>("/v1/admin/checklist-catalog/mappings", {
     method: "POST", body: JSON.stringify(data),
   }),
-  disableMapping: (mappingId: string) =>
-    apiFetch<JobTypeChecklistMappingRow>(`/v1/admin/checklist-catalog/mappings/${mappingId}/disable`, { method: "POST" }),
+  disableMapping: (mappingId: string, reason: string) =>
+    apiFetch<JobTypeChecklistMappingRow>(`/v1/admin/checklist-catalog/mappings/${mappingId}/disable`, { method: "POST", body: JSON.stringify({ reason }) }),
+  enableMapping: (mappingId: string) =>
+    apiFetch<JobTypeChecklistMappingRow>(`/v1/admin/checklist-catalog/mappings/${mappingId}/enable`, { method: "POST" }),
 
   getExecutionHealth: () => apiFetch<ChecklistExecutionHealth>("/v1/admin/checklist-catalog/execution-health"),
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Notification Event Policies — /v1/admin/notification-policies
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Notification Event Policies â€” /v1/admin/notification-policies
 //
 // Real bug fixed here: `app/admin/notifications/EventPoliciesPanel.tsx` has
 // always imported `notificationPolicyApi` and its three types, but they were
 // never implemented in this file -- so the Notifications workspace could not
 // compile at all. Every route below is matched against the real backend
 // router (app/engines/platform_notifications/policy_router.py).
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export interface NotificationPolicyListItem {
   event_key: string;
@@ -11344,13 +11303,13 @@ function _npQuery(verticalKey?: string | null): string {
 }
 
 export const notificationPolicyApi = {
-  list: (params?: { vertical_key?: string; channel?: string; status?: string; search?: string }) => {
+  list: (params?: { vertical_key?: string; channel?: string; status?: string; search?: string; limit?: number; offset?: number }) => {
     const qs = params
       ? `?${new URLSearchParams(
-          Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== "")) as Record<string, string>,
+          Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])) as Record<string, string>,
         )}`
       : "";
-    return apiFetch<{ items: NotificationPolicyListItem[]; summary: NotificationPolicySummary }>(
+    return apiFetch<{ items: NotificationPolicyListItem[]; total: number; limit: number; offset: number; summary: NotificationPolicySummary }>(
       `/v1/admin/notification-policies${qs}`,
     );
   },
@@ -11391,14 +11350,14 @@ export const notificationPolicyApi = {
     ),
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Admin Tenant Support Queue — /v1/admin/support
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Admin Tenant Support Queue â€” /v1/admin/support
 //
 // Real bug fixed here: app/admin/support/page.tsx and
 // app/admin/support/[id]/page.tsx have always imported `supportAdminApi` and
 // its types, but they were never implemented -- the whole Support workspace
 // failed to compile. Routes matched against app/engines/support/admin_router.py.
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export interface SupportTicketRow {
   id: string;
@@ -11604,119 +11563,5 @@ export type {
   MonetizationPolicy, MonetizationPolicyRow, MonetizationImpact, ConfigurationSummary,
 } from "./api-configuration";
 export { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi } from "./api-hs-finance";
+export type { MonetizationJobTypeRule } from "./api-hs-finance";
 export type { TopupPlan } from "./api-hs-finance";
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Customer Home campaigns (the promotional banner carousel)
-//
-// Real bug fixed here: the customer_campaigns engine powers the banner
-// carousel on the customer Home screen, but BOTH of its routers were written
-// and never mounted -- so there was no way for an admin to create, schedule
-// or update a banner. The carousel still rendered because customer_home
-// calls CampaignService in-process, which is why the gap went unnoticed.
-// Routes match app/engines/customer_campaigns/admin_router.py.
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** Deep-link targets are restricted to known in-app destinations -- never an
- * arbitrary external URL. Mirrors ALLOWED_DEEPLINK_PREFIXES on the backend,
- * which rejects anything else with a 422. */
-export const CAMPAIGN_DEEPLINK_PREFIXES = [
-  "app://home",
-  "app://category/",
-  "app://service/",
-  "app://booking/",
-  "app://offers",
-] as const;
-
-/** How a banner is drawn. The customer app ships one renderer per style, so the
- * backend refuses anything outside this list -- a saved banner it cannot draw
- * would read as a broken feature rather than a rejected input. */
-export const CAMPAIGN_STYLES = [
-  { value: "hero", label: "Hero — artwork-led card" },
-  { value: "festival", label: "Festival — accent colour, badge, end date" },
-  { value: "strip", label: "Strip — one quiet tappable line" },
-] as const;
-
-/** Where on Home it appears. Each slot is also a Home section, so it can be
- * re-ordered or switched off entirely on the Home Layout page. */
-export const CAMPAIGN_PLACEMENTS = [
-  { value: "campaign_top", label: "Top — above the services" },
-  { value: "campaign_after_problems", label: "Under the problem grid" },
-  { value: "campaign_after_services", label: "Under the services" },
-  { value: "campaign_mid", label: "Middle — below the assistant card" },
-  { value: "campaign_bottom", label: "Bottom — end of the screen" },
-] as const;
-
-export interface CustomerCampaign {
-  campaign_id: string;
-  /** Operator-facing name; never shown to customers. */
-  internal_name: string;
-  eyebrow: string | null;
-  title: string;
-  description: string | null;
-  artwork_url_light: string | null;
-  artwork_url_dark: string | null;
-  cta_label: string | null;
-  cta_deeplink: string | null;
-  /** One of CAMPAIGN_STYLES. */
-  display_style: string;
-  /** One of CAMPAIGN_PLACEMENTS. Several banners in one slot become a carousel. */
-  placement: string;
-  /** Festival treatment only: the colour the card is painted in, and the small
-   * badge above the title. Null renders the ordinary theme. */
-  accent_color: string | null;
-  badge_text: string | null;
-  is_enabled: boolean;
-  /** Lower shows first. */
-  priority: number;
-  starts_at: string | null;
-  ends_at: string | null;
-  eligible_vertical_keys: string[];
-  eligible_category_ids: string[];
-  target_zipcodes: string[];
-  target_zones: string[];
-  target_cities: string[];
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-export type CustomerCampaignPayload = Partial<Omit<CustomerCampaign,
-  "campaign_id" | "created_at" | "updated_at">>;
-
-/** One section of the customer Home screen. The key vocabulary is closed: the
- * app ships a renderer per key, so admin re-orders, renames and hides them but
- * cannot invent one -- a key with no renderer would be a row that does nothing. */
-export interface HomeSectionSetting {
-  section_key: string;
-  is_enabled: boolean;
-  display_order: number;
-  /** Null means the app uses the wording it ships with. */
-  title_override: string | null;
-  updated_at: string | null;
-}
-
-const HOME_SECTIONS = "/v1/admin/home-sections";
-
-export const homeSectionApi = {
-  list: () => apiFetch<{ items: HomeSectionSetting[]; total: number; known_keys: string[] }>(HOME_SECTIONS),
-  update: (key: string, payload: Partial<Pick<HomeSectionSetting, "is_enabled" | "display_order" | "title_override">>) =>
-    apiFetch<HomeSectionSetting>(`${HOME_SECTIONS}/${key}`, { method: "PUT", body: JSON.stringify(payload) }),
-  /** Sets the whole order in one call. The server validates every key before
-   * writing any of them, so a bad list cannot half-reorder the screen. */
-  reorder: (orderedKeys: string[]) =>
-    apiFetch<{ items: HomeSectionSetting[]; total: number }>(`${HOME_SECTIONS}/reorder`, {
-      method: "POST", body: JSON.stringify({ ordered_keys: orderedKeys }),
-    }),
-};
-
-const CUSTOMER_CAMPAIGNS = "/v1/admin/customer-campaigns";
-
-export const customerCampaignApi = {
-  list: () => apiFetch<{ items: CustomerCampaign[]; total: number }>(CUSTOMER_CAMPAIGNS),
-  create: (payload: CustomerCampaignPayload) =>
-    apiFetch<CustomerCampaign>(CUSTOMER_CAMPAIGNS, { method: "POST", body: JSON.stringify(payload) }),
-  update: (id: string, payload: CustomerCampaignPayload) =>
-    apiFetch<CustomerCampaign>(`${CUSTOMER_CAMPAIGNS}/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  remove: (id: string) =>
-    apiFetch<{ deleted: boolean; campaign_id: string }>(`${CUSTOMER_CAMPAIGNS}/${id}`, { method: "DELETE" }),
-};

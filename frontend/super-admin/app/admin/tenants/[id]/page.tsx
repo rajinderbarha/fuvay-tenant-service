@@ -1117,7 +1117,11 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const users       = useApi(useCallback(() => authApi.listUsers({ tenant_id: id, limit: 100 }), [id]));
   const zones       = useApi(useCallback(() => serviceAreaAdminApi.listByTenant(id),        [id]));
   const enabledSvcs = useApi(useCallback(() => adminCatalogApi.listEnabledServices(id),     [id]));
-  const pricing     = useApi(useCallback(() => adminCatalogApi.listPricingRules(),          []));
+  const pricing     = {
+    loading: enabledSvcs.loading,
+    data: { rules: [] as any[] },
+    refetch: enabledSvcs.refetch,
+  };
   const deposit     = useApi(useCallback(() => commerceApi.getDeposit(id),                  [id]));
   const depositTxns = useApi(useCallback(() => commerceApi.depositTransactions(id),         [id]));
   const packages    = useApi(useCallback(() => commerceApi.listPackages(),                  []));
@@ -2257,7 +2261,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-              Platform pricing rules — shown for reference. Tenant-specific overrides are set in Enabled Services.
+              Provider-owned service pricing is managed in Enabled Services. Customer and provider platform charges are governed by Home Services Finance.
             </p>
             <Btn size="sm" variant="ghost" icon={<RefreshCw size={13}/>} onClick={() => pricing.refetch()}>Refresh</Btn>
           </div>
@@ -2269,7 +2273,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             ) : (pricing.data?.rules ?? []).length === 0 ? (
               <div style={{ padding:"48px 20px", textAlign:"center" }}>
                 <div style={{ marginBottom:12 }}><Tag size={32} style={{ color:"var(--text-tertiary)" }}/></div>
-                <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No pricing rules found</p>
+                <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>Admin pricing rules are retired for Home Services</p>
               </div>
             ) : (
               <table style={{ width:"100%", borderCollapse:"collapse" }}>

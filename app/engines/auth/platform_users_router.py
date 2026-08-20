@@ -95,10 +95,28 @@ async def list_users(
 
 @router.get("/export")
 async def export_users(
-    r: Request, user_group: str = Query("platform"),
+    r: Request,
+    user_group: str = Query("platform"),
+    q: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    platform_role: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    mfa_status: Optional[str] = Query(None),
+    access_scope: Optional[str] = Query(None),
+    inactive_days_min: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db), admin=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
-    data = await _svc(r, db).list_platform_users(user_group=user_group, limit=10000)
+    data = await _svc(r, db).list_platform_users(
+        user_group=user_group,
+        q=q,
+        role=role,
+        platform_role=platform_role,
+        status=status,
+        mfa_status=mfa_status,
+        access_scope=access_scope,
+        inactive_days_min=inactive_days_min,
+        limit=10000,
+    )
     return ok({"rows": data["users"], "count": len(data["users"]), "format": "json"}, _rid(r), ENGINE_ID)
 
 

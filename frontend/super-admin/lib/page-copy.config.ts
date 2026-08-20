@@ -122,7 +122,7 @@ export const PAGE_COPY = {
     },
     pricing: {
       title: "Pricing Rules",
-      description: "Configure pricing tiers, brands, and service-level pricing.",
+      description: "Configure service catalog structure, brands, and provider-owned service setup.",
     },
     staff: {
       title: "Field Staff",

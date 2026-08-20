@@ -473,10 +473,17 @@ class RecommendationEngineService:
 
         elif entity_type == "workflow_template":
             for code in entity_codes:
+                # `slug`, not `code`, and `is_latest`, not `deleted_at`: this
+                # branch was copied from the service_option/issue_type branches
+                # above, whose models do have those columns.
+                # MasterWorkflowTemplate has neither, so every lookup here
+                # raised AttributeError before the query was even built — the
+                # workflow_template recommendation path could never run.
+                # `slug` is what the API exposes as `template_code`.
                 wf = await self.db.scalar(
                     select(MasterWorkflowTemplate).where(
-                        MasterWorkflowTemplate.code == code,
-                        MasterWorkflowTemplate.deleted_at.is_(None),
+                        MasterWorkflowTemplate.slug == code,
+                        MasterWorkflowTemplate.is_latest.is_(True),
                     )
                 )
                 if not wf:

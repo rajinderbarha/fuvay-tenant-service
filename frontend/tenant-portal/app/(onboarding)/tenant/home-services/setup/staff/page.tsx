@@ -28,6 +28,7 @@ const READINESS_META: Record<string, { label: string; variant: "default" | "succ
   needs_role:                { label: "Needs role",           variant: "warning", icon: <AlertTriangle size={13}/> },
   needs_service_assignment:  { label: "Needs setup",          variant: "warning", icon: <AlertTriangle size={13}/> },
   needs_availability:        { label: "Needs setup",          variant: "warning", icon: <AlertTriangle size={13}/> },
+  invitation_pending:        { label: "Invitation pending",   variant: "info",    icon: <AlertTriangle size={13}/> },
   access_disabled:           { label: "Access disabled",      variant: "danger",  icon: <ShieldOff size={13}/> },
   offboarded:                { label: "Inactive",             variant: "default", icon: <XCircle size={13}/> },
 };
@@ -39,6 +40,7 @@ export default function StaffTechniciansPage() {
   const [coverage, setCoverage] = useState<ServiceCoverageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<ProviderTeamMember | null>(null);
@@ -70,11 +72,41 @@ export default function StaffTechniciansPage() {
     catch (e) { setError(e instanceof ServiceOSError ? e.message : "Could not restore access."); }
     setMenuOpenId(null);
   }
+  async function handleSendInvite(member: ProviderTeamMember) {
+    if (!member.email) {
+      setEditingMember(member);
+      setWizardOpen(true);
+      setMenuOpenId(null);
+      return;
+    }
+    try {
+      const result = await providerTeamMembersApi.createLogin(member.member_id);
+      if (result.activation_token && !result.activation_sent) {
+        await navigator.clipboard?.writeText(result.activation_token);
+      }
+      setNotice(result.access_active
+        ? "App access is already active."
+        : result.activation_sent
+          ? `App invitation sent to ${member.email}.`
+          : result.activation_token
+            ? "Development activation code copied to the clipboard."
+            : "Invitation created, but email delivery could not be confirmed.");
+      load();
+    } catch (e) {
+      setError(e instanceof ServiceOSError ? e.message : "Could not send the app invitation.");
+    }
+    setMenuOpenId(null);
+  }
 
   const filtered = members.filter(m => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    return m.full_name.toLowerCase().includes(q) || (m.email || "").toLowerCase().includes(q) || (m.phone || "").includes(q);
+    return m.full_name.toLowerCase().includes(q)
+      || (m.email || "").toLowerCase().includes(q)
+      || (m.phone || "").includes(q)
+      || (m.member_type || "").toLowerCase().includes(q)
+      || (m.designation || "").toLowerCase().includes(q)
+      || (m.skills || []).some(skill => skill.toLowerCase().includes(q));
   });
 
   if (loading) {
@@ -89,6 +121,7 @@ export default function StaffTechniciansPage() {
 
   const counts = readiness?.counts;
   const statusLine = !counts ? "" : counts.total === 0 ? "Optional for now" : `${counts.ready} of ${counts.total} ready`;
+  const coverageGaps = coverage.filter(c => c.ready_technician_count === 0);
 
   return (
     <OnboardingShell activeNav="staff">
@@ -102,6 +135,11 @@ export default function StaffTechniciansPage() {
       {error && (
         <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/><span>{error}</span>
+        </div>
+      )}
+      {notice && (
+        <div role="status" style={{ padding: "11px 14px", borderRadius: 10, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success-text)", fontSize: 13, marginBottom: 16 }}>
+          {notice}
         </div>
       )}
 
@@ -143,12 +181,12 @@ export default function StaffTechniciansPage() {
               </div>
             )}
 
-            <div style={{ border: filtered.length ? "1px solid var(--border)" : "none", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ border: filtered.length ? "1px solid var(--border)" : "none", borderRadius: 10, overflow: "visible", position: "relative" }}>
               {filtered.map((m, i) => {
                 const r = readiness?.per_member[m.member_id];
                 const meta = READINESS_META[r?.status ?? "needs_identity"];
                 return (
-                  <div key={m.member_id} className="staff-row" style={{ borderBottom: i === filtered.length - 1 ? "none" : "1px solid var(--border)" }}>
+                  <div key={m.member_id} className="staff-row" style={{ borderBottom: i === filtered.length - 1 ? "none" : "1px solid var(--border)", position: "relative", zIndex: menuOpenId === m.member_id ? 100 : 1, background: "var(--surface)" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", overflow: "hidden" }}>
                       {m.profile_photo_url ? <img src={m.profile_photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : m.full_name.slice(0, 2).toUpperCase()}
                     </div>
@@ -161,13 +199,18 @@ export default function StaffTechniciansPage() {
                     <button onClick={() => { setEditingMember(m); setWizardOpen(true); }} style={{
                       fontSize: 12, fontWeight: 600, color: "var(--brand)", background: "none", border: "none", cursor: "pointer",
                     }}>View setup</button>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative", zIndex: menuOpenId === m.member_id ? 110 : 1 }}>
                       <button aria-label="More actions" onClick={() => setMenuOpenId(menuOpenId === m.member_id ? null : m.member_id)} style={{
                         width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
                         background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", borderRadius: 6,
                       }}><MoreVertical size={16}/></button>
                       {menuOpenId === m.member_id && (
-                        <div style={{ position: "absolute", right: 0, top: 36, zIndex: 20, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "var(--shadow-lg)", minWidth: 180, padding: 4 }}>
+                        <div style={{ position: "absolute", right: 0, top: 36, zIndex: 1000, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "var(--shadow-lg)", minWidth: 210, padding: 4 }}>
+                          {!m.login_active && (
+                            <button onClick={() => handleSendInvite(m)} style={menuItemStyle}>
+                              {m.email ? (m.password_generated ? "Resend app invitation" : "Send app invitation") : "Add email to send invitation"}
+                            </button>
+                          )}
                           {m.status === "active" ? (
                             <button onClick={() => handleDeactivate(m.member_id)} style={menuItemStyle}>Disable access</button>
                           ) : (
@@ -182,11 +225,12 @@ export default function StaffTechniciansPage() {
             </div>
           </Card>
 
-          {coverage.some(c => c.ready_technician_count === 0) && (
+          {coverageGaps.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 16px", borderRadius: 10, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", marginTop: 16 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--warning-text)" }}>
-                <AlertTriangle size={15}/> At least one ready technician is required for each technician-based service.
+                <AlertTriangle size={15}/> Assign a technician to {coverageGaps.map(c => c.name).join(", ")} before final submission.
               </span>
+              {members.length > 0 && <Btn variant="secondary" size="sm" onClick={() => { setEditingMember(members[0]); setWizardOpen(true); }}>Fix assignments</Btn>}
             </div>
           )}
         </div>
@@ -225,7 +269,9 @@ export default function StaffTechniciansPage() {
               <div key={c.offering_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 8 }}>
                 <span style={{ color: "var(--text-secondary)" }}>{c.name}</span>
                 <span style={{ fontWeight: 700, color: c.ready_technician_count > 0 ? "var(--success)" : "var(--danger)" }}>
-                  {c.ready_technician_count > 0 ? `${c.ready_technician_count} technician${c.ready_technician_count > 1 ? "s" : ""}` : "No technician"}
+                  {c.ready_technician_count > 0
+                    ? `${c.ready_technician_count} technician${c.ready_technician_count > 1 ? "s" : ""} · ${c.ready_technician_count} booking${c.ready_technician_count > 1 ? "s" : ""}/slot`
+                    : "No technician"}
                 </span>
               </div>
             ))}
@@ -234,7 +280,7 @@ export default function StaffTechniciansPage() {
           <Card>
             <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>Access &amp; security</p>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6 }}>
-              Team members get role-based access to the ServiceOS platform. You can invite account access after setup.
+              Team members get role-based access to Fuvay. You can invite account access after setup.
             </p>
           </Card>
         </div>
@@ -245,9 +291,8 @@ export default function StaffTechniciansPage() {
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="secondary" onClick={load}>Save draft</Btn>
           <Btn variant="primary"
-            disabled={coverage.some(c => c.ready_technician_count === 0)}
             onClick={() => router.push("/tenant/home-services/setup/finance")}>
-            Save &amp; continue <ChevronRight size={15}/>
+            {coverageGaps.length > 0 ? "Continue for now" : "Save & continue"} <ChevronRight size={15}/>
           </Btn>
         </div>
       </div>

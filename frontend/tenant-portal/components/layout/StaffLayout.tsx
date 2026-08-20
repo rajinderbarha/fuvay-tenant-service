@@ -8,6 +8,7 @@ import {
 import { useStaffContext, StaffContextProvider } from "../../hooks/useStaffContext";
 import { Skeleton, Badge } from "../shared/ui";
 import { authApi } from "../../lib/api";
+import FuvayLogo from "../brand/FuvayLogo";
 
 type NavItem = { id: string; href: string; label: string; icon: React.ReactNode };
 
@@ -66,8 +67,8 @@ export function StaffLayout({ activeNav, children }: { activeNav: string; childr
       <aside style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--surface)",
         display: "flex", flexDirection: "column", padding: "18px 12px" }}>
         <div style={{ padding: "0 8px 18px", borderBottom: "1px solid var(--border)", marginBottom: 12 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--brand)" }}>Technician App</div>
-          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>ServiceOS Staff Portal</div>
+          <FuvayLogo height={28}/>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>Technician App</div>
         </div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
           {NAV.map(item => (

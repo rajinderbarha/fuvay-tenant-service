@@ -9,7 +9,9 @@ def test_price_snapshot_applies_the_customer_charge():
     Rs.500 service at 10% -> platform_fee 50, customer_total 550."""
     from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
     src = inspect.getsource(HomeServiceChatbotBookingService._compute_price_snapshot)
-    assert "customer_charge_pct" in src
+    assert "get_current_policy_by_vertical_key" in src
+    assert "calculate_customer_platform_fee" in src
+    assert "customer_charge_pct" not in src
     assert "platform_fee" in src
     assert "customer_total" in src
     # display price must be the inclusive total, not the bare base

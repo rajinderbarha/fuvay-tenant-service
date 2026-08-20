@@ -1338,3 +1338,11 @@ async def remove_device_trust(
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
+# API keys are a dormant capability. Remove their routes before this router is
+# mounted so neither admins nor tenants can discover or call them while the
+# product is disabled.
+from app.core.feature_flags import hide_disabled_api_key_routes
+
+hide_disabled_api_key_routes(router)
+
+

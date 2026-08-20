@@ -22,7 +22,7 @@ from app.engines.admin_catalog.service import AdminCatalogService
 from app.engines.admin_catalog.job_type_blueprint_service import (
     JobTypeBlueprintService, WORKFLOW_EDITABLE_FIELDS, PRICING_BEHAVIORS,
 )
-from app.engines.admin_catalog.models import ServiceCategory, MasterService
+from app.engines.admin_catalog.models import ServiceCategory, ServiceGroup, MasterService
 from app.exceptions import ServiceOSException
 
 
@@ -159,14 +159,16 @@ class TestMasterServiceOwnership:
         """Creation succeeds with zero job types -- they're added afterward
         as child records, not chosen at creation time."""
         cat = make_category(is_active=True)
-        db = db_seq(cat, None)  # load category, then slug-uniqueness check
+        group = MagicMock(spec=ServiceGroup)
+        group.id = uuid.uuid4(); group.category_id = cat.id; group.status = "active"
+        db = db_seq(cat, group, None)  # category, group hierarchy, slug uniqueness
         svc = AdminCatalogService(db=db)
         result = await svc.create_master_service_canonical({
             "service_name": "Air Conditioner", "category_id": str(cat.id),
-            "service_group_id": str(uuid.uuid4()),
+            "service_group_id": str(group.id),
         })
         assert result is not None
-        added = db.add.call_args[0][0]
+        added = next(call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], MasterService))
         assert added.job_type is None
         assert added.pricing_model is None
 

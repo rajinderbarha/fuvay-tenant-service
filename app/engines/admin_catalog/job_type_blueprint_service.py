@@ -42,7 +42,14 @@ WORKFLOW_EDITABLE_FIELDS = {
     "inspection_required", "quote_approval_required", "checklist_required",
     "schedule_required", "address_required", "technician_required",
     "service_area_required", "availability_required", "pricing_behavior",
+    # Cross-app step choreography (migration 274). Edited through the same
+    # writer as everything else so a step change supersedes into a new version
+    # exactly like a capability change does — a job that snapshotted an older
+    # workflow keeps the step sequence it started with.
+    "steps", "transitions",
 }
+# The two above are named for the API; these are the columns they land in.
+_STEP_FIELD_COLUMNS = {"steps": "steps_json", "transitions": "transitions_json"}
 
 
 class JobTypeBlueprintService:
@@ -54,7 +61,11 @@ class JobTypeBlueprintService:
         rows = (await self.db.execute(
             select(MasterServiceJobType, JobTypeDefinition)
             .join(JobTypeDefinition, MasterServiceJobType.job_type_id == JobTypeDefinition.id)
-            .where(MasterServiceJobType.master_service_id == master_service_id)
+            .where(
+                MasterServiceJobType.master_service_id == master_service_id,
+                MasterServiceJobType.is_active.is_(True),
+                JobTypeDefinition.is_active.is_(True),
+            )
             .order_by(MasterServiceJobType.display_order))).all()
         out = []
         for link, jt in rows:
@@ -97,7 +108,20 @@ class JobTypeBlueprintService:
             select(MasterServiceJobType).where(MasterServiceJobType.id == link_id))).scalar_one_or_none()
         if not link:
             raise NotFoundException("MasterServiceJobType", str(link_id))
+        if not link.is_active:
+            return {"deactivated": True, "id": str(link_id)}
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, link.master_service_id, link.job_type_id)
         link.is_active = False
+        from sqlalchemy import update
+        from app.engines.admin_catalog.models import TenantService
+        await self.db.execute(
+            update(TenantService).where(
+                TenantService.master_service_id == link.master_service_id,
+                TenantService.job_type_id == link.job_type_id,
+                TenantService.deleted_at.is_(None),
+            ).values(is_enabled=False, setup_status="draft", last_active_step="services-pricing")
+        )
         await self.db.commit()
         return {"deactivated": True, "id": str(link_id)}
 
@@ -106,7 +130,9 @@ class JobTypeBlueprintService:
         row = (await self.db.execute(select(ServiceJobWorkflow).where(
             ServiceJobWorkflow.master_service_id == master_service_id,
             ServiceJobWorkflow.job_type_id == job_type_id,
-            ServiceJobWorkflow.is_current.is_(True)))).scalar_one_or_none()
+            ServiceJobWorkflow.is_current.is_(True),
+            ServiceJobWorkflow.status == "published",
+        ))).scalar_one_or_none()
         if row:
             return row.to_dict()
         # No blueprint configured yet -- honest defaults, not a guess at
@@ -117,6 +143,28 @@ class JobTypeBlueprintService:
             "schedule_required": False, "address_required": False, "technician_required": False,
             "service_area_required": False, "availability_required": False, "pricing_behavior": "fixed",
         }
+
+    async def _current_step_definition(self, master_service_id: uuid.UUID,
+                                       job_type_id: uuid.UUID) -> tuple[list, list]:
+        """The step definition currently published for this (service, job type)."""
+        row = (await self.db.execute(select(ServiceJobWorkflow).where(
+            ServiceJobWorkflow.master_service_id == master_service_id,
+            ServiceJobWorkflow.job_type_id == job_type_id,
+            ServiceJobWorkflow.is_current.is_(True),
+        ))).scalar_one_or_none()
+        if row is None:
+            return [], []
+        return list(row.steps_json or []), list(row.transitions_json or [])
+
+    async def review_workflow_steps(self, master_service_id: uuid.UUID,
+                                    job_type_id: uuid.UUID) -> dict:
+        """Coherence review of the published step definition (non-fatal)."""
+        from app.engines.admin_catalog.workflow_steps import check_definition
+        steps, transitions = await self._current_step_definition(master_service_id, job_type_id)
+        result = check_definition(steps, transitions)
+        result["step_count"] = len(steps)
+        result["transition_count"] = len(transitions)
+        return result
 
     async def set_workflow(self, master_service_id: uuid.UUID, job_type_id: uuid.UUID, data: dict) -> dict:
         """HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2: this previously UPDATEd
@@ -134,6 +182,24 @@ class JobTypeBlueprintService:
             raise ServiceOSException("INVALID_PRICING_BEHAVIOR",
                 f"pricing_behavior must be one of {sorted(PRICING_BEHAVIORS)}.", status_code=422)
 
+        # Steps and transitions are validated together — a transition can only
+        # be checked against the step list it refers to — then renamed to their
+        # column names so the rest of this method treats them like any other field.
+        if "steps" in data or "transitions" in data:
+            from app.engines.admin_catalog.workflow_steps import validate_workflow_steps
+            existing_steps, existing_transitions = await self._current_step_definition(
+                master_service_id, job_type_id)
+            try:
+                clean_steps, clean_transitions = validate_workflow_steps(
+                    data.get("steps", existing_steps),
+                    data.get("transitions", existing_transitions),
+                )
+            except ValueError as exc:
+                raise ServiceOSException("INVALID_WORKFLOW_STEPS", str(exc), status_code=422) from None
+            data = {k: v for k, v in data.items() if k not in _STEP_FIELD_COLUMNS}
+            data["steps_json"] = clean_steps
+            data["transitions_json"] = clean_transitions
+
         current = (await self.db.execute(select(ServiceJobWorkflow).where(
             ServiceJobWorkflow.master_service_id == master_service_id,
             ServiceJobWorkflow.job_type_id == job_type_id,
@@ -146,16 +212,11 @@ class JobTypeBlueprintService:
                 version_number=1, is_current=True, **data,
             )
             self.db.add(row)
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            await bump_tenant_setup_revision(self.db, master_service_id, job_type_id)
             await self.db.commit()
             await self.db.refresh(row)
             return row.to_dict()
-
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
-        current.is_current = False
-        current.superseded_at = now
-        self.db.add(current)
-        await self.db.flush()
 
         merged = {
             "inspection_required": current.inspection_required,
@@ -167,13 +228,25 @@ class JobTypeBlueprintService:
             "service_area_required": current.service_area_required,
             "availability_required": current.availability_required,
             "pricing_behavior": current.pricing_behavior,
+            "steps_json": current.steps_json or [],
+            "transitions_json": current.transitions_json or [],
             **data,
         }
+        if all(getattr(current, field) == value for field, value in merged.items()):
+            return current.to_dict()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        current.is_current = False
+        current.superseded_at = now
+        self.db.add(current)
+        await self.db.flush()
         new_row = ServiceJobWorkflow(
             master_service_id=master_service_id, job_type_id=job_type_id,
             version_number=current.version_number + 1, is_current=True, **merged,
         )
         self.db.add(new_row)
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, master_service_id, job_type_id)
         await self.db.commit()
         await self.db.refresh(new_row)
         return new_row.to_dict()

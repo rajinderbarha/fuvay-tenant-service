@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import {
@@ -11,6 +12,8 @@ import type {
   ServiceTypeMapRecord, BrandMapRecord, Brand34D, BrandRequest34D,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import { Plus, RefreshCw, Download, Search, ChevronDown, X, Info, Map } from "lucide-react";
 
 // ── Multi-select checkbox list (categories / service groups) ─────────────────
@@ -44,6 +47,21 @@ function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 }
 
+function ReasonModal({title, verb, onClose, onSubmit, error, loading}:{title:string;verb:string;onClose():void;onSubmit(reason:string):Promise<void>;error?:string|null;loading:boolean}) {
+  const [reason,setReason]=useState("");
+  return <Modal open title={title} onClose={onClose}><div style={{display:"flex",flexDirection:"column",gap:12,minWidth:420}}>
+    <div style={{padding:12,borderRadius:10,background:"var(--warning-bg)",color:"var(--text-secondary)",fontSize:12,lineHeight:1.5}}>
+      This action is audited. Records currently used by providers cannot be retired; resolve their usage first.
+    </div>
+    <label style={{fontSize:12,fontWeight:700}}>Reason (minimum 10 characters)</label>
+    <textarea autoFocus rows={4} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Explain why this master record is being retired…"
+      style={{padding:10,border:"1px solid var(--border)",borderRadius:8,background:"var(--input-bg)",color:"var(--text-primary)",resize:"vertical"}} />
+    {error&&<div role="alert" style={{fontSize:12,color:"var(--danger-text)"}}>{error}</div>}
+    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}><Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
+      <Btn variant="primary" size="sm" disabled={reason.trim().length<10} loading={loading} onClick={()=>onSubmit(reason.trim())}>{verb}</Btn></div>
+  </div></Modal>;
+}
+
 // Mirrors the backend's own _slugify (admin_catalog/types_service.py) so the
 // slug shown while typing matches what will actually be saved -- the
 // backend already auto-generates a slug from name when none is sent, but
@@ -70,14 +88,18 @@ const STATUS_OPTIONS = [
   { value:"",         label:"All Status" },
   { value:"active",   label:"Active" },
   { value:"inactive", label:"Inactive" },
-  { value:"archived", label:"Archived" },
 ];
 
 type Tab = "types" | "brands" | "brand-requests" | "type-mappings" | "brand-mappings";
 
 // ── Root Page ────────────────────────────────────────────────────────────────
 export default function TypesBrandsPage() {
-  const [tab, setTab] = useState<Tab>("types");
+  const query = useSearchParams();
+  const router = useRouter();
+  const requested = query.get("tab") as Tab | null;
+  const validTabs: Tab[] = ["types", "brands", "brand-requests", "type-mappings", "brand-mappings"];
+  const [tab, setTab] = useState<Tab>(requested && validTabs.includes(requested) ? requested : "types");
+  useEffect(() => { if (requested && validTabs.includes(requested)) setTab(requested); }, [requested]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key:"types",          label:"Service Types" },
@@ -98,7 +120,7 @@ export default function TypesBrandsPage() {
       {/* Tab bar */}
       <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:"2px solid var(--border)", paddingBottom:0 }}>
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
+          <button key={t.key} onClick={() => { setTab(t.key); router.replace(`/admin/types-brands?tab=${t.key}`); }} style={{
             padding:"10px 20px", border:"none", background:"none", cursor:"pointer",
             fontSize:13, fontWeight:600,
             color: tab === t.key ? "var(--accent)" : "var(--text-secondary)",
@@ -127,6 +149,17 @@ function ServiceTypesTab() {
   const [status,   setStatus]   = useState("");
   const [family,   setFamily]   = useState("");
   const [page,     setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [mapped, setMapped] = useState("");
+  const [providers, setProviders] = useState("");
+  const [lifecycle, setLifecycle] = useState<"current" | "retired">("current");
+  const [retireItem, setRetireItem] = useState<ServiceTypeMaster | null>(null);
+  const [restoreItem, setRestoreItem] = useState<ServiceTypeMaster | null>(null);
+  const [columnPrefs, setColumnPrefs] = useState<ColumnDef[]>([
+    {key:"name",label:"Type",visible:true,order:0},{key:"type_family",label:"Family",visible:true,order:1},
+    {key:"mapping_count",label:"Mapped",visible:true,order:2},{key:"customer_visible",label:"Customer Visible",visible:true,order:3},
+    {key:"status",label:"Status",visible:true,order:4},{key:"updated_at",label:"Updated",visible:true,order:5},
+  ]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem,   setEditItem]   = useState<ServiceTypeMaster | null>(null);
@@ -135,20 +168,24 @@ function ServiceTypesTab() {
   const summaryRes = useApi(useCallback(() => typesApi.summary(), []), []);
   const listRes    = useApi(useCallback(
     () => typesApi.list({
-      q: q || undefined, status: status || undefined,
-      page, page_size: 50,
+      q: q || undefined, status: status || undefined, type_family: family || undefined,
+      mapped: mapped ? mapped === "mapped" : undefined,
+      has_providers: providers ? providers === "used" : undefined,
+      retired: lifecycle === "retired",
+      page, page_size: pageSize,
     }),
-    [q, status, page],
-  ), [q, status, page]);
+    [q, status, family, mapped, providers, lifecycle, page, pageSize],
+  ), [q, status, family, mapped, providers, lifecycle, page, pageSize]);
 
   const activateAction   = useAction(useCallback((id:string) => typesApi.activate(id),   []));
   const deactivateAction = useAction(useCallback((id:string) => typesApi.deactivate(id), []));
-  const archiveAction    = useAction(useCallback((id:string) => typesApi.archive(id),    []));
+  const archiveAction    = useAction(useCallback(({id,reason}:{id:string;reason:string}) => typesApi.archive(id, reason), []));
+  const restoreAction    = useAction(useCallback(({id,reason}:{id:string;reason:string}) => typesApi.restore(id, reason), []));
 
   async function doStatus(id:string, action:"activate"|"deactivate"|"archive") {
     if (action === "activate")   await activateAction.execute(id);
     if (action === "deactivate") await deactivateAction.execute(id);
-    if (action === "archive")    await archiveAction.execute(id);
+    if (action === "archive")    return setRetireItem((listRes.data?.types ?? []).find(item => item.type_id === id) ?? null);
     listRes.refetch(); summaryRes.refetch();
   }
 
@@ -163,7 +200,7 @@ function ServiceTypesTab() {
     )},
     { key:"type_family",   label:"Family",          render:(_v:unknown, row:any) => row.type_family
       ? <Badge variant="info">{row.type_family.replace(/_/g," ")}</Badge> : <span style={{color:"var(--text-tertiary)"}}>—</span> },
-    { key:"categories",    label:"Mapped",          render:(_v:unknown, row:any) => (
+    { key:"mapping_count", label:"Mapped",          render:(_v:unknown, row:any) => (
       <div style={{ fontSize:12 }}>
         <span style={{ color:"var(--text-secondary)" }}>Cat: </span><strong>{row.category_count}</strong>
         {"  "}
@@ -174,8 +211,8 @@ function ServiceTypesTab() {
       <Badge variant={row.customer_visible ? "success" : "default"}>{row.customer_visible ? "Yes" : "No"}</Badge>
     )},
     { key:"status",        label:"Status",          render:(_v:unknown, row:any) => (
-      <Badge variant={row.status==="active"?"success":row.status==="inactive"?"warning":"default"}>
-        {row.status}
+      <Badge variant={row.deleted_at ? "muted" : row.status==="active"?"success":row.status==="inactive"?"warning":"default"}>
+        {row.deleted_at ? "retired" : row.status}
       </Badge>
     )},
     { key:"updated_at",    label:"Updated",         render:(_v:unknown, row:any) => (
@@ -184,7 +221,7 @@ function ServiceTypesTab() {
       </span>
     )},
     { key:"actions",       label:"Actions",         render:(_v:unknown, row:any) => (
-      <TypeActionMenu row={row}
+      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <TypeActionMenu row={row}
         onView={() => {
           typesApi.get(row.type_id).then(r => setDetailItem(r));
         }}
@@ -229,10 +266,19 @@ function ServiceTypesTab() {
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {/* Mapped/Unmapped filter dropdown removed 2026-08-05 at explicit
-              user request -- the MAPPED column and the Mapped/Unmapped
-              summary cards already convey this, and mapping is managed from
-              the dedicated Type Mappings tab. */}
+          <select aria-label="Type lifecycle" value={lifecycle} onChange={e=>{setLifecycle(e.target.value as "current"|"retired");setStatus("");setPage(1);}} className="enterprise-select">
+            <option value="current">Current records</option><option value="retired">Retired ({sum?.archived ?? 0})</option>
+          </select>
+          <select aria-label="Type family" value={family} onChange={e=>{setFamily(e.target.value);setPage(1);}} className="enterprise-select">
+            <option value="" hidden>Type family</option>
+            {TYPE_FAMILIES.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select aria-label="Mapping status" value={mapped} onChange={e=>{setMapped(e.target.value);setPage(1);}} className="enterprise-select">
+            <option value="">All mappings</option><option value="mapped">Mapped</option><option value="unmapped">Unmapped</option>
+          </select>
+          <select aria-label="Provider usage" value={providers} onChange={e=>{setProviders(e.target.value);setPage(1);}} className="enterprise-select">
+            <option value="">All provider usage</option><option value="used">Used by providers</option><option value="unused">Unused</option>
+          </select>
           <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
             <Btn variant="ghost" size="sm" onClick={() => { listRes.refetch(); summaryRes.refetch(); }}>
               <RefreshCw size={14}/>
@@ -243,6 +289,12 @@ function ServiceTypesTab() {
           </div>
         </div>
       </Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <OperationsDirectoryControls resourceKey="admin_service_types"
+          filters={{q,status,lifecycle,type_family:family,mapped:mapped ? mapped === "mapped" : undefined,has_providers:providers ? providers === "used" : undefined}}
+          columns={columnPrefs} onColumnsChange={setColumnPrefs}
+          onApplyView={(f)=>{setQ(String(f.q??""));setStatus(String(f.status??""));setLifecycle(f.lifecycle==="retired"?"retired":"current");setFamily(String(f.type_family??""));setMapped(f.mapped===true?"mapped":f.mapped===false?"unmapped":"");setProviders(f.has_providers===true?"used":f.has_providers===false?"unused":"");setPage(1);}} />
+      </div>
 
       {/* Table */}
       <Card padding={0}>
@@ -252,7 +304,7 @@ function ServiceTypesTab() {
             ? <EmptyState title="No service types yet"
                 description="Create reusable types to use across services. Examples: Split, Window, Front Load, 1 BHK."
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> New Type</Btn>}/>
-            : <DataTable columns={columns} rows={(listRes.data?.types ?? []) as unknown as Record<string, unknown>[]}/>
+            : <DataTable columns={columns.filter(column => column.key === "actions" || columnPrefs.find(pref => pref.key === column.key)?.visible !== false)} rows={(listRes.data?.types ?? []) as unknown as Record<string, unknown>[]}/>
         }
         {/* Pagination */}
         {(listRes.data?.pages ?? 1) > 1 && (
@@ -261,6 +313,7 @@ function ServiceTypesTab() {
             <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>
               Page {page} / {listRes.data?.pages}
             </span>
+            <select aria-label="Rows per page" value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} className="enterprise-select"><option>25</option><option>50</option><option>100</option><option>200</option></select>
             <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=(listRes.data?.pages??1)}>Next</Btn>
           </div>
         )}
@@ -278,6 +331,12 @@ function ServiceTypesTab() {
       {detailItem && (
         <TypeDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
+      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire" onClose={()=>setRetireItem(null)}
+        onSubmit={async reason=>{const done=await archiveAction.execute({id:retireItem.type_id,reason});if(done){setRetireItem(null);listRes.refetch();summaryRes.refetch();}}}
+        error={archiveAction.error} loading={archiveAction.loading}/>}
+      {restoreItem && <ReasonModal title={`Restore ${restoreItem.name}`} verb="Restore as inactive" onClose={()=>setRestoreItem(null)}
+        onSubmit={async reason=>{const done=await restoreAction.execute({id:restoreItem.type_id,reason});if(done){setRestoreItem(null);listRes.refetch();summaryRes.refetch();}}}
+        error={restoreAction.error} loading={restoreAction.loading}/>}
     </div>
   );
 }
@@ -780,7 +839,6 @@ function BrandRequestsTab() {
           </div>
         </div>
       )}
-
       <Modal open={!!modal} onClose={() => setActionModal(null)} title={modalTitle}>
         {modal && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -827,6 +885,17 @@ function BrandMasterTab() {
   const [q,      setQ]      = useState("");
   const [status, setStatus] = useState("");
   const [page,   setPage]   = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [mapped, setMapped] = useState("");
+  const [providers, setProviders] = useState("");
+  const [lifecycle, setLifecycle] = useState<"current" | "retired">("current");
+  const [retireItem, setRetireItem] = useState<Brand34D | null>(null);
+  const [restoreItem, setRestoreItem] = useState<Brand34D | null>(null);
+  const [columnPrefs, setColumnPrefs] = useState<ColumnDef[]>([
+    {key:"name",label:"Brand",visible:true,order:0},{key:"is_global",label:"Scope",visible:true,order:1},
+    {key:"service_mapping_count",label:"Mapped",visible:true,order:2},{key:"provider_usage_count",label:"Provider Usage",visible:true,order:3},
+    {key:"status",label:"Status",visible:true,order:4},{key:"updated_at",label:"Updated",visible:true,order:5},
+  ]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem,   setEditItem]   = useState<Brand34D | null>(null);
@@ -834,18 +903,21 @@ function BrandMasterTab() {
 
   const summaryRes = useApi(useCallback(() => typesApi.brandSummary(), []), []);
   const listRes    = useApi(useCallback(
-    () => catalogApi.listBrands({ search: q || undefined, status: status || undefined, page, page_size: 50 }),
-    [q, status, page],
-  ), [q, status, page]);
+    () => catalogApi.listBrands({ search: q || undefined, status: status || undefined,
+      mapped: mapped ? mapped === "mapped" : undefined,
+      has_providers: providers ? providers === "used" : undefined, retired: lifecycle === "retired", page, page_size: pageSize }),
+    [q, status, mapped, providers, lifecycle, page, pageSize],
+  ), [q, status, mapped, providers, lifecycle, page, pageSize]);
 
   const activateAction   = useAction(useCallback((id:string) => catalogApi.activateBrand(id),   []));
   const deactivateAction = useAction(useCallback((id:string) => catalogApi.deactivateBrand(id), []));
-  const archiveAction    = useAction(useCallback((id:string) => catalogApi.archiveBrand(id),    []));
+  const archiveAction    = useAction(useCallback(({id,reason}:{id:string;reason:string}) => catalogApi.archiveBrand(id, reason), []));
+  const restoreAction    = useAction(useCallback(({id,reason}:{id:string;reason:string}) => catalogApi.restoreBrand(id, reason), []));
 
   async function doStatus(id:string, action:"activate"|"deactivate"|"archive") {
     if (action === "activate")   await activateAction.execute(id);
     if (action === "deactivate") await deactivateAction.execute(id);
-    if (action === "archive")    await archiveAction.execute(id);
+    if (action === "archive")    return setRetireItem((listRes.data?.brands ?? []).find(item => item.brand_id === id) ?? null);
     listRes.refetch(); summaryRes.refetch();
   }
 
@@ -858,30 +930,31 @@ function BrandMasterTab() {
         <div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{row.code ?? row.slug}</div>
       </div>
     )},
-    { key:"scope",   label:"Scope", render:(_v:unknown, row:any) => (
+    { key:"is_global", label:"Scope", render:(_v:unknown, row:any) => (
       <Badge variant={row.is_global ? "info" : "default"}>{row.is_global ? "Global" : "Restricted"}</Badge>
     )},
-    { key:"cats",    label:"Mapped", render:(_v:unknown, row:any) => (
+    { key:"service_mapping_count", label:"Mapped", render:(_v:unknown, row:any) => (
       <div style={{ fontSize:12 }}>
         <span style={{ color:"var(--text-secondary)" }}>Cat: </span>
-        <strong>{row.category_mappings?.length ?? 0}</strong>
+        <strong>{row.category_mapping_count ?? 0}</strong>
         {"  "}
         <span style={{ color:"var(--text-secondary)" }}>Svc: </span>
-        <strong>{row.service_mappings?.length ?? 0}</strong>
+        <strong>{row.service_mapping_count ?? 0}</strong>
       </div>
     )},
+    { key:"provider_usage_count", label:"Provider Usage", render:(_v:unknown,row:any)=><strong>{row.provider_usage_count ?? 0}</strong> },
     { key:"status",  label:"Status", render:(_v:unknown, row:any) => (
-      <Badge variant={row.status==="active"?"success":row.status==="inactive"?"warning":"default"}>
-        {row.status}
+      <Badge variant={row.deleted_at ? "muted" : row.status==="active"?"success":row.status==="inactive"?"warning":"default"}>
+        {row.deleted_at ? "retired" : row.status}
       </Badge>
     )},
-    { key:"updated", label:"Updated", render:(_v:unknown, row:any) => (
+    { key:"updated_at", label:"Updated", render:(_v:unknown, row:any) => (
       <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>
         {new Date(row.created_at ?? "").toLocaleDateString("en-IN")}
       </span>
     )},
     { key:"actions", label:"Actions", render:(_v:unknown, row:any) => (
-      <BrandActionMenu row={row}
+      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <BrandActionMenu row={row}
         onView={() => setDetailItem(row)}
         onEdit={() => setEditItem(row)}
         onActivate={() => doStatus(row.brand_id, "activate")}
@@ -924,6 +997,15 @@ function BrandMasterTab() {
               color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
             {STATUS_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          <select aria-label="Brand lifecycle" value={lifecycle} onChange={e=>{setLifecycle(e.target.value as "current"|"retired");setStatus("");setPage(1);}} className="enterprise-select">
+            <option value="current">Current records</option><option value="retired">Retired ({sum?.archived ?? 0})</option>
+          </select>
+          <select aria-label="Brand mapping status" value={mapped} onChange={e=>{setMapped(e.target.value);setPage(1);}} className="enterprise-select">
+            <option value="">All mappings</option><option value="mapped">Mapped</option><option value="unmapped">Unmapped</option>
+          </select>
+          <select aria-label="Brand provider usage" value={providers} onChange={e=>{setProviders(e.target.value);setPage(1);}} className="enterprise-select">
+            <option value="">All provider usage</option><option value="used">Used by providers</option><option value="unused">Unused</option>
+          </select>
           <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
             <Btn variant="ghost" size="sm" onClick={() => { listRes.refetch(); summaryRes.refetch(); }}>
               <RefreshCw size={14}/>
@@ -934,6 +1016,11 @@ function BrandMasterTab() {
           </div>
         </div>
       </Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <OperationsDirectoryControls resourceKey="admin_brands" filters={{q,status,lifecycle,mapped:mapped ? mapped === "mapped" : undefined,has_providers:providers ? providers === "used" : undefined}}
+          columns={columnPrefs} onColumnsChange={setColumnPrefs}
+          onApplyView={(f)=>{setQ(String(f.q??""));setStatus(String(f.status??""));setLifecycle(f.lifecycle==="retired"?"retired":"current");setMapped(f.mapped===true?"mapped":f.mapped===false?"unmapped":"");setProviders(f.has_providers===true?"used":f.has_providers===false?"unused":"");setPage(1);}} />
+      </div>
 
       {/* Table */}
       <Card padding={0}>
@@ -943,17 +1030,18 @@ function BrandMasterTab() {
             ? <EmptyState title="No brands yet"
                 description="Create reusable brands and map them to relevant services. Examples: Samsung, LG, Daikin."
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> New Brand</Btn>}/>
-            : <DataTable columns={columns} rows={(listRes.data?.brands ?? []) as unknown as Record<string, unknown>[]}/>
+            : <DataTable columns={columns.filter(column => column.key === "actions" || columnPrefs.find(pref => pref.key === column.key)?.visible !== false)} rows={(listRes.data?.brands ?? []) as unknown as Record<string, unknown>[]}/>
         }
         {/* Pagination -- was previously missing entirely on this tab (fetched
             page_size:50 but gave no way to reach page 2+). */}
-        {Math.ceil((listRes.data?.total ?? 0) / 50) > 1 && (
+        {Math.ceil((listRes.data?.total ?? 0) / pageSize) > 1 && (
           <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
             <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
             <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>
-              Page {page} / {Math.ceil((listRes.data?.total ?? 0) / 50)}
+              Page {page} / {Math.ceil((listRes.data?.total ?? 0) / pageSize)}
             </span>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=Math.ceil((listRes.data?.total ?? 0) / 50)}>Next</Btn>
+            <select aria-label="Brand rows per page" value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} className="enterprise-select"><option>25</option><option>50</option><option>100</option><option>200</option></select>
+            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=Math.ceil((listRes.data?.total ?? 0) / pageSize)}>Next</Btn>
           </div>
         )}
       </Card>
@@ -970,6 +1058,12 @@ function BrandMasterTab() {
       {detailItem && (
         <BrandDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
+      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire" onClose={()=>setRetireItem(null)}
+        onSubmit={async reason=>{const done=await archiveAction.execute({id:retireItem.brand_id,reason});if(done){setRetireItem(null);listRes.refetch();summaryRes.refetch();}}}
+        error={archiveAction.error} loading={archiveAction.loading}/>}
+      {restoreItem && <ReasonModal title={`Restore ${restoreItem.name}`} verb="Restore as inactive" onClose={()=>setRestoreItem(null)}
+        onSubmit={async reason=>{const done=await restoreAction.execute({id:restoreItem.brand_id,reason});if(done){setRestoreItem(null);listRes.refetch();summaryRes.refetch();}}}
+        error={restoreAction.error} loading={restoreAction.loading}/>}
     </div>
   );
 }

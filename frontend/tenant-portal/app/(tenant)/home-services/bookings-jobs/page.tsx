@@ -318,6 +318,13 @@ function JobRow({ row, selected, onClick }: { row: BJItem; selected: boolean; on
   );
 }
 
+/** One resolved step of the job's cross-app journey, as the API returns it. */
+type WorkflowStage = {
+  step_key: string; label: string;
+  state: "completed" | "current" | "skipped" | "upcoming";
+  requires_photo?: boolean; requires_note?: boolean;
+};
+
 function JobPreviewPanel({ jobId, detail, loading, error, onClose, onChanged }: {
   jobId: string; detail: BJDetail | null; loading: boolean; error: string | null;
   onClose: () => void; onChanged: () => void;
@@ -372,24 +379,57 @@ function JobPreviewPanel({ jobId, detail, loading, error, onClose, onChanged }: 
             } />
           </Card>
 
+          {/* When this job's workflow blueprint defines a journey, show THAT —
+              only the steps flagged visible to the provider, with progress taken
+              from the job's real state. Falls back to the platform's fixed
+              lifecycle for job types with no journey defined. */}
           <Card padding="sm" style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", marginBottom: 8 }}>LIFECYCLE</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {LIFECYCLE_STAGES.map(s => {
-                const idx = LIFECYCLE_STAGES.indexOf(detail.stage.stage);
-                const thisIdx = LIFECYCLE_STAGES.indexOf(s);
-                const done = thisIdx < idx;
-                const current = s === detail.stage.stage;
-                return (
-                  <span key={s} style={{
-                    fontSize: 10, padding: "3px 7px", borderRadius: 999,
-                    background: current ? "var(--brand)" : done ? "var(--success-bg)" : "var(--surface-sunken)",
-                    color: current ? "#151617" : done ? "var(--success-text)" : "var(--text-tertiary)",
-                    fontWeight: current ? 700 : 400,
-                  }}>{s.replace(/_/g, " ")}</span>
-                );
-              })}
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", marginBottom: 8 }}>
+              {(detail.workflow_stages?.length ?? 0) > 0 ? "WORKFLOW" : "LIFECYCLE"}
             </div>
+            {(detail.workflow_stages?.length ?? 0) > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {(detail.workflow_stages as WorkflowStage[]).map(s => (
+                  <div key={s.step_key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                      background: s.state === "current" ? "var(--brand)"
+                        : s.state === "completed" ? "var(--success-text)"
+                        : s.state === "skipped" ? "var(--warning-text)" : "var(--border)",
+                    }}/>
+                    <span style={{
+                      fontSize: 12, flex: 1,
+                      color: s.state === "current" ? "var(--text-primary)" : "var(--text-secondary)",
+                      fontWeight: s.state === "current" ? 700 : 400,
+                      textDecoration: s.state === "skipped" ? "line-through" : "none",
+                    }}>{s.label}</span>
+                    {s.state === "skipped" && (
+                      <span style={{ fontSize: 10, color: "var(--warning-text)" }}>skipped</span>
+                    )}
+                    {s.requires_photo && s.state !== "completed" && (
+                      <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>photo</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {LIFECYCLE_STAGES.map(s => {
+                  const idx = LIFECYCLE_STAGES.indexOf(detail.stage.stage);
+                  const thisIdx = LIFECYCLE_STAGES.indexOf(s);
+                  const done = thisIdx < idx;
+                  const current = s === detail.stage.stage;
+                  return (
+                    <span key={s} style={{
+                      fontSize: 10, padding: "3px 7px", borderRadius: 999,
+                      background: current ? "var(--brand)" : done ? "var(--success-bg)" : "var(--surface-sunken)",
+                      color: current ? "#151617" : done ? "var(--success-text)" : "var(--text-tertiary)",
+                      fontWeight: current ? 700 : 400,
+                    }}>{s.replace(/_/g, " ")}</span>
+                  );
+                })}
+              </div>
+            )}
           </Card>
 
           <Card padding="sm" style={{ marginBottom: 12, background: "var(--accent-muted)" }}>

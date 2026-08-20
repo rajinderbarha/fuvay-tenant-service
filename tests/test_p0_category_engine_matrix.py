@@ -299,22 +299,24 @@ class TestFrontendApiClient:
 # ════════════════════════════════════════════════════════════════════════════
 # Frontend — Category Matrix tab UI elements
 # ════════════════════════════════════════════════════════════════════════════
-class TestFrontendCategoryMatrixTab:
+class TestFrontendCategoryMatrixOwnership:
     def test_engines_page_exists(self):
         assert ENGINES_PAGE.exists()
 
-    def test_category_selector_present(self):
+    def test_category_matrix_is_not_duplicated_in_engine_console(self):
         src = _read(ENGINES_PAGE)
-        assert "CategorySelector" in src or "category selector" in src.lower() or "categoryOptions" in src
+        assert "CategorySelector" not in src
+        assert '"category-matrix": "verticals"' in src
 
-    def test_seed_defaults_button_present(self):
-        assert "Seed" in _read(ENGINES_PAGE)
-
-    def test_summary_cards_present(self):
+    def test_vertical_usage_replaces_package_matrix(self):
         src = _read(ENGINES_PAGE)
-        assert "SummaryCardsRow" in src
+        assert "getVerticalUsage" in src
+        assert "Vertical usage" in src
+
+    def test_runtime_summary_cards_present(self):
+        src = _read(ENGINES_PAGE)
+        assert "function Metric" in src
 
     def test_labeled_actions_not_icon_only(self):
-        """Actions must be labeled buttons, not bare icon buttons, per spec Part D rules."""
         src = _read(ENGINES_PAGE)
-        assert "Enable" in src and "Disable" in src
+        assert "Manage vertical" in src and "Inspect" in src

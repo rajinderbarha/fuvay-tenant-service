@@ -161,6 +161,11 @@ class ServiceJob(ServiceOSBase):
     # mutated by anything except POST .../complete. HS9 reads this to
     # perform usage-credit deduction — this sprint only prepares it.
     completion_data:        Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    # Immutable warranty contract captured when work completes. Reading the
+    # live TenantService later would let a provider shorten an existing job's
+    # warranty after the customer bought it.
+    warranty_days_snapshot: Mapped[int | None]       = mapped_column(Integer, nullable=True)
+    warranty_expires_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     # CANCEL-RESCHEDULE-FOUNDATION (migration 224) -- count of customer-
     # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
     # in home_service_assignment.constants. Never decremented.
@@ -193,6 +198,8 @@ class ServiceJob(ServiceOSBase):
             "assignment_status":     self.assignment_status,
             "failure_reason":        self.failure_reason,
             "completion_data":       self.completion_data,
+            "warranty_days":         self.warranty_days_snapshot,
+            "warranty_expires_at":   self.warranty_expires_at.isoformat() if self.warranty_expires_at else None,
             "reschedule_count":      self.reschedule_count,
             "created_at":            self.created_at.isoformat() if self.created_at else None,
             "updated_at":            self.updated_at.isoformat() if self.updated_at else None,

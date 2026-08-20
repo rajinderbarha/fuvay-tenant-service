@@ -78,9 +78,10 @@ export const homeServicesFinanceApi = {
   // ── Overview ────────────────────────────────────────────────────────────
   getOverview: <T = FinRow>() => apiFetch<T>("/v1/admin/home-services/finance/overview"),
   getLedgerHealth: <T = FinRow>() => apiFetch<T>("/v1/admin/home-services/finance/ledger-health"),
+  runReconciliation: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/reconcile", { method: "POST" }),
   /** Page-based: the Finance page calls `listAudit(1, 50)`. */
   listAudit: <T = FinanceListEnvelope>(page = 1, pageSize = 50) =>
-    apiFetch<T>(`/v1/admin/finance/audit-logs${_q({ page, pageSize })}`),
+    apiFetch<T>(`/v1/admin/finance/home-services/audit${_q({ page, page_size: pageSize })}`),
 
   // ── Deposits ────────────────────────────────────────────────────────────
   // NOTE: `page_size`/`payment_status` are the real FastAPI Query param
@@ -88,11 +89,11 @@ export const homeServicesFinanceApi = {
   // sent for backward compatibility with existing call sites, but unknown
   // extra query params are just silently ignored by FastAPI, so the
   // snake_case ones below are what actually take effect.
-  listDeposits: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/deposits${_q({
+  listDeposits: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/deposits${_q({
     ...params, page_size: params?.pageSize ?? params?.page_size,
   })}`),
-  getDepositsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/deposits/summary"),
-  getDepositDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/deposits/${id}`),
+  getDepositsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/deposits/summary"),
+  getDepositDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/deposits/${id}`),
   approveDeposit: <T = FinRow>(id: string, notes?: string) =>
     apiFetch<T>(`/v1/admin/finance/deposits/${id}/approve`, { method: "POST", body: JSON.stringify({ notes }) }),
   rejectDeposit: <T = FinRow>(id: string, reason: string) =>
@@ -109,12 +110,14 @@ export const homeServicesFinanceApi = {
     }),
 
   // ── Top-ups ─────────────────────────────────────────────────────────────
-  listTopups: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/topups${_q({
+  listTopups: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/topups${_q({
     ...params,
     payment_status: params?.paymentStatus ?? params?.payment_status,
+    date_from: params?.dateFrom ?? params?.date_from,
+    date_to: params?.dateTo ?? params?.date_to,
     page_size: params?.pageSize ?? params?.page_size,
   })}`),
-  getTopupDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/topups/${id}`),
+  getTopupDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/topups/${id}`),
   retryTopupCredit: <T = FinRow>(id: string) =>
     apiFetch<T>(`/v1/admin/finance/topups/${id}/retry-credit`, { method: "POST" }),
   refundTopup: <T = FinRow>(id: string, amount: number, reason?: string) =>
@@ -122,14 +125,33 @@ export const homeServicesFinanceApi = {
 
   // ── Warranty claims ─────────────────────────────────────────────────────
   listWarrantyClaims: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims${_q(params)}`),
-  getWarrantyClaimsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/warranty-claims/summary"),
-  getWarrantyClaimDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}`),
+    apiFetch<T>(`/v1/admin/finance/home-services/warranty-claims${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
+  getWarrantyClaimsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/warranty-claims/summary"),
+  getWarrantyClaimDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/warranty-claims/${id}`),
+  assignWarrantyReviewer: <T = FinRow>(id: string, reviewerId: string) =>
+    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/assign`, {
+      method: "POST", body: JSON.stringify({ reviewer_id: reviewerId }),
+    }),
+  requestWarrantyDocuments: <T = FinRow>(id: string, notes: string) =>
+    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/request-documents`, {
+      method: "POST", body: JSON.stringify({ notes }),
+    }),
+  approveWarrantyClaim: <T = FinRow>(id: string, amountApproved: number, adminNotes?: string) =>
+    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/approve`, {
+      method: "POST", body: JSON.stringify({ amount_approved: amountApproved, admin_notes: adminNotes }),
+    }),
+  rejectWarrantyClaim: <T = FinRow>(id: string, rejectionReason: string, adminNotes?: string) =>
+    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/reject`, {
+      method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason, admin_notes: adminNotes }),
+    }),
+  settleWarrantyClaim: <T = FinRow>(id: string) =>
+    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/settle`, { method: "POST" }),
 
   // ── Invoices ────────────────────────────────────────────────────────────
-  listInvoices: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/invoices${_q(params)}`),
-  getInvoicesSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/summary"),
-  getInvoiceDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/service-invoices/${id}`),
+  listInvoices: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/invoices${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
+  getInvoicesSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/invoices/summary"),
+  getInvoiceDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/invoices/${id}`),
+  getCreditsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/credits/summary"),
 
   // ── Credits (customer service credit) ───────────────────────────────────
   listCreditAccounts: <T = FinanceListEnvelope>(params?: ListParams) =>
@@ -146,77 +168,62 @@ export const homeServicesFinanceApi = {
       tenant_id: params?.tenantId ?? params?.tenant_id,
       job_id: params?.jobId ?? params?.job_id,
       event_type: params?.eventType ?? params?.event_type,
+      date_from: params?.dateFrom ?? params?.date_from,
+      date_to: params?.dateTo ?? params?.date_to,
       page_size: params?.pageSize ?? params?.page_size,
     })}`),
 
   // ── Refund requests ─────────────────────────────────────────────────────
-  listRefunds: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/refund-requests${_q(params)}`),
-  getRefundsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/summary"),
-  getRefundDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/refund-requests/${id}`),
-  approveRefund: <T = FinRow>(id: string, reason?: string) =>
+  listRefunds: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/refunds${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
+  getRefundsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/refunds/summary"),
+  getRefundDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/refunds/${id}`),
+  issueRefundCreditRemedy: <T = FinRow>(id: string, amount: number, reason: string) =>
+    apiFetch<T>(`/v1/admin/refund-requests/${id}/credit-remedy`, {
+      method: "POST", body: JSON.stringify({ amount, reason }),
+    }),
+  approveRefund: <T = FinRow>(id: string, approvedAmount?: number) =>
     apiFetch<T>(`/v1/admin/refund-requests/${id}/approve`, {
-      method: "POST", body: JSON.stringify({ reason: reason ?? "" }),
+      method: "POST", body: JSON.stringify({ approved_amount: approvedAmount }),
     }),
   rejectRefund: <T = FinRow>(id: string, reason: string) =>
     apiFetch<T>(`/v1/admin/refund-requests/${id}/reject`, {
       method: "POST", body: JSON.stringify({ reason }),
     }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  recordRefund: <T = FinRow>(id: string, payload: any) =>
+  recordRefund: <T = FinRow>(id: string, amount: number, proofMediaUrl?: string) =>
     apiFetch<T>(`/v1/admin/refund-requests/${id}/record`, {
-      method: "POST", body: JSON.stringify(payload),
+      method: "POST", body: JSON.stringify({ recorded_amount: amount, proof_media_url: proofMediaUrl || null }),
     }),
   /** Provider-side verification of a refund the provider says they paid. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   verifyProviderRefund: <T = FinRow>(id: string, payload?: any) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/record`, {
-      method: "POST", body: JSON.stringify({ ...payload, verified_by_admin: true }),
-    }),
+    apiFetch<T>(`/v1/admin/refund-requests/${id}/verify`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
 
   // ── Financial events / ledger ───────────────────────────────────────────
   listFinancialEvents: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/financial-events${_q(params)}`),
-  getFinancialEventsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/summary"),
-  getFinancialEventDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/financial-events/${id}`),
+    apiFetch<T>(`/v1/admin/finance/home-services/financial-events${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
+  getFinancialEventsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/financial-events/summary"),
+  getFinancialEventDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/financial-events/${id}`),
   getLedgerEntryDetail: <T = FinRow>(entryId: string) =>
     apiFetch<T>(`/v1/admin/finance/home-services/credit-ledger/${entryId}`),
 
   // ── Provider charges (commission records) ───────────────────────────────
   listProviderCharges: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/commission-records${_q(params)}`),
-  getProviderChargeDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/commission-records/${id}`),
+    apiFetch<T>(`/v1/admin/finance/home-services/provider-charges${_q({ ...params, q: params?.q, charge_model: params?.chargeModel ?? params?.charge_model, page_size: params?.pageSize ?? params?.page_size })}`),
+  getProviderChargeDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/provider-charges/${id}`),
 
-  // ── Direct (cash/UPI-to-provider) payments ──────────────────────────────
-  listDirectPayments: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/payments${_q(params)}`),
-  getDirectPaymentsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/home-services/finance/payments/summary"),
-  getDirectPaymentDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/home-services/finance/payments/${id}`),
-  remindDirectPaymentCustomer: <T = FinRow>(id: string) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/payments/${id}/remind-customer`, { method: "POST" }),
-  openDirectPaymentDispute: <T = FinRow>(id: string, description?: string) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/payments/${id}/open-dispute`, {
-      method: "POST", body: JSON.stringify({ description }),
-    }),
-
-  // ── Platform charge configuration ───────────────────────────────────────
-  // Per-service/job-type completion-charge credit amounts (ServicePricingRule
-  // rows, via HomeServicesFinanceService.list_charge_config) -- NOT the same
-  // thing as the vertical monetization policy (that sets the flat per-job
-  // credit default; this overrides it per master-service/job-type). Fixed
-  // 2026-08-05: these previously pointed at the monetization policy
-  // endpoints, an entirely different shape, so the config table always
-  // rendered empty and Save silently created garbage monetization drafts.
-  listChargeConfig: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/charge-config${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
-  updateChargeConfig: <T = FinRow>(ruleId: string, completedJobDeductionCredits: number) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/charge-config/${ruleId}`, {
-      method: "POST", body: JSON.stringify({ completed_job_deduction_credits: completedJobDeductionCredits }),
-    }),
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createAdjustment: <T = FinRow>(payload: any) =>
+  createAdjustment: <T = FinRow>(payload: {
+    tenantId: string; direction: "credit" | "debit"; creditUnits: string | number;
+    reasonCode: string; detailedReason: string; supportingReference?: string;
+  }) =>
     apiFetch<T>("/v1/admin/finance/home-services/adjustments", {
-      method: "POST", body: JSON.stringify(payload),
+      method: "POST", body: JSON.stringify({
+        tenant_id: payload.tenantId,
+        direction: payload.direction,
+        credit_units: payload.creditUnits,
+        reason_code: payload.reasonCode,
+        detailed_reason: payload.detailedReason,
+        supporting_reference: payload.supportingReference,
+      }),
     }),
 };
 
@@ -248,7 +255,26 @@ export const homeServicesFinanceMonetizationApi = {
     }),
   discardDraft: <T = FinRow>() =>
     apiFetch<T>("/v1/admin/home-services/finance/monetization/draft", { method: "DELETE" }),
+  listJobTypeRules: <T = { items: MonetizationJobTypeRule[] }>(policyId: string) =>
+    apiFetch<T>(`/v1/admin/home-services/finance/monetization/policies/${policyId}/job-type-rules`),
+  upsertJobTypeRule: <T = MonetizationJobTypeRule>(policyId: string, jobTypeId: string, payload: Partial<MonetizationJobTypeRule>) =>
+    apiFetch<T>(`/v1/admin/home-services/finance/monetization/policies/${policyId}/job-type-rules/${jobTypeId}`, {
+      method: "PUT", body: JSON.stringify(payload),
+    }),
 };
+
+export interface MonetizationJobTypeRule {
+  id?: string;
+  policy_id?: string;
+  job_type_id: string;
+  customer_charge_enabled: boolean;
+  customer_charge_basis?: "booking_price_snapshot";
+  provider_charge_enabled: boolean;
+  provider_charge_model: "INHERIT" | "FIXED_CREDITS";
+  provider_charge_credit_units: string | null;
+  provider_chargeable_event: "job_completed" | "consultation_completed";
+  status: "active" | "inactive";
+}
 
 // ── Top-up Plan (starter credit package + activation security deposit) ─────
 // Separate versioned policy (HomeServicesActivationFinancePolicy) from the

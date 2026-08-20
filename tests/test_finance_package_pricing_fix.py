@@ -45,6 +45,7 @@ FIN_PG    = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "finan
 # P0 Enterprise Finance Hub Upgrade split the old single-page tabs into dedicated pages.
 FIN_DEPOSITS_PG = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "finance", "deposits", "page.tsx")
 FIN_TOPUPS_PG   = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "finance", "topups", "page.tsx")
+HS_FIN_PG       = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "home-services", "finance", "page.tsx")
 PKG_PG    = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "packages", "page.tsx")
 PRC_PG    = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "pricing", "page.tsx")
 CAT_PG    = os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "master-services", "page.tsx")
@@ -340,15 +341,18 @@ def test_finance_hub_has_security_deposits_tab():
 
 
 def test_finance_hub_has_credit_topups_tab():
-    # P0 Enterprise Finance Hub Upgrade: Credit Top-ups is now a dedicated page.
-    src = _r(FIN_TOPUPS_PG)
-    assert "Credit Top-ups" in src
+    # The retired standalone URL preserves deep links by redirecting to the
+    # one consolidated Home Services Finance authority.
+    redirect_src = _r(FIN_TOPUPS_PG)
+    workspace_src = _r(HS_FIN_PG)
+    assert "tab=credits&credits_tab=topups" in redirect_src
+    assert "Credits & Top-ups" in workspace_src
 
 
 def test_finance_hub_link_to_packages():
-    # Credit Top-ups references credit packages by name/order-ref; the platform-wide
-    # Packages page is reachable via the nav "Packages" group, not a direct in-page link.
-    src = _r(FIN_TOPUPS_PG)
+    # Package administration is rendered inside the consolidated Credits
+    # workspace; the compatibility redirect intentionally contains no UI.
+    src = _r(HS_FIN_PG)
     assert "credit_package" in src or "package" in src.lower()
 
 

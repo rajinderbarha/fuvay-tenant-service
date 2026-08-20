@@ -51,12 +51,13 @@ async def list_home_services_available_services(r: Request,
             summary="Read-only: Problems, Questions and Checklists the platform attached to this service")
 async def get_service_requirements(master_service_id: uuid.UUID, r: Request,
                                     tenant_id: uuid.UUID | None = Query(None),
+                                    job_type_id: uuid.UUID | None = Query(None),
                                     u: UserContext = Depends(get_current_user),
                                     s: TenantCatalogService = Depends(_svc)):
     """Lets a tenant see what the customer will be asked at booking and what
     the technician must complete on site. Admin-authored and read-only here;
     403s for a service this tenant has not enabled."""
-    return ok(await s.get_service_requirements(master_service_id, tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.get_service_requirements(master_service_id, tenant_id, job_type_id), _rid(r), ENGINE_ID)
 
 
 @router.get("/home-services/enabled-services", response_model=ApiResponse[dict],
@@ -67,6 +68,27 @@ async def list_home_services_enabled_services(r: Request,
                                                u: UserContext = Depends(get_current_user),
                                                s: TenantCatalogService = Depends(_svc)):
     return ok(await s.list_home_services_enabled(tenant_id), _rid(r), ENGINE_ID)
+
+
+@router.get("/home-services/pricing-policy", response_model=ApiResponse[dict],
+            summary="Get provider-wide Home Services pricing policy",
+            tags=["Tenant Home Services Setup"])
+async def get_home_services_pricing_policy(r: Request,
+                                            tenant_id: uuid.UUID | None = Query(None),
+                                            u: UserContext = Depends(get_current_user),
+                                            s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.get_home_services_pricing_policy(tenant_id), _rid(r), ENGINE_ID)
+
+
+@router.put("/home-services/pricing-policy", response_model=ApiResponse[dict],
+            summary="Set provider-wide Home Services pricing policy",
+            tags=["Tenant Home Services Setup"])
+async def update_home_services_pricing_policy(r: Request,
+                                               tenant_id: uuid.UUID | None = Query(None),
+                                               u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                               s: TenantCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.update_home_services_pricing_policy(body, tenant_id), _rid(r), ENGINE_ID)
 
 
 @router.get("/enabled-services", response_model=ApiResponse[dict],
@@ -115,7 +137,8 @@ async def disable_service(r: Request,
                            s: TenantCatalogService = Depends(_svc)):
     body = await r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     effective_msid = master_service_id or body.get("master_service_id")
-    return ok(await s.disable_service({"master_service_id": str(effective_msid)} if effective_msid else body,
+    payload = {**body, **({"master_service_id": str(effective_msid)} if effective_msid else {})}
+    return ok(await s.disable_service(payload,
                                        tenant_id), _rid(r), ENGINE_ID)
 
 
@@ -199,15 +222,6 @@ async def set_tenant_brand_pricing(tenant_service_id: uuid.UUID, brand_id: uuid.
     return ok(await s.set_brand_pricing(tenant_service_id, brand_id,
                                          body.get("tenant_min_price"), body.get("tenant_max_price"),
                                          service_type_id), _rid(r), ENGINE_ID)
-
-
-@router.post("/price-options/preview", response_model=ApiResponse[dict],
-             summary="Preview automatic Low/Mid/High for a candidate provider price range", tags=["Tenant Service Setup Pricing"])
-async def preview_tenant_price_options(r: Request,
-                                        u: UserContext = Depends(get_current_user),
-                                        s: TenantCatalogService = Depends(_svc)):
-    body = await r.json()
-    return ok(s.price_options_preview(body), _rid(r), ENGINE_ID)
 
 
 @router.get("/enabled-services/{tenant_service_id}/resolve-price", response_model=ApiResponse[dict],

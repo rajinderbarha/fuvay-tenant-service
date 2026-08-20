@@ -35,6 +35,9 @@ export const serviceJobDtoSchema = z.object({
   scheduled_time_window: z.string().nullable(),
   technician: jobTechnicianDtoSchema.nullable(),
   updated_at: z.string().nullable(),
+  warranty_days: z.number().nullable().optional(),
+  warranty_expires_at: z.string().nullable().optional(),
+  warranty_active: z.boolean().optional(),
   completion: z.object({
     work_summary: z.string().nullable(),
     collected_amount: z.number().nullable(),
@@ -63,6 +66,19 @@ export const answerSnapshotDtoSchema = z.object({
   answers: z.array(answerSnapshotEntryDtoSchema),
 });
 export type AnswerSnapshotDto = z.infer<typeof answerSnapshotDtoSchema>;
+
+/** One resolved step of the job's cross-app journey, as the API returns it.
+ *  `state` is the progress the SERVER computed from the job's real event
+ *  history — the app never re-derives it, so all three apps agree. */
+export const workflowStageDtoSchema = z.object({
+  step_key: z.string(),
+  label: z.string(),
+  state: z.enum(["completed", "current", "skipped", "upcoming"]),
+  requires_photo: z.boolean().optional(),
+  requires_note: z.boolean().optional(),
+}).passthrough();
+
+export type WorkflowStageDto = z.infer<typeof workflowStageDtoSchema>;
 
 export const serviceBookingDtoSchema = z.object({
   id: z.string(),
@@ -121,6 +137,10 @@ export const serviceBookingDtoSchema = z.object({
   offering_name: z.string().optional(),
   category_name: z.string().optional(),
   job_type_label: z.string().optional(),
+  // Cross-app workflow journey, customer-visible steps only (migration 274).
+  // Empty when this job's workflow defines no steps, in which case the app
+  // keeps rendering its own fixed progress timeline.
+  workflow_stages: z.array(workflowStageDtoSchema).optional(),
 }).passthrough();
 
 export type ServiceBookingDto = z.infer<typeof serviceBookingDtoSchema>;

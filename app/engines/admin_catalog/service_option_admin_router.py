@@ -1,4 +1,4 @@
-"""Sprint 34E — Admin routers for Service Options, Issue Types, Option Groups, and Mappings."""
+﻿"""Sprint 34E â€” Admin routers for Service Options, Issue Types, Option Groups, and Mappings."""
 import uuid
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -8,20 +8,20 @@ from app.engines.admin_catalog.service_option_service import ServiceOptionServic
 from app.schemas.base import ApiResponse, ok
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# ── Option Groups ──────────────────────────────────────────────────────────────
+# â”€â”€ Option Groups â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 grp_router = APIRouter(prefix="/v1/admin/service-option-groups",
                        tags=["Service Option Groups"])
 
-# ── Service Options ────────────────────────────────────────────────────────────
+# â”€â”€ Service Options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 opt_router = APIRouter(prefix="/v1/admin/service-options", tags=["Service Options"])
 
-# ── Issue Types ────────────────────────────────────────────────────────────────
+# â”€â”€ Issue Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 iss_router = APIRouter(prefix="/v1/admin/issue-types-v2", tags=["Issue Types"])
 
-# ── Service Mappings ───────────────────────────────────────────────────────────
+# â”€â”€ Service Mappings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 map_router = APIRouter(prefix="/v1/admin/master-services", tags=["Service Option Mappings"])
 
-# ── Checklist Items (Phase 2 — master/admin-catalog-level) ─────────────────────
+# â”€â”€ Checklist Items (Phase 2 â€” master/admin-catalog-level) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 chk_router = APIRouter(prefix="/v1/admin/checklists", tags=["Checklists"])
 
 
@@ -29,15 +29,15 @@ def _svc(r: Request, db: AsyncSession = Depends(get_db),
          u: UserContext = Depends(get_current_user)) -> ServiceOptionService:
     return ServiceOptionService(
         db=db, actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-        actor_role=u.role, request_id=getattr(r.state, "request_id", "—"))
+        actor_role=u.role, request_id=getattr(r.state, "request_id", "â€”"))
 
 
-def _rid(r): return getattr(r.state, "request_id", "—")
+def _rid(r): return getattr(r.state, "request_id", "â€”")
 
 
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # OPTION GROUPS
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @grp_router.get("", response_model=ApiResponse[list])
 async def list_option_groups(r: Request,
@@ -62,9 +62,9 @@ async def update_option_group(group_id: uuid.UUID, r: Request,
     return ok(await s.update_option_group(group_id, await r.json()), _rid(r))
 
 
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SERVICE OPTIONS
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @opt_router.get("/summary", response_model=ApiResponse[dict])
 async def get_service_options_summary(r: Request,
@@ -133,9 +133,9 @@ async def archive_service_option(option_id: uuid.UUID, r: Request,
     return ok(await s.archive_service_option(option_id), _rid(r))
 
 
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # ISSUE TYPES (v2 with status lifecycle)
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @iss_router.get("", response_model=ApiResponse[dict])
 async def list_issue_types(r: Request,
@@ -193,9 +193,9 @@ async def archive_issue_type(issue_id: uuid.UUID, r: Request,
     return ok(await s.archive_issue_type(issue_id), _rid(r))
 
 
-# ═════════════════════════════════════════════════════════
-# SERVICE ↔ OPTION MAPPINGS
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SERVICE â†” OPTION MAPPINGS
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @map_router.get("/{service_id}/options", response_model=ApiResponse[list])
 async def list_service_option_mappings(service_id: uuid.UUID, r: Request,
@@ -229,7 +229,7 @@ async def remove_service_option_mapping(service_id: uuid.UUID, mapping_id: uuid.
     return ok(await s.remove_service_option_mapping(mapping_id), _rid(r))
 
 
-# ── Service ↔ Issue Mappings ──────────────────────────────────────────────────
+# â”€â”€ Service â†” Issue Mappings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @map_router.get("/{service_id}/issues", response_model=ApiResponse[list])
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
@@ -263,40 +263,56 @@ async def remove_service_issue_mapping(service_id: uuid.UUID, mapping_id: uuid.U
     return ok(await s.remove_service_issue_mapping(mapping_id), _rid(r))
 
 
-# ── Workflow Mapping Readiness (Phase 2 — readiness check only, not full
-#    workflow certification; see PHASE_2_CATALOG_SERVICE_SETUP_AUDIT.md) ───────
+# â”€â”€ Workflow Mapping Readiness (Phase 2 â€” readiness check only, not full
+#    workflow certification; see PHASE_2_CATALOG_SERVICE_SETUP_AUDIT.md) â”€â”€â”€â”€â”€â”€â”€
 
 @map_router.get("/{service_id}/workflow-mapping-status", response_model=ApiResponse[dict])
 async def get_workflow_mapping_status(service_id: uuid.UUID, r: Request,
                                        u: UserContext = Depends(require_super_admin),
                                        db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import select
-    from app.engines.admin_catalog.models import MasterWorkflowTemplate, MasterService
+    from sqlalchemy import func, select
+    from app.engines.admin_catalog.models import (
+        JobTypeDefinition, MasterService, ServiceJobWorkflow,
+    )
 
     svc = await db.get(MasterService, service_id)
     if not svc:
         from app.exceptions import NotFoundException
         raise NotFoundException("MasterService", str(service_id))
 
-    result = await db.execute(select(MasterWorkflowTemplate).where(
-        MasterWorkflowTemplate.master_service_id == service_id,
-        MasterWorkflowTemplate.is_active == True))  # noqa: E712
-    mapped_templates = result.scalars().all()
+    rows = (await db.execute(
+        select(ServiceJobWorkflow, JobTypeDefinition)
+        .join(JobTypeDefinition, ServiceJobWorkflow.job_type_id == JobTypeDefinition.id)
+        .where(
+            ServiceJobWorkflow.master_service_id == service_id,
+            ServiceJobWorkflow.is_current.is_(True),
+            ServiceJobWorkflow.status == "published",
+        )
+        .order_by(JobTypeDefinition.display_order, JobTypeDefinition.label)
+    )).all()
+    total_workflow_count = int(await db.scalar(
+        select(func.count()).select_from(ServiceJobWorkflow).where(
+            ServiceJobWorkflow.master_service_id == service_id,
+            ServiceJobWorkflow.is_current.is_(True),
+        )
+    ) or 0)
 
-    status_value = "mapped" if mapped_templates else "missing_mapping"
+    status_value = "mapped" if rows else "missing_mapping"
     return ok({
         "service_id": str(service_id),
         "service_name": svc.service_name,
         "workflow_mapping_status": status_value,
-        "mapped_workflow_count": len(mapped_templates),
-        "mapped_workflow_names": [t.name for t in mapped_templates],
-        "fix_link": "/admin/workflows/templates",
+        "mapped_workflow_count": len(rows),
+        "total_workflow_count": total_workflow_count,
+        "mapped_workflow_names": [f"{jt.label} v{wf.version_number}" for wf, jt in rows],
+        "workflow_source": "service_job_workflow",
+        "fix_link": f"/admin/catalog-workspace?service_id={service_id}&tab=workflow",
     }, _rid(r))
 
 
-# ═════════════════════════════════════════════════════════
-# CHECKLIST ITEMS (Phase 2 — master/admin-catalog-level)
-# ═════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# CHECKLIST ITEMS (Phase 2 â€” master/admin-catalog-level)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @chk_router.get("", response_model=ApiResponse[dict])
 async def list_checklist_items(r: Request,

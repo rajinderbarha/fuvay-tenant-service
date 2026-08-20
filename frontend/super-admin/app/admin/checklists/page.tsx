@@ -1,5 +1,7 @@
 "use client";
 import React, { useState, useCallback } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard,} from "../../../components/shared/ui";
@@ -12,7 +14,9 @@ import {
   type ServiceCategory, type MasterService, type MasterServiceJobTypeLink,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { Plus, ClipboardList, CheckCircle2, Pencil, Archive, ListChecks, ShieldAlert, RefreshCw, Search } from "lucide-react";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
+import { Plus, ClipboardList, CheckCircle2, Pencil, Archive, ListChecks, ShieldAlert, RefreshCw, Search, ExternalLink } from "lucide-react";
 
 const PURPOSES: ChecklistPurpose[] = [
   "PRE_ARRIVAL", "INSPECTION", "PRE_WORK", "EXECUTION", "SAFETY", "COMPLETION", "HANDOVER",
@@ -29,6 +33,24 @@ const GATES: ChecklistCompletionGate[] = [
 ];
 
 type Tab = "templates" | "mappings" | "health";
+const TEMPLATE_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Checklist", visible: true, order: 0 },
+  { key: "code", label: "Code", visible: true, order: 1 },
+  { key: "purpose", label: "Purpose", visible: true, order: 2 },
+  { key: "version_status", label: "Version", visible: true, order: 3 },
+  { key: "active_mapping_count", label: "Mappings", visible: true, order: 4 },
+  { key: "updated_at", label: "Updated", visible: true, order: 5 },
+];
+const MAPPING_COLUMNS: ColumnDef[] = [
+  { key: "template_name", label: "Checklist", visible: true, order: 0 },
+  { key: "master_service_name", label: "Master Service", visible: true, order: 1 },
+  { key: "job_type_label", label: "Job Type", visible: true, order: 2 },
+  { key: "phase", label: "Phase", visible: true, order: 3 },
+  { key: "usage", label: "Usage", visible: true, order: 4 },
+  { key: "actor", label: "Actor", visible: true, order: 5 },
+  { key: "completion_gate", label: "Gate", visible: true, order: 6 },
+  { key: "status", label: "Status", visible: true, order: 7 },
+];
 
 const selectStyle: React.CSSProperties = {
   width: "100%", padding: "8px 10px", borderRadius: "var(--radius-md)",
@@ -44,32 +66,42 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 export default function ChecklistLibraryPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("templates");
   const [templateQuery, setTemplateQuery] = useState("");
   const [templatePurpose, setTemplatePurpose] = useState("");
+  const [templateStatus, setTemplateStatus] = useState(() => searchParams.get("status") === "archived" ? "archived" : "active");
   const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize, setTemplatePageSize] = useState(25);
+  const [templateColumns, setTemplateColumns] = useState<ColumnDef[]>(TEMPLATE_COLUMNS);
+  const [mappingColumns, setMappingColumns] = useState<ColumnDef[]>(MAPPING_COLUMNS);
+  const [mappingQuery, setMappingQuery] = useState("");
+  const [mappingUsage, setMappingUsage] = useState("");
+  const [mappingActor, setMappingActor] = useState("");
   const [mappingStatus, setMappingStatus] = useState("");
   const [mappingPage, setMappingPage] = useState(1);
+  const [mappingPageSize, setMappingPageSize] = useState(25);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
 
   const templates = useApi(useCallback(() => checklistCatalogApi.listTemplatesDirectory({
     q: templateQuery || undefined,
+    status: templateStatus || undefined,
     purpose: (templatePurpose || undefined) as ChecklistPurpose | undefined,
     page: templatePage,
-    page_size: 25,
-  }), [templateQuery, templatePurpose, templatePage]), [templateQuery, templatePurpose, templatePage]);
+    page_size: templatePageSize,
+  }), [templateQuery, templateStatus, templatePurpose, templatePage, templatePageSize]), [templateQuery, templateStatus, templatePurpose, templatePage, templatePageSize]);
   const templateList: ChecklistTemplateRow[] = templates.data?.items ?? [];
   const mappings = useApi(useCallback(() => checklistCatalogApi.listMappingsDirectory({
+    q: mappingQuery || undefined,
     status: mappingStatus || undefined,
+    usage: (mappingUsage || undefined) as ChecklistUsage | undefined,
+    actor: (mappingActor || undefined) as ChecklistActor | undefined,
     page: mappingPage,
-    page_size: 25,
-  }), [mappingStatus, mappingPage]), [mappingStatus, mappingPage]);
+    page_size: mappingPageSize,
+  }), [mappingQuery, mappingStatus, mappingUsage, mappingActor, mappingPage, mappingPageSize]), [mappingQuery, mappingStatus, mappingUsage, mappingActor, mappingPage, mappingPageSize]);
   const mappingList: JobTypeChecklistMappingRow[] = mappings.data?.items ?? [];
-
-  const publishedCount = templateList.filter(t => t.latest_version?.status === "PUBLISHED").length;
-  const draftCount = templateList.filter(t => t.latest_version?.status === "DRAFT").length;
-  const needReviewCount = templateList.filter(t => t.latest_version?.status === "DRAFT" && t.mapping_count > 0).length;
+  const summary = useApi(useCallback(() => checklistCatalogApi.getSummary(), []));
 
   return (
     <AdminLayout activeNav="checklist-templates">
@@ -88,6 +120,15 @@ export default function ChecklistLibraryPage() {
       <HomeServicesCatalogNav active="checklists" />
 
       {tab === "templates" && (
+        <OperationsDirectoryControls resourceKey="admin_checklist_templates"
+          filters={{ q: templateQuery, status: templateStatus, purpose: templatePurpose }}
+          sort={{ sort_by: "updated_at", sort_direction: "desc" }} columns={templateColumns}
+          onColumnsChange={setTemplateColumns} onApplyView={(filters) => {
+            setTemplateQuery(String(filters.q ?? filters.search ?? "")); setTemplateStatus(String(filters.status ?? "active"));
+            setTemplatePurpose(String(filters.purpose ?? "")); setTemplatePage(1);
+          }}/>
+      )}
+      {tab === "templates" && (
         <Card padding={14} style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ position: "relative", flex: "1 1 280px" }}>
@@ -102,6 +143,10 @@ export default function ChecklistLibraryPage() {
               <option value="">All purposes</option>
               {PURPOSES.map(p => <option key={p} value={p}>{p.replace(/_/g, " ")}</option>)}
             </select>
+            <select aria-label="Filter by checklist lifecycle" value={templateStatus}
+              onChange={e => { setTemplateStatus(e.target.value); setTemplatePage(1); }} style={{ ...selectStyle, width: 160 }}>
+              <option value="active">Active</option><option value="archived">Retired</option><option value="">All lifecycle</option>
+            </select>
             <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: "auto" }}>
               {templates.data?.total ?? 0} templates
             </span>
@@ -110,14 +155,31 @@ export default function ChecklistLibraryPage() {
       )}
 
       {tab === "mappings" && (
+        <OperationsDirectoryControls resourceKey="admin_checklist_mappings"
+          filters={{ q: mappingQuery, status: mappingStatus, usage: mappingUsage, actor: mappingActor }}
+          sort={{ sort_by: "updated_at", sort_direction: "desc" }} columns={mappingColumns}
+          onColumnsChange={setMappingColumns} onApplyView={(filters) => {
+            setMappingQuery(String(filters.q ?? filters.search ?? "")); setMappingStatus(String(filters.status ?? ""));
+            setMappingUsage(String(filters.usage ?? "")); setMappingActor(String(filters.actor ?? "")); setMappingPage(1);
+          }}/>
+      )}
+      {tab === "mappings" && (
         <Card padding={14} style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <input aria-label="Search mappings" placeholder="Search phase or gate…" value={mappingQuery}
+              onChange={e => { setMappingQuery(e.target.value); setMappingPage(1); }} style={{ ...selectStyle, width: 240 }}/>
             <select aria-label="Filter mapping status" value={mappingStatus}
               onChange={e => { setMappingStatus(e.target.value); setMappingPage(1); }}
               style={{ ...selectStyle, width: 190 }}>
               <option value="">All mapping statuses</option>
               <option value="active">Active</option>
               <option value="disabled">Disabled</option>
+            </select>
+            <select aria-label="Filter mapping usage" value={mappingUsage} onChange={e => { setMappingUsage(e.target.value); setMappingPage(1); }} style={{ ...selectStyle, width: 150 }}>
+              <option value="">All usage</option>{USAGES.map(value => <option key={value}>{value}</option>)}
+            </select>
+            <select aria-label="Filter mapping actor" value={mappingActor} onChange={e => { setMappingActor(e.target.value); setMappingPage(1); }} style={{ ...selectStyle, width: 170 }}>
+              <option value="">All actors</option>{ACTORS.map(value => <option key={value}>{value}</option>)}
             </select>
             <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: "auto" }}>
               {mappings.data?.total ?? 0} mappings
@@ -137,11 +199,11 @@ export default function ChecklistLibraryPage() {
 
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-        <SummaryCard icon={<ClipboardList />} label="Templates" value={templateList.length} />
-        <SummaryCard icon={<CheckCircle2 />} label="Published" value={publishedCount} accent="var(--success-text)" />
-        <SummaryCard icon={<Pencil />} label="Draft" value={draftCount} accent="var(--warning-text)" />
-        <SummaryCard icon={<ShieldAlert />} label="Need Review" value={needReviewCount} accent="var(--warning-text)" />
-        <SummaryCard icon={<ListChecks />} label="Job-Type Mappings" value={mappingList.length} />
+        <SummaryCard icon={<ClipboardList />} label="Active Templates" value={summary.data?.active_templates ?? 0} />
+        <SummaryCard icon={<CheckCircle2 />} label="Published Versions" value={summary.data?.published_versions ?? 0} accent="var(--success-text)" />
+        <SummaryCard icon={<Pencil />} label="Draft Versions" value={summary.data?.draft_versions ?? 0} accent="var(--warning-text)" />
+        <SummaryCard icon={<ShieldAlert />} label="Unmapped" value={summary.data?.unmapped_templates ?? 0} accent="var(--warning-text)" />
+        <SummaryCard icon={<ListChecks />} label="Active Mappings" value={summary.data?.active_mappings ?? 0} />
       </div>
 
       {/* Tabs */}
@@ -163,7 +225,7 @@ export default function ChecklistLibraryPage() {
             notify={notify}
           />
           <DirectoryPager page={templates.data?.page ?? templatePage} pages={templates.data?.pages ?? 1}
-            total={templates.data?.total ?? 0} onPage={setTemplatePage}/>
+            total={templates.data?.total ?? 0} pageSize={templatePageSize} onPageSize={setTemplatePageSize} onPage={setTemplatePage}/>
         </>
       )}
       {tab === "mappings" && (
@@ -173,7 +235,7 @@ export default function ChecklistLibraryPage() {
             onRefetch={() => mappings.refetch()} notify={notify}
           />
           <DirectoryPager page={mappings.data?.page ?? mappingPage} pages={mappings.data?.pages ?? 1}
-            total={mappings.data?.total ?? 0} onPage={setMappingPage}/>
+            total={mappings.data?.total ?? 0} pageSize={mappingPageSize} onPageSize={setMappingPageSize} onPage={setMappingPage}/>
         </>
       )}
       {tab === "health" && <ExecutionHealthTab />}
@@ -181,12 +243,14 @@ export default function ChecklistLibraryPage() {
   );
 }
 
-function DirectoryPager({ page, pages, total, onPage }: { page: number; pages: number; total: number; onPage: (page: number) => void }) {
-  if (pages <= 1) return null;
+function DirectoryPager({ page, pages, total, pageSize, onPageSize, onPage }: { page: number; pages: number; total: number; pageSize: number; onPageSize: (size: number) => void; onPage: (page: number) => void }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
       <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Page {page} of {pages} · {total} records</span>
       <div style={{ display: "flex", gap: 8 }}>
+        <select value={pageSize} onChange={event => onPageSize(Number(event.target.value))} style={{ ...selectStyle, width: 110 }}>
+          {[25, 50, 100].map(value => <option key={value} value={value}>{value} / page</option>)}
+        </select>
         <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
         <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
       </div>
@@ -259,24 +323,31 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
   notify: (msg: string, ok?: boolean) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [retireOpen, setRetireOpen] = useState(false);
+  const [retireReason, setRetireReason] = useState("");
   const selected = templates.find(t => t.id === selectedId) ?? null;
 
   const versionQuery = useApi(useCallback(
-    () => selectedId ? checklistCatalogApi.getOrCreateDraftVersion(selectedId) : Promise.resolve(null),
-    [selectedId]), [selectedId]);
+    () => selectedId
+      ? (editing ? checklistCatalogApi.getOrCreateDraftVersion(selectedId) : checklistCatalogApi.getLatestVersion(selectedId))
+      : Promise.resolve(null),
+    [selectedId, editing]), [selectedId, editing]);
   const version: ChecklistTemplateVersionDetail | null = versionQuery.data;
 
   const publish = useAction(useCallback(async (changeSummary: string) => {
     if (!version) return;
     await checklistCatalogApi.publishVersion(version.id, changeSummary || undefined);
-    versionQuery.refetch(); onRefetch(); notify("Version published.");
+    setEditing(false);
+    onRefetch(); notify("Version published.");
   }, [version, versionQuery, onRefetch, notify]));
 
   const archive = useAction(useCallback(async () => {
     if (!selected) return;
-    await checklistCatalogApi.archiveTemplate(selected.id);
-    onRefetch(); notify("Template archived.");
-  }, [selected, onRefetch, notify]));
+    await checklistCatalogApi.archiveTemplate(selected.id, retireReason);
+    setRetireOpen(false); setRetireReason(""); setSelectedId(null);
+    onRefetch(); notify("Template retired and active mappings disabled.");
+  }, [selected, retireReason, onRefetch, notify]));
 
   if (!loading && templates.length === 0) {
     return (
@@ -297,7 +368,7 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
         <div style={{ padding: 14, borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>Template Library</div>
         <div style={{ maxHeight: 560, overflowY: "auto" }}>
           {templates.map(t => (
-            <div key={t.id} onClick={() => setSelectedId(t.id)} style={{
+            <div key={t.id} onClick={() => { setSelectedId(t.id); setEditing(false); }} style={{
               padding: "12px 14px", cursor: "pointer",
               borderLeft: selectedId === t.id ? "3px solid var(--primary)" : "3px solid transparent",
               background: selectedId === t.id ? "var(--surface-sunken)" : "transparent",
@@ -331,10 +402,12 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
                 <div style={{ fontSize: 12, color: "var(--muted-text)", marginTop: 2 }}>{selected.description || "No description."}</div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
+                <Link href={`/admin/checklists/${selected.id}`}><Btn size="xs" variant="secondary"><ExternalLink size={12}/> Details</Btn></Link>
                 {selected.status !== "archived" && (
-                  <Btn size="xs" variant="ghost" onClick={() => archive.execute()} loading={archive.loading}>
-                    <Archive size={12} style={{ marginRight: 4 }} /> Archive
-                  </Btn>
+                  <>
+                  <Btn size="xs" variant="ghost" onClick={() => setRetireOpen(true)} loading={archive.loading}>
+                    <Archive size={12} style={{ marginRight: 4 }} /> Retire
+                  </Btn></>
                 )}
               </div>
             </div>
@@ -342,7 +415,8 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
               {version && version.status !== "DRAFT" && (
                 <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)",
                   border: "1px solid var(--border)", fontSize: 12, color: "var(--muted-text)", marginBottom: 12 }}>
-                  Viewing published v{version.version_number}. Editing content will create a new draft version automatically.
+                  Viewing immutable published v{version.version_number}. Start a draft to edit without changing live jobs.
+                  <span style={{ marginLeft: 10 }}><Btn size="xs" variant="secondary" onClick={() => setEditing(true)}>Create editable draft</Btn></span>
                 </div>
               )}
               {version?.sections.map(section => (
@@ -358,10 +432,10 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
                       {item.condition_rules && <Badge size="sm" variant="muted">Conditional</Badge>}
                     </div>
                   ))}
-                  <AddItemRow sectionId={section.id} onAdded={() => versionQuery.refetch()} />
+                  {version.status === "DRAFT" && <AddItemRow sectionId={section.id} onAdded={() => versionQuery.refetch()} />}
                 </div>
               ))}
-              <AddSectionRow versionId={version?.id ?? null} onAdded={() => versionQuery.refetch()} />
+              {version?.status === "DRAFT" && <AddSectionRow versionId={version.id} onAdded={() => versionQuery.refetch()} />}
 
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
                 <PublishControl disabled={!version || version.status !== "DRAFT"} loading={publish.loading}
@@ -395,6 +469,16 @@ function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
           </div>
         )}
       </Card>
+      <Modal open={retireOpen} onClose={() => setRetireOpen(false)} title="Retire checklist template">
+        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Historical job instances remain immutable. Active mappings are disabled so new jobs stop receiving this checklist.</p>
+        <textarea value={retireReason} onChange={event => setRetireReason(event.target.value)} rows={3}
+          placeholder="Reason for retirement (minimum 5 characters)" style={{ ...selectStyle, resize: "vertical" }}/>
+        {archive.error && <p style={{ fontSize: 12, color: "var(--danger-text)" }}>{archive.error}</p>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+          <Btn variant="secondary" onClick={() => setRetireOpen(false)}>Cancel</Btn>
+          <Btn variant="danger" disabled={retireReason.trim().length < 5} loading={archive.loading} onClick={() => archive.execute()}>Retire template</Btn>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -460,8 +544,17 @@ function MappingsTab({ mappings, loading, templates, onRefetch, notify }: {
   mappings: JobTypeChecklistMappingRow[]; loading: boolean; templates: ChecklistTemplateRow[];
   onRefetch: () => void; notify: (msg: string, ok?: boolean) => void;
 }) {
-  const publishedTemplates = templates.filter(t => t.latest_version?.status === "PUBLISHED");
+  const [disableRow, setDisableRow] = useState<JobTypeChecklistMappingRow | null>(null);
+  const [disableReason, setDisableReason] = useState("");
+  const disable = useAction(useCallback(async () => {
+    if (!disableRow) return;
+    await checklistCatalogApi.disableMapping(disableRow.id, disableReason);
+    setDisableRow(null); setDisableReason(""); onRefetch(); notify("Mapping disabled.");
+  }, [disableRow, disableReason, onRefetch, notify]));
   const columns = [
+    { key: "template_name", label: "Checklist", width: 170, render: (_: unknown, row: JobTypeChecklistMappingRow) => <span><strong>{row.template_name ?? "Unknown"}</strong><br/><small style={{color:"var(--text-tertiary)"}}>v{row.template_version ?? "—"}</small></span> },
+    { key: "master_service_name", label: "Master Service", width: 150 },
+    { key: "job_type_label", label: "Job Type", width: 120 },
     { key: "phase", label: "Phase", width: 120 },
     {
       key: "usage", label: "Usage", width: 100,
@@ -486,10 +579,10 @@ function MappingsTab({ mappings, loading, templates, onRefetch, notify }: {
       key: "id", label: "Actions", width: 100,
       render: (_: unknown, row: JobTypeChecklistMappingRow) => (
         row.status === "active" ? (
-          <Btn size="xs" variant="ghost" onClick={async () => { await checklistCatalogApi.disableMapping(row.id); onRefetch(); notify("Mapping disabled."); }}>
+          <Btn size="xs" variant="ghost" onClick={() => setDisableRow(row)}>
             Disable
           </Btn>
-        ) : <span style={{ fontSize: 11, color: "var(--muted-text)" }}>—</span>
+        ) : <Btn size="xs" variant="ghost" onClick={async () => { await checklistCatalogApi.enableMapping(row.id); onRefetch(); notify("Mapping enabled."); }}>Enable</Btn>
       ),
     },
   ];
@@ -497,7 +590,7 @@ function MappingsTab({ mappings, loading, templates, onRefetch, notify }: {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <NewMappingButton publishedTemplates={publishedTemplates} onCreated={() => { onRefetch(); notify("Mapping created."); }} />
+        <NewMappingButton onCreated={() => { onRefetch(); notify("Mapping created."); }} />
       </div>
       <Card padding={0}>
         <DataTable
@@ -507,12 +600,19 @@ function MappingsTab({ mappings, loading, templates, onRefetch, notify }: {
           emptyText="No Job-Type mappings yet. A checklist has no runtime effect until mapped to an exact Job Type."
         />
       </Card>
+      <Modal open={!!disableRow} onClose={() => setDisableRow(null)} title="Disable checklist mapping">
+        <p style={{fontSize:13,color:"var(--text-secondary)"}}>Existing job instances remain unchanged. New matching jobs will no longer receive this mapping.</p>
+        <textarea value={disableReason} onChange={event=>setDisableReason(event.target.value)} rows={3} placeholder="Reason for disabling (minimum 5 characters)" style={{...selectStyle,resize:"vertical"}}/>
+        {disable.error&&<p style={{fontSize:12,color:"var(--danger-text)"}}>{disable.error}</p>}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><Btn variant="secondary" onClick={()=>setDisableRow(null)}>Cancel</Btn><Btn variant="danger" disabled={disableReason.trim().length<5} loading={disable.loading} onClick={()=>disable.execute()}>Disable mapping</Btn></div>
+      </Modal>
     </div>
   );
 }
 
-function NewMappingButton({ publishedTemplates, onCreated }: { publishedTemplates: ChecklistTemplateRow[]; onCreated: () => void }) {
+function NewMappingButton({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [masterServiceId, setMasterServiceId] = useState("");
   const [jobTypeLinkId, setJobTypeLinkId] = useState("");
@@ -521,6 +621,11 @@ function NewMappingButton({ publishedTemplates, onCreated }: { publishedTemplate
   const [usage, setUsage] = useState<ChecklistUsage>("REQUIRED");
   const [actor, setActor] = useState<ChecklistActor>("TECHNICIAN");
   const [gate, setGate] = useState<ChecklistCompletionGate>("NONE");
+
+  const templateOptions = useApi(useCallback(
+    () => checklistCatalogApi.listPublishedTemplateOptions(templateSearch, 50),
+    [templateSearch]), [templateSearch], { enabled: open });
+  const publishedTemplates = templateOptions.data ?? [];
 
   const cats = useApi(useCallback(() => catalogApi.listCategories(true), []), [], { enabled: open });
   const catList: ServiceCategory[] = cats.data?.categories ?? [];
@@ -554,6 +659,8 @@ function NewMappingButton({ publishedTemplates, onCreated }: { publishedTemplate
             </div>
           )}
           <FieldRow label="Checklist Template Version (published only)">
+            <input value={templateSearch} onChange={event => setTemplateSearch(event.target.value)}
+              placeholder="Search checklist name or code" style={{ ...selectStyle, marginBottom: 8 }} />
             <select value={templateVersionId} onChange={e => setTemplateVersionId(e.target.value)} style={selectStyle}>
               <option value="">— Select —</option>
               {publishedTemplates.map(t => (

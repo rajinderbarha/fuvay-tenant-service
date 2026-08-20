@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Btn, Badge, Skeleton, Input, Modal, StatCard } from "../../../components/shared/ui";
 import { PageShell, PageHeader, SearchBar, ActionMenu } from "../../../components/shared/layout";
@@ -7,7 +7,7 @@ import {
   Mail, Users, CheckCircle2, Lock, Star, ShieldAlert, Clock, UserX, RefreshCw,
 } from "lucide-react";
 import {
-  platformUsersApi, type PlatformUserRow, type PlatformUserDetail,
+  authApi, platformUsersApi, type PlatformUserRow, type PlatformUserDetail,
   type PlatformUserInvite, type PlatformUserAuditEntry,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
@@ -448,17 +448,23 @@ export default function PlatformUsersPage() {
   const [invitesModal, setInvitesModal] = useState(false);
   const [toast, setToast] = useState("");
   const [bulkReasonAction, setBulkReasonAction] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const notify = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
 
+  const me = useApi(useCallback(() => authApi.me(), []), []);
   const summary = useApi(useCallback(() => platformUsersApi.getSummary(), []), []);
   const users = useApi(useCallback(() => platformUsersApi.list({
     user_group: "platform", q: q || undefined, platform_role: roleFilter || undefined,
     status: statusFilter || undefined, mfa_status: mfaFilter || undefined,
-    access_scope: scopeFilter || undefined, inactive_days_min: inactiveDaysMin, limit: 100,
-  }), [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin]),
-    [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin]);
+    access_scope: scopeFilter || undefined, inactive_days_min: inactiveDaysMin,
+    page, limit: pageSize,
+  }), [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin, page, pageSize]),
+    [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin, page, pageSize]);
   const invites = useApi(useCallback(() => invitesModal ? platformUsersApi.listInvites() : Promise.resolve({ invites: [], total: 0 }), [invitesModal]), [invitesModal]);
+
+  useEffect(() => { setPage(1); setSelected(new Set()); }, [q, roleFilter, statusFilter, mfaFilter, scopeFilter, inactiveDaysMin, pageSize]);
 
   // Phase 2A Slice 2: default/reset state previously referenced
   // "platform_admin" — a placeholder role removed by FINAL-L5-05N that
@@ -501,6 +507,9 @@ export default function PlatformUsersPage() {
   }
 
   const rows = users.data?.users ?? [];
+  const meta = users.data?.meta;
+  const totalPages = meta?.total_pages ?? 1;
+  const totalUsers = meta?.total ?? rows.length;
   const s = summary.data;
 
   function toggleRow(id: string) {
@@ -510,8 +519,7 @@ export default function PlatformUsersPage() {
     setSelected(prev => prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)));
   }
 
-  // Self-deactivation/suspend is enforced server-side regardless of this client-side hint.
-  const currentAdminId: string | null = null;
+  const currentAdminId: string | null = me.data?.id ?? null;
 
   return (
     <AdminLayout activeNav="users">
@@ -524,7 +532,15 @@ export default function PlatformUsersPage() {
           secondaryActions={[
             { label: "View Invitations", onClick: () => setInvitesModal(true) },
             { label: "Export Filtered Users", onClick: async () => {
-                const res = await platformUsersApi.export("platform");
+                const res = await platformUsersApi.export({
+                  user_group: "platform",
+                  q: q || undefined,
+                  platform_role: roleFilter || undefined,
+                  status: statusFilter || undefined,
+                  mfa_status: mfaFilter || undefined,
+                  access_scope: scopeFilter || undefined,
+                  inactive_days_min: inactiveDaysMin,
+                });
                 notify(`Exported ${res.count} users.`);
               } },
           ]}
@@ -578,6 +594,9 @@ export default function PlatformUsersPage() {
             <select value={scopeFilter} onChange={e => setScopeFilter(e.target.value)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
               <option value="">All Access Scopes</option>
               {ACCESS_SCOPES.map(s2 => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
+            </select>
+            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value) || 50)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
+              {[25, 50, 100, 200].map(size => <option key={size} value={size}>{size} / page</option>)}
             </select>
             <Btn size="sm" variant="secondary" onClick={() => { users.refetch(); summary.refetch(); }}><RefreshCw size={13} style={{ marginRight: 4 }} />Refresh</Btn>
             <Btn size="sm" variant="ghost" onClick={clearFilters}>Clear Filters</Btn>
@@ -662,6 +681,18 @@ export default function PlatformUsersPage() {
                   )}
                 </tbody>
               </table>
+              <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  Showing {rows.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, totalUsers)} of {totalUsers} users
+                </span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Btn size="xs" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 80, textAlign: "center" }}>
+                    Page {page} of {totalPages}
+                  </span>
+                  <Btn size="xs" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Btn>
+                </div>
+              </div>
             </div>
           )}
         </Card>

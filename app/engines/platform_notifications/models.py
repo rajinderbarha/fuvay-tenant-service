@@ -40,6 +40,9 @@ class NotificationEvent(ServiceOSBase):
             "source_record_type": self.source_record_type,
             "source_record_id": str(self.source_record_id) if self.source_record_id else None,
             "tenant_id": str(self.tenant_id) if self.tenant_id else None,
+            "customer_id": str(self.customer_id) if self.customer_id else None,
+            "actor_user_id": str(self.actor_user_id) if self.actor_user_id else None,
+            "vertical_key": self.vertical_key, "is_mandatory": self.is_mandatory,
             "severity": self.severity, "status": self.status,
             "payload": self.payload,
             "created_at": self.created_at.isoformat(),
@@ -89,7 +92,11 @@ class NotificationOutbox(ServiceOSBase):
             "delivery_status": self.delivery_status, "provider_name": self.provider_name,
             "failure_code": self.failure_code, "failure_message": self.failure_message,
             "retry_count": self.retry_count, "max_retries": self.max_retries,
+            "tenant_id": str(self.tenant_id) if self.tenant_id else None,
+            "vertical_key": self.vertical_key,
+            "scheduled_at": self.scheduled_at.isoformat() if self.scheduled_at else None,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -127,6 +134,7 @@ class InAppNotification(ServiceOSBase):
             "source_record_type": self.source_record_type,
             "source_record_id": str(self.source_record_id) if self.source_record_id else None,
             "severity": self.severity, "read_status": self.read_status,
+            "vertical_key": self.vertical_key, "is_mandatory": self.is_mandatory,
             "read_at": self.read_at.isoformat() if self.read_at else None,
             "created_at": self.created_at.isoformat(),
         }
@@ -179,6 +187,18 @@ class NotificationPreference(ServiceOSBase):
             "is_enabled": self.is_enabled,
             "updated_at": self.updated_at.isoformat(),
         }
+
+
+class NotificationChannelConfigAudit(ServiceOSBase):
+    """Append-only, secret-free audit history for provider changes."""
+    __tablename__ = "notification_channel_config_audits"
+    __table_args__ = (Index("ix_notification_channel_config_audit_channel_created", "channel", "created_at"),)
+
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    before_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    after_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ChatThread(ServiceOSBase):

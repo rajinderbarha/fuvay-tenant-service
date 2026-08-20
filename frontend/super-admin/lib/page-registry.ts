@@ -131,30 +131,10 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Packages" }],
   },
-  "/admin/pricing": {
-    title: "Pricing",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Pricing" }],
-  },
-  "/admin/service-options": {
-    title: "Service Options (Retired)",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog-workspace" }, { label: "Service Options (Retired)" }],
-  },
-  "/admin/issue-types": {
-    title: "Issue Types (Retired)",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog-workspace" }, { label: "Issue Types (Retired)" }],
-  },
   "/admin/checklists": {
     title: "Checklist Library",
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Checklist Library" }],
-  },
-  "/admin/workflow-templates": {
-    title: "Workflow Templates",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Workflows" }],
   },
   "/admin/service-setup": {
     title: "Service Setup",
@@ -196,11 +176,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Invoices",
     section: "finance",
     breadcrumbs: [{ label: "Finance", href: "/admin/finance" }, { label: "Invoices" }],
-  },
-  "/admin/provider-wallets": {
-    title: "Provider Wallets",
-    section: "finance",
-    breadcrumbs: [{ label: "Finance", href: "/admin/finance" }, { label: "Wallets" }],
   },
   "/admin/commission-records": {
     title: "Commissions",

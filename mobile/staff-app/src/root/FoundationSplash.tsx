@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { Image, View, Text, Pressable } from "react-native";
 import { useTheme } from "../design-system/themes";
 
 /**
@@ -14,9 +14,9 @@ export function FoundationSplash() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.backgroundPrimary, padding: spacing.lg, justifyContent: "center" }}>
-      <Text style={[typography.headingLarge, { color: colors.textPrimary, marginBottom: spacing.sm }]}>
-        ServiceOS Technician
-      </Text>
+      <Image source={require("../../assets/fuvay-logo-native.png")} resizeMode="contain"
+        accessibilityLabel="Fuvay" style={{ width: 190, height: 52, marginBottom: spacing.sm }} />
+      <Text style={[typography.headingLarge, { color: colors.textPrimary, marginBottom: spacing.sm }]}>Technician App</Text>
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xl }]}>
         Design foundation preview -- {mode} mode active.
       </Text>

@@ -28,12 +28,12 @@ def _read(path: Path) -> str:
 class TestJobsNavigationGuard:
     def test_operations_page_still_carries_the_legacy_field_ops_disclosure_banner(self):
         """FINAL-L5-05E: /admin/operations is now a real compatibility
-        redirect to the canonical service_jobs page (parity proven, all 4
+        redirect to the canonical Bookings & Jobs page (parity proven, all 4
         mutations + SLA + summary built) -- stronger than a disclosure
         banner. Must still self-identify as legacy and point at canonical."""
         src = _read(SA / "app" / "admin" / "operations" / "page.tsx")
         assert "legacy" in src.lower()
-        assert "/admin/home-services/service-jobs" in src
+        assert "/admin/home-services/bookings-jobs" in src
 
     def test_operations_pages_no_longer_use_jobs_api(self):
         """FINAL-L5-05E regression guard: both legacy operations pages must
@@ -48,9 +48,9 @@ class TestJobsNavigationGuard:
 
     def test_admin_layout_jobs_nav_points_to_canonical_route(self):
         """FINAL-L5-05E: primary Jobs sidebar item must point at the
-        canonical service_jobs page, not the legacy /admin/operations."""
+        unified Bookings & Jobs page, not the legacy /admin/operations."""
         src = _read(SA / "components" / "layout" / "AdminLayout.tsx")
-        assert '"/admin/home-services/service-jobs"' in src
+        assert '"/admin/home-services/bookings-jobs"' in src
 
     def test_zero_active_jobs_api_imports_anywhere_in_super_admin(self):
         """FINAL-L5-05E: no Super Admin page/component may import jobsApi --
@@ -68,7 +68,7 @@ class TestJobsNavigationGuard:
         assert not hits, f"active jobsApi imports found: {hits}"
 
     def test_canonical_service_jobs_page_exists_and_is_not_a_stub(self):
-        list_page = SA / "app" / "admin" / "home-services" / "service-jobs" / "page.tsx"
+        list_page = SA / "app" / "admin" / "home-services" / "bookings-jobs" / "page.tsx"
         detail_page = SA / "app" / "admin" / "home-services" / "service-jobs" / "[jobId]" / "page.tsx"
         assert list_page.exists() and detail_page.exists()
         assert len(_read(list_page).splitlines()) > 20
@@ -124,11 +124,11 @@ class TestNavHrefIntegrityGuard:
         dupes = {h for h in hrefs if hrefs.count(h) > 1}
         assert not dupes, f"duplicate NAV_GROUPS hrefs found: {dupes}"
 
-    def test_finance_usage_credits_and_reports_remain_in_nav(self):
-        """Regression guard for the FINAL-L5-05 orphan-page fix."""
+    def test_consolidated_finance_and_analytics_remain_in_nav(self):
+        """Finance and reports each live in their consolidated workspace."""
         src = _read(SA / "components" / "layout" / "AdminLayout.tsx")
-        assert "/admin/finance/usage-credits" in src
-        assert '"/admin/reports"' in src
+        assert "/admin/home-services/finance" in src
+        assert '"/admin/analytics"' in src
 
 
 class TestFinalL5_05H_JobDeductionGate:

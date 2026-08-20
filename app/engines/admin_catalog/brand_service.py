@@ -106,8 +106,36 @@ class BrandService:
         search: str | None = None,
         page: int = 1,
         page_size: int = 50,
+        retired: bool = False,
+        mapped: bool | None = None,
+        has_providers: bool | None = None,
+        sort_by: str = "display_order",
+        sort_dir: str = "asc",
     ) -> dict:
-        stmt = select(Brand).where(Brand.deleted_at.is_(None))
+        provider_counts = (
+            select(TenantSupportedBrand.brand_id.label("brand_id"), func.count(TenantSupportedBrand.id).label("provider_count"))
+            .where(TenantSupportedBrand.status == "active")
+            .group_by(TenantSupportedBrand.brand_id).subquery()
+        )
+        category_counts = (
+            select(BrandCategoryMapping.brand_id.label("brand_id"), func.count(BrandCategoryMapping.id).label("category_count"))
+            .where(BrandCategoryMapping.status == "active", BrandCategoryMapping.deleted_at.is_(None))
+            .group_by(BrandCategoryMapping.brand_id).subquery()
+        )
+        service_counts = (
+            select(MasterServiceBrand.brand_id.label("brand_id"), func.count(MasterServiceBrand.id).label("service_count"))
+            .where(MasterServiceBrand.is_active == True)
+            .group_by(MasterServiceBrand.brand_id).subquery()
+        )
+        stmt = select(
+            Brand,
+            func.coalesce(provider_counts.c.provider_count, 0),
+            func.coalesce(category_counts.c.category_count, 0),
+            func.coalesce(service_counts.c.service_count, 0),
+        ).outerjoin(provider_counts, provider_counts.c.brand_id == Brand.id)
+        stmt = stmt.outerjoin(category_counts, category_counts.c.brand_id == Brand.id)
+        stmt = stmt.outerjoin(service_counts, service_counts.c.brand_id == Brand.id)
+        stmt = stmt.where(Brand.deleted_at.isnot(None) if retired else Brand.deleted_at.is_(None))
         if status:
             stmt = stmt.where(Brand.status == status)
         elif is_active is not None:
@@ -127,54 +155,44 @@ class BrandService:
                 or_(Brand.category_id == category_id, Brand.id.in_(sub))
             )
         if search:
-            stmt = stmt.where(Brand.name.ilike(f"%{search}%"))
-        stmt = stmt.order_by(Brand.display_order, Brand.name)
+            term = f"%{search.strip().lower()}%"
+            stmt = stmt.where(or_(
+                func.lower(Brand.name).like(term), func.lower(Brand.slug).like(term),
+                func.lower(func.coalesce(Brand.code, "")).like(term),
+                func.lower(func.coalesce(Brand.normalized_name, "")).like(term),
+            ))
+        if mapped is not None:
+            stmt = stmt.where(service_counts.c.service_count > 0 if mapped else func.coalesce(service_counts.c.service_count, 0) == 0)
+        if has_providers is not None:
+            stmt = stmt.where(provider_counts.c.provider_count > 0 if has_providers else func.coalesce(provider_counts.c.provider_count, 0) == 0)
 
-        count_stmt = select(Brand).where(Brand.deleted_at.is_(None))
-        all_res = await self.db.execute(stmt)
-        brands = all_res.scalars().all()
-
-        # Enrich: provider usage count per brand
+        total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+        sort_columns = {
+            "name": Brand.name, "code": Brand.code, "status": Brand.status,
+            "display_order": Brand.display_order, "updated_at": Brand.updated_at,
+            "provider_usage_count": provider_counts.c.provider_count,
+            "service_mapping_count": service_counts.c.service_count,
+        }
+        col = sort_columns.get(sort_by, Brand.display_order)
+        direction = col.asc() if sort_dir == "asc" else col.desc()
+        stmt = stmt.order_by(direction.nulls_last(), Brand.name.asc(), Brand.id.asc())
+        stmt = stmt.limit(page_size).offset((page - 1) * page_size)
+        rows = (await self.db.execute(stmt)).all()
         enriched = []
-        for b in brands:
-            d = self._brand_dict(b)
-            # Count how many tenants support this brand
-            usage = await self.db.execute(
-                select(TenantSupportedBrand).where(
-                    TenantSupportedBrand.brand_id == b.id,
-                    TenantSupportedBrand.status == "active",
-                )
-            )
-            d["provider_usage_count"] = len(usage.scalars().all())
-            # Category mappings
-            cat_res = await self.db.execute(
-                select(BrandCategoryMapping).where(
-                    BrandCategoryMapping.brand_id == b.id,
-                    BrandCategoryMapping.status == "active",
-                )
-            )
-            d["category_mapping_count"] = len(cat_res.scalars().all())
-            # Service mappings
-            svc_res = await self.db.execute(
-                select(MasterServiceBrand).where(
-                    MasterServiceBrand.brand_id == b.id,
-                    MasterServiceBrand.is_active == True,
-                )
-            )
-            d["service_mapping_count"] = len(svc_res.scalars().all())
-            enriched.append(d)
-
-        offset = (page - 1) * page_size
-        total = len(enriched)
+        for brand, provider_count, category_count, service_count in rows:
+            item = self._brand_dict(brand)
+            item.update(provider_usage_count=int(provider_count), category_mapping_count=int(category_count),
+                        service_mapping_count=int(service_count))
+            enriched.append(item)
         return {
-            "brands": enriched[offset : offset + page_size],
+            "brands": enriched,
             "total": total,
             "page": page,
             "page_size": page_size,
         }
 
-    async def get_brand(self, brand_id: uuid.UUID) -> dict:
-        b = await self._load_brand(brand_id)
+    async def get_brand(self, brand_id: uuid.UUID, include_retired: bool = False) -> dict:
+        b = await self._load_brand_any(brand_id) if include_retired else await self._load_brand(brand_id)
         d = self._brand_dict(b)
 
         # Category mappings
@@ -304,12 +322,9 @@ class BrandService:
             b.display_name = data["display_name"]
         if "code" in data:
             b.code = (data["code"] or "").strip().upper() or None
-        if "status" in data:
-            if data["status"] not in VALID_BRAND_STATUSES:
-                raise ServiceOSException("INVALID_BRAND_STATUS",
-                                         f"status must be one of {VALID_BRAND_STATUSES}", status_code=422)
-            b.status = data["status"]
-            b.is_active = data["status"] == "active"
+        if "status" in data and data["status"] != b.status:
+            raise ServiceOSException("LIFECYCLE_ENDPOINT_REQUIRED",
+                "Use the activate, deactivate, retire, restore, or merge action for status changes.", status_code=409)
         if "logo_url" in data:
             b.logo_url = data["logo_url"]
         if "description" in data:
@@ -328,6 +343,13 @@ class BrandService:
             b.alias_names_json = data["alias_names_json"]
         if "replacement_brand_id" in data and data["replacement_brand_id"]:
             b.replacement_brand_id = uuid.UUID(str(data["replacement_brand_id"]))
+        duplicate = await self.db.scalar(select(func.count(Brand.id)).where(
+            Brand.id != brand_id, Brand.deleted_at.is_(None),
+            or_(Brand.normalized_name == b.normalized_name,
+                and_(b.code is not None, Brand.code == b.code)),
+        ))
+        if duplicate:
+            raise ServiceOSException("BRAND_DUPLICATE", "A live brand already uses this name or code.", status_code=409)
         b.updated_by_user_id = self.actor_id
 
         await self.db.flush()
@@ -353,15 +375,41 @@ class BrandService:
         await self._audit("brand.deactivated", "brand", brand_id)
         return {"brand_id": str(brand_id), "status": "inactive"}
 
-    async def archive_brand(self, brand_id: uuid.UUID) -> dict:
+    async def archive_brand(self, brand_id: uuid.UUID, reason: str) -> dict:
+        if len(reason.strip()) < 10:
+            raise ServiceOSException("RETIRE_REASON_REQUIRED", "A retirement reason of at least 10 characters is required.", status_code=422)
         b = await self._load_brand(brand_id)
+        provider_count = int(await self.db.scalar(select(func.count(TenantSupportedBrand.id)).where(
+            TenantSupportedBrand.brand_id == brand_id, TenantSupportedBrand.status == "active")) or 0)
+        tenant_count = int(await self.db.scalar(select(func.count(TenantServiceBrand.id)).where(
+            TenantServiceBrand.brand_id == brand_id, TenantServiceBrand.is_enabled == True)) or 0)
+        if provider_count or tenant_count:
+            raise ServiceOSException("BRAND_IN_USE", "This brand is enabled by providers. Remove provider usage or merge it before retirement.",
+                                     status_code=409, context={"provider_mappings": provider_count + tenant_count})
         b.status = "archived"
         b.is_active = False
         b.deleted_at = utcnow()
         b.updated_by_user_id = self.actor_id
         await self.db.flush()
-        await self._audit("brand.archived", "brand", brand_id)
+        await self._audit("brand.retired", "brand", brand_id, new_value={"reason": reason})
         return {"brand_id": str(brand_id), "status": "archived"}
+
+    async def restore_brand(self, brand_id: uuid.UUID, reason: str) -> dict:
+        if len(reason.strip()) < 10:
+            raise ServiceOSException("RESTORE_REASON_REQUIRED", "A restore reason of at least 10 characters is required.", status_code=422)
+        b = await self._load_brand_any(brand_id)
+        if b.deleted_at is None:
+            raise ServiceOSException("BRAND_NOT_RETIRED", "Only retired brands can be restored.", status_code=409)
+        b.deleted_at = None; b.status = "inactive"; b.is_active = False; b.updated_by_user_id = self.actor_id
+        await self.db.flush()
+        await self._audit("brand.restored", "brand", brand_id, new_value={"reason": reason})
+        return {"brand_id": str(brand_id), "status": "inactive"}
+
+    async def get_brand_audit(self, brand_id: uuid.UUID, limit: int = 100) -> dict:
+        rows = (await self.db.execute(select(MasterDataAuditLog).where(
+            MasterDataAuditLog.entity_type == "brand", MasterDataAuditLog.entity_id == brand_id,
+        ).order_by(MasterDataAuditLog.created_at.desc()).limit(min(limit, 200)))).scalars().all()
+        return {"audit_log": [row.to_dict() for row in rows], "total": len(rows)}
 
     # ─────────────────────────────────────────────────────────
     # CATEGORY MAPPINGS
@@ -1197,6 +1245,12 @@ class BrandService:
             raise NotFoundException("Brand", str(brand_id))
         return b
 
+    async def _load_brand_any(self, brand_id: uuid.UUID) -> Brand:
+        b = (await self.db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
+        if not b:
+            raise NotFoundException("Brand", str(brand_id))
+        return b
+
     async def _load_request(self, request_id: uuid.UUID) -> BrandRequest:
         res = await self.db.execute(select(BrandRequest).where(BrandRequest.id == request_id))
         r = res.scalar_one_or_none()
@@ -1225,6 +1279,7 @@ class BrandService:
             "replacement_brand_id": str(b.replacement_brand_id) if b.replacement_brand_id else None,
             "created_at": b.created_at.isoformat() if b.created_at else None,
             "updated_at": b.updated_at.isoformat() if b.updated_at else None,
+            "deleted_at": b.deleted_at.isoformat() if b.deleted_at else None,
         }
 
     def _request_dict(self, r: BrandRequest) -> dict:

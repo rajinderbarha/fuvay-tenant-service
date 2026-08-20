@@ -1,6 +1,7 @@
 """Sprint 27 — Admin Notification Outbox + Chat + Audit APIs."""
 from __future__ import annotations
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -14,8 +15,11 @@ from app.engines.platform_notifications.notification_service import Notification
 from app.engines.platform_notifications.chat_service import ChatThreadService, ChatMessageService
 from app.engines.platform_notifications.audit_service import PlatformAuditLogService
 from app.engines.platform_notifications.provider_status_service import ProviderStatusService
+from app.engines.platform_notifications.channel_config_service import channel_config_service
 from app.engines.platform_notifications.constants import RECIP_ADMIN
+from app.engines.platform_notifications.event_registry import NotificationEventRegistry
 from app.engines.platform_notifications.models import NotificationEvent
+from app.engines.platform_notifications.policy_models import NotificationPolicy
 from sqlalchemy import select
 
 admin_notif_router = APIRouter(
@@ -62,13 +66,18 @@ def _rid(r: Request) -> str:
 async def admin_list_notifications(
     r: Request,
     read_status: Optional[str] = Query(None),
+    notification_type: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
     u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
     result = await _notif_svc.get_user_notifications(
-        db, uuid.UUID(u.user_id), read_status=read_status, limit=limit, offset=offset,
+        db, uuid.UUID(u.user_id), read_status=read_status,
+        notification_type=notification_type, severity=severity, search=search,
+        limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "admin.notifications.list")
 
@@ -81,6 +90,16 @@ async def admin_unread_count(
 ):
     count = await _notif_svc.get_unread_count(db, uuid.UUID(u.user_id))
     return ok({"unread_count": count}, _rid(r), "admin.notifications.unread_count")
+
+
+@admin_notif_router.get("/summary", summary="Admin notification feed summary")
+async def admin_notification_summary(
+    r: Request,
+    u: UserContext = Depends(require_platform_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await _notif_svc.get_user_notification_summary(db, uuid.UUID(u.user_id))
+    return ok(data, _rid(r), "admin.notifications.summary")
 
 
 @admin_notif_router.post("/{notification_id}/read", summary="Mark admin notification read")
@@ -116,6 +135,62 @@ async def admin_get_prefs(
 ):
     prefs = await _notif_svc.get_preferences(db, uuid.UUID(u.user_id))
     return ok([p.to_dict() for p in prefs], _rid(r), "admin.notifications.preferences")
+
+
+@admin_notif_router.get("/preference-catalog", summary="Get effective admin notification preferences")
+async def admin_preference_catalog(
+    r: Request,
+    u: UserContext = Depends(require_platform_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """Registry-backed settings; never invent events or available channels."""
+    prefs = await _notif_svc.get_preferences(db, uuid.UUID(u.user_id))
+    pref_map = {(p.event_key, p.channel): p.is_enabled for p in prefs}
+    provider_rows = await _provider_status_svc.list_channel_status(db)
+    provider_map = {p["channel"]: p for p in provider_rows}
+    policies = (await db.execute(select(NotificationPolicy).where(
+        NotificationPolicy.is_current == True,  # noqa: E712
+        NotificationPolicy.status == "published",
+    ))).scalars().all()
+    policy_channels = {
+        (p.event_key, p.vertical_key): set(p.required_channels or [])
+        | set(p.primary_channels or []) | set(p.fallback_channels or [])
+        for p in policies
+    }
+    items = []
+    for cfg in NotificationEventRegistry.get_all().values():
+        if cfg.primary_recipient != RECIP_ADMIN and RECIP_ADMIN not in cfg.also_notify:
+            continue
+        channels = []
+        configured_channels = policy_channels.get((cfg.event_key, cfg.vertical_key), set(cfg.default_channels))
+        for channel, provider in provider_map.items():
+            configured_for_event = channel in configured_channels
+            explicit = pref_map.get((cfg.event_key, channel))
+            mandatory = cfg.is_mandatory and channel == "in_app"
+            supported = bool(provider["configured"] and configured_for_event)
+            effective = True if mandatory else (explicit if explicit is not None else configured_for_event)
+            channels.append({
+                "channel": channel,
+                "provider_state": provider["state"],
+                "supported": supported,
+                "configured_for_event": configured_for_event,
+                "explicit_value": explicit,
+                "effective_enabled": bool(effective and supported),
+                "configurable": supported and not mandatory,
+                "locked_reason": (
+                    "Mandatory platform alert" if mandatory else
+                    "Delivery provider is not connected" if not provider["configured"] else
+                    "Channel is not configured for this event" if not configured_for_event else None
+                ),
+            })
+        items.append({
+            "event_key": cfg.event_key, "event_name": cfg.event_name,
+            "source_engine": cfg.source_engine, "vertical_key": cfg.vertical_key,
+            "severity": cfg.severity, "is_mandatory": cfg.is_mandatory,
+            "primary_recipient": cfg.primary_recipient, "also_notify": cfg.also_notify,
+            "channels": channels,
+        })
+    return ok({"items": items, "providers": provider_rows}, _rid(r), "admin.notifications.preference_catalog")
 
 
 class AdminPrefIn(BaseModel):
@@ -180,6 +255,9 @@ async def admin_list_outbox(
     channel: Optional[str] = Query(None),
     recipient_type: Optional[str] = Query(None),
     tenant_id: Optional[uuid.UUID] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
+    vertical_key: Optional[str] = Query(None),
+    event_key: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     u: UserContext = Depends(require_super_admin),
@@ -187,7 +265,8 @@ async def admin_list_outbox(
 ):
     result = await _notif_svc.list_outbox(
         db, delivery_status=delivery_status, channel=channel,
-        recipient_type=recipient_type, tenant_id=tenant_id,
+        recipient_type=recipient_type, tenant_id=tenant_id, search=search,
+        vertical_key=vertical_key, event_key=event_key,
         limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "admin.notification_outbox.list")
@@ -201,6 +280,76 @@ async def admin_channel_status(
 ):
     items = await _provider_status_svc.list_channel_status(db)
     return ok({"items": items}, _rid(r), "admin.notification_outbox.channel_status")
+
+
+class ChannelConfigurationIn(BaseModel):
+    values: dict
+
+
+class ChannelEnabledIn(BaseModel):
+    enabled: bool
+
+
+@admin_outbox_router.put("/channel-configurations/{channel}", summary="Save encrypted channel configuration")
+async def admin_save_channel_configuration(
+    channel: str, body: ChannelConfigurationIn, r: Request,
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    item = await channel_config_service.save(
+        db, channel, body.values, uuid.UUID(u.user_id) if u.user_id else None,
+    )
+    return ok(item, _rid(r), "admin.notification_channels.configure")
+
+
+@admin_outbox_router.post("/channel-configurations/{channel}/test", summary="Test provider authentication")
+async def admin_test_channel_configuration(
+    channel: str, r: Request,
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    item = await channel_config_service.test(
+        db, channel, uuid.UUID(u.user_id) if u.user_id else None,
+    )
+    return ok(item, _rid(r), "admin.notification_channels.test")
+
+
+@admin_outbox_router.put("/channel-configurations/{channel}/enabled", summary="Enable or disable provider delivery")
+async def admin_set_channel_enabled(
+    channel: str, body: ChannelEnabledIn, r: Request,
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    item = await channel_config_service.set_enabled(
+        db, channel, body.enabled, uuid.UUID(u.user_id) if u.user_id else None,
+    )
+    return ok(item, _rid(r), "admin.notification_channels.enabled")
+
+
+@admin_outbox_router.get("/channel-configurations/{channel}/audit", summary="List secret-free channel configuration history")
+async def admin_channel_configuration_audit(
+    channel: str, r: Request, limit: int = Query(50, ge=1, le=200),
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    if channel not in {"in_app", "email", "sms", "whatsapp", "push"}:
+        from app.exceptions import ServiceOSException
+        raise ServiceOSException("CHANNEL_NOT_FOUND", "Unknown notification channel.", status_code=404)
+    return ok({"items": await channel_config_service.audit(db, channel, limit)}, _rid(r), "admin.notification_channels.audit")
+
+
+@admin_outbox_router.get("/export", summary="Export a bounded notification delivery result set")
+async def admin_export_outbox(
+    r: Request,
+    delivery_status: Optional[str] = Query(None), channel: Optional[str] = Query(None),
+    recipient_type: Optional[str] = Query(None), tenant_id: Optional[uuid.UUID] = Query(None),
+    search: Optional[str] = Query(None, max_length=200), vertical_key: Optional[str] = Query(None),
+    event_key: Optional[str] = Query(None), limit: int = Query(1000, ge=1, le=5000),
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    result = await _notif_svc.list_outbox(
+        db, delivery_status=delivery_status, channel=channel, recipient_type=recipient_type,
+        tenant_id=tenant_id, search=search, vertical_key=vertical_key, event_key=event_key,
+        limit=limit, offset=0,
+    )
+    result["exported"] = len(result["items"])
+    return ok(result, _rid(r), "admin.notification_outbox.export")
 
 
 @admin_outbox_router.get("/{outbox_id}", summary="Get outbox record details")
@@ -223,6 +372,26 @@ async def admin_retry_outbox(
 ):
     outbox = await _notif_svc.retry_outbox(db, outbox_id)
     return ok(outbox.to_dict(), _rid(r), "admin.notification_outbox.retry")
+
+
+@admin_outbox_router.delete("/{outbox_id}", summary="Cancel a pending outbox record")
+async def admin_cancel_outbox(
+    outbox_id: uuid.UUID,
+    r: Request,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    outbox = await _notif_svc.cancel_outbox(db, outbox_id)
+    return ok(outbox.to_dict(), _rid(r), "admin.notification_outbox.cancel")
+
+
+@admin_outbox_router.post("/{outbox_id}/cancel", summary="Cancel a pending outbox record")
+async def admin_cancel_outbox_action(
+    outbox_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    outbox = await _notif_svc.cancel_outbox(db, outbox_id)
+    return ok(outbox.to_dict(), _rid(r), "admin.notification_outbox.cancel")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -428,6 +597,8 @@ async def admin_list_audit(
     tenant_id: Optional[uuid.UUID] = Query(None),
     actor_user_id: Optional[uuid.UUID] = Query(None),
     search: Optional[str] = Query(None, max_length=256),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     u: UserContext = Depends(require_super_admin),
@@ -437,7 +608,8 @@ async def admin_list_audit(
         db, actor_type="admin",
         resource_type=resource_type, action=action, engine_key=engine_key,
         tenant_id=tenant_id, actor_user_id_filter=actor_user_id,
-        search=search, limit=limit, offset=offset,
+        search=search, date_from=date_from, date_to=date_to,
+        limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "admin.audit_logs.list")
 

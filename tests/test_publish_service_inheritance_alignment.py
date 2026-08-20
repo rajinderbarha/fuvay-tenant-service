@@ -27,12 +27,12 @@ def _read():
 
 
 class TestPublishServiceUsesSharedResolver:
-    def test_publish_service_reuses_resolve_tenant_price(self):
+    def test_publish_service_reuses_preflight_validation(self):
         c = _read()
         start = c.index("async def publish_service")
         end = c.index("async def save_draft")
         block = c[start:end]
-        assert "self.resolve_tenant_price(tenant_service_id, type_id, brand_id)" in block
+        assert "validation = await self.validate_for_publish(tenant_service_id)" in block
 
     def test_no_longer_requires_every_type_to_carry_its_own_price(self):
         c = _read()
@@ -45,16 +45,16 @@ class TestPublishServiceUsesSharedResolver:
         """A half-filled brand override (only min or only max set) is a real
         data-integrity problem regardless of inheritance -- must stay caught."""
         c = _read()
-        start = c.index("async def publish_service")
-        end = c.index("async def save_draft")
+        start = c.index("async def validate_for_publish")
+        end = c.index("async def get_blueprint_update_status")
         block = c[start:end]
         assert "has_partial" in block
         assert "Brand override price range is incomplete." in block
 
     def test_simple_service_default_price_check_still_present(self):
         c = _read()
-        start = c.index("async def publish_service")
-        end = c.index("async def save_draft")
+        start = c.index("async def validate_for_publish")
+        end = c.index("async def get_blueprint_update_status")
         block = c[start:end]
-        assert "not ts.requires_type and not ts.requires_brand" in block
-        assert "No default price or visit fee configured for this service." in block
+        assert "not requires_type and not requires_brand" in block
+        assert "Set the provider price for this service." in block

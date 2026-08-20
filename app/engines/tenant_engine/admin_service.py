@@ -560,8 +560,25 @@ class AdminTenantService:
     # because there is exactly one open request per tenant at a time (a second edit
     # replaces the first), and a table would have to enforce that anyway.
 
-    async def list_pending_change_requests(self) -> dict:
-        rows = (await self.db.execute(text("""
+    async def list_pending_change_requests(
+        self, *, q: str | None = None, vertical_type: str | None = None,
+        page: int = 1, page_size: int = 20,
+    ) -> dict:
+        extra = ""
+        params: dict[str, object] = {"limit": page_size, "offset": (page - 1) * page_size}
+        if vertical_type:
+            extra += " AND vertical = :vertical_type"
+            params["vertical_type"] = vertical_type
+        if q:
+            extra += " AND (business_name ILIKE :search OR tenant_name ILIKE :search OR email ILIKE :search OR tenant_code ILIKE :search)"
+            params["search"] = f"%{q.strip()}%"
+        total = (await self.db.execute(text(f"""
+            SELECT COUNT(*) FROM tenants
+            WHERE verification_status = 'changes_pending_review'
+              AND meta ->> 'pending_changes' IS NOT NULL
+              AND terminated_at IS NULL AND archived_at IS NULL {extra}
+        """), params)).scalar() or 0
+        rows = (await self.db.execute(text(f"""
             SELECT id, business_name, verification_status,
                    meta -> 'pending_changes' AS pending
             FROM tenants
@@ -572,8 +589,10 @@ class AdminTenantService:
               -- without borrowing a character the driver has already claimed.
               AND meta ->> 'pending_changes' IS NOT NULL
               AND terminated_at IS NULL AND archived_at IS NULL
-            ORDER BY (meta -> 'pending_changes' ->> 'submitted_at')
-        """))).fetchall()
+              {extra}
+            ORDER BY (meta -> 'pending_changes' ->> 'submitted_at') DESC, id
+            LIMIT :limit OFFSET :offset
+        """), params)).fetchall()
         items = []
         for r in rows:
             pending = r.pending if isinstance(r.pending, dict) else json.loads(r.pending or "{}")
@@ -616,7 +635,10 @@ class AdminTenantService:
                     for d in documents
                 ),
             })
-        return {"change_requests": items, "count": len(items)}
+        return {
+            "change_requests": items, "count": int(total), "total": int(total),
+            "page": page, "page_size": page_size,
+        }
 
     async def _load_pending(self, tenant_id: uuid.UUID) -> dict | None:
         """Read the staged request straight from JSONB.

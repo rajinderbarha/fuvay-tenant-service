@@ -92,27 +92,49 @@ export default function ReviewSubmitPage() {
     }
   }
 
-  // Fallback for tenants who reached Review before the Coverage & Availability
-  // step started auto-publishing eligible services: publish still-draft,
-  // priced services now that coverage necessarily already exists (it's an
-  // earlier required step), then re-check readiness.
+  // Review & Submit is the single publication boundary. Earlier steps own
+  // their own drafts; this action validates every enabled offering against
+  // pricing, catalog, coverage and availability before publishing it.
   async function retryPublishServices() {
     setPublishingServices(true);
     setError(null);
     try {
-      const { services } = await homeServicesSetupApi.listEnabled();
+      const [{ services }, { services: availableServices }] = await Promise.all([
+        homeServicesSetupApi.listEnabled(),
+        homeServicesSetupApi.listAvailable(),
+      ]);
+      const serviceNameByPair = new Map(
+        availableServices.map(service => [
+          `${service.service_id}:${service.job_type_id}`,
+          service.service_name,
+        ]),
+      );
       const errors: string[] = [];
       for (const svc of services) {
         if (svc.setup_status === "published") continue;
         try {
           await homeServicesSetupApi.publish(svc.tenant_service_id);
         } catch (err) {
-          const name = svc.tenant_display_name ?? "A service";
-          errors.push(err instanceof ServiceOSError ? `${name}: ${err.message}` : `${name}: could not be published.`);
+          const name = svc.tenant_display_name
+            ?? serviceNameByPair.get(`${svc.master_service_id}:${svc.job_type_id}`)
+            ?? "Service";
+          if (err instanceof ServiceOSError) {
+            const missing = Array.isArray(err.context?.missing)
+              ? (err.context?.missing as Array<{ message?: string }>).map(item => item.message).filter(Boolean)
+              : [];
+            errors.push(`${name}: ${missing.length ? missing.join(" ") : err.message}`);
+          } else {
+            errors.push(`${name}: could not be published.`);
+          }
         }
       }
-      if (errors.length) setError(`Some services still need attention: ${errors.join(" ")}`);
       load();
+      // load() clears an earlier error synchronously, so apply the actionable
+      // publication result after starting the overview refresh.
+      if (errors.length) {
+        setExpanded(prev => new Set(prev).add("SERVICES_PRICING"));
+        setError(`Some enabled services still need attention before publication: ${errors.join(" ")} Edit Services & pricing to complete them, or turn off an offering you do not want to publish.`);
+      }
     } catch (e) {
       setError(e instanceof ServiceOSError ? e.message : "Could not publish your services.");
     } finally {
@@ -398,7 +420,7 @@ function SectionRow({ section, expanded, onToggle, onRetryPublish, retryingPubli
         {onRetryPublish && (
           <button onClick={onRetryPublish} disabled={retryingPublish}
             style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", background: "none", border: "1px solid var(--brand)", borderRadius: 6, padding: "4px 10px", cursor: retryingPublish ? "default" : "pointer", opacity: retryingPublish ? 0.6 : 1 }}>
-            {retryingPublish ? "Publishing…" : "Publish now"}
+            {retryingPublish ? "Validating and publishing..." : "Validate & publish"}
           </button>
         )}
         {!isReviewRow && (

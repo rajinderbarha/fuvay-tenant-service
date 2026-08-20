@@ -82,7 +82,10 @@ class WalletTransaction(ServiceOSBase):
 class SecurityDeposit(ServiceOSBase):
     """Per-tenant security deposit. Funds warranty claims. 5% of each credit purchase replenishes."""
     __tablename__ = "security_deposits"
-    __table_args__ = (UniqueConstraint("tenant_id", name="uq_deposit_tenant"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_deposit_tenant"),
+        Index("ix_security_deposit_status_created_at", "status", "created_at"),
+    )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
     required_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
@@ -244,12 +247,13 @@ class CreditReservation(ServiceOSBase):
 
 
 class WarrantyClaim(ServiceOSBase):
-    """Warranty claims funded by tenant security deposit."""
+    """Provider-first warranty claim; admin credit is the final escalation."""
     __tablename__ = "warranty_claims"
     __table_args__ = (
         UniqueConstraint("job_id", name="uq_warranty_job"),
         Index("ix_wc_tenant_id", "tenant_id"),
         Index("ix_wc_status", "status"),
+        Index("ix_wc_status_created_at", "status", "created_at"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -260,7 +264,7 @@ class WarrantyClaim(ServiceOSBase):
     media_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     amount_requested: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     amount_approved: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="provider_action_required", nullable=False)
     admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -273,6 +277,17 @@ class WarrantyClaim(ServiceOSBase):
     settled_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     documents_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     documents_requested_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_response_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    warranty_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    warranty_days_snapshot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_credit_deducted: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    security_deposit_deducted: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    customer_credit_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class TenantBadge(ServiceOSBase):

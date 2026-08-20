@@ -8,6 +8,7 @@ import {
   Mail, ShieldCheck, UserRoundCheck,
 } from "lucide-react";
 import { authApi, type AdminUser } from "../../lib/api";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 
 const PLATFORM_ADMIN_ROLES = new Set([
   "super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly",
@@ -164,12 +165,13 @@ export default function LoginPage() {
 
   return (
     <main className="admin-login-page">
-      <section className="admin-login-shell" aria-label="ServiceOS administrator sign in">
+      <section className="admin-login-shell" aria-label="Fuvay administrator sign in">
         <aside className="admin-login-command-panel">
           <div className="admin-login-brand">
-            <span className="admin-login-brand-mark">S</span>
+            {/* .admin-login-command-panel is a dark gradient with white text
+                in both themes, so it needs the white-wordmark artwork. */}
+            <FuvayLogo height={46} tone="onDark"/>
             <span>
-              <strong>ServiceOS</strong>
               <small>Admin Control Center</small>
             </span>
           </div>
@@ -259,14 +261,14 @@ export default function LoginPage() {
             )}
 
             <p className="admin-login-help">
-              Need administrator access? Contact your ServiceOS platform owner.
+              Need administrator access? Contact your Fuvay platform owner.
             </p>
           </div>
         </div>
       </section>
 
       <footer className="admin-login-footer">
-        <span>© {new Date().getFullYear()} ServiceOS</span>
+        <span>© {new Date().getFullYear()} Fuvay</span>
         <span>Protected by session controls, MFA and audit logging</span>
       </footer>
     </main>

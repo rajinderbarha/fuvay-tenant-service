@@ -1,10 +1,9 @@
-"""Finance Hub — Home Services Finance (Completion Charges).
+"""Finance Hub — Home Services operational finance.
 
-Replaces the retired `/admin/home-services/completed-job-deduction` page,
-which 404'd because it called the deleted `GET /v1/admin/pricing-rules`
-admin surface (removed 2026-07 under the "provider-set-price" policy while
-the underlying `ServicePricingRule` table/model and its
-`completed_job_deduction_credits` column were deliberately left in place).
+Replaces the retired `/admin/home-services/completed-job-deduction` page.
+New provider/customer charge configuration lives only in Home Services
+Finance > Monetization; this service provides operational ledgers and safe
+reconciliation, not a second charge editor.
 
 This service does NOT call that deleted endpoint and does NOT duplicate the
 certified completion-charge engine. It is a READ (plus safe reconciliation)
@@ -28,19 +27,21 @@ another vertical's charges by construction.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import String, cast, literal, select, func, and_, or_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_platform_audit
 from app.engines.execution.usage_credit_deduction import DEDUCTION_EVENT_TYPE
 from app.engines.final_records.models import ServiceJob
 from app.engines.tenant_engine.models import TenantBilling, UsageCreditLedger, Tenant
-from app.engines.admin_catalog.models import ServicePricingRule, JobTypeDefinition, MasterService
-from app.engines.admin_catalog.service import AdminCatalogService
-from app.engines.invoice_payment.models import FinancialEvent, ServiceInvoice, SvcCommissionRecord, ServicePaymentRecord
+from app.engines.admin_catalog.models import ServicePricingRule, JobTypeDefinition
+from app.engines.invoice_payment.models import (
+    FinancialEvent, ServiceInvoice, ServiceInvoiceItem,
+    SvcCommissionRecord, ServicePaymentRecord,
+)
 from app.engines.finance_hub.models import CreditTopupOrder
 from app.engines.platform_commerce.models import SecurityDeposit, WarrantyClaim
 from app.engines.complaints.models import RefundRequest
@@ -124,7 +125,13 @@ class HomeServicesFinanceService:
         if date_from:
             clauses.append(col >= datetime.fromisoformat(date_from))
         if date_to:
-            clauses.append(col <= datetime.fromisoformat(date_to))
+            end = datetime.fromisoformat(date_to)
+            # HTML date inputs send YYYY-MM-DD. Treat the selected end date
+            # as an inclusive calendar day instead of midnight at its start.
+            if len(date_to) == 10:
+                clauses.append(col < end + timedelta(days=1))
+            else:
+                clauses.append(col <= end)
         return clauses
 
     async def _chargeable_job_ids_query(self, date_from: str | None, date_to: str | None):
@@ -180,7 +187,10 @@ class HomeServicesFinanceService:
         date_to: str | None = None, page: int = 1, page_size: int = 50,
         sort_by: str = "created_at", sort_dir: str = "desc",
     ) -> dict:
-        clauses = [UsageCreditLedger.event_type == DEDUCTION_EVENT_TYPE]
+        clauses = [
+            UsageCreditLedger.event_type == DEDUCTION_EVENT_TYPE,
+            Tenant.vertical == HOME_SERVICES_VERTICAL,
+        ]
         clauses += self._date_filters(date_from, date_to, UsageCreditLedger.created_at)
         if tenant_id:
             clauses.append(UsageCreditLedger.tenant_id == uuid.UUID(tenant_id))
@@ -256,6 +266,8 @@ class HomeServicesFinanceService:
             raise NotFoundException("CompletionCharge", charge_id)
         job = await self.db.get(ServiceJob, ledger.job_id) if ledger.job_id else None
         tenant = await self.db.get(Tenant, ledger.tenant_id)
+        if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
+            raise NotFoundException("CompletionCharge", charge_id)
         rule = None
         if ledger.deduction_source:
             try:
@@ -387,18 +399,30 @@ class HomeServicesFinanceService:
 
     async def list_credit_accounts(self, *, q: str | None = None, low_balance_only: bool = False,
                                     page: int = 1, page_size: int = 50) -> dict:
+        clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        if low_balance_only:
+            clauses.append(TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD)
+        if q and q.strip():
+            value = q.strip()
+            like = f"%{value}%"
+            search_clauses = [Tenant.business_name.ilike(like), Tenant.tenant_name.ilike(like)]
+            try:
+                exact_id = uuid.UUID(value)
+                search_clauses.extend([TenantBilling.id == exact_id, TenantBilling.tenant_id == exact_id])
+            except ValueError:
+                pass
+            clauses.append(or_(*search_clauses))
         stmt = (
             select(TenantBilling, Tenant)
             .join(Tenant, Tenant.id == TenantBilling.tenant_id)
-            .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
+            .where(*clauses)
+            .order_by(TenantBilling.credit_balance.asc(), TenantBilling.id.asc())
         )
-        if low_balance_only:
-            stmt = stmt.where(TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD)
-        if q:
-            like = f"%{q}%"
-            stmt = stmt.where(Tenant.business_name.ilike(like))
-        stmt = stmt.order_by(TenantBilling.credit_balance.asc())
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        total = (await self.db.execute(
+            select(func.count(TenantBilling.id))
+            .join(Tenant, Tenant.id == TenantBilling.tenant_id)
+            .where(*clauses)
+        )).scalar() or 0
         rows = (await self.db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
         return {
             "items": [{
@@ -421,20 +445,49 @@ class HomeServicesFinanceService:
     # writes a ledger row itself.
     async def list_credit_ledger(
         self, *, tenant_id: uuid.UUID | None = None, job_id: uuid.UUID | None = None,
-        event_type: str | None = None,
+        event_type: str | None = None, q: str | None = None,
+        direction: str | None = None, reason_code: str | None = None,
+        date_from: str | None = None, date_to: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
         clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        clauses += self._date_filters(date_from, date_to, UsageCreditLedger.created_at)
         if tenant_id: clauses.append(UsageCreditLedger.tenant_id == tenant_id)
         if job_id: clauses.append(UsageCreditLedger.job_id == job_id)
         if event_type: clauses.append(UsageCreditLedger.event_type == event_type)
+        if reason_code: clauses.append(UsageCreditLedger.reason_code == reason_code)
+        if direction == "credit": clauses.append(UsageCreditLedger.credit_delta >= 0)
+        if direction == "debit": clauses.append(UsageCreditLedger.credit_delta < 0)
+        if q and q.strip():
+            value = q.strip()
+            like = f"%{value}%"
+            search_clauses = [
+                Tenant.business_name.ilike(like), Tenant.tenant_name.ilike(like),
+                UsageCreditLedger.request_id.ilike(like), UsageCreditLedger.source_id.ilike(like),
+                UsageCreditLedger.idempotency_key.ilike(like), UsageCreditLedger.reason.ilike(like),
+            ]
+            try:
+                exact_id = uuid.UUID(value)
+                search_clauses.extend([
+                    UsageCreditLedger.id == exact_id,
+                    UsageCreditLedger.tenant_id == exact_id,
+                    UsageCreditLedger.job_id == exact_id,
+                    UsageCreditLedger.booking_id == exact_id,
+                ])
+            except ValueError:
+                pass
+            clauses.append(or_(*search_clauses))
         stmt = (
             select(UsageCreditLedger, Tenant)
             .join(Tenant, Tenant.id == UsageCreditLedger.tenant_id)
             .where(*clauses)
-            .order_by(UsageCreditLedger.created_at.desc())
+            .order_by(UsageCreditLedger.created_at.desc(), UsageCreditLedger.id.desc())
         )
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        total = (await self.db.execute(
+            select(func.count(UsageCreditLedger.id))
+            .join(Tenant, Tenant.id == UsageCreditLedger.tenant_id)
+            .where(*clauses)
+        )).scalar() or 0
         rows = (await self.db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
         return {
             "items": [{
@@ -478,6 +531,8 @@ class HomeServicesFinanceService:
             raise ServiceOSException("VALIDATION_ERROR", "credit_units must be positive.", status_code=422)
         if direction not in ("credit", "debit"):
             raise ServiceOSException("VALIDATION_ERROR", "direction must be 'credit' or 'debit'.", status_code=422)
+        if not detailed_reason or not detailed_reason.strip():
+            raise ServiceOSException("VALIDATION_ERROR", "detailed_reason is required.", status_code=422)
 
         billing = (await self.db.execute(
             select(TenantBilling).where(TenantBilling.tenant_id == tenant_id).with_for_update()
@@ -490,6 +545,13 @@ class HomeServicesFinanceService:
         delta = credit_units if direction == "credit" else -credit_units
         balance_before = Decimal(str(billing.credit_balance))
         balance_after = balance_before + delta
+        if balance_after < Decimal("0"):
+            raise ServiceOSException(
+                "INSUFFICIENT_USAGE_CREDIT",
+                "A manual debit cannot make the provider's usage-credit balance negative.",
+                status_code=409,
+                context={"balance_before": str(balance_before), "requested_debit": str(credit_units)},
+            )
         billing.credit_balance = balance_after
 
         entry = UsageCreditLedger(
@@ -605,42 +667,63 @@ class HomeServicesFinanceService:
                 "posted_at": recovery_entry.created_at.isoformat() if recovery_entry and recovery_entry.created_at else None,
                 "ledger_entry_id": str(recovery_entry.id) if recovery_entry else None,
             },
-            # PROVIDER_COMPLETION_CHARGE -- the certified per-job usage-credit
-            # deduction (primary mechanism for Home Services); commission is
-            # shown alongside as a secondary/legacy charge model, never merged.
+            # PROVIDER_COMPLETION_CHARGE -- the certified, sole live per-job
+            # Home Services charge mechanism.
             "provider_completion_charge": {
                 "status": "posted" if completion_entry else "not_calculated",
                 "credits": str(-completion_entry.credit_delta) if completion_entry else None,
                 "posted_at": completion_entry.created_at.isoformat() if completion_entry and completion_entry.created_at else None,
                 "ledger_entry_id": str(completion_entry.id) if completion_entry else None,
             },
-            "provider_completion_charge_status": commission.status if commission else "not_calculated",
-            "provider_completion_charge_amount": str(commission.commission_amount) if commission else None,
+            # Historical invoice-commission rows are explicitly named as
+            # legacy so clients cannot present them as a second live charge.
+            "legacy_invoice_commission": {
+                "status": commission.status if commission else "not_calculated",
+                "amount": str(commission.commission_amount) if commission else None,
+                "record_id": str(commission.id) if commission else None,
+            },
             "financial_events": [e.to_dict() for e in events],
         }
 
     async def get_direct_payments_summary(self, date_from: str | None = None, date_to: str | None = None) -> dict:
         clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
         clauses += self._date_filters(date_from, date_to, ServicePaymentRecord.created_at)
-        stmt = select(ServicePaymentRecord, ServiceInvoice).join(
-            Tenant, Tenant.id == ServicePaymentRecord.tenant_id
-        ).join(ServiceInvoice, ServiceInvoice.id == ServicePaymentRecord.invoice_id, isouter=True).where(*clauses)
-        rows = (await self.db.execute(stmt)).all()
-        provider_collected_total = sum((p.collected_amount or Decimal("0")) for p, _ in rows)
-        platform_charges_total = sum((inv.platform_fee_amount or Decimal("0")) for _, inv in rows if inv)
+        # Aggregate in Postgres. The old implementation materialized every
+        # payment and invoice in Python, which made the Overview endpoint grow
+        # linearly in memory with the number of payments.
+        row = (await self.db.execute(
+            select(
+                func.count(ServicePaymentRecord.id).label("total_attempts"),
+                func.count(ServicePaymentRecord.id).filter(
+                    ServicePaymentRecord.customer_confirmed.is_(True)
+                ).label("confirmed"),
+                func.count(ServicePaymentRecord.id).filter(
+                    ServicePaymentRecord.customer_confirmation_required.is_(True),
+                    ServicePaymentRecord.customer_confirmed.is_(False),
+                ).label("pending_confirmation"),
+                func.count(ServicePaymentRecord.id).filter(
+                    ServicePaymentRecord.payment_status == "disputed"
+                ).label("disputed"),
+                func.count(ServicePaymentRecord.id).filter(
+                    ServicePaymentRecord.payment_status == "failed"
+                ).label("failed"),
+                func.coalesce(func.sum(ServicePaymentRecord.collected_amount), 0).label("provider_collected_total"),
+                func.coalesce(func.sum(ServiceInvoice.platform_fee_amount), 0).label("platform_charges_total"),
+            )
+            .select_from(ServicePaymentRecord)
+            .join(Tenant, Tenant.id == ServicePaymentRecord.tenant_id)
+            .join(ServiceInvoice, ServiceInvoice.id == ServicePaymentRecord.invoice_id, isouter=True)
+            .where(*clauses)
+        )).one()
         return {
-            "total_attempts": len(rows),
-            "confirmed": sum(1 for p, _ in rows if p.customer_confirmed),
-            "pending_confirmation": sum(1 for p, _ in rows if p.customer_confirmation_required and not p.customer_confirmed),
-            "disputed": sum(1 for p, _ in rows if p.payment_status == "disputed"),
-            "failed": sum(1 for p, _ in rows if p.payment_status == "failed"),
-            "provider_collected_total": str(provider_collected_total),
-            "customer_platform_charges_recorded": str(platform_charges_total),
-            # No mechanism in the current codebase claws the platform charge
-            # back from provider credits separately from the completion
-            # charge -- see get_overview()'s note. Reporting this honestly as
-            # not tracked rather than fabricating a "recovered" figure.
-            "platform_charge_recovery_tracked": False,
+            "total_attempts": int(row.total_attempts or 0),
+            "confirmed": int(row.confirmed or 0),
+            "pending_confirmation": int(row.pending_confirmation or 0),
+            "disputed": int(row.disputed or 0),
+            "failed": int(row.failed or 0),
+            "provider_collected_total": str(row.provider_collected_total or 0),
+            "customer_platform_charges_recorded": str(row.platform_charges_total or 0),
+            "platform_charge_recovery_tracked": True,
         }
 
     async def get_direct_payments_summary_for_tenant(self, tenant_id: uuid.UUID) -> dict:
@@ -703,19 +786,16 @@ class HomeServicesFinanceService:
         warranty = await self.get_hs_warranty_claims_summary()
         events_summary = await self.get_financial_events_summary(date_from, date_to)
 
-        commission_rows = (await self.db.execute(
-            select(SvcCommissionRecord.status, func.count(), func.coalesce(func.sum(SvcCommissionRecord.commission_amount), 0))
-            .group_by(SvcCommissionRecord.status)
-        )).all()
-        commission_by_status = {status: {"count": count, "amount": str(amount)} for status, count, amount in commission_rows}
-        completion_charges_deducted = sum(int(v["count"]) for k, v in commission_by_status.items() if k == "deducted")
-        failed_completion_charges = sum(int(commission_by_status.get(k, {"count": 0})["count"]) for k in ("failed", "insufficient_credit"))
-
         low_balance_tenants = (await self.db.execute(
-            select(func.count(TenantBilling.id)).where(TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD)
+            select(func.count(TenantBilling.id)).join(Tenant, Tenant.id == TenantBilling.tenant_id).where(
+                Tenant.vertical == HOME_SERVICES_VERTICAL,
+                TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD,
+            )
         )).scalar() or 0
         total_credit_balance = (await self.db.execute(
             select(func.coalesce(func.sum(TenantBilling.credit_balance), 0))
+            .join(Tenant, Tenant.id == TenantBilling.tenant_id)
+            .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
         )).scalar() or Decimal("0")
 
         # CUSTOMER_PLATFORM_CHARGE_RECOVERY -- real ledger data. Previously
@@ -728,10 +808,14 @@ class HomeServicesFinanceService:
         recovery_clauses = [UsageCreditLedger.event_type == RECOVERY_EVENT_TYPE]
         recovery_clauses += self._date_filters(date_from, date_to, UsageCreditLedger.created_at)
         recovered_total = (await self.db.execute(
-            select(func.coalesce(func.sum(-UsageCreditLedger.credit_delta), 0)).where(*recovery_clauses)
+            select(func.coalesce(func.sum(-UsageCreditLedger.credit_delta), 0))
+            .join(Tenant, Tenant.id == UsageCreditLedger.tenant_id)
+            .where(Tenant.vertical == HOME_SERVICES_VERTICAL, *recovery_clauses)
         )).scalar() or Decimal("0")
         recovered_count = (await self.db.execute(
-            select(func.count(UsageCreditLedger.id)).where(*recovery_clauses)
+            select(func.count(UsageCreditLedger.id))
+            .join(Tenant, Tenant.id == UsageCreditLedger.tenant_id)
+            .where(Tenant.vertical == HOME_SERVICES_VERTICAL, *recovery_clauses)
         )).scalar() or 0
 
         return {
@@ -746,97 +830,120 @@ class HomeServicesFinanceService:
                 "platform_charge_recovery_tracked": True,
                 "platform_charge_recovery_count": recovered_count,
                 "provider_completion_charges": {
-                    "posted": completion_charges_deducted,
-                    "total_amount": commission_by_status.get("deducted", {"amount": "0"})["amount"],
+                    "posted": charges["charges_posted"],
+                    "total_credit_units": charges["credits_deducted"],
+                    "ledger": "usage_credit_ledger",
                 },
                 "active_usage_credit_balance": str(total_credit_balance),
                 "security_deposits_held": deposits.get("total_held", "0"),
             },
             "secondary": {
                 "low_credit_providers": low_balance_tenants,
-                "failed_charge_recoveries": failed_completion_charges,
+                "failed_charge_recoveries": charges["missing_charges"],
                 "deposit_return_requests": deposits.get("refund_pending", 0),
-                "warranty_financial_exposure": warranty.get("settled_value", "0"),
-                "finance_exceptions": payments["disputed"] + failed_completion_charges + charges["missing_charges"],
+                "warranty_financial_exposure": warranty.get("open_exposure", "0"),
+                "finance_exceptions": payments["disputed"] + charges["missing_charges"],
             },
             "completion_charge_ledger": charges,
             "events_today": events_summary.get("events_today", 0),
             "audit_note": (
                 "Customer platform-charge recovery now posts its own usage_credit_ledger row "
                 "(event_type customer_platform_charge_recovery), independent from the provider "
-                "completion charge (completed_job_deduction / commission). Both are keyed by job_id "
+                "completion charge (completed_job_deduction). Both are keyed by job_id "
                 "and never merged into one record."
             ),
         }
 
     # ── Provider Charges (unified usage-credit + commission view) ───────────
-    # Two independent provider-charge models coexist for Home Services:
-    #   - usage_credit: flat per-job credit deduction, written by
-    #     execution.usage_credit_deduction.deduct_for_completed_job (see
-    #     list_completion_charges above).
-    #   - commission: percentage-of-invoice charge, written by
-    #     invoice_payment.commission_service.ServiceCommissionService,
-    #     recorded in svc_commission_records (proven active -- called from
-    #     payment_service.py's on-site payment recording flow).
-    # This method merges both into one list with a charge_model discriminator
-    # rather than inventing a third unified table -- neither writer changes.
+    # Current Home Services charges come only from usage_credit_ledger. The
+    # invoice commission branch is retained read-only for historical audit;
+    # the live invoice writer now marks Home Services commission not_required
+    # so a completed job cannot be charged through both balance systems.
 
     async def list_provider_charges(
-        self, *, charge_model: str | None = None, tenant_id: str | None = None,
+        self, *, q: str | None = None, charge_model: str | None = None, tenant_id: str | None = None,
         status: str | None = None, date_from: str | None = None, date_to: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
-        items: list[dict] = []
+        if charge_model not in (None, "usage_credit", "commission"):
+            raise ServiceOSException("INVALID_CHARGE_MODEL", "charge_model must be usage_credit or commission.", status_code=422)
 
+        branches = []
         if charge_model in (None, "usage_credit"):
-            uc = await self.list_completion_charges(
-                tenant_id=tenant_id, date_from=date_from, date_to=date_to, page=1, page_size=5000,
-            )
-            for row in uc["items"]:
-                if status and status != row["status"]:
-                    continue
-                items.append({
-                    "charge_ref": f"usage_credit:{row['charge_id']}",
-                    "charge_model": "usage_credit",
-                    "tenant_id": row["tenant_id"],
-                    "tenant_name": row["tenant_name"],
-                    "job_id": row["job_id"],
-                    "amount": row["credits"],
-                    "status": row["status"],
-                    "policy_source": row["policy_source"],
-                    "triggered_at": row["posted_at"],
-                })
+            clauses = [
+                UsageCreditLedger.event_type == DEDUCTION_EVENT_TYPE,
+                Tenant.vertical == HOME_SERVICES_VERTICAL,
+            ]
+            clauses += self._date_filters(date_from, date_to, UsageCreditLedger.created_at)
+            if tenant_id:
+                clauses.append(UsageCreditLedger.tenant_id == uuid.UUID(tenant_id))
+            if status and status != "posted":
+                clauses.append(literal(False))
+            if q:
+                like = f"%{q.strip()}%"
+                clauses.append(or_(
+                    Tenant.business_name.ilike(like), Tenant.tenant_name.ilike(like),
+                    ServiceJob.job_number.ilike(like),
+                ))
+            branches.append(select(
+                cast(UsageCreditLedger.id, String).label("charge_id"),
+                literal("usage_credit").label("charge_model"),
+                cast(UsageCreditLedger.tenant_id, String).label("tenant_id"),
+                func.coalesce(Tenant.business_name, Tenant.tenant_name).label("tenant_name"),
+                cast(UsageCreditLedger.job_id, String).label("job_id"),
+                (-UsageCreditLedger.credit_delta).label("amount"),
+                literal("posted").label("status"),
+                UsageCreditLedger.deduction_source.label("policy_source"),
+                UsageCreditLedger.created_at.label("triggered_at"),
+            ).join(ServiceJob, ServiceJob.id == UsageCreditLedger.job_id, isouter=True)
+             .join(Tenant, Tenant.id == UsageCreditLedger.tenant_id, isouter=True)
+             .where(*clauses))
 
         if charge_model in (None, "commission"):
-            clauses = self._date_filters(date_from, date_to, SvcCommissionRecord.created_at)
+            clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+            clauses += self._date_filters(date_from, date_to, SvcCommissionRecord.created_at)
             if tenant_id:
                 clauses.append(SvcCommissionRecord.tenant_id == uuid.UUID(tenant_id))
             if status:
                 clauses.append(SvcCommissionRecord.status == status)
-            stmt = (
-                select(SvcCommissionRecord, Tenant)
-                .join(Tenant, Tenant.id == SvcCommissionRecord.tenant_id, isouter=True)
-                .where(*clauses)
-            )
-            rows = (await self.db.execute(stmt)).all()
-            for cr, t in rows:
-                items.append({
-                    "charge_ref": f"commission:{cr.id}",
-                    "charge_model": "commission",
-                    "tenant_id": str(cr.tenant_id),
-                    "tenant_name": t.business_name if t else None,
-                    "job_id": str(cr.job_id),
-                    "amount": str(cr.commission_amount),
-                    "status": cr.status,
-                    "policy_source": f"rate:{cr.commission_rate}" if cr.commission_rate else None,
-                    "triggered_at": (cr.deducted_at or cr.calculated_at).isoformat()
-                                    if (cr.deducted_at or cr.calculated_at) else None,
-                })
+            if q:
+                like = f"%{q.strip()}%"
+                clauses.append(or_(
+                    Tenant.business_name.ilike(like), Tenant.tenant_name.ilike(like),
+                    cast(SvcCommissionRecord.job_id, String).ilike(like),
+                ))
+            branches.append(select(
+                cast(SvcCommissionRecord.id, String).label("charge_id"),
+                literal("commission").label("charge_model"),
+                cast(SvcCommissionRecord.tenant_id, String).label("tenant_id"),
+                func.coalesce(Tenant.business_name, Tenant.tenant_name).label("tenant_name"),
+                cast(SvcCommissionRecord.job_id, String).label("job_id"),
+                SvcCommissionRecord.commission_amount.label("amount"),
+                SvcCommissionRecord.status.label("status"),
+                cast(SvcCommissionRecord.commission_rate, String).label("policy_source"),
+                func.coalesce(SvcCommissionRecord.deducted_at, SvcCommissionRecord.calculated_at,
+                              SvcCommissionRecord.created_at).label("triggered_at"),
+            ).join(Tenant, Tenant.id == SvcCommissionRecord.tenant_id)
+             .where(*clauses))
 
-        items.sort(key=lambda x: x["triggered_at"] or "", reverse=True)
-        total = len(items)
-        start = (page - 1) * page_size
-        return {"items": items[start:start + page_size], "total": total, "page": page, "page_size": page_size}
+        combined = union_all(*branches).subquery("provider_charges")
+        total = (await self.db.execute(select(func.count()).select_from(combined))).scalar() or 0
+        rows = (await self.db.execute(
+            select(combined).order_by(combined.c.triggered_at.desc(), combined.c.charge_id.desc())
+            .offset((page - 1) * page_size).limit(page_size)
+        )).mappings().all()
+        items = []
+        for row in rows:
+            source = row["policy_source"]
+            items.append({
+                **dict(row),
+                "charge_ref": f"{row['charge_model']}:{row['charge_id']}",
+                "amount": str(row["amount"]),
+                "policy_source": (_policy_source(source) if row["charge_model"] == "usage_credit"
+                                  else (f"rate:{source}" if source else None)),
+                "triggered_at": row["triggered_at"].isoformat() if row["triggered_at"] else None,
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     async def get_provider_charge_detail(self, charge_ref: str) -> dict:
         if ":" not in charge_ref:
@@ -849,6 +956,8 @@ class HomeServicesFinanceService:
             if not cr:
                 raise NotFoundException("CommissionCharge", charge_id)
             tenant = await self.db.get(Tenant, cr.tenant_id)
+            if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
+                raise NotFoundException("CommissionCharge", charge_id)
             invoice = await self.db.get(ServiceInvoice, cr.invoice_id)
             return {
                 "charge_model": "commission",
@@ -864,7 +973,7 @@ class HomeServicesFinanceService:
     # service.py::list_deposits already uses for Security Deposits.
 
     async def list_topups(
-        self, *, tenant_id: str | None = None, payment_status: str | None = None,
+        self, *, q: str | None = None, tenant_id: str | None = None, payment_status: str | None = None,
         date_from: str | None = None, date_to: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
@@ -874,18 +983,67 @@ class HomeServicesFinanceService:
             clauses.append(CreditTopupOrder.tenant_id == uuid.UUID(tenant_id))
         if payment_status:
             clauses.append(CreditTopupOrder.payment_status == payment_status)
+        if q:
+            value = q.strip()
+            like = f"%{value}%"
+            search_clauses = [
+                CreditTopupOrder.order_ref.ilike(like), Tenant.business_name.ilike(like),
+                Tenant.tenant_name.ilike(like),
+                CreditTopupOrder.gateway_order_id.ilike(like),
+                CreditTopupOrder.gateway_payment_id.ilike(like),
+            ]
+            try:
+                exact_id = uuid.UUID(value)
+                search_clauses.extend([
+                    CreditTopupOrder.id == exact_id,
+                    CreditTopupOrder.tenant_id == exact_id,
+                ])
+            except ValueError:
+                pass
+            clauses.append(or_(*search_clauses))
 
         stmt = (
             select(CreditTopupOrder, Tenant)
             .join(Tenant, Tenant.id == CreditTopupOrder.tenant_id)
             .where(*clauses)
-            .order_by(CreditTopupOrder.created_at.desc())
+            .order_by(CreditTopupOrder.created_at.desc(), CreditTopupOrder.id.desc())
         )
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        total = (await self.db.execute(
+            select(func.count(CreditTopupOrder.id))
+            .join(Tenant, Tenant.id == CreditTopupOrder.tenant_id)
+            .where(*clauses)
+        )).scalar() or 0
         rows = (await self.db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
         return {
             "items": [{**o.to_dict(), "tenant_name": t.business_name} for o, t in rows],
             "total": total, "page": page, "page_size": page_size,
+        }
+
+    async def get_credits_workspace_summary(self) -> dict:
+        account_row = (await self.db.execute(
+            select(
+                func.count(TenantBilling.id),
+                func.count(TenantBilling.id).filter(
+                    TenantBilling.credit_balance < LOW_BALANCE_DEFAULT_THRESHOLD
+                ),
+                func.coalesce(func.sum(TenantBilling.credit_balance), 0),
+            ).join(Tenant, Tenant.id == TenantBilling.tenant_id)
+             .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
+        )).one()
+        topup_row = (await self.db.execute(
+            select(
+                func.coalesce(func.sum(CreditTopupOrder.credits_purchased), 0),
+                func.count(CreditTopupOrder.id).filter(
+                    CreditTopupOrder.payment_status.in_(("initiated", "paid_pending_credit"))
+                ),
+                func.count(CreditTopupOrder.id).filter(CreditTopupOrder.payment_status == "failed"),
+            ).join(Tenant, Tenant.id == CreditTopupOrder.tenant_id)
+             .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
+        )).one()
+        return {
+            "providers": account_row[0], "low_balance_providers": account_row[1],
+            "available_credits": str(account_row[2]), "credits_purchased": str(topup_row[0]),
+            "pending_topups": topup_row[1], "failed_topups": topup_row[2],
         }
 
     async def get_topup_detail(self, topup_id: str) -> dict:
@@ -911,23 +1069,30 @@ class HomeServicesFinanceService:
         )
 
     async def get_hs_deposits_summary(self) -> dict:
-        stmt = select(SecurityDeposit).join(Tenant, Tenant.id == SecurityDeposit.tenant_id).where(
-            Tenant.vertical == HOME_SERVICES_VERTICAL
-        )
-        deposits = (await self.db.execute(stmt)).scalars().all()
+        row = (await self.db.execute(select(
+            func.count(SecurityDeposit.id),
+            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "paid"),
+            func.count(SecurityDeposit.id).filter(SecurityDeposit.status.in_(("unpaid", "partially_paid", "pending_verification"))),
+            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "refund_requested"),
+            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "refunded"),
+            func.count(SecurityDeposit.id).filter(SecurityDeposit.status.in_(("blocked", "forfeited"))),
+            func.coalesce(func.sum(SecurityDeposit.total_paid + SecurityDeposit.replenishment_total - SecurityDeposit.warranty_drawn), 0),
+        ).join(Tenant, Tenant.id == SecurityDeposit.tenant_id)
+         .where(Tenant.vertical == HOME_SERVICES_VERTICAL))).one()
         return {
-            "total_deposit_accounts": len(deposits),
-            "active_held_deposits": sum(1 for d in deposits if d.status == "paid"),
-            "pending_deposits": sum(1 for d in deposits if d.status in ("unpaid", "partially_paid", "pending_verification")),
-            "refund_pending": sum(1 for d in deposits if d.status == "refund_requested"),
-            "refunded": sum(1 for d in deposits if d.status == "refunded"),
-            "deposit_risk_cases": sum(1 for d in deposits if d.status in ("blocked", "forfeited")),
-            "total_held": str(sum((d.current_balance or Decimal("0")) for d in deposits)),
+            "total_deposit_accounts": row[0], "active_held_deposits": row[1],
+            "pending_deposits": row[2], "refund_pending": row[3], "refunded": row[4],
+            "deposit_risk_cases": row[5], "total_held": str(row[6]),
         }
 
     async def get_hs_deposit_detail(self, deposit_id: uuid.UUID) -> dict:
         detail = await self._fh.get_deposit_detail(deposit_id)
-        if detail.get("vertical") != HOME_SERVICES_VERTICAL:
+        # FinanceHubService returns the deposit beneath a `deposit` key so it
+        # can include its ledger and audit log alongside it.  Checking the
+        # envelope itself made every valid Home Services row fail ownership
+        # verification after it had already been loaded successfully.
+        deposit = detail.get("deposit") or {}
+        if deposit.get("vertical") != HOME_SERVICES_VERTICAL:
             raise NotFoundException("SecurityDeposit", str(deposit_id))
         return detail
 
@@ -946,11 +1111,16 @@ class HomeServicesFinanceService:
         )
         if status: stmt = stmt.where(WarrantyClaim.status == status)
         if category: stmt = stmt.where(WarrantyClaim.claim_type == category)
-        if q:
-            like = f"%{q.lower()}%"
-            stmt = stmt.where(func.lower(WarrantyClaim.job_id).like(like) | func.lower(Tenant.tenant_name).like(like))
+        if q and q.strip():
+            like = f"%{q.strip()}%"
+            stmt = stmt.where(or_(
+                WarrantyClaim.job_id.ilike(like),
+                cast(WarrantyClaim.id, String).ilike(like),
+                Tenant.tenant_name.ilike(like),
+                Tenant.business_name.ilike(like),
+            ))
         total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        stmt = stmt.order_by(WarrantyClaim.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        stmt = stmt.order_by(WarrantyClaim.created_at.desc(), WarrantyClaim.id.desc()).offset((page - 1) * page_size).limit(page_size)
         rows = (await self.db.execute(stmt)).all()
         return {
             "items": [{**self._fh._claim_dict(c, t), "vertical": t.vertical} for c, t in rows],
@@ -958,17 +1128,23 @@ class HomeServicesFinanceService:
         }
 
     async def get_hs_warranty_claims_summary(self) -> dict:
-        stmt = select(WarrantyClaim).join(Tenant, Tenant.id == WarrantyClaim.tenant_id).where(
-            Tenant.vertical == HOME_SERVICES_VERTICAL
-        )
-        claims = (await self.db.execute(stmt)).scalars().all()
+        row = (await self.db.execute(select(
+            func.count(WarrantyClaim.id),
+            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "admin_review"),
+            func.count(WarrantyClaim.id).filter(WarrantyClaim.status.in_(("provider_action_required", "provider_in_progress"))),
+            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "credit_issued"),
+            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "rejected"),
+            func.coalesce(func.sum(WarrantyClaim.settled_amount).filter(WarrantyClaim.status == "credit_issued"), 0),
+            func.coalesce(func.sum(WarrantyClaim.amount_requested).filter(
+                WarrantyClaim.status.not_in(("rejected", "credit_issued", "closed"))
+            ), 0),
+        ).join(Tenant, Tenant.id == WarrantyClaim.tenant_id)
+         .where(Tenant.vertical == HOME_SERVICES_VERTICAL))).one()
         return {
-            "total_claims": len(claims),
-            "pending_review": sum(1 for c in claims if c.status in ("pending", "pending_review")),
-            "investigation_ongoing": sum(1 for c in claims if c.status in ("investigating", "awaiting_documents")),
-            "approved_claims": sum(1 for c in claims if c.status == "approved"),
-            "rejected_claims": sum(1 for c in claims if c.status == "rejected"),
-            "settled_value": str(sum((c.settled_amount or Decimal("0")) for c in claims if c.status == "settled")),
+            "total_claims": row[0], "pending_review": row[1], "provider_action_required": row[2],
+            "investigation_ongoing": row[1],
+            "approved_claims": row[3], "rejected_claims": row[4], "settled_value": str(row[5]),
+            "open_exposure": str(row[6]),
         }
 
     async def get_hs_warranty_claim_detail(self, claim_id: uuid.UUID) -> dict:
@@ -992,14 +1168,15 @@ class HomeServicesFinanceService:
         date_from: str | None = None, date_to: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
-        clauses = self._date_filters(date_from, date_to, ServiceInvoice.created_at)
+        clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        clauses += self._date_filters(date_from, date_to, ServiceInvoice.created_at)
         if status: clauses.append(ServiceInvoice.status == status)
         if payment_status: clauses.append(ServiceInvoice.payment_status == payment_status)
         if tenant_id: clauses.append(ServiceInvoice.tenant_id == uuid.UUID(tenant_id))
 
         stmt = (
             select(ServiceInvoice, Tenant)
-            .join(Tenant, Tenant.id == ServiceInvoice.tenant_id, isouter=True)
+            .join(Tenant, Tenant.id == ServiceInvoice.tenant_id)
             .where(*clauses)
         )
         if q:
@@ -1019,28 +1196,57 @@ class HomeServicesFinanceService:
         if not inv:
             raise NotFoundException("ServiceInvoice", invoice_id)
         tenant = await self.db.get(Tenant, inv.tenant_id)
+        if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
+            raise NotFoundException("ServiceInvoice", invoice_id)
+        items = (await self.db.execute(
+            select(ServiceInvoiceItem)
+            .where(ServiceInvoiceItem.invoice_id == inv.id)
+            .order_by(ServiceInvoiceItem.created_at)
+        )).scalars().all()
+        payments = (await self.db.execute(
+            select(ServicePaymentRecord)
+            .where(ServicePaymentRecord.invoice_id == inv.id)
+            .order_by(ServicePaymentRecord.created_at.desc())
+        )).scalars().all()
+        commissions = (await self.db.execute(
+            select(SvcCommissionRecord)
+            .where(SvcCommissionRecord.invoice_id == inv.id)
+            .order_by(SvcCommissionRecord.created_at.desc())
+        )).scalars().all()
+        related_ids = [inv.id]
+        related_ids.extend(p.id for p in payments)
+        related_ids.extend(c.id for c in commissions)
         events = (await self.db.execute(
             select(FinancialEvent).where(
                 FinancialEvent.record_type.in_(("invoice", "payment", "commission")),
-                or_(FinancialEvent.record_id == inv.id, FinancialEvent.tenant_id == inv.tenant_id),
+                FinancialEvent.record_id.in_(related_ids),
             ).order_by(FinancialEvent.created_at.desc()).limit(50)
         )).scalars().all()
         return {
             **inv.to_dict(),
             "tenant_name": tenant.business_name if tenant else None,
+            "items": [item.to_dict() for item in items],
+            "payments": [payment.to_dict() for payment in payments],
+            "commissions": [commission.to_dict() for commission in commissions],
             "financial_events": [e.to_dict() for e in events],
         }
 
     async def get_invoices_summary(self, date_from: str | None = None, date_to: str | None = None) -> dict:
-        clauses = self._date_filters(date_from, date_to, ServiceInvoice.created_at)
-        invoices = (await self.db.execute(select(ServiceInvoice).where(*clauses))).scalars().all()
+        clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        clauses += self._date_filters(date_from, date_to, ServiceInvoice.created_at)
+        row = (await self.db.execute(select(
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.status == "issued"),
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.payment_status == "collected"),
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.payment_status == "verified"),
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.payment_status == "pending"),
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.payment_status == "failed"),
+            func.count(ServiceInvoice.id).filter(ServiceInvoice.status == "cancelled"),
+            func.coalesce(func.sum(ServiceInvoice.total_amount), 0),
+        ).join(Tenant, Tenant.id == ServiceInvoice.tenant_id).where(*clauses))).one()
         return {
-            "issued": sum(1 for i in invoices if i.status == "issued"),
-            "paid": sum(1 for i in invoices if i.payment_status == "paid"),
-            "outstanding": sum(1 for i in invoices if i.payment_status == "pending"),
-            "overdue": sum(1 for i in invoices if i.payment_status == "overdue"),
-            "cancelled": sum(1 for i in invoices if i.status == "cancelled"),
-            "total_value": str(sum((i.total_amount or Decimal("0")) for i in invoices)),
+            "issued": row[0], "collected": row[1], "verified": row[2],
+            "pending": row[3], "failed": row[4], "cancelled": row[5],
+            "total_value": str(row[6]),
         }
 
     # ── Customer Refunds ─────────────────────────────────────────────────────
@@ -1084,75 +1290,37 @@ class HomeServicesFinanceService:
         tenant = await self.db.get(Tenant, rr.tenant_id)
         if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
             raise NotFoundException("RefundRequest", str(refund_id))
-        return {**rr.to_dict(), "tenant_name": tenant.business_name}
+        overdue = bool(
+            rr.provider_response_due_at
+            and rr.provider_response_due_at <= datetime.now(timezone.utc)
+            and rr.status == "requested"
+        )
+        return {
+            **rr.to_dict(),
+            "tenant_name": tenant.business_name,
+            "admin_attention_required": rr.status == "admin_review" or overdue,
+            "provider_response_overdue": overdue,
+        }
 
     async def get_hs_refunds_summary(self, date_from: str | None = None, date_to: str | None = None) -> dict:
         clauses = [RefundRequest.tenant_id.isnot(None), Tenant.vertical == HOME_SERVICES_VERTICAL]
         clauses += self._date_filters(date_from, date_to, RefundRequest.created_at)
-        stmt = select(RefundRequest).join(Tenant, Tenant.id == RefundRequest.tenant_id).where(*clauses)
-        refunds = (await self.db.execute(stmt)).scalars().all()
+        row = (await self.db.execute(select(
+            func.count(RefundRequest.id).filter(RefundRequest.status == "requested"),
+            func.count(RefundRequest.id).filter(RefundRequest.status.in_(("provider_review", "admin_review"))),
+            func.count(RefundRequest.id).filter(RefundRequest.status == "approved"),
+            func.count(RefundRequest.id).filter(RefundRequest.status == "recorded"),
+            func.count(RefundRequest.id).filter(RefundRequest.status == "verified"),
+            func.count(RefundRequest.id).filter(RefundRequest.status == "rejected"),
+            func.count(RefundRequest.id).filter(RefundRequest.status == "cancelled"),
+        ).join(Tenant, Tenant.id == RefundRequest.tenant_id).where(*clauses))).one()
         # Real RefundRequest.status values (complaints/constants.py REFUND_*):
         # requested -> provider_review/admin_review -> approved -> rejected |
         # recorded -> verified | cancelled. No "processing"/"partially_
         # refunded"/"failed" status exists on this model -- not fabricated here.
         return {
-            "requested": sum(1 for r in refunds if r.status == "requested"),
-            "under_review": sum(1 for r in refunds if r.status in ("provider_review", "admin_review")),
-            "approved": sum(1 for r in refunds if r.status == "approved"),
-            "recorded": sum(1 for r in refunds if r.status == "recorded"),
-            "verified": sum(1 for r in refunds if r.status == "verified"),
-            "rejected": sum(1 for r in refunds if r.status == "rejected"),
-            "cancelled": sum(1 for r in refunds if r.status == "cancelled"),
-        }
-
-    # ── Provider Completion Charge Config ────────────────────────────────────
-    # The credits deducted per completed job (usage_credit_deduction.py's
-    # resolve_completed_job_deduction_credits) come from ServicePricingRule.
-    # completed_job_deduction_credits -- a real, already-validated field
-    # (AdminCatalogService.update_pricing_rule already enforces >= 0 and
-    # audit-logs the change) that simply had NO reachable HTTP route left
-    # after the old admin pricing-rule listing surface was deleted (confirmed
-    # zero routes reference pricing rules in admin_catalog/admin_router.py).
-    # This composes the existing, unmodified AdminCatalogService rather than
-    # duplicating pricing-rule logic -- only the completed_job_deduction_
-    # credits field is writable here; every other pricing-rule field (price,
-    # tax, etc.) stays out of scope for this finance-config surface.
-
-    async def list_charge_config(self, *, q: str | None = None, is_active: bool | None = None,
-                                  page: int = 1, page_size: int = 100) -> dict:
-        catalog = AdminCatalogService(db=self.db)
-        result = await catalog.list_pricing_rules(q=q, is_active=is_active, page=page, page_size=page_size,
-                                                    sort_by="updated_at", sort_dir="desc")
-        master_ids = {r["master_service_id"] for r in result["items"]}
-        masters = {}
-        if master_ids:
-            rows = (await self.db.execute(
-                select(MasterService).where(MasterService.id.in_(uuid.UUID(m) for m in master_ids))
-            )).scalars().all()
-            masters = {str(m.id): m.service_name for m in rows}
-        items = [{
-            "rule_id": r["rule_id"],
-            "master_service_name": masters.get(r["master_service_id"]),
-            "job_type": r["job_type"],
-            "rule_name": r["rule_name"],
-            "rule_code": r["rule_code"],
-            "completed_job_deduction_credits": r["completed_job_deduction_credits"],
-            "is_active": r["is_active"],
-            "effective_from": r["effective_from"],
-            "effective_to": r["effective_to"],
-        } for r in result["items"]]
-        return {"items": items, "total": result["pagination"]["total"], "page": page, "page_size": page_size}
-
-    async def update_charge_config(self, rule_id: uuid.UUID, completed_job_deduction_credits: int) -> dict:
-        catalog = AdminCatalogService(db=self.db, request_id=self.request_id,
-                                       actor_id=self.actor_id, actor_role=self.actor_role)
-        result = await catalog.update_pricing_rule(
-            rule_id, {"completed_job_deduction_credits": completed_job_deduction_credits},
-        )
-        await self.db.commit()
-        return {
-            "rule_id": result["rule_id"],
-            "completed_job_deduction_credits": result["completed_job_deduction_credits"],
+            "requested": row[0], "under_review": row[1], "approved": row[2],
+            "recorded": row[3], "verified": row[4], "rejected": row[5], "cancelled": row[6],
         }
 
     # ── Financial Events ─────────────────────────────────────────────────────
@@ -1171,7 +1339,8 @@ class HomeServicesFinanceService:
         date_from: str | None = None, date_to: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
-        clauses = self._date_filters(date_from, date_to, FinancialEvent.created_at)
+        clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        clauses += self._date_filters(date_from, date_to, FinancialEvent.created_at)
         if event_type:
             clauses.append(FinancialEvent.event_type == event_type)
         if record_type:
@@ -1181,7 +1350,7 @@ class HomeServicesFinanceService:
 
         stmt = (
             select(FinancialEvent, Tenant)
-            .join(Tenant, Tenant.id == FinancialEvent.tenant_id, isouter=True)
+            .join(Tenant, Tenant.id == FinancialEvent.tenant_id)
             .where(*clauses)
         )
         if q:
@@ -1214,6 +1383,8 @@ class HomeServicesFinanceService:
         if not ev:
             raise NotFoundException("FinancialEvent", event_id)
         tenant = await self.db.get(Tenant, ev.tenant_id) if ev.tenant_id else None
+        if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
+            raise NotFoundException("FinancialEvent", event_id)
         return {
             "event_id": str(ev.id),
             "event_type": ev.event_type,
@@ -1232,13 +1403,20 @@ class HomeServicesFinanceService:
         }
 
     async def get_financial_events_summary(self, date_from: str | None = None, date_to: str | None = None) -> dict:
-        clauses = self._date_filters(date_from, date_to, FinancialEvent.created_at)
-        today_clauses = [FinancialEvent.created_at >= datetime.now(timezone.utc).date()]
+        clauses = [Tenant.vertical == HOME_SERVICES_VERTICAL]
+        clauses += self._date_filters(date_from, date_to, FinancialEvent.created_at)
+        today_clauses = [
+            Tenant.vertical == HOME_SERVICES_VERTICAL,
+            FinancialEvent.created_at >= datetime.now(timezone.utc).date(),
+        ]
         events_today = (await self.db.execute(
-            select(func.count(FinancialEvent.id)).where(*today_clauses)
+            select(func.count(FinancialEvent.id))
+            .join(Tenant, Tenant.id == FinancialEvent.tenant_id)
+            .where(*today_clauses)
         )).scalar() or 0
         by_type_rows = (await self.db.execute(
             select(FinancialEvent.event_type, func.count(FinancialEvent.id))
+            .join(Tenant, Tenant.id == FinancialEvent.tenant_id)
             .where(*clauses).group_by(FinancialEvent.event_type)
         )).all()
         return {

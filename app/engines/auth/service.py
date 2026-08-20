@@ -313,6 +313,53 @@ class AuthService:
         from app.engines.auth.constants import REDIS_FAILED_ATTEMPTS_PREFIX
         await self.redis.delete(f"{REDIS_FAILED_ATTEMPTS_PREFIX}{email.lower()}")
 
+    async def _security_policy_value(self, key: str, default: Any) -> Any:
+        """Resolve a runtime Security workspace policy with a safe fallback."""
+        try:
+            from app.engines.security.models import SecurityPolicy
+            result = await self.db.execute(select(SecurityPolicy.policy_value_json).where(
+                SecurityPolicy.policy_key == key))
+            value = result.scalar_one_or_none()
+            return default if value is None else value
+        except Exception:
+            return default
+
+    async def _session_expires_at(self) -> datetime:
+        minutes = int(await self._security_policy_value("session_max_lifetime_minutes", 1440))
+        return utcnow() + timedelta(minutes=max(15, min(minutes, 43200)))
+
+    async def _ensure_required_admin_mfa(self, user: User) -> None:
+        if user.role == "super_admin":
+            policy_key = "mfa_required_super_admin"
+        elif user.role.startswith("admin_"):
+            policy_key = "mfa_required_platform_admin"
+        else:
+            return
+        if bool(await self._security_policy_value(policy_key, False)) and not user.is_mfa_enabled:
+            raise ServiceOSException(
+                "MFA_ENROLLMENT_REQUIRED",
+                "Multi-factor authentication is required for this administrator account.",
+                resolution="Ask a Super Admin to complete MFA enrollment before enabling this policy.",
+            )
+
+    async def _enforce_concurrent_session_limit(self, user_id: uuid.UUID) -> None:
+        """Revoke the oldest sessions after every successful authentication."""
+        maximum = int(await self._security_policy_value("max_concurrent_sessions", 10))
+        maximum = max(1, min(maximum, 100))
+        result = await self.db.execute(select(UserSession).where(
+            UserSession.user_id == user_id,
+            UserSession.revoked_at.is_(None),
+        ).order_by(UserSession.last_active_at.desc(), UserSession.id.desc()).offset(maximum))
+        for stale in result.scalars().all():
+            stale.revoked_at = utcnow()
+            stale.revoke_reason = "Concurrent session limit enforced"
+            try:
+                await self.redis.setex(
+                    f"serviceos:session:revoked:{stale.id}",
+                    ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
+            except Exception:
+                pass
+
     async def _publish_event(self, event_type: str, entity_id: str, payload: dict,
                               tenant_id: str | None = None, actor_id: str | None = None) -> None:
         try:
@@ -521,15 +568,21 @@ class AuthService:
                 resolution="Contact your administrator.",
             )
 
+        # Runtime thresholds are owned by Admin -> Security Policies.
+        warning_threshold = int(await self._security_policy_value(
+            "failed_login_threshold", MAX_FAILED_LOGIN_ATTEMPTS))
+        hard_threshold = int(await self._security_policy_value(
+            "auto_lock_threshold", HARD_LOCKOUT_ATTEMPTS))
+
         # Verify password
         if not verify_password(password, user.hashed_password or ""):
             count = await self._increment_failed(email)
-            if count >= HARD_LOCKOUT_ATTEMPTS:
+            if count >= hard_threshold:
                 user.locked_until = utcnow() + timedelta(days=365)
                 await self._audit("account.locked_permanent", "warning", actor_id=user.id)
                 await self._publish_event("auth.account_locked", str(user.id),
                                            {"reason": "too_many_attempts", "count": count})
-            elif count >= MAX_FAILED_LOGIN_ATTEMPTS:
+            elif count >= warning_threshold:
                 user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
                 await self._audit("account.locked_temp", "warning", actor_id=user.id)
             user.last_failed_login_at = utcnow()
@@ -543,7 +596,7 @@ class AuthService:
             )
             raise ServiceOSException(
                 "UNAUTHORIZED",
-                f"Invalid email or password. {max(0, MAX_FAILED_LOGIN_ATTEMPTS - count)} attempt(s) remaining before lockout.",
+                f"Invalid email or password. {max(0, warning_threshold - count)} attempt(s) remaining before lockout.",
                 resolution="Check your password and try again.",
             )
 
@@ -553,7 +606,8 @@ class AuthService:
         user.locked_until = None
         user.last_login_at = utcnow()
 
-        # MFA check
+        # MFA policy is enforced on every administrator login path.
+        await self._ensure_required_admin_mfa(user)
         if user.is_mfa_enabled:
             challenge = create_mfa_challenge_token(str(user.id), user.email)
             await self._audit("login.mfa_required", "pending", actor_id=user.id,
@@ -580,9 +634,11 @@ class AuthService:
             ip_address=self.ip_address,
             user_agent=user_agent,
             is_approved=True,
+            expires_at=await self._session_expires_at(),
         )
         self.db.add(session)
         await self.db.flush()
+        await self._enforce_concurrent_session_limit(user.id)
 
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("login.success", "success", actor_id=user.id,
@@ -748,6 +804,18 @@ class AuthService:
         if not user.is_active:
             raise ServiceOSException("UNAUTHORIZED", "Account is deactivated.")
 
+        await self._ensure_required_admin_mfa(user)
+        if user.is_mfa_enabled:
+            challenge = create_mfa_challenge_token(str(user.id), user.email)
+            await self._audit("login.mfa_required", "pending", actor_id=user.id,
+                              tenant_id=user.tenant_id)
+            await self._log_login_event(
+                "mfa_challenge_required", user_id=user.id,
+                email_attempted=normalized, tenant_id=user.tenant_id,
+                device_id=device_id, user_agent=user_agent,
+            )
+            return {"mfa_required": True, "mfa_challenge_token": challenge}
+
         user.last_login_at = utcnow()
         # Holding the code proves the address, which is exactly what verification means.
         if not user.is_verified:
@@ -759,9 +827,11 @@ class AuthService:
             device_id=device_id, device_name=device_name or dname,
             device_type=dtype, ip_address=self.ip_address,
             user_agent=user_agent, is_approved=True,
+            expires_at=await self._session_expires_at(),
         )
         self.db.add(session)
         await self.db.flush()
+        await self._enforce_concurrent_session_limit(user.id)
 
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("login.email_otp_success", "success", actor_id=user.id,
@@ -831,6 +901,18 @@ class AuthService:
         if not user.is_active:
             raise ServiceOSException("UNAUTHORIZED", "Account is deactivated.")
 
+        await self._ensure_required_admin_mfa(user)
+        if user.is_mfa_enabled:
+            challenge = create_mfa_challenge_token(str(user.id), user.email)
+            await self._audit("login.mfa_required", "pending", actor_id=user.id,
+                              tenant_id=user.tenant_id)
+            await self._log_login_event(
+                "mfa_challenge_required", user_id=user.id,
+                email_attempted=None, tenant_id=user.tenant_id,
+                device_id=device_id, user_agent=user_agent,
+            )
+            return {"mfa_required": True, "mfa_challenge_token": challenge}
+
         user.last_login_at = utcnow()
         if not user.is_verified:
             user.is_verified = True
@@ -841,9 +923,11 @@ class AuthService:
             device_id=device_id, device_name=device_name or dname,
             device_type=dtype, ip_address=self.ip_address,
             user_agent=user_agent, is_approved=True,
+            expires_at=await self._session_expires_at(),
         )
         self.db.add(session)
         await self.db.flush()
+        await self._enforce_concurrent_session_limit(user.id)
 
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("login.phone_otp_success", "success", actor_id=user.id,
@@ -917,9 +1001,11 @@ class AuthService:
             user_agent=user_agent,
             is_trusted=remember_device and device_id != "web",
             is_approved=True,
+            expires_at=await self._session_expires_at(),
         )
         self.db.add(session)
         await self.db.flush()
+        await self._enforce_concurrent_session_limit(user.id)
 
         tokens = await self._build_token_pair(user, session, enabled_engines or [], tenant_name, plan_type)
         await self._audit("mfa.verify_success", "success", actor_id=user.id, session_id=session.id)
@@ -1102,6 +1188,15 @@ class AuthService:
         session = session_r.scalar_one_or_none()
         if not session or session.revoked_at:
             raise ServiceOSException("UNAUTHORIZED", "Session has been revoked.")
+        if session.expires_at and session.expires_at <= utcnow():
+            session.revoked_at = utcnow()
+            session.revocation_reason = "maximum_lifetime_exceeded"
+            raise ServiceOSException("UNAUTHORIZED", "Session has expired. Log in again.")
+        idle_minutes = int(await self._security_policy_value("idle_timeout_minutes", 30))
+        if session.last_active_at and session.last_active_at <= utcnow() - timedelta(minutes=idle_minutes):
+            session.revoked_at = utcnow()
+            session.revocation_reason = "idle_timeout_exceeded"
+            raise ServiceOSException("UNAUTHORIZED", "Session expired after inactivity. Log in again.")
 
         session.last_active_at = utcnow()
 
@@ -2964,7 +3059,12 @@ class AuthService:
     @staticmethod
     def _user_group(u: "User") -> str:
         return {
-            "super_admin": "platform", "tenant_owner": "tenant",
+            "super_admin": "platform",
+            "admin_operations": "platform",
+            "admin_finance": "platform",
+            "admin_security": "platform",
+            "admin_readonly": "platform",
+            "tenant_owner": "tenant",
             "staff": "staff", "customer": "customer",
         }.get(u.role, "other")
 
@@ -3044,8 +3144,38 @@ class AuthService:
                 (User.last_login_at.is_(None) & (User.created_at < cutoff)) |
                 (User.last_login_at < cutoff)
             )
+        if status:
+            now = utcnow()
+            invited = User.meta.has_key("invite_token")  # type: ignore[attr-defined]
+            status_filters = {
+                "locked": or_(User.account_status == "locked", User.locked_until > now),
+                "suspended": User.account_status == "suspended",
+                "deactivated": User.is_active.is_(False),
+                "invited": invited,
+                "password_reset_required": User.password_reset_required.is_(True),
+                "active": and_(
+                    User.account_status.notin_(("locked", "suspended")),
+                    or_(User.locked_until.is_(None), User.locked_until <= now),
+                    User.is_active.is_(True),
+                    User.password_reset_required.is_(False),
+                    ~invited,
+                ),
+            }
+            if status in status_filters:
+                stmt = stmt.where(status_filters[status])
+        if mfa_status:
+            if mfa_status == "on":
+                stmt = stmt.where(User.is_mfa_enabled.is_(True))
+            elif mfa_status == "required":
+                stmt = stmt.where(User.is_mfa_enabled.is_(False), User.mfa_required.is_(True))
+            elif mfa_status == "off":
+                stmt = stmt.where(User.is_mfa_enabled.is_(False), User.mfa_required.is_(False))
 
-        rows = (await self.db.execute(stmt.order_by(User.created_at.desc()))).scalars().all()
+        total_count = await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        start = (page - 1) * limit
+        rows = (await self.db.execute(
+            stmt.order_by(User.created_at.desc()).offset(start).limit(limit)
+        )).scalars().all()
         # status/mfa_status are derived — filter in Python after computing
         dicts = [self._platform_user_dict(u) for u in rows]
         if status:
@@ -3053,9 +3183,8 @@ class AuthService:
         if mfa_status:
             dicts = [d for d in dicts if d["mfa_status"] == mfa_status]
 
-        total = len(dicts)
-        start = (page - 1) * limit
-        page_rows = dicts[start:start + limit]
+        total = total_count
+        page_rows = dicts
         return {
             "users": page_rows,
             "meta": {"total": total, "page": page, "limit": limit,

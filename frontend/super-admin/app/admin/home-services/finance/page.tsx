@@ -19,12 +19,12 @@
  * Finance > Vertical Monetization page, hardcoded server-side to
  * "home_services", never a second monetization engine.
  */
-import { useCallback, useState, Suspense } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, RefreshCw, PlusCircle, Plus, Trash2 } from "lucide-react";
+import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, Plus, Trash2 } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
-import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, adminWalletApi, commerceApi, catalogApi, type MonetizationPolicy, type TopupPlan, type WalletRecord, type CreditPackage } from "../../../../lib/api";
+import { Card, Badge, Btn, Input, Select, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
+import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, commerceApi, catalogWorkspaceApi, type CatalogJobType, type MonetizationJobTypeRule, type MonetizationPolicy, type TopupPlan, type CreditPackage } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
 let _toastId = 0;
@@ -40,17 +40,11 @@ function useToasts() {
 
 type TabKey =
   | "overview" | "monetization" | "provider-charges" | "credits" | "security-deposits"
-  | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events" | "wallets";
+  | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "monetization", label: "Monetization" },
-  // "Direct Customer Payments" removed 2026-08-05 at explicit user request --
-  // this business does not use the customer-pays-provider-directly (cash/
-  // UPI on-site declaration) model in Home Services. DirectPaymentsTab and
-  // its backend (finance_hub/admin_hs_finance_router.py's /payments/*
-  // routes, HomeServicesFinanceService.list_direct_payments et al.) stay in
-  // the codebase, unlinked, in case that changes.
   { key: "provider-charges", label: "Provider Charges" },
   { key: "credits", label: "Credits & Top-ups" },
   { key: "security-deposits", label: "Security Deposits" },
@@ -58,13 +52,8 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "customer-refunds", label: "Customer Refunds" },
   { key: "warranty-claims", label: "Warranty Claims" },
   { key: "financial-events", label: "Financial Events" },
-  // Same /admin/provider-wallets data (adminWalletApi, real + already live) --
-  // surfaced here too so this one page covers every Home Services money
-  // surface; the standalone /admin/provider-wallets route stays live,
-  // unlinked from nav, per this session's "don't delete before parity is
-  // proven" rule.
-  { key: "wallets", label: "Wallets" },
 ];
+const TAB_KEYS = new Set<TabKey>(TABS.map(item => item.key));
 
 function money(v?: string | number | null) {
   const n = Number(v ?? 0);
@@ -74,6 +63,26 @@ function dt(v?: string | null) {
   return v ? new Date(v).toLocaleString("en-IN") : "—";
 }
 
+function useDebouncedValue<T>(value: T, delay = 350): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handle = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handle);
+  }, [value, delay]);
+  return debounced;
+}
+
+function QueryError({ message, onRetry }: { message: string | null; onRetry: () => void }) {
+  if (!message) return null;
+  return (
+    <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+      padding: "10px 12px", border: "1px solid var(--danger-border)", borderRadius: 8,
+      background: "var(--danger-bg)", color: "var(--danger-text)", fontSize: 12 }}>
+      <span>{message}</span>
+      <Btn variant="ghost" onClick={onRetry}>Retry</Btn>
+    </div>
+  );
+}
 export default function HomeServicesFinancePage() {
   return (
     <Suspense fallback={<Skeleton height={400} />}>
@@ -85,7 +94,8 @@ export default function HomeServicesFinancePage() {
 function HomeServicesFinanceWorkspace() {
   const router = useRouter();
   const params = useSearchParams();
-  const tab = (params.get("tab") as TabKey) || "overview";
+  const requestedTab = params.get("tab") as TabKey | null;
+  const tab: TabKey = requestedTab && TAB_KEYS.has(requestedTab) ? requestedTab : "overview";
   const [auditOpen, setAuditOpen] = useState(false);
 
   function setTab(t: TabKey) {
@@ -94,11 +104,13 @@ function HomeServicesFinanceWorkspace() {
 
   return (
     <AdminLayout activeNav="hs-finance">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+      <div className="hs-finance-shell">
+      <div className="hs-finance-hero">
         <div>
+          <div className="hs-finance-eyebrow">Home Services · Financial Control</div>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Home Services Finance</h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-            Direct customer payments, provider charges and financial operations for Home Services.
+            Provider charges, usage credits, deposits and customer financial operations for Home Services.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -109,15 +121,12 @@ function HomeServicesFinanceWorkspace() {
 
       <StatusStrip />
 
-      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", margin: "16px 0", overflowX: "auto" }}>
+      <div className="hs-finance-tabs" role="tablist" aria-label="Finance workspace sections">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            style={{
-              padding: "10px 14px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
-              borderBottom: tab === t.key ? "2px solid var(--brand)" : "2px solid transparent",
-              color: tab === t.key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}>{t.label}</button>
+            className="hs-finance-tab" data-active={tab === t.key} role="tab" aria-selected={tab === t.key}>
+            {t.label}
+          </button>
         ))}
       </div>
 
@@ -130,50 +139,78 @@ function HomeServicesFinanceWorkspace() {
       {tab === "customer-refunds" && <CustomerRefundsTab />}
       {tab === "warranty-claims" && <WarrantyClaimsTab />}
       {tab === "financial-events" && <FinancialEventsTab />}
-      {tab === "wallets" && <WalletsTab />}
 
       <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Audit Trail" size="lg">
         <AuditPanel />
       </Modal>
+      </div>
     </AdminLayout>
   );
 }
 
 function ExportButton({ tab }: { tab: TabKey }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  if (tab === "overview" || tab === "monetization") return null;
+
+  function csvCell(value: unknown): string {
+    let text = value === null || value === undefined ? "" :
+      typeof value === "object" ? JSON.stringify(value) : String(value);
+    // Prevent spreadsheet applications from interpreting exported user data
+    // as a formula when a CSV is opened directly.
+    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
   async function doExport() {
+    setBusy(true);
+    setMessage("");
+    try {
     let rows: Record<string, unknown>[] = [];
-    if (tab === "provider-charges") rows = (await homeServicesFinanceApi.listProviderCharges({ pageSize: 5000 })).items;
-    else if (tab === "credits") rows = (await homeServicesFinanceApi.listTopups({ pageSize: 5000 })).items;
-    else if (tab === "security-deposits") rows = (await homeServicesFinanceApi.listDeposits({ pageSize: 5000 })).items;
-    else if (tab === "invoices") rows = (await homeServicesFinanceApi.listInvoices({ pageSize: 5000 })).items;
-    else if (tab === "customer-refunds") rows = (await homeServicesFinanceApi.listRefunds({ pageSize: 5000 })).items;
-    else if (tab === "warranty-claims") rows = (await homeServicesFinanceApi.listWarrantyClaims({ pageSize: 5000 })).items;
-    else if (tab === "financial-events") rows = (await homeServicesFinanceApi.listFinancialEvents({ pageSize: 5000 })).items;
-    else if (tab === "wallets") rows = (await adminWalletApi.list()) as unknown as Record<string, unknown>[];
+    if (tab === "provider-charges") rows = (await homeServicesFinanceApi.listProviderCharges({ pageSize: 200 })).items;
+    else if (tab === "credits") rows = (await homeServicesFinanceApi.listTopups({ pageSize: 200 })).items;
+    else if (tab === "security-deposits") rows = (await homeServicesFinanceApi.listDeposits({ pageSize: 200 })).items;
+    else if (tab === "invoices") rows = (await homeServicesFinanceApi.listInvoices({ pageSize: 200 })).items;
+    else if (tab === "customer-refunds") rows = (await homeServicesFinanceApi.listRefunds({ pageSize: 200 })).items;
+    else if (tab === "warranty-claims") rows = (await homeServicesFinanceApi.listWarrantyClaims({ pageSize: 200 })).items;
+    else if (tab === "financial-events") rows = (await homeServicesFinanceApi.listFinancialEvents({ pageSize: 200 })).items;
     else { const ov = await homeServicesFinanceApi.getOverview(); rows = [ov as Record<string, unknown>]; }
 
-    if (rows.length === 0) { alert("Nothing to export for this tab yet."); return; }
-    const headers = Object.keys(rows[0]);
-    const csv = [headers.join(","), ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(","))].join("\n");
+    if (rows.length === 0) { setMessage("No rows available."); return; }
+    const headers = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
+    const csv = [headers.map(csvCell).join(","), ...rows.map(r => headers.map(h => csvCell(r[h])).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `home-services-finance-${tab}.csv`; a.click();
     URL.revokeObjectURL(url);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Export failed.");
+    } finally { setBusy(false); }
   }
-  return <Btn variant="ghost" icon={<Download size={14} />} onClick={doExport}>Export</Btn>;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Btn variant="ghost" icon={<Download size={14} />} onClick={doExport} loading={busy}>
+        {tab === "credits" ? "Quick CSV · top-ups" : "Quick CSV · 200 max"}
+      </Btn>
+      {message && <span role="status" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{message}</span>}
+    </div>
+  );
 }
 
 function StatusStrip() {
   const ledger = useApi(useCallback(() => homeServicesFinanceApi.getLedgerHealth(), []));
+  const reconcile = useAction(() => homeServicesFinanceApi.runReconciliation());
   const h = ledger.data;
   return (
     <Card padding={16} style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
-      <StatusDot ok label="Home Services vertical" value="Active" />
-      <StatusDot ok label="Provider charging" value="Operational" />
-      <StatusDot ok={h?.idempotency_protected ?? true} label="Credit ledger" value={h?.idempotency_protected ? "Healthy" : "Checking"} />
-      <StatusDot ok={h?.append_only ?? true} label="Deposit ledger" value={h?.append_only ? "Healthy" : "Checking"} />
-      <StatusDot ok label="Reconciliation" value={h?.last_reconciliation ? dt(h.last_reconciliation) : "Not yet run"} />
+      <StatusDot ok={Boolean(h?.idempotency_protected)} label="Credit ledger idempotency" value={h?.idempotency_protected ? "Protected" : "Checking"} />
+      <StatusDot ok={Boolean(h?.append_only)} label="Credit ledger writes" value={h?.append_only ? "Append-only" : "Checking"} />
+      <StatusDot ok={Boolean(h?.atomic_balance_update)} label="Balance updates" value={h?.atomic_balance_update ? "Atomic" : "Checking"} />
+      <StatusDot ok={Boolean(h?.last_reconciliation)} label="Reconciliation" value={h?.last_reconciliation ? dt(h.last_reconciliation) : "Not yet run"} />
+      <Btn variant="ghost" loading={reconcile.loading}
+        onClick={async () => { if (await reconcile.execute()) ledger.refetch(); }}>Run reconciliation</Btn>
+      {reconcile.error && <span role="alert" style={{ color: "var(--danger-text)", fontSize: 12 }}>{reconcile.error}</span>}
     </Card>
   );
 }
@@ -199,7 +236,7 @@ type OverviewData = {
   };
   group_b_serviceos_financial_position: {
     platform_charges_recovered: string | null; platform_charge_recovery_tracked: boolean;
-    provider_completion_charges: { posted: number; total_amount: string };
+    provider_completion_charges: { posted: number; total_credit_units: string; ledger: string };
     active_usage_credit_balance: string; security_deposits_held: string;
   };
   secondary: {
@@ -216,6 +253,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
   if (overview.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Failed to load overview: {overview.error}</p></Card>;
   const o = overview.data;
   if (!o) return null;
+  const a = o.group_a_customer_to_provider;
   const b = o.group_b_serviceos_financial_position;
   const sec = o.secondary;
 
@@ -223,12 +261,30 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
         <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+          Customer-to-provider payment records
+        </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          <SummaryCard label="Collected Directly by Providers" value={money(a.provider_collected_customer_payments)} />
+          <SummaryCard label="Confirmations Pending" value={a.payment_confirmations_pending}
+            tone={a.payment_confirmations_pending > 0 ? "warning" : undefined} />
+          <SummaryCard label="Customer Platform Charges Recorded" value={money(a.customer_platform_charges_recorded)} />
+          <SummaryCard label="Payment Disputes" value={a.payment_disputes}
+            tone={a.payment_disputes > 0 ? "danger" : undefined} onClick={() => onNavigate("financial-events")} />
+        </div>
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "8px 0 0" }}>
+          Provider-collected customer payments are records, not ServiceOS-held funds.
+        </p>
+      </div>
+
+      <div>
+        <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>
           ServiceOS financial position
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          <NotTrackedCard label="Platform Charges Recovered" tracked={b.platform_charge_recovery_tracked} value={b.platform_charges_recovered} />
-          <SummaryCard label="Provider Completion Charges" value={money(b.provider_completion_charges.total_amount)} onClick={() => onNavigate("provider-charges")} />
-          <SummaryCard label="Available Usage Credits" value={money(b.active_usage_credit_balance)} onClick={() => onNavigate("credits")} />
+          <NotTrackedCard label="Platform-Charge Credits Recovered" tracked={b.platform_charge_recovery_tracked} value={b.platform_charges_recovered} asCredits />
+          <SummaryCard label="Provider-Charge Credits Deducted" value={units(b.provider_completion_charges.total_credit_units)} onClick={() => onNavigate("provider-charges")} />
+          <SummaryCard label="Provider Charges Posted" value={b.provider_completion_charges.posted} onClick={() => onNavigate("provider-charges")} />
+          <SummaryCard label="Available Usage Credits" value={units(b.active_usage_credit_balance)} onClick={() => onNavigate("credits")} />
           <SummaryCard label="Security Deposits Held" value={money(b.security_deposits_held)} onClick={() => onNavigate("security-deposits")} />
         </div>
       </div>
@@ -238,7 +294,8 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
         <SummaryCard label="Failed Charge Recoveries" value={sec.failed_charge_recoveries} tone={sec.failed_charge_recoveries > 0 ? "danger" : undefined} onClick={() => onNavigate("provider-charges")} />
         <SummaryCard label="Deposit Return Requests" value={sec.deposit_return_requests} tone={sec.deposit_return_requests > 0 ? "warning" : undefined} onClick={() => onNavigate("security-deposits")} />
         <SummaryCard label="Warranty Financial Exposure" value={money(sec.warranty_financial_exposure)} onClick={() => onNavigate("warranty-claims")} />
-        <SummaryCard label="Finance Exceptions" value={sec.finance_exceptions} tone={sec.finance_exceptions > 0 ? "danger" : undefined} />
+        <SummaryCard label="Finance Exceptions" value={sec.finance_exceptions} tone={sec.finance_exceptions > 0 ? "danger" : undefined}
+          onClick={() => onNavigate("financial-events")} />
       </div>
 
       <Card padding={16}>
@@ -265,11 +322,11 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
   );
 }
 
-function NotTrackedCard({ label, tracked, value }: { label: string; tracked: boolean; value: string | null }) {
+function NotTrackedCard({ label, tracked, value, asCredits = false }: { label: string; tracked: boolean; value: string | null; asCredits?: boolean }) {
   return (
     <Card padding={16}>
       <div style={{ fontSize: 22, fontWeight: 800, color: tracked ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-        {tracked ? money(value) : "Not tracked"}
+        {tracked ? (asCredits ? units(value) : money(value)) : "Not tracked"}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
     </Card>
@@ -281,18 +338,26 @@ function NotTrackedCard({ label, tracked, value }: { label: string; tracked: boo
 // Platform > Finance > Vertical Monetization, hardcoded server-side to
 // "home_services" so it can never read or mutate another vertical's policy.
 
-// All 5 are real enum values on the shared cross-vertical
-// VerticalMonetizationPolicy model. As of 2026-08-05, PERCENTAGE_COMMISSION
-// is the wired, live model for Home Services job-completion charging --
+// All values are real enum values on the shared cross-vertical policy.
+// Completion credits, fixed completion charges and percentage commission
+// are wired to the Home Services completed-job usage-credit ledger. For
+// PERCENTAGE_COMMISSION,
 // execution/usage_credit_deduction.py::resolve_commission_credits charges
-// this % of what the tenant collected from the customer, using each
-// category's own rate (edited below in the Provider Charges tab's
-// "Category Rates" table) with this policy's provider_percentage as the
-// fallback default for any category that hasn't set its own. The other
-// models are kept selectable (per explicit request) and clearly labeled as
-// not-yet-enforced for Home Services, rather than removed.
-const PROVIDER_MODELS = ["NONE", "COMPLETION_CREDITS", "PERCENTAGE_COMMISSION", "FIXED_COMPLETION_CHARGE", "SUBSCRIPTION", "LEAD_FEE"];
-const CUSTOMER_FEE_MODELS = ["NONE", "PERCENTAGE", "FIXED", "PERCENTAGE_WITH_MIN_MAX"];
+// this % of the final invoiced service value. This policy's
+// provider_percentage is the only Home Services rate. Subscription
+// and lead-fee models remain draftable for forward planning; server-side
+// validation prevents publishing them until their runtime engines exist.
+const PROVIDER_MODELS = [
+  { value: "NONE", label: "No provider charge" },
+  { value: "PERCENTAGE_COMMISSION", label: "Percentage commission" },
+  { value: "COMPLETION_CREDITS", label: "Fixed credits per completed job" },
+] as const;
+const CUSTOMER_FEE_MODELS = [
+  { value: "NONE", label: "No customer charge" },
+  { value: "PERCENTAGE", label: "Percentage added to service price" },
+  { value: "FIXED", label: "Fixed amount added to service price" },
+  { value: "PERCENTAGE_WITH_MIN_MAX", label: "Percentage with minimum / maximum" },
+] as const;
 
 function fmt(v: unknown): string {
   return v === null || v === undefined ? "—" : String(v);
@@ -307,6 +372,10 @@ function MonetizationTab() {
   const [form, setForm] = useState<Partial<MonetizationPolicy>>({});
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
+  const [ruleJobTypeId, setRuleJobTypeId] = useState("");
+  const [ruleCredits, setRuleCredits] = useState("");
+  const [ruleProviderEnabled, setRuleProviderEnabled] = useState(true);
+  const [ruleCustomerEnabled, setRuleCustomerEnabled] = useState(true);
 
   const currentApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getCurrent(), []));
   const draftApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getDraft(), []));
@@ -318,6 +387,27 @@ function MonetizationTab() {
 
   const current = currentApi.data as MonetizationPolicy | null;
   const draft = draftApi.data as MonetizationPolicy | null;
+  const jobTypesApi = useApi(
+    useCallback(() => catalogWorkspaceApi.listJobTypes({ includeInactive: false, pageSize: 100 }), []),
+    [], { enabled: true },
+  );
+  const draftRulesApi = useApi(
+    useCallback(() => homeServicesFinanceMonetizationApi.listJobTypeRules(draft?.id ?? ""), [draft?.id]),
+    [draft?.id], { enabled: showDraftDrawer && !!draft?.id },
+  );
+  const currentRulesApi = useApi(
+    useCallback(() => homeServicesFinanceMonetizationApi.listJobTypeRules(current?.id ?? ""), [current?.id]),
+    [current?.id], { enabled: !!current?.id },
+  );
+  const saveRuleAction = useAction((policyId: string, jobTypeId: string, payload: Partial<MonetizationJobTypeRule>) =>
+    homeServicesFinanceMonetizationApi.upsertJobTypeRule(policyId, jobTypeId, payload));
+  const providerModelLive = ["COMPLETION_CREDITS", "PERCENTAGE_COMMISSION", "FIXED_COMPLETION_CHARGE"]
+    .includes(current?.provider_model ?? "");
+  const providerStatusLabel = !current ? "Not configured"
+    : providerModelLive ? "Live" : current.provider_model === "NONE" ? "Disabled" : "Not enforceable";
+  const providerStatusVariant = providerModelLive ? "success"
+    : current?.provider_model === "NONE" || !current ? "muted" : "warning";
+  const customerFeeLive = !!current && current.customer_fee_model !== "NONE";
 
   function startDraft() {
     setForm(draft ?? current ?? { provider_model: "COMPLETION_CREDITS", customer_fee_model: "NONE", currency: "INR" });
@@ -344,6 +434,12 @@ function MonetizationTab() {
 
   async function confirmPublish() {
     if (!reason.trim()) return;
+    const validation = await homeServicesFinanceMonetizationApi.validate(form);
+    setErrors(validation.errors);
+    if (!validation.valid) {
+      push("This draft cannot be published until its validation errors are resolved.", "warning");
+      return;
+    }
     // Publish only takes a reason -- it publishes whatever draft is already
     // saved server-side. If the on-screen form was edited but never sent via
     // "Save Draft", those edits were silently lost (or, with no draft ever
@@ -369,11 +465,42 @@ function MonetizationTab() {
     else push(discardDraftAction.error ?? "Failed to discard draft.", "danger");
   }
 
+  async function saveJobTypeRule() {
+    if (!draft?.id || !ruleJobTypeId) return;
+    const parsedCredits = ruleCredits.trim() === "" ? null : Number(ruleCredits);
+    if (parsedCredits != null && (!Number.isFinite(parsedCredits) || parsedCredits < 0)) {
+      push("Fixed credit override must be zero or greater.", "warning");
+      return;
+    }
+    const selectedJobType = jobTypesApi.data?.items?.find((item: CatalogJobType) => item.id === ruleJobTypeId);
+    const providerChargeableEvent = selectedJobType?.key === "consultation"
+      ? "consultation_completed" : "job_completed";
+    const providerChargeModel = parsedCredits == null ? "INHERIT" : "FIXED_CREDITS";
+    const saved = await saveRuleAction.execute(draft.id, ruleJobTypeId, {
+      job_type_id: ruleJobTypeId,
+      provider_charge_enabled: ruleProviderEnabled,
+      provider_charge_model: providerChargeModel,
+      provider_charge_credit_units: parsedCredits == null ? null : String(parsedCredits),
+      provider_chargeable_event: providerChargeableEvent,
+      customer_charge_enabled: ruleCustomerEnabled,
+      customer_charge_basis: "booking_price_snapshot",
+      status: "active",
+    });
+    if (saved) {
+      draftRulesApi.refetch();
+      setRuleJobTypeId(""); setRuleCredits("");
+      setRuleProviderEnabled(true); setRuleCustomerEnabled(true);
+      push("Job Type rule saved to this draft.");
+    } else {
+      push(saveRuleAction.error ?? "Could not save the Job Type rule.", "danger");
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Toaster toasts={toasts} onRemove={remove} />
       <Card padding={16} style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <StatusDot ok label="Active Policy" value={current ? `v${current.version_number}` : "None"} />
+        <StatusDot ok={!!current} label="Published Policy" value={current ? `v${current.version_number}` : "None"} />
         <StatusDot ok label="Settlement" value="Provider Direct" />
         <StatusDot ok label="Recovery" value="Usage Credits" />
         <StatusDot ok={!draft} label="Draft" value={draft ? `v${draft.version_number}` : "None"} />
@@ -394,20 +521,33 @@ function MonetizationTab() {
           <Card padding={16}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
               <p style={{ fontSize: 14, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                Provider-side charge <Badge variant="success">Active</Badge>
+                Provider-side charge <Badge variant={providerStatusVariant}>{providerStatusLabel}</Badge>
               </p>
               <Btn variant="ghost" onClick={startDraft}>Edit in Draft</Btn>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 14, fontSize: 12 }}>
               <KV label="Revenue model" value={fmt(current?.provider_model)} />
               <KV label="Trigger" value="Eligible job completion" />
-              <KV label="Default rate" value={current?.provider_percentage != null ? `${current.provider_percentage}%` : "Set per-category — see Provider Charges tab"} />
+              <KV label="Configured charge" value={
+                current?.provider_model === "PERCENTAGE_COMMISSION"
+                  ? (current.provider_percentage != null ? `${current.provider_percentage}%` : "Not configured")
+                  : current?.provider_model === "COMPLETION_CREDITS"
+                    ? units(current.provider_credit_units ?? 0)
+                    : current?.provider_model === "FIXED_COMPLETION_CHARGE"
+                      ? units(Number(current.provider_fixed_amount_minor ?? 0) / 100)
+                      : "—"
+              } />
               <KV label="Recovery source" value="Provider usage credits" />
+              <KV label="Job Type rules" value={String(currentRulesApi.data?.items?.length ?? 0)} />
             </div>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-              Charged as this % of what the tenant collects from the customer for each completed job. Each
-              category can set its own rate in the Provider Charges tab&apos;s &quot;Category Commission
-              Rates&quot; — the rate above is only the fallback for a category that hasn&apos;t.
+              {current?.provider_model === "PERCENTAGE_COMMISSION"
+                ? "This is the single provider commission rate for Home Services. It is charged as a percentage of the final invoiced service value, excluding the customer platform fee."
+                : current?.provider_model === "COMPLETION_CREDITS"
+                  ? "A fixed number of usage-credit units is deducted for each eligible completed job."
+                  : current?.provider_model === "FIXED_COMPLETION_CHARGE"
+                    ? "The configured fixed amount is converted to rupee-equivalent usage-credit units at job completion."
+                    : "No provider-side completion charge is active."}
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
               <CheckCircle2 size={13} /> Eligible completion → <CheckCircle2 size={13} /> Idempotency check → <CheckCircle2 size={13} /> Credits deducted → <CheckCircle2 size={13} /> Ledger posted
@@ -415,22 +555,64 @@ function MonetizationTab() {
           </Card>
 
           <Card padding={16}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10 }}>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Job Type charge rules</p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "3px 0 0" }}>
+                  Published exceptions for repair, consultation and other Job Types.
+                </p>
+              </div>
+              <Btn variant="ghost" onClick={startDraft}>{draft ? "Edit rules" : "Create rules"}</Btn>
+            </div>
+            {currentRulesApi.loading ? (
+              <p style={{ margin: 0, fontSize: 12, color: "var(--text-tertiary)" }}>Loading published rules…</p>
+            ) : (currentRulesApi.data?.items ?? []).length === 0 ? (
+              <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
+                No published Job Type overrides. Every Job Type currently inherits the default provider and customer charge policy.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(currentRulesApi.data?.items ?? []).map((rule: MonetizationJobTypeRule) => {
+                  const jt = jobTypesApi.data?.items?.find((item: CatalogJobType) => item.id === rule.job_type_id);
+                  return (
+                    <div key={rule.job_type_id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 9, fontSize: 12 }}>
+                      <span>
+                        <strong>{jt?.label ?? rule.job_type_id}</strong>
+                        {jt?.key ? <span style={{ color: "var(--text-tertiary)" }}> · {jt.key}</span> : null}
+                        <br />
+                        Provider {rule.provider_charge_enabled ? (rule.provider_charge_model === "FIXED_CREDITS" ? `${rule.provider_charge_credit_units} fixed credits` : "inherits default") : "disabled"}
+                        {" · "}Trigger {rule.provider_chargeable_event === "consultation_completed" ? "consultation completed" : "job completed"}
+                        {" · "}Customer {rule.customer_charge_enabled ? "enabled" : "disabled"}
+                      </span>
+                      <Badge variant={rule.status === "active" ? "success" : "muted"}>{rule.status}</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <Card padding={16}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
               <p style={{ fontSize: 14, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                Customer platform charge <Badge variant="success">Active</Badge>
+                Customer platform charge <Badge variant={customerFeeLive ? "success" : "muted"}>{customerFeeLive ? "Live" : "Disabled"}</Badge>
               </p>
               <Btn variant="ghost" onClick={startDraft}>Edit in Draft</Btn>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 12, fontSize: 12 }}>
               <KV label="Fee model" value={fmt(current?.customer_fee_model)} />
-              <KV label="Rate" value={current?.customer_fee_percentage ? `${current.customer_fee_percentage}%` : "—"} />
+              <KV label="Configured charge" value={
+                current?.customer_fee_model === "FIXED"
+                  ? money(Number(current.customer_fee_fixed_amount_minor ?? 0) / 100)
+                  : current?.customer_fee_percentage ? `${current.customer_fee_percentage}%` : "—"
+              } />
               <KV label="Minimum" value={current?.customer_fee_min_minor != null ? money(current.customer_fee_min_minor / 100) : "—"} />
               <KV label="Maximum" value={current?.customer_fee_max_minor != null ? money(current.customer_fee_max_minor / 100) : "—"} />
               <KV label="Collection" value="Provider collects directly" />
               <KV label="Recovery" value="Deducted from usage credits" />
             </div>
             <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
-              ServiceOS does not collect the customer&apos;s job payment.
+              The customer pays the inclusive amount to the provider. At job completion, ServiceOS recovers this customer charge from the provider&apos;s usage credits in addition to the provider-side charge.
             </div>
           </Card>
         </div>
@@ -447,7 +629,10 @@ function MonetizationTab() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                 <PreviewRow label="Customer platform charge" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
                 <PreviewRow label="Customer pays provider directly" value={`₹${fmt(previewResult.total_payable)}`} strong />
-                <PreviewRow label="Provider completion charge" value="% of collected amount — varies by category, see Provider Charges tab" />
+                <PreviewRow label="Provider-side credit deduction" value={units(previewResult.provider_charge_credit_units as string)} />
+                <PreviewRow label="Customer-charge credit recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />
+                <PreviewRow label="Total credits deducted at completion" value={units(previewResult.total_credit_deduction as string)} strong />
+                <PreviewRow label="Provider calculation" value={fmt(previewResult.provider_charge_note)} />
                 <PreviewRow label="ServiceOS holds provider earnings" value="₹0" />
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>Preview only — does not change tenant pricing.</p>
               </div>
@@ -456,12 +641,19 @@ function MonetizationTab() {
 
           <Card padding={16}>
             <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Policy lifecycle</p>
-            {["Draft configuration", "Validate rules", "Preview impact", "Finance review", "Publish version"].map((step, i) => (
-              <div key={step} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12, color: i < 3 ? "var(--success-text)" : "var(--text-tertiary)" }}>
-                {i < 3 ? <CheckCircle2 size={13} /> : <Circle size={13} />} {step}
-              </div>
-            ))}
-            <Badge variant="success">v{fmt(current?.version_number)} Active</Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12,
+              color: draft ? "var(--warning-text)" : "var(--text-tertiary)" }}>
+              {draft ? <Circle size={13} /> : <CheckCircle2 size={13} />} Draft {draft ? `v${draft.version_number} awaiting publication` : "none"}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12,
+              color: previewResult ? "var(--success-text)" : "var(--text-tertiary)" }}>
+              {previewResult ? <CheckCircle2 size={13} /> : <Circle size={13} />} Impact preview {previewResult ? "completed this session" : "not run this session"}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 12,
+              color: current ? "var(--success-text)" : "var(--text-tertiary)" }}>
+              {current ? <CheckCircle2 size={13} /> : <Circle size={13} />} Published version {current ? `v${current.version_number}` : "none"}
+            </div>
+            <Badge variant={current ? "success" : "muted"}>{current ? `v${current.version_number} Published` : "No published policy"}</Badge>
           </Card>
 
           <Card padding={16}>
@@ -485,35 +677,39 @@ function MonetizationTab() {
           </label>
           <select value={form.provider_model ?? "NONE"} onChange={e => setForm({ ...form, provider_model: e.target.value })}
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
-            {PROVIDER_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+            {PROVIDER_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           {form.provider_model === "PERCENTAGE_COMMISSION" ? (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
-                Charged as this % of what the tenant collects from the customer for each completed job. This is
-                the default rate — any category with its own rate set in <strong>Provider Charges &gt; Category
-                Commission Rates</strong> uses that instead.
+                Deduct this percentage of the provider&apos;s final service price. The customer charge is calculated separately and never increases this commission base.
               </p>
-              <Input placeholder="Default commission % (e.g. 10)" value={String(form.provider_percentage ?? "")}
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Provider commission (%)</label>
+              <Input placeholder="e.g. 10" value={String(form.provider_percentage ?? "")}
                 onChange={v => setForm({ ...form, provider_percentage: v })} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Minimum credits (optional)</label>
+                  <Input placeholder="No minimum" value={form.provider_min_charge_minor != null ? String(form.provider_min_charge_minor / 100) : ""}
+                    onChange={v => setForm({ ...form, provider_min_charge_minor: v === "" ? null : Math.round(Number(v) * 100) })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Maximum credits (optional)</label>
+                  <Input placeholder="No maximum" value={form.provider_max_charge_minor != null ? String(form.provider_max_charge_minor / 100) : ""}
+                    onChange={v => setForm({ ...form, provider_max_charge_minor: v === "" ? null : Math.round(Number(v) * 100) })} />
+                </div>
+              </div>
             </>
-          ) : form.provider_model !== "NONE" && (
-            <p style={{ fontSize: 11, color: "var(--warning-text, #b45309)", margin: "0 0 8px" }}>
-              Not yet enforced for Home Services — job completion only charges via Percentage Commission
-              (Category Commission Overrides in the Provider Charges tab). Saved here for record-keeping only.
-            </p>
-          )}
-          {form.provider_model === "COMPLETION_CREDITS" && (
-            <Input placeholder="Credit units (reference only, not enforced)" value={String(form.provider_credit_units ?? "")}
-              onChange={v => setForm({ ...form, provider_credit_units: Number(v) })} />
-          )}
-          {form.provider_model === "FIXED_COMPLETION_CHARGE" && (
-            <Input placeholder="Fixed charge per job (₹)" value={form.provider_fixed_amount_minor != null ? String(form.provider_fixed_amount_minor / 100) : ""}
-              onChange={v => setForm({ ...form, provider_fixed_amount_minor: Math.round(Number(v) * 100) })} />
-          )}
-          {form.provider_model === "SUBSCRIPTION" && (
-            <Input placeholder="Subscription plan ID" value={String(form.provider_subscription_plan_id ?? "")}
-              onChange={v => setForm({ ...form, provider_subscription_plan_id: v })} />
+          ) : null}
+          {["COMPLETION_CREDITS", "PERCENTAGE_COMMISSION"].includes(form.provider_model ?? "") && (
+            <>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
+                Deduct the same fixed number of usage credits whenever an eligible job is completed. Add Job Type rules below when some work types need a different fixed deduction.
+              </p>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Default fixed credit deduction</label>
+              <Input placeholder="e.g. 100 credits" value={String(form.provider_credit_units ?? "")}
+                onChange={v => setForm({ ...form, provider_credit_units: v === "" ? null : Number(v) })} />
+            </>
           )}
 
           <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.03em", marginTop: 16, display: "block" }}>
@@ -521,15 +717,24 @@ function MonetizationTab() {
           </label>
           <select value={form.customer_fee_model ?? "NONE"} onChange={e => setForm({ ...form, customer_fee_model: e.target.value })}
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
-            {CUSTOMER_FEE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+            {CUSTOMER_FEE_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           {(form.customer_fee_model === "PERCENTAGE" || form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") && (
-            <Input placeholder="Customer platform fee %" value={String(form.customer_fee_percentage ?? "")}
-              onChange={v => setForm({ ...form, customer_fee_percentage: v })} />
+            <>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
+                Added on top of the provider&apos;s service price. The customer pays this inclusive total to the provider, and the same charge is recovered from provider usage credits at completion.
+              </p>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Customer charge (%)</label>
+              <Input placeholder="e.g. 10" value={String(form.customer_fee_percentage ?? "")}
+                onChange={v => setForm({ ...form, customer_fee_percentage: v })} />
+            </>
           )}
           {form.customer_fee_model === "FIXED" && (
-            <Input placeholder="Fixed fee (₹)" value={form.customer_fee_fixed_amount_minor != null ? String(form.customer_fee_fixed_amount_minor / 100) : ""}
-              onChange={v => setForm({ ...form, customer_fee_fixed_amount_minor: Math.round(Number(v) * 100) })} />
+            <>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Fixed customer charge (₹)</label>
+              <Input placeholder="e.g. 50" value={form.customer_fee_fixed_amount_minor != null ? String(form.customer_fee_fixed_amount_minor / 100) : ""}
+                onChange={v => setForm({ ...form, customer_fee_fixed_amount_minor: v === "" ? null : Math.round(Number(v) * 100) })} />
+            </>
           )}
           {form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX" && (
             <div style={{ display: "flex", gap: 8 }}>
@@ -537,6 +742,83 @@ function MonetizationTab() {
                 onChange={v => setForm({ ...form, customer_fee_min_minor: Math.round(Number(v) * 100) })} />
               <Input placeholder="Max fee (₹)" value={form.customer_fee_max_minor != null ? String(form.customer_fee_max_minor / 100) : ""}
                 onChange={v => setForm({ ...form, customer_fee_max_minor: Math.round(Number(v) * 100) })} />
+            </div>
+          )}
+
+          {previewResult && (
+            <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
+              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700 }}>Combined completion impact</p>
+              <PreviewRow label="Provider service price" value={`₹${previewAmount}`} />
+              <PreviewRow label="Customer charge added" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
+              <PreviewRow label="Customer sees and pays" value={`₹${fmt(previewResult.total_payable)}`} strong />
+              <PreviewRow label="Provider-side deduction" value={units(previewResult.provider_charge_credit_units as string)} />
+              <PreviewRow label="Customer-charge recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />
+              <PreviewRow label="Total credits deducted when job completes" value={units(previewResult.total_credit_deduction as string)} strong />
+            </div>
+          )}
+
+          {(
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+              <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700 }}>Job Type charge rules</p>
+              <p style={{ margin: "0 0 10px", fontSize: 11, color: "var(--text-tertiary)" }}>
+                Repair and fixed-price jobs can inherit the default policy. Consultation can use a fixed credit price charged when the consultation is completed. Save the base draft first; rules are versioned and publish with it.
+              </p>
+              {!draft?.id ? (
+                <div style={{ padding: 10, borderRadius: 8, background: "var(--surface-sunken)", fontSize: 11, color: "var(--text-secondary)" }}>
+                  Save Draft to enable Job Type rules.
+                </div>
+              ) : (
+                <>
+                  <select value={ruleJobTypeId} onChange={e => setRuleJobTypeId(e.target.value)}
+                    disabled={jobTypesApi.loading || !!jobTypesApi.error}
+                    style={{ width: "100%", padding: "7px 9px", marginBottom: 8 }}>
+                    <option value="">
+                      {jobTypesApi.loading ? "Loading Job Types…" : jobTypesApi.error ? "Could not load Job Types" : (jobTypesApi.data?.items ?? []).filter((jt: CatalogJobType) => jt.runtime_supported).length === 0 ? "No execution-enabled Job Types" : "Select Job Type"}
+                    </option>
+                    {(jobTypesApi.data?.items ?? []).filter((jt: CatalogJobType) => jt.runtime_supported).map((jt: CatalogJobType) => (
+                      <option key={jt.id} value={jt.id}>{jt.label} · {jt.key}</option>
+                    ))}
+                  </select>
+                  {jobTypesApi.error ? (
+                    <p style={{ margin: "-2px 0 8px", fontSize: 11, color: "var(--danger-text)" }}>
+                      {jobTypesApi.error}
+                    </p>
+                  ) : null}
+                  <Input
+                    placeholder={jobTypesApi.data?.items?.find((jt: CatalogJobType) => jt.id === ruleJobTypeId)?.key === "consultation"
+                      ? "Consultation credits deducted when consultation is done"
+                      : "Fixed credits deducted when job is completed (blank uses default)"}
+                    value={ruleCredits}
+                    onChange={setRuleCredits}
+                  />
+                  <div style={{ display: "flex", gap: 16, margin: "10px 0", flexWrap: "wrap", fontSize: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input type="checkbox" checked={ruleProviderEnabled} onChange={e => setRuleProviderEnabled(e.target.checked)} />
+                      Apply provider deduction
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input type="checkbox" checked={ruleCustomerEnabled} onChange={e => setRuleCustomerEnabled(e.target.checked)} />
+                      Apply customer charge
+                    </label>
+                  </div>
+                  <Btn variant="secondary" size="sm" disabled={!ruleJobTypeId || saveRuleAction.loading} onClick={saveJobTypeRule}>
+                    {saveRuleAction.loading ? "Saving…" : "Add / update rule"}
+                  </Btn>
+                  {(draftRulesApi.data?.items ?? []).length > 0 && (
+                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(draftRulesApi.data?.items ?? []).map((rule: MonetizationJobTypeRule) => {
+                        const jt = jobTypesApi.data?.items?.find((item: CatalogJobType) => item.id === rule.job_type_id);
+                        return (
+                          <div key={rule.job_type_id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
+                            <span><strong>{jt?.label ?? rule.job_type_id}</strong><br />Provider {rule.provider_charge_enabled ? (rule.provider_charge_model === "FIXED_CREDITS" ? `${rule.provider_charge_credit_units} fixed credits` : "inherits default") : "disabled"} · Trigger {rule.provider_chargeable_event === "consultation_completed" ? "consultation completed" : "job completed"} · Customer {rule.customer_charge_enabled ? "enabled" : "disabled"}</span>
+                            <Badge variant={rule.status === "active" ? "success" : "muted"}>{rule.status}</Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
           {errors.length > 0 && errors.map(e => <p key={e} style={{ fontSize: 11, color: "var(--danger-text)" }}>{e}</p>)}
@@ -962,246 +1244,79 @@ function PreviewRow({ label, value, strong }: { label: string; value: string; st
   );
 }
 
-// ── Direct Customer Payments ─────────────────────────────────────────────────
-
-function DirectPaymentsTab() {
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<string | null>(null);
-  const summary = useApi(useCallback(() => homeServicesFinanceApi.getDirectPaymentsSummary(), []));
-  const payments = useApi(useCallback(
-    () => homeServicesFinanceApi.listDirectPayments({ q: q || undefined, page, pageSize: 20 }),
-    [q, page]));
-  const s = summary.data as Record<string, unknown> | undefined;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Total Attempts" value={(s?.total_attempts as number) ?? 0} />
-        <SummaryCard label="Confirmed" value={(s?.confirmed as number) ?? 0} />
-        <SummaryCard label="Pending Confirmation" value={(s?.pending_confirmation as number) ?? 0} tone="warning" />
-        <SummaryCard label="Disputed" value={(s?.disputed as number) ?? 0} tone="danger" />
-        <SummaryCard label="Provider-Collected Total" value={money((s?.provider_collected_total as string) ?? 0)} />
-        <SummaryCard label="Customer Platform Charges Recorded" value={money((s?.customer_platform_charges_recorded as string) ?? 0)} />
-      </div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        The customer pays the provider directly. ServiceOS never collects this payment or holds provider earnings.
-      </p>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search invoice or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
-      <DataTable
-        loading={payments.loading}
-        rows={(payments.data?.items ?? []) as unknown as Record<string, unknown>[]}
-        emptyText="No direct customer payments recorded yet."
-        onRowClick={row => setSelected(String((row as Record<string, unknown>).id))}
-        columns={[
-          { key: "invoice_number", label: "Invoice #" },
-          { key: "tenant_name", label: "Provider" },
-          { key: "provider_collected_amount", label: "Provider-Collected", render: v => money(v as string) },
-          { key: "customer_platform_charge", label: "Platform Charge", render: v => money(v as string) },
-          { key: "payment_mode", label: "Method" },
-          { key: "payment_status", label: "Status", render: v => <Badge variant={v === "verified" || v === "collected" ? "success" : v === "disputed" || v === "failed" ? "danger" : "default"}>{String(v)}</Badge> },
-          { key: "customer_confirmed", label: "Confirmed", render: v => v ? <Badge variant="success">Yes</Badge> : <Badge variant="warning">Pending</Badge> },
-          { key: "created_at", label: "Recorded", render: v => dt(v as string) },
-        ]}
-      />
-      <Pagination page={page} total={payments.data?.total ?? 0} pageSize={20} onPage={setPage} />
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Direct Customer Payment Detail" size="lg">
-        {selected && <DirectPaymentDetail paymentId={selected} />}
-      </Modal>
-    </div>
-  );
-}
-function DirectPaymentDetail({ paymentId }: { paymentId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getDirectPaymentDetail(paymentId), [paymentId]));
-  if (detail.loading) return <Skeleton height={160} />;
-  const d = detail.data as Record<string, unknown> | undefined;
-  const recovery = d?.customer_platform_charge_recovery as { status: string; credits: string | null; posted_at: string | null } | undefined;
-  const completion = d?.provider_completion_charge as { status: string; credits: string | null; posted_at: string | null } | undefined;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <KeyValueGrid data={detail.data} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <ChargeLedgerCard title="CUSTOMER_PLATFORM_CHARGE_RECOVERY" entry={recovery} />
-        <ChargeLedgerCard title="PROVIDER_COMPLETION_CHARGE" entry={completion} />
-      </div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-        Two independent ledger entries, never merged into one commission record. ServiceOS collected
-        ₹0 from the customer directly — this payment was recorded by the provider.
-      </p>
-    </div>
-  );
-}
-function ChargeLedgerCard({ title, entry }: { title: string; entry?: { status: string; credits: string | null; posted_at: string | null } }) {
-  const posted = entry?.status === "posted" || entry?.status === "recovered";
-  return (
-    <Card padding={14}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.03em", color: "var(--text-tertiary)", marginBottom: 8 }}>{title}</div>
-      <Badge variant={posted ? "success" : "default"}>{entry?.status ?? "not_calculated"}</Badge>
-      {entry?.credits && <div style={{ fontSize: 18, fontWeight: 800, marginTop: 8 }}>{entry.credits} credits</div>}
-      {entry?.posted_at && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>Posted {dt(entry.posted_at)}</div>}
-    </Card>
-  );
-}
-
 // ── Provider Charges ─────────────────────────────────────────────────────────
 
 function ProviderChargesTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
   const [chargeModel, setChargeModel] = useState<string | undefined>(undefined);
+  const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const charges = useApi(useCallback(
-    () => homeServicesFinanceApi.listProviderCharges({ chargeModel, page, pageSize: 20 }),
-    [chargeModel, page]));
-  const filtered = (charges.data?.items ?? []).filter(r =>
-    !q || JSON.stringify(r).toLowerCase().includes(q.toLowerCase()));
+    () => homeServicesFinanceApi.listProviderCharges({ q: query || undefined, chargeModel, status: status || undefined, page, pageSize: 20 }),
+    [query, chargeModel, status, page]), [query, chargeModel, status, page]);
+  const usageStatusOptions = [{ value: "posted", label: "Posted usage credits" }];
+  const legacyStatusOptions = [
+    { value: "pending", label: "Legacy commission pending" },
+    { value: "calculated", label: "Legacy commission calculated" },
+    { value: "deducted", label: "Legacy commission deducted" },
+    { value: "insufficient_credit", label: "Insufficient legacy wallet credit" },
+    { value: "failed", label: "Legacy commission failed" },
+    { value: "reversed", label: "Legacy commission reversed" },
+    { value: "not_required", label: "Not required" },
+  ];
+  const statusOptions = chargeModel === "usage_credit" ? usageStatusOptions
+    : chargeModel === "commission" ? legacyStatusOptions : [...usageStatusOptions, ...legacyStatusOptions];
+
+  function chooseModel(model: string | undefined) {
+    setChargeModel(model);
+    setStatus("");
+    setPage(1);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search tenant or job..." value={q} onChange={setQ} /></div>
-        <Btn variant={chargeModel === undefined ? "primary" : "ghost"} onClick={() => setChargeModel(undefined)}>All</Btn>
-        <Btn variant={chargeModel === "usage_credit" ? "primary" : "ghost"} onClick={() => setChargeModel("usage_credit")}>Usage Credit</Btn>
-        <Btn variant={chargeModel === "commission" ? "primary" : "ghost"} onClick={() => setChargeModel("commission")}>Commission</Btn>
+      <Card padding={14} style={{ borderColor: "var(--border-strong, var(--border))" }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>One live Home Services charge ledger</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+          New provider charges are posted only to the usage-credit ledger at job completion. Legacy invoice-commission
+          records remain searchable for audit, but the invoice path can no longer debit Home Services providers again.
+        </div>
+      </Card>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search tenant or job..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={statusOptions} />
+        <Btn variant={chargeModel === undefined ? "primary" : "ghost"} onClick={() => chooseModel(undefined)}>All records</Btn>
+        <Btn variant={chargeModel === "usage_credit" ? "primary" : "ghost"} onClick={() => chooseModel("usage_credit")}>Usage Credit</Btn>
+        <Btn variant={chargeModel === "commission" ? "primary" : "ghost"} onClick={() => chooseModel("commission")}>Legacy Invoice Commission</Btn>
       </div>
+      <QueryError message={charges.error} onRetry={charges.refetch} />
       <DataTable
         loading={charges.loading}
-        rows={filtered as unknown as Record<string, unknown>[]}
+        rows={(charges.data?.items ?? []) as unknown as Record<string, unknown>[]}
         emptyText="No provider charges found for this filter."
         onRowClick={row => setSelected(String((row as Record<string, unknown>).charge_ref))}
         columns={[
           { key: "charge_ref", label: "Charge Ref", render: v => <span style={{ fontFamily: "monospace", fontSize: 12 }}>{String(v).split(":")[1]?.slice(0, 8)}</span> },
-          { key: "charge_model", label: "Model", render: v => <Badge variant={v === "commission" ? "info" : "default"}>{String(v)}</Badge> },
+          { key: "charge_model", label: "Record source", render: v => <Badge variant={v === "commission" ? "info" : "default"}>{v === "commission" ? "legacy invoice commission" : "usage-credit ledger"}</Badge> },
           { key: "tenant_name", label: "Tenant" },
           { key: "job_id", label: "Job", render: v => v ? String(v).slice(0, 8) : "—" },
-          { key: "amount", label: "Amount", render: v => money(v as string) },
+          { key: "amount", label: "Charge", render: (v, row) => (row as Record<string, unknown>).charge_model === "commission" ? money(v as string) : units(v as string) },
           { key: "status", label: "Status", render: v => <Badge variant={v === "posted" || v === "deducted" ? "success" : v === "failed" ? "danger" : "default"}>{String(v)}</Badge> },
           { key: "triggered_at", label: "Triggered", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={charges.data?.total ?? 0} pageSize={20} onPage={setPage} />
+      <Pagination page={page} total={charges.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Provider Charge Detail" size="lg">
         {selected && <ProviderChargeDetail chargeRef={selected} />}
       </Modal>
 
-      <CategoryCommissionSection />
     </div>
   );
 }
-
-// Replaced the old per-service flat "Provider Completion Charge Config"
-// table (2026-08-05, explicit user request: "we dont want this per service
-// system... we are charging percentage on category and want monetization,
-// map this with price that tenant will set and customer will see"). The
-// provider is now charged a % of what the tenant actually collected from
-// the customer for the job (job.completion_data.collected_amount), at a
-// optional override set PER CATEGORY here -- reusing the existing, already-real
-// ServiceCategory.commission_pct field/API (previously only reachable via
-// the other, invoice-based verticals' Category Rates page). This only
-// takes effect once the Monetization tab's policy has provider_model =
-// PERCENTAGE_COMMISSION published; see usage_credit_deduction
-// .resolve_commission_credits for the exact precedence (category rate,
-// falling back to the Monetization tab's vertical-wide rate).
-function CategoryCommissionSection() {
-  const rates = useApi(useCallback(() => catalogApi.listCategoryCommissionRates(), []));
-  // This API's own "effective_pct" falls back to a generic platform-wide
-  // default that has nothing to do with Home Services -- the real fallback
-  // used by usage_credit_deduction.resolve_commission_credits at job
-  // completion is the Monetization tab's own provider_percentage. Fetched
-  // separately so "Currently applies" shows the number that's actually
-  // charged, not a different, unrelated default.
-  const policyApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getCurrent(), []));
-  const policy = policyApi.data as MonetizationPolicy | null;
-  const policyIsLivePercentage = policy?.provider_model === "PERCENTAGE_COMMISSION";
-  const policyDefaultPct = policy?.provider_percentage != null ? Number(policy.provider_percentage) : null;
-
-  const [editing, setEditing] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const hsRates = (rates.data ?? []).filter(c => c.vertical_type === "home_services" && c.is_active);
-
-  async function save(categoryId: string) {
-    const raw = editing[categoryId];
-    const value = raw.trim() === "" ? null : Number(raw);
-    if (value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) {
-      setErr("Commission % must be between 0 and 100 (or blank to use the default).");
-      return;
-    }
-    setErr(null);
-    setSaving(categoryId);
-    try {
-      await catalogApi.setCategoryCommissionRate(categoryId, value);
-      await rates.refetch();
-      setEditing(e => { const n = { ...e }; delete n[categoryId]; return n; });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to update commission rate.");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  return (
-    <Card padding={16}>
-      <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>Category Commission Overrides</h3>
-      <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-        Provider commission, as a % of the price the tenant collects from the customer for a completed job —
-        optional per-category overrides only. A category left blank uses the Monetization tab&apos;s published vertical default
-        {policyDefaultPct != null ? ` (currently ${policyDefaultPct}%)` : " (none set yet)"}.
-      </p>
-      {!policyIsLivePercentage && (
-        <p style={{ fontSize: 12, color: "var(--warning-text, #b45309)", margin: "0 0 10px" }}>
-          Not live yet — Monetization&apos;s published policy is set to &quot;{fmt(policy?.provider_model)}&quot;,
-          not Percentage Commission, so these rates aren&apos;t charged. Publish Percentage Commission in the
-          Monetization tab to activate them.
-        </p>
-      )}
-      {err && <p style={{ fontSize: 12, color: "var(--danger-text)", margin: "0 0 10px" }}>{err}</p>}
-      <DataTable
-        loading={rates.loading}
-        rows={hsRates as unknown as Record<string, unknown>[]}
-        emptyText="No Home Services categories found."
-        columns={[
-          { key: "name", label: "Category" },
-          {
-            key: "commission_pct", label: "Commission %",
-            render: (v, row) => {
-              const categoryId = String((row as Record<string, unknown>).id);
-              const current = editing[categoryId] ?? (v == null ? "" : String(v));
-              const dirty = editing[categoryId] !== undefined && editing[categoryId] !== (v == null ? "" : String(v));
-              return (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="number" min={0} max={100} step="0.01" placeholder="default" value={current}
-                    onChange={e => setEditing(prev => ({ ...prev, [categoryId]: e.target.value }))}
-                    style={{ width: 80, padding: "4px 6px", fontSize: 12, background: "var(--bg-secondary)",
-                             border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)" }}
-                  />
-                  {dirty && (
-                    <Btn variant="primary" onClick={() => save(categoryId)} disabled={saving === categoryId}>
-                      {saving === categoryId ? "Saving…" : "Save"}
-                    </Btn>
-                  )}
-                </div>
-              );
-            },
-          },
-          {
-            key: "effective_pct", label: "Currently applies",
-            render: (_v, row) => {
-              const own = (row as Record<string, unknown>).commission_pct as number | null;
-              const pct = own ?? policyDefaultPct;
-              if (pct == null) return "—";
-              return `${pct}%${own == null ? " (default)" : ""}`;
-            },
-          },
-        ]}
-      />
-    </Card>
-  );
-}
 function ProviderChargeDetail({ chargeRef }: { chargeRef: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getProviderChargeDetail(chargeRef), [chargeRef]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getProviderChargeDetail(chargeRef), [chargeRef]), [chargeRef]);
   if (detail.loading) return <Skeleton height={120} />;
   return <KeyValueGrid data={detail.data} />;
 }
@@ -1232,45 +1347,49 @@ const CREDIT_SUBTABS = ["accounts", "topups", "packages", "ledger", "adjustments
 type CreditSubTab = typeof CREDIT_SUBTABS[number];
 
 function CreditsTab({ params }: { params: ReturnType<typeof useSearchParams> }) {
+  const router = useRouter();
   const requestedSubTab = params.get("credits_tab") as CreditSubTab | null;
-  const [subTab, setSubTab] = useState<CreditSubTab>(
-    requestedSubTab && CREDIT_SUBTABS.includes(requestedSubTab) ? requestedSubTab : "accounts",
-  );
+  const subTab: CreditSubTab = requestedSubTab && CREDIT_SUBTABS.includes(requestedSubTab)
+    ? requestedSubTab
+    : "accounts";
   const tenantId = params.get("tenant_id") || undefined;
   const jobId = params.get("job_id") || undefined;
   const [selectedTopup, setSelectedTopup] = useState<string | null>(null);
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState<string | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Record<string, unknown> | null>(null);
 
-  const accountsSummary = useApi(useCallback(
-    () => homeServicesFinanceApi.listCreditAccounts({ pageSize: 1000 }), []));
-  const topupsAll = useApi(useCallback(() => homeServicesFinanceApi.listTopups({ pageSize: 1000 }), []));
+  const summary = useApi(useCallback(() => homeServicesFinanceApi.getCreditsSummary(), []));
+  const totals = (summary.data ?? {}) as Record<string, unknown>;
 
-  const accts = (accountsSummary.data?.items ?? []) as unknown as Record<string, unknown>[];
-  const lowBalanceCount = accts.filter(a => a.low_balance).length;
-  const tops = (topupsAll.data?.items ?? []) as unknown as Record<string, unknown>[];
-  const pendingTopups = tops.filter(t => !["credited", "failed", "cancelled", "refunded"].includes(String(t.payment_status))).length;
-  const failedTopups = tops.filter(t => t.payment_status === "failed").length;
-  const creditsPurchased = tops.reduce((s, t) => s + Number(t.credits_purchased ?? 0), 0);
+  const setSubTab = useCallback((nextTab: CreditSubTab) => {
+    const next = new URLSearchParams(params.toString());
+    next.set("tab", "credits");
+    next.set("credits_tab", nextTab);
+    // A job is a ledger-only scope. Do not carry an invisible job filter
+    // into another operational view.
+    if (nextTab !== "ledger") next.delete("job_id");
+    router.replace(`/admin/home-services/finance?${next.toString()}`, { scroll: false });
+  }, [params, router]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>Credit units are not a cash wallet.</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Providers" value={accts.length} />
-        <SummaryCard label="Low-Balance Providers" value={lowBalanceCount} tone={lowBalanceCount > 0 ? "warning" : undefined} onClick={() => setSubTab("accounts")} />
-        <SummaryCard label="Credits Purchased" value={units(creditsPurchased)} onClick={() => setSubTab("topups")} />
-        <SummaryCard label="Pending Top-ups" value={pendingTopups} tone={pendingTopups > 0 ? "warning" : undefined} onClick={() => setSubTab("topups")} />
-        <SummaryCard label="Failed Top-ups" value={failedTopups} tone={failedTopups > 0 ? "danger" : undefined} onClick={() => setSubTab("topups")} />
+        <SummaryCard label="Providers" value={Number(totals.providers ?? 0)} />
+        <SummaryCard label="Low-Balance Providers" value={Number(totals.low_balance_providers ?? 0)} tone={Number(totals.low_balance_providers ?? 0) > 0 ? "warning" : undefined} onClick={() => setSubTab("accounts")} />
+        <SummaryCard label="Credits Purchased" value={units(totals.credits_purchased)} onClick={() => setSubTab("topups")} />
+        <SummaryCard label="Pending Top-ups" value={Number(totals.pending_topups ?? 0)} tone={Number(totals.pending_topups ?? 0) > 0 ? "warning" : undefined} onClick={() => setSubTab("topups")} />
+        <SummaryCard label="Failed Top-ups" value={Number(totals.failed_topups ?? 0)} tone={Number(totals.failed_topups ?? 0) > 0 ? "danger" : undefined} onClick={() => setSubTab("topups")} />
       </div>
 
-      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)" }}>
+      <div className="hs-finance-credit-tabs" role="tablist" aria-label="Credits and top-ups sections">
         {([
           ["accounts", "Credit Accounts"], ["topups", "Top-up Orders"], ["packages", "Top-up Plans"],
           ["ledger", "Credit Ledger"], ["adjustments", "Adjustments"],
         ] as [CreditSubTab, string][]).map(([key, label]) => (
-          <button key={key} onClick={() => setSubTab(key)}
+          <button key={key} type="button" role="tab" aria-selected={subTab === key}
+            onClick={() => setSubTab(key)}
             style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, background: "none", border: "none",
               borderBottom: subTab === key ? "2px solid var(--brand)" : "2px solid transparent",
               color: subTab === key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer" }}>
@@ -1283,10 +1402,10 @@ function CreditsTab({ params }: { params: ReturnType<typeof useSearchParams> }) 
       {subTab === "topups" && <TopupOrdersView onSelect={setSelectedTopup} />}
       {subTab === "packages" && <TopupPackagesPanel />}
       {subTab === "ledger" && <CreditLedgerView onSelect={setSelectedLedgerEntry} tenantId={tenantId} jobId={jobId} />}
-      {subTab === "adjustments" && <AdjustmentsView onCreated={() => accountsSummary.refetch()} />}
+      {subTab === "adjustments" && <AdjustmentsView onCreated={() => summary.refetch()} />}
 
       <Modal open={!!selectedTopup} onClose={() => setSelectedTopup(null)} title="Top-up Order Detail" size="lg">
-        {selectedTopup && <TopupDetail topupId={selectedTopup} onChanged={() => topupsAll.refetch()} />}
+        {selectedTopup && <TopupDetail topupId={selectedTopup} onChanged={() => summary.refetch()} />}
       </Modal>
       <Modal open={!!selectedLedgerEntry} onClose={() => setSelectedLedgerEntry(null)} title="Ledger Entry Detail" size="lg">
         {selectedLedgerEntry && <LedgerEntryDetail entryId={selectedLedgerEntry} />}
@@ -1308,18 +1427,25 @@ function creditAccountStatus(a: Record<string, unknown>): { label: string; varia
 
 function CreditAccountsView({ onSelect }: { onSelect: (a: Record<string, unknown>) => void }) {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
   const [lowOnly, setLowOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const accounts = useApi(useCallback(
-    () => homeServicesFinanceApi.listCreditAccounts({ q: q || undefined, lowBalanceOnly: lowOnly, pageSize: 100 }),
-    [q, lowOnly]));
+    () => homeServicesFinanceApi.listCreditAccounts({ q: query || undefined, lowBalanceOnly: lowOnly, page, pageSize }),
+    [query, lowOnly, page, pageSize]), [query, lowOnly, page, pageSize]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 10 }}>
-        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search provider or account ID..." value={q} onChange={setQ} /></div>
-        <Btn variant={lowOnly ? "primary" : "ghost"} onClick={() => setLowOnly(v => !v)}>Low balance only</Btn>
+      <div className="hs-finance-filterbar">
+        <div style={{ flex: "1 1 300px", minWidth: 260 }}><Input label="Search" placeholder="Provider or account ID..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 125 }}><Select label="Rows" value={String(pageSize)} onChange={v => { setPageSize(Number(v)); setPage(1); }} options={[
+          { value: "25", label: "25 rows" }, { value: "50", label: "50 rows" }, { value: "100", label: "100 rows" },
+        ]} /></div>
+        <div style={{ alignSelf: "flex-end" }}><Btn variant={lowOnly ? "primary" : "ghost"} onClick={() => { setLowOnly(v => !v); setPage(1); }}>Low balance only</Btn></div>
       </div>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>Scoped to Home Services. Business Vertical is fixed and cannot be changed here.</p>
+      <QueryError message={accounts.error} onRetry={accounts.refetch} />
       <DataTable
         loading={accounts.loading}
         rows={(accounts.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1328,8 +1454,6 @@ function CreditAccountsView({ onSelect }: { onSelect: (a: Record<string, unknown
         columns={[
           { key: "tenant_name", label: "Provider" },
           { key: "credit_balance", label: "Available Credits", render: v => units(v) },
-          { key: "reserved_credits", label: "Reserved Credits", render: () => units(0) },
-          { key: "pending_recoveries", label: "Pending Recoveries", render: () => "—" },
           { key: "low_balance_threshold", label: "Low-Balance Threshold", render: v => units(v) },
           { key: "low_balance", label: "Credit Status", render: (_v, row) => {
             const s = creditAccountStatus(row as Record<string, unknown>);
@@ -1337,6 +1461,7 @@ function CreditAccountsView({ onSelect }: { onSelect: (a: Record<string, unknown
           } },
         ]}
       />
+      <Pagination page={page} total={accounts.data?.total ?? 0} pageSize={pageSize} onPage={setPage} alwaysShow />
     </div>
   );
 }
@@ -1344,20 +1469,15 @@ function CreditAccountsView({ onSelect }: { onSelect: (a: Record<string, unknown
 function CreditAccountDetail({ account }: { account: Record<string, unknown> }) {
   const ledger = useApi(useCallback(
     () => homeServicesFinanceApi.listCreditLedger({ tenantId: String(account.tenant_id), pageSize: 20 }),
-    [account.tenant_id]));
+    [account.tenant_id]), [account.tenant_id]);
   const s = creditAccountStatus(account);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         <SummaryCard label="Available Credits" value={units(account.credit_balance)} />
-        <SummaryCard label="Reserved Credits" value={units(0)} />
         <SummaryCard label="Low-Balance Threshold" value={units(account.low_balance_threshold)} />
         <SummaryCard label="Credit Status" value={s.label} tone={s.variant === "danger" || s.variant === "warning" ? s.variant : undefined} />
       </div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        Reservations are not part of the canonical Home Services deduction flow today -- charges post directly
-        (idempotent per job/event), so no Reserved-credit workflow applies here yet.
-      </p>
       <div>
         <h4 style={{ fontSize: 12, fontWeight: 700, margin: "0 0 8px", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Recent ledger activity</h4>
         <DataTable
@@ -1380,15 +1500,41 @@ function CreditAccountDetail({ account }: { account: Record<string, unknown> }) 
 
 function TopupOrdersView({ onSelect }: { onSelect: (id: string) => void }) {
   const [status, setStatus] = useState<string | undefined>(undefined);
-  const topups = useApi(useCallback(() => homeServicesFinanceApi.listTopups({ paymentStatus: status, pageSize: 100 }), [status]));
+  const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const topups = useApi(useCallback(() => homeServicesFinanceApi.listTopups({
+    q: query || undefined, paymentStatus: status,
+    dateFrom: dateFrom || undefined, dateTo: dateTo || undefined,
+    page, pageSize,
+  }), [query, status, dateFrom, dateTo, page, pageSize]), [query, status, dateFrom, dateTo, page, pageSize]);
+  const hasFilters = Boolean(q || status || dateFrom || dateTo);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {[undefined, "initiated", "paid_pending_credit", "credited", "failed", "refunded"].map(s => (
-          <Btn key={s ?? "all"} variant={status === s ? "primary" : "ghost"} onClick={() => setStatus(s)}>{s ?? "All"}</Btn>
-        ))}
+      <div className="hs-finance-filterbar">
+        <div style={{ minWidth: 260, flex: "1 1 300px" }}><Input label="Search" placeholder="Order, provider or gateway reference..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 190 }}><Select label="Payment status" value={status ?? ""} onChange={v => { setStatus(v || undefined); setPage(1); }} options={[
+          { value: "", label: "All statuses" },
+          { value: "initiated", label: "Initiated" },
+          { value: "paid_pending_credit", label: "Paid, credit pending" },
+          { value: "credited", label: "Credited" },
+          { value: "failed", label: "Failed" },
+          { value: "cancelled", label: "Cancelled" },
+          { value: "refunded", label: "Refunded" },
+          { value: "partially_refunded", label: "Partially refunded" },
+        ]} /></div>
+        <div style={{ minWidth: 155 }}><Input label="From" type="date" value={dateFrom} onChange={v => { setDateFrom(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 155 }}><Input label="To" type="date" value={dateTo} onChange={v => { setDateTo(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 125 }}><Select label="Rows" value={String(pageSize)} onChange={v => { setPageSize(Number(v)); setPage(1); }} options={[
+          { value: "25", label: "25 rows" }, { value: "50", label: "50 rows" }, { value: "100", label: "100 rows" },
+        ]} /></div>
+        {hasFilters && <div style={{ alignSelf: "flex-end" }}><Btn variant="ghost" onClick={() => { setQ(""); setStatus(undefined); setDateFrom(""); setDateTo(""); setPage(1); }}>Clear filters</Btn></div>}
       </div>
+      <QueryError message={topups.error} onRetry={topups.refetch} />
       <DataTable
         loading={topups.loading}
         rows={(topups.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1405,11 +1551,12 @@ function TopupOrdersView({ onSelect }: { onSelect: (id: string) => void }) {
           { key: "created_at", label: "Created", render: v => dt(v as string) },
         ]}
       />
+      <Pagination page={page} total={topups.data?.total ?? 0} pageSize={pageSize} onPage={setPage} alwaysShow />
     </div>
   );
 }
 function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () => void }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getTopupDetail(topupId), [topupId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getTopupDetail(topupId), [topupId]), [topupId]);
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [showRefund, setShowRefund] = useState(false);
@@ -1418,7 +1565,8 @@ function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () =>
 
   if (detail.loading) return <Skeleton height={120} />;
   const d = detail.data as Record<string, unknown> | undefined;
-  const status = d?.payment_status as string | undefined;
+  const topup = (d?.topup ?? d) as Record<string, unknown> | undefined;
+  const status = topup?.payment_status as string | undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1434,7 +1582,7 @@ function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () =>
             Retry Credit Posting
           </Btn>
         )}
-        {status === "credited" && (
+        {(status === "credited" || status === "partially_refunded") && (
           <Btn variant="ghost" onClick={() => setShowRefund(v => !v)}>Refund</Btn>
         )}
       </div>
@@ -1443,7 +1591,8 @@ function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () =>
           <Input placeholder="Amount" value={refundAmount} onChange={setRefundAmount} />
           <Input placeholder="Reason" value={refundReason} onChange={setRefundReason} />
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={refundAction.loading} disabled={!refundAmount.trim()}
+            <Btn variant="primary" loading={refundAction.loading}
+              disabled={!Number.isFinite(Number(refundAmount)) || Number(refundAmount) <= 0 || !refundReason.trim()}
               onClick={async () => {
                 if (await refundAction.execute(topupId, Number(refundAmount), refundReason)) {
                   setShowRefund(false); setRefundAmount(""); setRefundReason(""); detail.refetch(); onChanged();
@@ -1463,6 +1612,7 @@ function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () =>
 
 const LEDGER_EVENT_TYPES = [
   "completed_job_deduction", "customer_platform_charge_recovery", "manual_credit_adjustment",
+  "topup_credit_granted", "topup_credit_refunded",
 ];
 
 function CreditLedgerView({ onSelect, tenantId, jobId }: {
@@ -1470,24 +1620,46 @@ function CreditLedgerView({ onSelect, tenantId, jobId }: {
   tenantId?: string;
   jobId?: string;
 }) {
+  const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
   const [eventType, setEventType] = useState<string | undefined>(undefined);
+  const [direction, setDirection] = useState<string | undefined>(undefined);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
   const ledger = useApi(useCallback(() => homeServicesFinanceApi.listCreditLedger({
-    tenantId, jobId, eventType, pageSize: 100,
-  }), [tenantId, jobId, eventType]));
+    tenantId, jobId, q: query || undefined, eventType, direction,
+    dateFrom: dateFrom || undefined, dateTo: dateTo || undefined,
+    page, pageSize,
+  }), [tenantId, jobId, query, eventType, direction, dateFrom, dateTo, page, pageSize]),
+    [tenantId, jobId, query, eventType, direction, dateFrom, dateTo, page, pageSize]);
+  const hasFilters = Boolean(q || eventType || direction || dateFrom || dateTo);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Btn variant={!eventType ? "primary" : "ghost"} onClick={() => setEventType(undefined)}>All</Btn>
-        {LEDGER_EVENT_TYPES.map(e => (
-          <Btn key={e} variant={eventType === e ? "primary" : "ghost"} onClick={() => setEventType(e)}>{e.toUpperCase()}</Btn>
-        ))}
+      <div className="hs-finance-filterbar">
+        <div style={{ minWidth: 260, flex: "1 1 300px" }}><Input label="Search" placeholder="Provider, entry, job or request reference..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 220 }}><Select label="Entry type" value={eventType ?? ""} onChange={v => { setEventType(v || undefined); setPage(1); }} options={[
+          { value: "", label: "All entry types" },
+          ...LEDGER_EVENT_TYPES.map(value => ({ value, label: ledgerEventLabel(value) })),
+        ]} /></div>
+        <div style={{ minWidth: 140 }}><Select label="Direction" value={direction ?? ""} onChange={v => { setDirection(v || undefined); setPage(1); }} options={[
+          { value: "", label: "All directions" }, { value: "credit", label: "Credit" }, { value: "debit", label: "Debit" },
+        ]} /></div>
+        <div style={{ minWidth: 155 }}><Input label="From" type="date" value={dateFrom} onChange={v => { setDateFrom(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 155 }}><Input label="To" type="date" value={dateTo} onChange={v => { setDateTo(v); setPage(1); }} /></div>
+        <div style={{ minWidth: 125 }}><Select label="Rows" value={String(pageSize)} onChange={v => { setPageSize(Number(v)); setPage(1); }} options={[
+          { value: "30", label: "30 rows" }, { value: "50", label: "50 rows" }, { value: "100", label: "100 rows" },
+        ]} /></div>
+        {hasFilters && <div style={{ alignSelf: "flex-end" }}><Btn variant="ghost" onClick={() => { setQ(""); setEventType(undefined); setDirection(undefined); setDateFrom(""); setDateTo(""); setPage(1); }}>Clear filters</Btn></div>}
       </div>
       {(tenantId || jobId) && (
         <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
           Showing exact ledger activity{tenantId ? ` for provider ${tenantId}` : ""}{jobId ? ` and job ${jobId}` : ""}.
         </p>
       )}
+      <QueryError message={ledger.error} onRetry={ledger.refetch} />
       <DataTable
         loading={ledger.loading}
         rows={(ledger.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1504,6 +1676,7 @@ function CreditLedgerView({ onSelect, tenantId, jobId }: {
           { key: "deduction_source", label: "Source", render: (v, row) => v ? String(v) : String((row as Record<string, unknown>).source_type ?? "—") },
         ]}
       />
+      <Pagination page={page} total={ledger.data?.total ?? 0} pageSize={pageSize} onPage={setPage} alwaysShow />
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
         The ledger is append-only. No code path exists to edit or delete a posted entry.
       </p>
@@ -1511,7 +1684,7 @@ function CreditLedgerView({ onSelect, tenantId, jobId }: {
   );
 }
 function LedgerEntryDetail({ entryId }: { entryId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getLedgerEntryDetail(entryId), [entryId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getLedgerEntryDetail(entryId), [entryId]), [entryId]);
   if (detail.loading) return <Skeleton height={140} />;
   return <KeyValueGrid data={detail.data} />;
 }
@@ -1525,18 +1698,33 @@ const ADJUSTMENT_REASONS = [
 
 function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
   const [tenantId, setTenantId] = useState("");
+  const [providerSearch, setProviderSearch] = useState("");
+  const providerQuery = useDebouncedValue(providerSearch);
   const [direction, setDirection] = useState<"credit" | "debit">("credit");
   const [creditUnits, setCreditUnits] = useState("");
   const [reasonCode, setReasonCode] = useState(ADJUSTMENT_REASONS[0]);
   const [detailedReason, setDetailedReason] = useState("");
+  const [supportingReference, setSupportingReference] = useState("");
+  const [ledgerPage, setLedgerPage] = useState(1);
   const action = useAction((body: Parameters<typeof homeServicesFinanceApi.createAdjustment>[0]) =>
     homeServicesFinanceApi.createAdjustment(body));
-  const ledger = useApi(useCallback(() => homeServicesFinanceApi.listCreditLedger({ eventType: "manual_credit_adjustment", pageSize: 50 }), []));
+  const providerResults = useApi(useCallback(() => homeServicesFinanceApi.listCreditAccounts({
+    q: providerQuery || undefined, page: 1, pageSize: 8,
+  }), [providerQuery]), [providerQuery]);
+  const ledger = useApi(useCallback(() => homeServicesFinanceApi.listCreditLedger({
+    eventType: "manual_credit_adjustment", page: ledgerPage, pageSize: 25,
+  }), [ledgerPage]), [ledgerPage]);
 
   async function submit() {
     if (!tenantId.trim() || !creditUnits.trim() || !detailedReason.trim()) return;
-    const r = await action.execute({ tenantId: tenantId.trim(), direction, creditUnits, reasonCode, detailedReason });
-    if (r) { setTenantId(""); setCreditUnits(""); setDetailedReason(""); ledger.refetch(); onCreated(); }
+    const r = await action.execute({
+      tenantId: tenantId.trim(), direction, creditUnits, reasonCode, detailedReason,
+      supportingReference: supportingReference.trim() || undefined,
+    });
+    if (r) {
+      setTenantId(""); setProviderSearch(""); setCreditUnits(""); setDetailedReason("");
+      setSupportingReference(""); setLedgerPage(1); ledger.refetch(); onCreated();
+    }
   }
 
   return (
@@ -1546,7 +1734,30 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
           Requires elevated permission. Creates an immutable ledger entry -- the balance is never edited directly.
         </p>
-        <Input placeholder="Provider (tenant ID)" value={tenantId} onChange={setTenantId} />
+        <div style={{ position: "relative" }}>
+          <Input label="Provider" placeholder="Search provider name or account ID..." value={providerSearch}
+            onChange={v => { setProviderSearch(v); setTenantId(""); }} />
+          {!!providerSearch.trim() && !tenantId && (
+            <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, marginTop: 4,
+              maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8,
+              background: "var(--surface)", boxShadow: "var(--shadow-md)" }}>
+              {providerResults.loading && <div style={{ padding: 10, fontSize: 12 }}>Searching…</div>}
+              {providerResults.error && <div style={{ padding: 10, fontSize: 12, color: "var(--danger-text)" }}>{providerResults.error}</div>}
+              {!providerResults.loading && !providerResults.error && (providerResults.data?.items ?? []).map((provider: Record<string, unknown>) => (
+                <button key={String(provider.tenant_id)} type="button"
+                  onClick={() => { setTenantId(String(provider.tenant_id)); setProviderSearch(String(provider.tenant_name ?? provider.tenant_id)); }}
+                  style={{ display: "flex", width: "100%", justifyContent: "space-between", gap: 10, padding: "9px 10px",
+                    border: 0, borderBottom: "1px solid var(--border-subtle)", background: "transparent",
+                    color: "var(--text-primary)", cursor: "pointer", textAlign: "left" }}>
+                  <span>{String(provider.tenant_name ?? "Unnamed provider")}</span>
+                  <span style={{ color: "var(--text-tertiary)", fontFamily: "monospace", fontSize: 11 }}>{String(provider.tenant_id).slice(0, 8)}</span>
+                </button>
+              ))}
+              {!providerResults.loading && !providerResults.error && (providerResults.data?.items ?? []).length === 0 &&
+                <div style={{ padding: 10, fontSize: 12, color: "var(--text-tertiary)" }}>No provider credit account found.</div>}
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 8, margin: "8px 0" }}>
           <Btn variant={direction === "credit" ? "primary" : "ghost"} onClick={() => setDirection("credit")}>Credit</Btn>
           <Btn variant={direction === "debit" ? "primary" : "ghost"} onClick={() => setDirection("debit")}>Debit</Btn>
@@ -1558,13 +1769,17 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
         </select>
         <textarea placeholder="Detailed reason" value={detailedReason} onChange={e => setDetailedReason(e.target.value)} rows={3}
           style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13, boxSizing: "border-box" }} />
+        <Input placeholder="Supporting reference (optional)" value={supportingReference} onChange={setSupportingReference} />
         {action.error && <p style={{ fontSize: 11, color: "var(--danger-text)", marginTop: 6 }}>{action.error}</p>}
-        <Btn variant="primary" onClick={submit} disabled={action.loading} style={{ marginTop: 10 }}>
+        <Btn variant="primary" onClick={submit}
+          disabled={action.loading || !tenantId || !Number.isFinite(Number(creditUnits)) || Number(creditUnits) <= 0 || detailedReason.trim().length < 3}
+          style={{ marginTop: 10 }}>
           {action.loading ? "Submitting…" : "Submit Adjustment"}
         </Btn>
       </Card>
       <div style={{ flex: "2 1 420px" }}>
         <h4 style={{ fontSize: 12, fontWeight: 700, margin: "0 0 8px", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Recent adjustments</h4>
+        <QueryError message={ledger.error} onRetry={ledger.refetch} />
         <DataTable
           loading={ledger.loading}
           rows={(ledger.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1577,6 +1792,7 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
             { key: "reason", label: "Detail" },
           ]}
         />
+        <Pagination page={ledgerPage} total={ledger.data?.total ?? 0} pageSize={25} onPage={setLedgerPage} alwaysShow />
       </div>
     </div>
   );
@@ -1586,12 +1802,14 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
 
 function SecurityDepositsTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApi(useCallback(() => homeServicesFinanceApi.getDepositsSummary(), []));
   const deposits = useApi(useCallback(
-    () => homeServicesFinanceApi.listDeposits({ q: q || undefined, page, pageSize: 20 }),
-    [q, page]));
+    () => homeServicesFinanceApi.listDeposits({ q: query || undefined, status: status || undefined, page, pageSize: 20 }),
+    [query, status, page]), [query, status, page]);
   const s = summary.data as Record<string, unknown> | undefined;
 
   return (
@@ -1604,7 +1822,17 @@ function SecurityDepositsTab() {
         <SummaryCard label="Refunded" value={(s?.refunded as number) ?? 0} />
         <SummaryCard label="Risk Cases" value={(s?.deposit_risk_cases as number) ?? 0} tone={(s?.deposit_risk_cases as number) > 0 ? "danger" : undefined} />
       </div>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search tenant..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search tenant..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
+          { value: "unpaid", label: "Unpaid" }, { value: "partially_paid", label: "Partially paid" },
+          { value: "pending_verification", label: "Pending verification" }, { value: "paid", label: "Paid" },
+          { value: "refund_requested", label: "Return requested" }, { value: "refunded", label: "Refunded" },
+          { value: "rejected", label: "Rejected" }, { value: "forfeited", label: "Forfeited" },
+          { value: "partially_adjusted", label: "Partially adjusted" },
+        ]} />
+      </div>
+      <QueryError message={deposits.error} onRetry={deposits.refetch} />
       <DataTable
         loading={deposits.loading}
         rows={(deposits.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1618,7 +1846,7 @@ function SecurityDepositsTab() {
           { key: "created_at", label: "Collected", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={deposits.data?.pagination?.total ?? 0} pageSize={20} onPage={setPage} />
+      <Pagination page={page} total={deposits.data?.pagination?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Security Deposit Detail" size="lg">
         {selected && <DepositDetail depositId={selected} onChanged={() => { deposits.refetch(); summary.refetch(); }} />}
       </Modal>
@@ -1628,7 +1856,7 @@ function SecurityDepositsTab() {
 type DepositActionKind = "approve" | "reject" | "record-offline" | "refund" | "adjust";
 
 function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged: () => void }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getDepositDetail(depositId), [depositId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getDepositDetail(depositId), [depositId]), [depositId]);
   const [openAction, setOpenAction] = useState<DepositActionKind | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
@@ -1649,7 +1877,8 @@ function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged:
 
   if (detail.loading) return <Skeleton height={160} />;
   const d = detail.data as Record<string, unknown> | undefined;
-  const status = d?.status as string | undefined;
+  const deposit = (d?.deposit ?? d) as Record<string, unknown> | undefined;
+  const status = deposit?.status as string | undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1658,20 +1887,22 @@ function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged:
         A deposit return is recorded here as a SECURITY_DEPOSIT_RETURN ledger entry — never a provider payout.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {status === "pending" && (
+        {(status === "pending" || status === "pending_verification") && (
           <>
             <Btn variant="primary" loading={approveAction.loading}
               onClick={async () => { if (await approveAction.execute(depositId, undefined)) afterSuccess(); }}>Approve</Btn>
             <Btn variant="ghost" onClick={() => setOpenAction("reject")}>Reject</Btn>
           </>
         )}
-        {(status === "unpaid" || status === "pending") && (
+        {(status === "unpaid" || status === "partially_paid") && (
           <Btn variant="secondary" onClick={() => setOpenAction("record-offline")}>Record Offline Payment</Btn>
         )}
         {(status === "paid" || status === "refund_requested") && (
           <Btn variant="ghost" onClick={() => setOpenAction("refund")}>Refund</Btn>
         )}
-        <Btn variant="ghost" onClick={() => setOpenAction("adjust")}>Adjust / Forfeit</Btn>
+        {status !== "refunded" && status !== "rejected" && (
+          <Btn variant="ghost" onClick={() => setOpenAction("adjust")}>Adjust / Forfeit</Btn>
+        )}
       </div>
 
       {openAction === "reject" && (
@@ -1713,10 +1944,11 @@ function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged:
       )}
       {openAction === "adjust" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8 }}>
-          <Input placeholder="Adjustment amount" value={amount} onChange={setAmount} />
+          <Input placeholder="Signed amount: positive adds, negative forfeits" value={amount} onChange={setAmount} />
           <Input placeholder="Reason" value={reason} onChange={setReason} />
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={adjustAction.loading} disabled={!amount.trim() || !reason.trim()}
+            <Btn variant="primary" loading={adjustAction.loading}
+              disabled={!Number.isFinite(Number(amount)) || Number(amount) === 0 || !reason.trim()}
               onClick={async () => { if (await adjustAction.execute(depositId, Number(amount), reason.trim())) afterSuccess(); }}>
               Confirm Adjustment
             </Btn>
@@ -1733,24 +1965,46 @@ function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged:
 
 function InvoicesTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [status, setStatus] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApi(useCallback(() => homeServicesFinanceApi.getInvoicesSummary(), []));
   const invoices = useApi(useCallback(
-    () => homeServicesFinanceApi.listInvoices({ q: q || undefined, page, pageSize: 20 }),
-    [q, page]));
+    () => homeServicesFinanceApi.listInvoices({
+      q: query || undefined, status: status || undefined,
+      payment_status: paymentStatus || undefined, page, pageSize: 20,
+    }),
+    [query, status, paymentStatus, page]), [query, status, paymentStatus, page]);
   const s = summary.data as Record<string, unknown> | undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
         <SummaryCard label="Issued" value={(s?.issued as number) ?? 0} />
-        <SummaryCard label="Paid" value={(s?.paid as number) ?? 0} />
-        <SummaryCard label="Outstanding" value={(s?.outstanding as number) ?? 0} tone="warning" />
-        <SummaryCard label="Overdue" value={(s?.overdue as number) ?? 0} tone="danger" />
+        <SummaryCard label="Payment Collected" value={(s?.collected as number) ?? 0} />
+        <SummaryCard label="Payment Verified" value={(s?.verified as number) ?? 0} />
+        <SummaryCard label="Payment Pending" value={(s?.pending as number) ?? 0} tone="warning" />
+        <SummaryCard label="Payment Failed" value={(s?.failed as number) ?? 0} tone="danger" />
         <SummaryCard label="Cancelled" value={(s?.cancelled as number) ?? 0} />
+        <SummaryCard label="Invoice Value" value={money((s?.total_value as string) ?? 0)} />
       </div>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search invoice #..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search invoice or tenant..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All invoice states" options={[
+          { value: "draft", label: "Draft" }, { value: "issued", label: "Issued" },
+          { value: "payment_pending", label: "Payment pending" }, { value: "payment_collected", label: "Payment collected" },
+          { value: "paid", label: "Paid" }, { value: "cancelled", label: "Cancelled" },
+          { value: "failed", label: "Failed" },
+        ]} />
+        <Select value={paymentStatus} onChange={v => { setPaymentStatus(v); setPage(1); }} placeholder="All payment states" options={[
+          { value: "pending", label: "Pending" }, { value: "collected", label: "Collected" },
+          { value: "verified", label: "Verified" }, { value: "failed", label: "Failed" },
+          { value: "disputed", label: "Disputed" }, { value: "not_required", label: "Not required" },
+        ]} />
+      </div>
+      <QueryError message={invoices.error} onRetry={invoices.refetch} />
       <DataTable
         loading={invoices.loading}
         rows={(invoices.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1760,12 +2014,12 @@ function InvoicesTab() {
           { key: "invoice_number", label: "Invoice #" },
           { key: "tenant_name", label: "Tenant" },
           { key: "total_amount", label: "Total", render: v => money(v as string) },
-          { key: "payment_status", label: "Payment", render: v => <Badge variant={v === "paid" ? "success" : v === "overdue" ? "danger" : "default"}>{String(v)}</Badge> },
+          { key: "payment_status", label: "Payment", render: v => <Badge variant={v === "verified" ? "success" : v === "failed" || v === "disputed" ? "danger" : v === "pending" || v === "collected" ? "warning" : "default"}>{String(v)}</Badge> },
           { key: "status", label: "Status", render: v => <Badge>{String(v)}</Badge> },
           { key: "issued_at", label: "Issued", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={invoices.data?.total ?? 0} pageSize={20} onPage={setPage} />
+      <Pagination page={page} total={invoices.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Invoice Detail" size="lg">
         {selected && <InvoiceDetail invoiceId={selected} />}
       </Modal>
@@ -1773,7 +2027,7 @@ function InvoicesTab() {
   );
 }
 function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getInvoiceDetail(invoiceId), [invoiceId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getInvoiceDetail(invoiceId), [invoiceId]), [invoiceId]);
   if (detail.loading) return <Skeleton height={160} />;
   return <KeyValueGrid data={detail.data} />;
 }
@@ -1782,12 +2036,19 @@ function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
 
 function CustomerRefundsTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [status, setStatus] = useState("");
+  const [refundType, setRefundType] = useState("");
+  const refundTypeQuery = useDebouncedValue(refundType);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApi(useCallback(() => homeServicesFinanceApi.getRefundsSummary(), []));
   const refunds = useApi(useCallback(
-    () => homeServicesFinanceApi.listRefunds({ q: q || undefined, page, pageSize: 20 }),
-    [q, page]));
+    () => homeServicesFinanceApi.listRefunds({
+      q: query || undefined, status: status || undefined,
+      refund_type: refundTypeQuery || undefined, page, pageSize: 20,
+    }),
+    [query, status, refundTypeQuery, page]), [query, status, refundTypeQuery, page]);
   const s = summary.data as Record<string, unknown> | undefined;
 
   return (
@@ -1800,7 +2061,18 @@ function CustomerRefundsTab() {
         <SummaryCard label="Verified" value={(s?.verified as number) ?? 0} />
         <SummaryCard label="Rejected" value={(s?.rejected as number) ?? 0} tone="danger" />
       </div>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search refund #..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search refund or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
+          { value: "requested", label: "Requested" }, { value: "provider_review", label: "Provider review" },
+          { value: "admin_review", label: "Admin review" },
+          { value: "approved", label: "Approved" }, { value: "recorded", label: "Recorded" },
+          { value: "verified", label: "Verified" }, { value: "rejected", label: "Rejected" },
+          { value: "cancelled", label: "Cancelled" },
+        ]} />
+        <div style={{ width: 220 }}><Input placeholder="Exact refund type..." value={refundType} onChange={v => { setRefundType(v); setPage(1); }} /></div>
+      </div>
+      <QueryError message={refunds.error} onRetry={refunds.refetch} />
       <DataTable
         loading={refunds.loading}
         rows={(refunds.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1815,7 +2087,7 @@ function CustomerRefundsTab() {
           { key: "created_at", label: "Requested At", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={refunds.data?.total ?? 0} pageSize={20} onPage={setPage} />
+      <Pagination page={page} total={refunds.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Customer Refund Detail" size="lg">
         {selected && <RefundDetail refundId={selected} />}
       </Modal>
@@ -1823,47 +2095,47 @@ function CustomerRefundsTab() {
   );
 }
 function RefundDetail({ refundId }: { refundId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getRefundDetail(refundId), [refundId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getRefundDetail(refundId), [refundId]), [refundId]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [openAction, setOpenAction] = useState<"credit" | "reject" | null>(null);
+  const [reason, setReason] = useState("");
+  const [approvedAmount, setApprovedAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   async function run(action: string, fn: () => Promise<unknown>) {
     setBusy(action);
-    try { await fn(); detail.refetch(); }
-    catch (e) { alert(e instanceof Error ? e.message : `Failed to ${action}.`); }
+    setError(null);
+    try {
+      await fn();
+      setOpenAction(null); setReason(""); setApprovedAmount("");
+      detail.refetch();
+    }
+    catch (e) { setError(e instanceof Error ? e.message : `Failed to ${action}.`); }
     finally { setBusy(null); }
   }
 
   if (detail.loading) return <Skeleton height={160} />;
-  const status = (detail.data as Record<string, unknown> | undefined)?.status as string | undefined;
+  const refund = (detail.data ?? {}) as Record<string, unknown>;
+  const status = refund.status as string | undefined;
+  const adminAttention = Boolean(refund.admin_attention_required);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <KeyValueGrid data={detail.data} />
       <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-        The provider collected this payment directly, so the provider returns the money — admin only
-        records, reviews and confirms the evidence. This is never a ServiceOS cash refund.
+        The provider owns the refund and records any direct customer repayment. Admin intervenes only after
+        provider resolution fails, issuing reusable service points funded from provider usage credits first
+        and then the provider security deposit.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {status === "requested" && (
+        {adminAttention && (
           <>
-            <Btn variant="primary" disabled={busy === "approve"}
-              onClick={() => run("approve", () => homeServicesFinanceApi.approveRefund(refundId))}>
-              {busy === "approve" ? "Approving…" : "Approve"}
-            </Btn>
+            <Btn variant="primary" disabled={busy === "credit"} onClick={() => setOpenAction("credit")}>Issue service points</Btn>
             <Btn variant="ghost" disabled={busy === "reject"}
-              onClick={() => { const reason = prompt("Rejection reason:"); if (reason) run("reject", () => homeServicesFinanceApi.rejectRefund(refundId, reason)); }}>
+              onClick={() => setOpenAction("reject")}>
               {busy === "reject" ? "Rejecting…" : "Reject"}
             </Btn>
           </>
-        )}
-        {status === "approved" && (
-          <Btn variant="primary" disabled={busy === "record"}
-            onClick={() => {
-              const amount = prompt("Amount the provider actually refunded:");
-              if (amount) run("record", () => homeServicesFinanceApi.recordRefund(refundId, amount));
-            }}>
-            {busy === "record" ? "Recording…" : "Record Provider Refund"}
-          </Btn>
         )}
         {status === "recorded" && (
           <Btn variant="primary" disabled={busy === "verify"}
@@ -1872,6 +2144,32 @@ function RefundDetail({ refundId }: { refundId: string }) {
           </Btn>
         )}
       </div>
+      {openAction === "credit" && (
+        <div className="hs-finance-action-panel">
+          <Input placeholder="Service points to issue" value={approvedAmount} onChange={setApprovedAmount} />
+          <Input placeholder="Why provider resolution failed" value={reason} onChange={setReason} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" disabled={!!busy || !reason.trim() || !Number.isFinite(Number(approvedAmount)) || Number(approvedAmount) <= 0}
+              onClick={() => run("issue service points", () => homeServicesFinanceApi.issueRefundCreditRemedy(
+                refundId, Number(approvedAmount), reason.trim(),
+              ))}>Issue points</Btn>
+            <Btn variant="ghost" onClick={() => setOpenAction(null)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+      {openAction === "reject" && (
+        <div className="hs-finance-action-panel">
+          <Input placeholder="Required rejection reason" value={reason} onChange={setReason} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" disabled={!reason.trim() || !!busy}
+              onClick={() => run("reject", () => homeServicesFinanceApi.rejectRefund(refundId, reason.trim()))}>
+              Confirm rejection
+            </Btn>
+            <Btn variant="ghost" onClick={() => setOpenAction(null)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+      {error && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 12, margin: 0 }}>{error}</p>}
     </div>
   );
 }
@@ -1880,24 +2178,44 @@ function RefundDetail({ refundId }: { refundId: string }) {
 
 function WarrantyClaimsTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [status, setStatus] = useState("");
+  const [claimType, setClaimType] = useState("");
+  const claimTypeQuery = useDebouncedValue(claimType);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApi(useCallback(() => homeServicesFinanceApi.getWarrantyClaimsSummary(), []));
   const claims = useApi(useCallback(
-    () => homeServicesFinanceApi.listWarrantyClaims({ q: q || undefined, page, pageSize: 20 }),
-    [q, page]));
+    () => homeServicesFinanceApi.listWarrantyClaims({
+      q: query || undefined, status: status || undefined,
+      category: claimTypeQuery || undefined, page, pageSize: 20,
+    }),
+    [query, status, claimTypeQuery, page]), [query, status, claimTypeQuery, page]);
   const s = summary.data as Record<string, unknown> | undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Pending Review" value={(s?.pending_review as number) ?? 0} tone="warning" />
-        <SummaryCard label="Investigating" value={(s?.investigation_ongoing as number) ?? 0} />
-        <SummaryCard label="Approved" value={(s?.approved_claims as number) ?? 0} />
+        <SummaryCard label="Provider Action" value={(s?.provider_action_required as number) ?? 0} tone="warning" />
+        <SummaryCard label="Admin Escalations" value={(s?.pending_review as number) ?? 0} tone="warning" />
+        <SummaryCard label="Points Issued" value={(s?.approved_claims as number) ?? 0} />
         <SummaryCard label="Rejected" value={(s?.rejected_claims as number) ?? 0} />
+        <SummaryCard label="Open Exposure" value={money((s?.open_exposure as string) ?? 0)} tone="warning" />
         <SummaryCard label="Settled Value" value={money((s?.settled_value as string) ?? 0)} />
       </div>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search job or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search job or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <div style={{ width: 220 }}><Input placeholder="Exact claim type..." value={claimType} onChange={v => { setClaimType(v); setPage(1); }} /></div>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
+          { value: "provider_action_required", label: "Provider action required" },
+          { value: "provider_in_progress", label: "Provider in progress" },
+          { value: "provider_resolved", label: "Resolved by provider" },
+          { value: "admin_review", label: "Admin escalation" },
+          { value: "credit_issued", label: "Service points issued" },
+          { value: "rejected", label: "Rejected" }, { value: "closed", label: "Closed" },
+        ]} />
+      </div>
+      <QueryError message={claims.error} onRetry={claims.refetch} />
       <DataTable
         loading={claims.loading}
         rows={(claims.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1908,34 +2226,102 @@ function WarrantyClaimsTab() {
           { key: "job_id", label: "Job", render: v => v ? String(v).slice(0, 8) : "—" },
           { key: "claim_type", label: "Type" },
           { key: "amount_requested", label: "Exposure", render: v => money(v as number) },
-          { key: "status", label: "Status", render: v => <Badge variant={v === "approved" ? "success" : v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
+          { key: "status", label: "Status", render: v => <Badge variant={v === "credit_issued" || v === "provider_resolved" ? "success" : v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
           { key: "created_at", label: "Created", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={claims.data?.total ?? 0} pageSize={20} onPage={setPage} />
+      <Pagination page={page} total={claims.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Warranty Claim Detail" size="lg">
-        {selected && <WarrantyClaimDetail claimId={selected} />}
+        {selected && <WarrantyClaimDetail claimId={selected} onChanged={() => { claims.refetch(); summary.refetch(); }} />}
       </Modal>
     </div>
   );
 }
-function WarrantyClaimDetail({ claimId }: { claimId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getWarrantyClaimDetail(claimId), [claimId]));
+function WarrantyClaimDetail({ claimId, onChanged }: { claimId: string; onChanged: () => void }) {
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getWarrantyClaimDetail(claimId), [claimId]), [claimId]);
+  const [openAction, setOpenAction] = useState<"assign" | "documents" | "approve" | "reject" | null>(null);
+  const [field1, setField1] = useState("");
+  const [field2, setField2] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: string, fn: () => Promise<unknown>) {
+    setBusy(action); setError(null);
+    try {
+      await fn(); setOpenAction(null); setField1(""); setField2("");
+      await detail.refetch(); onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Failed to ${action}.`);
+    } finally { setBusy(null); }
+  }
+
   if (detail.loading) return <Skeleton height={160} />;
-  return <KeyValueGrid data={detail.data} />;
+  const claim = (detail.data ?? {}) as Record<string, unknown>;
+  const status = String(claim.status ?? "");
+  const decisionAllowed = Boolean(claim.admin_attention_required)
+    && !["credit_issued", "rejected", "provider_resolved", "closed"].includes(status);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <KeyValueGrid data={detail.data} />
+      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+        The provider is responsible during the warranty window. Admin actions unlock only after customer
+        escalation or the provider response deadline, and compensation is issued as reusable service points.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("assign")}>Assign reviewer</Btn>}
+        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("documents")}>Request documents</Btn>}
+        {decisionAllowed && <Btn variant="primary" onClick={() => setOpenAction("approve")}>Issue service points</Btn>}
+        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("reject")}>Reject</Btn>}
+      </div>
+      {openAction && (
+        <div className="hs-finance-action-panel">
+          {openAction === "assign" && <Input label="Reviewer user ID" value={field1} onChange={setField1} />}
+          {openAction === "documents" && <Input label="Documents required and instructions" value={field1} onChange={setField1} />}
+          {openAction === "approve" && <>
+            <Input label="Service points" value={field1} onChange={setField1} />
+            <Input label="Required remedy reason" value={field2} onChange={setField2} />
+          </>}
+          {openAction === "reject" && <>
+            <Input label="Rejection reason" value={field1} onChange={setField1} />
+            <Input label="Admin notes (optional)" value={field2} onChange={setField2} />
+          </>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" loading={!!busy}
+              disabled={!field1.trim() || (openAction === "approve" && (!Number.isFinite(Number(field1)) || Number(field1) <= 0 || field2.trim().length < 5))}
+              onClick={() => {
+                if (openAction === "assign") return run("assign reviewer", () => homeServicesFinanceApi.assignWarrantyReviewer(claimId, field1.trim()));
+                if (openAction === "documents") return run("request documents", () => homeServicesFinanceApi.requestWarrantyDocuments(claimId, field1.trim()));
+                if (openAction === "approve") return run("issue service points", () => homeServicesFinanceApi.approveWarrantyClaim(claimId, Number(field1), field2.trim()));
+                return run("reject claim", () => homeServicesFinanceApi.rejectWarrantyClaim(claimId, field1.trim(), field2.trim() || undefined));
+              }}>Confirm</Btn>
+            <Btn variant="ghost" onClick={() => { setOpenAction(null); setField1(""); setField2(""); }}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+      {error && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 12, margin: 0 }}>{error}</p>}
+    </div>
+  );
 }
 
 // ── Financial Events ─────────────────────────────────────────────────────────
 
 function FinancialEventsTab() {
   const [q, setQ] = useState("");
+  const query = useDebouncedValue(q);
+  const [eventType, setEventType] = useState("");
+  const [recordType, setRecordType] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const summary = useApi(useCallback(() => homeServicesFinanceApi.getFinancialEventsSummary(), []));
   const events = useApi(useCallback(
-    () => homeServicesFinanceApi.listFinancialEvents({ q: q || undefined, page, pageSize: 30 }),
-    [q, page]));
+    () => homeServicesFinanceApi.listFinancialEvents({
+      q: query || undefined, event_type: eventType || undefined,
+      record_type: recordType || undefined, page, pageSize: 30,
+    }),
+    [query, eventType, recordType, page]), [query, eventType, recordType, page]);
   const s = summary.data as Record<string, unknown> | undefined;
+  const eventTypeOptions = Object.keys((s?.by_event_type as Record<string, unknown> | undefined) ?? {})
+    .sort().map(value => ({ value, label: ledgerEventLabel(value) }));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1943,7 +2329,17 @@ function FinancialEventsTab() {
         <SummaryCard label="Events Today" value={(s?.events_today as number) ?? 0} />
         <SummaryCard label="Immutable" value={s?.immutable ? "Yes" : "—"} />
       </div>
-      <div style={{ maxWidth: 320 }}><Input placeholder="Search tenant or request ID..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search tenant or request ID..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
+        <Select value={eventType} onChange={v => { setEventType(v); setPage(1); }} placeholder="All event types" options={eventTypeOptions} />
+        <Select value={recordType} onChange={v => { setRecordType(v); setPage(1); }} placeholder="All entity types" options={[
+          { value: "invoice", label: "Invoice" }, { value: "payment", label: "Payment" },
+          { value: "commission", label: "Commission" }, { value: "wallet", label: "Legacy wallet event" },
+          { value: "activation_payment", label: "Activation payment" },
+          { value: "credit_topup_order", label: "Credit top-up order" },
+        ]} />
+      </div>
+      <QueryError message={events.error} onRetry={events.refetch} />
       <DataTable
         loading={events.loading}
         rows={(events.data?.items ?? []) as unknown as Record<string, unknown>[]}
@@ -1957,7 +2353,7 @@ function FinancialEventsTab() {
           { key: "occurred_at", label: "Occurred", render: v => dt(v as string) },
         ]}
       />
-      <Pagination page={page} total={events.data?.total ?? 0} pageSize={30} onPage={setPage} />
+      <Pagination page={page} total={events.data?.total ?? 0} pageSize={30} onPage={setPage} alwaysShow />
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Financial Event Detail" size="lg">
         {selected && <FinancialEventDetail eventId={selected} />}
       </Modal>
@@ -1965,7 +2361,7 @@ function FinancialEventsTab() {
   );
 }
 function FinancialEventDetail({ eventId }: { eventId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getFinancialEventDetail(eventId), [eventId]));
+  const detail = useApi(useCallback(() => homeServicesFinanceApi.getFinancialEventDetail(eventId), [eventId]), [eventId]);
   if (detail.loading) return <Skeleton height={160} />;
   return (
     <div>
@@ -1980,19 +2376,25 @@ function FinancialEventDetail({ eventId }: { eventId: string }) {
 // ── Audit ────────────────────────────────────────────────────────────────────
 
 function AuditPanel() {
-  const audit = useApi(useCallback(() => homeServicesFinanceApi.listAudit(1, 50), []));
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const audit = useApi(useCallback(() => homeServicesFinanceApi.listAudit(page, pageSize), [page]), [page]);
   return (
-    <DataTable
-      loading={audit.loading}
-      rows={(audit.data?.items ?? []) as unknown as Record<string, unknown>[]}
-      emptyText="No audit events recorded yet — run a reconciliation or export to generate one."
-      columns={[
-        { key: "operation", label: "Operation" },
-        { key: "actor_role", label: "Actor" },
-        { key: "after", label: "Details", render: v => <span style={{ fontFamily: "monospace", fontSize: 11 }}>{JSON.stringify(v)}</span> },
-        { key: "created_at", label: "When", render: v => dt(v as string) },
-      ]}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <QueryError message={audit.error} onRetry={audit.refetch} />
+      <DataTable
+        loading={audit.loading}
+        rows={(audit.data?.items ?? []) as unknown as Record<string, unknown>[]}
+        emptyText="No finance audit events recorded yet."
+        columns={[
+          { key: "operation", label: "Operation" },
+          { key: "actor_role", label: "Actor" },
+          { key: "after", label: "Details", render: v => <span style={{ fontFamily: "monospace", fontSize: 11 }}>{JSON.stringify(v)}</span> },
+          { key: "created_at", label: "When", render: v => dt(v as string) },
+        ]}
+      />
+      <Pagination page={page} total={audit.data?.total ?? 0} pageSize={pageSize} onPage={setPage} alwaysShow />
+    </div>
   );
 }
 
@@ -2013,90 +2415,6 @@ function KeyValueGrid({ data }: { data: unknown }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Provider Wallets (ported from the standalone /admin/provider-wallets
-// page so this workspace covers every Home Services money surface) ─────────
-
-function WalletsTab() {
-  const [creditTarget, setCreditTarget] = useState<string | null>(null);
-  const [creditAmount, setCreditAmount] = useState("");
-  const [creditReason, setCreditReason] = useState("");
-
-  const { data, loading, refetch } = useApi(useCallback(() => adminWalletApi.list(), []));
-  const wallets: WalletRecord[] = (Array.isArray(data) ? data : []) as WalletRecord[];
-
-  const creditAction = useAction(useCallback(
-    (tenantId: string, amount: number, reason: string) => adminWalletApi.credit(tenantId, { amount, reason }),
-    []));
-
-  const handleCredit = async () => {
-    if (!creditTarget) return;
-    const result = await creditAction.execute(creditTarget, Number(creditAmount), creditReason || "Admin credit");
-    if (result) {
-      setCreditTarget(null); setCreditAmount(""); setCreditReason("");
-      refetch();
-    }
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Credit balances for all provider tenants.</p>
-        <Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>
-      </div>
-
-      {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[0, 1, 2].map(i => <Skeleton key={i} height={80} />)}
-        </div>
-      ) : wallets.length === 0 ? (
-        <Card padding={48} style={{ textAlign: "center" }}>
-          <Wallet size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} />
-          <p style={{ color: "var(--text-secondary)", margin: 0 }}>No provider wallets found.</p>
-        </Card>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {wallets.map((w: WalletRecord) => (
-            <Card key={w.tenant_id} padding={16}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <p style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", margin: 0 }}>
-                    Tenant: {w.tenant_id?.slice(0, 12)}
-                  </p>
-                  <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, flexWrap: "wrap" }}>
-                    <span><strong>Balance:</strong> {w.current_balance}</span>
-                    <span><strong>Reserved:</strong> {w.reserved_balance}</span>
-                    <span><strong>In:</strong> {w.total_purchased}</span>
-                    <span><strong>Out:</strong> {w.total_deducted}</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Badge variant={w.is_active ? "success" : "danger"}>{w.is_active ? "Active" : "Inactive"}</Badge>
-                  <Btn size="sm" onClick={() => setCreditTarget(w.tenant_id)}>
-                    <PlusCircle size={12} /> Add Credit
-                  </Btn>
-                </div>
-              </div>
-
-              {creditTarget === w.tenant_id && (
-                <div style={{ marginTop: 12, padding: 12, background: "var(--surface-sunken)",
-                  borderRadius: "var(--radius-md)", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <Input placeholder="Amount" value={creditAmount} onChange={setCreditAmount} />
-                  <Input placeholder="Reason (optional)" value={creditReason} onChange={setCreditReason} />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Btn size="sm" onClick={handleCredit} loading={creditAction.loading}>Confirm Credit</Btn>
-                    <Btn size="sm" variant="ghost" onClick={() => setCreditTarget(null)}>Cancel</Btn>
-                  </div>
-                  {creditAction.error && <p style={{ color: "var(--danger-text)", fontSize: 11, margin: 0 }}>{creditAction.error}</p>}
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

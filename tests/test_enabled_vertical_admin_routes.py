@@ -19,5 +19,4 @@ def test_enabled_vertical_route_map_targets_real_admin_workspaces():
         "listing_types": "/admin/types-brands",
         "amenities": "/admin/service-options",
         "localities": "/admin/location-mapping",
-        "site_visit_workflows": "/admin/workflow-templates",
     }

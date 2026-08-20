@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import P, require_permission, require_tenant_mutation_permission
 from app.core.security import get_client_ip
+from app.config import get_settings
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.exceptions import ServiceOSException
@@ -30,18 +31,22 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 
 @router.get("/meta", tags=["Engine Registry"])
 async def engine_meta() -> dict:
-    return {
-        "engine_id": ENGINE_ID, "name": "Security Engine", "version": "12.0.0",
-        "endpoint_count": 21, "status": "active",
-        "capabilities": [
+    capabilities = [
+        "ip_blocklist_redis_o1_lookup",
+        "sliding_window_threat_detection",
+        "append_only_audit_log",
+        "atomic_session_force_logout",
+    ]
+    if get_settings().API_KEYS_ENABLED:
+        capabilities.extend([
             "api_key_hmac_hash_only",
-            "ip_blocklist_redis_o1_lookup",
-            "sliding_window_threat_detection",
-            "append_only_audit_log",
-            "atomic_session_force_logout",
             "api_key_rotation_atomic",
             "plaintext_never_stored",
-        ],
+        ])
+    return {
+        "engine_id": ENGINE_ID, "name": "Security Engine", "version": "12.0.0",
+        "endpoint_count": len(router.routes), "status": "active",
+        "capabilities": capabilities,
     }
 
 
@@ -300,3 +305,10 @@ async def security_summary(r: Request,
                             u: UserContext = Depends(require_super_admin),
                             s: SecurityService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_security_summary(tenant_id), _rid(r), ENGINE_ID)
+
+
+# Keep existing key records intact, but make issuance, verification, rotation,
+# revocation, and discovery unavailable until the integration product launches.
+from app.core.feature_flags import hide_disabled_api_key_routes
+
+hide_disabled_api_key_routes(router)

@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
@@ -14,7 +13,7 @@ import {
   type ServiceGroupEnriched, type ServiceCategory,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { RefreshCw, Archive, AlertCircle, CheckSquare, Square } from "lucide-react";
+import { RefreshCw, AlertCircle, CheckSquare, Square } from "lucide-react";
 
 // ── Label maps ─────────────────────────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -108,11 +107,13 @@ function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onV
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function ServiceGroupsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Filters
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState<"current" | "retired">(() => searchParams.get("lifecycle") === "retired" ? "retired" : "current");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hasServicesFilter, setHasServicesFilter] = useState<"" | "true" | "false">("");
   const [page, setPage] = useState(1);
@@ -142,14 +143,15 @@ export default function ServiceGroupsPage() {
     () => catalogApi.listServiceGroups({
       categoryId: categoryFilter || undefined,
       status: statusFilter || undefined,
+      retired: lifecycleFilter === "retired",
       q: debouncedQ || undefined,
       hasServices: hasServicesFilter === "" ? undefined : hasServicesFilter === "true",
       sortBy, sortDir,
       limit: pageSize,
       offset: (page - 1) * pageSize,
     }),
-    [categoryFilter, statusFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize],
-  ), [categoryFilter, statusFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize]);
+    [categoryFilter, statusFilter, lifecycleFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize],
+  ), [categoryFilter, statusFilter, lifecycleFilter, debouncedQ, hasServicesFilter, sortBy, sortDir, page, pageSize]);
 
   const notify = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -218,7 +220,7 @@ export default function ServiceGroupsPage() {
 
   const s = summary.data;
   const rows = groups.data?.groups ?? [];
-  useEffect(() => { setSelected(new Set()); }, [page, pageSize, categoryFilter, statusFilter, hasServicesFilter, debouncedQ]);
+  useEffect(() => { setSelected(new Set()); }, [page, pageSize, categoryFilter, statusFilter, lifecycleFilter, hasServicesFilter, debouncedQ]);
   const canSave = !!form.name && !!form.category_id;
   const activeAction = editing ? editAction : createAction;
 
@@ -272,7 +274,9 @@ export default function ServiceGroupsPage() {
     },
     {
       key: "id", label: "", width: 120,
-      render: (_: unknown, row: ServiceGroupEnriched) => (
+      render: (_: unknown, row: ServiceGroupEnriched) => row.deleted_at ? (
+        <Btn variant="ghost" size="xs" onClick={() => router.push(`/admin/service-groups/${row.id}`)}>View / restore</Btn>
+      ) : (
         <GroupActionMenu
           row={row}
           onView={() => router.push(`/admin/service-groups/${row.id}`)}
@@ -289,13 +293,13 @@ export default function ServiceGroupsPage() {
 
   return (
     <AdminLayout activeNav="service-groups">
+      <div className="catalog-admin-page">
       {/* Header */}
       <SectionHeader
         title="Service Groups"
         subtitle="Intermediate grouping layer between Categories and Master Services (e.g. 'AC Services' under 'Home Services')"
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Link href="/admin/service-groups/retired"><Btn variant="secondary" size="sm"><Archive size={14}/> Retired groups{s?.retired ? ` (${s.retired})` : ""}</Btn></Link>
             <Btn variant="secondary" size="sm" onClick={() => { groups.refetch(); summary.refetch(); }}>
               <RefreshCw size={14} style={{ marginRight: 4 }} /> Refresh
             </Btn>
@@ -306,17 +310,16 @@ export default function ServiceGroupsPage() {
       <HomeServicesCatalogNav active="groups" />
 
       <OperationsDirectoryControls resourceKey="admin_service_groups"
-        filters={{ q:debouncedQ, category_id:categoryFilter, status:statusFilter, has_services:hasServicesFilter }}
+        filters={{ q:debouncedQ, category_id:categoryFilter, status:statusFilter, lifecycle:lifecycleFilter, has_services:hasServicesFilter }}
         sort={{ sort_by:sortBy, sort_direction:sortDir }} columns={columnsConfig}
         onColumnsChange={setColumnsConfig}
         onApplyView={(filters, sort) => {
           setQ(String(filters.q ?? filters.search ?? ""));
           setCategoryFilter(String(filters.category_id ?? "")); setStatusFilter(String(filters.status ?? ""));
+          setLifecycleFilter(filters.lifecycle === "retired" ? "retired" : "current");
           setHasServicesFilter(String(filters.has_services ?? "") as ""|"true"|"false");
           setSortBy(String(sort.sort_by ?? "display_order")); setSortDir(String(sort.sort_direction ?? "asc")); setPage(1);
         }}/>
-      <span className="sr-only">Export controls are available in the operations toolbar.</span>
-
       {/* Toast */}
       {toast && (
         <div style={{
@@ -370,6 +373,10 @@ export default function ServiceGroupsPage() {
               placeholder="All Statuses"
               options={[{ value: "", label: "All Statuses" }, { value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
           </div>
+          <div style={{ minWidth: 150 }}>
+            <Select label="" value={lifecycleFilter} onChange={value => { setLifecycleFilter(value as "current" | "retired"); setStatusFilter(""); setPage(1); }}
+              options={[{ value: "current", label: "Current records" }, { value: "retired", label: `Retired (${s?.retired ?? 0})` }]} />
+          </div>
           <Btn variant="ghost" size="sm" onClick={() => setShowAdvanced(p => !p)}>
             Advanced {showAdvanced ? "▲" : "▼"}
           </Btn>
@@ -421,7 +428,7 @@ export default function ServiceGroupsPage() {
         rows={rows as unknown as Record<string, unknown>[]}
         loading={groups.loading}
         onRowClick={row => router.push(`/admin/service-groups/${(row as unknown as ServiceGroupEnriched).id}`)}
-        emptyText="No service groups found. Create your first service group to organize master services within a category."
+        emptyText={lifecycleFilter === "retired" ? "No retired service groups." : "No service groups found. Create your first service group to organize master services within a category."}
       />
       <DirectoryPagination
         page={page}
@@ -496,6 +503,7 @@ export default function ServiceGroupsPage() {
           </Btn>
         </div>
       </Modal>
+      </div>
     </AdminLayout>
   );
 }

@@ -38,24 +38,19 @@ def test_admin_endpoints_and_page_exist():
     page = os.path.join(root, "frontend", "super-admin", "app", "admin", "pricing",
                         "commission", "page.tsx")
     assert os.path.isfile(page)
-    # Reachability updated 2026-08-05: the standalone "Category Rates" nav item
-    # was removed at explicit user request during the admin nav consolidation
-    # (the /admin/pricing/commission route stays live but unlinked). The same
-    # capability is now reachable as the "Category Commission Overrides" table on
-    # Home Services Finance > Provider Charges, which is the surface that
-    # actually drives Home Services job-completion charging. Assert THAT is
-    # reachable rather than asserting a nav item the product deliberately
-    # dropped.
+    # Home Services now has one finance authority: Monetization. Provider
+    # Charges is a transaction ledger and must not expose a second editor.
     fin_page = open(os.path.join(root, "frontend", "super-admin", "app", "admin",
                                  "home-services", "finance", "page.tsx"),
                     encoding="utf-8").read()
-    assert "Category Commission Overrides" in fin_page
-    assert "setCategoryCommissionRate" in fin_page     # really wired to the API
+    assert "Category Commission Overrides" not in fin_page
+    assert "setCategoryCommissionRate" not in fin_page
+    assert "single provider commission rate for Home Services" in fin_page
     detail = open(os.path.join(root, "frontend", "super-admin", "app", "admin",
                                "categories", "[id]", "page.tsx"), encoding="utf-8").read()
     assert "getCategoryCommissionAuthority" in detail
     assert "upsertCategoryConfig" not in detail         # no duplicate category editor
-    assert "intentionally read-only" in detail
+    assert "only provider and customer charge configuration authority" in detail
     nav = open(os.path.join(root, "frontend", "super-admin", "components", "layout",
                             "AdminLayout.tsx"), encoding="utf-8").read()
     assert "/admin/home-services/finance" in nav       # reachable from the menu

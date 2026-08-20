@@ -1,172 +1,30 @@
 "use client";
 import React, { useCallback, useState } from "react";
-import { Card, Badge, Btn, Select, Input, Modal } from "../../../components/shared/ui";
-import { sprint27AdminApi } from "../../../lib/api";
-import type { NotificationOutboxRecord } from "../../../lib/api";
-import { useApi, useAction } from "../../../hooks/useApi";
-import { RefreshCw, Download, RotateCw, XCircle, Eye } from "lucide-react";
+import { Download, Eye, RefreshCw, RotateCw, Search, XCircle } from "lucide-react";
+import { Badge, Btn, Card, EmptyState, Input, Modal, Pagination, Select, Skeleton } from "../../../components/shared/ui";
+import { sprint27AdminApi, type NotificationOutboxRecord } from "../../../lib/api";
+import { useAction, useApi } from "../../../hooks/useApi";
 
-const STATUS_VARIANT: Record<string, "success" | "warning" | "danger" | "muted"> = {
-  delivered: "success", pending: "warning", failed: "danger",
-  skipped: "muted", provider_not_configured: "muted", preference_disabled: "muted",
-};
+const PAGE_SIZE = 25;
+const STATUS_VARIANT: Record<string, "success" | "warning" | "danger" | "muted"> = { delivered: "success", sent: "success", pending: "warning", queued: "warning", failed: "danger", skipped: "muted", provider_not_configured: "muted", preference_disabled: "muted" };
 
 export function LogsFailuresPanel() {
-  const [statusFilter, setStatusFilter] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
-  const [selected, setSelected] = useState<NotificationOutboxRecord | null>(null);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-
-  const notify = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
-
-  const outboxApi = useApi(useCallback(() => sprint27AdminApi.listOutbox({
-    delivery_status: statusFilter || undefined, channel: channelFilter || undefined, limit: 100,
-  } as Record<string, string | number>), [statusFilter, channelFilter]));
-
-  const retryAction = useAction((id: string) => sprint27AdminApi.retryOutbox(id));
-  const cancelAction = useAction((id: string) => sprint27AdminApi.cancelOutbox(id));
-
-  async function handleRetry(id: string) {
-    try {
-      await retryAction.execute(id);
-      outboxApi.refetch();
-      notify("Retry queued — idempotent, will not create a duplicate delivery.");
-    } catch (e) {
-      notify(e instanceof Error ? e.message : "Retry not allowed.", false);
-    }
-  }
-
-  async function handleCancel(id: string) {
-    try {
-      await cancelAction.execute(id);
-      outboxApi.refetch();
-      notify("Pending delivery cancelled.");
-    } catch (e) {
-      notify(e instanceof Error ? e.message : "Cancel not allowed — only pending deliveries can be cancelled.", false);
-    }
-  }
-
-  async function handleExport() {
-    const data = await sprint27AdminApi.exportOutbox({
-      delivery_status: statusFilter || undefined, channel: channelFilter || undefined,
-    } as Record<string, string | number>);
-    const blob = new Blob([JSON.stringify(data.items, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `notification-delivery-logs-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const items = outboxApi.data?.items ?? [];
-
-  return (
-    <div>
-      {toast && (
-        <div style={{ padding: "10px 16px", marginBottom: 16, borderRadius: 10,
-          background: toast.ok ? "var(--success-bg)" : "var(--danger-bg)",
-          border: `1px solid ${toast.ok ? "var(--success-border)" : "var(--danger-border)"}`,
-          color: toast.ok ? "var(--success-text)" : "var(--danger-text)", fontSize: 13 }}>
-          {toast.msg}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <Select value={statusFilter} onChange={setStatusFilter} placeholder="Status" options={[
-          { value: "", label: "All Statuses" },
-          { value: "delivered", label: "Delivered" },
-          { value: "pending", label: "Pending" },
-          { value: "failed", label: "Failed" },
-          { value: "skipped", label: "Skipped / Cancelled" },
-          { value: "provider_not_configured", label: "Provider Not Configured" },
-          { value: "preference_disabled", label: "Preference Disabled" },
-        ]}/>
-        <Select value={channelFilter} onChange={setChannelFilter} placeholder="Channel" options={[
-          { value: "", label: "All Channels" },
-          { value: "in_app", label: "In-App" }, { value: "email", label: "Email" },
-          { value: "sms", label: "SMS" }, { value: "whatsapp", label: "WhatsApp" }, { value: "push", label: "Push" },
-        ]}/>
-        <div style={{ flex: 1 }}/>
-        <Btn size="sm" variant="ghost" onClick={() => outboxApi.refetch()}><RefreshCw size={14}/></Btn>
-        <Btn size="sm" variant="secondary" onClick={handleExport}><Download size={14} style={{ marginRight: 4 }}/>Export</Btn>
-      </div>
-
-      <Card style={{ padding: 0 }}>
-        {outboxApi.loading ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading delivery logs…</div>
-        ) : items.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No delivery attempts match this filter.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-                  {["Delivery ID", "Vertical", "Recipient Type", "Channel", "Provider", "Status", "Attempts", "Created", "Actions"].map(h => (
-                    <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(row => (
-                  <tr key={row.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 11 }}>{row.id.slice(0, 8)}…</td>
-                    <td style={{ padding: "9px 14px" }}>{row.vertical_key ?? "Global"}</td>
-                    <td style={{ padding: "9px 14px" }}>{row.recipient_type}</td>
-                    <td style={{ padding: "9px 14px" }}>{row.channel}</td>
-                    <td style={{ padding: "9px 14px", color: "var(--text-secondary)" }}>{row.provider_name ?? "—"}</td>
-                    <td style={{ padding: "9px 14px" }}>
-                      <Badge variant={STATUS_VARIANT[row.delivery_status] ?? "muted"} size="sm">{row.delivery_status.replace(/_/g, " ")}</Badge>
-                    </td>
-                    <td style={{ padding: "9px 14px" }}>{row.retry_count} / {row.max_retries}</td>
-                    <td style={{ padding: "9px 14px", color: "var(--text-tertiary)", fontSize: 12 }}>{new Date(row.created_at).toLocaleString()}</td>
-                    <td style={{ padding: "9px 14px", display: "flex", gap: 4 }}>
-                      <Btn size="xs" variant="ghost" onClick={() => setSelected(row)}><Eye size={12}/></Btn>
-                      {row.delivery_status === "failed" && row.retry_count < row.max_retries && (
-                        <Btn size="xs" variant="secondary" onClick={() => handleRetry(row.id)} loading={retryAction.loading}><RotateCw size={12}/></Btn>
-                      )}
-                      {row.delivery_status === "pending" && (
-                        <Btn size="xs" variant="ghost" onClick={() => handleCancel(row.id)} loading={cancelAction.loading}><XCircle size={12}/></Btn>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>Showing 1 to {items.length} of {outboxApi.data?.total ?? items.length} delivery attempts</div>
-      </Card>
-
-      {selected && (
-        <Modal open onClose={() => setSelected(null)} title="Delivery trace" size="md">
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Delivery ID" value={selected.id}/>
-            <Field label="Event" value={selected.notification_event_id ?? "—"}/>
-            <Field label="Template key" value={selected.template_key}/>
-            <Field label="Title" value={selected.title}/>
-            <Field label="Body" value={selected.body}/>
-            <Field label="Channel" value={selected.channel}/>
-            <Field label="Provider" value={selected.provider_name ?? "—"}/>
-            <Field label="Vertical" value={selected.vertical_key ?? "Global"}/>
-            <Field label="Status" value={selected.delivery_status}/>
-            <Field label="Failure code" value={selected.failure_code ?? "—"}/>
-            <Field label="Attempts" value={`${selected.retry_count} / ${selected.max_retries}`}/>
-            <Field label="Sent at" value={selected.sent_at ? new Date(selected.sent_at).toLocaleString() : "Not yet sent"}/>
-            <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 8 }}>
-              <Btn size="sm" variant="ghost" onClick={() => setSelected(null)}>Close</Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
+  const [status, setStatus] = useState(""); const [channel, setChannel] = useState(""); const [recipient, setRecipient] = useState(""); const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<NotificationOutboxRecord | null>(null); const [workingId, setWorkingId] = useState<string | null>(null); const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const outbox = useApi(useCallback(() => sprint27AdminApi.listOutbox({ delivery_status: status || undefined, channel: channel || undefined, recipient_type: recipient || undefined, search: search || undefined, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE } as Record<string, string | number>), [status, channel, recipient, search, page]));
+  const retry = useAction((id: string) => sprint27AdminApi.retryOutbox(id)); const cancel = useAction((id: string) => sprint27AdminApi.cancelOutbox(id));
+  function changeFilter(setter: (v: string) => void, value: string) { setter(value); setPage(1); }
+  async function handleRetry(id: string) { setWorkingId(id); const result = await retry.execute(id); setWorkingId(null); if (result) { setNotice({ ok: true, text: "Delivery returned to the pending queue without creating a duplicate." }); outbox.refetch(); } else setNotice({ ok: false, text: retry.error ?? "Retry was not accepted." }); }
+  async function handleCancel(id: string) { setWorkingId(id); const result = await cancel.execute(id); setWorkingId(null); if (result) { setNotice({ ok: true, text: "Pending delivery cancelled before dispatch." }); outbox.refetch(); } else setNotice({ ok: false, text: cancel.error ?? "Only a pending delivery can be cancelled." }); }
+  async function handleExport() { try { const data = await sprint27AdminApi.exportOutbox({ delivery_status: status || undefined, channel: channel || undefined, recipient_type: recipient || undefined, search: search || undefined }); const columns = ["id", "created_at", "channel", "recipient_type", "delivery_status", "provider_name", "retry_count", "failure_code", "template_key"]; const csv = [columns.join(","), ...data.items.map(row => columns.map(key => `"${String(row[key] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n"); const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); const link = document.createElement("a"); link.href = url; link.download = `notification-delivery-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url); setNotice({ ok: true, text: `Exported ${data.items.length} matching records (operational export limit: 200).` }); } catch (e) { setNotice({ ok: false, text: e instanceof Error ? e.message : "Export failed." }); } }
+  const rows = outbox.data?.items ?? [];
+  return <div className="nc-stack">
+    {notice && <div className={`nc-message ${notice.ok ? "success" : "danger"}`}>{notice.text}</div>}
+    <Card padding={0}><div className="nc-filterbar"><div className="nc-search"><Search size={15}/><Input placeholder="Search delivery, recipient, template, or failure" value={search} onChange={v => changeFilter(setSearch, v)}/></div><Select value={status} onChange={v => changeFilter(setStatus, v)} options={[{ value: "", label: "All delivery states" }, { value: "delivered", label: "Delivered" }, { value: "pending", label: "Pending" }, { value: "failed", label: "Failed" }, { value: "skipped", label: "Cancelled / skipped" }, { value: "provider_not_configured", label: "Provider unavailable" }, { value: "preference_disabled", label: "Preference disabled" }]}/><Select value={channel} onChange={v => changeFilter(setChannel, v)} options={[{ value: "", label: "All channels" }, { value: "in_app", label: "In-app" }, { value: "email", label: "Email" }, { value: "sms", label: "SMS" }, { value: "whatsapp", label: "WhatsApp" }, { value: "push", label: "Push" }]}/><Select value={recipient} onChange={v => changeFilter(setRecipient, v)} options={[{ value: "", label: "All recipients" }, { value: "admin", label: "Admin" }, { value: "provider", label: "Provider" }, { value: "customer", label: "Customer" }, { value: "staff", label: "Staff" }]}/><Btn size="sm" variant="ghost" onClick={outbox.refetch}><RefreshCw size={14}/></Btn><Btn size="sm" variant="secondary" onClick={handleExport}><Download size={14}/> Export CSV</Btn></div>
+      {outbox.error ? <div className="nc-empty-error">{outbox.error}{outbox.requestId ? ` · ${outbox.requestId}` : ""}</div> : outbox.loading ? <div style={{ padding: 18 }}>{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} height={48} style={{ marginBottom: 8 }}/>)}</div> : rows.length === 0 ? <EmptyState title="No delivery attempts match" description={outbox.data?.total === 0 && !status && !channel && !recipient && !search ? "The outbox is connected and empty. Delivery traces will appear as notifications are generated." : "Clear or change the filters to widen the result set."}/> : <div style={{ overflowX: "auto" }}><table className="nc-table"><thead><tr><th>Delivery</th><th>Recipient</th><th>Channel</th><th>Provider</th><th>Status</th><th>Attempts</th><th>Created</th><th></th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><div className="nc-notif-title">{row.title}</div><code style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{row.id.slice(0, 12)} · {row.template_key}</code></td><td>{row.recipient_type}<div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{row.recipient_user_id?.slice(0, 12) ?? "No user"}</div></td><td><Badge variant="muted">{row.channel.replace("_", "-")}</Badge></td><td>{row.provider_name ?? "Not assigned"}</td><td><Badge variant={STATUS_VARIANT[row.delivery_status] ?? "muted"}>{row.delivery_status.replace(/_/g, " ")}</Badge>{row.failure_code && <div style={{ color: "var(--danger-text)", fontSize: 10, marginTop: 3 }}>{row.failure_code}</div>}</td><td>{row.retry_count} / {row.max_retries}</td><td>{new Date(row.created_at).toLocaleString()}</td><td><div style={{ display: "flex", gap: 4 }}><Btn size="xs" variant="ghost" onClick={() => setSelected(row)}><Eye size={12}/></Btn>{row.delivery_status === "failed" && row.retry_count < row.max_retries && <Btn size="xs" variant="secondary" loading={workingId === row.id} onClick={() => handleRetry(row.id)}><RotateCw size={12}/></Btn>}{row.delivery_status === "pending" && <Btn size="xs" variant="ghost" loading={workingId === row.id} onClick={() => handleCancel(row.id)}><XCircle size={12}/></Btn>}</div></td></tr>)}</tbody></table></div>}
+      <Pagination page={page} total={outbox.data?.total ?? 0} pageSize={PAGE_SIZE} onPage={setPage}/>
+    </Card>
+    {selected && <Modal open onClose={() => setSelected(null)} title="Delivery trace" size="lg"><div className="nc-stack"><div style={{ display: "flex", gap: 7 }}><Badge variant={STATUS_VARIANT[selected.delivery_status] ?? "muted"}>{selected.delivery_status.replace(/_/g, " ")}</Badge><Badge variant="muted">{selected.channel}</Badge></div><Trace label="Delivery ID" value={selected.id}/><Trace label="Event ID" value={selected.notification_event_id ?? "Not linked"}/><Trace label="Recipient" value={`${selected.recipient_type} · ${selected.recipient_user_id ?? "No user"}`}/><Trace label="Template" value={selected.template_key}/><Trace label="Message" value={`${selected.title}\n${selected.body}`}/><Trace label="Provider" value={selected.provider_name ?? "Not assigned"}/><Trace label="Failure" value={selected.failure_code ? `${selected.failure_code}: ${selected.failure_message ?? "No provider detail"}` : "None"}/><Trace label="Timing" value={`Created ${new Date(selected.created_at).toLocaleString()} · Sent ${selected.sent_at ? new Date(selected.sent_at).toLocaleString() : "not sent"} · Delivered ${selected.delivered_at ? new Date(selected.delivered_at).toLocaleString() : "not delivered"}`}/><div style={{ display: "flex", justifyContent: "flex-end" }}><Btn variant="ghost" onClick={() => setSelected(null)}>Close</Btn></div></div></Modal>}
+  </div>;
 }
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, color: "var(--text-primary)", wordBreak: "break-word" }}>{value}</div>
-    </div>
-  );
-}
+function Trace({ label, value }: { label: string; value: string }) { return <div><div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--text-tertiary)", fontWeight: 800, marginBottom: 4 }}>{label}</div><div style={{ padding: "9px 11px", borderRadius: 8, background: "var(--surface-sunken)", color: "var(--text-primary)", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{value}</div></div>; }

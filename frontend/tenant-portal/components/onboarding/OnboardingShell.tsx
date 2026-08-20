@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import FuvayLogo from "../brand/FuvayLogo";
 import {
   LayoutGrid, Building2, FileText, Tag, MapPin, Users2, Wallet,
   ClipboardCheck, HelpCircle, Bell, ChevronDown, LogOut, User, Shield, Menu, X, Rocket,
@@ -168,10 +169,8 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
         borderRight: "1px solid var(--sidebar-border)",
       }}>
         <div style={{ height: 64, padding: "0 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: "var(--radius-lg)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ color: "var(--text-on-brand)", fontWeight: 800, fontSize: 14 }}>S</span>
-          </div>
-          <span style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 14, flex: 1 }}>ServiceOS</span>
+          <FuvayLogo height={32}/>
+          <span style={{ flex: 1 }}/>
           <button aria-label="Close menu" onClick={() => setDrawerOpen(false)} className="onboarding-hamburger"
             style={{ background: "none", border: "none", color: "var(--sidebar-text)", cursor: "pointer", padding: 4 }}>
             <X size={18}/>

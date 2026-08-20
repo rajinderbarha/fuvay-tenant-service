@@ -32,6 +32,8 @@ async def deduct_customer_platform_charge_recovery(
     booking_id: uuid.UUID,
     vertical_key: str,
     chargeable_amount: Decimal,
+    snapshotted_fee_amount: Decimal | None = None,
+    policy_reference: str | None = None,
     request_id: str | None = None,
 ) -> dict:
     """Idempotent per (job_id, event_type) -- a second call for the same job
@@ -55,16 +57,25 @@ async def deduct_customer_platform_charge_recovery(
     if not vertical:
         return {"recovery_status": "skipped", "reason": "vertical_not_found"}
 
-    policy = await get_current_policy(db, vertical.id)
-    result = calculate_customer_platform_fee(
-        policy=policy, service_subtotal_minor=to_minor(chargeable_amount),
-        calculation_basis="job_completion",
-    )
-    fee_minor = result["fee_amount_minor"]
-    if fee_minor <= 0:
+    result = None
+    if snapshotted_fee_amount is None:
+        policy = await get_current_policy(db, vertical.id)
+        result = calculate_customer_platform_fee(
+            policy=policy, service_subtotal_minor=to_minor(chargeable_amount),
+            calculation_basis="job_completion_fallback",
+        )
+        recovery_amount = Decimal(to_major(result["fee_amount_minor"]))
+        policy_reference = policy_reference or (
+            f"monetization_policy:{result['policy_id']}:v{result['policy_version']}"
+        )
+    else:
+        # Invoice creation already snapshotted the policy-calculated fee.
+        # Recover that exact amount even if an admin publishes a new policy
+        # before the provider completes the job.
+        recovery_amount = Decimal(str(snapshotted_fee_amount)).quantize(Decimal("0.01"))
+        policy_reference = policy_reference or "invoice_platform_fee_snapshot"
+    if recovery_amount <= 0:
         return {"recovery_status": "not_required", "reason": "no_customer_fee_policy_or_zero_fee"}
-
-    recovery_amount = Decimal(to_major(fee_minor))  # rupee-equivalent credit units, same unit space as completed_job_deduction_credits
 
     billing = (await db.execute(select(TenantBilling).where(TenantBilling.tenant_id == tenant_id))).scalars().first()
     if not billing:
@@ -80,11 +91,14 @@ async def deduct_customer_platform_charge_recovery(
         tenant_id=tenant_id, job_id=job_id, booking_id=booking_id,
         event_type=RECOVERY_EVENT_TYPE, credit_delta=-recovery_amount,
         balance_before=balance_before, balance_after=balance_after,
-        reason=f"Customer platform charge recovery for job {job_id} "
-               f"(policy {result['policy_id']} v{result['policy_version']})",
+        reason=f"Customer platform charge recovery for job {job_id} ({policy_reference})",
         request_id=request_id,
     )
     db.add(ledger)
     await db.flush()
-    return {**ledger.to_dict(), "recovery_status": "recovered",
-            "fee_amount": result["customer_platform_fee"], "policy_version": result["policy_version"]}
+    return {
+        **ledger.to_dict(), "recovery_status": "recovered",
+        "fee_amount": str(recovery_amount),
+        "policy_reference": policy_reference,
+        "policy_version": result["policy_version"] if result is not None else None,
+    }

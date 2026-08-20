@@ -97,6 +97,8 @@ class PlatformAuditLogService:
         engine_key: str | None = None,
         actor_user_id_filter: uuid.UUID | None = None,
         search: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> dict:
@@ -118,6 +120,10 @@ class PlatformAuditLogService:
             q = q.where(PlatformAuditLog.engine_id == engine_key)
         if actor_user_id_filter:
             q = q.where(PlatformAuditLog.actor_id == actor_user_id_filter)
+        if date_from:
+            q = q.where(PlatformAuditLog.created_at >= date_from)
+        if date_to:
+            q = q.where(PlatformAuditLog.created_at <= date_to)
         if search:
             q = q.where(
                 or_(

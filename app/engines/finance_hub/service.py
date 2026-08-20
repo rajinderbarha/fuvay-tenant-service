@@ -34,7 +34,7 @@ utcnow = lambda: datetime.now(timezone.utc)
 LOW_BALANCE_DEFAULT_THRESHOLD = Decimal("500.00")
 
 DEPOSIT_ACTIVE_STATUSES = ("paid", "partially_paid")
-CLAIM_OPEN_STATUSES = ("pending", "pending_review", "investigating", "awaiting_documents")
+CLAIM_OPEN_STATUSES = ("provider_action_required", "provider_in_progress", "admin_review")
 PAYOUT_OPEN_STATUSES = ("pending", "approved", "processing")
 
 
@@ -304,6 +304,9 @@ class FinanceHubService:
         if d.status == "refunded":
             raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
                 "This security deposit has already been refunded and cannot be approved.", status_code=409)
+        if d.status not in ("pending", "pending_verification"):
+            raise ServiceOSException("DEPOSIT_INVALID_STATE",
+                f"A deposit in '{d.status}' state cannot be approved.", status_code=409)
         before = self._deposit_dict(d)
         d.status = "paid"; d.hold_state = "held"; d.approved_by = self.actor_id; d.approved_at = utcnow()
         if not d.paid_at: d.paid_at = utcnow()
@@ -313,8 +316,13 @@ class FinanceHubService:
 
     async def reject_deposit(self, deposit_id: uuid.UUID, reason: str) -> dict:
         d = await self._load_deposit(deposit_id)
+        if d.status not in ("pending", "pending_verification"):
+            raise ServiceOSException("DEPOSIT_INVALID_STATE",
+                f"A deposit in '{d.status}' state cannot be rejected.", status_code=409)
         before = self._deposit_dict(d)
         d.rejection_reason = reason
+        d.status = "rejected"
+        d.hold_state = "released"
         await self.db.flush()
         await self._audit("deposit.reject", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
         return self._deposit_dict(d)
@@ -329,6 +337,9 @@ class FinanceHubService:
         if amount <= Decimal("0"):
             raise ServiceOSException("VALIDATION_ERROR",
                 "Deposit amount must be positive.", status_code=422)
+        if d.status not in ("unpaid", "partially_paid"):
+            raise ServiceOSException("DEPOSIT_INVALID_STATE",
+                f"Offline payment cannot be recorded for a deposit in '{d.status}' state.", status_code=409)
         if reference:
             dup = await self.db.execute(
                 select(SecurityDepositTransaction).where(
@@ -365,6 +376,9 @@ class FinanceHubService:
         if d.status == "refunded":
             raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
                 "This security deposit has already been refunded.", status_code=409)
+        if d.status not in ("paid", "refund_requested", "partially_adjusted"):
+            raise ServiceOSException("DEPOSIT_INVALID_STATE",
+                f"A deposit in '{d.status}' state cannot be refunded.", status_code=409)
         before = self._deposit_dict(d)
         await debit_deposit(self.db, d, amount, "refund", None, reason, self.actor_id)
         d.status = "refunded"; d.hold_state = "released"; d.refunded_at = utcnow()
@@ -373,8 +387,14 @@ class FinanceHubService:
 
     async def adjust_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reason: str, category: str = "manual") -> dict:
         d = await self._load_deposit(deposit_id)
+        amount = Decimal(str(amount))
+        if amount == Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR", "Adjustment amount cannot be zero.", status_code=422)
+        if d.status == "refunded":
+            raise ServiceOSException("DEPOSIT_INVALID_STATE",
+                "A refunded deposit cannot be adjusted.", status_code=409)
         before = self._deposit_dict(d)
-        await self._commerce.admin_adjust_deposit(d.tenant_id, Decimal(str(amount)), reason, category)
+        await self._commerce.admin_adjust_deposit(d.tenant_id, amount, reason, category)
         if d.status == "paid" and d.current_balance < d.required_amount:
             d.status = "partially_adjusted"
         await self._audit("deposit.adjust", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
@@ -433,8 +453,11 @@ class FinanceHubService:
                 (t.amount_paid for t in paid_topups if t.created_at and t.created_at >= month_start), Decimal("0"))),
         }
 
-    async def _load_topup(self, topup_id: uuid.UUID) -> CreditTopupOrder:
-        r = await self.db.execute(select(CreditTopupOrder).where(CreditTopupOrder.id == topup_id))
+    async def _load_topup(self, topup_id: uuid.UUID, *, for_update: bool = False) -> CreditTopupOrder:
+        stmt = select(CreditTopupOrder).where(CreditTopupOrder.id == topup_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        r = await self.db.execute(stmt)
         t = r.scalar_one_or_none()
         if not t: raise NotFoundException("CreditTopupOrder", str(topup_id))
         return t
@@ -449,6 +472,7 @@ class FinanceHubService:
             p = pr.scalar_one_or_none()
             pkg = {"package_id": str(p.id), "name": p.name} if p else None
         ledger_entry = None
+        credit_ledger: list[dict] = []
         if t.usage_credit_ledger_event_id:
             from app.engines.tenant_engine.models import UsageCreditLedger
             lr = await self.db.execute(select(UsageCreditLedger).where(
@@ -467,9 +491,20 @@ class FinanceHubService:
                 ledger_entry = {"txn_id": str(w.id), "amount": float(w.amount),
                                  "balance_after": float(w.balance_after), "created_at": w.created_at.isoformat(),
                                  "legacy": True}
+        # Show the complete immutable credit history for this order, including
+        # proportional reversals from partial/full monetary refunds.
+        from app.engines.tenant_engine.models import UsageCreditLedger
+        ledger_rows = (await self.db.execute(
+            select(UsageCreditLedger).where(
+                UsageCreditLedger.source_type == "FINANCE_HUB_CREDIT_TOPUP",
+                UsageCreditLedger.source_id == str(t.id),
+            ).order_by(UsageCreditLedger.created_at.asc(), UsageCreditLedger.id.asc())
+        )).scalars().all()
+        credit_ledger = [row.to_dict() for row in ledger_rows]
         audit = await self.list_audit_logs("credit_topup_order", str(topup_id))
         d = t.to_dict(); d["tenant_name"] = tenant.tenant_name if tenant else None
-        return {"topup": d, "package": pkg, "ledger_entry": ledger_entry, "audit_log": audit["audit_log"]}
+        return {"topup": d, "package": pkg, "ledger_entry": ledger_entry,
+                "credit_ledger": credit_ledger, "audit_log": audit["audit_log"]}
 
     async def retry_credit_posting(self, topup_id: uuid.UUID) -> dict:
         """FINAL-L5-05K: grants through the same canonical
@@ -480,9 +515,12 @@ class FinanceHubService:
         topup row was updated), this becomes a safe idempotent no-op
         instead of a second, TenantWallet-targeted credit."""
         from app.engines.usage_credits.service import UsageCreditService
-        t = await self._load_topup(topup_id)
+        t = await self._load_topup(topup_id, for_update=True)
         if t.wallet_credit_status == "credited":
             raise ServiceOSException("CONFLICT", "Credits have already been posted for this top-up.")
+        if t.payment_status not in ("paid_pending_credit", "failed"):
+            raise ServiceOSException("TOPUP_INVALID_STATE",
+                f"Credit posting cannot be retried for a top-up in '{t.payment_status}' state.", status_code=409)
         before = t.to_dict()
         total = t.credits_purchased + t.bonus_credits
         uc_svc = UsageCreditService(self.db, actor_id=self.actor_id, actor_role=self.actor_role,
@@ -498,7 +536,7 @@ class FinanceHubService:
         return t.to_dict()
 
     async def refund_topup(self, topup_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
-        t = await self._load_topup(topup_id)
+        t = await self._load_topup(topup_id, for_update=True)
         amount = Decimal(str(amount))
         # MODULE-L5-10: refunded_amount used to be OVERWRITTEN (t.refunded_amount
         # = amount), so a second partial refund silently lost the first, and there
@@ -507,6 +545,11 @@ class FinanceHubService:
         if amount <= Decimal("0"):
             raise ServiceOSException("VALIDATION_ERROR",
                 "Refund amount must be positive.", status_code=422)
+        if not reason or not reason.strip():
+            raise ServiceOSException("VALIDATION_ERROR", "A refund reason is required.", status_code=422)
+        if t.payment_status not in ("credited", "partially_refunded"):
+            raise ServiceOSException("TOPUP_INVALID_STATE",
+                f"A top-up in '{t.payment_status}' state cannot be refunded.", status_code=409)
         already = Decimal(str(t.refunded_amount or "0"))
         paid = Decimal(str(t.amount_paid or "0"))
         if already >= paid:
@@ -518,12 +561,38 @@ class FinanceHubService:
                 f"{already}, requested {amount}.", status_code=422,
                 context={"paid": float(paid), "already_refunded": float(already),
                          "requested": float(amount)})
+        # Revoke the proportional share of purchased credits (including
+        # bonuses) in the same transaction as the cash-refund record. Without
+        # this, a provider could spend the credits and recover the purchase
+        # money as well. Cumulative targets make partial refunds add up exactly;
+        # a full refund always removes the complete original grant.
+        from decimal import ROUND_HALF_UP
+        from app.engines.usage_credits.service import UsageCreditService
+        total_credits = Decimal(str(t.credits_purchased or "0")) + Decimal(str(t.bonus_credits or "0"))
+        new_refunded = already + amount
+        old_target = (total_credits * already / paid).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        new_target = (total_credits * new_refunded / paid).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if new_refunded >= paid:
+            new_target = total_credits
+        credits_to_revoke = new_target - old_target
+        reversal = None
+        if credits_to_revoke > 0:
+            uc_svc = UsageCreditService(
+                self.db, actor_id=self.actor_id, actor_role=self.actor_role,
+                request_id=self.request_id,
+            )
+            reversal = await uc_svc.revoke_topup_credit(
+                tenant_id=t.tenant_id, topup_order_id=str(t.id),
+                amount=credits_to_revoke, refund_version=str(new_refunded.normalize()),
+                reason=reason.strip(),
+            )
         before = t.to_dict()
-        t.refunded_amount = already + amount
+        t.refunded_amount = new_refunded
         t.payment_status = "refunded" if t.refunded_amount >= paid else "partially_refunded"
         t.failure_reason = t.failure_reason or reason
         await self._audit("topup.refund", "credit_topup_order", str(topup_id), t.tenant_id, before, t.to_dict())
-        return t.to_dict()
+        return {**t.to_dict(), "credits_revoked": float(credits_to_revoke),
+                "credit_reversal_ledger_id": reversal.get("ledger_id") if reversal else None}
 
     async def export_topups(self, **filters) -> list[dict]:
         filters.setdefault("page", 1); filters["page_size"] = 5000
@@ -547,6 +616,21 @@ class FinanceHubService:
             "settled_amount": float(c.settled_amount) if c.settled_amount is not None else None,
             "documents_requested_at": c.documents_requested_at.isoformat() if c.documents_requested_at else None,
             "documents_requested_notes": c.documents_requested_notes,
+            "provider_response_due_at": c.provider_response_due_at.isoformat() if c.provider_response_due_at else None,
+            "provider_responded_at": c.provider_responded_at.isoformat() if c.provider_responded_at else None,
+            "provider_resolution": c.provider_resolution,
+            "provider_resolved_at": c.provider_resolved_at.isoformat() if c.provider_resolved_at else None,
+            "escalated_at": c.escalated_at.isoformat() if c.escalated_at else None,
+            "escalation_reason": c.escalation_reason,
+            "warranty_days": c.warranty_days_snapshot,
+            "warranty_expires_at": c.warranty_expires_at.isoformat() if c.warranty_expires_at else None,
+            "admin_attention_required": c.status == "admin_review" or bool(
+                c.status == "provider_action_required" and c.provider_response_due_at
+                and c.provider_response_due_at <= utcnow()
+            ),
+            "provider_credit_deducted": float(c.provider_credit_deducted or 0),
+            "security_deposit_deducted": float(c.security_deposit_deducted or 0),
+            "customer_credit_id": str(c.customer_credit_id) if c.customer_credit_id else None,
             "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
@@ -575,11 +659,12 @@ class FinanceHubService:
         claims = (await self.db.execute(select(WarrantyClaim))).scalars().all()
         return {
             "total_claims": len(claims),
-            "pending_review": sum(1 for c in claims if c.status in ("pending", "pending_review")),
-            "investigation_ongoing": sum(1 for c in claims if c.status in ("investigating", "awaiting_documents")),
-            "approved_claims": sum(1 for c in claims if c.status == "approved"),
+            "provider_action_required": sum(1 for c in claims if c.status in ("provider_action_required", "provider_in_progress")),
+            "pending_review": sum(1 for c in claims if c.status == "admin_review"),
+            "investigation_ongoing": sum(1 for c in claims if c.status == "admin_review"),
+            "approved_claims": sum(1 for c in claims if c.status == "credit_issued"),
             "rejected_claims": sum(1 for c in claims if c.status == "rejected"),
-            "settled_value": float(sum((c.settled_amount or Decimal("0")) for c in claims if c.status == "settled")),
+            "settled_value": float(sum((c.settled_amount or Decimal("0")) for c in claims if c.status == "credit_issued")),
         }
 
     async def _load_claim(self, claim_id: uuid.UUID) -> WarrantyClaim:
@@ -597,16 +682,24 @@ class FinanceHubService:
 
     async def assign_reviewer(self, claim_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
         c = await self._load_claim(claim_id)
+        overdue = bool(c.status == "provider_action_required" and c.provider_response_due_at and c.provider_response_due_at <= utcnow())
+        if c.status != "admin_review" and not overdue:
+            raise ServiceOSException("PROVIDER_RESOLUTION_REQUIRED", "Reviewer assignment starts only after provider failure.", status_code=409)
         before = self._claim_dict(c)
         c.assigned_reviewer_id = reviewer_id
-        if c.status == "pending": c.status = "pending_review"
+        if overdue:
+            c.status = "admin_review"; c.escalated_at = c.escalated_at or utcnow()
         await self._audit("claim.assign_reviewer", "warranty_claim", str(claim_id), c.tenant_id, before, self._claim_dict(c))
         return self._claim_dict(c)
 
     async def request_documents(self, claim_id: uuid.UUID, notes: str) -> dict:
         c = await self._load_claim(claim_id)
+        overdue = bool(c.status == "provider_action_required" and c.provider_response_due_at and c.provider_response_due_at <= utcnow())
+        if c.status != "admin_review" and not overdue:
+            raise ServiceOSException("PROVIDER_RESOLUTION_REQUIRED", "Documents can be requested only after provider failure.", status_code=409)
         before = self._claim_dict(c)
-        c.status = "awaiting_documents"
+        c.status = "admin_review"
+        c.escalated_at = c.escalated_at or utcnow()
         c.documents_requested_at = utcnow(); c.documents_requested_notes = notes
         await self._audit("claim.request_documents", "warranty_claim", str(claim_id), c.tenant_id, before, self._claim_dict(c))
         return self._claim_dict(c)
@@ -615,6 +708,9 @@ class FinanceHubService:
         before = self._claim_dict(await self._load_claim(claim_id))
         result = await self._commerce.approve_claim(claim_id, Decimal(str(amount_approved)), admin_notes)
         await self._audit("claim.approve", "warranty_claim", str(claim_id), uuid.UUID(before["tenant_id"]), before, result)
+        # Do not acknowledge an issued customer credit until the claim,
+        # provider deductions, customer ledger, and admin audit are durable.
+        await self.db.commit()
         return result
 
     async def reject_claim(self, claim_id: uuid.UUID, rejection_reason: str, admin_notes: str | None = None) -> dict:
@@ -624,13 +720,11 @@ class FinanceHubService:
         return result
 
     async def settle_claim(self, claim_id: uuid.UUID) -> dict:
-        c = await self._load_claim(claim_id)
-        if c.status != "approved":
-            raise ServiceOSException("CONFLICT", "Only approved claims can be settled.")
-        before = self._claim_dict(c)
-        c.status = "settled"; c.settled_at = utcnow(); c.settled_amount = c.amount_approved
-        await self._audit("claim.settle", "warranty_claim", str(claim_id), c.tenant_id, before, self._claim_dict(c))
-        return self._claim_dict(c)
+        raise ServiceOSException(
+            "WARRANTY_SETTLEMENT_ATOMIC",
+            "Warranty service credit is issued atomically when Admin approves; no separate settle step exists.",
+            status_code=409,
+        )
 
     async def export_claims(self, **filters) -> list[dict]:
         filters.setdefault("page", 1); filters["page_size"] = 5000

@@ -449,6 +449,22 @@ class RegistrationService:
             self.db.add(enrollment)
             await self.db.flush()
 
+            # Enrollment tracks setup state; tenant service enablement and
+            # provider matching enforce the independent entitlement tables.
+            # Grant the chosen vertical and its active service groups in this
+            # same transaction so a fresh workspace can complete Services &
+            # Pricing. Admin can still disable either entitlement later.
+            from app.engines.entitlement.service import entitlement_service
+            await entitlement_service.grant_registration_defaults(
+                self.db,
+                tenant_id=tenant.id,
+                module_key=vertical.key,
+                actor_id=owner.id,
+                actor_role="tenant_owner",
+                request_id=idempotency_key,
+                commit=False,
+            )
+
             granted_at = utcnow()
             self.db.add(ConsentRecord(
                 user_id=owner.id, tenant_id=tenant.id, consent_type="authorization_declaration",

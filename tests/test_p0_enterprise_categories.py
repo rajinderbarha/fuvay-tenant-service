@@ -164,6 +164,7 @@ def test_compute_readiness_detects_missing_pricing():
     from app.engines.admin_catalog.category_runtime_router import _compute_readiness
     cat = {
         "is_active": True,
+        "vertical_type": "professional_services",
         "customer_flow_type": "service_booking",
         "finance_model": "security_deposit_plus_credit_wallet",
         "pricing_supported": True,
@@ -173,6 +174,51 @@ def test_compute_readiness_detects_missing_pricing():
     rd = _compute_readiness(cat)
     assert rd["readiness_status"] == "missing_pricing"
     assert any(i["key"] == "pricing_rules" for i in rd["readiness_items"])
+
+def test_compute_readiness_does_not_require_legacy_pricing_rules_for_home_services():
+    from app.engines.admin_catalog.category_runtime_router import _compute_readiness
+    cat = {
+        "is_active": True,
+        "vertical_type": "home_services",
+        "customer_flow_type": "service_booking",
+        "finance_model": "security_deposit_plus_credit_wallet",
+        "pricing_supported": True,
+        "tenant_selectable": False,
+        "linked_counts": {"service_groups": 1, "services": 5, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0},
+    }
+    rd = _compute_readiness(cat)
+    assert rd["readiness_status"] == "ready"
+    assert not any(i["key"] == "pricing_rules" for i in rd["readiness_items"])
+
+def test_compute_readiness_does_not_require_subscription_packages_for_home_services():
+    from app.engines.admin_catalog.category_runtime_router import _compute_readiness
+    cat = {
+        "is_active": True,
+        "vertical_type": "home_services",
+        "customer_flow_type": "service_booking",
+        "finance_model": "security_deposit_plus_credit_wallet",
+        "pricing_supported": True,
+        "tenant_selectable": True,
+        "linked_counts": {"service_groups": 1, "services": 5, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0},
+    }
+    rd = _compute_readiness(cat)
+    assert rd["readiness_status"] == "ready"
+    assert not any(i["key"] == "packages" for i in rd["readiness_items"])
+
+def test_compute_readiness_still_requires_packages_for_subscription_verticals():
+    from app.engines.admin_catalog.category_runtime_router import _compute_readiness
+    cat = {
+        "is_active": True,
+        "vertical_type": "coaching",
+        "customer_flow_type": "appointment_booking",
+        "finance_model": "subscription",
+        "pricing_supported": False,
+        "tenant_selectable": True,
+        "linked_counts": {"service_groups": 1, "services": 5, "pricing_rules": 0, "brands": 0, "packages": 0, "providers": 0},
+    }
+    rd = _compute_readiness(cat)
+    assert rd["readiness_status"] == "missing_package"
+    assert any(i["key"] == "packages" for i in rd["readiness_items"])
 
 def test_compute_readiness_detects_missing_flow():
     from app.engines.admin_catalog.category_runtime_router import _compute_readiness
@@ -486,5 +532,7 @@ class TestAdminCategoriesRealRuntime:
         svc = AdminCatalogService(real_db_session)
         data = await svc.list_categories(is_active=None)
         cats = data["categories"]
+        if not any(c.get("display_order") == 0 for c in cats) or not any((c.get("display_order") or 0) > 0 for c in cats):
+            pytest.skip("old buggy sort precondition requires both zero and nonzero display_order rows")
         with pytest.raises(TypeError):
             sorted(cats, key=lambda c: (c.get("display_order") or ""))

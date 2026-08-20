@@ -141,38 +141,6 @@ export const homeServiceabilityDtoSchema = z.object({
   checked: z.boolean(),
 }).nullable();
 
-export const homeCampaignDtoSchema = z.object({
-  campaign_id: z.string(),
-  eyebrow: z.string().nullable().optional(),
-  title: z.string(),
-  description: z.string().nullable().optional(),
-  artwork_url_light: z.string().nullable().optional(),
-  artwork_url_dark: z.string().nullable().optional(),
-  cta_label: z.string().nullable().optional(),
-  cta_deeplink: z.string().nullable().optional(),
-  priority: z.number(),
-  /** How to draw it and where it belongs. The backend validates both against
-   * the vocabulary this app ships renderers and slots for, so an unknown value
-   * means a newer backend than this build -- the app skips it rather than
-   * guessing a layout. */
-  display_style: z.string().optional(),
-  placement: z.string().optional(),
-  /** Festival treatment: the accent the card is painted in and the small badge
-   * above the title. */
-  accent_color: z.string().nullable().optional(),
-  badge_text: z.string().nullable().optional(),
-  /** A real end date for a limited run, never a manufactured countdown. */
-  ends_at: z.string().nullable().optional(),
-});
-
-/** One section of the Home layout, in the order the backend wants it drawn.
- * `title` is an admin override; null means the app uses its own wording. */
-export const homeSectionDtoSchema = z.object({
-  key: z.string(),
-  order: z.number(),
-  title: z.string().nullable().optional(),
-});
-
 export const homeCapabilitiesDtoSchema = z.object({
   bargain_available: z.boolean(),
   photo_attach_available: z.boolean(),
@@ -181,10 +149,6 @@ export const homeCapabilitiesDtoSchema = z.object({
 
 export const customerHomeResponseSchema = z.object({
   response_version: z.number(),
-  // Absent on an older backend, which is why it defaults to empty rather than
-  // being required: the app then draws its own shipped layout, which is a
-  // working screen -- not a blank one.
-  sections: z.array(homeSectionDtoSchema).optional().default([]),
   /** Up to three live bookings, newest first. Empty on an older backend, which
    * the adapter then fills from the single `active_booking` below. */
   active_bookings: z.array(homeActiveBookingDtoSchema).optional().default([]),
@@ -203,7 +167,6 @@ export const customerHomeResponseSchema = z.object({
   quick_issues: z.array(homeQuickIssueDtoSchema).optional().default([]),
   active_booking: homeActiveBookingDtoNullableSchema,
   unread_notification_count: z.number(),
-  campaigns: z.array(homeCampaignDtoSchema),
   capabilities: homeCapabilitiesDtoSchema,
 });
 export type CustomerHomeResponseDto = z.infer<typeof customerHomeResponseSchema>;

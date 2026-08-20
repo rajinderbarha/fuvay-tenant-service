@@ -145,18 +145,17 @@ function PricePreviewBand({ preview }: { preview: HsPricePreview | null }) {
   if (!preview) return null;
   return (
     <div style={{
-      display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8,
+      display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8,
       padding: "14px 16px", background: "var(--surface-sunken)", borderRadius: 10,
     }}>
-      {(["Low", "Mid", "High"] as const).map(tier => {
-        const val = tier === "Low" ? preview.low_price
-          : tier === "Mid" ? preview.mid_price : preview.high_price;
+      {(["Minimum", "Maximum"] as const).map(label => {
+        const val = label === "Minimum" ? preview.provider_min_price : preview.provider_max_price;
         return (
-          <div key={tier} style={{
+          <div key={label} style={{
             padding: "10px 12px", background: "var(--surface)", borderRadius:"var(--radius-md)",
             border: "1px solid var(--border)", textAlign: "center",
           }}>
-            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1 }}>{tier}</p>
+            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1 }}>Provider {label}</p>
             <p style={{ margin: "4px 0 0", fontSize: 17, fontWeight: 800, color: "var(--text-primary)" }}>
               {safeCur(val)}
             </p>
@@ -164,7 +163,7 @@ function PricePreviewBand({ preview }: { preview: HsPricePreview | null }) {
         );
       })}
       <p style={{ gridColumn: "1/-1", margin: 0, fontSize: 10, color: "var(--text-tertiary)" }}>
-        Platform fee: {safeNum(preview.platform_fee_percent)}% · Customer pays provider directly on-site
+        Customer-facing charges are added by Home Services Finance during booking. Customer pays provider directly on-site.
       </p>
     </div>
   );
@@ -295,7 +294,8 @@ function ServiceSetupWizard({
   // Enable service on first open if not yet enabled
   const enableAction = useAction(useCallback(async () => {
     if (tenantServiceId) return { tenant_service_id: tenantServiceId };
-    const result = await homeServicesSetupApi.enable({ master_service_id: service.service_id });
+    if (!service.job_type_id) throw new Error("This service has no job type configured.");
+    const result = await homeServicesSetupApi.enable({ master_service_id: service.service_id, job_type_id: service.job_type_id });
     setTenantServiceId(result.tenant_service_id);
     return result;
   }, [tenantServiceId, service.service_id]));
@@ -704,8 +704,7 @@ function ServiceSetupWizard({
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>Set your price range per type</h2>
                 <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-                  Your range must stay within the admin-set working range.
-                  Customer Low / Mid / High options are generated automatically.
+                  Set the provider price range for this type. Customer-facing charges are added by Home Services Finance during booking.
                 </p>
               </div>
               {typePricingApi.loading ? <Skeleton height={300} /> : (
@@ -871,7 +870,7 @@ function ServiceSetupWizard({
                           <td style={{ padding: "10px 12px" }}>
                             {tp.preview ? (
                               <span style={{ color: "var(--text-secondary)" }}>
-                                Low {safeCur(tp.preview.low_price)} / Mid {safeCur(tp.preview.mid_price)} / High {safeCur(tp.preview.high_price)}
+                                Provider range {safeCur(tp.preview.provider_min_price)} – {safeCur(tp.preview.provider_max_price)}
                               </span>
                             ) : <span style={{ color: "var(--text-tertiary)" }}>Preview not loaded</span>}
                           </td>
@@ -889,7 +888,7 @@ function ServiceSetupWizard({
                                 <td style={{ padding: "8px 12px" }}>
                                   {bp.preview ? (
                                     <span style={{ color: "var(--text-secondary)" }}>
-                                      Low {safeCur(bp.preview.low_price)} / Mid {safeCur(bp.preview.mid_price)} / High {safeCur(bp.preview.high_price)}
+                                      Provider range {safeCur(bp.preview.provider_min_price)} – {safeCur(bp.preview.provider_max_price)}
                                     </span>
                                   ) : <span style={{ color: "var(--text-tertiary)" }}>Preview not loaded</span>}
                                 </td>
@@ -1134,7 +1133,7 @@ function TypePricingCard({ tp, onUpdate, onPreview, previewLoading }: {
           <PricePreviewBand preview={tp.preview} />
         ) : (
           <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
-            Click Preview to see Low / Mid / High options customers will see.
+            Click Preview to verify the provider price range.
           </p>
         )}
       </div>
@@ -1278,7 +1277,7 @@ function EnabledServicesList({
   enabledServices: TenantEnabledService[];
   availableServices: AdminMasterServiceRow[];
   onManage: (svc: TenantEnabledService) => void;
-  onDisable: (masterServiceId: string) => void;
+  onDisable: (masterServiceId: string, jobTypeId: string) => void;
 }) {
   if (enabledServices.length === 0) return null;
   const published = enabledServices.filter(s => s.setup_status === "published" && s.is_active);
@@ -1322,7 +1321,7 @@ function EnabledServicesList({
                   <td style={{ padding: "12px 14px" }}>
                     <div style={{ display: "flex", gap: 8 }}>
                       <Btn size="sm" variant="secondary" onClick={() => onManage(svc)}>Manage</Btn>
-                      <Btn size="sm" variant="ghost" onClick={() => onDisable(svc.master_service_id)}>Disable</Btn>
+                      <Btn size="sm" variant="ghost" onClick={() => svc.job_type_id && onDisable(svc.master_service_id, svc.job_type_id)}>Disable</Btn>
                     </div>
                   </td>
                 </tr>
@@ -1344,26 +1343,26 @@ export default function HomeServicesServiceSetupPage() {
   const availableApi = useApi(useCallback(() => homeServicesSetupApi.listAvailable(), []), []);
   const enabledApi = useApi(useCallback(() => homeServicesSetupApi.listEnabled(), []), []);
 
-  const disableAction = useAction(useCallback((masterServiceId: string) =>
-    homeServicesSetupApi.disable(masterServiceId), []));
+  const disableAction = useAction(useCallback((masterServiceId: string, jobTypeId: string) =>
+    homeServicesSetupApi.disable(masterServiceId, jobTypeId), []));
 
   function openWizard(service: AdminMasterServiceRow) {
-    const enabled = (enabledApi.data?.services ?? []).find(s => s.master_service_id === service.service_id) ?? null;
+    const enabled = (enabledApi.data?.services ?? []).find(s => s.master_service_id === service.service_id && s.job_type_id === service.job_type_id) ?? null;
     setWizardEnabled(enabled);
     setWizardService(service);
   }
 
   function openWizardFromEnabled(svc: TenantEnabledService) {
-    const master = (availableApi.data?.services ?? []).find(s => s.service_id === svc.master_service_id);
+    const master = (availableApi.data?.services ?? []).find(s => s.service_id === svc.master_service_id && s.job_type_id === svc.job_type_id);
     if (master) {
       setWizardEnabled(svc);
       setWizardService(master);
     }
   }
 
-  async function handleDisable(masterServiceId: string) {
+  async function handleDisable(masterServiceId: string, jobTypeId: string) {
     try {
-      await disableAction.execute(masterServiceId);
+      await disableAction.execute(masterServiceId, jobTypeId);
       await enabledApi.refetch();
     } catch { /* surface via action.error below if needed */ }
   }
@@ -1425,7 +1424,7 @@ export default function HomeServicesServiceSetupPage() {
         <Info size={15} style={{ color: "var(--info-text, var(--brand-hover))", flexShrink: 0, marginTop: 1 }} />
         <p style={{ fontSize: 12, color: "var(--info-text, var(--brand-hover))", margin: 0 }}>
           You can only select services from the admin-approved catalog.
-          Customer Low / Mid / High price options are generated automatically from your price range + platform fee.
+          Customers see the provider price plus Home Services Finance charges during booking.
         </p>
       </div>
 

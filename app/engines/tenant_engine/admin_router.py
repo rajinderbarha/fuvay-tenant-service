@@ -195,6 +195,10 @@ async def list_tenants(
 @router.get("/change-requests")
 async def list_pending_change_requests(
     request: Request,
+    q: str | None = Query(None),
+    vertical_type: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> dict:
@@ -205,7 +209,9 @@ async def list_pending_change_requests(
     # work had already been done, which on the approve route meant the change was applied
     # and the caller was told it had failed.
     svc = _svc(db, request, user)
-    return await svc.list_pending_change_requests()
+    return await svc.list_pending_change_requests(
+        q=q, vertical_type=vertical_type, page=page, page_size=page_size,
+    )
 
 
 @router.get("/{tenant_id}")

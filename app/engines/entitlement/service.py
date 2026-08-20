@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import ServiceGroup, ServiceCategory
@@ -196,6 +196,7 @@ class EntitlementService:
         self, db: AsyncSession, *, tenant_id: uuid.UUID, module_key: str,
         actor_id: uuid.UUID | None, actor_role: str | None, source: str = "admin_manual",
         request_id: str | None = None, configuration: dict | None = None,
+        commit: bool = True,
     ) -> dict:
         v = (await db.execute(select(Vertical).where(Vertical.key == module_key))).scalar_one_or_none()
         if not v:
@@ -221,8 +222,65 @@ class EntitlementService:
         await self._audit(db, tenant_id=tenant_id, entity_type="module", entity_id=ent.id,
                            event="MODULE_ENTITLEMENT_ASSIGNED", previous_status=None, new_status="ACTIVE",
                            actor_id=actor_id, actor_role=actor_role, source=source, request_id=request_id)
-        await db.commit()
+        if commit:
+            await db.commit()
         return self._module_dict(ent, v)
+
+    async def grant_registration_defaults(
+        self, db: AsyncSession, *, tenant_id: uuid.UUID, module_key: str,
+        actor_id: uuid.UUID | None, actor_role: str | None,
+        request_id: str | None = None, commit: bool = True,
+    ) -> dict[str, Any]:
+        """Grant the active catalog selected during public registration.
+
+        A vertical enrollment tracks onboarding state, but service enablement
+        and matching intentionally enforce the separate entitlement tables.
+        New registrations therefore receive the selected module and its active
+        service groups. Admin can still disable either level through the
+        existing audited control plane. ``commit=False`` keeps signup atomic.
+        """
+        module = await self.assign_module_entitlement(
+            db,
+            tenant_id=tenant_id,
+            module_key=module_key,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            source="tenant_registration",
+            request_id=request_id,
+            configuration={"grant_policy": "active_vertical_service_groups"},
+            commit=False,
+        )
+        groups = (await db.execute(
+            select(ServiceGroup)
+            .join(ServiceCategory, ServiceCategory.id == ServiceGroup.category_id)
+            .where(
+                ServiceCategory.is_active.is_(True),
+                or_(
+                    ServiceCategory.vertical_type == module_key,
+                    ServiceCategory.category_type == module_key,
+                ),
+                ServiceGroup.status == "active",
+                ServiceGroup.deleted_at.is_(None),
+            )
+            .order_by(ServiceGroup.display_order, ServiceGroup.name)
+        )).scalars().all()
+
+        categories = []
+        for group in groups:
+            categories.append(await self.assign_category_entitlement(
+                db,
+                tenant_id=tenant_id,
+                category_id=group.id,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                source="tenant_registration",
+                request_id=request_id,
+                configuration={"grant_policy": "active_vertical_service_groups"},
+                commit=False,
+            ))
+        if commit:
+            await db.commit()
+        return {"module": module, "categories": categories}
 
     async def disable_module_entitlement(
         self, db: AsyncSession, *, tenant_id: uuid.UUID, module_key: str,
@@ -304,6 +362,7 @@ class EntitlementService:
         self, db: AsyncSession, *, tenant_id: uuid.UUID, category_id: uuid.UUID,
         actor_id: uuid.UUID | None, actor_role: str | None, source: str = "admin_manual",
         request_id: str | None = None, configuration: dict | None = None,
+        commit: bool = True,
     ) -> dict:
         group = (await db.execute(select(ServiceGroup).where(ServiceGroup.id == category_id))).scalar_one_or_none()
         if not group:
@@ -353,7 +412,8 @@ class EntitlementService:
         await self._audit(db, tenant_id=tenant_id, entity_type="category", entity_id=ent.id,
                            event="CATEGORY_ENTITLEMENT_ASSIGNED", previous_status=None, new_status="ACTIVE",
                            actor_id=actor_id, actor_role=actor_role, source=source, request_id=request_id)
-        await db.commit()
+        if commit:
+            await db.commit()
         return self._category_dict(ent, group)
 
     async def disable_category_entitlement(

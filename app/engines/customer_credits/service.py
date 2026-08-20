@@ -22,10 +22,8 @@ from app.engines.customer_credits.models import (
     SecurityDepositAdjustment, FinanceAuditLog,
     FinanceVerticalConfig,
 )
-from app.engines.platform_commerce.models import (
-    TenantWallet, WalletTransaction,
-    SecurityDeposit, SecurityDepositTransaction,
-)
+from app.engines.platform_commerce.models import SecurityDeposit, SecurityDepositTransaction
+from app.engines.tenant_engine.models import TenantBilling, UsageCreditLedger
 from app.engines.complaints.models import CustomerComplaint
 from app.engines.booking.models import Booking
 from app.exceptions import ServiceOSException, NotFoundException
@@ -57,6 +55,171 @@ def _two(v: Decimal) -> Decimal:
     return v.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
 
+async def issue_provider_funded_customer_credit(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    amount: Decimal,
+    reference_type: str,
+    reference_id: uuid.UUID,
+    reason: str,
+    actor_id: uuid.UUID | None,
+    actor_role: str = "super_admin",
+    request_id: str = "-",
+    booking_id: uuid.UUID | None = None,
+    job_id: uuid.UUID | None = None,
+    currency: str = "INR",
+) -> dict:
+    """Issue service points funded by provider credits, then deposit.
+
+    The caller owns the transaction and must lock its claim/refund row first.
+    No partial remedy is ever posted: both funding sources are locked and
+    checked before any balance is changed.
+    """
+    amount = _two(Decimal(str(amount)))
+    if amount <= 0:
+        raise ServiceOSException("VALIDATION_ERROR", "Credit amount must be positive.", status_code=422)
+
+    existing_ledger = await db.scalar(
+        select(CustomerCreditLedger).where(
+            CustomerCreditLedger.reference_type == reference_type,
+            CustomerCreditLedger.reference_id == reference_id,
+            CustomerCreditLedger.transaction_type == "issued",
+        ).limit(1)
+    )
+    if existing_ledger:
+        existing_credit = await db.get(CustomerServiceCredit, existing_ledger.customer_credit_id)
+        return {
+            "credit": existing_credit,
+            "provider_credit_deducted": Decimal("0"),
+            "security_deposit_deducted": Decimal("0"),
+            "idempotent_replay": True,
+        }
+
+    billing = await db.scalar(
+        select(TenantBilling).where(TenantBilling.tenant_id == tenant_id).with_for_update()
+    )
+    deposit = await db.scalar(
+        select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id).with_for_update()
+    )
+    usage_available = _two(Decimal(str(billing.credit_balance or 0))) if billing else Decimal("0")
+    deposit_available = _two(Decimal(str(deposit.current_balance))) if deposit else Decimal("0")
+    if usage_available + deposit_available < amount:
+        raise ServiceOSException(
+            "PROVIDER_REMEDY_FUNDS_INSUFFICIENT",
+            "Provider usage credits and security deposit cannot fully fund this customer credit.",
+            status_code=409,
+            context={
+                "required": float(amount),
+                "provider_credits_available": float(usage_available),
+                "security_deposit_available": float(deposit_available),
+            },
+        )
+
+    usage_deduct = min(amount, usage_available)
+    deposit_deduct = amount - usage_deduct
+    if usage_deduct > 0 and billing:
+        before = _two(Decimal(str(billing.credit_balance or 0)))
+        billing.credit_balance = before - usage_deduct
+        db.add(UsageCreditLedger(
+            tenant_id=tenant_id,
+            job_id=job_id,
+            booking_id=booking_id,
+            event_type="customer_remedy_deduction",
+            credit_delta=-usage_deduct,
+            balance_before=before,
+            balance_after=billing.credit_balance,
+            deduction_source="provider_usage_credits_then_security_deposit",
+            reason=reason,
+            created_by=actor_id,
+            request_id=request_id,
+            idempotency_key=f"customer_remedy:{reference_type}:{reference_id}:credits",
+            source_type=reference_type,
+            source_id=str(reference_id),
+            reason_code="provider_failed_resolution",
+            actor_role=actor_role,
+        ))
+
+    if deposit_deduct > 0 and deposit:
+        before = _two(Decimal(str(deposit.current_balance)))
+        deposit.warranty_drawn = _two(Decimal(str(deposit.warranty_drawn or 0)) + deposit_deduct)
+        db.add(SecurityDepositTransaction(
+            deposit_id=deposit.id,
+            tenant_id=tenant_id,
+            txn_type="customer_remedy_draw",
+            amount=-deposit_deduct,
+            balance_before=before,
+            balance_after=deposit.current_balance,
+            reference_id=str(reference_id),
+            notes=reason,
+            actor_id=actor_id,
+        ))
+
+    credit = CustomerServiceCredit(
+        credit_number=_gen_number("CSC"),
+        customer_id=customer_id,
+        tenant_id=tenant_id,
+        booking_id=booking_id,
+        job_id=job_id,
+        amount=amount,
+        remaining_amount=amount,
+        currency=currency,
+        credit_type=("warranty_compensation" if reference_type == "warranty_claim" else "refund_compensation"),
+        source="provider_funded_remedy",
+        status="active",
+        issued_by_admin_id=actor_id,
+        issued_reason=reason,
+        customer_message=(
+            f"We issued {float(amount):,.2f} service points to your account. "
+            "You can apply them to another service booking."
+        ),
+        valid_from=_utcnow(),
+        expires_at=_utcnow() + timedelta(days=CREDIT_EXPIRY_DAYS),
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    db.add(credit)
+    await db.flush()
+    db.add(CustomerCreditLedger(
+        customer_credit_id=credit.id,
+        customer_id=customer_id,
+        booking_id=booking_id,
+        transaction_type="issued",
+        amount=amount,
+        balance_after=amount,
+        description="Provider-funded service credit; not a cash refund.",
+        reference_type=reference_type,
+        reference_id=reference_id,
+        created_at=_utcnow(),
+    ))
+    db.add(FinanceAuditLog(
+        event_type="customer_credit.provider_funded_remedy",
+        actor_user_id=actor_id,
+        actor_role=actor_role,
+        request_id=request_id,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        booking_id=booking_id,
+        amount=amount,
+        reason=reason,
+        metadata_json={
+            "reference_type": reference_type,
+            "reference_id": str(reference_id),
+            "provider_credit_deducted": str(usage_deduct),
+            "security_deposit_deducted": str(deposit_deduct),
+            "credit_number": credit.credit_number,
+        },
+        created_at=_utcnow(),
+    ))
+    return {
+        "credit": credit,
+        "provider_credit_deducted": usage_deduct,
+        "security_deposit_deducted": deposit_deduct,
+        "idempotent_replay": False,
+    }
+
+
 class DisputeSettlementService:
     """Manages the full dispute settlement flow — create, approve, execute, cancel."""
 
@@ -69,9 +232,12 @@ class DisputeSettlementService:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    async def _get_wallet(self, tenant_id: uuid.UUID) -> TenantWallet | None:
-        return await self.db.scalar(
-            select(TenantWallet).where(TenantWallet.tenant_id == tenant_id))
+    async def _get_wallet(self, tenant_id: uuid.UUID, *, for_update: bool = False) -> TenantBilling | None:
+        """Canonical provider usage-credit balance used by job completion."""
+        stmt = select(TenantBilling).where(TenantBilling.tenant_id == tenant_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        return await self.db.scalar(stmt)
 
     async def _get_deposit(self, tenant_id: uuid.UUID) -> SecurityDeposit | None:
         return await self.db.scalar(
@@ -271,13 +437,20 @@ class DisputeSettlementService:
 
         # Re-compute deduction amounts at execution time
         preview = await self.preview_deduction(tenant_id, total, s.deduction_source)
+        if not preview["can_fully_cover"]:
+            raise ServiceOSException(
+                "PROVIDER_REMEDY_FUNDS_INSUFFICIENT",
+                "Provider usage credits and security deposit cannot fully fund this customer credit.",
+                status_code=409,
+                context={"uncovered_amount": preview["uncovered_amount"]},
+            )
         wallet_deduct  = _two(Decimal(str(preview["wallet_deduction"])))
         deposit_deduct = _two(Decimal(str(preview["deposit_deduction"])))
         goodwill_amt   = _two(Decimal(str(preview["platform_goodwill_amount"])))
 
         # ── Step 1: Deduct tenant wallet ──────────────────────────────────────
         if wallet_deduct > Decimal("0"):
-            wallet = await self._get_wallet(tenant_id)
+            wallet = await self._get_wallet(tenant_id, for_update=True)
             if not wallet or wallet.credit_balance < wallet_deduct:
                 actual_deduct = _two(wallet.credit_balance if wallet else Decimal("0"))
             else:
@@ -286,24 +459,27 @@ class DisputeSettlementService:
             if wallet and actual_deduct > Decimal("0"):
                 bal_before = wallet.credit_balance
                 wallet.credit_balance -= actual_deduct
-                wallet.last_transaction_at = _utcnow()
-                self.db.add(WalletTransaction(
+                self.db.add(UsageCreditLedger(
                     tenant_id=tenant_id,
-                    txn_type="manual_deduct",
-                    amount=-actual_deduct,
+                    job_id=s.job_id,
+                    booking_id=s.booking_id,
+                    event_type="customer_remedy_deduction",
+                    credit_delta=-actual_deduct,
                     balance_before=bal_before,
                     balance_after=wallet.credit_balance,
-                    reference_id=str(settlement_id),
-                    reference_type="dispute_settlement",
-                    idempotency_key=f"ds_wallet_{settlement_id}",
-                    description=(
+                    deduction_source="provider_usage_credits_then_security_deposit",
+                    reason=(
                         f"Dispute settlement deduction — {s.settlement_number}. "
                         "ServiceOS platform does not collect direct payments for Home Services; "
                         "this amount is deducted to fund customer service credit."
                     ),
-                    actor_id=self.actor_id,
-                    meta={"settlement_number": s.settlement_number,
-                          "dispute_id": str(s.dispute_id)},
+                    created_by=self.actor_id,
+                    request_id=self.request_id,
+                    idempotency_key=f"customer_remedy:dispute:{settlement_id}:credits",
+                    source_type="dispute_settlement",
+                    source_id=str(settlement_id),
+                    reason_code="provider_failed_resolution",
+                    actor_role=self.actor_role,
                 ))
                 s.tenant_wallet_deduction_amount = actual_deduct
                 self._audit("tenant_wallet.deducted_for_dispute",
@@ -316,7 +492,9 @@ class DisputeSettlementService:
 
         # ── Step 2: Deduct security deposit if needed ─────────────────────────
         if deposit_deduct > Decimal("0"):
-            deposit = await self._get_deposit(tenant_id)
+            deposit = await self.db.scalar(
+                select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id).with_for_update()
+            )
             if deposit and deposit.current_balance >= deposit_deduct:
                 bal_before = deposit.current_balance
                 deposit.warranty_drawn = (deposit.warranty_drawn or Decimal("0")) + deposit_deduct

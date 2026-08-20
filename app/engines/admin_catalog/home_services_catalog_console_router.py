@@ -3,8 +3,7 @@
 Consolidates the already-real, already-working master-service / service-type
 / brand / pricing-rule CRUD (admin_router.py) into one Home-Services-scoped
 console surface: grouped service list, per-service tabs (types with admin
-floor/ceiling, brand behavior + brand override limits, symmetric customer
-Low/Mid/High preview, audit trail). Hard-scoped to the Home Services
+floor/ceiling, brand behavior + brand override limits, audit trail). Hard-scoped to the Home Services
 category — never reads or writes any other vertical's catalog data.
 """
 import uuid
@@ -104,15 +103,6 @@ async def set_console_brand_limits(service_id: uuid.UUID, brand_id: uuid.UUID, r
                                     s: AdminCatalogService = Depends(_svc)):
     body = await r.json()
     return ok(await s.upsert_home_services_brand_limits(service_id, brand_id, service_type_id, body), _rid(r), ENGINE_ID)
-
-
-@router.post("/price-preview", response_model=ApiResponse[dict],
-             summary="Customer Price Preview — symmetric Low/Mid/High from a provider price range")
-async def console_price_preview(r: Request,
-                                 u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
-                                 s: AdminCatalogService = Depends(_svc)):
-    body = await r.json()
-    return ok(s.preview_symmetric_customer_price(body), _rid(r), ENGINE_ID)
 
 
 @router.get("/services/{service_id}/audit", response_model=ApiResponse[dict],

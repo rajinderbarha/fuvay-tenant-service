@@ -389,7 +389,17 @@ async def customer_job_tracking(job_id: uuid.UUID, r: Request, user=Depends(requ
     notes = await _svc.get_job_notes(db, job_id, job.tenant_id, customer_only=True)
     media = await _svc.get_job_media(db, job_id, job.tenant_id, customer_only=True)
     timeline = await _svc.get_job_timeline(db, job_id, job.tenant_id)
-    return ok({"job": job.to_dict(), "notes": notes, "media": media, "timeline": timeline}, rid, "customer-exec-tracking")
+    # The journey as the CUSTOMER should see it — only steps flagged
+    # customer_visible on the job's own snapshotted workflow, so internal stages
+    # (e.g. "Work Started") never leak to the customer. None when the workflow
+    # defines no steps, in which case the response simply omits the tracker.
+    from app.engines.admin_catalog.workflow_steps import (
+        resolve_job_workflow_stages, to_client_stages,
+    )
+    stages = await resolve_job_workflow_stages(db, job, "customer")
+    return ok({"job": job.to_dict(), "notes": notes, "media": media, "timeline": timeline,
+               "workflow_stages": to_client_stages(stages) if stages else []},
+              rid, "customer-exec-tracking")
 
 
 # ── Admin router ──────────────────────────────────────────────────────────────

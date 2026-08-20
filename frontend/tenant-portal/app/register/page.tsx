@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button, Alert, Card } from "@serviceos/design-system";
 import { publicSignupApi, SignupVertical } from "../../lib/api";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 
 const VERTICAL_ICONS: Record<string, React.ElementType> = {
   home_services: Wrench, real_estate: Building2, salon: Scissors, coaching: GraduationCap,
@@ -320,12 +321,7 @@ export default function RegisterPage() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "18px 32px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", gap: 12,
       }} className="register-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: "var(--radius-md)", background: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ color: "var(--text-on-brand, #fff)", fontWeight: 800, fontSize: 14 }}>S</span>
-          </div>
-          <span style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)" }}>ServiceOS</span>
-        </div>
+        <FuvayLogo height={36}/>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <span className="register-header-prompt" style={{ fontSize: 13, color: "var(--text-secondary)" }}>Already have an account?</span>
           <Link href="/login" style={{ minHeight: 36, padding: "0 16px", display: "inline-flex", alignItems: "center", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-md)", color: "var(--text-primary)", background: "var(--surface)", fontSize: 14, fontWeight: 600, textDecoration: "none" }}>Sign in</Link>
@@ -658,7 +654,7 @@ export default function RegisterPage() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "16px 32px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap", gap: 8,
       }}>
-        <span>© {new Date().getFullYear()} ServiceOS. All rights reserved.</span>
+        <span>© {new Date().getFullYear()} Fuvay. All rights reserved.</span>
         <div style={{ display: "flex", gap: 16 }}>
           <Link href="/terms" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Terms of Service</Link>
           <Link href="/privacy" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Privacy Notice</Link>

@@ -242,6 +242,12 @@ def register_exception_handlers(app: FastAPI) -> None:
             403: "PERMISSION_DENIED",
             404: "NOT_FOUND",
             409: "CONFLICT",
+            # A route that raises HTTPException(422) is reporting a validation
+            # failure. Without this entry it fell through to INTERNAL_ERROR, so
+            # the response carried status 422 while its title read "Internal
+            # Server Error" — telling the caller the server had broken when in
+            # fact their input had, and telling on-call the same thing.
+            422: "VALIDATION_ERROR",
             429: "RATE_LIMITED",
         }
         error_code = error_map.get(exc.status_code, "INTERNAL_ERROR")

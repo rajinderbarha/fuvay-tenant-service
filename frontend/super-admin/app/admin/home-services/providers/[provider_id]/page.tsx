@@ -7,7 +7,7 @@
  * route (/admin/[vertical]/providers/[id]) once other verticals get their
  * own backend directory service — see that route's own honest-gap message
  * for why only Home Services works today. Nothing here duplicates that file.
- * Previous (pre-rebuild) version preserved at ../_legacy/provider-detail-v1.page.tsx.bak.
+ * The pre-rebuild duplicate was retired after this route reached parity.
  */
 import { Suspense } from "react";
 import { useParams } from "next/navigation";

@@ -231,11 +231,11 @@ class PlatformAnalyticsService:
                    COUNT(DISTINCT j.id) AS job_count,
                    COUNT(DISTINCT cc.id) AS complaint_count
             FROM tenants t
-            LEFT JOIN jobs j ON j.tenant_id = t.id
+            LEFT JOIN service_jobs j ON j.tenant_id = t.id
                 AND j.created_at > NOW() - INTERVAL '30 days'
             LEFT JOIN customer_complaints cc ON cc.tenant_id = t.id
                 AND cc.created_at > NOW() - INTERVAL '30 days'
-            WHERE t.status = 'active'
+            WHERE t.status = 'active' AND t.vertical = 'home_services'
             GROUP BY t.id, t.business_name, t.vertical
             HAVING COUNT(DISTINCT j.id) > 0
                AND COUNT(DISTINCT cc.id)::float / COUNT(DISTINCT j.id) > 0.2

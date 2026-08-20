@@ -202,7 +202,7 @@ export function LoginScreen({ navigation, route }: Props) {
           )}
 
           <View style={{ alignItems: "center", marginTop: theme.spacing.xs }}>
-            <AppText variant="caption" color="tertiary">Protected by ServiceOS secure authentication</AppText>
+            <AppText variant="caption" color="tertiary">Protected by Fuvay secure authentication</AppText>
           </View>
         </Stack>
       </Card>

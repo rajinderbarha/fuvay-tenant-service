@@ -236,13 +236,13 @@ def test_security_meta(client):
     assert r.status_code == 200
     d = r.json()
     assert d["engine_id"] == "security"
-    assert "api_key_hmac_hash_only"       in d["capabilities"]
+    assert "api_key_hmac_hash_only"   not in d["capabilities"]
     assert "ip_blocklist_redis_o1_lookup" in d["capabilities"]
     assert "append_only_audit_log"        in d["capabilities"]
-    assert "plaintext_never_stored"       in d["capabilities"]
+    assert "plaintext_never_stored"   not in d["capabilities"]
 
-def test_create_api_key_requires_auth(client):
-    assert client.post("/v1/security/api-keys", json={}).status_code == 401
+def test_create_api_key_is_hidden(client):
+    assert client.post("/v1/security/api-keys", json={}).status_code == 404
 
 def test_block_ip_requires_admin(client):
     assert client.post("/v1/security/blocklist", json={}).status_code == 401
@@ -258,10 +258,10 @@ def test_revoke_all_sessions_requires_admin(client):
     assert client.post(f"/v1/security/sessions/users/{uid}/revoke-all",
                        json={}).status_code == 401
 
-def test_verify_api_key_is_open(client):
-    # Verification endpoint open — API key auth itself needs to be callable
+def test_verify_api_key_is_hidden(client):
+    # The dormant API-key product must not expose even its verification route.
     r = client.post("/v1/security/api-keys/verify", json={"api_key": "invalid_test"})
-    assert r.status_code in (200, 422)  # not 401
+    assert r.status_code == 404
 
 def test_check_ip_requires_auth(client):
     assert client.get("/v1/security/blocklist/check?ip=1.2.3.4").status_code == 401

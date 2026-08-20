@@ -136,7 +136,9 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
              "                AND COALESCE(ms.base_price, ms.min_price) IS NOT NULL))"),
         {"tid": str(tenant_id)},
     )).scalar() or 0
-    services_ready = published_count > 0 and priced_count > 0
+    # Every published service must be priced. Comparing only `> 0` let one
+    # valid service hide any number of unpriced published services.
+    services_ready = published_count > 0 and priced_count == published_count
 
     # ── Coverage & Availability ───────────────────────────────────────────
     active_areas = (await db.execute(
@@ -144,24 +146,31 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         {"tid": str(tenant_id)},
     )).scalar() or 0
     availability_count = (await db.execute(
-        text("SELECT count(*) FROM provider_availability_rules WHERE tenant_id=:tid AND is_active=true"),
+        text("SELECT count(*) FROM provider_availability_rules WHERE tenant_id=:tid "
+             "AND scope_type='provider' AND scope_id IS NULL AND is_active=true"),
         {"tid": str(tenant_id)},
     )).scalar() or 0
     coverage_ready = active_areas > 0 and availability_count > 0
 
     # ── Staff & Technicians ───────────────────────────────────────────────
-    active_staff = (await db.execute(
-        text("SELECT count(*) FROM provider_team_members WHERE tenant_id=:tid "
-             "AND status='active' AND deleted_at IS NULL"),
-        {"tid": str(tenant_id)},
-    )).scalar() or 0
+    from app.engines.home_service_assignment.team_readiness_service import (
+        compute_service_coverage,
+        compute_team_summary,
+    )
+    team_summary = await compute_team_summary(db, tenant_id)
+    service_coverage = await compute_service_coverage(db, tenant_id)
+    # Kept under the existing response key for API compatibility, but this is
+    # now the count of genuinely ready members rather than active name-only rows.
+    active_staff = int(team_summary["counts"]["ready"])
     # Required only once at least one service is published (nothing to staff
     # before then); optional_for_now is the honest state for a brand-new
     # workspace, matching the real absence of any assignable work yet.
     staff_required = published_count > 0
     # Zero staff is not "complete". It is optional only until a service is
     # published, then becomes required and incomplete until someone is ready.
-    staff_ready = active_staff > 0
+    staff_ready = active_staff > 0 and all(
+        row["ready_technician_count"] > 0 for row in service_coverage
+    )
 
     # ── Finance Readiness ─────────────────────────────────────────────────
     billing_row = (await db.execute(

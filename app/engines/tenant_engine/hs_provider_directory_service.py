@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.tenant_engine.models import Tenant, TenantBilling
@@ -54,7 +54,9 @@ class HomeServicesProviderDirectoryService:
     # ── The one shared predicate: summary, list and export all start here ──
     def _base_query(self, *, q: str | None = None, status: str | None = None,
                      status_in: list[str] | None = None,
-                     verification_status: str | None = None):
+                     verification_status: str | None = None,
+                     city: str | None = None, state: str | None = None,
+                     health_band: str | None = None):
         stmt = select(Tenant).where(Tenant.vertical == HOME_SERVICES_VERTICAL)
         if status:
             stmt = stmt.where(Tenant.status == status)
@@ -62,6 +64,12 @@ class HomeServicesProviderDirectoryService:
             stmt = stmt.where(Tenant.status.in_(status_in))
         if verification_status:
             stmt = stmt.where(Tenant.verification_status == verification_status)
+        if city:
+            stmt = stmt.where(Tenant.city.ilike(f"%{city.strip()}%"))
+        if state:
+            stmt = stmt.where(Tenant.state.ilike(f"%{state.strip()}%"))
+        if health_band:
+            stmt = stmt.where(Tenant.health_band == health_band)
         if q:
             like = f"%{q}%"
             stmt = stmt.where(or_(
@@ -83,14 +91,15 @@ class HomeServicesProviderDirectoryService:
             func.count().filter(base.c.status.in_(SETUP_INCOMPLETE_STATUSES)).label("setup_incomplete"),
             func.count().filter(base.c.verification_status == "changes_requested").label("changes_requested"),
             func.count().filter(base.c.status == "suspended").label("suspended"),
+            func.count().filter(base.c.status == "archived").label("archived"),
             func.count().filter(or_(base.c.status == "rejected", base.c.verification_status == "rejected")).label("rejected"),
             func.count().filter(or_(base.c.verification_status == "changes_requested", base.c.status == "suspended")).label("needs_attention"),
         ).select_from(base))).one()
         return {
-            key: int(getattr(counts, key) or 0)
+            key: int(getattr(counts, key, 0) or 0)
             for key in (
                 "total_providers", "pending_verification", "active",
-                "setup_incomplete", "changes_requested", "suspended",
+                "setup_incomplete", "changes_requested", "suspended", "archived",
                 "rejected", "needs_attention",
             )
         }
@@ -98,14 +107,24 @@ class HomeServicesProviderDirectoryService:
     async def list_providers(self, *, q: str | None = None, status: str | None = None,
                               status_in: list[str] | None = None,
                               verification_status: str | None = None,
+                              city: str | None = None, state: str | None = None,
+                              health_band: str | None = None,
                               page: int = 1, page_size: int = 20,
                               sort_by: str = "created_at", sort_dir: str = "desc") -> dict:
-        base = self._base_query(q=q, status=status, status_in=status_in, verification_status=verification_status)
+        base = self._base_query(
+            q=q, status=status, status_in=status_in,
+            verification_status=verification_status, city=city, state=state,
+            health_band=health_band,
+        )
         total = (await self.db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
 
         sort_col = {"created_at": Tenant.created_at, "health_score": Tenant.health_score,
-                    "business_name": Tenant.business_name}.get(sort_by, Tenant.created_at)
-        stmt = base.order_by(sort_col.desc() if sort_dir == "desc" else sort_col.asc())
+                    "business_name": Tenant.business_name, "rating_average": Tenant.rating_average,
+                    "city": Tenant.city, "verification_status": Tenant.verification_status}.get(sort_by, Tenant.created_at)
+        direction = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
+        # The id tie-breaker makes adjacent pages deterministic when many rows
+        # share a timestamp/status -- essential when the directory is changing.
+        stmt = base.order_by(direction, Tenant.id.asc())
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
         tenants = (await self.db.execute(stmt)).scalars().all()
 
@@ -287,7 +306,26 @@ class HomeServicesProviderDirectoryService:
             .order_by(CustomerComplaint.created_at.desc())
             .offset((page - 1) * page_size).limit(page_size)
         )).scalars().all()
-        open_count = sum(1 for c in rows if c.status not in ("resolved", "closed", "rejected"))
+        open_count = (await self.db.execute(
+            select(func.count(CustomerComplaint.id)).where(
+                *clauses,
+                CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+            )
+        )).scalar() or 0
+        job_counts = (await self.db.execute(select(
+            func.count(ServiceJob.id).label("total"),
+            func.count(ServiceJob.id).filter(ServiceJob.status == "completed").label("completed"),
+            func.count(ServiceJob.id).filter(ServiceJob.status == "cancelled").label("cancelled"),
+            func.count(func.distinct(ServiceJob.customer_id)).filter(ServiceJob.customer_id.isnot(None)).label("customers"),
+        ).where(ServiceJob.tenant_id == provider_id))).one()
+        repeat_customers = (await self.db.execute(select(func.count()).select_from(
+            select(ServiceJob.customer_id)
+            .where(ServiceJob.tenant_id == provider_id, ServiceJob.customer_id.isnot(None))
+            .group_by(ServiceJob.customer_id).having(func.count(ServiceJob.id) > 1).subquery()
+        ))).scalar() or 0
+        total_jobs = int(job_counts.total or 0)
+        completed_jobs = int(job_counts.completed or 0)
+        cancelled_jobs = int(job_counts.cancelled or 0)
 
         return {
             "rating_average": float(tenant.rating_average),
@@ -295,6 +333,13 @@ class HomeServicesProviderDirectoryService:
             "health_band": tenant.health_band,
             "open_complaints_count": open_count,
             "total_complaints": total,
+            "total_jobs": total_jobs,
+            "completed_jobs": completed_jobs,
+            "cancelled_jobs": cancelled_jobs,
+            "completion_rate": round((completed_jobs / total_jobs) * 100, 1) if total_jobs else 0.0,
+            "cancellation_rate": round((cancelled_jobs / total_jobs) * 100, 1) if total_jobs else 0.0,
+            "unique_customers": int(job_counts.customers or 0),
+            "repeat_customers": int(repeat_customers),
             "complaints": [{
                 "complaint_id": str(c.id),
                 "complaint_number": c.complaint_number,
@@ -323,19 +368,32 @@ class HomeServicesProviderDirectoryService:
     # (0 / not fabricated) rather than guessed; "available" here means
     # active and not currently assigned to an in-progress ServiceJob (the
     # real Home Services job table, not the dead field_ops `jobs` table).
-    async def get_provider_team(self, provider_id: uuid.UUID) -> dict:
+    async def get_provider_team(self, provider_id: uuid.UUID, *, page: int = 1, page_size: int = 20) -> dict:
         tenant = await self.db.get(Tenant, provider_id)
         if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
             raise NotFoundException("HomeServicesProvider", str(provider_id))
 
         from app.engines.auth.models import User
 
+        clauses = [
+            User.tenant_id == provider_id,
+            User.role.notin_(("customer", "super_admin", "tenant_owner")),
+            User.deleted_at.is_(None),
+        ]
+        active_job_exists = exists(select(ServiceJob.id).where(
+            ServiceJob.assigned_staff_id == User.id,
+            ServiceJob.status.notin_(("completed", "cancelled")),
+        ))
+        stats = (await self.db.execute(select(
+            func.count(User.id).label("total"),
+            func.count(User.id).filter(User.is_verified.is_(True)).label("verified"),
+            func.count(User.id).filter(User.is_active.is_(False)).label("suspended"),
+            func.count(User.id).filter(User.is_active.is_(True), ~active_job_exists).label("available"),
+        ).where(*clauses))).one()
         staff = (await self.db.execute(
-            select(User).where(
-                User.tenant_id == provider_id,
-                User.role.notin_(("customer", "super_admin", "tenant_owner")),
-                User.deleted_at.is_(None),
-            )
+            select(User).where(*clauses)
+            .order_by(User.full_name.asc(), User.id.asc())
+            .offset((page - 1) * page_size).limit(page_size)
         )).scalars().all()
 
         active_jobs_by_staff: dict[uuid.UUID, int] = {}
@@ -353,13 +411,13 @@ class HomeServicesProviderDirectoryService:
             return u.is_active and active_jobs_by_staff.get(u.id, 0) == 0
 
         return {
-            "total_staff": len(staff),
-            "verified_staff": sum(1 for u in staff if u.is_verified),
-            "available_staff": sum(1 for u in staff if is_available(u)),
+            "total_staff": int(stats.total or 0),
+            "verified_staff": int(stats.verified or 0),
+            "available_staff": int(stats.available or 0),
             # Per-job-type capability isn't tracked at the User level today --
             # reported as 0 (not applicable), never guessed.
             "capability_incomplete_staff": 0,
-            "suspended_staff": sum(1 for u in staff if not u.is_active),
+            "suspended_staff": int(stats.suspended or 0),
             "staff": [{
                 "staff_id": str(u.id),
                 "name": u.full_name,
@@ -370,6 +428,8 @@ class HomeServicesProviderDirectoryService:
                 "job_type_capabilities": [],
                 "is_active": u.is_active,
             } for u in staff],
+            "page": page,
+            "page_size": page_size,
         }
 
     # ── Provider 360 Operations tab ──────────────────────────────────────────
@@ -392,13 +452,17 @@ class HomeServicesProviderDirectoryService:
             .offset((page - 1) * page_size).limit(page_size)
         )).scalars().all()
 
-        by_status: dict[str, int] = {}
-        for j in rows:
-            by_status[j.status] = by_status.get(j.status, 0) + 1
+        status_rows = (await self.db.execute(
+            select(ServiceJob.status, func.count(ServiceJob.id))
+            .where(*clauses).group_by(ServiceJob.status)
+        )).all()
+        by_status = {str(status): int(count) for status, count in status_rows}
+        active_jobs = sum(count for status, count in by_status.items()
+                          if status not in ("completed", "cancelled"))
 
         return {
             "total_jobs": total,
-            "active_jobs": sum(1 for j in rows if j.status not in ("completed", "cancelled")),
+            "active_jobs": active_jobs,
             "by_status": by_status,
             "jobs": [{
                 "job_id": str(j.id),

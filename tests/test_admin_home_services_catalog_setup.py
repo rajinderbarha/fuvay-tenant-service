@@ -241,9 +241,10 @@ def test_hs2b_retire_service_group_checks_usage():
     assert "len(reason) < 10" in fn
 
 
-def test_hs2b_hard_delete_master_service_already_checks_usage():
-    fn = SERVICE_PY.split("async def hard_delete_master_service")[1].split("async def _load_master_service")[0]
-    assert "MASTER_SERVICE_HAS_RULES" in fn
+def test_hs2b_retire_master_service_preserves_provider_history():
+    fn = SERVICE_PY.split("async def archive_master_service")[1].split("async def restore_master_service")[0]
+    assert "MASTER_SERVICE_IN_USE" in fn
+    assert "len((reason or \"\").strip()) < 10" in fn
 
 
 def test_hs2b_still_no_pricing_forms():

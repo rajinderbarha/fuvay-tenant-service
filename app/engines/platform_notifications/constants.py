@@ -199,3 +199,11 @@ EVT_DOCUMENT_CHANGES_REQUESTED = "document.changes_requested"
 EVT_DOCUMENT_REJECTED     = "document.rejected"
 
 MAX_RETRY_COUNT = 3
+
+# Canonical names for live hand-written in-app events that pre-date the
+# fire_event registry.  Keeping the strings here lets every projection and
+# future migration reference one source instead of repeating literals.
+EVT_BOOKING_NEW = "booking.new"
+EVT_PAYMENT_CONFIRMATION_REQUESTED = "payment.confirmation_requested"
+EVT_PAYMENT_MISMATCH_REPORTED = "payment.mismatch_reported"
+EVT_DOCUMENT_EXPIRING = "document.expiring"

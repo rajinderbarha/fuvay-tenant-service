@@ -2,7 +2,7 @@
 from __future__ import annotations
 import uuid
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase
@@ -18,6 +18,9 @@ class ServiceInvoice(ServiceOSBase):
         Index("ix_si_customer_id",     "customer_id"),
         Index("ix_si_status",          "status"),
         Index("ix_si_payment_status",  "payment_status"),
+        Index("ix_si_tenant_created_at", "tenant_id", "created_at"),
+        Index("uq_si_active_job", "job_id", unique=True,
+              postgresql_where=text("status <> 'cancelled'")),
     )
     invoice_number:        Mapped[str]             = mapped_column(String(40),  nullable=False)
     booking_id:            Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -231,6 +234,7 @@ class SvcCommissionRecord(ServiceOSBase):
         Index("ix_svccom_tenant_id", "tenant_id"),
         Index("ix_svccom_status",    "status"),
         Index("ix_svccom_idem_key",  "idempotency_key"),
+        Index("ix_svccom_tenant_created_at", "tenant_id", "created_at"),
     )
     invoice_id:              Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     booking_id:              Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -276,6 +280,8 @@ class FinancialEvent(ServiceOSBase):
         Index("ix_fev_record_id",   "record_id"),
         Index("ix_fev_tenant_id",   "tenant_id"),
         Index("ix_fev_event_type",  "event_type"),
+        Index("ix_fev_created_at", "created_at"),
+        Index("ix_fev_tenant_created_at", "tenant_id", "created_at"),
     )
     record_type:   Mapped[str]             = mapped_column(String(30), nullable=False)
     record_id:     Mapped[uuid.UUID]       = mapped_column(UUID(as_uuid=True), nullable=False)

@@ -445,12 +445,12 @@ async def test_create_master_service_inactive_category():
     assert exc.value.error_code == "SERVICE_CATEGORY_INACTIVE"
 
 
-async def test_delete_master_service():
+async def test_deactivate_master_service():
     service = make_service()
     db = db_one(service)
     svc = AdminCatalogService(db=db)
-    result = await svc.delete_master_service(service.id)
-    assert result["deleted"] is True
+    result = await svc.deactivate_master_service(service.id)
+    assert result["is_active"] is False
     assert service.is_active is False
 
 
@@ -684,8 +684,10 @@ async def test_tenant_can_enable_active_service():
     tenant_id = uuid.uuid4()
     service = make_service()
     cat = make_category()
-    # db_seq: svc load, category load, existing check (none)
-    db = db_seq(service, cat, None)
+    # db_seq: svc load, category load, existing check, normalized dimension
+    # lookup, latest published setup-blueprint version.
+    empty_rows = MagicMock(); empty_rows.all.return_value = []
+    db = db_seq(service, cat, None, empty_rows, None)
     ts_svc = TenantCatalogService(db=db, actor_tenant_id=tenant_id, actor_role="tenant_owner")
     result = await ts_svc.enable_service({"master_service_id": str(service.id)}, tenant_id)
     assert result["is_enabled"] is True
@@ -815,13 +817,14 @@ async def test_list_available_shows_enabled_flag():
     service = make_service()
     tenant_service = make_tenant_service(tenant_id=tenant_id, master_service_id=service.id)
 
-    # db: list master services, list enabled
+    # db: list master services, list normalized dimensions, list enabled
     svcs_scalars = MagicMock(); svcs_scalars.all.return_value = [service]
     svcs_res = MagicMock(); svcs_res.scalars.return_value = svcs_scalars
     enabled_scalars = MagicMock(); enabled_scalars.all.return_value = [tenant_service]
     enabled_res = MagicMock(); enabled_res.scalars.return_value = enabled_scalars
+    dimensions_res = MagicMock(); dimensions_res.all.return_value = []
     db = MagicMock()
-    db.execute = AsyncMock(side_effect=[svcs_res, enabled_res])
+    db.execute = AsyncMock(side_effect=[svcs_res, dimensions_res, enabled_res])
 
     ts_svc = TenantCatalogService(db=db, actor_tenant_id=tenant_id, actor_role="tenant_owner")
     result = await ts_svc.list_available_services(tenant_id)

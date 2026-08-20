@@ -39,12 +39,40 @@ class JobTypeService:
         self.db = db
         self.actor_id = actor_id
 
-    async def list_job_types(self, include_inactive: bool = False) -> list[dict]:
-        q = select(JobTypeDefinition).order_by(JobTypeDefinition.display_order)
+    async def list_job_types(
+        self,
+        include_inactive: bool = False,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict:
+        filters = []
         if not include_inactive:
-            q = q.where(JobTypeDefinition.is_active == True)  # noqa: E712
-        rows = (await self.db.execute(q)).scalars().all()
-        return [self._to_dict(jt) for jt in rows]
+            filters.append(JobTypeDefinition.is_active == True)  # noqa: E712
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            filters.append(
+                JobTypeDefinition.label.ilike(term)
+                | JobTypeDefinition.key.ilike(term)
+                | JobTypeDefinition.description.ilike(term)
+            )
+        total = int(await self.db.scalar(
+            select(func.count(JobTypeDefinition.id)).where(*filters)
+        ) or 0)
+        rows = (await self.db.execute(
+            select(JobTypeDefinition)
+            .where(*filters)
+            .order_by(JobTypeDefinition.display_order, JobTypeDefinition.label, JobTypeDefinition.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )).scalars().all()
+        return {
+            "items": [self._to_dict(jt) for jt in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size),
+        }
 
     async def create_job_type(self, data: dict) -> dict:
         key = (data.get("key") or "").strip().lower()

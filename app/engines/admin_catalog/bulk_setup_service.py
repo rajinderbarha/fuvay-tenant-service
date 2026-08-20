@@ -23,10 +23,10 @@ from app.engines.admin_catalog.models import (
     MasterIssueType,
     ServiceOptionMapping,
     ServiceIssueMapping,
-    MasterWorkflowTemplate,
     ServiceSetupTemplate,
     BrandTemplate,
 )
+from app.exceptions import ServiceOSException
 
 
 VALID_STATUSES = {"draft", "in_progress", "previewed", "ready_to_apply", "applied", "failed", "archived"}
@@ -223,9 +223,13 @@ class AdminBulkSetupDraftService:
             "admin_bulk_setup.commission_mappings_updated")
 
     async def set_workflow_mappings(self, draft_id: uuid.UUID, body: dict) -> dict:
-        return await self._update_payload_section(
-            draft_id, "workflow_mappings", body.get("mappings", []),
-            "admin_bulk_setup.workflow_mappings_updated")
+        _ = (draft_id, body)
+        raise ServiceOSException(
+            "BULK_WORKFLOW_TEMPLATES_RETIRED",
+            "Bulk workflow-template mappings are retired. Configure runtime job "
+            "workflow per service/job type in Catalog Workspace -> Workflow.",
+            status_code=410,
+        )
 
     # ── Available-* Queries ─────────────────────────────────────────────────
 
@@ -364,11 +368,13 @@ class AdminBulkSetupDraftService:
         self,
         category_id: uuid.UUID | None = None,
     ) -> list[dict]:
-        q = select(MasterWorkflowTemplate).where(MasterWorkflowTemplate.is_active == True)
-        if category_id:
-            q = q.where(MasterWorkflowTemplate.category_id == category_id)
-        rows = (await self.db.scalars(q.order_by(MasterWorkflowTemplate.display_order))).all()
-        return [r.to_dict() for r in rows]
+        _ = category_id
+        raise ServiceOSException(
+            "BULK_WORKFLOW_TEMPLATES_RETIRED",
+            "Bulk workflow-template selection is retired. Configure runtime job "
+            "workflow per service/job type in Catalog Workspace -> Workflow.",
+            status_code=410,
+        )
 
     async def get_available_document_requirements(self) -> list[dict]:
         from app.engines.document.models import DocumentTemplate
@@ -660,21 +666,6 @@ class AdminBulkSetupPreviewService:
                     mappings += 1
 
         # ── Workflow Mappings ─────────────────────────────────────────────
-        for m in payload.get("workflow_mappings", []):
-            wid = m.get("workflow_template_id")
-            if wid:
-                wt = await self.db.scalar(select(MasterWorkflowTemplate).where(
-                    MasterWorkflowTemplate.id == uuid.UUID(wid)
-                ))
-                label = wt.name if wt else wid
-                action = "map" if (wt and wt.is_active) else "skip"
-                items.append({"entity_type": "workflow_mapping", "name": label, "action": action,
-                              "reason": "Inactive template" if action == "skip" else None})
-                if action == "map":
-                    mappings += 1
-                else:
-                    skips += 1
-
         # Document/checklist/pricing/commission — simple count from payload
         for section, etype in [("document_mappings", "document_mapping"),
                                 ("checklist_mappings", "checklist_mapping"),
@@ -907,8 +898,7 @@ class AdminBulkSetupApplyService:
             for section, etype in [("document_mappings", "document_mapping"),
                                     ("checklist_mappings", "checklist_mapping"),
                                     ("pricing_mappings", "pricing_mapping"),
-                                    ("commission_mappings", "commission_mapping"),
-                                    ("workflow_mappings", "workflow_mapping")]:
+                                    ("commission_mappings", "commission_mapping")]:
                 for item in payload.get(section, []):
                     ref = item.get("id") or item.get("template_id") or "unknown"
                     await record(etype, "mapped", None, ref, f"Mapped via {section}")

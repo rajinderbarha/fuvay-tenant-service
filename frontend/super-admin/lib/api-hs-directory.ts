@@ -81,20 +81,18 @@ export const hsProviderDirectoryApi = {
     /** Comma-separated, e.g. "suspended,archived". */
     status_in?: string;
     verification_status?: string;
+    city?: string; state?: string; health_band?: string;
     page?: number; page_size?: number; pageSize?: number;
     sort_by?: string; sort_dir?: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }) => apiFetch<T>(`${PROVIDERS}${_hsdQuery(params)}`),
-  export: <T = HsRow>(params?: { q?: string; status?: string }) =>
-    apiFetch<T>(`${PROVIDERS}/export${_hsdQuery(params)}`),
-
   getDetail: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}`),
   getFinance: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/finance`),
-  getQuality: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/quality`),
-  getTeam: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/team`),
-  getOperations: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/operations`),
-  getActivity: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/activity`),
+  getQuality: <T = HsRow>(providerId: string, params?: { page?: number; page_size?: number }) => apiFetch<T>(`${PROVIDERS}/${providerId}/quality${_hsdQuery(params)}`),
+  getTeam: <T = HsRow>(providerId: string, params?: { page?: number; page_size?: number }) => apiFetch<T>(`${PROVIDERS}/${providerId}/team${_hsdQuery(params)}`),
+  getOperations: <T = HsRow>(providerId: string, params?: { page?: number; page_size?: number }) => apiFetch<T>(`${PROVIDERS}/${providerId}/operations${_hsdQuery(params)}`),
+  getActivity: <T = HsRow>(providerId: string, params?: { page?: number; page_size?: number }) => apiFetch<T>(`${PROVIDERS}/${providerId}/activity${_hsdQuery(params)}`),
   getServices: <T = HsRow>(providerId: string) => apiFetch<T>(`${PROVIDERS}/${providerId}/services`),
 };
 

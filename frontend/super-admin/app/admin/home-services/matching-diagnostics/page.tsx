@@ -60,9 +60,9 @@ export default function MatchingDiagnosticsPage() {
   }
 
   return (
-    <AdminLayout activeNav="hs-matching-diagnostics">
+    <AdminLayout activeNav="bookability">
       <SectionHeader
-        title="Matching Diagnostics"
+        title="Booking Match Diagnostics"
         subtitle="Run provider-first matching for any service/area combination and see exactly why a provider was selected — or why nobody was eligible."
       />
 
@@ -174,17 +174,6 @@ export default function MatchingDiagnosticsPage() {
             </Card>
           )}
 
-          {result.price_options && (
-            <Card style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Low / Mid / High Price Preview</p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <PriceTierCard label="Low" value={result.price_options.low_price}/>
-                <PriceTierCard label="Mid" value={result.price_options.mid_price}/>
-                <PriceTierCard label="High" value={result.price_options.high_price}/>
-              </div>
-            </Card>
-          )}
-
           {result.area_market_comparison && (
             <Card>
               <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Area Price Comparison</p>
@@ -213,11 +202,3 @@ function MiniStat({ label, value, danger }: { label: string; value: number; dang
   );
 }
 
-function PriceTierCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div style={{ flex: 1, padding: 12, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)", textAlign: "center" }}>
-      <p style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-text)", textTransform: "uppercase", margin: "0 0 2px" }}>{label}</p>
-      <p style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{money(value)}</p>
-    </div>
-  );
-}

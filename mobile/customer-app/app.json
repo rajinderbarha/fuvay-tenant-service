@@ -1,23 +1,28 @@
 {
   "expo": {
-    "name": "ServiceOS",
+    "name": "Fuvay",
     "slug": "serviceos-customer",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/fuvay-logo-native.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#071633"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.serviceos.customer",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ServiceOS needs your location to find services near you and track your technician."
+        "NSLocationWhenInUseUsageDescription": "Fuvay needs your location to find services near you and track your technician."
       }
     },
     "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#071633"
+      },
       "package": "com.serviceos.customer",
       "permissions": [
         "ACCESS_FINE_LOCATION",

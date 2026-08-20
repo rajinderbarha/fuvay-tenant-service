@@ -23,6 +23,9 @@ def _job(tenant_id: uuid.UUID, status: str = "new") -> MagicMock:
     j.assigned_staff_id = None
     j.scheduled_date = None
     j.scheduled_time_window = None
+    j.service_job_workflow_id = None
+    j.offering_id = None
+    j.job_type_id = None
     return j
 
 

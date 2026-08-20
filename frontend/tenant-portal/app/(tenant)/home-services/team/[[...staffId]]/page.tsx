@@ -24,6 +24,19 @@ const MEMBER_TYPE_OPTIONS: { value: MemberType; label: string }[] = [
   { value: "manager", label: "Manager" },
 ];
 
+const DESIGNATIONS_BY_MEMBER_TYPE: Record<string, string[]> = {
+  technician: [
+    "Technician", "Junior Technician", "Senior Technician", "Lead Technician",
+    "AC Technician", "Installation Specialist", "Maintenance Specialist", "Field Supervisor",
+  ],
+  staff: [
+    "Operations Coordinator", "Dispatcher", "Customer Support Executive", "Back Office Executive",
+  ],
+  manager: [
+    "Team Manager", "Operations Manager", "Service Manager", "Branch Manager",
+  ],
+};
+
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "capabilities", label: "Capabilities" },
@@ -298,8 +311,11 @@ function EditProfileModal({ staffId, onClose, onSaved }: { staffId: string; onCl
   const [designation, setDesignation] = useState("");
   const [memberType, setMemberType] = useState<MemberType>("technician");
   const [canReceiveAssignment, setCanReceiveAssignment] = useState(true);
-  const [maxConcurrentJobs, setMaxConcurrentJobs] = useState(4);
   const [initialized, setInitialized] = useState(false);
+  const designationOptions = [
+    ...(designation && !(DESIGNATIONS_BY_MEMBER_TYPE[memberType] ?? []).includes(designation) ? [designation] : []),
+    ...(DESIGNATIONS_BY_MEMBER_TYPE[memberType] ?? []),
+  ].map(value => ({ value, label: value }));
 
   if (member && !initialized) {
     setFullName(member.full_name ?? "");
@@ -308,7 +324,6 @@ function EditProfileModal({ staffId, onClose, onSaved }: { staffId: string; onCl
     setDesignation(member.designation ?? "");
     setMemberType((member.member_type as MemberType) ?? "technician");
     setCanReceiveAssignment(member.can_receive_assignment ?? true);
-    setMaxConcurrentJobs(member.max_concurrent_jobs ?? 4);
     setInitialized(true);
   }
 
@@ -319,7 +334,7 @@ function EditProfileModal({ staffId, onClose, onSaved }: { staffId: string; onCl
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!fullName.trim()) return;
+    if (!fullName.trim() || !designation.trim()) return;
     await save({
       full_name: fullName.trim(),
       phone: phone.trim() || null,
@@ -327,7 +342,6 @@ function EditProfileModal({ staffId, onClose, onSaved }: { staffId: string; onCl
       designation: designation.trim() || null,
       member_type: memberType,
       can_receive_assignment: canReceiveAssignment,
-      max_concurrent_jobs: maxConcurrentJobs,
     });
   }
 
@@ -345,17 +359,23 @@ function EditProfileModal({ staffId, onClose, onSaved }: { staffId: string; onCl
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Select label="Role" options={MEMBER_TYPE_OPTIONS} value={memberType}
-              onChange={e => setMemberType(e.target.value as MemberType)} />
-            <Input label="Designation" value={designation} onChange={e => setDesignation(e.target.value)} />
+              onChange={e => {
+                const nextType = e.target.value as MemberType;
+                setMemberType(nextType);
+                if (!(DESIGNATIONS_BY_MEMBER_TYPE[nextType] ?? []).includes(designation)) setDesignation("");
+              }} />
+            <Select label="Designation" required options={designationOptions} value={designation}
+              placeholder="Select designation" onChange={e => setDesignation(e.target.value)} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "end" }}>
-            <Input label="Max concurrent jobs" type="number" min={1} value={maxConcurrentJobs}
-              onChange={e => setMaxConcurrentJobs(Math.max(1, Number(e.target.value) || 1))} />
+          <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", paddingBottom: 8 }}>
               <input type="checkbox" checked={canReceiveAssignment}
                 onChange={e => setCanReceiveAssignment(e.target.checked)} />
               Can receive new job assignments
             </label>
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
+              Slot capacity is calculated automatically from ready technicians assigned to the service.
+            </p>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
             <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>

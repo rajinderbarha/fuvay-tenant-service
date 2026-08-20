@@ -3,14 +3,13 @@
 Deduction model (2026-08-05, explicit user request): a single Home
 Services-wide PERCENTAGE_COMMISSION, set in Home Services Finance >
 Monetization ("provider_percentage" on the current published
-VerticalMonetizationPolicy), applied to the price the tenant actually
-collected from the customer for that job (`job.completion_data
-.collected_amount`) — never an internal catalog price. This replaced the
-old per-service flat "Provider Completion Charge Config" table
-(ServicePricingRule.completed_job_deduction_credits), which is kept as a
-fallback ONLY for the (now unreachable-from-the-UI) case where no
-PERCENTAGE_COMMISSION policy is published, so historical/manually-set
-rows don't silently start charging 0.
+VerticalMonetizationPolicy), applied to the final service value snapshotted
+on the job's issued invoice (`service_invoices.total_amount`). Legacy jobs
+without an invoice fall back to the collected amount. The customer platform
+fee is never part of this basis. This replaces the old per-service flat
+"Provider Completion Charge Config". There is deliberately no fallback:
+without a published Home Services Monetization policy the charge is zero.
+This guarantees one visible configuration authority for every new charge.
 
 Deduction itself is applied against the tenant's existing
 `tenant_billing.credit_balance` and writes a `usage_credit_ledger` row,
@@ -30,51 +29,6 @@ DEDUCTION_EVENT_TYPE = "completed_job_deduction"
 _HS_KEY = "home_services"
 
 
-async def resolve_completed_job_deduction_credits(
-    db: AsyncSession,
-    master_service_id: uuid.UUID,
-    offering_type_id: uuid.UUID | None,
-    brand_id: uuid.UUID | None,
-) -> tuple[Decimal, uuid.UUID | None]:
-    """Legacy per-service flat-credit lookup. Mirrors the specificity
-    ranking used by HS6's bargain-rule resolution — service+type+brand (3)
-    > service+type (2) > service-only (1). A rule scoped to a *different*
-    type/brand than requested is never eligible (score -1), preventing
-    the ticket's explicit "Window AC LG deduction used for Split AC LG"
-    failure mode. Only reached today when no PERCENTAGE_COMMISSION policy
-    is published for Home Services — see `resolve_commission_credits`."""
-    from app.engines.admin_catalog.models import ServicePricingRule
-
-    rows = (await db.execute(
-        select(ServicePricingRule).where(
-            ServicePricingRule.master_service_id == master_service_id,
-            ServicePricingRule.is_active.is_(True),
-        )
-    )).scalars().all()
-
-    def _specificity(rule) -> int:
-        has_type = offering_type_id is not None and rule.service_type_id == offering_type_id
-        has_brand = brand_id is not None and rule.brand_id == brand_id
-        if rule.service_type_id is not None and rule.service_type_id != offering_type_id:
-            return -1
-        if rule.brand_id is not None and rule.brand_id != brand_id:
-            return -1
-        if has_type and has_brand:
-            return 3
-        if has_type:
-            return 2
-        if rule.service_type_id is None and rule.brand_id is None:
-            return 1
-        return -1
-
-    eligible = [r for r in rows if _specificity(r) >= 0]
-    eligible.sort(key=lambda r: (_specificity(r), r.created_at), reverse=True)
-    if not eligible:
-        return Decimal("0"), None
-    best = eligible[0]
-    return Decimal(str(best.completed_job_deduction_credits or 0)), best.id
-
-
 async def resolve_commission_credits(
     db: AsyncSession,
     *,
@@ -84,23 +38,18 @@ async def resolve_commission_credits(
     offering_type_id: uuid.UUID | None,
     brand_id: uuid.UUID | None,
     job_type_id: uuid.UUID | None = None,
+    chargeable_event: str = "job_completed",
 ) -> tuple[Decimal, str | None]:
     """Returns (credits, deduction_source_label). Each Home Services
-    category can carry an optional commission override (`ServiceCategory
-    .commission_pct`, edited in Home Services Finance > Provider Charges) —
-    PERCENTAGE_COMMISSION must be published on the Home Services vertical's
-    Monetization policy for this to be live at all, but the actual rate
-    applied is the job's own category's rate, falling back to the policy's
-    vertical-wide `provider_percentage` only if that category hasn't set
-    its own. Falls back further to the legacy per-service flat-credit
-    table (see module docstring) if no PERCENTAGE_COMMISSION policy is
-    published for Home Services at all."""
+    PERCENTAGE_COMMISSION rate comes only from the Home Services vertical's
+    published Monetization policy. Service categories do not carry a second
+    Home Services finance configuration. No published policy means zero
+    charge; hidden pricing-rule values are never used as a fallback."""
     from app.engines.vertical_catalog.models import Vertical
     from app.engines.vertical_monetization.models import (
         MonetizationJobTypeRule,
         VerticalMonetizationPolicy,
     )
-    from app.engines.admin_catalog.models import ServiceCategory
 
     vertical = (await db.execute(
         select(Vertical).where(Vertical.key == _HS_KEY)
@@ -115,7 +64,19 @@ async def resolve_commission_credits(
             )
         )).scalar_one_or_none()
 
-    if policy is not None and policy.provider_model == "COMPLETION_CREDITS":
+    if policy is not None:
+        # Defence in depth: publishing already rejects unsupported provider
+        # models, but the runtime writer must also fail closed if an old or
+        # manually-corrupted policy reaches this path. These are the only
+        # three models that produce a Home Services provider charge.
+        runtime_model_supported = (
+            policy.provider_model == "COMPLETION_CREDITS"
+            or policy.provider_model == "PERCENTAGE_COMMISSION"
+            or policy.provider_model == "FIXED_COMPLETION_CHARGE"
+        )
+        if not runtime_model_supported:
+            return Decimal("0"), f"monetization_policy:{policy.id}:unsupported_model"
+        override = None
         if job_type_id is not None:
             override = (await db.execute(
                 select(MonetizationJobTypeRule).where(
@@ -124,45 +85,32 @@ async def resolve_commission_credits(
                     MonetizationJobTypeRule.status == "active",
                 )
             )).scalar_one_or_none()
-            if override is not None:
-                source = f"monetization_job_type_rule:{override.id}"
-                if not override.provider_charge_enabled:
-                    return Decimal("0"), source
-                if override.provider_charge_credit_units is not None:
-                    return Decimal(str(override.provider_charge_credit_units)), source
+        if override is not None and override.provider_chargeable_event != chargeable_event:
+            return Decimal("0"), f"monetization_job_type_rule:{override.id}:event_not_reached"
+        from app.engines.vertical_monetization.calculation_service import calculate_provider_completion_credits
+        calculated = calculate_provider_completion_credits(
+            policy=policy,
+            service_amount=job_price or Decimal("0"),
+            provider_charge_enabled=override.provider_charge_enabled if override is not None else True,
+            credit_units_override=(
+                override.provider_charge_credit_units
+                if override is not None and (
+                    policy.provider_model == "COMPLETION_CREDITS"
+                    or override.provider_charge_model == "FIXED_CREDITS"
+                )
+                else None
+            ),
+            charge_model_override=override.provider_charge_model if override is not None else None,
+        )
+        source = (
+            f"monetization_job_type_rule:{override.id}"
+            if override is not None else f"monetization_policy:{policy.id}"
+        )
+        return Decimal(calculated["provider_charge_credit_units"]), source
 
-        return Decimal(str(policy.provider_credit_units or 0)), f"monetization_policy:{policy.id}"
-
-    if (
-        policy is not None
-        and policy.provider_model == "PERCENTAGE_COMMISSION"
-        and job_price is not None
-        and job_price > 0
-    ):
-        pct = None
-        source = None
-        if category_id is not None:
-            category = await db.get(ServiceCategory, category_id)
-            if category is not None and category.commission_pct is not None:
-                pct = Decimal(str(category.commission_pct))
-                source = f"category_commission:{category_id}"
-        if pct is None and policy.provider_percentage is not None:
-            pct = Decimal(str(policy.provider_percentage))
-            source = f"monetization_policy:{policy.id}"
-        if pct is not None:
-            credits = (job_price * pct / Decimal("100")).quantize(Decimal("0.01"))
-            return credits, source
-
-    # A current policy using NONE/SUBSCRIPTION/etc. explicitly means this
-    # usage-credit wallet must not be charged. Do not silently resurrect an
-    # older service-pricing rule underneath a published policy.
-    if policy is not None:
-        return Decimal("0"), f"monetization_policy:{policy.id}"
-
-    legacy_credits, pricing_rule_id = await resolve_completed_job_deduction_credits(
-        db, master_service_id, offering_type_id, brand_id,
-    )
-    return legacy_credits, (str(pricing_rule_id) if pricing_rule_id else None)
+    # No hidden fallback: Home Services Monetization is the sole authority.
+    # With no published policy, no provider charge is created.
+    return Decimal("0"), None
 
 
 async def deduct_for_completed_job(
@@ -178,6 +126,7 @@ async def deduct_for_completed_job(
     job_type_id: uuid.UUID | None = None,
     job_price: Decimal | None = None,
     request_id: str | None = None,
+    chargeable_event: str = "job_completed",
 ) -> dict:
     """Idempotent per job_id — a second call for the same job returns the
     existing ledger row instead of deducting again (HS9 hard gate: never
@@ -197,6 +146,7 @@ async def deduct_for_completed_job(
         db, job_price=job_price, category_id=category_id,
         master_service_id=master_service_id, offering_type_id=offering_type_id, brand_id=brand_id,
         job_type_id=job_type_id,
+        chargeable_event=chargeable_event,
     )
 
     billing = (await db.execute(

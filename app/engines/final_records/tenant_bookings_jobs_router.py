@@ -348,6 +348,12 @@ async def get_bookings_jobs_detail(
         city=job.city, zipcode=job.zipcode,
     )
 
+    from app.engines.admin_catalog.workflow_steps import (
+        resolve_job_workflow_stages, to_client_stages,
+    )
+    _stages = await resolve_job_workflow_stages(db, job, "tenant")
+    _tenant_stages = to_client_stages(_stages) if _stages else []
+
     return ok({
         "booking": booking_dict,
         "job":     job_dict,
@@ -360,6 +366,10 @@ async def get_bookings_jobs_detail(
         "visit_fee": str(visit_fee) if visit_fee is not None else None,
         "open_complaint_count": open_complaint_count,
         "sla": sla,
+        # The journey as the PROVIDER should see it — steps flagged
+        # tenant_visible on this job's own snapshotted workflow. Empty when the
+        # workflow defines no steps, so pre-migration-274 workflows are unaffected.
+        "workflow_stages": _tenant_stages,
         "direct_payment_notice": "Customer pays the provider directly. ServiceOS records confirmation only.",
     }, _RID(r), "final_records")
 

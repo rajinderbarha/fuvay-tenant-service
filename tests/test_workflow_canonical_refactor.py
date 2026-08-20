@@ -17,6 +17,7 @@ tests/test_module_l5_29_booking_cancel_reschedule.py.
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -260,37 +261,28 @@ class TestDeadSystemGone:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# f. Kept system #2 (MasterWorkflowTemplate / admin_catalog) still works
+# f. Retired duplicate system #2 (MasterWorkflowTemplate / admin_catalog route)
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestKeptSystemStillWorks:
-    async def test_workflow_templates_summary_200(self, admin, pg):
-        # Pre-existing environment drift discovered while writing this test
-        # (unrelated to the workflow-canonicalization refactor): this DB's
-        # alembic_version reports 186 (head), but `master_workflow_templates`
-        # / `workflow_service_mappings` (created by migration 055, altered by
-        # 086) do not actually exist as tables here. Skip with a clear reason
-        # rather than mask it as a pass -- see final report.
-        exists = await pg.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-            "WHERE table_name = 'master_workflow_templates')"
-        )
-        if not exists:
-            pytest.skip(
-                "master_workflow_templates table missing in this DB despite "
-                "alembic head=186 -- pre-existing environment drift, not "
-                "caused by the workflow-canonicalization refactor"
-            )
+class TestRetiredDuplicateWorkflowSurface:
+    async def test_workflow_templates_summary_is_gone(self, admin, pg):
         r = await admin.get("/v1/admin/workflow-templates/summary")
-        assert r.status_code == 200, r.text
-        assert "data" in r.json()
+        assert r.status_code == 410, r.text
+        assert r.json()["error"]["code"] == "WORKFLOW_TEMPLATES_RETIRED"
 
-    def test_system2_router_and_models_still_present_in_source(self):
-        """Source-level confirmation that system #2 itself was NOT touched
-        by this refactor (independent of the DB-drift issue above)."""
-        from app.engines.admin_catalog.models import MasterWorkflowTemplate, WorkflowServiceMapping
-        assert MasterWorkflowTemplate.__tablename__ == "master_workflow_templates"
-        assert WorkflowServiceMapping.__tablename__ == "workflow_service_mappings"
+    def test_admin_page_redirects_to_canonical_catalog_workspace(self):
+        root = os.path.join(os.path.dirname(__file__), "..")
+        page = os.path.join(root, "frontend", "super-admin", "app", "admin",
+                            "workflow-templates", "page.tsx")
+        src = open(page, encoding="utf-8").read()
+        assert "redirect" in src
+        assert "/admin/catalog-workspace?tab=workflow" in src
+        assert "masterDataApi" not in src
+
+    def test_canonical_job_type_workflow_router_still_present(self):
         import app.engines.admin_catalog.admin_router as ac_router_mod
-        src = open(ac_router_mod.__file__, encoding="utf-8").read()
-        assert '"/workflow-templates' in src
+        import app.engines.admin_catalog.job_type_blueprint_router as bp_router_mod
+        admin_src = open(ac_router_mod.__file__, encoding="utf-8").read()
+        bp_src = open(bp_router_mod.__file__, encoding="utf-8").read()
+        assert "WORKFLOW_TEMPLATES_RETIRED" in admin_src
+        assert '"/{service_id}/job-types/{job_type_id}/workflow"' in bp_src

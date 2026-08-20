@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission, require_tenant_mutation_permission, require_mutation_access_scope
 from app.core.security import get_client_ip, rate_limiter
-from app.dependencies.auth import get_current_user, UserContext, require_super_admin
+from app.dependencies.auth import get_current_user, UserContext, require_super_admin, require_customer
 from app.dependencies.db import get_db
 from app.engine_registry.registry import registry
 from app.engines.platform_commerce.schemas import (
@@ -16,9 +16,11 @@ from app.engines.platform_commerce.schemas import (
     CreatePackageRequest, UpdatePackageRequest,
     PurchaseInitiateRequest, PurchaseConfirmRequest, ManualCreditRequest,
     CommissionDeductRequest, UpdateHealthSignalRequest, HealthOverrideRequest,
-    ReservationCreateRequest, WarrantyClaimRequest, ClaimResolveRequest, PreflightRequest,
+    ReservationCreateRequest, WarrantyClaimRequest, WarrantyProviderResponseRequest,
+    WarrantyEscalationRequest, ClaimResolveRequest, PreflightRequest,
 )
 from app.engines.platform_commerce.service import CommerceService
+from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, Meta, Links, Link, ok
 
 logger = structlog.get_logger("commerce.router")
@@ -403,10 +405,9 @@ async def forfeit_reservation(booking_id: str, r: Request,
 # ── WARRANTY CLAIMS (6) ───────────────────────────────────────────────────────
 @router.post("/warranty/claims", summary="Submit warranty claim for a completed job", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict])
 async def submit_claim(body: WarrantyClaimRequest, r: Request,
-                        tid: uuid.UUID = Query(..., alias="tenant_id"),
-                        u: UserContext = Depends(require_mutation_access_scope),
+                        u: UserContext = Depends(require_customer),
                         s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.submit_claim(tid, uuid.UUID(u.user_id), body.job_id, body.claim_type,
+    data = await s.submit_claim(uuid.UUID(u.user_id), body.job_id, body.claim_type,
                                  body.description, body.media_ids, body.amount_requested)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
@@ -414,7 +415,13 @@ async def submit_claim(body: WarrantyClaimRequest, r: Request,
 async def get_claim(claim_id: uuid.UUID, r: Request,
                      u: UserContext = Depends(get_current_user),
                      s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.get_claim(claim_id)
+    platform_role = u.role in ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+    data = await s.get_claim(
+        claim_id,
+        customer_id=uuid.UUID(u.user_id) if u.role == "customer" else None,
+        tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None,
+        is_admin=platform_role,
+    )
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
 @router.get("/tenants/{tenant_id}/warranty/claims", summary="List warranty claims for tenant", response_model=ApiResponse[dict])
@@ -424,7 +431,42 @@ async def list_tenant_claims(tenant_id: uuid.UUID, r: Request,
                               cursor: str | None = Query(None),
                               u: UserContext = Depends(get_current_user),
                               s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
+    platform_role = u.role in ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
+    if not platform_role and (not u.tenant_id or str(u.tenant_id) != str(tenant_id)):
+        raise ServiceOSException("NOT_FOUND", "Warranty claims not found.", status_code=404)
     data = await s.list_tenant_claims(tenant_id, status_filter, limit, cursor)
+    return ok(data, _meta(r).request_id, ENGINE_ID)
+
+@router.get("/customer/warranty/claims", summary="List my warranty claims", response_model=ApiResponse[dict])
+async def list_customer_claims(r: Request,
+                               status_filter: str | None = Query(None, alias="status"),
+                               limit: int = Query(50, ge=1, le=100),
+                               cursor: str | None = Query(None),
+                               u: UserContext = Depends(require_customer),
+                               s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.list_customer_claims(uuid.UUID(u.user_id), status_filter, limit, cursor)
+    return ok(data, _meta(r).request_id, ENGINE_ID)
+
+@router.post("/warranty/claims/{claim_id}/provider-response", summary="Provider responds to or resolves own warranty claim", response_model=ApiResponse[dict])
+async def provider_respond_claim(claim_id: uuid.UUID, body: WarrantyProviderResponseRequest, r: Request,
+                                 u: UserContext = Depends(require_mutation_access_scope),
+                                 s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
+    if not u.tenant_id:
+        raise ServiceOSException("TENANT_CONTEXT_REQUIRED", "Provider tenant context is required.", status_code=403)
+    data = await s.provider_respond_claim(
+        claim_id, uuid.UUID(u.tenant_id), body.resolution, resolved=body.resolved,
+    )
+    return ok(data, _meta(r).request_id, ENGINE_ID)
+
+@router.post("/warranty/claims/{claim_id}/escalate", summary="Escalate an unresolved provider warranty claim", response_model=ApiResponse[dict])
+async def escalate_claim(claim_id: uuid.UUID, body: WarrantyEscalationRequest, r: Request,
+                         u: UserContext = Depends(require_mutation_access_scope),
+                         s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
+    data = await s.escalate_claim(
+        claim_id, body.reason,
+        customer_id=uuid.UUID(u.user_id) if u.role == "customer" else None,
+        tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None,
+    )
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
 @router.get("/warranty/claims", summary="[Admin] Platform-wide warranty claims queue", response_model=ApiResponse[dict])
@@ -437,7 +479,7 @@ async def list_all_claims(r: Request,
     data = await s.list_all_claims(status_filter, limit, cursor)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/warranty/claims/{claim_id}/approve", summary="[Admin] Approve claim — draws from security deposit", response_model=ApiResponse[dict])
+@router.post("/warranty/claims/{claim_id}/approve", summary="[Admin] Issue provider-funded service points after escalation", response_model=ApiResponse[dict])
 async def approve_claim(claim_id: uuid.UUID, body: ClaimResolveRequest, r: Request,
                          u: UserContext = Depends(require_super_admin),
                          s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:

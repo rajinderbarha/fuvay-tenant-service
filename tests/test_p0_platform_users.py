@@ -87,6 +87,15 @@ class TestPlatformUsersService:
     def test_list_platform_users(self):
         assert "async def list_platform_users" in _read(SERVICE)
 
+    def test_list_platform_users_uses_sql_pagination(self):
+        src = _read(SERVICE)
+        start = src.index("async def list_platform_users")
+        end = src.index("async def get_platform_users_summary")
+        section = src[start:end]
+        assert "select(func.count()).select_from(stmt.subquery())" in section
+        assert ".offset(start).limit(limit)" in section
+        assert "stmt.order_by(User.created_at.desc()))).scalars().all()" not in section
+
     def test_list_excludes_tenant_by_default(self):
         src = _read(SERVICE)
         # FINAL-L5-05N: "platform" group now scopes to all 5 real admin
@@ -383,6 +392,17 @@ class TestMainRegistration:
         src = _read(MAIN)
         assert "app.include_router(platform_users_router)" in src
 
+    def test_export_accepts_same_filters_as_list(self):
+        src = _read(ROUTER)
+        start = src.index("async def export_users")
+        end = src.index("@router.get(\"/audit-logs\")")
+        section = src[start:end]
+        for param in ("q: Optional[str]", "platform_role: Optional[str]",
+                      "status: Optional[str]", "mfa_status: Optional[str]",
+                      "access_scope: Optional[str]", "inactive_days_min: Optional[int]"):
+            assert param in section
+        assert "q=q" in section and "mfa_status=mfa_status" in section
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # Frontend — page + api client (non-blocking scope: page rewrite tracked separately)
@@ -393,3 +413,34 @@ class TestFrontendPage:
 
     def test_api_file_exists(self):
         assert API_TS.exists()
+
+    def test_api_export_accepts_filter_params(self):
+        src = _read(API_TS)
+        start = src.index("export: (params?:")
+        end = src.index("invite: (data:", start)
+        section = src[start:end]
+        for field in ("q?: string", "platform_role?: string", "status?: string",
+                      "mfa_status?: string", "access_scope?: string",
+                      "inactive_days_min?: number"):
+            assert field in section
+
+    def test_page_uses_server_pagination(self):
+        src = _read(PAGE)
+        assert "const [page, setPage]" in src
+        assert "const [pageSize, setPageSize]" in src
+        assert "page, limit: pageSize" in src
+        assert "Page {page} of {totalPages}" in src
+        assert "limit: 100" not in src
+
+    def test_page_fetches_current_admin_for_self_guard(self):
+        src = _read(PAGE)
+        assert "authApi.me()" in src
+        assert "const currentAdminId: string | null = me.data?.id ?? null" in src
+
+    def test_filtered_export_sends_active_filters(self):
+        src = _read(PAGE)
+        assert "platformUsersApi.export({" in src
+        for field in ("q: q || undefined", "platform_role: roleFilter || undefined",
+                      "status: statusFilter || undefined", "mfa_status: mfaFilter || undefined",
+                      "access_scope: scopeFilter || undefined", "inactive_days_min: inactiveDaysMin"):
+            assert field in src

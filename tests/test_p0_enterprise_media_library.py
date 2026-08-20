@@ -466,7 +466,7 @@ class TestApiTsMediaAdminApi:
     def test_export_csv_method(self):
         src = _frontend("lib/api.ts")
         idx = src.index("export const mediaAdminApi")
-        snippet = src[idx:idx + 6000]
+        snippet = src[idx:]
         assert "exportCsv" in snippet
 
     def test_storage_summary_method(self):
@@ -550,9 +550,19 @@ class TestMediaPage:
         src = _frontend("app/admin/media/page.tsx")
         assert "No media files found" in src or "No files found" in src
 
-    def test_force_delete_option(self):
+    def test_force_delete_is_not_exposed_to_admin_ui(self):
         src = _frontend("app/admin/media/page.tsx")
-        assert "force" in src
+        assert "Force delete" not in src
+        assert "bypass active-link guard" not in src
+
+    def test_cursor_pagination_is_wired(self):
+        src = _frontend("app/admin/media/page.tsx")
+        assert "next_cursor" in src
+        assert "cursorHistory" in src
+
+    def test_sort_is_sent_to_backend(self):
+        src = _frontend("lib/api.ts")
+        assert 'qs.set("sort", params.sort)' in src
 
     def test_delete_blocked_guard_exists_in_service(self):
         src = _backend("engines/media/admin_service.py")
@@ -579,9 +589,11 @@ class TestMediaPage:
         src = _frontend("app/admin/media/page.tsx")
         assert "MediaCard" in src
 
-    def test_filter_sidebar_component(self):
+    def test_single_enterprise_filter_toolbar(self):
         src = _frontend("app/admin/media/page.tsx")
-        assert "FilterSidebar" in src
+        assert "FilterSidebar" not in src
+        for control in ("All Contexts", "All Types", "All Statuses", "showMore"):
+            assert control in src
 
     def test_bulk_action_bar_component(self):
         src = _frontend("app/admin/media/page.tsx")

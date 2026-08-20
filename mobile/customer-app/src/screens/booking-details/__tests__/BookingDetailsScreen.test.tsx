@@ -45,6 +45,7 @@ function job(overrides: Partial<CustomerActiveJob> = {}): CustomerActiveJob {
     jobId: "job-1", rawStage: "assignment", rawStatus: "assigned", scheduledDate: null, scheduledTimeWindow: null,
     technician: { displayName: "Amanpreet S.", designation: "Technician", photoUrl: null },
     completion: null,
+    warrantyDays: null, warrantyExpiresAt: null, warrantyActive: false,
     ...overrides,
   };
 }

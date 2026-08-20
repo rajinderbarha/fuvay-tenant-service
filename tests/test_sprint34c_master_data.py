@@ -23,6 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 SA_API       = os.path.join(ROOT, "frontend", "super-admin", "lib", "api.ts")
 SA_LAYOUT    = os.path.join(ROOT, "frontend", "super-admin", "components", "layout", "AdminLayout.tsx")
 SA_PAGES     = os.path.join(ROOT, "frontend", "super-admin", "app", "admin")
+CATALOG_WORKSPACE_PAGE = os.path.join(SA_PAGES, "catalog-workspace", "page.tsx")
 MIGRATION    = os.path.join(ROOT, "alembic", "versions", "055_sprint34c_master_data.py")
 MODELS_FILE  = os.path.join(ROOT, "app", "engines", "admin_catalog", "models.py")
 SERVICE_FILE = os.path.join(ROOT, "app", "engines", "admin_catalog", "service.py")
@@ -187,15 +188,17 @@ def test_admin_router_service_options_create_requires_super_admin():
     first_post = block[:block.index('"/service-options/{option_id}"')]
     assert "require_super_admin" in first_post
 
-def test_admin_router_has_workflow_templates_list():
+def test_admin_router_retired_workflow_templates_route_exists():
     src = _read(ADMIN_ROUTER)
     assert '"/workflow-templates"' in src
+    assert "WORKFLOW_TEMPLATES_RETIRED" in src
 
-def test_admin_router_workflow_templates_create_requires_super_admin():
+def test_admin_router_workflow_templates_fail_closed_requires_super_admin():
     src = _read(ADMIN_ROUTER)
     block = src[src.index('"/workflow-templates"'):]
     first_post = block[:block.index('"/workflow-templates/{template_id}"')]
     assert "require_super_admin" in first_post
+    assert "status_code=410" in first_post
 
 def test_admin_router_has_master_data_audit():
     src = _read(ADMIN_ROUTER)
@@ -260,9 +263,9 @@ def test_api_has_master_service_option_interface():
     src = _read(SA_API)
     assert "interface MasterServiceOption" in src or "MasterServiceOption" in src
 
-def test_api_has_master_workflow_template_interface():
+def test_api_master_workflow_template_interface_removed():
     src = _read(SA_API)
-    assert "interface MasterWorkflowTemplate" in src or "MasterWorkflowTemplate" in src
+    assert "interface MasterWorkflowTemplate" not in src
 
 def test_api_has_list_issue_types():
     src = _read(SA_API)
@@ -280,13 +283,13 @@ def test_api_has_create_service_option():
     src = _read(SA_API)
     assert "createServiceOption" in src
 
-def test_api_has_list_workflow_templates():
+def test_api_list_workflow_templates_removed():
     src = _read(SA_API)
-    assert "listWorkflowTemplates" in src
+    assert "listWorkflowTemplates" not in src
 
-def test_api_has_create_workflow_template():
+def test_api_create_workflow_template_removed():
     src = _read(SA_API)
-    assert "createWorkflowTemplate" in src
+    assert "createWorkflowTemplate" not in src
 
 def test_api_has_list_audit_log():
     src = _read(SA_API)
@@ -296,16 +299,18 @@ def test_api_endpoints_use_admin_prefix():
     src = _read(SA_API)
     assert "/v1/admin/issue-types" in src
     assert "/v1/admin/service-options" in src
-    assert "/v1/admin/workflow-templates" in src
+    assert "/v1/admin/workflow-templates" not in src
 
 
 # ── Frontend: Admin Pages ─────────────────────────────────────────────────────
 
 def test_issue_types_page_exists():
-    assert os.path.exists(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
+    assert not os.path.exists(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
+    assert os.path.exists(CATALOG_WORKSPACE_PAGE)
 
 def test_service_options_page_exists():
-    assert os.path.exists(os.path.join(SA_PAGES, "service-options", "page.tsx"))
+    assert not os.path.exists(os.path.join(SA_PAGES, "service-options", "page.tsx"))
+    assert os.path.exists(CATALOG_WORKSPACE_PAGE)
 
 def test_workflow_templates_page_exists():
     assert os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
@@ -316,55 +321,56 @@ def test_workflow_templates_page_exists():
 # Sprint34E serviceOptionApi/catalogApi model, using SectionHeader/DataTable
 # from shared/ui instead. Real, working functionality either way.
 def test_issue_types_page_uses_page_shell():
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "SectionHeader" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert '"problems"' in src
 
 def test_issue_types_page_uses_page_header():
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "DataTable" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert "ProblemsQuestionsTab" in src
 
 def test_issue_types_page_uses_search_bar():
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "Input" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert "catalogWorkspaceApi" in src
 
 def test_service_options_page_uses_page_shell():
-    src = _read(os.path.join(SA_PAGES, "service-options", "page.tsx"))
-    assert "PageShell" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert '"options"' in src
 
-def test_workflow_templates_page_uses_page_shell():
+def test_workflow_templates_page_redirects_to_catalog_workspace():
     src = _read(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
-    assert "PageShell" in src
+    assert "redirect" in src
+    assert "/admin/catalog-workspace?tab=workflow" in src
 
 def test_issue_types_page_uses_master_data_api():
     # See migration note above test_issue_types_page_uses_page_shell.
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
-    assert "serviceOptionApi" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert "catalogWorkspaceApi" in src
 
 def test_service_options_page_uses_service_option_api():
     # Page was migrated from masterDataApi → serviceOptionApi for correct response shape
-    src = _read(os.path.join(SA_PAGES, "service-options", "page.tsx"))
-    assert "serviceOptionApi" in src
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert "OptionsTab" in src
 
-def test_workflow_templates_page_uses_master_data_api():
+def test_workflow_templates_page_does_not_use_master_data_api():
     src = _read(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
-    assert "masterDataApi" in src
+    assert "masterDataApi" not in src
 
 def test_no_hardcoded_brands_in_issue_types_page():
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
+    src = _read(CATALOG_WORKSPACE_PAGE)
     # No inline array of hardcoded brand/issue names
     assert "Samsung" not in src and "LG" not in src and "Daikin" not in src
 
 def test_no_hardcoded_options_in_service_options_page():
-    src = _read(os.path.join(SA_PAGES, "service-options", "page.tsx"))
+    src = _read(CATALOG_WORKSPACE_PAGE)
     assert "Samsung" not in src
 
 def test_issue_types_page_no_tailwind():
-    src = _read(os.path.join(SA_PAGES, "issue-types", "page.tsx"))
+    src = _read(CATALOG_WORKSPACE_PAGE)
     tailwind = re.compile(r'className="[^"]*(?:flex|text-sm|bg-blue|p-\d|m-\d|rounded-)[^"]*"')
     assert not tailwind.search(src)
 
 def test_service_options_page_no_tailwind():
-    src = _read(os.path.join(SA_PAGES, "service-options", "page.tsx"))
+    src = _read(CATALOG_WORKSPACE_PAGE)
     tailwind = re.compile(r'className="[^"]*(?:flex|text-sm|bg-blue|p-\d|m-\d|rounded-)[^"]*"')
     assert not tailwind.search(src)
 
@@ -393,6 +399,6 @@ def test_admin_layout_has_service_options_nav():
     seed = _read(os.path.join(ROOT, "alembic", "versions", "089_multi_vertical_catalog_architecture.py"))
     assert '"/admin/service-options"' in seed
 
-def test_admin_layout_has_workflow_templates_nav():
+def test_admin_layout_does_not_have_workflow_templates_nav():
     src = _read(SA_LAYOUT)
-    assert "workflow-templates" in src
+    assert 'href: "/admin/workflow-templates"' not in src

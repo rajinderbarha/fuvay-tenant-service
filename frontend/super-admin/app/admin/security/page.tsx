@@ -1,559 +1,137 @@
 "use client";
-/**
- * Security & Threats — Enterprise SOC (7 tabs).
- * PROVEN: every mutating action (block IP, revoke session, create/rotate/revoke API key,
- * resolve threat) is backed by an audit-logged endpoint under /v1/admin/security/*.
- * Raw API keys are shown exactly once, in a dedicated modal, never persisted client-side.
- */
-import { useState, useCallback } from "react";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  RefreshCw, Download, Ban, Shield, Key, UserCheck, ScrollText, SlidersHorizontal, AlertTriangle,
+  Activity, AlertTriangle, Ban, CheckCircle2, ChevronLeft, ChevronRight,
+  Clock3, Copy, Download, Eye, Fingerprint, Key, Laptop, LockKeyhole,
+  MonitorSmartphone, Network, Plus, RefreshCw, ScrollText, Search, Shield, ShieldAlert,
+  ShieldCheck, SlidersHorizontal, UserCheck, Users,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Badge, Btn, Modal, Input } from "../../../components/shared/ui";
-import { Card, PageHeader, PageShell, StatusBadge, Skeleton } from "@serviceos/design-system";
-import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
+import { Badge, Btn, Modal, Input, Select, Textarea } from "../../../components/shared/ui";
+import { Skeleton, StatusBadge } from "@serviceos/design-system";
 import { ActionMenu } from "../../../components/pricing/ActionMenu";
 import {
-  securityAdminApi, SecurityThreat, SecuritySession, IPBlockEntry, SecurityApiKey, SecurityAuditEntry,
+  securityAdminApi, SecurityApiKey, SecurityAuditEntry, SecurityOverview,
+  SecurityPolicy, SecuritySession, SecurityThreat, IPBlockEntry,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { RequirePermission } from "../../../components/shared/PermissionGate";
+import styles from "./security.module.css";
 
-type Tab = "overview" | "threats" | "sessions" | "ip_blocklist" | "api_keys" | "audit_logs" | "policies";
+type Tab = "overview" | "threats" | "sessions" | "ip_blocklist" | "audit_logs" | "policies";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: "overview", label: "Overview", icon: <Shield size={14} /> },
-  { key: "threats", label: "Threats", icon: <AlertTriangle size={14} /> },
-  { key: "sessions", label: "Active Sessions", icon: <UserCheck size={14} /> },
-  { key: "ip_blocklist", label: "IP Blocklist", icon: <Ban size={14} /> },
-  { key: "api_keys", label: "API Keys", icon: <Key size={14} /> },
-  { key: "audit_logs", label: "Audit Logs", icon: <ScrollText size={14} /> },
-  { key: "policies", label: "Security Policies", icon: <SlidersHorizontal size={14} /> },
+  { key: "overview", label: "Overview", icon: <Shield size={15} /> },
+  { key: "threats", label: "Threats", icon: <AlertTriangle size={15} /> },
+  { key: "sessions", label: "Active Sessions", icon: <UserCheck size={15} /> },
+  { key: "ip_blocklist", label: "IP Blocklist", icon: <Ban size={15} /> },
+  { key: "audit_logs", label: "Audit Logs", icon: <ScrollText size={15} /> },
+  { key: "policies", label: "Security Policies", icon: <SlidersHorizontal size={15} /> },
 ];
+const LEVEL_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = { critical: "danger", high: "warning", medium: "info", low: "muted" };
+const API_SCOPES = ["read:jobs", "write:jobs", "read:bookings", "write:bookings", "read:customers", "read:analytics", "write:webhooks", "manage:staff", "billing", "admin"];
 
-const LEVEL_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = {
-  critical: "danger", high: "warning", medium: "info", low: "muted",
-};
+function humanize(value: string) { return value.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
+function formatDate(value: string | null | undefined) { return value ? new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—"; }
+function useDebouncedValue(value: string, delay = 300) { const [debounced, setDebounced] = useState(value); useEffect(() => { const timer = window.setTimeout(() => setDebounced(value.trim()), delay); return () => window.clearTimeout(timer); }, [value, delay]); return debounced; }
 
-function EmptyState({ text }: { text: string }) {
-  return <p style={{ padding: "28px 0", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>{text}</p>;
+function ErrorBanner({ message }: { message: string | null }) { return message ? <div className={styles.errorBanner}><AlertTriangle size={16} /><span>{message}</span></div> : null; }
+function EmptyState({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action?: React.ReactNode }) { return <div className={styles.emptyState}><span className={styles.emptyIcon}>{icon}</span><strong>{title}</strong><p>{description}</p>{action}</div>; }
+function TableShell({ children, loading, empty }: { children: React.ReactNode; loading: boolean; empty?: React.ReactNode }) { return <div className={styles.tableCard}>{loading ? <div className={styles.tableLoading}><Skeleton height={240} /></div> : empty ?? children}</div>; }
+function Th({ children }: { children: React.ReactNode }) { return <th>{children}</th>; }
+function Td({ children, mono = false }: { children: React.ReactNode; mono?: boolean }) { return <td className={mono ? styles.mono : undefined}>{children}</td>; }
+
+function CursorPager({ hasNext, cursor, history, nextCursor, onChange, pageSize, onPageSize }: { hasNext: boolean; cursor: string; history: string[]; nextCursor: string | null; onChange: (cursor: string, history: string[]) => void; pageSize: number; onPageSize: (size: number) => void }) {
+  return <div className={styles.pager}><span>Page {history.length + 1}</span><Select value={String(pageSize)} onChange={v => onPageSize(Number(v))} options={[{ value: "25", label: "25 rows" }, { value: "50", label: "50 rows" }, { value: "100", label: "100 rows" }]} /><div className={styles.pagerButtons}><button aria-label="Previous page" disabled={!cursor} onClick={() => onChange(history.at(-1) ?? "", history.slice(0, -1))}><ChevronLeft size={16} /></button><button aria-label="Next page" disabled={!hasNext || !nextCursor} onClick={() => onChange(nextCursor ?? "", [...history, cursor])}><ChevronRight size={16} /></button></div></div>;
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--border)" }}>{children}</th>;
-}
-function Td({ children }: { children: React.ReactNode }) {
-  return <td style={{ padding: "10px 12px", fontSize: 13, borderBottom: "1px solid var(--border)" }}>{children}</td>;
+function ConfirmActionModal({ open, title, description, confirmLabel, destructive = true, loading, error, onClose, onConfirm }: { open: boolean; title: string; description: string; confirmLabel: string; destructive?: boolean; loading?: boolean; error?: string | null; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
+  const [reason, setReason] = useState(""); useEffect(() => { if (!open) setReason(""); }, [open]);
+  return <Modal open={open} onClose={onClose} title={title}><div className={styles.modalStack}><div className={destructive ? styles.dangerNotice : styles.infoNotice}><ShieldAlert size={18} /><span>{description}</span></div><Textarea label="Reason" value={reason} onChange={setReason} rows={3} required placeholder="Record why this action is necessary…" /><ErrorBanner message={error ?? null} /><div className={styles.modalActions}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant={destructive ? "danger" : "primary"} loading={loading} disabled={reason.trim().length < 5} onClick={() => onConfirm(reason.trim())}>{confirmLabel}</Btn></div></div></Modal>;
 }
 
 export default function SecurityPage() {
-  const router = useRouter();
-  const [tab, setTab] = useState<Tab>("overview");
-
-  return (
-    <AdminLayout activeNav="security">
-      <RequirePermission requiredPermission="security:read" parentLabel="Dashboard">
-      <PageShell>
-      <PageHeader
-        title="Security & Threats"
-        description="Threats, active sessions, IP blocklist, API keys, audit trail, and security policies."
-      />
-      <div>
-        <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", border: "none",
-              background: "none", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 700 : 500,
-              color: tab === t.key ? "var(--accent)" : "var(--text-secondary)",
-              borderBottom: tab === t.key ? "2px solid var(--accent)" : "2px solid transparent",
-              whiteSpace: "nowrap",
-            }}>
-              {t.icon}{t.label}
-            </button>
-          ))}
-        </div>
-
-        {tab === "overview" && <OverviewTab />}
-        {tab === "threats" && <ThreatsTab router={router} />}
-        {tab === "sessions" && <SessionsTab />}
-        {tab === "ip_blocklist" && <IpBlocklistTab />}
-        {tab === "api_keys" && <ApiKeysTab />}
-        {tab === "audit_logs" && <AuditLogsTab />}
-        {tab === "policies" && <PoliciesTab />}
-      </div>
-      </PageShell>
-      </RequirePermission>
-    </AdminLayout>
-  );
+  const [tab, setTab] = useState<Tab>("overview"); const [refreshKey, setRefreshKey] = useState(0);
+  const overview = useApi(useCallback(() => securityAdminApi.getOverview(), []), [refreshKey]);
+  useEffect(() => { const candidate = new URLSearchParams(window.location.search).get("tab") as Tab | null; if (candidate && TABS.some(t => t.key === candidate)) setTab(candidate); }, []);
+  function changeTab(next: Tab) { setTab(next); const url = new URL(window.location.href); if (next === "overview") url.searchParams.delete("tab"); else url.searchParams.set("tab", next); window.history.replaceState({}, "", `${url.pathname}${url.search}`); }
+  const counts: Partial<Record<Tab, number>> = overview.data ? { threats: overview.data.summary_cards.open_threats, sessions: overview.data.summary_cards.active_sessions, ip_blocklist: overview.data.summary_cards.blocked_ips } : {};
+  return <AdminLayout activeNav="security"><RequirePermission requiredPermission="security:read" parentLabel="Dashboard"><main className={styles.page}>
+    <header className={styles.pageHeader}><div><span className={styles.eyebrow}>Platform protection</span><h1>Security &amp; Threats</h1><p>Investigate risk, control access, and manage enforceable platform security policy.</p></div><div className={styles.headerActions}><span className={styles.lastUpdated}><Clock3 size={14} />{overview.data ? `Updated ${formatDate(overview.data.generated_at)}` : "Loading posture…"}</span><Btn variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={() => setRefreshKey(v => v + 1)}>Refresh</Btn></div></header>
+    <nav className={styles.tabs} aria-label="Security sections">{TABS.map(item => <button key={item.key} className={tab === item.key ? styles.activeTab : ""} aria-current={tab === item.key ? "page" : undefined} onClick={() => changeTab(item.key)}>{item.icon}<span>{item.label}</span>{counts[item.key] !== undefined && <b>{counts[item.key]!.toLocaleString()}</b>}</button>)}</nav>
+    <section className={styles.tabContent}>{tab === "overview" && <OverviewTab data={overview.data} loading={overview.loading} error={overview.error} onNavigate={changeTab} />}{tab === "threats" && <ThreatsTab refreshKey={refreshKey} />}{tab === "sessions" && <SessionsTab refreshKey={refreshKey} />}{tab === "ip_blocklist" && <IpBlocklistTab refreshKey={refreshKey} />}{tab === "audit_logs" && <AuditLogsTab refreshKey={refreshKey} />}{tab === "policies" && <PoliciesTab refreshKey={refreshKey} />}</section>
+  </main></RequirePermission></AdminLayout>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OVERVIEW
-// ═══════════════════════════════════════════════════════════════
+function OverviewTab({ data, loading, error, onNavigate }: { data: SecurityOverview | null; loading: boolean; error: string | null; onNavigate: (tab: Tab) => void }) {
+  if (loading) return <Skeleton height={520} />; if (error || !data) return <ErrorBanner message={error || "Security posture could not be loaded."} />; const c = data.summary_cards;
+  const posture = c.critical_threats > 0 ? { label: "Critical attention", copy: "Critical threats require immediate containment.", icon: <ShieldAlert size={30} />, tone: styles.postureCritical } : c.open_threats > 0 || c.high_risk_audit_events_24h > 0 ? { label: "Review required", copy: "Open security signals are waiting for triage.", icon: <Shield size={30} />, tone: styles.postureWarning } : { label: "Platform protected", copy: "No open threat requires administrator action.", icon: <ShieldCheck size={30} />, tone: styles.postureHealthy };
+  return <div className={styles.stack}><div className={styles.overviewGrid}><article className={`${styles.postureCard} ${posture.tone}`}><span className={styles.postureIcon}>{posture.icon}</span><div><small>Current posture</small><h2>{posture.label}</h2><p>{posture.copy}</p></div><Btn size="sm" variant="secondary" onClick={() => onNavigate("threats")}>Open threat queue</Btn></article><div className={styles.primaryMetrics}><Metric icon={<ShieldAlert size={18} />} label="Open threats" value={c.open_threats} note={`${c.critical_threats} critical`} danger={c.critical_threats > 0} /><Metric icon={<Users size={18} />} label="Active sessions" value={c.active_sessions} note="within policy" /><Metric icon={<Network size={18} />} label="Blocked networks" value={c.blocked_ips} note="actively enforced" /></div></div>
+    <div className={styles.signalStrip}><Signal label="Failed logins · 24h" value={c.failed_logins_24h} icon={<Fingerprint size={16} />} /><Signal label="High-risk actions · 24h" value={c.high_risk_audit_events_24h} icon={<Activity size={16} />} /><div className={styles.quickLinks}><button onClick={() => onNavigate("sessions")}>Review sessions</button><button onClick={() => onNavigate("audit_logs")}>Open audit trail</button><button onClick={() => onNavigate("policies")}>Manage policy</button></div></div>
+    <div className={styles.activityGrid}><OverviewPanel title="Threat queue" action="View all threats" onAction={() => onNavigate("threats")}>{data.recent_threats.length === 0 ? <CompactEmpty icon={<CheckCircle2 size={18} />} text="No open threats" /> : data.recent_threats.map(t => <div className={styles.activityRow} key={t.threat_id}><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"} size="sm">{t.threat_level}</Badge><div><strong>{t.description}</strong><span>{t.ip_address ?? "No IP"} · {formatDate(t.created_at)}</span></div><b>{t.risk_score}</b></div>)}</OverviewPanel><OverviewPanel title="Privileged activity" action="View audit log" onAction={() => onNavigate("audit_logs")}>{data.recent_high_risk_audit.length === 0 ? <CompactEmpty icon={<CheckCircle2 size={18} />} text="No high-risk action recorded" /> : data.recent_high_risk_audit.map(a => <div className={styles.activityRow} key={a.log_id}><span className={styles.dangerDot} /><div><strong>{humanize(a.operation)}</strong><span>{a.actor_role ?? "System"} · {formatDate(a.created_at)}</span></div></div>)}</OverviewPanel><OverviewPanel title="Network enforcement" action="Manage blocklist" onAction={() => onNavigate("ip_blocklist")}>{data.top_blocked_ips.length === 0 ? <CompactEmpty icon={<Network size={18} />} text="No active network blocks" /> : data.top_blocked_ips.map(e => <div className={styles.activityRow} key={e.entry_id}><code>{e.ip_or_cidr}</code><div><strong>{e.reason}</strong><span>{humanize(e.scope)} scope</span></div><b>{e.hit_count} hits</b></div>)}</OverviewPanel></div>
+  </div>;
+}
+function Metric({ icon, label, value, note, danger }: { icon: React.ReactNode; label: string; value: number; note: string; danger?: boolean }) { return <article className={`${styles.metric} ${danger ? styles.metricDanger : ""}`}><span>{icon}</span><div><small>{label}</small><strong>{value.toLocaleString()}</strong><p>{note}</p></div></article>; }
+function Signal({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) { return <div className={styles.signal}>{icon}<span>{label}</span><b>{value.toLocaleString()}</b></div>; }
+function OverviewPanel({ title, action, onAction, children }: { title: string; action: string; onAction: () => void; children: React.ReactNode }) { return <article className={styles.panel}><header><h3>{title}</h3><button onClick={onAction}>{action}<ChevronRight size={14} /></button></header><div>{children}</div></article>; }
+function CompactEmpty({ icon, text }: { icon: React.ReactNode; text: string }) { return <div className={styles.compactEmpty}>{icon}<span>{text}</span></div>; }
 
-function OverviewTab() {
-  const overview = useApi(useCallback(() => securityAdminApi.getOverview(), []));
-  const o = overview.data;
-
-  if (overview.loading) return <Skeleton height={300} />;
-  if (overview.error || !o) return <Card padding="md"><p style={{ color: "var(--danger-text)" }}>Could not load overview. {overview.error}</p></Card>;
-
-  const c = o.summary_cards;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <SummaryCardsRow cards={[
-        { label: "Open Threats", value: c.open_threats, accent: c.open_threats > 0 },
-        { label: "Critical Threats", value: c.critical_threats, accent: c.critical_threats > 0 },
-        { label: "Active Sessions", value: c.active_sessions },
-        { label: "Blocked IPs", value: c.blocked_ips },
-        { label: "Active API Keys", value: c.active_api_keys },
-        { label: "Expiring API Keys (30d)", value: c.expiring_api_keys, accent: c.expiring_api_keys > 0 },
-        { label: "Failed Logins (24h)", value: c.failed_logins_24h },
-        { label: "High-Risk Audit Events (24h)", value: c.high_risk_audit_events_24h },
-      ]} />
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Card padding="md">
-          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Recent Threats</h3>
-          {o.recent_threats.length === 0 ? <EmptyState text="No open threats." /> : o.recent_threats.map(t => (
-            <div key={t.threat_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-              <Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"} size="sm">{t.threat_level}</Badge>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>{t.ip_address ?? "—"} · {new Date(t.created_at).toLocaleString("en-IN")}</p>
-              </div>
-            </div>
-          ))}
-        </Card>
-
-        <Card padding="md">
-          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Recent High-Risk Audit Events</h3>
-          {o.recent_high_risk_audit.length === 0 ? <EmptyState text="No high-risk actions recorded." /> : o.recent_high_risk_audit.map(a => (
-            <div key={a.log_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-              <Badge variant="danger" size="sm">HIGH RISK</Badge>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 12.5 }}>{a.operation} · {a.engine_id}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>{a.actor_role ?? "—"} · {a.actor_ip ?? "—"} · {new Date(a.created_at).toLocaleString("en-IN")}</p>
-              </div>
-            </div>
-          ))}
-        </Card>
-
-        <Card padding="md">
-          <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Top Blocked IPs</h3>
-          {o.top_blocked_ips.length === 0 ? <EmptyState text="No active IP blocks." /> : o.top_blocked_ips.map(e => (
-            <div key={e.entry_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
-              <code style={{ fontSize: 12, background: "var(--surface-sunken)", padding: "2px 8px", borderRadius: 6 }}>{e.ip_or_cidr}</code>
-              <span style={{ fontSize: 11, color: "var(--text-tertiary)", flex: 1 }}>{e.reason}</span>
-              <Badge variant={LEVEL_VARIANT[e.threat_level] ?? "muted"} size="sm">{e.hit_count} hits</Badge>
-            </div>
-          ))}
-        </Card>
-      </div>
-    </div>
-  );
+function ThreatsTab({ refreshKey }: { refreshKey: number }) {
+  const router = useRouter(); const perm = usePermissions(); const [q, setQ] = useState(""); const search = useDebouncedValue(q); const [status, setStatus] = useState(""); const [level, setLevel] = useState(""); const [cursor, setCursor] = useState(""); const [history, setHistory] = useState<string[]>([]); const [pageSize, setPageSize] = useState(25); const [confirm, setConfirm] = useState<{ t: SecurityThreat; action: "investigating" | "resolved" | "false_positive" | "block" | "revoke" } | null>(null);
+  useEffect(() => { setCursor(""); setHistory([]); }, [status, level, search, pageSize]);
+  const threats = useApi(useCallback(() => securityAdminApi.listThreats({ status: status || undefined, threatLevel: level || undefined, q: search || undefined, limit: pageSize, cursor: cursor || undefined }), [status, level, search, pageSize, cursor]), [status, level, search, pageSize, cursor, refreshKey]);
+  const statusAction = useAction(useCallback((id: string, s: string, notes: string) => securityAdminApi.updateThreatStatus(id, s, notes), [])); const blockAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.blockIpFromThreat(id, reason), [])); const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeSessionsFromThreat(id, reason), []));
+  async function run(reason: string) { if (!confirm) return; const { t, action } = confirm; const result = action === "block" ? await blockAction.execute(t.threat_id, reason) : action === "revoke" ? await revokeAction.execute(t.threat_id, reason) : await statusAction.execute(t.threat_id, action, reason); if (result) { setConfirm(null); threats.refetch(); } }
+  const rows = threats.data?.threats ?? [];
+  return <div className={styles.stack}><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search threat, IP, or description" /></div><Select value={status} onChange={setStatus} options={[{ value: "", label: "All statuses" }, ...["open", "investigating", "contained", "resolved", "false_positive", "ignored"].map(v => ({ value: v, label: humanize(v) }))]} /><Select value={level} onChange={setLevel} options={[{ value: "", label: "All severity" }, ...["critical", "high", "medium", "low"].map(v => ({ value: v, label: humanize(v) }))]} />{(q || status || level) && <Btn size="sm" variant="ghost" onClick={() => { setQ(""); setStatus(""); setLevel(""); }}>Clear</Btn>}</div><ErrorBanner message={threats.error} /><TableShell loading={threats.loading} empty={!threats.loading && rows.length === 0 ? <EmptyState icon={<ShieldCheck size={24} />} title="No matching threats" description="The queue is clear for the selected filters." /> : undefined}><div className={styles.tableScroll}><table><thead><tr><Th>Threat</Th><Th>Signal</Th><Th>Severity</Th><Th>Risk</Th><Th>Source IP</Th><Th>Status</Th><Th>Detected</Th><Th>Actions</Th></tr></thead><tbody>{rows.map(t => <tr key={t.threat_id}><Td><button className={styles.rowLink} onClick={() => router.push(`/admin/security/threats/${t.threat_id}`)}>{t.threat_number ?? t.threat_id.slice(0, 8)}</button></Td><Td><strong>{humanize(t.activity_type)}</strong><span className={styles.cellSub}>{t.description}</span></Td><Td><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"} size="sm">{t.threat_level}</Badge></Td><Td><span className={styles.riskScore}>{t.risk_score}</span></Td><Td mono>{t.ip_address ?? "—"}</Td><Td><StatusBadge status={t.status} size="sm" /></Td><Td>{formatDate(t.created_at)}</Td><Td><ActionMenu items={[{ label: "Open investigation", onClick: () => router.push(`/admin/security/threats/${t.threat_id}`) }, perm.has("security:threats:resolve") && { label: "Mark investigating", onClick: () => setConfirm({ t, action: "investigating" }) }, perm.has("security:threats:block_ip") && { label: "Block source IP", onClick: () => setConfirm({ t, action: "block" }), disabled: !t.ip_address }, perm.has("security:sessions:revoke") && { label: "Revoke user sessions", onClick: () => setConfirm({ t, action: "revoke" }), disabled: !t.target_user_id, destructive: true }, perm.has("security:threats:resolve") && { label: "Resolve threat", onClick: () => setConfirm({ t, action: "resolved" }) }, perm.has("security:threats:resolve") && { label: "Mark false positive", onClick: () => setConfirm({ t, action: "false_positive" }) }]} /></Td></tr>)}</tbody></table></div><CursorPager hasNext={!!threats.data?.has_next} nextCursor={threats.data?.next_cursor ?? null} cursor={cursor} history={history} onChange={(c, h) => { setCursor(c); setHistory(h); }} pageSize={pageSize} onPageSize={setPageSize} /></TableShell><ConfirmActionModal open={!!confirm} onClose={() => setConfirm(null)} title={confirm ? humanize(confirm.action === "block" ? "Block source IP" : confirm.action === "revoke" ? "Revoke user sessions" : `Mark ${confirm.action}`) : "Confirm action"} description="This security action is recorded in the immutable platform audit trail." confirmLabel={confirm?.action === "block" ? "Block IP" : confirm?.action === "revoke" ? "Revoke sessions" : "Confirm status"} destructive={confirm?.action === "block" || confirm?.action === "revoke"} loading={statusAction.loading || blockAction.loading || revokeAction.loading} error={statusAction.error || blockAction.error || revokeAction.error} onConfirm={run} /></div>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// THREATS
-// ═══════════════════════════════════════════════════════════════
+function SessionsTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions(); const [q, setQ] = useState(""); const search = useDebouncedValue(q); const [role, setRole] = useState(""); const [activeOnly, setActiveOnly] = useState("true"); const [cursor, setCursor] = useState(""); const [history, setHistory] = useState<string[]>([]); const [pageSize, setPageSize] = useState(25); const [selected, setSelected] = useState<string | null>(null); const [confirm, setConfirm] = useState<{ s: SecuritySession; all: boolean } | null>(null);
+  useEffect(() => { setCursor(""); setHistory([]); }, [search, role, activeOnly, pageSize]);
+  const sessions = useApi(useCallback(() => securityAdminApi.listSessions({ q: search || undefined, role: role || undefined, activeOnly: activeOnly === "true", limit: pageSize, cursor: cursor || undefined }), [search, role, activeOnly, pageSize, cursor]), [search, role, activeOnly, pageSize, cursor, refreshKey]); const detail = useApi(useCallback(() => securityAdminApi.getSessionDetail(selected!), [selected]), [selected], { enabled: !!selected }); const revokeOne = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeSession(id, reason), [])); const revokeAll = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeAllUserSessions(id, reason), []));
+  async function run(reason: string) { if (!confirm) return; const result = confirm.all ? await revokeAll.execute(confirm.s.user_id, reason) : await revokeOne.execute(confirm.s.session_id, reason); if (result) { setConfirm(null); sessions.refetch(); } } const rows = sessions.data?.sessions ?? [];
+  return <div className={styles.stack}><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search user, email, or IP" /></div><Select value={role} onChange={setRole} options={[{ value: "", label: "All roles" }, ...["super_admin", "admin_security", "tenant_owner", "staff", "customer"].map(v => ({ value: v, label: humanize(v) }))]} /><Select value={activeOnly} onChange={setActiveOnly} options={[{ value: "true", label: "Active only" }, { value: "false", label: "All sessions" }]} /></div><ErrorBanner message={sessions.error} /><TableShell loading={sessions.loading} empty={!sessions.loading && rows.length === 0 ? <EmptyState icon={<Laptop size={24} />} title="No matching sessions" description="No sessions match the current access filters." /> : undefined}><div className={styles.tableScroll}><table><thead><tr><Th>User</Th><Th>Role</Th><Th>Device</Th><Th>IP</Th><Th>Trust</Th><Th>Status</Th><Th>Last active</Th><Th>Actions</Th></tr></thead><tbody>{rows.map(s => <tr key={s.session_id}><Td><strong>{s.user_name || s.user_email}</strong><span className={styles.cellSub}>{s.user_email}</span></Td><Td>{humanize(s.user_role)}</Td><Td><strong>{s.device_name}</strong><span className={styles.cellSub}>{humanize(s.device_type)}</span></Td><Td mono>{s.ip_address ?? "—"}</Td><Td>{s.is_trusted ? <Badge variant="success" size="sm">Trusted</Badge> : <Badge variant="muted" size="sm">Standard</Badge>}</Td><Td><StatusBadge status={s.status} size="sm" /></Td><Td>{formatDate(s.last_active_at)}</Td><Td><ActionMenu items={[{ label: "View login activity", onClick: () => setSelected(s.session_id) }, perm.has("security:sessions:revoke") && { label: "Revoke this session", onClick: () => setConfirm({ s, all: false }), disabled: s.status !== "active", destructive: true }, perm.has("security:sessions:revoke") && { label: "Revoke all user sessions", onClick: () => setConfirm({ s, all: true }), destructive: true }]} /></Td></tr>)}</tbody></table></div><CursorPager hasNext={!!sessions.data?.has_next} nextCursor={sessions.data?.next_cursor ?? null} cursor={cursor} history={history} onChange={(c, h) => { setCursor(c); setHistory(h); }} pageSize={pageSize} onPageSize={setPageSize} /></TableShell><ConfirmActionModal open={!!confirm} onClose={() => setConfirm(null)} title={confirm?.all ? "Revoke all user sessions" : "Revoke session"} description={confirm?.all ? "Every active session for this user will be invalidated immediately." : "The selected device will lose access immediately."} confirmLabel="Revoke access" loading={revokeOne.loading || revokeAll.loading} error={revokeOne.error || revokeAll.error} onConfirm={run} /><Modal open={!!selected} onClose={() => setSelected(null)} title="Session activity" size="lg"><ErrorBanner message={detail.error} />{detail.loading ? <Skeleton height={260} /> : detail.data && <div className={styles.modalStack}><div className={styles.detailGrid}><Detail label="User" value={detail.data.user_email} /><Detail label="Role" value={humanize(detail.data.user_role)} /><Detail label="Device" value={detail.data.device_name} /><Detail label="IP address" value={detail.data.ip_address ?? "—"} /><Detail label="Expires" value={formatDate(detail.data.expires_at)} /><Detail label="Status" value={humanize(detail.data.status)} /></div><h3 className={styles.modalHeading}>Recent login events</h3><div className={styles.timeline}>{(detail.data.login_history ?? []).map((e, i) => <div key={`${e.created_at}-${i}`}><span className={e.failure_reason ? styles.timelineDanger : styles.timelineGood} /><div><strong>{humanize(e.event_type)}</strong><small>{e.ip_address ?? "No IP"} · {formatDate(e.created_at)}</small></div></div>)}</div></div>}</Modal></div>;
+}
+function Detail({ label, value }: { label: string; value: React.ReactNode }) { return <div className={styles.detail}><span>{label}</span><strong>{value}</strong></div>; }
 
-function ThreatsTab({ router }: { router: ReturnType<typeof useRouter> }) {
-  const perm = usePermissions();
-  const [status, setStatus] = useState("");
-  const threats = useApi(useCallback(() => securityAdminApi.listThreats({ status: status || undefined, limit: 100 }), [status]));
-  const statusAction = useAction(useCallback((id: string, s: string) => securityAdminApi.updateThreatStatus(id, s), []));
-  const blockAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.blockIpFromThreat(id, reason), []));
-  const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeSessionsFromThreat(id, reason), []));
-
-  async function act(t: SecurityThreat, fn: () => Promise<unknown>) {
-    await fn();
-    threats.refetch();
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-        {["", "open", "investigating", "contained", "resolved", "false_positive", "ignored"].map(s => (
-          <Btn key={s || "all"} size="sm" variant={status === s ? "primary" : "secondary"} onClick={() => setStatus(s)}>
-            {s || "All"}
-          </Btn>
-        ))}
-      </div>
-      <Card padding="none">
-        {threats.loading ? <Skeleton height={200} /> : (threats.data?.threats.length ?? 0) === 0 ? <EmptyState text="No threats match this filter." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Threat #</Th><Th>Type</Th><Th>Level</Th><Th>Risk</Th><Th>IP</Th><Th>Status</Th><Th>Detected</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {threats.data!.threats.map(t => (
-                <tr key={t.threat_id} style={{ cursor: "pointer" }} onClick={() => router.push(`/admin/security/threats/${t.threat_id}`)}>
-                  <Td>{t.threat_number ?? t.threat_id.slice(0, 8)}</Td>
-                  <Td>{t.activity_type.replace(/_/g, " ")}</Td>
-                  <Td><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"} size="sm">{t.threat_level}</Badge></Td>
-                  <Td>{t.risk_score}</Td>
-                  <Td>{t.ip_address ?? "—"}</Td>
-                  <Td><StatusBadge status={t.status} size="sm" /></Td>
-                  <Td>{new Date(t.created_at).toLocaleString("en-IN")}</Td>
-                  <Td>
-                    <ActionMenu items={[
-                      perm.has("security:threats:resolve") && { label: "Mark Investigating", onClick: () => act(t, () => statusAction.execute(t.threat_id, "investigating")) },
-                      perm.has("security:threats:block_ip") && { label: "Block IP", onClick: () => act(t, () => blockAction.execute(t.threat_id, "Blocked from threat review")), disabled: !t.ip_address },
-                      perm.has("security:sessions:revoke") && { label: "Revoke Sessions", onClick: () => act(t, () => revokeAction.execute(t.threat_id, "Sessions revoked from threat review")), disabled: !t.target_user_id },
-                      perm.has("security:threats:resolve") && { label: "Mark Resolved", onClick: () => act(t, () => statusAction.execute(t.threat_id, "resolved")) },
-                      perm.has("security:threats:resolve") && { label: "Mark False Positive", onClick: () => act(t, () => statusAction.execute(t.threat_id, "false_positive")) },
-                    ]} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
+function IpBlocklistTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions(); const [q, setQ] = useState(""); const search = useDebouncedValue(q); const [status, setStatus] = useState(""); const [scope, setScope] = useState(""); const [cursor, setCursor] = useState(""); const [history, setHistory] = useState<string[]>([]); const [pageSize, setPageSize] = useState(25); const [createOpen, setCreateOpen] = useState(false); const [confirm, setConfirm] = useState<IPBlockEntry | null>(null); const [hitsFor, setHitsFor] = useState<IPBlockEntry | null>(null); const [form, setForm] = useState({ ip: "", reason: "", level: "medium", scope: "all", tenantId: "", expiry: "720" });
+  useEffect(() => { setCursor(""); setHistory([]); }, [search, status, scope, pageSize]);
+  const list = useApi(useCallback(() => securityAdminApi.listIpBlocklist({ q: search || undefined, status: status || undefined, scope: scope || undefined, limit: pageSize, cursor: cursor || undefined }), [search, status, scope, pageSize, cursor]), [search, status, scope, pageSize, cursor, refreshKey]); const hits = useApi(useCallback(() => securityAdminApi.getIpBlockHits(hitsFor!.entry_id), [hitsFor]), [hitsFor], { enabled: !!hitsFor }); const createAction = useAction(useCallback((payload: typeof form) => securityAdminApi.createIpBlock({ ipOrCidr: payload.ip, reason: payload.reason, threatLevel: payload.level, scope: payload.scope, tenantId: payload.scope === "tenant" ? payload.tenantId : undefined, expiresHours: payload.expiry === "permanent" ? undefined : Number(payload.expiry), permanent: payload.expiry === "permanent" }), [])); const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeIpBlock(id, reason), []));
+  async function create() { const result = await createAction.execute(form); if (result) { setCreateOpen(false); setForm({ ip: "", reason: "", level: "medium", scope: "all", tenantId: "", expiry: "720" }); list.refetch(); } } async function revoke(reason: string) { if (!confirm) return; const result = await revokeAction.execute(confirm.entry_id, reason); if (result) { setConfirm(null); list.refetch(); } } const rows = list.data?.entries ?? [];
+  return <div className={styles.stack}><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search IP or CIDR" /></div><Select value={status} onChange={setStatus} options={[{ value: "", label: "All statuses" }, { value: "active", label: "Active" }, { value: "revoked", label: "Revoked" }, { value: "expired", label: "Expired" }]} /><Select value={scope} onChange={setScope} options={[{ value: "", label: "All scopes" }, ...["all", "admin", "tenant", "customer", "staff"].map(v => ({ value: v, label: humanize(v) }))]} /><span className={styles.toolbarSpacer} />{perm.has("security:ip_blocklist:create") && <Btn variant="danger" size="sm" icon={<Ban size={14} />} onClick={() => setCreateOpen(true)}>Block network</Btn>}</div><ErrorBanner message={list.error} /><TableShell loading={list.loading} empty={!list.loading && rows.length === 0 ? <EmptyState icon={<Network size={24} />} title="No matching blocks" description="No active or historical network block matches these filters." action={perm.has("security:ip_blocklist:create") ? <Btn size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>Create first block</Btn> : undefined} /> : undefined}><div className={styles.tableScroll}><table><thead><tr><Th>Network</Th><Th>Reason</Th><Th>Severity</Th><Th>Scope</Th><Th>Status</Th><Th>Hits</Th><Th>Expires</Th><Th>Actions</Th></tr></thead><tbody>{rows.map(e => <tr key={e.entry_id}><Td mono>{e.ip_or_cidr}</Td><Td>{e.reason}</Td><Td><Badge variant={LEVEL_VARIANT[e.threat_level] ?? "muted"} size="sm">{e.threat_level}</Badge></Td><Td>{humanize(e.scope)}</Td><Td><StatusBadge status={e.status} size="sm" /></Td><Td><button className={styles.rowLink} onClick={() => setHitsFor(e)}>{e.hit_count.toLocaleString()}</button></Td><Td>{e.expires_at ? formatDate(e.expires_at) : "Permanent"}</Td><Td><ActionMenu items={[{ label: "View blocked requests", onClick: () => setHitsFor(e) }, perm.has("security:ip_blocklist:revoke") && { label: "Revoke block", onClick: () => setConfirm(e), disabled: e.status !== "active", destructive: true }]} /></Td></tr>)}</tbody></table></div><CursorPager hasNext={!!list.data?.has_next} nextCursor={list.data?.next_cursor ?? null} cursor={cursor} history={history} onChange={(c, h) => { setCursor(c); setHistory(h); }} pageSize={pageSize} onPageSize={setPageSize} /></TableShell>
+    <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Block IP or network" size="lg"><div className={styles.modalStack}><div className={styles.infoNotice}><Network size={18} /><span>Blocks are enforced by the API gateway and every rejected request is recorded.</span></div><div className={styles.formGrid}><Input label="IP address or CIDR" value={form.ip} onChange={v => setForm(f => ({ ...f, ip: v }))} placeholder="203.0.113.7 or 203.0.113.0/24" required /><Select label="Threat level" value={form.level} onChange={v => setForm(f => ({ ...f, level: v }))} options={["low", "medium", "high", "critical"].map(v => ({ value: v, label: humanize(v) }))} /><Select label="Enforcement scope" value={form.scope} onChange={v => setForm(f => ({ ...f, scope: v }))} options={["all", "admin", "tenant", "customer", "staff"].map(v => ({ value: v, label: humanize(v) }))} /><Select label="Expires" value={form.expiry} onChange={v => setForm(f => ({ ...f, expiry: v }))} options={[{ value: "24", label: "24 hours" }, { value: "168", label: "7 days" }, { value: "720", label: "30 days" }, { value: "2160", label: "90 days" }, { value: "permanent", label: "Permanent" }]} />{form.scope === "tenant" && <Input label="Tenant ID" value={form.tenantId} onChange={v => setForm(f => ({ ...f, tenantId: v }))} required />}</div><Textarea label="Reason" value={form.reason} onChange={v => setForm(f => ({ ...f, reason: v }))} rows={3} required /><ErrorBanner message={createAction.error} /><div className={styles.modalActions}><Btn variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Btn><Btn variant="danger" loading={createAction.loading} disabled={!form.ip.trim() || form.reason.trim().length < 5 || (form.scope === "tenant" && !form.tenantId)} onClick={create}>Enforce block</Btn></div></div></Modal><ConfirmActionModal open={!!confirm} onClose={() => setConfirm(null)} title="Revoke network block" description="Requests from this network will be allowed again immediately. The historical hit trail remains available." confirmLabel="Revoke block" loading={revokeAction.loading} error={revokeAction.error} onConfirm={revoke} /><Modal open={!!hitsFor} onClose={() => setHitsFor(null)} title={`Blocked requests · ${hitsFor?.ip_or_cidr ?? ""}`} size="lg"><ErrorBanner message={hits.error} />{hits.loading ? <Skeleton height={240} /> : (hits.data?.hits.length ?? 0) === 0 ? <EmptyState icon={<ShieldCheck size={22} />} title="No blocked requests yet" description="The rule is active but has not matched a request." /> : <div className={styles.timeline}>{hits.data!.hits.map((h, i) => <div key={`${h.hit_at}-${i}`}><span className={styles.timelineDanger} /><div><strong>{h.method ?? "REQUEST"} {h.path ?? "Unknown path"}</strong><small>{formatDate(h.hit_at)} · {h.blocked_scope ?? "all"}</small></div></div>)}</div>}</Modal></div>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ACTIVE SESSIONS
-// ═══════════════════════════════════════════════════════════════
-
-function SessionsTab() {
-  const perm = usePermissions();
-  const [q, setQ] = useState("");
-  const sessions = useApi(useCallback(() => securityAdminApi.listSessions({ q: q || undefined, limit: 100 }), [q]));
-  const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeSession(id, reason), []));
-  const revokeAllAction = useAction(useCallback((userId: string, reason: string) => securityAdminApi.revokeAllUserSessions(userId, reason), []));
-
-  async function revoke(s: SecuritySession) {
-    await revokeAction.execute(s.session_id, "Revoked by admin from Active Sessions");
-    sessions.refetch();
-  }
-  async function revokeAll(s: SecuritySession) {
-    await revokeAllAction.execute(s.user_id, "All sessions revoked by admin");
-    sessions.refetch();
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14, maxWidth: 320 }}>
-        <Input placeholder="Search by user, email, or IP..." value={q} onChange={setQ} />
-      </div>
-      <Card padding="none">
-        {sessions.loading ? <Skeleton height={200} /> : (sessions.data?.sessions.length ?? 0) === 0 ? <EmptyState text="No active sessions." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>User</Th><Th>Role</Th><Th>Device</Th><Th>IP</Th><Th>Status</Th><Th>Last Active</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {sessions.data!.sessions.map(s => (
-                <tr key={s.session_id}>
-                  <Td>{s.user_email}</Td>
-                  <Td>{s.user_role}</Td>
-                  <Td>{s.device_name}</Td>
-                  <Td>{s.ip_address ?? "—"}</Td>
-                  <Td><StatusBadge status={s.status} size="sm" /></Td>
-                  <Td>{s.last_active_at ? new Date(s.last_active_at).toLocaleString("en-IN") : "—"}</Td>
-                  <Td>
-                    {perm.has("security:sessions:revoke") && (
-                      <ActionMenu items={[
-                        { label: "Revoke Session", onClick: () => revoke(s), disabled: s.status !== "active", destructive: true },
-                        { label: "Revoke All Sessions", onClick: () => revokeAll(s), destructive: true },
-                      ]} />
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
+function ApiKeysTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions(); const [q, setQ] = useState(""); const search = useDebouncedValue(q); const [status, setStatus] = useState(""); const [cursor, setCursor] = useState(""); const [history, setHistory] = useState<string[]>([]); const [pageSize, setPageSize] = useState(25); const [createOpen, setCreateOpen] = useState(false); const [revealed, setRevealed] = useState<string | null>(null); const [usageFor, setUsageFor] = useState<SecurityApiKey | null>(null); const [confirm, setConfirm] = useState<{ key: SecurityApiKey; action: "rotate" | "revoke" } | null>(null); const [form, setForm] = useState({ tenantId: "", name: "", description: "", environment: "live", expiry: "90", rateLimit: "600", allowedIps: "", scopes: ["read:jobs"] as string[] });
+  useEffect(() => { setCursor(""); setHistory([]); }, [search, status, pageSize]);
+  const list = useApi(useCallback(() => securityAdminApi.listApiKeys({ q: search || undefined, status: status || undefined, limit: pageSize, cursor: cursor || undefined }), [search, status, pageSize, cursor]), [search, status, pageSize, cursor, refreshKey]); const usage = useApi(useCallback(() => securityAdminApi.getApiKeyUsage(usageFor!.key_id), [usageFor]), [usageFor], { enabled: !!usageFor }); const createAction = useAction(useCallback((f: typeof form) => securityAdminApi.createApiKey({ tenantId: f.tenantId, name: f.name, description: f.description || undefined, scopes: f.scopes, environment: f.environment, expiresDays: Number(f.expiry), rateLimitPerMinute: Number(f.rateLimit), allowedIps: f.allowedIps.split(/[\n,]/).map(v => v.trim()).filter(Boolean) }), [])); const revokeAction = useAction(useCallback((k: SecurityApiKey, reason: string) => securityAdminApi.revokeApiKey(k.key_id, k.tenant_id!, reason), [])); const rotateAction = useAction(useCallback((payload: { key: SecurityApiKey; reason: string }) => securityAdminApi.rotateApiKey(payload.key.key_id, payload.key.tenant_id!, payload.reason), []));
+  async function create() { const result = await createAction.execute(form); if (result) { setCreateOpen(false); setRevealed(result.raw_key); list.refetch(); } } async function run(reason: string) { if (!confirm) return; const result = confirm.action === "revoke" ? await revokeAction.execute(confirm.key, reason) : await rotateAction.execute({ key: confirm.key, reason }); if (result) { if ("raw_key" in result) setRevealed(result.raw_key); setConfirm(null); list.refetch(); } } function toggleScope(scope: string) { setForm(f => ({ ...f, scopes: f.scopes.includes(scope) ? f.scopes.filter(s => s !== scope) : [...f.scopes, scope] })); } const rows = list.data?.api_keys ?? [];
+  return <div className={styles.stack}><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search API key name" /></div><Select value={status} onChange={setStatus} options={[{ value: "", label: "All statuses" }, ...["active", "revoked", "rotated", "expired"].map(v => ({ value: v, label: humanize(v) }))]} /><span className={styles.toolbarSpacer} />{perm.has("security:api_keys:create") && <Btn size="sm" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>Create API key</Btn>}</div><ErrorBanner message={list.error} /><TableShell loading={list.loading} empty={!list.loading && rows.length === 0 ? <EmptyState icon={<Key size={24} />} title="No API keys" description="Create a scoped key when a tenant integration needs API access." /> : undefined}><div className={styles.tableScroll}><table><thead><tr><Th>Key</Th><Th>Tenant</Th><Th>Environment</Th><Th>Scopes</Th><Th>Status</Th><Th>Usage</Th><Th>Last used</Th><Th>Actions</Th></tr></thead><tbody>{rows.map(k => <tr key={k.key_id}><Td><strong>{k.name}</strong><span className={styles.cellSubMono}>{k.key_prefix}</span></Td><Td mono>{k.tenant_id?.slice(0, 8) ?? "Platform"}</Td><Td><Badge variant={k.environment === "live" ? "success" : "info"} size="sm">{k.environment}</Badge></Td><Td>{k.scopes.length} scope{k.scopes.length === 1 ? "" : "s"}</Td><Td><StatusBadge status={k.status} size="sm" /></Td><Td><button className={styles.rowLink} onClick={() => setUsageFor(k)}>{k.use_count.toLocaleString()}</button></Td><Td>{formatDate(k.last_used_at)}</Td><Td><ActionMenu items={[{ label: "View usage", onClick: () => setUsageFor(k) }, perm.has("security:api_keys:rotate") && { label: "Rotate key", onClick: () => setConfirm({ key: k, action: "rotate" }), disabled: k.status !== "active" }, perm.has("security:api_keys:revoke") && { label: "Revoke key", onClick: () => setConfirm({ key: k, action: "revoke" }), disabled: k.status !== "active", destructive: true }]} /></Td></tr>)}</tbody></table></div><CursorPager hasNext={!!list.data?.has_next} nextCursor={list.data?.next_cursor ?? null} cursor={cursor} history={history} onChange={(c, h) => { setCursor(c); setHistory(h); }} pageSize={pageSize} onPageSize={setPageSize} /></TableShell>
+    <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create tenant API key" size="lg"><div className={styles.modalStack}><div className={styles.infoNotice}><LockKeyhole size={18} /><span>The secret is shown once. Only a one-way hash is stored by Fuvay.</span></div><div className={styles.formGrid}><Input label="Tenant ID" value={form.tenantId} onChange={v => setForm(f => ({ ...f, tenantId: v }))} required /><Input label="Key name" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Production booking integration" required /><Select label="Environment" value={form.environment} onChange={v => setForm(f => ({ ...f, environment: v }))} options={[{ value: "live", label: "Live" }, { value: "test", label: "Test" }]} /><Select label="Expiry" value={form.expiry} onChange={v => setForm(f => ({ ...f, expiry: v }))} options={[{ value: "30", label: "30 days" }, { value: "90", label: "90 days" }, { value: "180", label: "180 days" }, { value: "365", label: "365 days" }]} /><Input label="Rate limit / minute" value={form.rateLimit} onChange={v => setForm(f => ({ ...f, rateLimit: v.replace(/\D/g, "") }))} /><Input label="Allowed IPs / CIDRs" value={form.allowedIps} onChange={v => setForm(f => ({ ...f, allowedIps: v }))} placeholder="Optional, comma separated" /></div><Textarea label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} rows={2} /><fieldset className={styles.scopeGrid}><legend>Least-privilege scopes</legend>{API_SCOPES.map(scope => <label key={scope}><input type="checkbox" checked={form.scopes.includes(scope)} onChange={() => toggleScope(scope)} /><span>{scope}</span></label>)}</fieldset><ErrorBanner message={createAction.error} /><div className={styles.modalActions}><Btn variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Btn><Btn loading={createAction.loading} disabled={!form.tenantId || form.name.trim().length < 3 || form.scopes.length === 0} onClick={create}>Create secure key</Btn></div></div></Modal><ConfirmActionModal open={!!confirm} onClose={() => setConfirm(null)} title={confirm?.action === "rotate" ? "Rotate API key" : "Revoke API key"} description={confirm?.action === "rotate" ? "The current secret will stop working immediately and a replacement will be shown once." : "This integration will lose access immediately."} confirmLabel={confirm?.action === "rotate" ? "Rotate key" : "Revoke key"} destructive loading={revokeAction.loading || rotateAction.loading} error={revokeAction.error || rotateAction.error} onConfirm={run} /><Modal open={!!revealed} onClose={() => setRevealed(null)} title="Copy API secret now"><div className={styles.modalStack}><div className={styles.dangerNotice}><AlertTriangle size={18} /><span>This secret cannot be recovered after this dialog is closed.</span></div><code className={styles.secret}>{revealed}</code><Btn variant="secondary" icon={<Copy size={14} />} onClick={() => revealed && navigator.clipboard.writeText(revealed)}>Copy secret</Btn></div></Modal><Modal open={!!usageFor} onClose={() => setUsageFor(null)} title={`API usage · ${usageFor?.name ?? ""}`} size="lg"><ErrorBanner message={usage.error} />{usage.loading ? <Skeleton height={240} /> : (usage.data?.usage.length ?? 0) === 0 ? <EmptyState icon={<Activity size={22} />} title="No recorded usage" description="This key has not authenticated an API request yet." /> : <div className={styles.timeline}>{usage.data!.usage.map((u, i) => <div key={`${u.used_at}-${i}`}><span className={u.status_code && u.status_code >= 400 ? styles.timelineDanger : styles.timelineGood} /><div><strong>{u.method ?? "REQUEST"} {u.endpoint ?? "Unknown endpoint"}</strong><small>{u.status_code ?? "—"} · {u.ip_address ?? "No IP"} · {formatDate(u.used_at)}</small></div></div>)}</div>}</Modal></div>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// IP BLOCKLIST
-// ═══════════════════════════════════════════════════════════════
-
-function IpBlocklistTab() {
-  const perm = usePermissions();
-  const [modal, setModal] = useState(false);
-  const [ip, setIp] = useState("");
-  const [reason, setReason] = useState("");
-  const blocklist = useApi(useCallback(() => securityAdminApi.listIpBlocklist({ limit: 100 }), []));
-  const createAction = useAction(useCallback((ip: string, reason: string) => securityAdminApi.createIpBlock({ ipOrCidr: ip, reason }), []));
-  const revokeAction = useAction(useCallback((id: string, reason: string) => securityAdminApi.revokeIpBlock(id, reason), []));
-
-  async function handleCreate() {
-    const r = await createAction.execute(ip, reason);
-    if (r) { setModal(false); setIp(""); setReason(""); blocklist.refetch(); }
-  }
-  async function handleRevoke(e: IPBlockEntry) {
-    await revokeAction.execute(e.entry_id, "Unblocked by admin");
-    blocklist.refetch();
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        {perm.has("security:ip_blocklist:create") && (
-          <Btn variant="danger" size="sm" icon={<Ban size={14} />} onClick={() => setModal(true)}>Block IP</Btn>
-        )}
-      </div>
-      <Card padding="none">
-        {blocklist.loading ? <Skeleton height={200} /> : (blocklist.data?.entries.length ?? 0) === 0 ? <EmptyState text="No IP blocks configured." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>IP / CIDR</Th><Th>Reason</Th><Th>Level</Th><Th>Scope</Th><Th>Status</Th><Th>Hits</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {blocklist.data!.entries.map(e => (
-                <tr key={e.entry_id}>
-                  <Td><code>{e.ip_or_cidr}</code></Td>
-                  <Td>{e.reason}</Td>
-                  <Td><Badge variant={LEVEL_VARIANT[e.threat_level] ?? "muted"} size="sm">{e.threat_level}</Badge></Td>
-                  <Td>{e.scope}</Td>
-                  <Td><StatusBadge status={e.status} size="sm" /></Td>
-                  <Td>{e.hit_count}</Td>
-                  <Td>
-                    {perm.has("security:ip_blocklist:revoke") && (
-                      <ActionMenu items={[
-                        { label: "Revoke Block", onClick: () => handleRevoke(e), disabled: e.status !== "active", destructive: true },
-                      ]} />
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={modal} onClose={() => setModal(false)} title="Block IP Address">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {createAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createAction.error}</p>}
-          <Input label="IP Address or CIDR" placeholder="103.21.45.67 or 103.0.0.0/8" value={ip} onChange={setIp} required />
-          <Input label="Reason" placeholder="Brute force attack, suspicious activity..." value={reason} onChange={setReason} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setModal(false)}>Cancel</Btn>
-            <Btn variant="danger" size="sm" loading={createAction.loading} onClick={handleCreate}>Block IP</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+function AuditLogsTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions(); const [q, setQ] = useState(""); const search = useDebouncedValue(q); const [engine, setEngine] = useState(""); const [risk, setRisk] = useState(""); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [cursor, setCursor] = useState(""); const [history, setHistory] = useState<string[]>([]); const [pageSize, setPageSize] = useState(25); const [selected, setSelected] = useState<SecurityAuditEntry | null>(null);
+  useEffect(() => { setCursor(""); setHistory([]); }, [search, engine, risk, from, to, pageSize]);
+  const logs = useApi(useCallback(() => securityAdminApi.listAuditLogs({ q: search || undefined, engineId: engine || undefined, isHighRisk: risk ? risk === "true" : undefined, dateFrom: from ? new Date(`${from}T00:00:00`).toISOString() : undefined, dateTo: to ? new Date(`${to}T23:59:59`).toISOString() : undefined, limit: pageSize, cursor: cursor || undefined }), [search, engine, risk, from, to, pageSize, cursor]), [search, engine, risk, from, to, pageSize, cursor, refreshKey]); const exportAction = useAction(useCallback(() => securityAdminApi.exportAuditLogs({ engineId: engine || undefined, dateFrom: from ? new Date(`${from}T00:00:00`).toISOString() : undefined, dateTo: to ? new Date(`${to}T23:59:59`).toISOString() : undefined }), [engine, from, to]));
+  async function exportCsv() { const blob = await exportAction.execute(); if (!blob) return; const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `security-audit-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); } const rows = logs.data?.audit_logs ?? [];
+  return <div className={styles.stack}><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search operation, entity, or IP" /></div><Input type="date" value={from} onChange={setFrom} /><Input type="date" value={to} onChange={setTo} /><Select value={risk} onChange={setRisk} options={[{ value: "", label: "All risk" }, { value: "true", label: "High risk" }, { value: "false", label: "Standard" }]} /><Input value={engine} onChange={setEngine} placeholder="Engine" /><span className={styles.toolbarSpacer} />{perm.has("security:audit:export") && <Btn variant="secondary" size="sm" icon={<Download size={14} />} loading={exportAction.loading} onClick={exportCsv}>Export filtered CSV</Btn>}</div><ErrorBanner message={logs.error || exportAction.error} /><TableShell loading={logs.loading} empty={!logs.loading && rows.length === 0 ? <EmptyState icon={<ScrollText size={24} />} title="No matching audit events" description="The append-only trail has no events for these filters." /> : undefined}><div className={styles.auditIntegrity}><LockKeyhole size={15} /><span>Immutable record · entries cannot be edited or deleted</span></div><div className={styles.tableScroll}><table><thead><tr><Th>Operation</Th><Th>Engine</Th><Th>Entity</Th><Th>Actor</Th><Th>Source IP</Th><Th>Risk</Th><Th>When</Th><Th>Detail</Th></tr></thead><tbody>{rows.map(l => <tr key={l.log_id}><Td><strong>{humanize(l.operation)}</strong></Td><Td>{humanize(l.engine_id)}</Td><Td><span>{humanize(l.entity_type ?? "system")}</span><span className={styles.cellSubMono}>{l.entity_id?.slice(0, 14) ?? "—"}</span></Td><Td>{humanize(l.actor_role ?? "system")}</Td><Td mono>{l.actor_ip ?? "—"}</Td><Td><Badge variant={l.is_high_risk ? "danger" : "muted"} size="sm">{l.is_high_risk ? "High" : "Standard"}</Badge></Td><Td>{formatDate(l.created_at)}</Td><Td><button className={styles.iconButton} aria-label="View audit detail" onClick={() => setSelected(l)}><Eye size={15} /></button></Td></tr>)}</tbody></table></div><CursorPager hasNext={!!logs.data?.has_next} nextCursor={logs.data?.next_cursor ?? null} cursor={cursor} history={history} onChange={(c, h) => { setCursor(c); setHistory(h); }} pageSize={pageSize} onPageSize={setPageSize} /></TableShell><Modal open={!!selected} onClose={() => setSelected(null)} title="Audit event detail" size="lg">{selected && <div className={styles.modalStack}><div className={styles.detailGrid}><Detail label="Operation" value={humanize(selected.operation)} /><Detail label="Engine" value={humanize(selected.engine_id)} /><Detail label="Actor" value={humanize(selected.actor_role ?? "system")} /><Detail label="Source IP" value={selected.actor_ip ?? "—"} /><Detail label="Entity" value={`${selected.entity_type ?? "system"} · ${selected.entity_id ?? "—"}`} /><Detail label="Recorded" value={formatDate(selected.created_at)} /></div><div className={styles.diffGrid}><JsonPanel title="Before" value={selected.before_state} /><JsonPanel title="After" value={selected.after_state} /></div></div>}</Modal></div>;
 }
+function JsonPanel({ title, value }: { title: string; value: Record<string, unknown> | null }) { return <div className={styles.jsonPanel}><strong>{title}</strong><pre>{value ? JSON.stringify(value, null, 2) : "No state captured"}</pre></div>; }
 
-// ═══════════════════════════════════════════════════════════════
-// API KEYS
-// ═══════════════════════════════════════════════════════════════
+const POLICY_META: Record<string, { label: string; group: string; unit?: string; impact: string; icon: React.ReactNode }> = {
+  mfa_required_super_admin: { label: "Super Admin MFA", group: "Identity protection", impact: "Requires MFA for the highest-privilege accounts after every active account is enrolled.", icon: <Fingerprint size={18} /> }, mfa_required_platform_admin: { label: "Delegated admin MFA", group: "Identity protection", impact: "Requires MFA for scoped administrators after every active account is enrolled.", icon: <Fingerprint size={18} /> }, failed_login_threshold: { label: "Temporary lock threshold", group: "Authentication defence", impact: "Failed attempts allowed before a temporary account lock.", icon: <ShieldAlert size={18} /> }, auto_lock_threshold: { label: "Security lock threshold", group: "Authentication defence", impact: "Failed attempts before a long-term security lock.", icon: <Ban size={18} /> }, session_max_lifetime_minutes: { label: "Maximum session lifetime", group: "Session controls", unit: "minutes", impact: "Absolute maximum lifetime for newly issued sessions.", icon: <Clock3 size={18} /> }, idle_timeout_minutes: { label: "Idle timeout", group: "Session controls", unit: "minutes", impact: "Refresh is denied after this period of inactivity.", icon: <Laptop size={18} /> }, max_concurrent_sessions: { label: "Concurrent session limit", group: "Session controls", unit: "sessions", impact: "Revokes a user's oldest sessions after a successful sign-in.", icon: <MonitorSmartphone size={18} /> }, ip_block_auto_expiry_default_days: { label: "Default network block", group: "Network controls", unit: "days", impact: "Default duration when no custom block expiry is supplied.", icon: <Network size={18} /> }, export_audit_retention_days: { label: "Audit export retention", group: "Evidence retention", unit: "days", impact: "Caps how far back synchronous security exports may read.", icon: <ScrollText size={18} /> },
+};
 
-function ApiKeysTab() {
-  const perm = usePermissions();
-  const [modal, setModal] = useState(false);
-  const [name, setName] = useState("");
-  const [tenantId, setTenantId] = useState("");
-  const [revealedKey, setRevealedKey] = useState<string | null>(null);
-  const keys = useApi(useCallback(() => securityAdminApi.listApiKeys({ limit: 100 }), []));
-  const createAction = useAction(useCallback(
-    (tenantId: string, name: string) => securityAdminApi.createApiKey({ tenantId, name, scopes: ["read:jobs"] }), []));
-  const revokeAction = useAction(useCallback((keyId: string, tenantId: string, reason: string) => securityAdminApi.revokeApiKey(keyId, tenantId, reason), []));
-  const rotateAction = useAction(useCallback((keyId: string, tenantId: string) => securityAdminApi.rotateApiKey(keyId, tenantId), []));
-
-  async function handleCreate() {
-    const r = await createAction.execute(tenantId, name);
-    if (r) { setModal(false); setName(""); setTenantId(""); setRevealedKey(r.raw_key); keys.refetch(); }
-  }
-  async function handleRevoke(k: SecurityApiKey) {
-    if (!k.tenant_id) return;
-    await revokeAction.execute(k.key_id, k.tenant_id, "Revoked by admin");
-    keys.refetch();
-  }
-  async function handleRotate(k: SecurityApiKey) {
-    if (!k.tenant_id) return;
-    const r = await rotateAction.execute(k.key_id, k.tenant_id);
-    if (r) setRevealedKey(r.raw_key);
-    keys.refetch();
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        {perm.has("security:api_keys:create") && (
-          <Btn variant="primary" size="sm" icon={<Key size={14} />} onClick={() => setModal(true)}>Create API Key</Btn>
-        )}
-      </div>
-      <Card padding="none">
-        {keys.loading ? <Skeleton height={200} /> : (keys.data?.api_keys.length ?? 0) === 0 ? <EmptyState text="No API keys created yet." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Name</Th><Th>Prefix</Th><Th>Environment</Th><Th>Status</Th><Th>Uses</Th><Th>Created</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {keys.data!.api_keys.map(k => (
-                <tr key={k.key_id}>
-                  <Td>{k.name}</Td>
-                  <Td><code>{k.key_prefix}</code></Td>
-                  <Td>{k.environment}</Td>
-                  <Td><StatusBadge status={k.status} size="sm" /></Td>
-                  <Td>{k.use_count}</Td>
-                  <Td>{new Date(k.created_at).toLocaleDateString("en-IN")}</Td>
-                  <Td>
-                    <ActionMenu items={[
-                      perm.has("security:api_keys:rotate") && { label: "Rotate Key", onClick: () => handleRotate(k), disabled: k.status !== "active" },
-                      perm.has("security:api_keys:revoke") && { label: "Revoke Key", onClick: () => handleRevoke(k), disabled: k.status !== "active", destructive: true },
-                    ]} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={modal} onClose={() => setModal(false)} title="Create API Key">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {createAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createAction.error}</p>}
-          <Input label="Tenant ID" value={tenantId} onChange={setTenantId} required />
-          <Input label="Key Name" placeholder="e.g. Zapier Integration" value={name} onChange={setName} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={createAction.loading} onClick={handleCreate}>Create Key</Btn>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={!!revealedKey} onClose={() => setRevealedKey(null)} title="API Key Created">
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0, fontWeight: 600 }}>
-            This key will not be shown again. Copy it now and store it securely.
-          </p>
-          <code style={{ display: "block", padding: "12px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", fontSize: 12, wordBreak: "break-all" }}>
-            {revealedKey}
-          </code>
-          <Btn variant="secondary" size="sm" onClick={() => { if (revealedKey) navigator.clipboard.writeText(revealedKey); }}>
-            Copy to clipboard
-          </Btn>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// AUDIT LOGS
-// ═══════════════════════════════════════════════════════════════
-
-function AuditLogsTab() {
-  const perm = usePermissions();
-  const [q, setQ] = useState("");
-  const logs = useApi(useCallback(() => securityAdminApi.listAuditLogs({ q: q || undefined, limit: 100 }), [q]));
-  const exportAction = useAction(useCallback(() => securityAdminApi.exportAuditLogs(), []));
-
-  async function handleExport() {
-    const blob = await exportAction.execute();
-    if (blob) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "security_audit_log.csv"; a.click();
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
-        <div style={{ maxWidth: 320, flex: 1 }}>
-          <Input placeholder="Search by operation, entity, or IP..." value={q} onChange={setQ} />
-        </div>
-        {perm.has("security:audit:export") && (
-          <Btn variant="secondary" size="sm" icon={<Download size={14} />} loading={exportAction.loading} onClick={handleExport}>
-            Export Audit Log
-          </Btn>
-        )}
-      </div>
-      <Card padding="none">
-        {logs.loading ? <Skeleton height={200} /> : (logs.data?.audit_logs.length ?? 0) === 0 ? <EmptyState text="No audit entries match this filter." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Operation</Th><Th>Engine</Th><Th>Actor Role</Th><Th>IP</Th><Th>Risk</Th><Th>When</Th></tr></thead>
-            <tbody>
-              {logs.data!.audit_logs.map((l: SecurityAuditEntry) => (
-                <tr key={l.log_id}>
-                  <Td>{l.operation}</Td>
-                  <Td>{l.engine_id}</Td>
-                  <Td>{l.actor_role ?? "—"}</Td>
-                  <Td>{l.actor_ip ?? "—"}</Td>
-                  <Td><Badge variant={l.is_high_risk ? "danger" : "muted"} size="sm">{l.is_high_risk ? "HIGH RISK" : "normal"}</Badge></Td>
-                  <Td>{new Date(l.created_at).toLocaleString("en-IN")}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p style={{ padding: "10px 12px", margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
-          Audit log is append-only. No entries can be modified or deleted.
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SECURITY POLICIES
-// ═══════════════════════════════════════════════════════════════
-
-function PoliciesTab() {
-  const perm = usePermissions();
-  const policies = useApi(useCallback(() => securityAdminApi.getPolicies(), []));
-  const updateAction = useAction(useCallback((key: string, value: unknown, reason: string) => securityAdminApi.updatePolicy(key, value, reason), []));
-  const [editKey, setEditKey] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [editReason, setEditReason] = useState("");
-
-  function openEdit(policyKey: string, currentValue: unknown) {
-    setEditKey(policyKey);
-    setEditValue(typeof currentValue === "object" ? JSON.stringify(currentValue) : String(currentValue));
-    setEditReason("");
-  }
-
-  async function handleSave() {
-    if (!editKey) return;
-    let parsed: unknown = editValue;
-    if (editValue === "true") parsed = true;
-    else if (editValue === "false") parsed = false;
-    else if (!isNaN(Number(editValue)) && editValue.trim() !== "") parsed = Number(editValue);
-    const r = await updateAction.execute(editKey, parsed, editReason);
-    if (r) { setEditKey(null); policies.refetch(); }
-  }
-
-  return (
-    <div>
-      <Card padding="none">
-        {policies.loading ? <Skeleton height={200} /> : (policies.data?.policies.length ?? 0) === 0 ? <EmptyState text="No security policies configured." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Policy</Th><Th>Value</Th><Th>Description</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {policies.data!.policies.map(p => (
-                <tr key={p.id}>
-                  <Td><code>{p.policy_key}</code></Td>
-                  <Td>{typeof p.policy_value === "object" ? JSON.stringify(p.policy_value) : String(p.policy_value)}</Td>
-                  <Td>{p.description ?? "—"}</Td>
-                  <Td>{perm.has("security:policies:update") && <Btn variant="secondary" size="xs" onClick={() => openEdit(p.policy_key, p.policy_value)}>Edit</Btn>}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={!!editKey} onClose={() => setEditKey(null)} title={`Update Policy: ${editKey ?? ""}`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {updateAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{updateAction.error}</p>}
-          <Input label="New Value" value={editValue} onChange={setEditValue} required />
-          <Input label="Reason (required)" placeholder="Why is this policy changing?" value={editReason} onChange={setEditReason} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setEditKey(null)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={updateAction.loading} disabled={!editReason} onClick={handleSave}>Save</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+function PoliciesTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions(); const policies = useApi(useCallback(() => securityAdminApi.getPolicies(), []), [refreshKey]); const [editing, setEditing] = useState<SecurityPolicy | null>(null); const [value, setValue] = useState(""); const [reason, setReason] = useState(""); const updateAction = useAction(useCallback((key: string, v: unknown, r: string) => securityAdminApi.updatePolicy(key, v, r), []));
+  function open(p: SecurityPolicy) { setEditing(p); setValue(String(p.policy_value)); setReason(""); } async function save() { if (!editing) return; const parsed = editing.value_type === "boolean" ? value === "true" : Number(value); const result = await updateAction.execute(editing.policy_key, parsed, reason.trim()); if (result) { setEditing(null); policies.refetch(); } }
+  const grouped = useMemo(() => { const map: Record<string, SecurityPolicy[]> = {}; for (const p of policies.data?.policies ?? []) { const group = POLICY_META[p.policy_key]?.group ?? "Other controls"; (map[group] ??= []).push(p); } return map; }, [policies.data]);
+  return <div className={styles.stack}><div className={styles.policyIntro}><div><ShieldCheck size={24} /><div><h2>Runtime security policy</h2><p>Changes are validated, applied to authentication and security operations, and written to the immutable audit trail.</p></div></div><Badge variant="success">Runtime enforced</Badge></div><ErrorBanner message={policies.error} />{policies.loading ? <Skeleton height={460} /> : (policies.data?.policies.length ?? 0) === 0 ? <EmptyState icon={<AlertTriangle size={24} />} title="Security policy is not initialized" description="Apply the latest database migration to install the protected defaults." /> : <div className={styles.policyGroups}>{Object.entries(grouped).map(([group, items]) => <section key={group} className={styles.policyGroup}><header><h3>{group}</h3><span>{items.length} control{items.length === 1 ? "" : "s"}</span></header>{items.map(p => { const meta = POLICY_META[p.policy_key]; const enabled = p.value_type === "boolean" ? Boolean(p.policy_value) : null; return <article className={styles.policyRow} key={p.id}><span className={styles.policyIcon}>{meta?.icon ?? <SlidersHorizontal size={18} />}</span><div className={styles.policyCopy}><strong>{meta?.label ?? humanize(p.policy_key)}</strong><p>{meta?.impact ?? p.description}</p><small>{p.updated_reason ? `Last change: ${p.updated_reason}` : "Protected platform default"} · {formatDate(p.updated_at)}</small></div><div className={styles.policyValue}>{p.value_type === "boolean" ? <Badge variant={enabled ? "success" : "muted"}>{enabled ? "Enabled" : "Disabled"}</Badge> : <><strong>{String(p.policy_value)}</strong><span>{meta?.unit}</span></>}{perm.has("security:policies:update") && <Btn size="xs" variant="secondary" onClick={() => open(p)}>Edit</Btn>}</div></article>; })}</section>)}</div>}<Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Update ${POLICY_META[editing.policy_key]?.label ?? humanize(editing.policy_key)}` : "Update policy"}>{editing && <div className={styles.modalStack}><div className={styles.infoNotice}><Shield size={18} /><span>{POLICY_META[editing.policy_key]?.impact ?? editing.description}</span></div>{editing.value_type === "boolean" ? <Select label="Policy state" value={value} onChange={setValue} options={[{ value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} /> : <Input label={`Value${POLICY_META[editing.policy_key]?.unit ? ` (${POLICY_META[editing.policy_key].unit})` : ""}`} value={value} onChange={v => setValue(v.replace(/\D/g, ""))} hint={editing.minimum !== null ? `Allowed range: ${editing.minimum}–${editing.maximum}` : undefined} required />}<Textarea label="Change reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this control changing?" required /><ErrorBanner message={updateAction.error} /><div className={styles.modalActions}><Btn variant="ghost" onClick={() => setEditing(null)}>Cancel</Btn><Btn loading={updateAction.loading} disabled={reason.trim().length < 8 || (editing.value_type === "number" && !value)} onClick={save}>Apply policy</Btn></div></div>}</Modal></div>;
 }

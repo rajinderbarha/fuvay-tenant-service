@@ -7,14 +7,10 @@ proves, against real inserted rows (not mocks):
 1. Direct Customer Payments (ServicePaymentRecord) and Overview aggregation
    are scoped to the Home Services vertical only -- a Coaching-vertical
    tenant's payment never appears.
-2. The customer platform charge (ServiceInvoice.platform_fee_amount) and
-   the provider completion charge (SvcCommissionRecord) remain two
-   structurally separate records, never merged into one commission row.
-3. Overview honestly reports "platform charge recovery" as not-tracked
-   rather than fabricating a recovered amount, since no code path in this
-   codebase claws the platform fee back from provider credits separately
-   from the completion charge (grep-verified during the audit that produced
-   this endpoint).
+2. Home Services provider charges use the completed-job usage-credit ledger;
+   the legacy invoice commission path is marked not-required and cannot debit
+   the provider a second time.
+3. Overview reports the independently tracked platform-charge recovery.
 """
 from __future__ import annotations
 
@@ -71,6 +67,9 @@ async def hs_payment(db_session):
            "booking_id": booking_id, "job_id": job_id, "customer_id": customer_id}
 
     await db_session.execute(text("DELETE FROM svc_commission_records WHERE invoice_id = :id"), {"id": invoice_id})
+    await db_session.execute(text(
+        "DELETE FROM financial_events WHERE record_type = 'commission' AND tenant_id = :tid"
+    ), {"tid": tenant_id})
     await db_session.execute(text("DELETE FROM financial_events WHERE record_id IN (:pid, :iid)"),
                               {"pid": payment_id, "iid": invoice_id})
     await db_session.execute(text("DELETE FROM service_payment_records WHERE id = :id"), {"id": payment_id})
@@ -165,8 +164,23 @@ class TestChargeSeparation:
         assert detail["provider_collected_amount"] == "520.00"
         # No commission row was created in this fixture -- proves the two
         # concepts are independently absent/present, not derived from one another.
-        assert detail["provider_completion_charge_status"] == "not_calculated"
-        assert detail["provider_completion_charge_amount"] is None
+        assert detail["legacy_invoice_commission"]["status"] == "not_calculated"
+        assert detail["legacy_invoice_commission"]["amount"] is None
+
+    async def test_home_services_invoice_commission_is_not_required(self, db_session, hs_payment):
+        """Recording the invoice payment cannot debit a second wallet after
+        the completed-job usage-credit charge has run."""
+        from app.engines.invoice_payment.commission_service import ServiceCommissionService
+        result = await ServiceCommissionService().calculate_commission(
+            db_session, str(hs_payment["invoice_id"])
+        )
+        assert result["status"] == "not_required"
+        assert Decimal(result["commission_amount"]) == Decimal("0")
+        second = await ServiceCommissionService().deduct_commission(
+            db_session, str(hs_payment["invoice_id"]), idempotency_key=f"test-{hs_payment['invoice_id']}"
+        )
+        assert second["status"] == "not_required"
+        assert second["wallet_ledger_entry_id"] is None
 
 
 class TestOverviewHonesty:

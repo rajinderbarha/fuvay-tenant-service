@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
     CatalogQuestion, CatalogQuestionOption, CatalogQuestionRule,
-    CatalogDimension, ServiceType, Brand,
+    CatalogDimension, ServiceType, ServiceTypeMapping, Brand, BrandMapping,
 )
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -47,7 +47,12 @@ class CatalogQuestionService:
         out = []
         for qn in rows:
             d = qn.to_dict()
-            d["options"] = await self._options(qn.id) if qn.answer_source == "static" else []
+            # The catalog workspace and the tenant requirements preview must
+            # expose the same selectable values that the customer booking
+            # resolver uses. Returning an empty list for dimension-backed
+            # questions made configured Type/Brand questions look unfinished
+            # even though their mappings were valid at runtime.
+            d["options"] = await self._resolved_options(qn)
             d["rules"] = await self._rules(qn.id)
             out.append(d)
         return {"questions": out}
@@ -202,12 +207,32 @@ class CatalogQuestionService:
                 return []
             if dim.legacy_source == "service_types":
                 rows = (await self.db.execute(
-                    select(ServiceType.id, ServiceType.name).where(ServiceType.is_active == True))).all()  # noqa: E712
-                return [{"id": str(i), "label": n} for i, n in rows]
+                    select(ServiceType.id, ServiceType.slug, ServiceType.name)
+                    .join(ServiceTypeMapping, ServiceTypeMapping.type_id == ServiceType.id)
+                    .where(
+                        ServiceTypeMapping.service_id == qn.master_service_id,
+                        ServiceTypeMapping.status == "active",
+                        ServiceTypeMapping.customer_visible.is_(True),
+                        ServiceType.is_active.is_(True),
+                        ServiceType.deleted_at.is_(None),
+                    )
+                    .order_by(ServiceTypeMapping.display_order, ServiceType.display_order, ServiceType.name)
+                )).all()
+                return [{"id": str(i), "code": slug, "label": name} for i, slug, name in rows]
             if dim.legacy_source == "brands":
                 rows = (await self.db.execute(
-                    select(Brand.id, Brand.name).where(Brand.is_active == True))).all()  # noqa: E712
-                return [{"id": str(i), "label": n} for i, n in rows]
+                    select(Brand.id, Brand.slug, Brand.name)
+                    .join(BrandMapping, BrandMapping.brand_id == Brand.id)
+                    .where(
+                        BrandMapping.service_id == qn.master_service_id,
+                        BrandMapping.status == "active",
+                        BrandMapping.customer_visible.is_(True),
+                        Brand.is_active.is_(True),
+                        Brand.deleted_at.is_(None),
+                    )
+                    .order_by(BrandMapping.display_order, Brand.display_order, Brand.name)
+                )).all()
+                return [{"id": str(i), "code": slug, "label": name} for i, slug, name in rows]
             from app.engines.admin_catalog.models import CatalogDimensionValue
             rows = (await self.db.execute(
                 select(CatalogDimensionValue).where(

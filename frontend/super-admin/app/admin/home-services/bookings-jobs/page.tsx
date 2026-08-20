@@ -5,12 +5,13 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Skeleton, Input } from "../../../../components/shared/ui";
 import {
   homeServicesOperationsApi, type UnifiedOperationRow, type UnifiedOperationsMetrics,
-  finalRecordsAdminApi, adminExecutionApi, adminBookingsApi, adminReviewApi,
+  finalRecordsAdminApi, adminExecutionApi, adminBookingsApi, adminReviewApi, adminHomeServiceBookingApi,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
   Search, Download, RefreshCw, X, Briefcase, FileText, UserX, Activity,
-  Clock, AlertTriangle, ExternalLink, Phone, Star, Pencil,
+  Clock, AlertTriangle, ExternalLink, Phone, Star, Pencil, SlidersHorizontal,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 // HOME-SERVICES-OPERATIONS: unified Bookings & Jobs workspace. Reads the
@@ -27,6 +28,7 @@ const TABS = [
   { key: "completed", label: "Completed" },
 ] as const;
 type TabKey = typeof TABS[number]["key"];
+const TAB_KEYS = new Set<TabKey>(TABS.map(tab => tab.key));
 
 const STAGE_BADGE: Record<string, "success" | "warning" | "danger" | "info" | "muted"> = {
   REQUEST: "muted", MATCHING: "info", UNASSIGNED: "warning", ASSIGNED: "info",
@@ -42,6 +44,7 @@ const STAGE_LABEL: Record<string, string> = {
   IN_PROGRESS: "Work in progress", WORK_DONE: "Work done", COMPLETED: "Completed",
   AT_RISK: "At risk", CLOSED: "Closed", UNKNOWN: "Unknown",
 };
+const STAGE_KEYS = Object.keys(STAGE_LABEL);
 const SLA_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = {
   ON_TRACK: "success", AT_RISK: "warning", BREACHED: "danger", NOT_APPLICABLE: "muted",
 };
@@ -51,96 +54,226 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
+const filterLabelStyle: React.CSSProperties = {
+  display: "flex", flexDirection: "column", gap: 5, minWidth: 0,
+  fontSize: 11, fontWeight: 650, color: "var(--text-tertiary)",
+};
+const filterControlStyle: React.CSSProperties = {
+  width: "100%", height: 36, padding: "0 10px", boxSizing: "border-box",
+  borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
+  color: "var(--text-primary)", fontSize: 12, fontFamily: "inherit",
+};
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px",
+      borderRadius: 999, background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
+      {label}<button type="button" aria-label={`Clear ${label}`} onClick={onClear}
+        style={{ border: 0, background: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: 0, display: "flex" }}><X size={11}/></button>
+    </span>
+  );
+}
+
+function DebouncedFilterInput({ value, onCommit, placeholder }: { value: string; onCommit: (value: string) => void; placeholder: string }) {
+  const [input, setInput] = useState(value);
+  useEffect(() => setInput(value), [value]);
+  useEffect(() => {
+    const timer = setTimeout(() => { if (input !== value) onCommit(input.trim()); }, 350);
+    return () => clearTimeout(timer);
+  }, [input, value, onCommit]);
+  return <input value={input} onChange={event => setInput(event.target.value)} placeholder={placeholder} style={filterControlStyle}/>;
+}
+
+function ProviderFilter({ tenantId, tenantName, onChange }: {
+  tenantId: string; tenantName: string; onChange: (id: string | null, name: string | null) => void;
+}) {
+  const [query, setQuery] = useState(tenantName);
+  const [open, setOpen] = useState(false);
+  useEffect(() => setQuery(tenantName), [tenantName]);
+  const matches = useApi(useCallback(
+    () => adminBookingsApi.tenantSearch(query.trim()), [query]), [query], { enabled: open && query.trim().length >= 2 });
+  return (
+    <label style={{ ...filterLabelStyle, position: "relative" }}>Provider
+      <input value={query} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onChange={event => { setQuery(event.target.value); setOpen(true); if (!event.target.value) onChange(null, null); }}
+        placeholder="Search provider" style={filterControlStyle}/>
+      {open && query.trim().length >= 2 && (
+        <div style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: 58, maxHeight: 220, overflowY: "auto",
+          border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", boxShadow: "var(--shadow-lg)" }}>
+          {matches.loading ? <div style={{ padding: 10, fontSize: 12, color: "var(--text-tertiary)" }}>Searching…</div>
+            : (matches.data?.tenants ?? []).length === 0 ? <div style={{ padding: 10, fontSize: 12, color: "var(--text-tertiary)" }}>No providers found</div>
+            : matches.data!.tenants.map(tenant => (
+              <button type="button" key={tenant.id} onMouseDown={event => event.preventDefault()}
+                onClick={() => { onChange(tenant.id, tenant.name); setQuery(tenant.name); setOpen(false); }}
+                style={{ width: "100%", padding: "9px 10px", textAlign: "left", border: 0, borderBottom: "1px solid var(--border)", background: "transparent", color: "var(--text-primary)", cursor: "pointer", fontSize: 12 }}>
+                <strong>{tenant.name || tenant.id.slice(0, 8)}</strong>{tenant.city ? <span style={{ color: "var(--text-tertiary)" }}> · {tenant.city}</span> : null}
+              </button>
+            ))}
+        </div>
+      )}
+      {tenantId && <span style={{ position: "absolute", right: 8, top: 32, fontSize: 10, color: "var(--success-text)" }}>Selected</span>}
+    </label>
+  );
+}
+
 export default function HomeServicesOperationsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
 
-  const view = (params.get("view") as TabKey) || "all";
+  const rawView = params.get("view") as TabKey | null;
+  const view: TabKey = rawView && TAB_KEYS.has(rawView) ? rawView : "all";
   const search = params.get("search") || "";
-  const stage = params.get("stage") || "";
-  const page = Number(params.get("page") || "1");
+  const rawStage = params.get("stage") || "";
+  const stage = !rawStage || STAGE_KEYS.includes(rawStage) ? rawStage : "";
+  const assignment = ["assigned", "unassigned"].includes(params.get("assignment") || "") ? params.get("assignment") || "" : "";
+  const city = params.get("city") || "";
+  const dateFrom = params.get("date_from") || "";
+  const dateTo = params.get("date_to") || "";
+  const tenantId = params.get("tenant_id") || "";
+  const tenantName = params.get("tenant_name") || "";
+  const rawPage = Number(params.get("page") || "1");
+  const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const rawPageSize = Number(params.get("page_size") || "25");
+  const pageSize = [10, 25, 50, 100].includes(rawPageSize) ? rawPageSize : 25;
   const [searchInput, setSearchInput] = useState(search);
   const [selected, setSelected] = useState<UnifiedOperationRow | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(Boolean(assignment || city || dateFrom || dateTo || tenantId || stage));
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const updateParams = useCallback((updates: Record<string, string | null>, resetPage = true) => {
+    const next = new URLSearchParams(params.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) next.set(key, value); else next.delete(key);
+    });
+    if (resetPage && !(Object.keys(updates).length === 1 && "page" in updates)) next.delete("page");
+    const query = next.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }, [params, pathname, router]);
 
   function setParam(key: string, value: string | null) {
-    const next = new URLSearchParams(params.toString());
-    if (value) next.set(key, value); else next.delete(key);
-    if (key !== "page") next.delete("page");
-    router.push(`${pathname}?${next.toString()}`);
+    updateParams({ [key]: value });
   }
 
   // Debounced search -> URL param
   useEffect(() => {
-    const t = setTimeout(() => { if (searchInput !== search) setParam("search", searchInput || null); }, 400);
+    const t = setTimeout(() => { if (searchInput !== search) updateParams({ search: searchInput.trim() || null }); }, 400);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+  }, [searchInput, search, updateParams]);
 
   const listApi = useApi(useCallback(() => homeServicesOperationsApi.list({
-    view, search: search || undefined, stage: stage || undefined, page, page_size: 10,
-  }), [view, search, stage, page]), [view, search, stage, page]);
+    view, search: search || undefined, stage: stage || undefined,
+    assignment: assignment || undefined, city: city || undefined,
+    tenant_id: tenantId || undefined, date_from: dateFrom || undefined,
+    date_to: dateTo || undefined, page, page_size: pageSize,
+  }), [view, search, stage, assignment, city, tenantId, dateFrom, dateTo, page, pageSize]),
+  [view, search, stage, assignment, city, tenantId, dateFrom, dateTo, page, pageSize]);
 
-  const metricsApi = useApi(useCallback(() => homeServicesOperationsApi.summary(), []), []);
+  // The KPI tiles are served from a short-lived cache (counting every job is a
+  // full table pass). `forceMetrics` bumps on Refresh so the admin's explicit
+  // ask bypasses that cache; ordinary navigation reads it.
+  const [forceMetrics, setForceMetrics] = useState(0);
+  const metricsApi = useApi(
+    useCallback(() => homeServicesOperationsApi.summary(tenantId || undefined, forceMetrics > 0),
+      [tenantId, forceMetrics]),
+    [tenantId, forceMetrics]);
 
   const records = listApi.data?.records ?? [];
   const pagination = listApi.data?.pagination;
   const metrics = metricsApi.data as UnifiedOperationsMetrics | null;
 
-  function exportCsv() {
+  const activeFilterCount = [search, stage, assignment, city, tenantId, dateFrom, dateTo].filter(Boolean).length;
+
+  async function exportCsv() {
+    setExporting(true); setExportError(null);
     const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     const token = (typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") : null) ?? "";
-    const path = homeServicesOperationsApi.exportUrl({ view, search: search || undefined, stage: stage || undefined });
-    fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.blob())
-      .then(blob => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `home-services-operations-${new Date().toISOString().slice(0, 10)}.csv`;
-        a.click();
-      })
-      .catch(err => console.error("Export failed:", err));
+    const path = homeServicesOperationsApi.exportUrl({ view, search: search || undefined, stage: stage || undefined,
+      assignment: assignment || undefined, city: city || undefined, tenant_id: tenantId || undefined,
+      date_from: dateFrom || undefined, date_to: dateTo || undefined });
+    try {
+      const response = await fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
+      const truncated = response.headers.get("x-export-truncated") === "true";
+      const exportTotal = response.headers.get("x-export-total");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `home-services-operations-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (truncated) setExportError(`Exported the first 5,000 of ${exportTotal ?? "all matching"} records. Narrow the filters for a complete file.`);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const METRIC_TILES: { key: string; label: string; value: number | undefined; icon: React.ReactNode; onClick: () => void; tooltip: string }[] = [
     { key: "active", label: "Active", value: metrics?.active, icon: <Briefcase size={16}/>, tooltip: "Every request/job not yet completed or closed",
-      onClick: () => { setParam("view", "active"); setParam("stage", null); } },
+      onClick: () => updateParams({ view: "active", stage: null }) },
     { key: "new_requests", label: "New Requests", value: metrics?.new_requests, icon: <FileText size={16}/>, tooltip: "Booking drafts not yet confirmed into a job",
-      onClick: () => { setParam("view", "requests"); setParam("stage", null); } },
+      onClick: () => updateParams({ view: "requests", stage: null }) },
     { key: "unassigned", label: "Unassigned", value: metrics?.unassigned, icon: <UserX size={16}/>, tooltip: "Jobs with no technician assigned yet",
-      onClick: () => { setParam("view", "all"); setParam("stage", "UNASSIGNED"); } },
+      onClick: () => updateParams({ view: null, stage: "UNASSIGNED" }) },
     { key: "in_progress", label: "In Progress", value: metrics?.in_progress, icon: <Activity size={16}/>, tooltip: "Work has started, not yet done",
-      onClick: () => { setParam("view", "all"); setParam("stage", "IN_PROGRESS"); } },
+      onClick: () => updateParams({ view: null, stage: "IN_PROGRESS" }) },
     { key: "awaiting_approval", label: "Awaiting Approval", value: metrics?.awaiting_approval, icon: <Clock size={16}/>, tooltip: "Estimate sent, waiting on customer approval",
-      onClick: () => { setParam("view", "approval"); setParam("stage", null); } },
+      onClick: () => updateParams({ view: "approval", stage: null }) },
     { key: "at_risk", label: "At Risk", value: metrics?.at_risk, icon: <AlertTriangle size={16}/>, tooltip: "SLA breached or an operational exception",
-      onClick: () => { setParam("view", "exceptions"); setParam("stage", null); } },
+      onClick: () => updateParams({ view: "exceptions", stage: null }) },
   ];
 
   return (
     <AdminLayout activeNav="home-services-operations">
       <div style={{ padding: "0 4px", display: "flex", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Operations / Home Services</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Bookings & Jobs</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 18px" }}>
-            Track every request from booking to completion in one workspace.
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+            <div>
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Operations / Home Services</p>
+              <h1 style={{ fontSize: 24, fontWeight: 750, margin: "0 0 4px", color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bookings & Jobs</h1>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+                One canonical workspace from customer request through job completion.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => { listApi.refetch(); setForceMetrics(n => n + 1); }}><RefreshCw size={14} style={{ marginRight: 5 }}/>Refresh</Btn>
+              <Btn variant="secondary" size="sm" onClick={exportCsv} loading={exporting}><Download size={14} style={{ marginRight: 5 }}/>Export CSV</Btn>
+            </div>
+          </div>
+          {exportError && <div role="alert" style={{ marginBottom: 12, fontSize: 12, color: "var(--danger-text)" }}>{exportError}</div>}
 
           {/* Metrics */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(120px, 1fr))", gap: 10, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(138px, 1fr))", gap: 10, marginBottom: 18 }}>
             {METRIC_TILES.map(t => (
               <button key={t.key} onClick={t.onClick} title={t.tooltip}
                 style={{ textAlign: "left", padding: "12px 14px", borderRadius: "var(--radius-lg)",
-                  border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
-                <div style={{ color: "var(--text-tertiary)", marginBottom: 6 }}>{t.icon}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>
+                  border: "1px solid var(--border)", background: "linear-gradient(145deg, var(--surface), var(--surface-sunken))", cursor: "pointer",
+                  boxShadow: "var(--shadow-xs)" }}>
+                <div style={{ color: "var(--brand)", marginBottom: 8 }}>{t.icon}</div>
+                <div style={{ fontSize: 22, fontWeight: 750, color: "var(--text-primary)", lineHeight: 1 }}>
                   {metricsApi.loading ? "—" : t.value ?? 0}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{t.label}</div>
               </button>
             ))}
           </div>
+          {/* Say how old the tiles are rather than letting them imply they are
+              live — they are computed at most once a minute. */}
+          {metrics?.computed_at && (
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "-10px 0 14px" }}>
+              Counts as of {new Date(metrics.computed_at).toLocaleTimeString("en-IN",
+                { hour: "2-digit", minute: "2-digit" })}
+              {metrics.freshness === "stale" && " · refreshing…"}
+            </div>
+          )}
+          {metricsApi.error && (
+            <div role="alert" style={{ fontSize: 11, color: "var(--danger-text)", margin: "-10px 0 14px" }}>
+              Counts unavailable: {metricsApi.error}
+            </div>
+          )}
 
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--border)", overflowX: "auto" }} role="tablist">
@@ -156,7 +289,8 @@ export default function HomeServicesOperationsPage() {
           </div>
 
           {/* Filter bar */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Card style={{ padding: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ position: "relative", flex: "1 1 240px" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
               <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
@@ -164,10 +298,44 @@ export default function HomeServicesOperationsPage() {
                 style={{ width: "100%", padding: "8px 10px 8px 30px", borderRadius: "var(--radius-md)",
                   border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}/>
             </div>
-            <Btn variant="ghost" size="sm" onClick={() => listApi.refetch()}><RefreshCw size={14}/></Btn>
-            <Btn variant="ghost" size="sm" onClick={exportCsv}><Download size={14} style={{ marginRight: 4 }}/>Export</Btn>
+            <Btn variant={filtersOpen ? "secondary" : "ghost"} size="sm" onClick={() => setFiltersOpen(v => !v)}>
+              <SlidersHorizontal size={14} style={{ marginRight: 5 }}/>Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+            </Btn>
+            {activeFilterCount > 0 && (
+              <Btn variant="ghost" size="sm" onClick={() => {
+                setSearchInput("");
+                updateParams({ search: null, stage: null, assignment: null, city: null, tenant_id: null,
+                  tenant_name: null, date_from: null, date_to: null });
+              }}>Clear all</Btn>
+            )}
           </div>
-          {(search || stage) && (
+          {filtersOpen && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(165px, 1fr))", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+              <label style={filterLabelStyle}>Stage
+                <select value={stage} onChange={e => setParam("stage", e.target.value || null)} style={filterControlStyle}>
+                  <option value="">All stages</option>
+                  {STAGE_KEYS.map(key => <option key={key} value={key}>{STAGE_LABEL[key]}</option>)}
+                </select>
+              </label>
+              <label style={filterLabelStyle}>Assignment
+                <select value={assignment} onChange={e => setParam("assignment", e.target.value || null)} style={filterControlStyle}>
+                  <option value="">Any assignment</option><option value="unassigned">Unassigned</option><option value="assigned">Assigned</option>
+                </select>
+              </label>
+              <ProviderFilter tenantId={tenantId} tenantName={tenantName} onChange={(id, name) => updateParams({ tenant_id: id, tenant_name: name })}/>
+              <label style={filterLabelStyle}>City
+                <DebouncedFilterInput value={city} onCommit={value => updateParams({ city: value || null })} placeholder="Any city"/>
+              </label>
+              <label style={filterLabelStyle}>Created from
+                <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setParam("date_from", e.target.value || null)} style={filterControlStyle}/>
+              </label>
+              <label style={filterLabelStyle}>Created to
+                <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setParam("date_to", e.target.value || null)} style={filterControlStyle}/>
+              </label>
+            </div>
+          )}
+          </Card>
+          {(search || stage || assignment || city || tenantId || dateFrom || dateTo) && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
               {search && (
                 <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px",
@@ -181,8 +349,18 @@ export default function HomeServicesOperationsPage() {
                   Stage: {STAGE_LABEL[stage] ?? stage} <X size={11} style={{ cursor: "pointer" }} onClick={() => setParam("stage", null)}/>
                 </span>
               )}
+              {assignment && <FilterChip label={`Assignment: ${assignment}`} onClear={() => setParam("assignment", null)}/>}
+              {city && <FilterChip label={`City: ${city}`} onClear={() => setParam("city", null)}/>}
+              {tenantId && <FilterChip label={`Provider: ${tenantName || tenantId.slice(0, 8)}`} onClear={() => updateParams({ tenant_id: null, tenant_name: null })}/>}
+              {(dateFrom || dateTo) && <FilterChip label={`Created: ${dateFrom || "Any"} – ${dateTo || "Today"}`} onClear={() => updateParams({ date_from: null, date_to: null })}/>}
             </div>
           )}
+
+          {listApi.data?.unknown_statuses?.length ? (
+            <div role="alert" style={{ padding: "10px 12px", marginBottom: 12, borderRadius: 8, border: "1px solid var(--warning-border)", background: "var(--warning-bg)", color: "var(--warning-text)", fontSize: 12 }}>
+              {listApi.data.unknown_statuses.length} unmapped workflow status{listApi.data.unknown_statuses.length === 1 ? "" : "es"} need configuration review.
+            </div>
+          ) : null}
 
           {/* Table */}
           <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -249,14 +427,26 @@ export default function HomeServicesOperationsPage() {
                 </table>
               </div>
             )}
-            {pagination && pagination.total_pages > 1 && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: "1px solid var(--border)" }}>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  Page {pagination.page} of {pagination.total_pages} · {pagination.total} records
-                </span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setParam("page", String(page - 1))}>Prev</Btn>
-                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => setParam("page", String(page + 1))}>Next</Btn>
+            {pagination && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                    {pagination.total === 0 ? "No records" : `${(pagination.page - 1) * pagination.page_size + 1}–${Math.min(pagination.page * pagination.page_size, pagination.total)} of ${pagination.total.toLocaleString("en-IN")}`}
+                  </span>
+                  <label style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
+                    Rows
+                    <select value={pageSize} onChange={event => updateParams({ page_size: event.target.value, page: null })}
+                      style={{ ...filterControlStyle, width: 66, height: 30 }}>
+                      {[10, 25, 50, 100].map(size => <option key={size}>{size}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 4 }}>Page {pagination.page} of {pagination.total_pages}</span>
+                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setParam("page", "1")} aria-label="First page"><ChevronLeft size={13}/><ChevronLeft size={13} style={{ marginLeft: -8 }}/></Btn>
+                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setParam("page", String(page - 1))}><ChevronLeft size={13}/>Previous</Btn>
+                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => setParam("page", String(page + 1))}>Next<ChevronRight size={13}/></Btn>
+                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => setParam("page", String(pagination.total_pages))} aria-label="Last page"><ChevronRight size={13}/><ChevronRight size={13} style={{ marginLeft: -8 }}/></Btn>
                 </div>
               </div>
             )}
@@ -302,16 +492,19 @@ const EXECUTION_EVENT_LABEL: Record<string, string> = {
 function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose: () => void }) {
   const job = useApi(useCallback(
     () => row.job_id ? finalRecordsAdminApi.getJob(row.job_id) : Promise.resolve(null),
-    [row.job_id]));
+    [row.job_id]), [row.job_id]);
   const execTimeline = useApi(useCallback(
     () => row.job_id ? adminExecutionApi.getJobTimeline(row.job_id) : Promise.resolve([]),
-    [row.job_id]));
+    [row.job_id]), [row.job_id]);
   const jobNotes = useApi(useCallback(
     () => row.job_id ? adminExecutionApi.getJobNotes(row.job_id) : Promise.resolve([]),
-    [row.job_id]));
-  const bookingTimeline = useApi(useCallback(
-    () => !row.job_id && row.booking_id ? adminBookingsApi.getTimeline(row.booking_id) : Promise.resolve(null),
-    [row.job_id, row.booking_id]));
+    [row.job_id]), [row.job_id]);
+  const draft = useApi(useCallback(
+    () => !row.job_id && row.draft_id ? adminHomeServiceBookingApi.getDraft(row.draft_id) : Promise.resolve(null),
+    [row.job_id, row.draft_id]), [row.job_id, row.draft_id]);
+  const draftEvents = useApi(useCallback(
+    () => !row.job_id && row.draft_id ? adminHomeServiceBookingApi.getDraftEvents(row.draft_id) : Promise.resolve(null),
+    [row.job_id, row.draft_id]), [row.job_id, row.draft_id]);
 
   const j = job.data;
   const isCompleted = j?.status === "completed";
@@ -332,10 +525,10 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
   const [editTitle, setEditTitle] = useState("");
   const [editText, setEditText] = useState("");
   const sla = j?.sla;
-  const priceSnapshot = j?.booking?.price_snapshot as Record<string, unknown> | null | undefined;
+  const priceSnapshot = (j?.booking?.price_snapshot ?? (row.amount_summary.source !== "none" ? row.amount_summary : null)) as Record<string, unknown> | null | undefined;
   const events = execTimeline.data ?? [];
-  const bookingEvents = bookingTimeline.data?.timeline ?? [];
-  const loadingDetail = row.job_id ? (job.loading || execTimeline.loading) : bookingTimeline.loading;
+  const bookingEvents = draftEvents.data?.events ?? [];
+  const loadingDetail = row.job_id ? (job.loading || execTimeline.loading) : (draft.loading || draftEvents.loading);
 
   const allPriceRows = priceSnapshot
     ? Object.entries(priceSnapshot).filter(([, v]) => v !== null && v !== undefined && v !== "" && typeof v !== "object")
@@ -351,7 +544,7 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
   const customerTotal = priceSnapshot?.customer_total ?? priceSnapshot?.display_price ?? null;
   const timelineItems = row.job_id
     ? events.map(ev => ({ key: ev.id, when: ev.created_at, label: EXECUTION_EVENT_LABEL[ev.event_type] ?? (ev.new_status ? `→ ${ev.new_status.replace(/_/g, " ")}` : ev.event_type) }))
-    : bookingEvents.map((ev, i) => ({ key: String(i), when: ev.occurred_at, label: `→ ${ev.to_status.replace(/_/g, " ")}${ev.reason ? ` (${ev.reason})` : ""}` }));
+    : bookingEvents.map(ev => ({ key: ev.id, when: ev.created_at, label: ev.message || ev.event_type.replace(/_/g, " ") }));
 
   return (
     <>
@@ -410,6 +603,11 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
                 </p>
               )}
               <p style={{ color: "var(--text-secondary)", margin: "0 0 10px", fontSize: 13 }}>{row.master_service ?? "—"}{row.job_type ? ` · ${row.job_type}` : ""}</p>
+              {!row.job_id && draft.data?.issue_summary && (
+                <div style={{ margin: "0 0 10px", padding: "9px 10px", borderRadius: 8, background: "var(--surface-sunken)", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--text-primary)" }}>Customer issue: </strong>{draft.data.issue_summary}
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
                 <div>
                   <div style={{ fontSize: 10, textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 2 }}>Tenant</div>

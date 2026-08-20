@@ -1,28 +1,8 @@
 import { CustomerHomeResponseDto, customerHomeResponseSchema } from "../contracts/customerHome";
-import {
-  CustomerHome, HomeCampaignPlacement, HomeCampaignStyle,
-} from "../../domain/customerHome";
+import { CustomerHome } from "../../domain/customerHome";
 import { asAddressId, asCategoryId, asServiceBookingId, asVerticalId } from "../../domain/ids";
 import { parseServerTimestamp } from "../../domain/dates";
 import { ContractValidationError } from "../../domain/errors";
-
-/** The banner layouts and slots THIS build can draw. Kept beside the adapter so
- * the filter and the renderers cannot drift apart. */
-const KNOWN_STYLES: readonly string[] = ["hero", "festival", "strip"];
-const KNOWN_PLACEMENTS: readonly string[] = [
-  "campaign_top", "campaign_after_problems", "campaign_after_services",
-  "campaign_mid", "campaign_after_circles", "campaign_bottom",
-];
-
-function isKnownStyle(style: string | undefined): boolean {
-  // Undefined is an older backend that predates styles: treat it as the hero
-  // carousel it always was, rather than dropping every existing banner.
-  return style === undefined || KNOWN_STYLES.includes(style);
-}
-
-function isKnownPlacement(placement: string | undefined): boolean {
-  return placement === undefined || KNOWN_PLACEMENTS.includes(placement);
-}
 
 export function parseCustomerHomeDto(raw: unknown): CustomerHomeResponseDto {
   const result = customerHomeResponseSchema.safeParse(raw);
@@ -122,32 +102,6 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
     season: dto.season ?? null,
     seasonLabel: dto.season_label ?? null,
     unreadNotificationCount: dto.unread_notification_count,
-    // An unrecognised style or placement means a backend newer than this build.
-    // Such a banner is DROPPED rather than coerced into the nearest layout: a
-    // festival card squeezed into a one-line strip, or a bottom banner hoisted
-    // to the top, is not what the admin scheduled.
-    campaigns: dto.campaigns
-      .filter(c => isKnownStyle(c.display_style) && isKnownPlacement(c.placement))
-      .map(c => ({
-        campaignId: c.campaign_id,
-        eyebrow: c.eyebrow ?? null,
-        title: c.title,
-        description: c.description ?? null,
-        artworkUrlLight: c.artwork_url_light ?? null,
-        artworkUrlDark: c.artwork_url_dark ?? null,
-        ctaLabel: c.cta_label ?? null,
-        ctaDeeplink: c.cta_deeplink ?? null,
-        priority: c.priority,
-        style: (c.display_style ?? "hero") as HomeCampaignStyle,
-        placement: (c.placement ?? "campaign_top") as HomeCampaignPlacement,
-        accentColor: c.accent_color ?? null,
-        badgeText: c.badge_text ?? null,
-        endsAt: c.ends_at ?? null,
-      }))
-      .sort((a, b) => a.priority - b.priority),
-    sections: dto.sections
-      .map(x => ({ key: x.key, order: x.order, title: x.title ?? null }))
-      .sort((a, b) => a.order - b.order),
     capabilities: {
       bargainAvailable: dto.capabilities.bargain_available,
       photoAttachAvailable: dto.capabilities.photo_attach_available,

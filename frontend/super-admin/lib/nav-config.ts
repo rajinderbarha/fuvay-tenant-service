@@ -48,13 +48,8 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     id: "home-services",
     label: "Home Services",
     items: [
-      { id: "hs-bookings",         label: "Bookings",                  href: "/admin/home-services/booking-drafts",             icon: "🏠", group: "home-services" },
+      { id: "hs-bookings",         label: "Bookings & Jobs",           href: "/admin/home-services/bookings-jobs",              icon: "🏠", group: "home-services" },
       { id: "hs-service-catalog",  label: "Service Catalog",           href: "/admin/catalog-workspace",            icon: "🗂️", group: "home-services" },
-      { id: "hs-price-experience", label: "Customer Price Experience", href: "/admin/home-services/price-experience",           icon: "🧾", group: "home-services" },
-      { id: "hs-provider-matching",label: "Provider Matching",         href: "/admin/home-services/provider-matching",          icon: "🔗", group: "home-services" },
-      { id: "hs-matching-diagnostics", label: "Matching Diagnostics",  href: "/admin/home-services/matching-diagnostics",       icon: "🩺", group: "home-services" },
-      { id: "service-area-requests", label: "Service Area Requests",   href: "/admin/service-area-requests",                    icon: "📍", group: "home-services" },
-      { id: "hs-job-deduction",    label: "Completed Job Deduction",   href: "/admin/home-services/completed-job-deduction",    icon: "✅", group: "home-services" },
       { id: "hs-settings",         label: "Home Services Settings",    href: "/admin/home-services/settings",                   icon: "⚙️", group: "home-services" },
     ],
   },
@@ -64,13 +59,8 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "catalog",            label: "Services",          href: "/admin/catalog",              icon: "🗂️", group: "catalog" },
       { id: "categories",         label: "Categories",        href: "/admin/categories",           icon: "📦", group: "catalog" },
-      // Service Options and Issue Types are retired as standalone nav entries
-      // (Job-Type Blueprint consolidation) -- both are now configured only
-      // per exact Job Type inside Catalog Workspace's Options & Add-ons and
-      // Problems & Questions tabs. Their pages remain at their old URLs as
-      // retired-notice redirects (not deleted) for bookmarked/typed links.
+      // Options and issue types are configured per exact job type in Catalog Workspace.
       { id: "checklist-templates",label: "Checklist Library", href: "/admin/checklists",           icon: "📋", group: "catalog" },
-      { id: "workflow-templates",  label: "Workflows",        href: "/admin/workflow-templates",   icon: "🔀", group: "catalog" },
       { id: "service-setup",      label: "Service Setup",     href: "/admin/service-setup/brands", icon: "🛠️", group: "catalog" },
       { id: "customer-flow",      label: "Customer Flow",     href: "/admin/customer-flow",        icon: "🌊", group: "catalog" },
     ],
@@ -80,13 +70,6 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     label: "Packages & Plans",
     items: [
       { id: "packages", label: "Package & Plans", href: "/admin/packages", icon: "🎁", group: "packages" },
-    ],
-  },
-  {
-    id: "pricing",
-    label: "Pricing",
-    items: [
-      { id: "pricing", label: "Pricing Rules", href: "/admin/pricing", icon: "💲", group: "pricing" },
     ],
   },
   {
@@ -110,6 +93,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { id: "exports",      label: "Export Jobs",      href: "/admin/exports",       icon: "📤", group: "intelligence" },
       { id: "ai",           label: "AI Config",        href: "/admin/ai/sessions",   icon: "🤖", group: "intelligence" },
       { id: "ai-chat",      label: "AI Chat",          href: "/admin/ai-chat",       icon: "💬", group: "intelligence" },
+      { id: "tenant-assistant", label: "Tenant Assistant", href: "/admin/tenant-assistant", icon: "✨", group: "intelligence" },
     ],
   },
   {
@@ -117,8 +101,6 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     label: "Engagement",
     items: [
       { id: "marketing",     label: "Marketing",      href: "/admin/marketing",     icon: "📣", group: "engagement" },
-      { id: "home-banners",  label: "Home Banners",   href: "/admin/home-banners",  icon: "🖼️", group: "engagement" },
-      { id: "home-layout",   label: "Home Layout",    href: "/admin/home-layout",   icon: "🧩", group: "engagement" },
       { id: "notifications", label: "Notifications",  href: "/admin/notifications", icon: "🔔", group: "engagement" },
       { id: "reviews",       label: "Reviews",        href: "/admin/reviews",       icon: "⭐", group: "engagement" },
       { id: "complaints",    label: "Complaints",     href: "/admin/complaints",    icon: "⚠️", group: "engagement" },
@@ -171,12 +153,8 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   catalog:                "catalog",
   categories:             "categories",
   packages:               "packages",
-  pricing:                "pricing",
-  "service-options":      "hs-service-catalog",
-  "issue-types":          "hs-service-catalog",
   "checklist-templates":  "checklist-templates",
   "checklists":           "checklist-templates",
-  "workflow-templates":   "workflow-templates",
   "service-setup":        "service-setup",
   "customer-flow":        "customer-flow",
   finance:                "finance",
@@ -190,9 +168,8 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   exports:                "exports",
   ai:                     "ai",
   "ai-chat":              "ai-chat",
+  "tenant-assistant":     "tenant-assistant",
   marketing:              "marketing",
-  "home-banners":         "home-banners",
-  "home-layout":          "home-layout",
   notifications:          "notifications",
   "notification-templates": "notifications",
   "notification-outbox":    "notifications",
@@ -224,10 +201,6 @@ const HOME_SERVICES_SUBPAGE_TO_NAV_ID: Record<string, string> = {
   "booking-drafts":          "hs-bookings",
   "service-jobs":            "hs-bookings",
   "service-catalog":         "hs-service-catalog",
-  "price-experience":        "hs-price-experience",
-  "provider-matching":       "hs-provider-matching",
-  "matching-diagnostics":    "hs-matching-diagnostics",
-  "completed-job-deduction": "hs-job-deduction",
   "settings":                "hs-settings",
 };
 

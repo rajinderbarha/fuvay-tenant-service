@@ -30,27 +30,27 @@ function ModulesModal({ vertical, onClose, onChanged }: { vertical: VerticalItem
   const detail = useApi(() => verticalCatalogApi.getVertical(vertical.key), [vertical.key]);
   const enable = useAction((key: string) => verticalCatalogApi.enableModule(vertical.key, key));
   const disable = useAction((key: string, auditReason: string) => verticalCatalogApi.disableModule(vertical.key, key, auditReason));
-  const modules = (detail.data as VerticalDetail | null)?.modules ?? [];
+  const allModules = (detail.data as VerticalDetail | null)?.modules ?? [];
+  const modules = allModules.filter(module => module.navigation_status === "available");
+  const hiddenCount = allModules.length - modules.length;
   const groups = modules.reduce<Record<string, typeof modules>>((all, item) => {
     (all[item.module_group ?? "Other"] ??= []).push(item); return all;
   }, {});
   const activeCount = modules.filter(module => module.is_enabled).length;
-  const availableCount = modules.filter(module => module.navigation_status === "available").length;
   return <Modal open title={`${vertical.label} · Admin navigation`} size="lg" onClose={onClose}>
     <div style={{ padding: 12, marginBottom: 14, borderRadius: 10, border: "1px solid var(--info-border)", background: "var(--info-bg)", color: "var(--text-secondary)", fontSize: 12, lineHeight: 1.55 }}>
-      These switches only control pages shown in the super-admin sidebar. They do not enable or disable tenant entitlements, native-app features, booking engines, or finance policy.
-      {!detail.loading && <strong style={{ display: "block", marginTop: 4, color: "var(--text-primary)" }}>{activeCount} enabled · {availableCount} available · {modules.length - availableCount} retired or unavailable</strong>}
+      These switches only control current pages shown in the super-admin sidebar. They do not enable or disable tenant entitlements, native-app features, booking engines, or finance policy.
+      {!detail.loading && <strong style={{ display: "block", marginTop: 4, color: "var(--text-primary)" }}>{activeCount} enabled of {modules.length} current admin workspaces{hiddenCount ? ` · ${hiddenCount} retired or unavailable hidden` : ""}</strong>}
     </div>
     {(detail.error || enable.error || disable.error) && <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", fontSize: 12 }}>{detail.error || enable.error || disable.error}</div>}
-    {detail.loading ? <div className="skeleton" style={{ height: 180 }} /> : modules.length === 0 ? <div style={{ padding: 28, textAlign: "center", color: "var(--text-tertiary)" }}>No admin navigation modules are assigned to this vertical.</div> : Object.entries(groups).map(([group, rows]) => <section key={group} style={{ marginBottom: 16 }}>
+    {detail.loading ? <div className="skeleton" style={{ height: 180 }} /> : modules.length === 0 ? <div style={{ padding: 28, textAlign: "center", color: "var(--text-tertiary)" }}>No current admin navigation modules are assigned to this vertical.</div> : Object.entries(groups).map(([group, rows]) => <section key={group} style={{ marginBottom: 16 }}>
       <p style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--text-tertiary)", letterSpacing: ".07em" }}>{group}</p>
-      {rows.map(row => <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", background: "var(--surface-sunken)", borderRadius: 9, marginBottom: 5, opacity: row.navigation_status === "available" ? 1 : .72 }}>
+      {rows.map(row => <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", background: "var(--surface-sunken)", borderRadius: 9, marginBottom: 5 }}>
         <Layers size={14} color="var(--brand)" /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 650 }}>{row.label}</div><div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 2 }}>{row.navigation_status_reason || row.description || row.admin_path || "Admin navigation page"}</div></div>
         {row.is_required && <Badge variant="warning">Required</Badge>}
-        {row.navigation_status !== "available" && <Badge variant="muted">{row.navigation_status === "retired" ? "Retired" : "Not implemented"}</Badge>}
-        <button aria-label={`${row.is_enabled ? "Disable" : "Enable"} ${row.label}`} disabled={row.navigation_status !== "available" || (row.is_required && row.is_enabled) || enable.loading || disable.loading}
+        <button aria-label={`${row.is_enabled ? "Disable" : "Enable"} ${row.label}`} disabled={(row.is_required && row.is_enabled) || enable.loading || disable.loading}
           onClick={async () => { if (row.is_enabled) { setPendingDisable({ key: row.key, label: row.label }); setReason(""); } else { const result = await enable.execute(row.key); if (result) { detail.refetch(); onChanged(); } } }}
-          style={{ border: 0, background: "none", color: row.is_enabled ? "var(--success)" : "var(--text-tertiary)", cursor: row.navigation_status !== "available" || (row.is_required && row.is_enabled) ? "not-allowed" : "pointer" }}>
+          style={{ border: 0, background: "none", color: row.is_enabled ? "var(--success)" : "var(--text-tertiary)", cursor: (row.is_required && row.is_enabled) ? "not-allowed" : "pointer" }}>
           {row.is_enabled ? <ToggleRight size={23} /> : <ToggleLeft size={23} />}
         </button>
       </div>)}

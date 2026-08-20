@@ -16,12 +16,13 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ShieldCheck, ArrowLeft, FileText, Wrench, Users, Briefcase, Star,
-  Wallet, ShieldCheck as DepositIcon, AlertTriangle, ChevronRight, MoreHorizontal,
+  Wallet, ShieldCheck as DepositIcon, AlertTriangle, ChevronRight,
   PauseCircle, RotateCcw, Send,
 } from "lucide-react";
 import { AdminLayout } from "../layout/AdminLayout";
-import { Card, Badge, Btn, Skeleton, Modal, DataTable } from "../shared/ui";
+import { Card, Badge, Btn, Skeleton, Modal, DataTable, Pagination } from "../shared/ui";
 import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../lib/api";
+import { openAdminMediaPreview } from "../../lib/open-admin-media-preview";
 import { useApi, useAction } from "../../hooks/useApi";
 
 function dt(v?: string | null) {
@@ -56,6 +57,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
   const [action, setAction] = useState<"changes_requested" | "suspended" | "approved_pending_activation" | null>(null);
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [documentError, setDocumentError] = useState<string | null>(null);
 
   const detail = useApi(useCallback(() => hsProviderDirectoryApi.getDetail(providerId), [providerId]));
   const enrollment = useApi(useCallback(
@@ -179,10 +181,6 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
               Suspend Home Services
             </Btn>
           )}
-          <button style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, width: 32, height: 32,
-            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--text-tertiary)" }}>
-            <MoreHorizontal size={16} />
-          </button>
         </div>
       </Card>
 
@@ -192,6 +190,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
           {notice}
         </div>
       )}
+      {documentError && <div role="alert" style={{ marginTop:12, padding:"10px 14px", borderRadius:10, background:"var(--danger-bg)", border:"1px solid var(--danger-border)", color:"var(--danger-text)", fontSize:13 }}>{documentError}</div>}
 
       <Card padding={12} style={{ marginTop: 12, background: "var(--surface-sunken)", display: "flex", gap: 8, alignItems: "flex-start" }}>
         <AlertTriangle size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 1 }} />
@@ -217,7 +216,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
       {tab === "quality" && <QualityTab providerId={providerId} />}
       {tab === "team" && <TeamTab providerId={providerId} />}
       {tab === "operations" && <OperationsTab providerId={providerId} />}
-      {tab === "documents" && <ActivityTab providerId={providerId} />}
+      {tab === "documents" && <ActivityTab providerId={providerId} onError={setDocumentError} />}
       {tab === "services" && <ServicesTab providerId={providerId} />}
 
       <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Home Services lifecycle" size="lg">
@@ -444,9 +443,6 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
               </div>
             </div>
           )}
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
-            Completion rate, cancellation rate and repeat-customer rate aren&apos;t wired into this tab yet.
-          </p>
         </Card>
 
         <Card padding={16}>
@@ -601,7 +597,8 @@ function FinanceTab({ providerId }: { providerId: string }) {
 }
 
 function QualityTab({ providerId }: { providerId: string }) {
-  const quality = useApi(useCallback(() => hsProviderDirectoryApi.getQuality(providerId), [providerId]));
+  const [page, setPage] = useState(1);
+  const quality = useApi(useCallback(() => hsProviderDirectoryApi.getQuality(providerId, { page, page_size:20 }), [providerId, page]), [providerId, page]);
   const reviews = useApi(useCallback(() => hsReviewApi.getProviderReviewSummary("home-services", providerId), [providerId]));
   if (quality.loading) return <Skeleton height={300} />;
   if (quality.error) {
@@ -621,6 +618,9 @@ function QualityTab({ providerId }: { providerId: string }) {
         <StatCard label="Health Score" value={`${q.health_score}%`} sub={String(q.health_band)} />
         <StatCard label="Open Complaints" value={String(q.open_complaints_count ?? 0)} />
         <StatCard label="Total Complaints" value={String(q.total_complaints ?? 0)} />
+        <StatCard label="Completion Rate" value={`${q.completion_rate ?? 0}%`} />
+        <StatCard label="Cancellation Rate" value={`${q.cancellation_rate ?? 0}%`} />
+        <StatCard label="Repeat Customers" value={String(q.repeat_customers ?? 0)} sub={`${q.unique_customers ?? 0} total`} />
         {reviews.data && (
           <>
             <StatCard label="Low-Rating Reviews" value={String(reviews.data.low_rating_count ?? 0)} />
@@ -629,10 +629,6 @@ function QualityTab({ providerId }: { providerId: string }) {
           </>
         )}
       </div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        Completion rate, cancellation rate, SLA adherence and repeat-customer rate aren&apos;t wired into
-        this tab yet — they need canonical read services this page doesn&apos;t reach into.
-      </p>
       {recentReviews.length > 0 && (
         <div>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>Recent reviews</h3>
@@ -658,13 +654,15 @@ function QualityTab({ providerId }: { providerId: string }) {
             { key: "created_at", label: "Created", render: v => dt(v as string) },
           ]}
         />
+        <Pagination page={page} total={Number(q.total_complaints ?? 0)} pageSize={20} onPage={setPage}/>
       </div>
     </div>
   );
 }
 
 function TeamTab({ providerId }: { providerId: string }) {
-  const team = useApi(useCallback(() => hsProviderDirectoryApi.getTeam(providerId), [providerId]));
+  const [page, setPage] = useState(1);
+  const team = useApi(useCallback(() => hsProviderDirectoryApi.getTeam(providerId, { page, page_size:20 }), [providerId, page]), [providerId, page]);
   if (team.loading) return <Skeleton height={300} />;
   if (team.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Team data unavailable: {team.error}</p></Card>;
   const t = team.data as Record<string, unknown> | undefined;
@@ -695,12 +693,14 @@ function TeamTab({ providerId }: { providerId: string }) {
           { key: "assignment_status", label: "Assignment", render: v => <Badge variant={v === "suspended" ? "danger" : "default"}>{String(v)}</Badge> },
         ]}
       />
+      <Pagination page={page} total={Number(t.total_staff ?? 0)} pageSize={20} onPage={setPage}/>
     </div>
   );
 }
 
 function OperationsTab({ providerId }: { providerId: string }) {
-  const ops = useApi(useCallback(() => hsProviderDirectoryApi.getOperations(providerId), [providerId]));
+  const [page, setPage] = useState(1);
+  const ops = useApi(useCallback(() => hsProviderDirectoryApi.getOperations(providerId, { page, page_size:20 }), [providerId, page]), [providerId, page]);
   if (ops.loading) return <Skeleton height={300} />;
   if (ops.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Operations data unavailable: {ops.error}</p></Card>;
   const o = ops.data as Record<string, unknown> | undefined;
@@ -717,9 +717,6 @@ function OperationsTab({ providerId }: { providerId: string }) {
           <StatCard key={status} label={status.replace(/_/g, " ")} value={String(count)} />
         ))}
       </div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        Quotes/checklists, SLA event detail and cancellation reasons aren&apos;t wired into this tab yet.
-      </p>
       <DataTable
         rows={jobs}
         emptyText="No Home Services jobs recorded for this provider yet."
@@ -730,12 +727,14 @@ function OperationsTab({ providerId }: { providerId: string }) {
           { key: "updated_at", label: "Last Update", render: v => dt(v as string) },
         ]}
       />
+      <Pagination page={page} total={Number(o.total_jobs ?? 0)} pageSize={20} onPage={setPage}/>
     </div>
   );
 }
 
-function ActivityTab({ providerId }: { providerId: string }) {
-  const activity = useApi(useCallback(() => hsProviderDirectoryApi.getActivity(providerId), [providerId]));
+function ActivityTab({ providerId, onError }: { providerId: string; onError: (message:string|null)=>void }) {
+  const [page, setPage] = useState(1);
+  const activity = useApi(useCallback(() => hsProviderDirectoryApi.getActivity(providerId, { page, page_size:30 }), [providerId, page]), [providerId, page]);
   if (activity.loading) return <Skeleton height={300} />;
   if (activity.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Activity data unavailable: {activity.error}</p></Card>;
   const a = activity.data as Record<string, unknown> | undefined;
@@ -760,22 +759,11 @@ function ActivityTab({ providerId }: { providerId: string }) {
               <button
                 onClick={async e => {
                   e.stopPropagation();
+                  onError(null);
                   try {
-                    // The signed-preview-url flow (mediaAdminApi.createSignedPreviewUrl)
-                    // still requires an Authorization header to resolve
-                    // (its own "unauthenticated" comment doesn't match its
-                    // actual implementation) -- window.open() can't carry
-                    // that header, so it always 401s. Fetching the file
-                    // directly with the header and opening it as a blob
-                    // sidesteps that broken layer entirely.
-                    const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-                    const token = localStorage.getItem("serviceos_admin_token") ?? "";
-                    const res = await fetch(`${API_BASE}/v1/media/${v}/view`, { headers: { Authorization: `Bearer ${token}` } });
-                    if (!res.ok) throw new Error(String(res.status));
-                    const blob = await res.blob();
-                    window.open(URL.createObjectURL(blob), "_blank");
-                  } catch {
-                    alert("Could not open this attachment.");
+                    await openAdminMediaPreview(String(v));
+                  } catch (error) {
+                    onError(error instanceof Error ? error.message : "Could not open this attachment. Check document access and try again.");
                   }
                 }}
                 style={{ background: "none", border: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, textDecoration: "underline" }}>
@@ -797,6 +785,7 @@ function ActivityTab({ providerId }: { providerId: string }) {
             { key: "created_at", label: "When", render: v => dt(v as string) },
           ]}
         />
+        <Pagination page={page} total={Number(a.total ?? 0)} pageSize={30} onPage={setPage}/>
       </div>
     </div>
   );

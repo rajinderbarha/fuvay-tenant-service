@@ -31,6 +31,8 @@ const ACTIVITY_TYPES = [
   { key:"excessive_requests", label:"Excessive API/request activity" },
 ] as const;
 
+const API_KEYS_ENABLED = false;
+
 export default function SettingsPage() {
   const [tab, setTab] = useState<"workspace"|"team"|"activity"|"general"|"webhooks"|"deliveries"|"privacy"|"security">("workspace");
 
@@ -154,7 +156,9 @@ export default function SettingsPage() {
   });
 
   // ── Security (Security Engine — integration keys, blocklist, threats) ──────
-  const secKeys = useApi(useCallback(() => securityApi.listApiKeys(), []));
+  const secKeys = useApi(useCallback(() => API_KEYS_ENABLED
+    ? securityApi.listApiKeys()
+    : Promise.resolve({ api_keys: [] }), []));
   const [secKeyModal,  setSecKeyModal]  = useState(false);
   const [secKeyResult, setSecKeyResult] = useState<SecurityApiKeyCreated | null>(null);
   const [secKeyName,   setSecKeyName]   = useState("");
@@ -662,6 +666,7 @@ export default function SettingsPage() {
         {/* SECURITY */}
         {tab === "security" && (
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+            {API_KEYS_ENABLED && (
             <Card>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                 <p style={{ fontWeight:600, margin:0 }}>Integration API Keys</p>
@@ -706,6 +711,7 @@ export default function SettingsPage() {
                 </div>
               )}
             </Card>
+            )}
 
             <Card>
               <p style={{ fontWeight:600, margin:"0 0 4px" }}>Check IP Blocklist</p>
@@ -796,7 +802,7 @@ export default function SettingsPage() {
       </Modal>
 
       {/* Integration API key create/rotate result modal */}
-      <Modal open={secKeyModal} onClose={() => { setSecKeyModal(false); setSecKeyResult(null); }}
+      {API_KEYS_ENABLED && <Modal open={secKeyModal} onClose={() => { setSecKeyModal(false); setSecKeyResult(null); }}
         title={secKeyResult ? "Key Created" : "New Integration API Key"}
         footer={secKeyResult
           ? <Button size="sm" onClick={() => { setSecKeyModal(false); setSecKeyResult(null); }}>Done</Button>
@@ -820,7 +826,7 @@ export default function SettingsPage() {
             {createSecKey.error && <p style={{ color:"var(--danger)", fontSize:12 }}>{createSecKey.error}</p>}
           </div>
         )}
-      </Modal>
+      </Modal>}
     </TenantLayout>
   );
 }

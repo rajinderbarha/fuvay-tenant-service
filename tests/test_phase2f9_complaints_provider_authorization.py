@@ -1,8 +1,8 @@
 """Phase 2A Slice 2F-9 — complaints.provider_router mutation enforcement
 closure.
 
-9 mounted mutation routes were re-verified via runtime introspection.
-ALL 9 previously used get_current_user only -- no permission, role, or
+11 mounted mutation routes are re-verified via runtime introspection.
+The original 9 previously used get_current_user only -- no permission, role, or
 access-scope check at all -- meaning any authenticated user of any role
 (including customer, guest, or a cross-tenant staff member) could
 respond to complaints, offer resolutions, schedule/start/complete
@@ -70,6 +70,10 @@ MUTATION_ROUTES = [
     ("POST", f"/v1/provider/rework-requests/{REWORK_ID}/start", None),
     ("POST", f"/v1/provider/rework-requests/{REWORK_ID}/complete", {"notes": "done"}),
     ("POST", f"/v1/provider/refund-requests/{REFUND_ID}/review", {"notes": "ok"}),
+    ("POST", f"/v1/provider/refund-requests/{REFUND_ID}/decision",
+     {"approve": False, "reason": "Provider decision"}),
+    ("POST", f"/v1/provider/refund-requests/{REFUND_ID}/record",
+     {"recorded_amount": "10.00"}),
     ("POST", f"/v1/provider/complaints/{COMPLAINT_ID}/ai-session/answers", {"answers": ["yes"]}),
     ("POST", f"/v1/provider/complaints/{COMPLAINT_ID}/settlement-proposals",
      {"proposal_type": "refund", "description": "settlement"}),
@@ -387,7 +391,7 @@ class TestModuleVerificationExitsClean:
         mod = self._load_inventory_module()
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.complaints.provider_router"]
-        assert len(routes) == 9
+        assert len(routes) == 11
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

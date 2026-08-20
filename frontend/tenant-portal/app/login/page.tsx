@@ -14,6 +14,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { Button, Alert } from "@serviceos/design-system";
 import { authApi, publicSignupStatusApi } from "../../lib/api";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 import {
   Mail, Lock, Eye, EyeOff, Smartphone, Wrench, UserCheck, ShieldCheck, Lock as LockIcon,
   Home, ClipboardList, User as UserIcon, Building2, UtensilsCrossed, Briefcase,
@@ -218,13 +219,7 @@ export default function LoginPage() {
         padding: "18px 32px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", gap: 12,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: "var(--radius-md)", background: "var(--brand)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <span style={{ color: "var(--text-on-brand, #fff)", fontWeight: 800, fontSize: 14 }}>S</span>
-          </div>
-          <span style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)" }}>ServiceOS</span>
+          <FuvayLogo height={38}/>
           {/*
             "All systems operational" in the reference design implies a real,
             monitored status feed. No public system-status endpoint exists
@@ -244,7 +239,7 @@ export default function LoginPage() {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>New to ServiceOS?</span>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>New to Fuvay?</span>
           <BrandOutlineLink href="/register">Create business account</BrandOutlineLink>
           <Link href="/help" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}>
             Need help?
@@ -376,7 +371,7 @@ export default function LoginPage() {
           </button>
 
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "20px 0 0", textAlign: "center" }}>
-            New to ServiceOS?{" "}
+            New to Fuvay?{" "}
             <Link href="/register" style={{ color: "var(--brand)", fontWeight: 700, textDecoration: "none" }}>
               Create business account
             </Link>
@@ -396,7 +391,7 @@ export default function LoginPage() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "16px 32px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap", gap: 8,
       }}>
-        <span>© ServiceOS</span>
+        <span>© Fuvay</span>
         <div style={{ display: "flex", gap: 16 }}>
           <Link href="/terms" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Terms of Service</Link>
           <Link href="/privacy" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Privacy Policy</Link>

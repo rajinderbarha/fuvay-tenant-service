@@ -75,9 +75,9 @@ class TestFiles:
         # items were dropped entirely from NAV_GROUPS in favor of the single
         # canonical Types & Brands entry — see that suite for the current assertions.
         src = _read(ADMIN_LAYOUT)
-        assert 'case "operations":' in src
-        assert 'case "finance-deposits":' in src
-        assert 'case "finance-topups":' in src
+        assert "FIELD_OPS_SHARED_ITEMS" in src
+        assert "FIELD_OPS_VERTICALS" in src
+        assert "VerticalCatalogSection" in src
 
     def test_api_ts_has_operation_visibility_type(self):
         src = _read(API_TS)
@@ -107,11 +107,15 @@ class TestEffectiveMenuResolver:
         module_keys = {m["key"] for m in coaching["modules"]}
         assert "issue_types" not in module_keys
         assert "service_options" not in module_keys
-        assert "courses" in module_keys
-        assert "batches" in module_keys
+        assert "courses" not in module_keys
+        assert "batches" not in module_keys
+        assert "categories" in module_keys
 
     async def test_disabling_real_estate_hides_site_visits_only(self, client):
-        await client.post("/v1/admin/verticals/real_estate/disable")
+        await client.post("/v1/admin/verticals/coaching/enable")
+        await client.post("/v1/admin/verticals/professional_services/enable")
+        r0 = await client.post("/v1/admin/verticals/real_estate/disable", json={"reason": "Navigation visibility regression test"})
+        assert r0.status_code == 200, r0.text
         try:
             r = await client.get("/v1/admin/catalog/navigation/effective-menu")
             d = r.json()["data"]
@@ -123,7 +127,8 @@ class TestEffectiveMenuResolver:
             await client.post("/v1/admin/verticals/real_estate/enable")
 
     async def test_disabling_home_services_hides_finance_items(self, client):
-        await client.post("/v1/admin/verticals/home_services/disable")
+        r0 = await client.post("/v1/admin/verticals/home_services/disable", json={"reason": "Navigation visibility regression test"})
+        assert r0.status_code == 200, r0.text
         try:
             r = await client.get("/v1/admin/catalog/navigation/effective-menu")
             d = r.json()["data"]

@@ -1,35 +1,30 @@
 "use client";
-/**
- * Platform Settings — Enterprise System Configuration Center (7 tabs).
- * PROVEN: every mutating action (create/update/enable/disable/rollback/override/flag)
- * is backed by an audit-logged endpoint under /v1/admin/settings/*.
- * Secret settings are always masked, both server-side and client-side.
- */
-import { useState, useCallback } from "react";
+
+import { useCallback, useMemo, useState } from "react";
 import {
-  Settings as SettingsIcon, Layers, Package, Building2, Flag, ScrollText, History, Download, Upload,
+  Activity, AlertTriangle, ArchiveRestore, Building2, CheckCircle2, ChevronRight,
+  CircleGauge, Clock3, Download, Flag, History, KeyRound, Layers3, Package,
+  Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Badge, Btn, Modal, Input, Select } from "../../../components/shared/ui";
-import { Card, PageHeader, PageShell, StatusBadge, Skeleton } from "@serviceos/design-system";
-import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
-import { ActionMenu } from "../../../components/pricing/ActionMenu";
+import { Badge, Btn, Input, Modal, Select, Skeleton, Textarea } from "../../../components/shared/ui";
 import {
-  settingsAdminApi, EnterpriseSetting, FeatureFlag, PlanSettingRow, CategorySettingRow,
-  TenantOverrideRow, SettingAuditLogRow,
+  CategorySettingRow, EnterpriseSetting, FeatureFlag, PlanSettingRow,
+  SettingAuditLogRow, SettingsSummary, TenantOverrideRow, settingsAdminApi,
 } from "../../../lib/api";
-import { useApi, useAction } from "../../../hooks/useApi";
+import { useAction, useApi } from "../../../hooks/useApi";
+import styles from "./settings.module.css";
 
 type Tab = "global" | "category" | "plan" | "tenant_overrides" | "feature_flags" | "audit_log" | "version_history";
 
-const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: "global", label: "Global Settings", icon: <SettingsIcon size={14} /> },
-  { key: "category", label: "Category Settings", icon: <Layers size={14} /> },
-  { key: "plan", label: "Plan / Package Settings", icon: <Package size={14} /> },
-  { key: "tenant_overrides", label: "Tenant Overrides", icon: <Building2 size={14} /> },
-  { key: "feature_flags", label: "Feature Flags", icon: <Flag size={14} /> },
-  { key: "audit_log", label: "Audit Log", icon: <ScrollText size={14} /> },
-  { key: "version_history", label: "Version History", icon: <History size={14} /> },
+const TABS: Array<{ key: Tab; label: string; description: string; icon: React.ReactNode }> = [
+  { key: "global", label: "Global Settings", description: "Platform-wide defaults and runtime behavior", icon: <Settings2 /> },
+  { key: "category", label: "Category Policies", description: "Commercial and operating rules by service", icon: <Layers3 /> },
+  { key: "plan", label: "Plans & Packages", description: "Entitlements, quotas, rates, and deposits", icon: <Package /> },
+  { key: "tenant_overrides", label: "Tenant Overrides", description: "Time-bound exceptions for specific tenants", icon: <Building2 /> },
+  { key: "feature_flags", label: "Feature Flags", description: "Controlled rollouts and scoped releases", icon: <Flag /> },
+  { key: "audit_log", label: "Audit Log", description: "Immutable record of configuration changes", icon: <Activity /> },
+  { key: "version_history", label: "Version History", description: "Inspect and restore previous values", icon: <History /> },
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -46,648 +41,187 @@ const RISK_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = {
   critical: "danger", high: "warning", medium: "info", low: "muted",
 };
 
-function EmptyState({ text, actions }: { text: string; actions?: React.ReactNode }) {
-  return (
-    <div style={{ padding: "36px 20px", textAlign: "center" }}>
-      <p style={{ color: "var(--text-tertiary)", fontSize: 13, margin: "0 0 14px" }}>{text}</p>
-      {actions}
-    </div>
-  );
+function fmtValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Enabled" : "Disabled";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--border)" }}>{children}</th>;
-}
-function Td({ children }: { children: React.ReactNode }) {
-  return <td style={{ padding: "10px 12px", fontSize: 13, borderBottom: "1px solid var(--border)" }}>{children}</td>;
+function fmtDate(value: string | null, withTime = true): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return withTime
+    ? date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+    : date.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
 
-function fmtValue(v: unknown): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+function parseValue(raw: string, type = "string"): unknown {
+  if (type === "boolean") return raw === "true";
+  if (type === "number") return Number(raw);
+  if (type === "json") { try { return JSON.parse(raw); } catch { return raw; } }
+  return raw;
+}
+
+function ErrorBanner({ message }: { message: string | null }) {
+  if (!message) return null;
+  return <div className={styles.errorBanner}><AlertTriangle size={16} />{message}</div>;
+}
+
+function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return <div className={styles.emptyState}><div className={styles.emptyIcon}><SlidersHorizontal size={22} /></div><strong>{title}</strong><p>{description}</p>{action}</div>;
+}
+
+function SectionIntro({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
+  return <div className={styles.sectionIntro}><div><span>{eyebrow}</span><h2>{title}</h2><p>{description}</p></div>{action && <div className={styles.sectionActions}>{action}</div>}</div>;
+}
+
+function Switch({ checked, onChange, label, description }: { checked: boolean; onChange: (checked: boolean) => void; label: string; description?: string }) {
+  return <label className={styles.switchRow}><span><strong>{label}</strong>{description && <small>{description}</small>}</span><button type="button" role="switch" aria-checked={checked} aria-label={label} className={`${styles.switch} ${checked ? styles.switchOn : ""}`} onClick={() => onChange(!checked)}><span /></button></label>;
+}
+
+function SettingsLoading() {
+  return <div className={styles.loadingStack}><Skeleton height={52} /><Skeleton height={52} /><Skeleton height={52} /></div>;
 }
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("global");
-
-  return (
-    <AdminLayout activeNav="settings">
-      <PageShell>
-      <PageHeader
-        title="Platform Settings"
-        description="Configure global platform, category, package, tenant, finance, security, compliance, and runtime settings."
-      />
-      <div>
-        <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", border: "none",
-              background: "none", cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 700 : 500,
-              color: tab === t.key ? "var(--accent)" : "var(--text-secondary)",
-              borderBottom: tab === t.key ? "2px solid var(--accent)" : "2px solid transparent",
-              whiteSpace: "nowrap",
-            }}>
-              {t.icon}{t.label}
-            </button>
-          ))}
-        </div>
-
-        {tab === "global" && <GlobalSettingsTab />}
-        {tab === "category" && <CategorySettingsTab />}
-        {tab === "plan" && <PlanSettingsTab />}
-        {tab === "tenant_overrides" && <TenantOverridesTab />}
-        {tab === "feature_flags" && <FeatureFlagsTab />}
-        {tab === "audit_log" && <AuditLogTab />}
-        {tab === "version_history" && <VersionHistoryTab />}
-      </div>
-      </PageShell>
-    </AdminLayout>
-  );
+  const summary = useApi(useCallback(() => settingsAdminApi.getSummary(), []));
+  const activeTab = TABS.find(item => item.key === tab)!;
+  const tabCount = (key: Tab) => {
+    if (!summary.data) return null;
+    if (key === "global") return summary.data.total_settings;
+    if (key === "tenant_overrides") return summary.data.tenant_overrides;
+    if (key === "version_history") return summary.data.rollback_available;
+    return null;
+  };
+  return <AdminLayout activeNav="settings"><main className={styles.page}>
+    {/* SectionHeader-equivalent page landmark, tailored for this control center. */}
+    <header className={styles.pageHeader}><div><div className={styles.eyebrow}><ShieldCheck size={14} />Platform control plane</div><h1>Platform Settings</h1><p>Govern runtime behavior, commercial policy, tenant exceptions, and releases from one audited workspace.</p></div><div className={styles.headerStatus}><span className={styles.liveDot} /><div><strong>Configuration service online</strong><small>Changes are audit logged</small></div></div></header>
+    <section className={styles.healthStrip} aria-label="Configuration health">
+      <HealthMetric icon={<CircleGauge />} label="Active controls" value={summary.data ? `${summary.data.active_settings}/${summary.data.total_settings}` : "—"} detail="platform settings" />
+      <HealthMetric icon={<AlertTriangle />} label="Needs attention" value={summary.data ? summary.data.invalid_settings + summary.data.pending_approval : "—"} detail="invalid or awaiting approval" tone={(summary.data?.invalid_settings ?? 0) > 0 ? "danger" : "warning"} />
+      <HealthMetric icon={<Building2 />} label="Scoped exceptions" value={summary.data ? summary.data.tenant_overrides + summary.data.plan_overrides : "—"} detail="tenant and plan overrides" />
+      <HealthMetric icon={<Clock3 />} label="Change activity" value={summary.data?.changed_this_week ?? "—"} detail="changes in the last 7 days" />
+    </section>
+    <div className={styles.workspace}><nav className={styles.scopeNav} aria-label="Settings workspaces"><div className={styles.scopeNavHeader}>Configuration scope</div>{TABS.map(item => { const count = tabCount(item.key); return <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`${styles.scopeNavItem} ${tab === item.key ? styles.scopeNavItemActive : ""}`} aria-current={tab === item.key ? "page" : undefined}><span className={styles.scopeNavIcon}>{item.icon}</span><span><strong>{item.label}</strong><small>{item.description}</small></span>{count !== null ? <b>{count}</b> : <ChevronRight className={styles.scopeChevron} />}</button>; })}<div className={styles.governanceNote}><KeyRound size={16} /><div><strong>Protected configuration</strong><p>Secret values stay masked and critical changes require a reason.</p></div></div></nav>
+      <section className={styles.content} aria-label={activeTab.label}>{tab === "global" && <GlobalSettingsTab summary={summary.data} refreshSummary={summary.refetch} />}{tab === "category" && <CategorySettingsTab />}{tab === "plan" && <PlanSettingsTab />}{tab === "tenant_overrides" && <TenantOverridesTab refreshSummary={summary.refetch} />}{tab === "feature_flags" && <FeatureFlagsTab />}{tab === "audit_log" && <AuditLogTab />}{tab === "version_history" && <VersionHistoryTab />}</section>
+    </div>
+  </main></AdminLayout>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// GLOBAL SETTINGS
-// ═══════════════════════════════════════════════════════════════
+function HealthMetric({ icon, label, value, detail, tone = "neutral" }: { icon: React.ReactNode; label: string; value: React.ReactNode; detail: string; tone?: "neutral" | "warning" | "danger" }) {
+  return <div className={`${styles.healthMetric} ${styles[`tone_${tone}`]}`}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div></div>;
+}
 
-function GlobalSettingsTab() {
-  const [category, setCategory] = useState<string | null>(null);
-  const [addModal, setAddModal] = useState(false);
-  const [editSetting, setEditSetting] = useState<EnterpriseSetting | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [editReason, setEditReason] = useState("");
-  const [previewSetting, setPreviewSetting] = useState<EnterpriseSetting | null>(null);
-  const [previewResult, setPreviewResult] = useState<Awaited<ReturnType<typeof settingsAdminApi.impactPreview>> | null>(null);
-  const [resolverKey, setResolverKey] = useState("tenant_payouts_enabled");
-
-  const summary = useApi(useCallback(() => settingsAdminApi.getSummary(), []));
+function GlobalSettingsTab({ summary, refreshSummary }: { summary: SettingsSummary | null; refreshSummary: () => void }) {
+  const [category, setCategory] = useState(""); const [status, setStatus] = useState(""); const [search, setSearch] = useState(""); const [selectedKey, setSelectedKey] = useState("");
+  const [addOpen, setAddOpen] = useState(false); const [editSetting, setEditSetting] = useState<EnterpriseSetting | null>(null); const [statusSetting, setStatusSetting] = useState<EnterpriseSetting | null>(null); const [statusReason, setStatusReason] = useState("");
+  const [seedPreview, setSeedPreview] = useState<{ would_create: string[]; would_skip: string[]; total_defaults: number } | null>(null);
   const groups = useApi(useCallback(() => settingsAdminApi.getGroups(), []));
-  const list = useApi(useCallback(() => settingsAdminApi.list({ category: category || undefined }), [category]));
-  const resolver = useApi(useCallback(() => settingsAdminApi.resolveEffectiveValue(resolverKey), [resolverKey]));
+  const list = useApi(useCallback(() => settingsAdminApi.list({ category: category || undefined, status: status || undefined }), [category, status]));
+  const seedPreviewAction = useAction(useCallback(() => settingsAdminApi.previewSeedDefaults(), [])); const seedAction = useAction(useCallback(() => settingsAdminApi.seedDefaults(), []));
+  const statusAction = useAction(useCallback((item: EnterpriseSetting, reason: string) => item.status === "active" ? settingsAdminApi.disable(item.key, reason) : settingsAdminApi.enable(item.key, reason), []));
+  const settings = useMemo(() => { const rows = list.data?.settings ?? []; const q = search.trim().toLowerCase(); return q ? rows.filter(item => `${item.label} ${item.key} ${item.description ?? ""} ${item.owner_module ?? ""}`.toLowerCase().includes(q)) : rows; }, [list.data, search]);
+  const selected = settings.find(item => item.key === selectedKey) ?? settings[0] ?? null;
+  const refresh = () => { list.refetch(); groups.refetch(); refreshSummary(); };
+  async function seedDefaults() { const result = await seedAction.execute(); if (result) { setSeedPreview(null); refresh(); } }
+  async function toggleStatus() { if (!statusSetting || !statusReason.trim()) return; const result = await statusAction.execute(statusSetting, statusReason.trim()); if (result) { setStatusSetting(null); setStatusReason(""); refresh(); } }
+  function exportCsv() { const header = ["key", "label", "category", "type", "status", "risk", "value", "updated_at"]; const rows = settings.map(item => [item.key, item.label, item.category, item.type, item.status, item.risk_level, item.is_secret ? "[REDACTED]" : fmtValue(item.value), item.updated_at ?? ""]); const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n"); const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const anchor = document.createElement("a"); anchor.href = href; anchor.download = "serviceos-platform-settings.csv"; anchor.click(); URL.revokeObjectURL(href); }
+  return <>
+    <SectionIntro eyebrow="Global configuration" title="Runtime defaults" description="Search, inspect, and safely change the values inherited by every category, plan, and tenant." action={<><Btn variant="secondary" size="sm" icon={<Download size={14} />} onClick={exportCsv} disabled={!settings.length}>Export CSV</Btn><Btn variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>Add setting</Btn></>} />
+    {summary?.total_settings === 0 && !list.loading ? <div className={styles.bootstrapCard}><div className={styles.bootstrapIcon}><ArchiveRestore size={24} /></div><div><span>First-time setup</span><h3>Start with the reviewed ServiceOS baseline</h3><p>Preview the default set before applying it. Existing keys are never replaced.</p></div><Btn variant="secondary" size="sm" loading={seedPreviewAction.loading} onClick={async () => { const r = await seedPreviewAction.execute(); if (r) setSeedPreview(r); }}>Preview Seed Defaults</Btn></div> : null}
+    <div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Search settings" placeholder="Search key, label, owner, or description…" value={search} onChange={e => setSearch(e.target.value)} /></div><Select value={category} onChange={setCategory} options={[{ value: "", label: "All categories" }, ...(groups.data?.categories ?? []).map(item => ({ value: item.category, label: `${CATEGORY_LABELS[item.category] ?? item.category} (${item.setting_count})` }))]} /><Select value={status} onChange={setStatus} options={[{ value: "", label: "Any status" }, { value: "active", label: "Active" }, { value: "disabled", label: "Disabled" }, { value: "pending", label: "Pending approval" }]} /><button className={styles.iconButton} type="button" aria-label="Refresh settings" onClick={refresh}><RefreshCw size={15} /></button></div><ErrorBanner message={list.error ?? groups.error} />
+    <div className={styles.masterDetail}><div className={styles.tableCard}><div className={styles.tableMeta}><strong>{settings.length} settings</strong><span>Select a row to inspect inheritance and governance.</span></div>{list.loading ? <SettingsLoading /> : settings.length === 0 ? <EmptyState title="No settings match" description="Adjust the search or filters, or create a new platform setting." /> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Setting</th><th>Effective value</th><th>Risk</th><th>Status</th><th>Updated</th></tr></thead><tbody>{settings.map(item => <tr key={item.key} tabIndex={0} aria-selected={selected?.key === item.key} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedKey(item.key); } }} onClick={() => setSelectedKey(item.key)} className={selected?.key === item.key ? styles.selectedRow : ""}><td><div className={styles.settingName}><strong>{item.label}</strong><code>{item.key}</code></div></td><td><span className={styles.valueCell}>{item.is_secret ? "••••••••" : fmtValue(item.value)}</span></td><td><Badge variant={RISK_VARIANT[item.risk_level] ?? "muted"} size="sm">{item.risk_level}</Badge></td><td><span className={`${styles.statusPill} ${item.status === "active" ? styles.statusActive : styles.statusMuted}`}><i />{item.status}</span></td><td><span className={styles.mutedCell}>{fmtDate(item.updated_at, false)}</span></td></tr>)}</tbody></table></div>}</div><SettingInspector setting={selected} onEdit={() => selected && setEditSetting(selected)} onStatus={() => { if (selected) { setStatusSetting(selected); setStatusReason(""); } }} /></div>
+    <AddSettingModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={refresh} /><EditSettingModal setting={editSetting} onClose={() => setEditSetting(null)} onSaved={refresh} />
+    <Modal open={!!statusSetting} onClose={() => setStatusSetting(null)} title={`${statusSetting?.status === "active" ? "Disable" : "Enable"} setting`} size="sm"><div className={styles.modalStack}><div className={styles.changeSummary}><AlertTriangle size={17} /><div><strong>{statusSetting?.label}</strong><p>This changes the platform-level status for every scope without its own override.</p></div></div><ErrorBanner message={statusAction.error} /><Textarea label="Change reason" value={statusReason} onChange={setStatusReason} required rows={3} placeholder="Explain the operational reason and expected impact…" /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setStatusSetting(null)}>Cancel</Btn><Btn variant={statusSetting?.status === "active" ? "danger" : "primary"} size="sm" loading={statusAction.loading} disabled={!statusReason.trim()} onClick={toggleStatus}>{statusSetting?.status === "active" ? "Disable setting" : "Enable setting"}</Btn></div></div></Modal>
+    <Modal open={!!seedPreview} onClose={() => setSeedPreview(null)} title="Seed defaults preview" size="lg"><div className={styles.modalStack}><div className={styles.previewStats}><div><strong>{seedPreview?.would_create.length ?? 0}</strong><span>will be created</span></div><div><strong>{seedPreview?.would_skip.length ?? 0}</strong><span>already exist</span></div><div><strong>{seedPreview?.total_defaults ?? 0}</strong><span>reviewed defaults</span></div></div><p className={styles.helperText}>This operation is additive and preserves every existing setting.</p><div className={styles.previewList}>{seedPreview?.would_create.slice(0, 12).map(item => <code key={item}>{item}</code>)}{(seedPreview?.would_create.length ?? 0) > 12 && <span>+ {(seedPreview?.would_create.length ?? 0) - 12} more</span>}</div><ErrorBanner message={seedAction.error} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setSeedPreview(null)}>Cancel</Btn><Btn variant="primary" size="sm" loading={seedAction.loading} onClick={seedDefaults}>Seed Defaults</Btn></div></div></Modal>
+  </>;
+}
 
-  const seedPreviewAction = useAction(useCallback(() => settingsAdminApi.previewSeedDefaults(), []));
-  const seedAction = useAction(useCallback(() => settingsAdminApi.seedDefaults(), []));
-  const updateAction = useAction(useCallback(
-    (key: string, value: unknown, reason: string) => settingsAdminApi.update(key, { value, reason }), []));
-  const impactAction = useAction(useCallback(
-    (key: string, newValue: unknown) => settingsAdminApi.impactPreview(key, newValue), []));
-
-  const s = summary.data;
-  const settings = list.data?.settings ?? [];
-
-  function parseValue(raw: string): unknown {
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    if (!isNaN(Number(raw)) && raw.trim() !== "") return Number(raw);
-    try { return JSON.parse(raw); } catch { return raw; }
-  }
-
-  async function openEdit(setting: EnterpriseSetting) {
-    setEditSetting(setting);
-    setEditValue(setting.is_secret ? "" : fmtValue(setting.value));
-    setEditReason("");
-  }
-
-  async function openPreview(setting: EnterpriseSetting) {
-    setPreviewSetting(setting);
-    const result = await impactAction.execute(setting.key, setting.value);
-    setPreviewResult(result);
-  }
-
-  async function saveEdit() {
-    if (!editSetting) return;
-    const result = await updateAction.execute(editSetting.key, parseValue(editValue), editReason);
-    if (result) { setEditSetting(null); list.refetch(); summary.refetch(); }
-  }
-
-  async function runSeed() {
-    await seedAction.execute();
-    list.refetch(); summary.refetch(); groups.refetch();
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Btn variant="secondary" size="sm" onClick={async () => { const r = await seedPreviewAction.execute(); if (r) alert(`Would create ${r.would_create.length}, skip ${r.would_skip.length}`); }}>
-            Preview Seed Defaults
-          </Btn>
-          <Btn variant="primary" size="sm" loading={seedAction.loading} onClick={runSeed}>Seed Defaults</Btn>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Btn variant="secondary" size="sm" icon={<Upload size={14} />} disabled>Import</Btn>
-          <Btn variant="secondary" size="sm" icon={<Download size={14} />} disabled>Export</Btn>
-          <Btn variant="primary" size="sm" onClick={() => setAddModal(true)}>Add Setting</Btn>
-        </div>
-      </div>
-
-      {s && (
-        <SummaryCardsRow cards={[
-          { label: "Total Settings", value: s.total_settings },
-          { label: "Active Settings", value: s.active_settings },
-          { label: "Secret Settings", value: s.secret_settings },
-          { label: "Pending Approval", value: s.pending_approval, accent: s.pending_approval > 0 },
-          { label: "Tenant Overrides", value: s.tenant_overrides },
-          { label: "Plan Overrides", value: s.plan_overrides },
-          { label: "Changed This Week", value: s.changed_this_week },
-          { label: "Rollback Available", value: s.rollback_available },
-        ]} />
-      )}
-
-      {settings.length === 0 && !list.loading ? (
-        <Card padding="none">
-          <EmptyState text="No platform settings configured. Seed recommended ServiceOS defaults or create a setting manually." actions={
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <Btn variant="primary" size="sm" onClick={runSeed}>Seed Defaults</Btn>
-              <Btn variant="secondary" size="sm" onClick={() => setAddModal(true)}>Add Setting</Btn>
-            </div>
-          } />
-        </Card>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 320px", gap: 16 }}>
-          {/* Left category sidebar */}
-          <Card padding="sm">
-            <button onClick={() => setCategory(null)} style={{
-              display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none",
-              background: !category ? "var(--surface-sunken)" : "none", borderRadius: 6, cursor: "pointer",
-              fontSize: 13, fontWeight: !category ? 700 : 500, marginBottom: 2,
-            }}>All Categories</button>
-            {(groups.data?.categories ?? []).map(c => (
-              <button key={c.category} onClick={() => setCategory(c.category)} style={{
-                display: "flex", justifyContent: "space-between", width: "100%", textAlign: "left",
-                padding: "8px 10px", border: "none", background: category === c.category ? "var(--surface-sunken)" : "none",
-                borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: category === c.category ? 700 : 500, marginBottom: 2,
-              }}>
-                <span>{CATEGORY_LABELS[c.category] ?? c.category}</span>
-                <span style={{ color: "var(--text-tertiary)" }}>{c.setting_count}</span>
-              </button>
-            ))}
-          </Card>
-
-          {/* Main settings table */}
-          <Card padding="none">
-            {list.loading ? <Skeleton height={300} /> : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr><Th>Setting</Th><Th>Key</Th><Th>Type</Th><Th>Value</Th><Th>Risk</Th><Th>Status</Th><Th>{" "}</Th></tr></thead>
-                <tbody>
-                  {settings.map(st => (
-                    <tr key={st.key}>
-                      <Td>{st.label}</Td>
-                      <Td><code style={{ fontSize: 11 }}>{st.key}</code></Td>
-                      <Td>{st.type}</Td>
-                      <Td>{st.is_secret ? "••••••••" : fmtValue(st.value)}</Td>
-                      <Td><Badge variant={RISK_VARIANT[st.risk_level] ?? "muted"} size="sm">{st.risk_level}</Badge></Td>
-                      <Td><StatusBadge status={st.status} size="sm" /></Td>
-                      <Td>
-                        <ActionMenu items={[
-                          { label: "Edit", onClick: () => openEdit(st), disabled: !st.is_runtime_editable },
-                          { label: "Preview Impact", onClick: () => openPreview(st) },
-                          { label: st.status === "active" ? "Disable" : "Enable", onClick: async () => {
-                              if (st.status === "active") await settingsAdminApi.disable(st.key);
-                              else await settingsAdminApi.enable(st.key);
-                              list.refetch();
-                            } },
-                        ]} />
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-
-          {/* Right effective value / resolver panel */}
-          <Card padding="md">
-            <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Effective Value Resolver</h3>
-            <Input label="Setting Key" value={resolverKey} onChange={setResolverKey} />
-            {resolver.loading ? <Skeleton height={100} /> : resolver.data && (
-              <div style={{ marginTop: 10, fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div>Default: <strong>{fmtValue(resolver.data.default_value)}</strong></div>
-                <div>Global: <strong>{fmtValue(resolver.data.global_value)}</strong></div>
-                <div>Plan Override: <strong>{fmtValue(resolver.data.plan_override)}</strong></div>
-                <div>Tenant Override: <strong>{fmtValue(resolver.data.tenant_override)}</strong></div>
-                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 6, marginTop: 4 }}>
-                  Effective: <strong style={{ color: "var(--accent)" }}>{fmtValue(resolver.data.effective_value)}</strong>
-                </div>
-                <div style={{ color: "var(--text-tertiary)" }}>Path: {resolver.data.resolution_path}</div>
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
-      <Modal open={!!editSetting} onClose={() => setEditSetting(null)} title={`Edit: ${editSetting?.label ?? ""}`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {updateAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{updateAction.error}</p>}
-          {editSetting?.is_secret && (
-            <p style={{ fontSize: 12, color: "var(--warning-text,#b45309)" }}>
-              This is a secret setting. Enter a new value to rotate it — the current value cannot be displayed.
-            </p>
-          )}
-          <Input label="New Value" value={editValue} onChange={setEditValue} required />
-          {editSetting?.risk_level === "critical" && (
-            <Input label="Reason (required for critical settings)" value={editReason} onChange={setEditReason} required />
-          )}
-          {editSetting?.risk_level !== "critical" && (
-            <Input label="Reason (optional)" value={editReason} onChange={setEditReason} />
-          )}
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setEditSetting(null)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" loading={updateAction.loading}
-              disabled={editSetting?.risk_level === "critical" && !editReason}
-              onClick={saveEdit}>Save</Btn>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={!!previewSetting} onClose={() => { setPreviewSetting(null); setPreviewResult(null); }} title="Impact Preview">
-        {previewResult && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-            {previewResult.blocked && (
-              <div style={{ padding: "10px 14px", background: "var(--danger-bg)", borderRadius:"var(--radius-md)", color: "var(--danger-text)" }}>
-                {previewResult.blocker_message}
-              </div>
-            )}
-            <div>Risk Level: <Badge variant={RISK_VARIANT[previewResult.risk_level] ?? "muted"} size="sm">{previewResult.risk_level}</Badge></div>
-            {previewResult.warnings.map((w, i) => <p key={i} style={{ color: "var(--warning-text,#b45309)", margin: 0 }}>⚠ {w}</p>)}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Btn variant="ghost" size="sm" onClick={() => { setPreviewSetting(null); setPreviewResult(null); }}>Close</Btn>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <AddSettingModal open={addModal} onClose={() => setAddModal(false)} onCreated={() => { list.refetch(); summary.refetch(); groups.refetch(); }} />
-    </div>
-  );
+function SettingInspector({ setting, onEdit, onStatus }: { setting: EnterpriseSetting | null; onEdit: () => void; onStatus: () => void }) {
+  const [tenantDraft, setTenantDraft] = useState(""); const [planDraft, setPlanDraft] = useState("");
+  const [tenantId, setTenantId] = useState(""); const [planType, setPlanType] = useState(""); const key = setting?.key ?? "";
+  const resolver = useApi(useCallback(() => settingsAdminApi.resolveEffectiveValue(key, tenantId || undefined, planType || undefined), [key, tenantId, planType]), [key, tenantId, planType], { enabled: !!key });
+  if (!setting) return <aside className={styles.inspector}><EmptyState title="Select a setting" description="Choose a row to inspect ownership, inheritance, and change controls." /></aside>;
+  return <aside className={styles.inspector}><div className={styles.inspectorHeader}><span className={styles.inspectorIcon}>{setting.is_secret ? <KeyRound /> : <SlidersHorizontal />}</span><div><small>{CATEGORY_LABELS[setting.category] ?? setting.category}</small><h3>{setting.label}</h3><code>{setting.key}</code></div></div><p className={styles.inspectorDescription}>{setting.description || "No operational description has been provided for this setting."}</p><div className={styles.tagRow}><Badge variant={RISK_VARIANT[setting.risk_level] ?? "muted"} size="sm">{setting.risk_level} risk</Badge>{setting.requires_approval && <Badge variant="warning" size="sm">approval required</Badge>}{setting.requires_restart && <Badge variant="info" size="sm">restart required</Badge>}</div><dl className={styles.metaGrid}><div><dt>Type</dt><dd>{setting.type}</dd></div><div><dt>Owner</dt><dd>{setting.owner_module || "Platform"}</dd></div><div><dt>Visibility</dt><dd>{setting.is_secret ? "Secret" : setting.is_public ? "Public" : "Internal"}</dd></div><div><dt>Editing</dt><dd>{setting.is_runtime_editable ? "Runtime" : "Deployment only"}</dd></div></dl><div className={styles.resolverPanel}><div><strong>Effective value</strong><small>Resolve the final value for an optional scope.</small></div><Input placeholder="Tenant ID (optional)" value={tenantDraft} onChange={setTenantDraft} /><Input placeholder="Plan type (optional)" value={planDraft} onChange={setPlanDraft} /><Btn variant="secondary" size="xs" onClick={() => { setTenantId(tenantDraft.trim()); setPlanType(planDraft.trim()); }}>Resolve scope</Btn>{resolver.loading ? <Skeleton height={72} /> : resolver.data ? <><div className={styles.effectiveValue}>{fmtValue(resolver.data.effective_value)}</div><span className={styles.resolutionPath}>{resolver.data.resolution_path}</span>{resolver.data.warnings.map(w => <p key={w} className={styles.resolverWarning}>{w}</p>)}</> : <span className={styles.helperText}>Unable to resolve this value.</span>}</div><div className={styles.inspectorActions}><Btn variant="primary" size="sm" onClick={onEdit} disabled={!setting.is_runtime_editable}>Review change</Btn><Btn variant="secondary" size="sm" onClick={onStatus}>{setting.status === "active" ? "Disable" : "Enable"}</Btn></div></aside>;
 }
 
 function AddSettingModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
-  const [key, setKey] = useState("");
-  const [label, setLabel] = useState("");
-  const [value, setValue] = useState("");
-  const [settingType, setSettingType] = useState("string");
-  const [category, setCategory] = useState("general_platform");
-  const [isSecret, setIsSecret] = useState(false);
-  const [riskLevel, setRiskLevel] = useState("low");
-
-  const createAction = useAction(useCallback(
-    () => settingsAdminApi.create({
-      key, label, value: settingType === "boolean" ? value === "true" : value,
-      setting_type: settingType, category, is_secret: isSecret, risk_level: riskLevel,
-    }), [key, label, value, settingType, category, isSecret, riskLevel]));
-
-  async function handleCreate() {
-    const result = await createAction.execute();
-    if (result) {
-      setKey(""); setLabel(""); setValue(""); onClose(); onCreated();
-    }
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Add Setting">
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {createAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createAction.error}</p>}
-        <Input label="Setting Label" value={label} onChange={setLabel} required />
-        <Input label="Setting Key" placeholder="e.g. max_tenants_per_city" value={key} onChange={setKey} required />
-        <Select label="Setting Type" value={settingType} onChange={setSettingType} options={[
-          { value: "string", label: "string" }, { value: "number", label: "number" },
-          { value: "boolean", label: "boolean" }, { value: "json", label: "json" },
-          { value: "secret", label: "secret" },
-        ]} />
-        <Input label="Default Value" value={value} onChange={setValue} required />
-        <Select label="Category" value={category} onChange={setCategory} options={
-          Object.entries(CATEGORY_LABELS).map(([v, label]) => ({ value: v, label }))
-        } />
-        <Select label="Risk Level" value={riskLevel} onChange={setRiskLevel} options={[
-          { value: "low", label: "low" }, { value: "medium", label: "medium" },
-          { value: "high", label: "high" }, { value: "critical", label: "critical" },
-        ]} />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <input type="checkbox" checked={isSecret} onChange={e => setIsSecret(e.target.checked)} />
-          Is Secret (value will be masked after save)
-        </label>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" size="sm" loading={createAction.loading} disabled={!key || !label} onClick={handleCreate}>Create</Btn>
-        </div>
-      </div>
-    </Modal>
-  );
+  const [key, setKey] = useState(""); const [label, setLabel] = useState(""); const [description, setDescription] = useState(""); const [value, setValue] = useState(""); const [type, setType] = useState("string"); const [category, setCategory] = useState("general_platform"); const [risk, setRisk] = useState("low"); const [secret, setSecret] = useState(false); const [approval, setApproval] = useState(false); const [restart, setRestart] = useState(false);
+  const action = useAction(useCallback(() => settingsAdminApi.create({ key, label, description, value: parseValue(value, type), setting_type: type, category, risk_level: risk, is_secret: secret || type === "secret", requires_approval: approval, requires_restart: restart }), [key, label, description, value, type, category, risk, secret, approval, restart]));
+  async function save() { const result = await action.execute(); if (result) { onClose(); onCreated(); } }
+  return <Modal open={open} onClose={onClose} title="Create platform setting" size="lg"><div className={styles.modalStack}><ErrorBanner message={action.error} /><div className={styles.formGrid}><Input label="Setting label" value={label} onChange={setLabel} required /><Input label="Setting key" value={key} onChange={setKey} required placeholder="snake_case_key" /><Select label="Value type" value={type} onChange={setType} options={["string", "number", "boolean", "json", "secret"].map(v => ({ value: v, label: v }))} /><Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY_LABELS).map(([v, l]) => ({ value: v, label: l }))} /></div><Textarea label="Operational description" value={description} onChange={setDescription} rows={3} placeholder="What does this control and who relies on it?" /><Input label="Initial value" value={value} onChange={setValue} required /><Select label="Risk classification" value={risk} onChange={setRisk} options={["low", "medium", "high", "critical"].map(v => ({ value: v, label: v }))} /><div className={styles.toggleGroup}><Switch checked={secret} onChange={setSecret} label="Secret value" description="Mask the value in reads, exports, and history." /><Switch checked={approval} onChange={setApproval} label="Require approval" description="Route changes through an approval state." /><Switch checked={restart} onChange={setRestart} label="Restart required" description="Operators must restart affected services after change." /></div><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={onClose}>Cancel</Btn><Btn variant="primary" size="sm" loading={action.loading} disabled={!key.trim() || !label.trim() || value === ""} onClick={save}>Create setting</Btn></div></div></Modal>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CATEGORY SETTINGS
-// ═══════════════════════════════════════════════════════════════
+function EditSettingModal({ setting, onClose, onSaved }: { setting: EnterpriseSetting | null; onClose: () => void; onSaved: () => void }) {
+  const [value, setValue] = useState(""); const [reason, setReason] = useState(""); const [preview, setPreview] = useState<Awaited<ReturnType<typeof settingsAdminApi.impactPreview>> | null>(null);
+  const update = useAction(useCallback((item: EnterpriseSetting, next: unknown, why: string) => settingsAdminApi.update(item.key, { value: next, reason: why }), [])); const impact = useAction(useCallback((item: EnterpriseSetting, next: unknown) => settingsAdminApi.impactPreview(item.key, next), []));
+  function close() { setValue(""); setReason(""); setPreview(null); onClose(); } async function review() { if (!setting) return; const result = await impact.execute(setting, parseValue(value, setting.type)); if (result) setPreview(result); } async function save() { if (!setting) return; const result = await update.execute(setting, parseValue(value, setting.type), reason); if (result) { close(); onSaved(); } }
+  const reasonRequired = setting?.risk_level === "critical" || setting?.requires_approval;
+  return <Modal open={!!setting} onClose={close} title={`Review change · ${setting?.label ?? ""}`} size="lg"><div className={styles.modalStack}><div className={styles.changeComparison}><div><small>Current value</small><strong>{setting?.is_secret ? "••••••••" : fmtValue(setting?.value)}</strong></div><ChevronRight size={18} /><div><small>Proposed value</small><strong>{value || "Not entered"}</strong></div></div>{setting?.is_secret && <div className={styles.infoBanner}><KeyRound size={16} />The current secret cannot be displayed. Saving rotates it to the new value.</div>}<ErrorBanner message={impact.error ?? update.error} /><Input label="New value" value={value} onChange={v => { setValue(v); setPreview(null); }} required /><Textarea label={`Change reason${reasonRequired ? " (required)" : ""}`} value={reason} onChange={setReason} rows={3} placeholder="Explain why this change is needed…" />{preview && <div className={`${styles.impactPanel} ${preview.blocked ? styles.impactBlocked : ""}`}><div><strong>{preview.blocked ? "Change blocked" : "Impact review passed"}</strong><Badge variant={RISK_VARIANT[preview.risk_level] ?? "muted"} size="sm">{preview.risk_level} risk</Badge></div>{preview.blocker_message && <p>{preview.blocker_message}</p>}{preview.warnings.map(w => <p key={w}>{w}</p>)}<small>{preview.rollback_available ? "Rollback will be available after this change." : "This change cannot be rolled back automatically."}</small></div>}<div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={close}>Cancel</Btn>{!preview ? <Btn variant="primary" size="sm" loading={impact.loading} disabled={!value} onClick={review}>Review impact</Btn> : <Btn variant="primary" size="sm" loading={update.loading} disabled={preview.blocked || (reasonRequired && !reason.trim())} onClick={save}>Apply change</Btn>}</div></div></Modal>;
+}
 
 function CategorySettingsTab() {
-  const categories = useApi(useCallback(() => settingsAdminApi.listCategories(), []));
-  const rows = categories.data?.categories ?? [];
-
-  return (
-    <Card padding="none">
-      {categories.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-        <EmptyState text="No categories found." />
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Category</Th><Th>Vertical</Th><Th>Finance Model</Th><Th>Payment Collection</Th><Th>Payouts</Th><Th>Status</Th></tr></thead>
-          <tbody>
-            {rows.map((c: CategorySettingRow) => (
-              <tr key={c.id}>
-                <Td>{c.name}</Td>
-                <Td>{c.vertical_type ?? "—"}</Td>
-                <Td><code style={{ fontSize: 11 }}>{c.finance_model ?? "—"}</code></Td>
-                <Td><Badge variant={c.payment_collection_enabled ? "warning" : "success"} size="sm">{String(c.payment_collection_enabled)}</Badge></Td>
-                <Td><Badge variant={c.tenant_payouts_enabled ? "warning" : "success"} size="sm">{String(c.tenant_payouts_enabled)}</Badge></Td>
-                <Td><StatusBadge status={c.is_active ? "active" : "inactive"} size="sm" /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
-  );
+  const [search, setSearch] = useState(""); const [editing, setEditing] = useState<CategorySettingRow | null>(null); const categories = useApi(useCallback(() => settingsAdminApi.listCategories(), [])); const rows = (categories.data?.categories ?? []).filter(row => `${row.name} ${row.slug} ${row.vertical_type ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  return <><SectionIntro eyebrow="Category policy" title="Service operating models" description="Align finance, provider, and monetization behavior for each service category." /><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Search categories" placeholder="Search categories…" value={search} onChange={e => setSearch(e.target.value)} /></div><button className={styles.iconButton} type="button" aria-label="Refresh categories" onClick={categories.refetch}><RefreshCw size={15} /></button></div><ErrorBanner message={categories.error} /><div className={styles.tableCard}>{categories.loading ? <SettingsLoading /> : rows.length === 0 ? <EmptyState title="No categories found" description="Try a different search." /> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Category</th><th>Finance model</th><th>Provider model</th><th>Collection</th><th>Status</th><th aria-label="Actions" /></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><div className={styles.settingName}><strong>{row.name}</strong><code>{row.slug} · {row.vertical_type || "unassigned"}</code></div></td><td>{row.finance_model || "Not configured"}</td><td>{row.provider_business_model || "Not configured"}</td><td><Badge variant={row.payment_collection_enabled ? "warning" : "success"} size="sm">{row.payment_collection_enabled ? "Platform collects" : "Direct pay"}</Badge></td><td><span className={`${styles.statusPill} ${row.is_active ? styles.statusActive : styles.statusMuted}`}><i />{row.is_active ? "active" : "inactive"}</span></td><td><Btn variant="secondary" size="xs" onClick={() => setEditing(row)}>Edit policy</Btn></td></tr>)}</tbody></table></div>}</div><CategoryEditModal row={editing} onClose={() => setEditing(null)} onSaved={categories.refetch} /></>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PLAN / PACKAGE SETTINGS
-// ═══════════════════════════════════════════════════════════════
+function CategoryEditModal({ row, onClose, onSaved }: { row: CategorySettingRow | null; onClose: () => void; onSaved: () => void }) {
+  const [finance, setFinance] = useState(""); const [provider, setProvider] = useState(""); const [monetization, setMonetization] = useState(""); const [active, setActive] = useState<boolean | null>(null); const [reason, setReason] = useState("");
+  const action = useAction(useCallback((item: CategorySettingRow) => settingsAdminApi.updateCategory(item.id, { finance_model: finance || item.finance_model || undefined, provider_business_model: provider || item.provider_business_model || undefined, monetization_model: monetization || item.monetization_model || undefined, is_active: active ?? item.is_active, reason }), [finance, provider, monetization, active, reason]));
+  function close() { setFinance(""); setProvider(""); setMonetization(""); setActive(null); setReason(""); onClose(); } async function save() { if (!row) return; const r = await action.execute(row); if (r) { close(); onSaved(); } }
+  return <Modal open={!!row} onClose={close} title={`Edit category policy · ${row?.name ?? ""}`} size="lg"><div className={styles.modalStack}><ErrorBanner message={action.error} /><div className={styles.formGrid}><Input label="Finance model" value={finance || row?.finance_model || ""} onChange={setFinance} /><Input label="Provider business model" value={provider || row?.provider_business_model || ""} onChange={setProvider} /><Input label="Monetization model" value={monetization || row?.monetization_model || ""} onChange={setMonetization} /></div><Switch checked={active ?? row?.is_active ?? true} onChange={setActive} label="Category active" description="Inactive categories stop participating in runtime discovery." /><Textarea label="Change reason" value={reason} onChange={setReason} required rows={3} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={close}>Cancel</Btn><Btn variant="primary" size="sm" loading={action.loading} disabled={!reason.trim()} onClick={save}>Save policy</Btn></div></div></Modal>;
+}
 
 function PlanSettingsTab() {
-  const plans = useApi(useCallback(() => settingsAdminApi.listPlans(), []));
-  const rows = plans.data?.packages ?? [];
-
-  return (
-    <Card padding="none">
-      {plans.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-        <EmptyState text="No plan settings configured. Select a package or seed default plan settings." />
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Package</Th><Th>Type</Th><Th>Included Credits</Th><Th>Storage Quota GB</Th><Th>Commission</Th><Th>Deposit</Th><Th>Status</Th></tr></thead>
-          <tbody>
-            {rows.map((p: PlanSettingRow) => (
-              <tr key={p.id}>
-                <Td>{p.name}</Td>
-                <Td>{p.package_type}</Td>
-                <Td>{p.included_credit_amount ?? "—"}</Td>
-                <Td>{p.storage_quota_gb ?? "—"}</Td>
-                <Td>{p.commission_rate != null ? `${p.commission_rate}%` : "—"}</Td>
-                <Td>{p.security_deposit_amount ?? "—"}</Td>
-                <Td><StatusBadge status={p.is_active ? "active" : "inactive"} size="sm" /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
-  );
+  const [search, setSearch] = useState(""); const [editing, setEditing] = useState<PlanSettingRow | null>(null); const plans = useApi(useCallback(() => settingsAdminApi.listPlans(), [])); const rows = (plans.data?.packages ?? []).filter(row => `${row.name} ${row.package_type} ${row.plan_level ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  return <><SectionIntro eyebrow="Commercial configuration" title="Plans and packages" description="Manage included credits, operational limits, commission, and deposit exposure." /><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Search plans" placeholder="Search plan or package…" value={search} onChange={e => setSearch(e.target.value)} /></div><button className={styles.iconButton} type="button" aria-label="Refresh plans" onClick={plans.refetch}><RefreshCw size={15} /></button></div><ErrorBanner message={plans.error} /><div className={styles.tableCard}>{plans.loading ? <SettingsLoading /> : rows.length === 0 ? <EmptyState title="No plans configured" description="Create packages in commerce setup before configuring their limits here." /> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Package</th><th>Included credits</th><th>Storage</th><th>Commission</th><th>Security deposit</th><th>Status</th><th aria-label="Actions" /></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><div className={styles.settingName}><strong>{row.name}</strong><code>{row.package_type} · {row.billing_cycle || "no billing cycle"}</code></div></td><td>{row.included_credit_amount ?? "—"} {row.currency}</td><td>{row.storage_quota_gb != null ? `${row.storage_quota_gb} GB` : "—"}</td><td>{row.commission_rate != null ? `${row.commission_rate}%` : "—"}</td><td>{row.security_deposit_amount != null ? `${row.security_deposit_amount} ${row.currency}` : "—"}</td><td><span className={`${styles.statusPill} ${row.is_active ? styles.statusActive : styles.statusMuted}`}><i />{row.is_active ? "active" : "inactive"}</span></td><td><Btn variant="secondary" size="xs" onClick={() => setEditing(row)}>Edit package</Btn></td></tr>)}</tbody></table></div>}</div><PlanEditModal row={editing} onClose={() => setEditing(null)} onSaved={plans.refetch} /></>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TENANT OVERRIDES
-// ═══════════════════════════════════════════════════════════════
-
-function TenantOverridesTab() {
-  const [modal, setModal] = useState(false);
-  const [tenantId, setTenantId] = useState("");
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("");
-  const [reason, setReason] = useState("");
-
-  const overrides = useApi(useCallback(() => settingsAdminApi.listTenantOverrides(), []));
-  const createAction = useAction(useCallback(
-    () => settingsAdminApi.createTenantOverride({ tenant_id: tenantId, key, value, reason }),
-    [tenantId, key, value, reason]));
-  const revokeAction = useAction(useCallback(
-    (id: string, r: string) => settingsAdminApi.revokeTenantOverride(id, r), []));
-
-  const rows = overrides.data?.overrides ?? [];
-
-  async function handleCreate() {
-    const result = await createAction.execute();
-    if (result) { setModal(false); setTenantId(""); setKey(""); setValue(""); setReason(""); overrides.refetch(); }
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        <Btn variant="primary" size="sm" onClick={() => setModal(true)}>Create Override</Btn>
-      </div>
-      <Card padding="none">
-        {overrides.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-          <EmptyState text="No tenant overrides configured." />
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Tenant</Th><Th>Setting</Th><Th>Value</Th><Th>Reason</Th><Th>Expires</Th><Th>Status</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {rows.map((o: TenantOverrideRow) => (
-                <tr key={o.id}>
-                  <Td><code style={{ fontSize: 11 }}>{o.tenant_id.slice(0, 8)}</code></Td>
-                  <Td>{o.key}</Td>
-                  <Td>{fmtValue(o.value)}</Td>
-                  <Td>{o.reason ?? "—"}</Td>
-                  <Td>{o.expires_at ? new Date(o.expires_at).toLocaleDateString("en-IN") : "Never"}</Td>
-                  <Td><StatusBadge status={o.status} size="sm" /></Td>
-                  <Td>
-                    <ActionMenu items={[
-                      { label: "Revoke", onClick: () => revokeAction.execute(o.id, "Revoked by admin").then(() => overrides.refetch()), destructive: true },
-                    ]} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={modal} onClose={() => setModal(false)} title="Create Tenant Override">
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {createAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createAction.error}</p>}
-          <Input label="Tenant ID" value={tenantId} onChange={setTenantId} required />
-          <Input label="Setting Key" value={key} onChange={setKey} required />
-          <Input label="Override Value" value={value} onChange={setValue} required />
-          <Input label="Reason (required)" value={reason} onChange={setReason} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" disabled={!tenantId || !key || !reason} loading={createAction.loading} onClick={handleCreate}>Create</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+function PlanEditModal({ row, onClose, onSaved }: { row: PlanSettingRow | null; onClose: () => void; onSaved: () => void }) {
+  const [credits, setCredits] = useState(""); const [storage, setStorage] = useState(""); const [commission, setCommission] = useState(""); const [deposit, setDeposit] = useState(""); const [validity, setValidity] = useState(""); const [active, setActive] = useState<boolean | null>(null); const [reason, setReason] = useState("");
+  const action = useAction(useCallback((item: PlanSettingRow) => settingsAdminApi.updatePlan(item.id, { included_credit_amount: Number(credits || item.included_credit_amount || 0), storage_quota_gb: Number(storage || item.storage_quota_gb || 0), commission_rate: Number(commission || item.commission_rate || 0), security_deposit_amount: Number(deposit || item.security_deposit_amount || 0), validity_days: Number(validity || item.validity_days || 0), is_active: active ?? item.is_active, reason }), [credits, storage, commission, deposit, validity, active, reason]));
+  function close() { setCredits(""); setStorage(""); setCommission(""); setDeposit(""); setValidity(""); setActive(null); setReason(""); onClose(); } async function save() { if (!row) return; const r = await action.execute(row); if (r) { close(); onSaved(); } }
+  return <Modal open={!!row} onClose={close} title={`Edit package · ${row?.name ?? ""}`} size="lg"><div className={styles.modalStack}><ErrorBanner message={action.error} /><div className={styles.formGrid}><Input type="number" label={`Included credits (${row?.currency ?? "currency"})`} value={credits || String(row?.included_credit_amount ?? "")} onChange={setCredits} /><Input type="number" label="Storage quota (GB)" value={storage || String(row?.storage_quota_gb ?? "")} onChange={setStorage} /><Input type="number" label="Commission rate (%)" value={commission || String(row?.commission_rate ?? "")} onChange={setCommission} /><Input type="number" label={`Security deposit (${row?.currency ?? "currency"})`} value={deposit || String(row?.security_deposit_amount ?? "")} onChange={setDeposit} /><Input type="number" label="Validity (days)" value={validity || String(row?.validity_days ?? "")} onChange={setValidity} /></div><Switch checked={active ?? row?.is_active ?? true} onChange={setActive} label="Package active" description="Inactive packages cannot be selected for new subscriptions." /><Textarea label="Change reason" value={reason} onChange={setReason} required rows={3} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={close}>Cancel</Btn><Btn variant="primary" size="sm" loading={action.loading} disabled={!reason.trim()} onClick={save}>Save package</Btn></div></div></Modal>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FEATURE FLAGS
-// ═══════════════════════════════════════════════════════════════
+function TenantOverridesTab({ refreshSummary }: { refreshSummary: () => void }) {
+  const [search, setSearch] = useState(""); const [editing, setEditing] = useState<TenantOverrideRow | "new" | null>(null); const [revoking, setRevoking] = useState<TenantOverrideRow | null>(null); const [reason, setReason] = useState(""); const overrides = useApi(useCallback(() => settingsAdminApi.listTenantOverrides(), [])); const revoke = useAction(useCallback((id: string, why: string) => settingsAdminApi.revokeTenantOverride(id, why), [])); const rows = (overrides.data?.overrides ?? []).filter(row => `${row.tenant_id} ${row.key} ${row.reason ?? ""}`.toLowerCase().includes(search.toLowerCase())); const refresh = () => { overrides.refetch(); refreshSummary(); };
+  async function revokeNow() { if (!revoking || !reason.trim()) return; const r = await revoke.execute(revoking.id, reason); if (r) { setRevoking(null); setReason(""); refresh(); } }
+  return <><SectionIntro eyebrow="Scoped exceptions" title="Tenant overrides" description="Create explicit, time-bound exceptions without weakening global policy for everyone." action={<Btn variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setEditing("new")}>Create override</Btn>} /><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Search tenant overrides" placeholder="Search tenant ID, setting, or reason…" value={search} onChange={e => setSearch(e.target.value)} /></div><button className={styles.iconButton} type="button" aria-label="Refresh overrides" onClick={refresh}><RefreshCw size={15} /></button></div><ErrorBanner message={overrides.error} /><div className={styles.tableCard}>{overrides.loading ? <SettingsLoading /> : rows.length === 0 ? <EmptyState title="No tenant overrides" description="Global and plan values currently apply without tenant-specific exceptions." action={<Btn variant="secondary" size="sm" onClick={() => setEditing("new")}>Create first override</Btn>} /> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Tenant</th><th>Setting</th><th>Override</th><th>Governance</th><th>Expires</th><th>Status</th><th aria-label="Actions" /></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td><code>{row.tenant_id.slice(0, 12)}…</code></td><td><div className={styles.settingName}><strong>{row.key}</strong><small>{row.reason || "No reason recorded"}</small></div></td><td><span className={styles.valueCell}>{fmtValue(row.value)}</span></td><td>{row.requires_approval ? <Badge variant="warning" size="sm">Approval required</Badge> : <span className={styles.mutedCell}>Direct change</span>}</td><td>{row.expires_at ? fmtDate(row.expires_at, false) : <span className={styles.warningText}>No expiry</span>}</td><td><span className={`${styles.statusPill} ${row.status === "active" ? styles.statusActive : styles.statusMuted}`}><i />{row.status}</span></td><td><div className={styles.rowActions}><Btn variant="secondary" size="xs" onClick={() => setEditing(row)}>Edit</Btn><Btn variant="ghost" size="xs" onClick={() => { setRevoking(row); setReason(""); }}>Revoke</Btn></div></td></tr>)}</tbody></table></div>}</div><OverrideModal value={editing} onClose={() => setEditing(null)} onSaved={refresh} /><Modal open={!!revoking} onClose={() => setRevoking(null)} title="Revoke tenant override" size="sm"><div className={styles.modalStack}><div className={styles.changeSummary}><AlertTriangle size={17} /><div><strong>{revoking?.key}</strong><p>The tenant will immediately fall back to its plan or global value.</p></div></div><ErrorBanner message={revoke.error} /><Textarea label="Revocation reason" value={reason} onChange={setReason} required rows={3} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setRevoking(null)}>Cancel</Btn><Btn variant="danger" size="sm" disabled={!reason.trim()} loading={revoke.loading} onClick={revokeNow}>Revoke override</Btn></div></div></Modal></>;
+}
+
+function OverrideModal({ value, onClose, onSaved }: { value: TenantOverrideRow | "new" | null; onClose: () => void; onSaved: () => void }) {
+  const existing = value && value !== "new" ? value : null; const [tenantId, setTenantId] = useState(""); const [key, setKey] = useState(""); const [settingValue, setSettingValue] = useState(""); const [type, setType] = useState(""); const [expires, setExpires] = useState(""); const [approval, setApproval] = useState(false); const [reason, setReason] = useState("");
+  const inferredType = !existing ? "boolean" : typeof existing.value === "number" ? "number" : typeof existing.value === "boolean" ? "boolean" : typeof existing.value === "object" ? "json" : "string";
+  const valueType = type || inferredType;
+  const action = useAction(useCallback(() => existing ? settingsAdminApi.updateTenantOverride(existing.id, { value: parseValue(settingValue || String(existing.value), valueType), setting_type: valueType, reason, expires_at: expires || existing.expires_at || undefined }) : settingsAdminApi.createTenantOverride({ tenant_id: tenantId, key, value: parseValue(settingValue, valueType), setting_type: valueType, reason, expires_at: expires || undefined, requires_approval: approval }), [existing, tenantId, key, settingValue, valueType, reason, expires, approval]));
+  function close() { setTenantId(""); setKey(""); setSettingValue(""); setType(""); setExpires(""); setReason(""); onClose(); } async function save() { const r = await action.execute(); if (r) { close(); onSaved(); } }
+  return <Modal open={!!value} onClose={close} title={existing ? `Edit override · ${existing.key}` : "Create tenant override"} size="lg"><div className={styles.modalStack}><ErrorBanner message={action.error} /><div className={styles.formGrid}><Input label="Tenant ID" value={tenantId || existing?.tenant_id || ""} onChange={setTenantId} required disabled={!!existing} /><Input label="Setting key" value={key || existing?.key || ""} onChange={setKey} required disabled={!!existing} /><Select label="Value type" value={valueType} onChange={setType} options={["boolean", "string", "number", "json"].map(v => ({ value: v, label: v }))} /><Input type="datetime-local" label="Expiry" value={expires} onChange={setExpires} hint="Strongly recommended for every exception." /></div><Input label="Override value" value={settingValue || (existing ? String(existing.value) : "")} onChange={setSettingValue} required />{!existing && <Switch checked={approval} onChange={setApproval} label="Require approval" description="Create this override in a pending state." />}<Textarea label="Business reason" value={reason} onChange={setReason} required rows={3} placeholder="Reference the incident, agreement, or exception policy…" /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={close}>Cancel</Btn><Btn variant="primary" size="sm" loading={action.loading} disabled={!(existing || (tenantId.trim() && key.trim())) || !reason.trim()} onClick={save}>{existing ? "Save override" : "Create override"}</Btn></div></div></Modal>;
+}
 
 function FeatureFlagsTab() {
-  const [modal, setModal] = useState(false);
-  const [flagKey, setFlagKey] = useState("");
-  const [label, setLabel] = useState("");
-
-  const flags = useApi(useCallback(() => settingsAdminApi.listFeatureFlags(), []));
-  const createAction = useAction(useCallback(
-    () => settingsAdminApi.createFeatureFlag({ flag_key: flagKey, label }), [flagKey, label]));
-  const enableAction = useAction(useCallback((id: string) => settingsAdminApi.enableFeatureFlag(id), []));
-  const disableAction = useAction(useCallback((id: string) => settingsAdminApi.disableFeatureFlag(id), []));
-
-  const rows = flags.data?.flags ?? [];
-
-  async function handleCreate() {
-    const result = await createAction.execute();
-    if (result) { setModal(false); setFlagKey(""); setLabel(""); flags.refetch(); }
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14 }}>
-        <Btn variant="primary" size="sm" icon={<Flag size={14} />} onClick={() => setModal(true)}>Create Flag</Btn>
-      </div>
-      <Card padding="none">
-        {flags.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-          <EmptyState text="No feature flags configured." />
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Flag</Th><Th>Key</Th><Th>Status</Th><Th>Rollout</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {rows.map((f: FeatureFlag) => (
-                <tr key={f.id}>
-                  <Td>{f.label}</Td>
-                  <Td><code style={{ fontSize: 11 }}>{f.flag_key}</code></Td>
-                  <Td><StatusBadge status={f.status} size="sm" /></Td>
-                  <Td>{f.rollout_type}{f.rollout_percent != null ? ` (${f.rollout_percent}%)` : ""}</Td>
-                  <Td>
-                    <ActionMenu items={[
-                      f.status === "enabled"
-                        ? { label: "Disable", onClick: () => disableAction.execute(f.id).then(() => flags.refetch()), destructive: true }
-                        : { label: "Enable", onClick: () => enableAction.execute(f.id).then(() => flags.refetch()) },
-                    ]} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={modal} onClose={() => setModal(false)} title="Create Feature Flag">
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {createAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{createAction.error}</p>}
-          <Input label="Flag Label" value={label} onChange={setLabel} required />
-          <Input label="Flag Key" placeholder="e.g. bargain_engine_enabled" value={flagKey} onChange={setFlagKey} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" disabled={!flagKey || !label} loading={createAction.loading} onClick={handleCreate}>Create</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+  const [search, setSearch] = useState(""); const [editing, setEditing] = useState<FeatureFlag | "new" | null>(null); const [confirming, setConfirming] = useState<FeatureFlag | null>(null); const flags = useApi(useCallback(() => settingsAdminApi.listFeatureFlags(), [])); const toggle = useAction(useCallback((flag: FeatureFlag) => flag.status === "enabled" ? settingsAdminApi.disableFeatureFlag(flag.id) : settingsAdminApi.enableFeatureFlag(flag.id), [])); const rows = (flags.data?.flags ?? []).filter(row => `${row.label} ${row.flag_key} ${row.owner_module ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  async function toggleNow() { if (!confirming) return; const r = await toggle.execute(confirming); if (r) { setConfirming(null); flags.refetch(); } }
+  return <><SectionIntro eyebrow="Release controls" title="Feature flags" description="Roll out changes progressively, target a narrow scope, and preserve an immediate kill switch." action={<Btn variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setEditing("new")}>Create flag</Btn>} /><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Search feature flags" placeholder="Search flag, key, or owner…" value={search} onChange={e => setSearch(e.target.value)} /></div><button className={styles.iconButton} type="button" aria-label="Refresh feature flags" onClick={flags.refetch}><RefreshCw size={15} /></button></div><ErrorBanner message={flags.error} /><div className={styles.cardGrid}>{flags.loading ? <div className={styles.tableCard}><SettingsLoading /></div> : rows.length === 0 ? <div className={styles.tableCard}><EmptyState title="No feature flags" description="Create a flag for releases that need progressive exposure or a kill switch." /></div> : rows.map(flag => <article className={styles.flagCard} key={flag.id}><header><span className={`${styles.flagIcon} ${flag.status === "enabled" ? styles.flagIconOn : ""}`}><Flag size={17} /></span><div><h3>{flag.label}</h3><code>{flag.flag_key}</code></div><button type="button" role="switch" aria-label={`${flag.status === "enabled" ? "Disable" : "Enable"} ${flag.label}`} aria-checked={flag.status === "enabled"} className={`${styles.switch} ${flag.status === "enabled" ? styles.switchOn : ""}`} onClick={() => setConfirming(flag)}><span /></button></header><p>{flag.description || "No release notes have been added for this flag."}</p><dl><div><dt>Rollout</dt><dd>{flag.rollout_type === "percentage" ? `${flag.rollout_percent ?? 0}%` : flag.rollout_type}</dd></div><div><dt>Scope</dt><dd>{flag.tenant_scope ? "Tenant" : flag.category_scope ? flag.category_scope : "All tenants"}</dd></div><div><dt>Owner</dt><dd>{flag.owner_module || "Platform"}</dd></div><div><dt>Updated</dt><dd>{fmtDate(flag.updated_at, false)}</dd></div></dl><footer><span className={`${styles.statusPill} ${flag.status === "enabled" ? styles.statusActive : styles.statusMuted}`}><i />{flag.status}</span><Btn variant="secondary" size="xs" onClick={() => setEditing(flag)}>Configure</Btn></footer></article>)}</div><FeatureFlagModal value={editing} onClose={() => setEditing(null)} onSaved={flags.refetch} /><Modal open={!!confirming} onClose={() => setConfirming(null)} title={`${confirming?.status === "enabled" ? "Disable" : "Enable"} feature flag`} size="sm"><div className={styles.modalStack}><div className={styles.changeSummary}><Flag size={17} /><div><strong>{confirming?.label}</strong><p>{confirming?.status === "enabled" ? "Traffic will stop receiving this feature immediately." : "The configured rollout will start immediately."}</p></div></div><ErrorBanner message={toggle.error} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Btn><Btn variant={confirming?.status === "enabled" ? "danger" : "primary"} size="sm" loading={toggle.loading} onClick={toggleNow}>{confirming?.status === "enabled" ? "Disable flag" : "Enable rollout"}</Btn></div></div></Modal></>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// AUDIT LOG
-// ═══════════════════════════════════════════════════════════════
+function FeatureFlagModal({ value, onClose, onSaved }: { value: FeatureFlag | "new" | null; onClose: () => void; onSaved: () => void }) {
+  const existing = value && value !== "new" ? value : null; const [key, setKey] = useState(""); const [label, setLabel] = useState(""); const [description, setDescription] = useState(""); const [rollout, setRollout] = useState(""); const [percent, setPercent] = useState(""); const [category, setCategory] = useState(""); const [tenant, setTenant] = useState(""); const [owner, setOwner] = useState("");
+  const action = useAction(useCallback(() => existing ? settingsAdminApi.updateFeatureFlag(existing.id, { label: label || existing.label, description: description || existing.description, rollout_type: rollout || existing.rollout_type, rollout_percent: Number(percent || existing.rollout_percent || 0), category_scope: category || existing.category_scope, owner_module: owner || existing.owner_module }) : settingsAdminApi.createFeatureFlag({ flag_key: key, label, description, rollout_type: rollout || "global", rollout_percent: rollout === "percentage" ? Number(percent || 0) : undefined, category_scope: rollout === "category" ? category : undefined, tenant_scope: rollout === "tenant" ? tenant : undefined, owner_module: owner }), [existing, key, label, description, rollout, percent, category, tenant, owner]));
+  function close() { setKey(""); setLabel(""); setDescription(""); setRollout(""); setPercent(""); setCategory(""); setTenant(""); setOwner(""); onClose(); } async function save() { const r = await action.execute(); if (r) { close(); onSaved(); } } const rolloutValue = rollout || existing?.rollout_type || "global";
+  return <Modal open={!!value} onClose={close} title={existing ? `Configure flag · ${existing.label}` : "Create feature flag"} size="lg"><div className={styles.modalStack}><ErrorBanner message={action.error} /><div className={styles.formGrid}><Input label="Flag label" value={label || existing?.label || ""} onChange={setLabel} required /><Input label="Flag key" value={key || existing?.flag_key || ""} onChange={setKey} required disabled={!!existing} /><Input label="Owner module" value={owner || existing?.owner_module || ""} onChange={setOwner} placeholder="e.g. booking" /><Select label="Rollout strategy" value={rolloutValue} onChange={setRollout} options={[{ value: "global", label: "Global" }, { value: "percentage", label: "Percentage" }, { value: "category", label: "Category" }, { value: "tenant", label: "Single tenant" }]} /></div><Textarea label="Release notes" value={description || existing?.description || ""} onChange={setDescription} rows={3} placeholder="What does this flag release and how can operators validate it?" />{rolloutValue === "percentage" && <Input type="number" label="Traffic percentage" value={percent || String(existing?.rollout_percent ?? "")} onChange={setPercent} hint="Use 0–100." />}{rolloutValue === "category" && <Input label="Category scope" value={category || existing?.category_scope || ""} onChange={setCategory} />}{rolloutValue === "tenant" && <Input label="Tenant ID" value={tenant || existing?.tenant_scope || ""} onChange={setTenant} disabled={!!existing} />}<div className={styles.infoBanner}><ShieldCheck size={16} />New flags are created disabled. Review the scope, then enable them from the flag card.</div><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={close}>Cancel</Btn><Btn variant="primary" size="sm" loading={action.loading} disabled={!(existing || (key.trim() && label.trim()))} onClick={save}>{existing ? "Save configuration" : "Create flag"}</Btn></div></div></Modal>;
+}
 
 function AuditLogTab() {
-  const [key, setKey] = useState("");
-  const logs = useApi(useCallback(() => settingsAdminApi.getAuditLogs({ key: key || undefined, limit: 100 }), [key]));
-  const rows = logs.data?.logs ?? [];
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14, maxWidth: 320 }}>
-        <Input placeholder="Filter by setting key..." value={key} onChange={setKey} />
-      </div>
-      <Card padding="none">
-        {logs.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-          <EmptyState text="No audit entries." />
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Time</Th><Th>Setting</Th><Th>Scope</Th><Th>Action</Th><Th>Old → New</Th><Th>Risk</Th></tr></thead>
-            <tbody>
-              {rows.map((l: SettingAuditLogRow) => (
-                <tr key={l.log_id}>
-                  <Td>{new Date(l.created_at).toLocaleString("en-IN")}</Td>
-                  <Td><code style={{ fontSize: 11 }}>{l.key}</code></Td>
-                  <Td>{l.tier}</Td>
-                  <Td>{l.action_type}</Td>
-                  <Td>{fmtValue(l.old_value)} → {fmtValue(l.new_value)}</Td>
-                  <Td><Badge variant={RISK_VARIANT[l.risk_level] ?? "muted"} size="sm">{l.risk_level}</Badge></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
+  const [key, setKey] = useState(""); const [tenant, setTenant] = useState(""); const [risk, setRisk] = useState(""); const logs = useApi(useCallback(() => settingsAdminApi.getAuditLogs({ limit: 100 }), [])); const rows = (logs.data?.logs ?? []).filter(row => (!key || row.key.toLowerCase().includes(key.toLowerCase())) && (!tenant || (row.tenant_id ?? "").toLowerCase().includes(tenant.toLowerCase())) && (!risk || row.risk_level === risk));
+  return <><SectionIntro eyebrow="Governance evidence" title="Configuration audit log" description="Trace every platform, plan, category, tenant, and feature-control change to its actor and request." /><div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><input aria-label="Filter by setting key" placeholder="Filter by setting key…" value={key} onChange={e => setKey(e.target.value)} /></div><div className={styles.searchBox}><Building2 size={15} /><input aria-label="Filter by tenant ID" placeholder="Tenant ID…" value={tenant} onChange={e => setTenant(e.target.value)} /></div><Select value={risk} onChange={setRisk} options={[{ value: "", label: "Any risk" }, ...["low", "medium", "high", "critical"].map(v => ({ value: v, label: v }))]} /></div><ErrorBanner message={logs.error} /><div className={styles.tableCard}>{logs.loading ? <SettingsLoading /> : rows.length === 0 ? <EmptyState title="No audit entries" description="No changes match the current filters." /> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th>Time</th><th>Setting / scope</th><th>Action</th><th>Change</th><th>Actor / reason</th><th>Risk</th></tr></thead><tbody>{rows.map((row: SettingAuditLogRow) => <tr key={row.log_id}><td><span className={styles.mutedCell}>{fmtDate(row.created_at)}</span></td><td><div className={styles.settingName}><strong>{row.key}</strong><code>{row.tier}{row.tenant_id ? ` · ${row.tenant_id.slice(0, 8)}…` : ""}</code></div></td><td>{row.action_type.replaceAll("_", " ")}</td><td><div className={styles.diffCell}><span>{fmtValue(row.old_value)}</span><ChevronRight size={12} /><strong>{fmtValue(row.new_value)}</strong></div></td><td><div className={styles.settingName}><strong>{row.actor || "System"}</strong><small>{row.reason || "No reason recorded"}</small><code>{row.request_id || "No request ID"}</code></div></td><td><Badge variant={RISK_VARIANT[row.risk_level] ?? "muted"} size="sm">{row.risk_level}</Badge></td></tr>)}</tbody></table></div>}</div></>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// VERSION HISTORY
-// ═══════════════════════════════════════════════════════════════
-
 function VersionHistoryTab() {
-  const [key, setKey] = useState("tenant_payouts_enabled");
-  const [rollbackReason, setRollbackReason] = useState("");
-  const [rollbackLogId, setRollbackLogId] = useState<string | null>(null);
-
-  const history = useApi(useCallback(() => settingsAdminApi.getHistory(key), [key]));
-  const rollbackAction = useAction(useCallback(
-    (logId: string, reason: string) => settingsAdminApi.rollback(key, logId, reason), [key]));
-
-  const rows = history.data?.history ?? [];
-
-  async function handleRollback() {
-    if (!rollbackLogId || !rollbackReason) return;
-    const result = await rollbackAction.execute(rollbackLogId, rollbackReason);
-    if (result) { setRollbackLogId(null); setRollbackReason(""); history.refetch(); }
-  }
-
-  return (
-    <div>
-      <div style={{ marginBottom: 14, maxWidth: 320 }}>
-        <Input label="Setting Key" value={key} onChange={setKey} />
-      </div>
-      <Card padding="none">
-        {history.loading ? <Skeleton height={200} /> : rows.length === 0 ? (
-          <EmptyState text="No version history for this setting." />
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>When</Th><Th>Action</Th><Th>Old → New</Th><Th>Changed By</Th><Th>Reason</Th><Th>{" "}</Th></tr></thead>
-            <tbody>
-              {rows.map(h => (
-                <tr key={h.log_id}>
-                  <Td>{new Date(h.created_at).toLocaleString("en-IN")}</Td>
-                  <Td>{h.action_type}</Td>
-                  <Td>{fmtValue(h.old_value)} → {fmtValue(h.new_value)}</Td>
-                  <Td>{h.changed_by ? h.changed_by.slice(0, 8) : "—"}</Td>
-                  <Td>{h.reason ?? "—"}</Td>
-                  <Td>
-                    {h.rollback_available && (
-                      <Btn variant="secondary" size="xs" onClick={() => setRollbackLogId(h.log_id)}>Rollback</Btn>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      <Modal open={!!rollbackLogId} onClose={() => setRollbackLogId(null)} title="Rollback Setting">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {rollbackAction.error && <p style={{ color: "var(--danger-text)", fontSize: 12 }}>{rollbackAction.error}</p>}
-          <Input label="Reason (required)" value={rollbackReason} onChange={setRollbackReason} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setRollbackLogId(null)}>Cancel</Btn>
-            <Btn variant="danger" size="sm" disabled={!rollbackReason} loading={rollbackAction.loading} onClick={handleRollback}>Rollback</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+  const [key, setKey] = useState("tenant_payouts_enabled"); const [rollback, setRollback] = useState<string | null>(null); const [reason, setReason] = useState(""); const catalog = useApi(useCallback(() => settingsAdminApi.list({ limit: 500 }), [])); const history = useApi(useCallback(() => settingsAdminApi.getHistory(key), [key]), [key], { enabled: !!key }); const action = useAction(useCallback((logId: string, why: string) => settingsAdminApi.rollback(key, logId, why), [key]));
+  async function rollbackNow() { if (!rollback || !reason.trim()) return; const r = await action.execute(rollback, reason); if (r) { setRollback(null); setReason(""); history.refetch(); } }
+  return <><SectionIntro eyebrow="Recovery controls" title="Version history and rollback" description="Inspect the full change chain for a setting and restore a known-good value as a new audited revision." /><div className={styles.historyPicker}><Select label="Setting" value={key} onChange={setKey} options={(catalog.data?.settings ?? []).map(item => ({ value: item.key, label: `${item.label} · ${item.key}` }))} /><div><ArchiveRestore size={18} /><p><strong>Rollback never erases history.</strong><span>It creates a new version with the selected previous value.</span></p></div></div><ErrorBanner message={history.error} /><div className={styles.timelineCard}>{history.loading ? <SettingsLoading /> : (history.data?.history ?? []).length === 0 ? <EmptyState title="No version history" description="This setting has no audited revisions yet." /> : <div className={styles.timeline}>{(history.data?.history ?? []).map((entry, index) => <article key={entry.log_id}><div className={styles.timelineMarker}>{index === 0 ? <CheckCircle2 size={15} /> : <History size={14} />}</div><div className={styles.timelineBody}><header><div><strong>{entry.action_type.replaceAll("_", " ")}</strong>{index === 0 && <Badge variant="success" size="sm">Current</Badge>}</div><time>{fmtDate(entry.created_at)}</time></header><div className={styles.versionDiff}><span>{fmtValue(entry.old_value)}</span><ChevronRight size={13} /><strong>{fmtValue(entry.new_value)}</strong></div><p>{entry.reason || "No reason recorded"}</p><small>Changed by {entry.changed_by ? `${entry.changed_by.slice(0, 12)}…` : "system"} · Request {entry.request_id || "not recorded"}</small>{entry.rollback_available && <Btn variant="secondary" size="xs" icon={<ArchiveRestore size={13} />} onClick={() => { setRollback(entry.log_id); setReason(""); }}>Restore this value</Btn>}</div></article>)}</div>}</div><Modal open={!!rollback} onClose={() => setRollback(null)} title="Restore previous value" size="sm"><div className={styles.modalStack}><div className={styles.changeSummary}><ArchiveRestore size={17} /><div><strong>{key}</strong><p>A new audited version will be created from the selected value.</p></div></div><ErrorBanner message={action.error} /><Textarea label="Rollback reason" value={reason} onChange={setReason} required rows={3} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setRollback(null)}>Cancel</Btn><Btn variant="danger" size="sm" loading={action.loading} disabled={!reason.trim()} onClick={rollbackNow}>Restore value</Btn></div></div></Modal></>;
 }

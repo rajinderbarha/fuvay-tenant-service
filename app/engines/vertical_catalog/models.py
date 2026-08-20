@@ -33,7 +33,14 @@ class Vertical(ServiceOSBase):
     lifecycle_status:  Mapped[str]        = mapped_column(String(20), nullable=False, default="active")
     registration_allowed: Mapped[bool]    = mapped_column(Boolean, nullable=False, default=True)
     capabilities:       Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    release_stage:      Mapped[str]        = mapped_column(String(20), nullable=False, default="ga")
+    # "production", not "ga": the column carries a CHECK constraint
+    # (ck_verticals_release_stage_valid) allowing only draft/upcoming/beta/
+    # production/deprecated/retired, and the database's own column default is
+    # 'production'. The previous "ga" default was a value the constraint
+    # rejects, so constructing a Vertical through the ORM without overriding it
+    # always raised CheckViolationError — latent only because every existing
+    # vertical is created by migrations in raw SQL that let the column default apply.
+    release_stage:      Mapped[str]        = mapped_column(String(20), nullable=False, default="production")
     onboarding_requirements: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     enabled_by:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     disabled_by:   Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

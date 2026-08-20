@@ -5,7 +5,7 @@ Read endpoints require authenticated user (for dropdown population in tenant por
 import uuid
 from decimal import Decimal
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Body, Depends, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import ServiceOSException
@@ -60,8 +60,9 @@ async def list_pricing_models(r: Request, u: UserContext = Depends(get_current_u
 # PRICING TIERS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/tiers", response_model=ApiResponse[dict], summary="List pricing tiers",
-            tags=["Pricing Tiers"])
+# Retired: admin pricing tiers are not part of the current provider-owned
+# Home Services pricing model. Kept as an unregistered helper only until the
+# historical service/model code is removed by a DB cleanup migration.
 async def list_tiers(r: Request,
                      is_active: bool | None = Query(None),
                      q: str | None = Query(None),
@@ -76,16 +77,14 @@ async def list_tiers(r: Request,
                                   has_zipcode_mapping, date_from, date_to), _rid(r), ENGINE_ID)
 
 
-@router.get("/tiers/summary", response_model=ApiResponse[dict], summary="Pricing tiers summary cards",
-            tags=["Pricing Tiers"])
+# Retired route: /v1/admin/tiers/summary
 async def tiers_summary(r: Request,
                         u: UserContext = Depends(require_permission(P.CATALOG_TIERS_READ)),
                         s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_tiers_summary(), _rid(r), ENGINE_ID)
 
 
-@router.get("/tiers/export", response_model=ApiResponse[dict], summary="Export pricing tiers",
-            tags=["Pricing Tiers"])
+# Retired route: /v1/admin/tiers/export
 async def export_tiers(r: Request,
                        is_active: bool | None = Query(None),
                        u: UserContext = Depends(require_permission(P.CATALOG_TIERS_READ)),
@@ -94,8 +93,7 @@ async def export_tiers(r: Request,
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
 
 
-@router.post("/tiers", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create pricing tier", tags=["Pricing Tiers"])
+# Retired route: POST /v1/admin/tiers
 async def create_tier(r: Request,
                       u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                       s: AdminCatalogService = Depends(_svc)):
@@ -103,8 +101,7 @@ async def create_tier(r: Request,
     return ok(await s.create_tier(body), _rid(r), ENGINE_ID)
 
 
-@router.get("/tiers/resolve-location", response_model=ApiResponse[dict],
-            summary="Resolve tier from city/zipcode", tags=["Pricing Tiers"])
+# Retired route: GET /v1/admin/tiers/resolve-location
 async def resolve_location_get(r: Request,
                                 city: str | None = Query(None),
                                 zipcode: str | None = Query(None),
@@ -116,8 +113,7 @@ async def resolve_location_get(r: Request,
     return ok(await s.resolve_location(city, zipcode, state, None, district, zone), _rid(r), ENGINE_ID)
 
 
-@router.post("/tiers/resolve-location", response_model=ApiResponse[dict],
-             summary="Resolve tier from city/zipcode (POST)", tags=["Pricing Tiers"])
+# Retired route: POST /v1/admin/tiers/resolve-location
 async def resolve_location_post(r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
@@ -126,24 +122,21 @@ async def resolve_location_post(r: Request,
                                         body.get("state"), body.get("country")), _rid(r), ENGINE_ID)
 
 
-@router.get("/tiers/{tier_id}/detail", response_model=ApiResponse[dict],
-            summary="Pricing tier detail (locations, rules, audit log)", tags=["Pricing Tiers"])
+# Retired route: GET /v1/admin/tiers/{tier_id}/detail
 async def get_tier_detail(tier_id: uuid.UUID, r: Request,
                           u: UserContext = Depends(require_permission(P.CATALOG_TIERS_READ)),
                           s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_tier_detail(tier_id), _rid(r), ENGINE_ID)
 
 
-@router.get("/tiers/{tier_id}", response_model=ApiResponse[dict], summary="Get pricing tier",
-            tags=["Pricing Tiers"])
+# Retired route: GET /v1/admin/tiers/{tier_id}
 async def get_tier(tier_id: uuid.UUID, r: Request,
                    u: UserContext = Depends(require_super_admin),
                    s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_tier(tier_id), _rid(r), ENGINE_ID)
 
 
-@router.put("/tiers/{tier_id}", response_model=ApiResponse[dict], summary="Update pricing tier",
-            tags=["Pricing Tiers"])
+# Retired route: PUT /v1/admin/tiers/{tier_id}
 async def update_tier(tier_id: uuid.UUID, r: Request,
                       u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                       s: AdminCatalogService = Depends(_svc)):
@@ -151,17 +144,14 @@ async def update_tier(tier_id: uuid.UUID, r: Request,
     return ok(await s.update_tier(tier_id, body), _rid(r), ENGINE_ID)
 
 
-@router.delete("/tiers/{tier_id}", response_model=ApiResponse[dict], summary="Deactivate pricing tier",
-               tags=["Pricing Tiers"])
+# Retired route: DELETE /v1/admin/tiers/{tier_id}
 async def delete_tier(tier_id: uuid.UUID, r: Request,
                       u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                       s: AdminCatalogService = Depends(_svc)):
     return ok(await s.delete_tier(tier_id), _rid(r), ENGINE_ID)
 
 
-@router.delete("/tiers/{tier_id}/hard-delete", response_model=ApiResponse[dict],
-               summary="Permanently delete a tier (only if no active pricing rules use it)",
-               tags=["Pricing Tiers"])
+# Retired route: DELETE /v1/admin/tiers/{tier_id}/hard-delete
 async def hard_delete_tier(tier_id: uuid.UUID, r: Request,
                             u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                             s: AdminCatalogService = Depends(_svc)):
@@ -172,8 +162,7 @@ async def hard_delete_tier(tier_id: uuid.UUID, r: Request,
 # TIER LOCATIONS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/tier-locations", response_model=ApiResponse[dict], summary="List tier locations",
-            tags=["Tier Locations"])
+# Retired route: GET /v1/admin/tier-locations
 async def list_tier_locations(r: Request,
                                tier_id: uuid.UUID | None = Query(None),
                                q: str | None = Query(None),
@@ -195,16 +184,14 @@ async def list_tier_locations(r: Request,
     ), _rid(r), ENGINE_ID)
 
 
-@router.get("/tier-locations/summary", response_model=ApiResponse[dict],
-            summary="City/Zipcode mapping summary cards", tags=["Tier Locations"])
+# Retired route: GET /v1/admin/tier-locations/summary
 async def tier_locations_summary(r: Request,
                                   u: UserContext = Depends(require_permission(P.CATALOG_TIERS_READ)),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_tier_location_summary(), _rid(r), ENGINE_ID)
 
 
-@router.get("/tier-locations/export", response_model=ApiResponse[dict],
-            summary="Export tier locations", tags=["Tier Locations"])
+# Retired route: GET /v1/admin/tier-locations/export
 async def export_tier_locations(r: Request,
                                  tier_id: uuid.UUID | None = Query(None),
                                  state: str | None = Query(None),
@@ -221,8 +208,7 @@ async def export_tier_locations(r: Request,
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations/import/preview", response_model=ApiResponse[dict],
-             summary="Preview a City/Zipcode CSV import", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations/import/preview
 async def import_tier_locations_preview(r: Request,
                                          u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                          s: AdminCatalogService = Depends(_svc)):
@@ -232,8 +218,7 @@ async def import_tier_locations_preview(r: Request,
     ), _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations/import/confirm", response_model=ApiResponse[dict],
-             summary="Confirm a previewed City/Zipcode CSV import", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations/import/confirm
 async def import_tier_locations_confirm(r: Request,
                                          u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                          s: AdminCatalogService = Depends(_svc)):
@@ -243,8 +228,7 @@ async def import_tier_locations_confirm(r: Request,
     ), _rid(r), ENGINE_ID)
 
 
-@router.get("/tier-locations/imports", response_model=ApiResponse[dict],
-            summary="List all City/Zipcode CSV import batches", tags=["Tier Locations"])
+# Retired route: GET /v1/admin/tier-locations/imports
 async def list_import_batches(r: Request,
                                page: int = Query(1, ge=1),
                                page_size: int = Query(20, ge=1, le=100),
@@ -253,16 +237,14 @@ async def list_import_batches(r: Request,
     return ok(await s.list_import_batches(page, page_size), _rid(r), ENGINE_ID)
 
 
-@router.get("/tier-locations/imports/{batch_id}", response_model=ApiResponse[dict],
-            summary="Get a City/Zipcode CSV import batch status/report", tags=["Tier Locations"])
+# Retired route: GET /v1/admin/tier-locations/imports/{batch_id}
 async def get_import_batch(batch_id: uuid.UUID, r: Request,
                             u: UserContext = Depends(require_permission(P.CATALOG_TIERS_READ)),
                             s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_import_batch(batch_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations/bulk/change-tier", response_model=ApiResponse[dict],
-             summary="Bulk change tier for multiple location mappings", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations/bulk/change-tier
 async def bulk_change_tier_locations(r: Request,
                                       u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                       s: AdminCatalogService = Depends(_svc)):
@@ -272,8 +254,7 @@ async def bulk_change_tier_locations(r: Request,
     ), _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations/bulk/deactivate", response_model=ApiResponse[dict],
-             summary="Bulk deactivate location mappings", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations/bulk/deactivate
 async def bulk_deactivate_tier_locations(r: Request,
                                           u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                           s: AdminCatalogService = Depends(_svc)):
@@ -281,8 +262,7 @@ async def bulk_deactivate_tier_locations(r: Request,
     return ok(await s.bulk_deactivate_tier_locations(body.get("location_ids", [])), _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create tier location mapping", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations
 async def create_tier_location(r: Request,
                                 u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                 s: AdminCatalogService = Depends(_svc)):
@@ -290,8 +270,7 @@ async def create_tier_location(r: Request,
     return ok(await s.create_tier_location(body), _rid(r), ENGINE_ID)
 
 
-@router.put("/tier-locations/{location_id}", response_model=ApiResponse[dict],
-            summary="Update tier location", tags=["Tier Locations"])
+# Retired route: PUT /v1/admin/tier-locations/{location_id}
 async def update_tier_location(location_id: uuid.UUID, r: Request,
                                 u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                 s: AdminCatalogService = Depends(_svc)):
@@ -299,16 +278,14 @@ async def update_tier_location(location_id: uuid.UUID, r: Request,
     return ok(await s.update_tier_location(location_id, body), _rid(r), ENGINE_ID)
 
 
-@router.delete("/tier-locations/{location_id}", response_model=ApiResponse[dict],
-               summary="Remove tier location mapping", tags=["Tier Locations"])
+# Retired route: DELETE /v1/admin/tier-locations/{location_id}
 async def delete_tier_location(location_id: uuid.UUID, r: Request,
                                 u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                 s: AdminCatalogService = Depends(_svc)):
     return ok(await s.delete_tier_location(location_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/tier-locations/{location_id}/resolve-conflict", response_model=ApiResponse[dict],
-             summary="Resolve a conflict for a tier location mapping", tags=["Tier Locations"])
+# Retired route: POST /v1/admin/tier-locations/{location_id}/resolve-conflict
 async def resolve_conflict_location(location_id: uuid.UUID, r: Request,
                                      u: UserContext = Depends(require_permission(P.CATALOG_TIERS_WRITE)),
                                      s: AdminCatalogService = Depends(_svc)):
@@ -337,16 +314,20 @@ async def list_categories(r: Request,
             summary="List categories with their commission rate", tags=["Commission"])
 async def list_category_commission_rates(
     r: Request,
+    vertical_type: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    u: UserContext = Depends(require_super_admin),
+    u: UserContext = Depends(require_permission(P.FINANCE_READ)),
 ):
     from sqlalchemy import select
     from app.engines.admin_catalog.models import ServiceCategory
     from app.engines.invoice_payment.constants import DEFAULT_COMMISSION_RATE
     from app.engines.vertical_catalog.models import Vertical
     from app.engines.vertical_monetization.models import VerticalMonetizationPolicy
+    stmt = select(ServiceCategory)
+    if vertical_type:
+        stmt = stmt.where(ServiceCategory.vertical_type == vertical_type)
     rows = (await db.execute(
-        select(ServiceCategory).order_by(ServiceCategory.display_order, ServiceCategory.name)
+        stmt.order_by(ServiceCategory.display_order, ServiceCategory.name)
     )).scalars().all()
     default = float(DEFAULT_COMMISSION_RATE)
     vertical_keys = {c.vertical_type for c in rows if c.vertical_type}
@@ -365,6 +346,14 @@ async def list_category_commission_rates(
 
     def _resolution(c):
         policy = policy_by_key.get(c.vertical_type)
+        if c.vertical_type == "home_services":
+            if policy is None:
+                return None, "policy_not_published", False
+            if policy.provider_model != "PERCENTAGE_COMMISSION":
+                return None, "model_not_percentage", False
+            if policy.provider_percentage is not None:
+                return float(policy.provider_percentage), "vertical_default", True
+            return None, "percentage_default_missing", False
         own = float(c.commission_pct) if c.commission_pct is not None else None
         if policy is not None and policy.provider_model != "PERCENTAGE_COMMISSION":
             return None, "model_not_percentage", False
@@ -383,11 +372,12 @@ async def list_category_commission_rates(
         "vertical_type":    c.vertical_type,
         "is_active":        c.is_active,
         # provider commission (migration 139)
-        "commission_pct":   float(c.commission_pct) if c.commission_pct is not None else None,
+        "commission_pct":   (None if c.vertical_type == "home_services" else
+                              float(c.commission_pct) if c.commission_pct is not None else None),
         "effective_pct":    _resolution(c)[0],
         "effective_source": _resolution(c)[1],
         "is_percentage_commission_live": _resolution(c)[2],
-        "using_default":    c.commission_pct is None,
+        "using_default":    c.vertical_type == "home_services" or c.commission_pct is None,
         "default_pct":      default,
         "provider_model":   policy_by_key[c.vertical_type].provider_model if c.vertical_type in policy_by_key else None,
         "vertical_default_pct": (
@@ -396,7 +386,8 @@ async def list_category_commission_rates(
             else None
         ),
         # customer charge / platform fee (migration 140) — NULL = 0%
-        "customer_charge_pct": float(c.customer_charge_pct) if c.customer_charge_pct is not None else None,
+        "customer_charge_pct": (None if c.vertical_type == "home_services" else
+                                float(c.customer_charge_pct) if c.customer_charge_pct is not None else None),
     } for c in rows], _rid(r), ENGINE_ID)
 
 
@@ -411,14 +402,14 @@ async def get_category_commission_authority(
     category_id: uuid.UUID,
     r: Request,
     db: AsyncSession = Depends(get_db),
-    u: UserContext = Depends(require_super_admin),
+    u: UserContext = Depends(require_permission(P.FINANCE_READ)),
 ):
     """Read-only explanation of the rate the runtime will use.
 
     Category Detail deliberately consumes this endpoint instead of exposing
-    another editor. Vertical defaults are edited in Monetization; optional
-    category overrides are edited in Provider Charges. Both runtime charging
-    engines follow this exact category -> published vertical default order.
+    another editor. Home Services has exactly one finance authority: its
+    published Monetization policy. Legacy category overrides remain available
+    only for other verticals that have not migrated to dedicated finance.
     """
     from app.engines.admin_catalog.models import ServiceCategory
     from app.engines.invoice_payment.constants import DEFAULT_COMMISSION_RATE
@@ -442,12 +433,15 @@ async def get_category_commission_authority(
                 VerticalMonetizationPolicy.status == "published",
             ))).scalar_one_or_none()
 
-    own = Decimal(str(cat.commission_pct)) if cat.commission_pct is not None else None
+    is_hs = cat.vertical_type == "home_services"
+    own = None if is_hs else (Decimal(str(cat.commission_pct)) if cat.commission_pct is not None else None)
     default = Decimal(str(policy.provider_percentage)) if (
         policy is not None and policy.provider_percentage is not None
     ) else None
     if policy is not None and policy.provider_model != "PERCENTAGE_COMMISSION":
         effective, source, live = None, "model_not_percentage", False
+    elif is_hs and policy is None:
+        effective, source, live = None, "policy_not_published", False
     elif own is not None:
         effective, source, live = own, "category_override", True
     elif default is not None:
@@ -457,7 +451,6 @@ async def get_category_commission_authority(
     else:
         effective, source, live = None, "percentage_default_missing", False
 
-    is_hs = cat.vertical_type == "home_services"
     return ok({
         "category_id": str(cat.id),
         "category_name": cat.name,
@@ -474,10 +467,7 @@ async def get_category_commission_authority(
             "/admin/home-services/finance?tab=monetization" if is_hs
             else "/admin/finance/vertical-monetization"
         ),
-        "override_editor_path": (
-            "/admin/home-services/finance?tab=provider-charges" if is_hs
-            else "/admin/pricing/commission"
-        ),
+        "override_editor_path": None,
     }, _rid(r), ENGINE_ID)
 
 
@@ -488,10 +478,11 @@ async def set_category_commission_rate(
     body: CategoryCommissionIn,
     r: Request,
     db: AsyncSession = Depends(get_db),
-    u: UserContext = Depends(require_super_admin),
+    u: UserContext = Depends(require_permission(P.FINANCE_MONETIZATION_DRAFT)),
 ):
     from sqlalchemy import select
     from app.engines.admin_catalog.models import ServiceCategory
+    from app.engines.vertical_catalog.models import Vertical, VerticalAuditLog
     fields = body.model_dump(exclude_unset=True)
     for key in ("commission_pct", "customer_charge_pct"):
         v = fields.get(key)
@@ -503,12 +494,39 @@ async def set_category_commission_rate(
     )).scalar_one_or_none()
     if not cat:
         raise ServiceOSException("NOT_FOUND", "Category not found.", status_code=404)
+    if cat.vertical_type == "home_services" and fields.keys() & {"commission_pct", "customer_charge_pct"}:
+        raise ServiceOSException(
+            "HOME_SERVICES_MONETIZATION_SINGLE_AUTHORITY",
+            "Home Services provider and customer charges are configured only in Home Services Finance > Monetization.",
+            status_code=409,
+        )
+    before = {
+        "commission_pct": str(cat.commission_pct) if cat.commission_pct is not None else None,
+        "customer_charge_pct": str(cat.customer_charge_pct) if cat.customer_charge_pct is not None else None,
+    }
     # only touch the fields the caller actually sent (so setting one does not
     # clear the other)
     if "commission_pct" in fields:
         cat.commission_pct = fields["commission_pct"]
     if "customer_charge_pct" in fields:
         cat.customer_charge_pct = fields["customer_charge_pct"]
+    vertical_id = None
+    if cat.vertical_type:
+        vertical_id = (await db.execute(
+            select(Vertical.id).where(Vertical.key == cat.vertical_type)
+        )).scalar_one_or_none()
+    after = {
+        "commission_pct": str(cat.commission_pct) if cat.commission_pct is not None else None,
+        "customer_charge_pct": str(cat.customer_charge_pct) if cat.customer_charge_pct is not None else None,
+    }
+    db.add(VerticalAuditLog(
+        vertical_id=vertical_id,
+        actor_id=uuid.UUID(u.user_id) if u.user_id else None,
+        action_type="monetization.category_override.update",
+        before_state={"category_id": str(cat.id), **before},
+        after_state={"category_id": str(cat.id), **after},
+        notes=f"Category monetization override updated for {cat.name}.",
+    ))
     await db.commit()
     return ok({"id": str(category_id),
                "commission_pct": float(cat.commission_pct) if cat.commission_pct is not None else None,
@@ -552,9 +570,9 @@ async def category_options(r: Request,
     return ok(options, _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing-rules", response_model=ApiResponse[dict],
-            summary="List service pricing rules (incl. completed_job_deduction_credits)",
-            tags=["Service Pricing Rules"])
+# Retired route: GET /v1/admin/pricing-rules.
+# Provider service prices live in tenant catalog setup; Home Services platform
+# charges live in Home Services Finance.
 async def list_pricing_rules(r: Request,
                               master_service_id: uuid.UUID | None = Query(None),
                               is_active: bool | None = Query(None),
@@ -590,6 +608,81 @@ async def list_pricing_rules(r: Request,
         expiring_within_days=expiring_within_days, rule_status=rule_status,
         page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir,
     ), _rid(r), ENGINE_ID)
+
+
+# ── Service Pricing Rules: the rest of the workspace ────────────────────────
+# The GET above was exposed on its own; every other operation the Pricing Rules
+# workspace performs stayed unrouted even though AdminCatalogService implements
+# all of them. So the page could LIST rules and nothing else — create, edit,
+# delete, preview, summary, export and conflict-check every 404'd. Same class of
+# bug the docstring above describes, just left half-finished.
+
+# Retired route: GET /v1/admin/pricing-rules/summary
+async def pricing_rules_summary(r: Request,
+                                 u: UserContext = Depends(require_super_admin),
+                                 s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.get_pricing_rules_summary(), _rid(r), ENGINE_ID)
+
+
+# Retired route: GET /v1/admin/pricing-rules/export
+async def export_pricing_rules(r: Request,
+                                master_service_id: uuid.UUID | None = Query(None),
+                                is_active: bool | None = Query(None),
+                                q: str | None = Query(None),
+                                u: UserContext = Depends(require_super_admin),
+                                s: AdminCatalogService = Depends(_svc)):
+    rows = await s.export_pricing_rules(
+        master_service_id=master_service_id, is_active=is_active, q=q)
+    return ok({"rows": rows, "count": len(rows)}, _rid(r), ENGINE_ID)
+
+
+# Retired route: POST /v1/admin/pricing-rules/preview
+async def preview_pricing(r: Request, payload: dict = Body(...),
+                          u: UserContext = Depends(require_super_admin),
+                          s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.preview_pricing(payload), _rid(r), ENGINE_ID)
+
+
+# Retired route: POST /v1/admin/pricing-rules
+async def create_pricing_rule(r: Request, payload: dict = Body(...),
+                              u: UserContext = Depends(require_super_admin),
+                              s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.create_pricing_rule(payload), _rid(r), ENGINE_ID)
+
+
+# Retired route: GET /v1/admin/pricing-rules/{rule_id}
+async def get_pricing_rule(rule_id: uuid.UUID, r: Request,
+                           u: UserContext = Depends(require_super_admin),
+                           s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.get_pricing_rule(rule_id), _rid(r), ENGINE_ID)
+
+
+# Retired route: PUT /v1/admin/pricing-rules/{rule_id}
+async def update_pricing_rule(rule_id: uuid.UUID, r: Request, payload: dict = Body(...),
+                              u: UserContext = Depends(require_super_admin),
+                              s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.update_pricing_rule(rule_id, payload), _rid(r), ENGINE_ID)
+
+
+# Retired route: DELETE /v1/admin/pricing-rules/{rule_id}
+async def delete_pricing_rule(rule_id: uuid.UUID, r: Request,
+                              u: UserContext = Depends(require_super_admin),
+                              s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.delete_pricing_rule(rule_id), _rid(r), ENGINE_ID)
+
+
+# Retired route: DELETE /v1/admin/pricing-rules/{rule_id}/hard-delete
+async def hard_delete_pricing_rule(rule_id: uuid.UUID, r: Request,
+                                    u: UserContext = Depends(require_super_admin),
+                                    s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.hard_delete_pricing_rule(rule_id), _rid(r), ENGINE_ID)
+
+
+# Retired route: GET /v1/admin/pricing-rules/{rule_id}/conflicts
+async def pricing_rule_conflicts(rule_id: uuid.UUID, r: Request,
+                                  u: UserContext = Depends(require_super_admin),
+                                  s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.get_pricing_rule_conflicts(rule_id), _rid(r), ENGINE_ID)
 
 
 @router.post("/service-categories", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
@@ -808,11 +901,12 @@ async def export_master_services(r: Request,
                                   service_group_id: uuid.UUID | None = Query(None),
                                   job_type: str | None = Query(None),
                                   is_active: bool | None = Query(None),
+                                  retired: bool = Query(False),
                                   u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     rows = await s.export_master_services(
         category_id=category_id, service_group_id=service_group_id,
-        job_type=job_type, is_active=is_active,
+        job_type=job_type, is_active=is_active, retired=retired,
     )
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
 
@@ -826,7 +920,12 @@ async def list_master_services(r: Request,
                                 job_type: str | None = Query(None),
                                 pricing_model: str | None = Query(None),
                                 is_active: bool | None = Query(None),
-                                limit: int = Query(200, ge=1, le=1000),
+                                retired: bool = Query(False),
+                                readiness: str | None = Query(None),
+                                has_providers: bool | None = Query(None),
+                                sort_by: str = Query("display_order"),
+                                sort_dir: str = Query("asc", pattern="^(asc|desc)$"),
+                                limit: int = Query(50, ge=1, le=100),
                                 offset: int = Query(0, ge=0),
                                 u: UserContext = Depends(require_super_admin),
                                 s: AdminCatalogService = Depends(_svc)):
@@ -834,7 +933,9 @@ async def list_master_services(r: Request,
         await s.list_master_services_enterprise(
             q=q, category_id=category_id, service_group_id=service_group_id,
             job_type=job_type, pricing_model=pricing_model,
-            is_active=is_active, limit=limit, offset=offset,
+            is_active=is_active, retired=retired, readiness=readiness,
+            has_providers=has_providers, sort_by=sort_by, sort_dir=sort_dir,
+            limit=limit, offset=offset,
         ),
         _rid(r), ENGINE_ID,
     )
@@ -864,12 +965,32 @@ async def create_master_service_v2(r: Request,
     return ok(await s.create_master_service_canonical(body), _rid(r), ENGINE_ID)
 
 
+@router.post("/master-services/bulk-status", response_model=ApiResponse[dict],
+             summary="Bulk activate or deactivate master services", tags=["Master Services"])
+async def bulk_master_service_status(r: Request,
+                                     u: UserContext = Depends(require_super_admin),
+                                     s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    ids = [uuid.UUID(str(value)) for value in body.get("ids", [])]
+    return ok(await s.bulk_master_service_status(ids, body.get("action", "")), _rid(r), ENGINE_ID)
+
+
 @router.get("/master-services/{service_id}", response_model=ApiResponse[dict],
             summary="Get master service", tags=["Master Services"])
 async def get_master_service(service_id: uuid.UUID, r: Request,
+                              include_retired: bool = Query(False),
                               u: UserContext = Depends(require_super_admin),
                               s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_master_service(service_id), _rid(r), ENGINE_ID)
+    return ok(await s.get_master_service_enterprise(service_id, include_retired), _rid(r), ENGINE_ID)
+
+
+@router.get("/master-services/{service_id}/audit", response_model=ApiResponse[dict],
+            summary="Master service audit history", tags=["Master Services"])
+async def master_service_audit(service_id: uuid.UUID, r: Request,
+                               limit: int = Query(100, ge=1, le=200),
+                               u: UserContext = Depends(require_super_admin),
+                               s: AdminCatalogService = Depends(_svc)):
+    return ok(await s.get_master_service_audit(service_id, limit), _rid(r), ENGINE_ID)
 
 
 @router.put("/master-services/{service_id}", response_model=ApiResponse[dict],
@@ -883,11 +1004,15 @@ async def update_master_service(service_id: uuid.UUID, r: Request,
 
 
 @router.delete("/master-services/{service_id}", response_model=ApiResponse[dict],
-               summary="Deactivate master service", tags=["Master Services"])
+               summary="Deprecated: use audited retire endpoint", tags=["Master Services"])
 async def delete_master_service(service_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.delete_master_service(service_id), _rid(r), ENGINE_ID)
+    raise ServiceOSException(
+        "AUDITED_RETIRE_REQUIRED",
+        "Use POST /master-services/{id}/archive with a retirement reason.",
+        status_code=410,
+    )
 
 
 @router.delete("/master-services/{service_id}/hard-delete", response_model=ApiResponse[dict],
@@ -896,7 +1021,11 @@ async def delete_master_service(service_id: uuid.UUID, r: Request,
 async def hard_delete_master_service(service_id: uuid.UUID, r: Request,
                                       u: UserContext = Depends(require_super_admin),
                                       s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.hard_delete_master_service(service_id), _rid(r), ENGINE_ID)
+    raise ServiceOSException(
+        "PERMANENT_DELETE_DISABLED",
+        "Permanent deletion is disabled. Retire the master service to preserve catalog and booking history.",
+        status_code=410,
+    )
 
 
 @router.post("/master-services/{service_id}/activate", response_model=ApiResponse[dict],
@@ -920,7 +1049,17 @@ async def deactivate_master_service(service_id: uuid.UUID, r: Request,
 async def archive_master_service(service_id: uuid.UUID, r: Request,
                                   u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.archive_master_service(service_id), _rid(r), ENGINE_ID)
+    body = await r.json()
+    return ok(await s.archive_master_service(service_id, body.get("reason", "")), _rid(r), ENGINE_ID)
+
+
+@router.post("/master-services/{service_id}/restore", response_model=ApiResponse[dict],
+             summary="Restore retired master service as inactive", tags=["Master Services"])
+async def restore_master_service(service_id: uuid.UUID, r: Request,
+                                 u: UserContext = Depends(require_super_admin),
+                                 s: AdminCatalogService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.restore_master_service(service_id, body.get("reason", "")), _rid(r), ENGINE_ID)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1050,16 +1189,16 @@ async def remove_service_brand_mapping(service_id: uuid.UUID, mapping_id: uuid.U
 # BARGAIN RULES (Phase 3 / 3B)
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/pricing/bargain-rules/summary", response_model=ApiResponse[dict],
-            summary="Bargain rules KPI summary", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.get("/pricing/bargain-rules/summary", response_model=ApiResponse[dict],
+            # summary="Bargain rules KPI summary", tags=["Bargain Rules"])
 async def get_bargain_rules_summary(r: Request,
                                      u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_READ)),
                                      s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_bargain_rules_summary(), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/bargain-rules", response_model=ApiResponse[dict],
-            summary="List bargain rules", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.get("/pricing/bargain-rules", response_model=ApiResponse[dict],
+            # summary="List bargain rules", tags=["Bargain Rules"])
 async def list_bargain_rules(r: Request,
                               master_service_id: uuid.UUID | None = Query(None),
                               category_id: uuid.UUID | None = Query(None),
@@ -1076,81 +1215,81 @@ async def list_bargain_rules(r: Request,
                                           below_floor_action, page, page_size), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
+             # summary="Create bargain rule", tags=["Bargain Rules"])
 async def create_bargain_rule(r: Request,
                                u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_CREATE)),
                                s: AdminCatalogService = Depends(_svc)):
     return ok(await s.create_bargain_rule(await r.json()), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/bargain-rules/{rule_id}", response_model=ApiResponse[dict],
-            summary="Get bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.get("/pricing/bargain-rules/{rule_id}", response_model=ApiResponse[dict],
+            # summary="Get bargain rule", tags=["Bargain Rules"])
 async def get_bargain_rule(rule_id: uuid.UUID, r: Request,
                             u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_READ)),
                             s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.put("/pricing/bargain-rules/{rule_id}", response_model=ApiResponse[dict],
-            summary="Update bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.put("/pricing/bargain-rules/{rule_id}", response_model=ApiResponse[dict],
+            # summary="Update bargain rule", tags=["Bargain Rules"])
 async def update_bargain_rule(rule_id: uuid.UUID, r: Request,
                                u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_UPDATE)),
                                s: AdminCatalogService = Depends(_svc)):
     return ok(await s.update_bargain_rule(rule_id, await r.json()), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules/{rule_id}/enable", response_model=ApiResponse[dict],
-             summary="Enable bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules/{rule_id}/enable", response_model=ApiResponse[dict],
+             # summary="Enable bargain rule", tags=["Bargain Rules"])
 async def enable_bargain_rule(rule_id: uuid.UUID, r: Request,
                                u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_UPDATE)),
                                s: AdminCatalogService = Depends(_svc)):
     return ok(await s.enable_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules/{rule_id}/disable", response_model=ApiResponse[dict],
-             summary="Disable bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules/{rule_id}/disable", response_model=ApiResponse[dict],
+             # summary="Disable bargain rule", tags=["Bargain Rules"])
 async def disable_bargain_rule(rule_id: uuid.UUID, r: Request,
                                 u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_UPDATE)),
                                 s: AdminCatalogService = Depends(_svc)):
     return ok(await s.disable_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules/{rule_id}/activate", response_model=ApiResponse[dict],
-             summary="Activate bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules/{rule_id}/activate", response_model=ApiResponse[dict],
+             # summary="Activate bargain rule", tags=["Bargain Rules"])
 async def activate_bargain_rule(rule_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_ACTIVATE)),
                                  s: AdminCatalogService = Depends(_svc)):
     return ok(await s.enable_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules/{rule_id}/deactivate", response_model=ApiResponse[dict],
-             summary="Deactivate bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules/{rule_id}/deactivate", response_model=ApiResponse[dict],
+             # summary="Deactivate bargain rule", tags=["Bargain Rules"])
 async def deactivate_bargain_rule(rule_id: uuid.UUID, r: Request,
                                    u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_DEACTIVATE)),
                                    s: AdminCatalogService = Depends(_svc)):
     return ok(await s.disable_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain-rules/{rule_id}/validate", response_model=ApiResponse[dict],
-             summary="Validate bargain rule", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain-rules/{rule_id}/validate", response_model=ApiResponse[dict],
+             # summary="Validate bargain rule", tags=["Bargain Rules"])
 async def validate_bargain_rule(rule_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_READ)),
                                  s: AdminCatalogService = Depends(_svc)):
     return ok(await s.validate_bargain_rule(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/bargain-rules/{rule_id}/audit", response_model=ApiResponse[dict],
-            summary="Bargain rule audit trail", tags=["Bargain Rules"])
+# Retired admin pricing route: @router.get("/pricing/bargain-rules/{rule_id}/audit", response_model=ApiResponse[dict],
+            # summary="Bargain rule audit trail", tags=["Bargain Rules"])
 async def get_bargain_rule_audit(rule_id: uuid.UUID, r: Request,
                                   u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_RULES_AUDIT_READ)),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_bargain_rule_audit(rule_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/bargain/evaluate-preview", response_model=ApiResponse[BargainEvaluationResponse],
-             summary="Evaluate a bargain offer against the customer range + platform fee floor (admin preview)",
-             tags=["Bargain Rules"])
+# Retired admin pricing route: @router.post("/pricing/bargain/evaluate-preview", response_model=ApiResponse[BargainEvaluationResponse],
+             # summary="Evaluate a bargain offer against the customer range + platform fee floor (admin preview)",
+             # tags=["Bargain Rules"])
 async def evaluate_bargain_preview(r: Request, body: BargainEvaluationRequest,
                                     u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
                                     s: AdminCatalogService = Depends(_svc)):
@@ -1161,16 +1300,16 @@ async def evaluate_bargain_preview(r: Request, body: BargainEvaluationRequest,
 # PROVIDER PRICING OVERRIDES (Phase 3 / 3B)
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/pricing/provider-overrides/summary", response_model=ApiResponse[dict],
-            summary="Provider overrides KPI summary", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.get("/pricing/provider-overrides/summary", response_model=ApiResponse[dict],
+            # summary="Provider overrides KPI summary", tags=["Provider Pricing Overrides"])
 async def get_provider_overrides_summary(r: Request,
                                           u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_READ)),
                                           s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_provider_overrides_summary(), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/provider-overrides", response_model=ApiResponse[dict],
-            summary="List provider pricing overrides", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.get("/pricing/provider-overrides", response_model=ApiResponse[dict],
+            # summary="List provider pricing overrides", tags=["Provider Pricing Overrides"])
 async def list_provider_overrides(r: Request,
                                    tenant_id: uuid.UUID | None = Query(None),
                                    approval_status: str | None = Query(None),
@@ -1183,48 +1322,48 @@ async def list_provider_overrides(r: Request,
                                                search, page, page_size), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
+             # summary="Create provider pricing override", tags=["Provider Pricing Overrides"])
 async def create_provider_override(r: Request,
                                     u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_CREATE)),
                                     s: AdminCatalogService = Depends(_svc)):
     return ok(await s.create_provider_override(await r.json()), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/validate-preview", response_model=ApiResponse[dict],
-             summary="Validate a provider override (dry-run, admin preview)", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/validate-preview", response_model=ApiResponse[dict],
+             # summary="Validate a provider override (dry-run, admin preview)", tags=["Provider Pricing Overrides"])
 async def validate_provider_override_preview(r: Request,
                                               u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_VALIDATE_PREVIEW)),
                                               s: AdminCatalogService = Depends(_svc)):
     return ok(await s.validate_provider_override_preview(await r.json()), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/provider-overrides/{override_id}", response_model=ApiResponse[dict],
-            summary="Get provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.get("/pricing/provider-overrides/{override_id}", response_model=ApiResponse[dict],
+            # summary="Get provider pricing override", tags=["Provider Pricing Overrides"])
 async def get_provider_override(override_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_READ)),
                                  s: AdminCatalogService = Depends(_svc)):
     return ok(await s.get_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.put("/pricing/provider-overrides/{override_id}", response_model=ApiResponse[dict],
-            summary="Update provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.put("/pricing/provider-overrides/{override_id}", response_model=ApiResponse[dict],
+            # summary="Update provider pricing override", tags=["Provider Pricing Overrides"])
 async def update_provider_override(override_id: uuid.UUID, r: Request,
                                     u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_UPDATE)),
                                     s: AdminCatalogService = Depends(_svc)):
     return ok(await s.update_provider_override(override_id, await r.json()), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/approve", response_model=ApiResponse[dict],
-             summary="Approve provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/approve", response_model=ApiResponse[dict],
+             # summary="Approve provider pricing override", tags=["Provider Pricing Overrides"])
 async def approve_provider_override(override_id: uuid.UUID, r: Request,
                                      u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_APPROVE)),
                                      s: AdminCatalogService = Depends(_svc)):
     return ok(await s.approve_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/reject", response_model=ApiResponse[dict],
-             summary="Reject provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/reject", response_model=ApiResponse[dict],
+             # summary="Reject provider pricing override", tags=["Provider Pricing Overrides"])
 async def reject_provider_override(override_id: uuid.UUID, r: Request,
                                     u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_REJECT)),
                                     s: AdminCatalogService = Depends(_svc)):
@@ -1232,40 +1371,40 @@ async def reject_provider_override(override_id: uuid.UUID, r: Request,
     return ok(await s.reject_provider_override(override_id, body.get("reason", "")), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/enable", response_model=ApiResponse[dict],
-             summary="Enable provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/enable", response_model=ApiResponse[dict],
+             # summary="Enable provider pricing override", tags=["Provider Pricing Overrides"])
 async def enable_provider_override(override_id: uuid.UUID, r: Request,
                                     u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_UPDATE)),
                                     s: AdminCatalogService = Depends(_svc)):
     return ok(await s.enable_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/disable", response_model=ApiResponse[dict],
-             summary="Disable provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/disable", response_model=ApiResponse[dict],
+             # summary="Disable provider pricing override", tags=["Provider Pricing Overrides"])
 async def disable_provider_override(override_id: uuid.UUID, r: Request,
                                      u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_UPDATE)),
                                      s: AdminCatalogService = Depends(_svc)):
     return ok(await s.disable_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/activate", response_model=ApiResponse[dict],
-             summary="Activate provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/activate", response_model=ApiResponse[dict],
+             # summary="Activate provider pricing override", tags=["Provider Pricing Overrides"])
 async def activate_provider_override(override_id: uuid.UUID, r: Request,
                                       u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_ACTIVATE)),
                                       s: AdminCatalogService = Depends(_svc)):
     return ok(await s.enable_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/pricing/provider-overrides/{override_id}/deactivate", response_model=ApiResponse[dict],
-             summary="Deactivate provider pricing override", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.post("/pricing/provider-overrides/{override_id}/deactivate", response_model=ApiResponse[dict],
+             # summary="Deactivate provider pricing override", tags=["Provider Pricing Overrides"])
 async def deactivate_provider_override(override_id: uuid.UUID, r: Request,
                                         u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_DEACTIVATE)),
                                         s: AdminCatalogService = Depends(_svc)):
     return ok(await s.disable_provider_override(override_id), _rid(r), ENGINE_ID)
 
 
-@router.get("/pricing/provider-overrides/{override_id}/audit", response_model=ApiResponse[dict],
-            summary="Provider pricing override audit trail", tags=["Provider Pricing Overrides"])
+# Retired admin pricing route: @router.get("/pricing/provider-overrides/{override_id}/audit", response_model=ApiResponse[dict],
+            # summary="Provider pricing override audit trail", tags=["Provider Pricing Overrides"])
 async def get_provider_override_audit(override_id: uuid.UUID, r: Request,
                                        u: UserContext = Depends(require_permission(P.PRICING_PROVIDER_OVERRIDES_AUDIT_READ)),
                                        s: AdminCatalogService = Depends(_svc)):
@@ -1390,6 +1529,23 @@ async def delete_service_option(option_id: uuid.UUID, r: Request,
 # ═══════════════════════════════════════════════════════════════
 # MASTER WORKFLOW TEMPLATES  (Sprint 34C, upgraded — P0 Enterprise Workflow Engine)
 # ═══════════════════════════════════════════════════════════════
+
+@router.api_route("/workflow-templates", methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                  response_model=ApiResponse[dict], include_in_schema=False)
+@router.api_route("/workflow-templates/{retired_path:path}",
+                  methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                  response_model=ApiResponse[dict], include_in_schema=False)
+async def retired_workflow_templates_api(retired_path: str = "",
+                                         u: UserContext = Depends(require_super_admin)):
+    _ = (retired_path, u)
+    raise ServiceOSException(
+        "WORKFLOW_TEMPLATES_RETIRED",
+        "Workflow templates are retired. Configure the runtime job workflow in "
+        "Home Services -> Service Catalog -> Catalog Workspace -> Workflow "
+        "(service_job_workflow).",
+        status_code=410,
+    )
+
 
 @router.get("/workflow-templates/summary", response_model=ApiResponse[dict],
             summary="Workflow templates summary cards", tags=["Master Workflow Templates"])
@@ -1679,3 +1835,15 @@ async def list_master_data_audit(r: Request,
                                   u: UserContext = Depends(require_super_admin),
                                   s: AdminCatalogService = Depends(_svc)):
     return ok(await s.list_master_data_audit(entity_type, entity_id, limit), _rid(r), ENGINE_ID)
+
+
+# The retired master_workflow_templates handlers remain below the 410 guard for
+# migration/audit compatibility, but should not appear as production API
+# surface area. Runtime workflow authoring is the Job-Type Blueprint router.
+for _route in router.routes:
+    _path = getattr(_route, "path", "")
+    if (
+        (_path.startswith("/v1/admin/workflow-templates") or _path.startswith("/workflow-templates"))
+        and getattr(_route, "name", "") != "retired_workflow_templates_api"
+    ):
+        _route.include_in_schema = False

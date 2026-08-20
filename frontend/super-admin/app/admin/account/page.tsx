@@ -7,10 +7,12 @@ import { ProfilePhotoUploader } from "../../../components/shared/ProfilePhotoUpl
 import { authApi, type UserSession, type ApiKey, type ApiKeyCreated, type MfaSetup, type MediaAsset } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 
+const API_KEYS_ENABLED = false;
+
 export default function AccountPage() {
   const me       = useApi(() => authApi.me(), []);
   const sessions = useApi(() => authApi.getSessions(), []);
-  const keys     = useApi(() => authApi.listApiKeys(), []);
+  const keys     = useApi(() => authApi.listApiKeys(), [], { enabled: API_KEYS_ENABLED });
 
   const [tab, setTab]               = useState<"profile"|"security"|"mfa"|"sessions"|"apikeys">("profile");
   const [toast, setToast]           = useState("");
@@ -114,7 +116,6 @@ export default function AccountPage() {
     { id:"security", label:"Password"   },
     { id:"mfa",      label:"MFA"        },
     { id:"sessions", label:"Sessions"   },
-    { id:"apikeys",  label:"API Keys"   },
   ] as const;
 
   const u = me.data as (typeof me.data & { mfa_enabled?: boolean }) | null;
@@ -122,7 +123,7 @@ export default function AccountPage() {
   return (
     <AdminLayout activeNav="account">
       <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-        <SectionHeader title="My Account" subtitle="Profile, security, sessions and API keys" />
+        <SectionHeader title="My Account" subtitle="Profile, security and active sessions" />
 
         {toast && (
           <div style={{ padding:"10px 16px", background:"var(--success-bg,#d1fae5)", border:"1px solid var(--success,var(--success))",

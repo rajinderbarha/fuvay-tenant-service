@@ -86,9 +86,12 @@ async def list_permissions(r: Request,
                             app_scope: str | None = Query(None),
                             risk_level: str | None = Query(None),
                             search: str | None = Query(None),
+                            page: int = Query(1, ge=1),
+                            limit: int = Query(50, ge=1, le=200),
                             u: UserContext = Depends(require_permission(P.PLATFORM_PERMISSIONS_READ))) -> ApiResponse[dict]:
     return ok(svc.list_permissions(module=module, app_scope=app_scope,
-                                    risk_level=risk_level, search=search),
+                                    risk_level=risk_level, search=search,
+                                    page=page, limit=limit),
               _rid(r), "roles_permissions")
 
 

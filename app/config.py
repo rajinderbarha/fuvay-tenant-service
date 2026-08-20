@@ -4,6 +4,7 @@ All settings loaded from environment / .env file via pydantic-settings.
 Never import settings directly — always use get_settings() to allow DI in tests.
 """
 from functools import lru_cache
+import json
 from typing import Annotated, Literal
 
 from pydantic import field_validator, model_validator
@@ -30,6 +31,11 @@ class Settings(BaseSettings):
 
     # ── API ────────────────────────────────────────────────────────
     API_V1_PREFIX: str = "/v1"
+    # API-key issuance is intentionally unavailable until the integration
+    # product, tenant controls, and operational support model are launched.
+    # Keeping this server-side flag off removes the routes from both runtime
+    # routing and OpenAPI rather than relying on frontend concealment.
+    API_KEYS_ENABLED: bool = False
     ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",   # Super Admin Portal
         "http://localhost:3001",   # Tenant Owner Portal
@@ -99,6 +105,7 @@ class Settings(BaseSettings):
 
     # ── Media Engine (Phase 0A) ────────────────────────────────────
     FILE_STORAGE_DRIVER: str = ""         # local | cloudinary | s3_compatible | cloudflare_r2
+    FILE_STORAGE_DOCUMENT_DRIVER: str = ""  # optional separate driver for PDF/office/text files
     FILE_STORAGE_BUCKET: str = ""
     FILE_STORAGE_REGION: str = ""
     FILE_STORAGE_ENDPOINT: str = ""
@@ -138,6 +145,9 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = ""
     SENDGRID_API_KEY: str = ""
     FCM_SERVER_KEY: str = ""
+    # Optional dedicated Fernet key for notification-provider credentials.
+    # When empty outside production, a stable key is derived from SECRET_KEY.
+    NOTIFICATION_CREDENTIAL_KEY: str = ""
 
     # ── Email (SMTP) ───────────────────────────────────────────────
     EMAIL_USERNAME: str = ""
@@ -149,6 +159,19 @@ class Settings(BaseSettings):
     @classmethod
     def parse_origins(cls, v):
         if isinstance(v, str):
+            value = v.strip()
+            # Deployment scripts commonly provide a JSON array while local
+            # .env files use comma-separated origins.  NoDecode intentionally
+            # leaves parsing to us, so accept both representations; otherwise
+            # values such as `["http://localhost:3000"` silently become an
+            # invalid CORS origin and block browser login preflights.
+            if value.startswith("["):
+                try:
+                    decoded = json.loads(value)
+                    if isinstance(decoded, list):
+                        return [str(origin).strip() for origin in decoded if str(origin).strip()]
+                except (json.JSONDecodeError, TypeError):
+                    pass
             return [origin.strip() for origin in v.split(",")]
         return v
 

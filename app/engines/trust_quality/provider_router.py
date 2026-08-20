@@ -40,8 +40,13 @@ async def staff_badges(
     r: Request, staff_id: uuid.UUID,
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[dict]:
-    """The badges a technician on this provider's team holds. A provider only
-    ever sees their own staff, which is enforced by the staff-scoping the
-    tenant-portal uses to list staff in the first place."""
-    return ok({"items": await _svc(db, user).list_earned_badges(
-        "technician", staff_id, "provider")}, _rid(r))
+    """The badges a team member holds.
+
+    Staff and technician badges are separate fixed families, but both use the
+    same staff user id in the Home Services app. Return both so tenant/profile
+    surfaces do not silently hide half of the trust model.
+    """
+    svc = _svc(db, user)
+    staff_items = await svc.list_earned_badges("staff", staff_id, "provider")
+    tech_items = await svc.list_earned_badges("technician", staff_id, "provider")
+    return ok({"items": staff_items + tech_items}, _rid(r))

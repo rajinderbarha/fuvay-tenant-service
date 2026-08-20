@@ -1,18 +1,19 @@
 """Sprint 25 — Provider Complaint API."""
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
 import uuid
 from decimal import Decimal
 
-from app.dependencies.auth import get_current_user, UserContext
+from app.dependencies.auth import get_current_user, require_staff_or_above, UserContext
 from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.rework_service import ServiceReworkService
 from app.engines.complaints.refund_service import RefundRequestService
+from app.exceptions import ServiceOSException
 
 provider_complaint_router = APIRouter(prefix="/v1/provider/complaints", tags=["provider-complaints"])
 provider_rework_router    = APIRouter(prefix="/v1/provider/rework-requests", tags=["provider-rework"])
@@ -26,6 +27,16 @@ _refund    = RefundRequestService()
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _rid(r):
     return getattr(r.state, "request_id", "—") if r else "—"
+
+
+def _provider_tenant_id(u: UserContext) -> str:
+    if not u.tenant_id:
+        raise ServiceOSException(
+            "TENANT_CONTEXT_REQUIRED",
+            "Provider tenant context is required.",
+            status_code=403,
+        )
+    return u.tenant_id
 
 
 class AddMessageIn(BaseModel):
@@ -60,13 +71,22 @@ class ReworkNotesIn(BaseModel):
 class RefundReviewIn(BaseModel):
     notes: Optional[str] = None
 
+class RefundDecisionIn(BaseModel):
+    approve: bool
+    approved_amount: Optional[Decimal] = None
+    reason: Optional[str] = None
+
+class RefundRecordIn(BaseModel):
+    recorded_amount: Decimal
+    proof_media_url: Optional[str] = None
+
 
 # ── Complaints ────────────────────────────────────────────────────────────────
 @provider_complaint_router.get("")
 async def list_complaints(
     status: Optional[str] = None,
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_staff_or_above),
     db: AsyncSession = Depends(get_db),
 ):
     complaints = await _complaint.provider_list_complaints(db, u.tenant_id, status=status)
@@ -220,14 +240,17 @@ async def complete_rework(
 @provider_refund_router.get("")
 async def list_refund_requests(
     status: Optional[str] = None,
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     r: Request       = None,
-    u: UserContext   = Depends(get_current_user),
+    u: UserContext   = Depends(require_staff_or_above),
     db: AsyncSession = Depends(get_db),
 ):
-    refunds = await _refund.list_refund_requests(db, tenant_id=u.tenant_id, status=status)
-    return ok([{"id": str(rf.id), "status": rf.status, "complaint_id": str(rf.complaint_id),
-                "refund_type": rf.refund_type, "requested_amount": str(rf.requested_amount) if rf.requested_amount else None,
-                "created_at": str(rf.created_at)} for rf in refunds], _rid(r), "provider.refund.list")
+    data = await _refund.list_refund_requests_page(
+        db, tenant_id=_provider_tenant_id(u), status=status, q=q, page=page, page_size=page_size,
+    )
+    return ok(data, _rid(r), "provider.refund.list")
 
 
 @provider_refund_router.post("/{refund_id}/review")
@@ -238,8 +261,33 @@ async def review_refund(
     u: UserContext   = Depends(require_tenant_owner_mutation),
     db: AsyncSession = Depends(get_db),
 ):
-    rf = await _refund.provider_review_refund(db, refund_id, u.user_id, notes=body.notes, request_id=_rid(r), tenant_id=u.tenant_id)
+    rf = await _refund.provider_review_refund(db, refund_id, u.user_id, notes=body.notes, request_id=_rid(r), tenant_id=_provider_tenant_id(u))
     return ok({"id": str(rf.id), "status": rf.status}, _rid(r), "provider.refund.reviewed")
+
+@provider_refund_router.post("/{refund_id}/decision")
+async def decide_refund(
+    refund_id: uuid.UUID, body: RefundDecisionIn, r: Request = None,
+    u: UserContext = Depends(require_tenant_owner_mutation), db: AsyncSession = Depends(get_db),
+):
+    rf = await _refund.provider_decide_refund(
+        db, refund_id, _provider_tenant_id(u), u.user_id, approve=body.approve,
+        approved_amount=body.approved_amount, reason=body.reason, request_id=_rid(r),
+    )
+    return ok(rf.to_dict(), _rid(r), "provider.refund.decided")
+
+@provider_refund_router.post("/{refund_id}/record")
+async def provider_record_refund(
+    refund_id: uuid.UUID, body: RefundRecordIn, r: Request = None,
+    u: UserContext = Depends(require_tenant_owner_mutation), db: AsyncSession = Depends(get_db),
+):
+    # Ownership is checked before the shared record operation; provider identity
+    # is retained in the append-only complaint event.
+    await _refund.get_refund(db, refund_id, tenant_id=_provider_tenant_id(u))
+    rf = await _refund.record_refund(
+        db, refund_id, u.user_id, "provider", body.recorded_amount,
+        proof_media_url=body.proof_media_url, request_id=_rid(r),
+    )
+    return ok(rf.to_dict(), _rid(r), "provider.refund.recorded")
 
 
 # ── Settlement proposals (Sprint 75) ──────────────────────────────────────────

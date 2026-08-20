@@ -12,14 +12,9 @@ enforced throughout: tenant sets amounts only; type/brand mode, checklist,
 technician/schedule/estimate requirements always come from
 MasterService/ServiceJobWorkflow (admin-owned), never invented here.
 
-Known architectural limitation (documented, not hidden): TenantService has
-UniqueConstraint(tenant_id, master_service_id) -- NOT (..., job_type_id) --
-so on the newer MasterServiceJobType hierarchy a tenant cannot yet have
-independent rows per Job Type under one Master Service. This workspace is
-built against the live, populated model (one MasterService row per job-type
-flavor, e.g. "AC Repair" / "AC Installation" as distinct rows), which is
-what real tenant data actually uses today. Fixing the constraint to also
-support the newer per-Job-Type hierarchy is a separate, tracked follow-up.
+TenantService is one row per (tenant, master service, job type). Repair and
+Installation therefore keep independent setup, pricing, publication, and
+readiness while booking/jobs snapshot the exact published workflow version.
 """
 from __future__ import annotations
 
@@ -33,10 +28,10 @@ from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
-from app.engines.admin_catalog.tenant_service import TenantCatalogService, project_tenant_blueprint
+from app.engines.admin_catalog.tenant_service import TenantCatalogService
 from app.engines.admin_catalog.models import (
     TenantService, MasterService, ServiceGroup, JobTypeDefinition,
-    ServiceJobWorkflow, TenantServiceType, TenantServiceBrand,
+    TenantServiceType, TenantServiceBrand,
 )
 
 router = APIRouter(prefix="/v1/tenant/home-services/services", tags=["Tenant Home Services — Services & Pricing"])
@@ -114,9 +109,11 @@ async def get_workspace(
             missing_pricing += 1
 
         job_type_label = None
-        if m and m.job_type_id:
-            job_type_label = await db.scalar(select(JobTypeDefinition.label).where(JobTypeDefinition.id == m.job_type_id))
-        elif s.get("job_type"):
+        if s.get("job_type_id"):
+            job_type_label = await db.scalar(
+                select(JobTypeDefinition.label).where(JobTypeDefinition.id == uuid.UUID(s["job_type_id"]))
+            )
+        if not job_type_label and s.get("job_type"):
             job_type_label = s["job_type"].replace("_", " ").title()
 
         tree[group_key]["services"].append({
@@ -158,33 +155,14 @@ async def get_offering_detail(
     ts_dict = await svc.get_enabled_service(tenant_service_id)
     master = await db.get(MasterService, ts_row.master_service_id)
 
-    job_type_label = None
-    workflow = None
-    # Older TenantService rows may not carry job_type_id even though their
-    # MasterService does.  Setup reads the master row, so using only the
-    # tenant row here made the dashboard silently fall back to legacy fields
-    # for the very same offering.  Resolve one canonical job type for both.
-    workflow_job_type_id = ts_row.job_type_id or (master.job_type_id if master else None)
-    if workflow_job_type_id:
-        job_type_label = await db.scalar(select(JobTypeDefinition.label).where(JobTypeDefinition.id == workflow_job_type_id))
-        workflow_row = (await db.execute(
-            select(ServiceJobWorkflow).where(
-                ServiceJobWorkflow.master_service_id == ts_row.master_service_id,
-                ServiceJobWorkflow.job_type_id == workflow_job_type_id,
-                ServiceJobWorkflow.is_current.is_(True),
-                ServiceJobWorkflow.status == "published",
-            ).order_by(ServiceJobWorkflow.version_number.desc())
-        )).scalars().first()
-        if workflow_row:
-            workflow = workflow_row.to_dict()
-    elif ts_row.job_type:
+    # Admin blueprint -- exact same job-type-specific requirements used by
+    # Tenant Setup and its publish gate.
+    blueprint = await svc._tenant_setup_blueprint(master, ts_row.job_type_id)  # noqa: SLF001
+    job_type_label = await db.scalar(
+        select(JobTypeDefinition.label).where(JobTypeDefinition.id == ts_row.job_type_id)
+    )
+    if not job_type_label and ts_row.job_type:
         job_type_label = ts_row.job_type.replace("_", " ").title()
-
-    # Admin blueprint -- prefer the real per-(master_service, job_type)
-    # ServiceJobWorkflow row when it exists; fall back to MasterService's own
-    # scalar fields for tenants still on the legacy one-row-per-job-type
-    # model (documented in this router's module docstring).
-    blueprint = project_tenant_blueprint(master, workflow)
 
     validation = await svc.validate_for_publish(tenant_service_id)
     types = (await svc.get_tenant_service_types(tenant_service_id))["types"]

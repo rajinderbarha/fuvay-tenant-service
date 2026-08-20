@@ -27,8 +27,8 @@ from app.engines.customer_home.seasonality import (
 
 logger = structlog.get_logger("customer_home.service")
 
-# v2 adds `global_services` (always-visible promotional lead-capture cards).
-HOME_RESPONSE_VERSION = 2
+# v3 retires Home banners, mutable Home Layout, and Global Services.
+HOME_RESPONSE_VERSION = 3
 
 
 # How many live bookings the Home strip carries. Three fits the slider without
@@ -72,13 +72,6 @@ class CustomerHomeService:
         active_booking_total = await self._safe_call(
             self._count_active_bookings(customer_id), default=len(active_bookings or []))
         unread_count = await self._safe_call(self._get_unread_notification_count(customer_id), default=0)
-        campaigns = await self._safe_call(self._get_active_campaigns(zipcode), default=[])
-        # Global Services are promotional platform-run offerings shown to
-        # EVERY customer regardless of ZIP/vertical/serviceability -- they are
-        # deliberately not gated like `bookable_categories`, because they are
-        # lead-capture cards (admin calls the customer back), not bookable
-        # catalog entries. See global_services/customer_router.py.
-        global_services = await self._safe_call(self._get_global_services(), default=[])
         # Scoped to the categories resolved above, so a shortcut can never
         # lead somewhere this ZIP cannot book. The id is read with .get():
         # building the argument list happens OUTSIDE _safe_call, so a
@@ -131,15 +124,9 @@ class CustomerHomeService:
         elif address and address.get("zipcode"):
             serviceability_summary = {"zipcode": address["zipcode"], "checked": True}
 
-        # Which sections the app should draw, and in what order. Falls back to
-        # an empty list rather than a guessed order: the app then renders its own
-        # shipped layout, which is a working screen -- a half-invented order
-        # would silently move things around for every customer.
-        sections = await self._safe_call(self._get_home_sections(), default=[])
-
         return {
             "response_version": HOME_RESPONSE_VERSION,
-            "sections": sections,
+            "sections": [],
             # Named so the app can say WHY the order is what it is ("Monsoon
             # picks") rather than silently rearranging the screen each quarter.
             "season": season,
@@ -158,8 +145,7 @@ class CustomerHomeService:
             # inferred from the length of a capped list.
             "active_booking_total": active_booking_total,
             "unread_notification_count": unread_count,
-            "campaigns": campaigns,
-            "global_services": global_services,
+            "campaigns": [],
             "quick_issues": quick_issues,
             "capabilities": {
                 "bargain_available": True,
@@ -596,20 +582,6 @@ class CustomerHomeService:
         from app.engines.platform_notifications.notification_service import NotificationService
         svc = NotificationService()
         return await svc.get_unread_count(self.db, customer_id)
-
-    async def _get_home_sections(self) -> list[dict]:
-        from app.engines.customer_home.section_service import HomeSectionService
-        return await HomeSectionService(self.db).customer_sections()
-
-    async def _get_active_campaigns(self, zipcode: str | None) -> list[dict]:
-        from app.engines.customer_campaigns.service import CampaignService
-        svc = CampaignService(db=self.db)
-        return await svc.list_active_for_customer(zipcode=zipcode)
-
-    async def _get_global_services(self) -> list[dict]:
-        from app.engines.global_services.service import GlobalServicesService
-        svc = GlobalServicesService(self.db)
-        return await svc.list_services(include_inactive=False)
 
     async def _get_quick_issues(self, category_ids: list) -> list[dict]:
         """Specific problems a customer can tap straight into, e.g.

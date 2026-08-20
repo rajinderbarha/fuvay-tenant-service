@@ -41,12 +41,10 @@ async def resolve_provider_commission_rate(db: AsyncSession, category_id) -> Dec
     runtime effect -- the platform kept charging the category rate (or the
     flat default) no matter what an admin configured and "published".
 
-    Precedence, most-specific first:
-      1. The category's own `commission_pct` override, but only while the
-         vertical's CURRENT published model is PERCENTAGE_COMMISSION.
-      2. The published vertical policy's `provider_percentage` default.
-      3. The legacy category/platform fallback when no vertical policy has
-         ever been published.
+    Home Services has one authority: its published Monetization policy.
+    Category commission fields are ignored for that vertical. Other legacy
+    verticals retain category -> published default -> platform fallback
+    precedence until their own dedicated finance workspaces are migrated.
 
     A published policy whose `provider_model` is something other than
     PERCENTAGE_COMMISSION (e.g. COMPLETION_CREDITS, SUBSCRIPTION) returns
@@ -96,10 +94,17 @@ async def resolve_provider_commission_rate(db: AsyncSession, category_id) -> Dec
         if policy is not None:
             if policy.provider_model != "PERCENTAGE_COMMISSION":
                 return Decimal("0")
+            if category.vertical_type == "home_services":
+                return Decimal(str(policy.provider_percentage or 0))
             if category_rate is not None:
                 return category_rate
             if policy.provider_percentage is not None:
                 return Decimal(str(policy.provider_percentage))
+
+        if category.vertical_type == "home_services":
+            # No published Home Services Monetization policy means no
+            # provider charge. Never resurrect a category/platform default.
+            return Decimal("0")
 
     if category_rate is not None:
         return category_rate
@@ -151,6 +156,23 @@ class ServiceCommissionService:
         ignored (see that function's own docstring for the full bug)."""
         return await resolve_provider_commission_rate(db, category_id)
 
+    async def _uses_home_services_completion_ledger(
+        self, db: AsyncSession, invoice: ServiceInvoice,
+    ) -> bool:
+        """Home Services has one authoritative provider-charge writer.
+
+        The completed-job execution pipeline posts the provider charge to
+        ``usage_credit_ledger``.  The older invoice commission subsystem
+        debits ``tenant_wallets`` and must therefore remain disabled for Home
+        Services or the same job can be charged twice.  Other verticals keep
+        using this invoice-commission service unchanged.
+        """
+        from app.engines.tenant_engine.models import Tenant
+        vertical_type = (await db.execute(
+            select(Tenant.vertical).where(Tenant.id == invoice.tenant_id)
+        )).scalar_one_or_none()
+        return vertical_type == "home_services"
+
     # ── Calculate commission ───────────────────────────────────────────────────
 
     async def calculate_commission(
@@ -165,7 +187,8 @@ class ServiceCommissionService:
         if cr and cr.status in {COM_DEDUCTED}:
             raise ValueError(ERR_COMMISSION_ALREADY_DEDUCTED)
 
-        rate = await self._resolve_rate(db, inv.category_id)
+        uses_completion_ledger = await self._uses_home_services_completion_ledger(db, inv)
+        rate = Decimal("0") if uses_completion_ledger else await self._resolve_rate(db, inv.category_id)
         # MODULE-L5-10: commission is charged on the SERVICE value (total_amount),
         # NOT customer_payable_amount — the latter now includes the platform's own
         # customer charge, and the provider must not pay commission on that fee.
@@ -180,7 +203,7 @@ class ServiceCommissionService:
                 update(SvcCommissionRecord)
                 .where(SvcCommissionRecord.id == cr.id)
                 .values(
-                    status=COM_CALCULATED,
+                    status=COM_NOT_REQUIRED if uses_completion_ledger else COM_CALCULATED,
                     commission_base_amount=base,
                     commission_rate=rate,
                     commission_amount=amount,
@@ -196,7 +219,7 @@ class ServiceCommissionService:
                 booking_id=inv.booking_id,
                 job_id=inv.job_id,
                 tenant_id=inv.tenant_id,
-                status=COM_CALCULATED,
+                status=COM_NOT_REQUIRED if uses_completion_ledger else COM_CALCULATED,
                 commission_base_amount=base,
                 commission_rate=rate,
                 commission_amount=amount,
@@ -205,8 +228,15 @@ class ServiceCommissionService:
             db.add(cr)
             await db.flush()
 
-        await self._log_event(db, inv, cr, FEV_COMMISSION_CALCULATED, "system", actor_user_id,
-                              new_value={"rate": str(rate), "amount": str(amount)})
+        await self._log_event(
+            db, inv, cr, FEV_COMMISSION_CALCULATED, "system", actor_user_id,
+            new_value={
+                "rate": str(rate), "amount": str(amount),
+                "status": COM_NOT_REQUIRED if uses_completion_ledger else COM_CALCULATED,
+                "reason": "home_services_completion_usage_credit_ledger"
+                if uses_completion_ledger else None,
+            },
+        )
         await db.commit()
         await db.refresh(cr)
         return cr.to_dict()
@@ -232,6 +262,8 @@ class ServiceCommissionService:
 
         if cr.status == COM_DEDUCTED:
             raise ValueError(ERR_COMMISSION_ALREADY_DEDUCTED)
+        if cr.status == COM_NOT_REQUIRED:
+            return cr.to_dict()
 
         # Idempotency: same key, same record → no-op
         if cr.idempotency_key and cr.idempotency_key == idempotency_key and cr.status == COM_DEDUCTED:

@@ -77,10 +77,11 @@ from app.core.permissions import P, ROLE_PERMISSIONS, permission_checker
 
 ROOT = Path(__file__).parent.parent
 
-# Real, pre-existing seeded demo tenants (confirmed live via direct SQL --
-# both already have a SecurityDeposit row, status=unpaid, balance 0).
-TENANT_A = uuid.UUID("5209ef33-a53e-4fc0-b3f6-006335b8d712")
-TENANT_B = uuid.UUID("f45664c1-50b7-42c5-a115-37fed1bbaf53")
+# Real, pre-existing Home Services tenants (confirmed live via direct SQL).
+# Keep these aligned with the durable E2E seed instead of the retired Demo
+# AC Services fixture, which was removed from the development database.
+TENANT_A = uuid.UUID("13309ae1-69b2-4174-a775-1bc2e008bf8a")
+TENANT_B = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
 
 
 def _read(rel: str) -> str:
@@ -142,9 +143,14 @@ class TestFrontendBackendMatchGuards:
 
     def test_nav_item_uses_canonical_permission(self):
         src = _read("frontend/super-admin/components/layout/AdminLayout.tsx")
-        start = src.index('id: "finance-deposits"')
+        # Deposits now live inside the consolidated Home Services Finance
+        # workspace, so the old standalone nav item must not return. The
+        # workspace has its canonical read guard; deposit mutations retain
+        # their granular backend permissions.
+        assert 'id: "finance-deposits"' not in src
+        start = src.index('id: "home-services-finance"')
         line = src[start:src.index("\n", start)]
-        assert 'requiredPermission: "finance:deposits:read"' in line
+        assert 'requiredPermission: "finance:hub:read"' in line
         assert "finance.security_deposits" not in line
 
     def test_page_route_guard_uses_canonical_permission(self):

@@ -5,7 +5,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, SectionHeader, Skeleton } from "../../../../components/shared/ui";
 import { autoPriceOptionsApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
-import { CheckCircle2, XCircle, Search, History, ShieldCheck } from "lucide-react";
+import { CheckCircle2, XCircle, Search, ShieldCheck } from "lucide-react";
 
 function SectionError({ title, message, requestId, onRetry }: {
   title: string; message: string; requestId?: string | null; onRetry?: () => void;
@@ -27,10 +27,10 @@ export default function ProviderMatchingPage() {
   const policy = useApi(useCallback(() => autoPriceOptionsApi.getMatchingPolicy(), []));
 
   return (
-    <AdminLayout activeNav="hs-provider-matching">
+    <AdminLayout activeNav="bookability">
       <SectionHeader
-        title="Provider Matching"
-        subtitle="ServiceOS automatically selects the single best-matched provider for Home Services bookings before the customer sees any price. Customers never pick a provider manually."
+        title="Booking Match Policy"
+        subtitle="Fuvay selects the best eligible Home Services provider from tenant-owned service areas, bookability, availability, finance, and Trust & Quality signals."
       />
 
       <Card style={{ marginBottom: 20 }}>
@@ -38,7 +38,7 @@ export default function ProviderMatchingPage() {
           <SectionError title="Couldn't load configuration" message={config.error} requestId={config.requestId} onRetry={config.refetch}/>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-            <StatusRow label="Provider-first matching" enabled={config.data?.provider_first_matching_enabled ?? true}/>
+            <StatusRow label="Provider-first booking" enabled={config.data?.provider_first_matching_enabled ?? true}/>
             <StatusRow label="Customer manual provider selection" enabled={false} invert label2="Disabled for this flow"/>
             <div>
               <p style={{ fontSize: 11, color: "var(--muted-text)", textTransform: "uppercase", margin: "0 0 4px" }}>Scope</p>
@@ -51,7 +51,7 @@ export default function ProviderMatchingPage() {
       <Card style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>Ranking Factors</p>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px" }}>
-          When more than one provider is eligible, ServiceOS ranks them using this weighted score.
+          When more than one provider is eligible, Fuvay ranks them using this weighted score.
           Provider eligibility itself is a hard gate (bookable, coverage, technician, availability,
           pricing, package, credits, deposit) — only eligible providers are ever scored.
         </p>
@@ -88,9 +88,6 @@ export default function ProviderMatchingPage() {
         </Link>
         <Link href="/admin/home-services/matching-diagnostics">
           <Btn size="sm" variant="secondary"><Search size={13} style={{ marginRight: 4 }}/>View Diagnostics</Btn>
-        </Link>
-        <Link href="/admin/pricing/bargain-rules">
-          <Btn size="sm" variant="secondary"><History size={13} style={{ marginRight: 4 }}/>View Audit (legacy)</Btn>
         </Link>
       </div>
     </AdminLayout>

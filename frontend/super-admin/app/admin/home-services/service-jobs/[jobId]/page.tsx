@@ -16,7 +16,7 @@ import { usePermissions } from "../../../../../hooks/usePermissions";
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
 const STATUS_VARIANT: Record<string, "success" | "warning" | "muted" | "danger"> = {
-  completed: "success", cancelled: "danger", failed: "danger",
+  completed: "success", cancelled: "danger", failed: "danger", force_closed: "danger", voided: "muted",
   pending_assignment: "muted", assigned: "warning", accepted: "warning",
   on_the_way: "warning", reached_site: "warning", inspection_started: "warning",
   inspection_done: "warning", service_started: "warning", work_done: "warning",
@@ -48,7 +48,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
   jobId: string; currentStatus: string; onClose: () => void; onDone: () => void;
 }) {
-  const targets = useApi(useCallback(() => adminExecutionApi.getAllowedServiceJobOverrideTargets(jobId), [jobId]));
+  const targets = useApi(useCallback(() => adminExecutionApi.getAllowedServiceJobOverrideTargets(jobId), [jobId]), [jobId]);
   const override = useAction(adminExecutionApi.overrideServiceJobStatus);
   const [targetStatus, setTargetStatus] = useState("");
   const [reason, setReason] = useState("");
@@ -210,7 +210,7 @@ function VoidModal({ jobId, currentStatus, onClose, onDone }: {
 // before submitting. Technician list comes from the live eligible-technicians
 // endpoint, not a hardcoded/mocked list.
 function ReassignModal({ jobId, onClose, onDone }: { jobId: string; onClose: () => void; onDone: () => void }) {
-  const technicians = useApi(useCallback(() => adminServiceJobAssignmentApi.getEligibleTechnicians(jobId), [jobId]));
+  const technicians = useApi(useCallback(() => adminServiceJobAssignmentApi.getEligibleTechnicians(jobId), [jobId]), [jobId]);
   const reassign = useAction(adminServiceJobAssignmentApi.reassignJob);
   const [technicianId, setTechnicianId] = useState("");
   const [reason, setReason] = useState("");
@@ -278,16 +278,16 @@ function ReassignModal({ jobId, onClose, onDone }: { jobId: string; onClose: () 
 
 export default function AdminServiceJobDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = React.use(params);
-  const job = useApi(useCallback(() => finalRecordsAdminApi.getJob(jobId), [jobId]));
+  const job = useApi(useCallback(() => finalRecordsAdminApi.getJob(jobId), [jobId]), [jobId]);
   // FINAL-L5-05B — these two admin timeline endpoints (assignment + execution)
   // plus the notes endpoint already existed as real, working backend routes
   // and typed API-client methods, but were never wired into this page (dead
   // code). Wiring them here closes part of the real feature-parity gap this
   // sprint found between this canonical page and the legacy /admin/operations
   // page (which shows a rendered timeline) — see FINAL_L5_05_JOBS_MIGRATION.md.
-  const assignmentTimeline = useApi(useCallback(() => adminServiceJobAssignmentApi.getJobTimeline(jobId), [jobId]));
-  const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]));
-  const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]));
+  const assignmentTimeline = useApi(useCallback(() => adminServiceJobAssignmentApi.getJobTimeline(jobId), [jobId]), [jobId]);
+  const executionTimeline = useApi(useCallback(() => adminExecutionApi.getJobTimeline(jobId), [jobId]), [jobId]);
+  const jobNotes = useApi(useCallback(() => adminExecutionApi.getJobNotes(jobId), [jobId]), [jobId]);
   const perm = usePermissions();
   const [showReassign, setShowReassign] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
@@ -300,7 +300,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const deduction = d?.usage_credit_deduction;
 
   return (
-    <AdminLayout activeNav="operations">
+    <AdminLayout activeNav="home-services-operations">
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
         <span>Admin</span><ChevronRight size={12}/><span>Home Services</span><ChevronRight size={12}/>
         <Link href="/admin/home-services/bookings-jobs" style={{ color: "var(--text-tertiary)", textDecoration: "none" }}>Service Jobs</Link>
@@ -398,7 +398,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
       {job.loading ? (
         <Skeleton height={300} />
       ) : d && !(d as any).error ? (
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: 16 }}>
           <div>
             <Section title="Job Summary">
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

@@ -1,83 +1,56 @@
 "use client";
-import { useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { AdminLayout } from "../../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Skeleton } from "../../../../../components/shared/ui";
-import { securityAdminApi } from "../../../../../lib/api";
-import { useApi, useAction } from "../../../../../hooks/useApi";
 
-const LEVEL_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = {
-  critical: "danger", high: "warning", medium: "info", low: "muted",
-};
+import { useCallback, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeft, Ban, CheckCircle2, Clock3, Fingerprint, Network, ShieldAlert, UserX } from "lucide-react";
+import { AdminLayout } from "../../../../../components/layout/AdminLayout";
+import { Badge, Btn, Modal, Select, Textarea } from "../../../../../components/shared/ui";
+import { Skeleton } from "@serviceos/design-system";
+import { platformUsersApi, securityAdminApi } from "../../../../../lib/api";
+import { useApi, useAction } from "../../../../../hooks/useApi";
+import { usePermissions } from "../../../../../hooks/usePermissions";
+import styles from "./threat.module.css";
+
+const LEVEL_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = { critical: "danger", high: "warning", medium: "info", low: "muted" };
+type Action = "investigating" | "resolved" | "false_positive" | "block_ip" | "revoke_sessions";
+function fmt(value?: string | null) { return value ? new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Not recorded"; }
 
 export default function ThreatDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const threatId = String(params.threat_id);
-  const threat = useApi(useCallback(() => securityAdminApi.getThreatDetail(threatId), [threatId]));
-  const statusAction = useAction(useCallback((s: string) => securityAdminApi.updateThreatStatus(threatId, s), [threatId]));
-  const blockAction = useAction(useCallback((reason: string) => securityAdminApi.blockIpFromThreat(threatId, reason), [threatId]));
-  const revokeAction = useAction(useCallback((reason: string) => securityAdminApi.revokeSessionsFromThreat(threatId, reason), [threatId]));
-
+  const params = useParams(); const router = useRouter(); const permissions = usePermissions();
+  const threatId = String(params.threat_id); const [pending, setPending] = useState<Action | null>(null); const [reason, setReason] = useState(""); const [assignee, setAssignee] = useState("");
+  const threat = useApi(useCallback(() => securityAdminApi.getThreatDetail(threatId), [threatId]), [threatId]);
+  const admins = useApi(useCallback(() => platformUsersApi.list({ user_group: "platform", status: "active", limit: 100 }), []), []);
+  const statusAction = useAction(useCallback((payload: { status: string; reason: string }) => securityAdminApi.updateThreatStatus(threatId, payload.status, payload.reason), [threatId]));
+  const blockAction = useAction(useCallback((value: string) => securityAdminApi.blockIpFromThreat(threatId, value), [threatId]));
+  const revokeAction = useAction(useCallback((value: string) => securityAdminApi.revokeSessionsFromThreat(threatId, value), [threatId]));
+  const assignAction = useAction(useCallback((adminId: string) => securityAdminApi.assignThreat(threatId, adminId), [threatId]));
   const t = threat.data;
-
-  return (
-    <AdminLayout activeNav="security">
-      <SectionHeader
-        title={t ? `Threat ${t.threat_number ?? t.threat_id.slice(0, 8)}` : "Threat Detail"}
-        subtitle={t?.activity_type.replace(/_/g, " ")}
-        actions={<Btn variant="ghost" size="sm" icon={<ArrowLeft size={14} />} onClick={() => router.push("/admin/security")}>Back to Security</Btn>}
-      />
-      <div style={{ padding: "0 28px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
-        {threat.loading ? <Skeleton height={300} /> : !t ? (
-          <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Could not load threat. {threat.error}</p></Card>
-        ) : (
-          <>
-            <Card padding={20}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
-                <Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"}>{t.threat_level.toUpperCase()}</Badge>
-                <Badge variant={t.status === "open" ? "danger" : t.status === "resolved" ? "success" : "muted"}>{t.status}</Badge>
-                <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Risk Score: {t.risk_score}</span>
-              </div>
-              <p style={{ fontSize: 14, margin: "0 0 12px" }}>{t.description}</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, fontSize: 13 }}>
-                <div><strong>IP Address</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{t.ip_address ?? "—"}</p></div>
-                <div><strong>Source</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{t.source ?? "—"}</p></div>
-                <div><strong>Entity</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{t.entity_type}: {t.entity_id}</p></div>
-                <div><strong>Target User</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{t.target_user_id ?? "—"}</p></div>
-                <div><strong>Detected</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{new Date(t.created_at).toLocaleString("en-IN")}</p></div>
-                <div><strong>Last Seen</strong><p style={{ margin: "4px 0 0", color: "var(--text-tertiary)" }}>{t.last_seen_at ? new Date(t.last_seen_at).toLocaleString("en-IN") : "—"}</p></div>
-              </div>
-            </Card>
-
-            <Card padding={20}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Recommended Actions</h3>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Btn variant="secondary" size="sm" loading={statusAction.loading} onClick={async () => { await statusAction.execute("investigating"); threat.refetch(); }}>Mark Investigating</Btn>
-                <Btn variant="danger" size="sm" disabled={!t.ip_address} loading={blockAction.loading}
-                  onClick={async () => { await blockAction.execute("Blocked from threat detail"); threat.refetch(); }}>Block IP</Btn>
-                <Btn variant="danger" size="sm" disabled={!t.target_user_id} loading={revokeAction.loading}
-                  onClick={async () => { await revokeAction.execute("Sessions revoked from threat detail"); threat.refetch(); }}>Revoke Sessions</Btn>
-                <Btn variant="secondary" size="sm" onClick={async () => { await statusAction.execute("resolved"); threat.refetch(); }}>Mark Resolved</Btn>
-                <Btn variant="ghost" size="sm" onClick={async () => { await statusAction.execute("false_positive"); threat.refetch(); }}>Mark False Positive</Btn>
-              </div>
-            </Card>
-
-            <Card padding={20}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Actions Taken (Audit Trail)</h3>
-              {(t.actions_taken ?? []).length === 0 ? (
-                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No actions recorded yet for this threat.</p>
-              ) : (t.actions_taken ?? []).map(a => (
-                <div key={a.log_id} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ fontSize: 12, flex: 1 }}>{a.operation}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{new Date(a.created_at).toLocaleString("en-IN")}</span>
-                </div>
-              ))}
-            </Card>
-          </>
-        )}
-      </div>
-    </AdminLayout>
-  );
+  function request(action: Action) { setPending(action); setReason(""); }
+  async function confirm() {
+    if (!pending) return;
+    const result = pending === "block_ip" ? await blockAction.execute(reason) : pending === "revoke_sessions" ? await revokeAction.execute(reason) : await statusAction.execute({ status: pending, reason });
+    if (result) { setPending(null); setReason(""); threat.refetch(); }
+  }
+  async function assign() { const result = await assignAction.execute(assignee); if (result) { setAssignee(""); threat.refetch(); } }
+  const loading = statusAction.loading || blockAction.loading || revokeAction.loading; const error = statusAction.error || blockAction.error || revokeAction.error;
+  const actionCopy: Record<Action, { title: string; description: string; label: string; danger?: boolean }> = {
+    investigating: { title: "Start investigation", description: "Moves this signal into the active investigation queue.", label: "Start investigation" },
+    resolved: { title: "Resolve threat", description: "Closes the threat while retaining the complete evidence trail.", label: "Resolve threat" },
+    false_positive: { title: "Mark false positive", description: "Closes the signal as benign. Explain the evidence behind this decision.", label: "Mark false positive" },
+    block_ip: { title: "Block source network", description: "Immediately blocks requests from the detected IP for 30 days.", label: "Block IP", danger: true },
+    revoke_sessions: { title: "Revoke user sessions", description: "Immediately signs the affected user out from every active device.", label: "Revoke sessions", danger: true },
+  };
+  return <AdminLayout activeNav="security"><main className={styles.page}>
+    <header className={styles.header}><div><button className={styles.back} onClick={() => router.push("/admin/security?tab=threats")}><ArrowLeft size={15} /> Threat queue</button><span className={styles.eyebrow}>Security operations / Investigation</span><h1>{t ? `Threat ${t.threat_number ?? t.threat_id.slice(0, 8)}` : "Threat investigation"}</h1><p>{t ? t.activity_type.replace(/_/g, " ") : "Loading evidence and response controls..."}</p></div>{t && <div className={styles.headerBadges}><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"}>{t.threat_level}</Badge><Badge variant={t.status === "open" ? "danger" : t.status === "resolved" ? "success" : "warning"}>{t.status.replace(/_/g, " ")}</Badge></div>}</header>
+    {threat.loading ? <Skeleton height={560} /> : !t ? <section className={styles.error}><AlertTriangle size={24} /><strong>Threat could not be loaded</strong><span>{threat.error}</span></section> : <>
+      <section className={styles.hero}><div className={styles.risk}><ShieldAlert size={25} /><div><span>Risk score</span><strong>{t.risk_score}<small>/100</small></strong></div></div><div className={styles.description}><span>Detection summary</span><h2>{t.description}</h2><p>Detected {fmt(t.created_at)} · Last observed {fmt(t.last_seen_at)}</p></div><div className={styles.owner}><span>Response owner</span><strong>{t.assigned_to_admin_id ? "Assigned administrator" : "Unassigned"}</strong><small>{t.assigned_to_admin_id ?? "Claim from the threat queue"}</small></div></section>
+      <div className={styles.workspace}><div className={styles.mainColumn}>
+        <section className={styles.card}><header><h2>Evidence</h2><span>Immutable detection context</span></header><div className={styles.factGrid}><Fact icon={<Network size={16} />} label="Source IP" value={t.ip_address ?? "Not captured"} mono /><Fact icon={<Fingerprint size={16} />} label="Source engine" value={t.source ?? "Platform detection"} /><Fact icon={<ShieldAlert size={16} />} label="Detection rule" value={t.activity_type.replace(/_/g, " ")} /><Fact icon={<Clock3 size={16} />} label="Observed" value={`${t.detected_value ?? "—"} / threshold ${t.threshold ?? "—"}`} /><Fact label="Entity type" value={t.entity_type ?? "Not linked"} /><Fact label="Entity ID" value={t.entity_id ?? "Not linked"} mono /><Fact label="Target user" value={t.target_user_id ?? "Not linked"} mono /><Fact label="Resolution time" value={fmt(t.resolved_at)} /></div>{t.context && Object.keys(t.context).length > 0 && <details className={styles.context}><summary>View technical context</summary><pre>{JSON.stringify(t.context, null, 2)}</pre></details>}</section>
+        <section className={styles.card}><header><h2>Response history</h2><span>{t.actions_taken?.length ?? 0} recorded actions</span></header><div className={styles.timeline}>{(t.actions_taken ?? []).length === 0 ? <div className={styles.empty}><CheckCircle2 size={20} /><span>No response action has been recorded.</span></div> : t.actions_taken!.map(a => <article key={a.log_id}><span /><div><strong>{a.operation.replace(/\./g, " · ").replace(/_/g, " ")}</strong><small>{a.actor_role ?? "System"} · {fmt(a.created_at)}</small></div></article>)}</div></section>
+      </div><aside className={styles.sideColumn}><section className={styles.card}><header><h2>Response controls</h2><span>Reason required</span></header><div className={styles.actions}>{permissions.has("security:threats:update") && <div className={styles.assignment}><Select value={assignee} onChange={setAssignee} options={[{ value: "", label: "Assign investigator" }, ...(admins.data?.users ?? []).map(a => ({ value: a.id, label: `${a.full_name} · ${a.platform_role ?? a.role}` }))]} /><Btn variant="secondary" loading={assignAction.loading} disabled={!assignee} onClick={assign}>Assign</Btn>{assignAction.error && <small>{assignAction.error}</small>}</div>}{permissions.has("security:threats:resolve") && <><Btn onClick={() => request("investigating")} disabled={t.status === "investigating"}>Start investigation</Btn><Btn variant="secondary" onClick={() => request("resolved")} disabled={t.status === "resolved"}>Resolve threat</Btn><Btn variant="ghost" onClick={() => request("false_positive")}>Mark false positive</Btn></>}{permissions.has("security:threats:block_ip") && <Btn variant="danger" icon={<Ban size={14} />} onClick={() => request("block_ip")} disabled={!t.ip_address}>Block source IP</Btn>}{permissions.has("security:sessions:revoke") && <Btn variant="danger" icon={<UserX size={14} />} onClick={() => request("revoke_sessions")} disabled={!t.target_user_id}>Revoke user sessions</Btn>}</div></section><section className={styles.guidance}><ShieldAlert size={18} /><div><strong>Response guidance</strong><p>Validate the source and affected identity before containment. All actions are permanently recorded.</p></div></section></aside></div>
+    </>}
+    <Modal open={!!pending} onClose={() => setPending(null)} title={pending ? actionCopy[pending].title : "Confirm action"}><div className={styles.modal}><p>{pending ? actionCopy[pending].description : ""}</p><Textarea label="Decision reason" value={reason} onChange={setReason} rows={3} placeholder="Document the evidence and operational reason" required />{error && <div className={styles.modalError}>{error}</div>}<div><Btn variant="ghost" onClick={() => setPending(null)}>Cancel</Btn><Btn variant={pending && actionCopy[pending].danger ? "danger" : "primary"} loading={loading} disabled={reason.trim().length < 5} onClick={confirm}>{pending ? actionCopy[pending].label : "Confirm"}</Btn></div></div></Modal>
+  </main></AdminLayout>;
 }
+
+function Fact({ icon, label, value, mono = false }: { icon?: React.ReactNode; label: string; value: string; mono?: boolean }) { return <div className={styles.fact}>{icon && <span>{icon}</span>}<div><small>{label}</small><strong className={mono ? styles.mono : undefined}>{value}</strong></div></div>; }

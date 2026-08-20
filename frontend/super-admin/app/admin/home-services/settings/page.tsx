@@ -65,12 +65,12 @@ export default function AdminHomeServicesSettingsPage() {
         <div style={{ height: 160, background: "var(--surface-sunken)", borderRadius:"var(--radius-lg)", animation: "pulse 1.5s ease-in-out infinite" }}/>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <FlagRow label="Auto Price Options" on={cfg.auto_price_options_enabled}
-            description="System automatically derives Customer Price Options (Low/Mid/High) from provider price ranges + platform fee."/>
+          <FlagRow label="Matching Engine Diagnostics" on={cfg.auto_price_options_enabled}
+            description="System diagnostics are enabled for provider eligibility, scoring, and readiness. Tier-based customer price options are retired."/>
           <FlagRow label="Manual Bargain Rules" on={cfg.manual_bargain_rules_enabled}
-            description="Legacy manual bargain-rule authoring. Disabled — superseded by Auto Price Options."/>
-          <FlagRow label="Provider-First Matching" on={cfg.provider_first_matching_enabled}
-            description="Customers are matched to the best-ranked provider before choosing a price option."/>
+            description="Legacy manual bargain-rule authoring. Disabled for the provider-owned pricing model."/>
+          <FlagRow label="Provider-First Booking Engine" on={cfg.provider_first_matching_enabled}
+            description="Customers are matched to the best-ranked provider before confirming the provider-owned price."/>
           <FlagRow label="Home Services Only" on={cfg.home_services_only}
             description="This pricing/matching flow is hard-scoped to the Home Services vertical and cannot affect other verticals."/>
         </div>

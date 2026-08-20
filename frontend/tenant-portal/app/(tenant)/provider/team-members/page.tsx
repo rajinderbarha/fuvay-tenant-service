@@ -3,7 +3,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import {
   providerTeamMembersApi, providerOnboardingApi, categoryDashboardApi,
-  providerOfferingsApi, providerServiceAreasApi, mediaAssetApi,
+  providerOfferingsApi, providerServiceAreasApi, providerTeamSkillsApi, mediaAssetApi,
   type ProviderTeamMember, type ProviderTeamMemberPayload, type MemberType,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
@@ -52,14 +52,19 @@ function memberTypeOptions(categoryType: string | null): { value: MemberType; la
 // category-aware like memberTypeOptions above. Home Services gets a real
 // list of field-service designations; other verticals get a small sane
 // fallback rather than fabricating designations for verticals not in scope.
-function designationOptions(categoryType: string | null): string[] {
-  if (categoryType === "home_services") return [
-    "Technician", "Senior Technician", "Lead Technician", "Trainee Technician",
-    "Electrician", "Plumber", "AC Technician", "Appliance Repair Technician",
-    "Carpenter", "Painter", "Pest Control Technician", "Cleaner",
-    "Installation Specialist", "Field Supervisor", "Team Lead",
-    "Operations Manager", "Customer Support Executive",
-  ];
+function designationOptions(categoryType: string | null, memberType?: MemberType): string[] {
+  if (categoryType === "home_services") {
+    if (memberType === "manager") return [
+      "Team Manager", "Operations Manager", "Service Manager", "Branch Manager",
+    ];
+    if (memberType === "staff") return [
+      "Operations Coordinator", "Dispatcher", "Customer Support Executive", "Back Office Executive",
+    ];
+    return [
+      "Technician", "Junior Technician", "Senior Technician", "Lead Technician",
+      "AC Technician", "Installation Specialist", "Maintenance Specialist", "Field Supervisor",
+    ];
+  }
   if (categoryType === "coaching" || categoryType === "coaching_ielts") return [
     "Trainer", "Senior Trainer", "Counsellor", "Academic Coordinator", "Center Manager",
   ];
@@ -71,17 +76,6 @@ function designationOptions(categoryType: string | null): string[] {
 
 // Skills are provider-selected chips, not free text — category-aware for
 // the same reason as designations above.
-function skillOptions(categoryType: string | null): string[] {
-  if (categoryType === "home_services") return [
-    "AC Repair", "AC Installation", "AC Maintenance", "Refrigerator Repair",
-    "Washing Machine Repair", "Water Heater Repair", "Plumbing Repair",
-    "Electrical Wiring", "Appliance Repair", "Carpentry", "Painting",
-    "Pest Control", "Deep Cleaning", "Furniture Assembly", "CCTV Installation",
-    "Inverter & Battery Service", "RO Water Purifier Service",
-  ];
-  return [];
-}
-
 // ── Credentials Modal (shown once after create-login) ─────────────────────────
 
 function CredentialsModal({
@@ -139,7 +133,7 @@ const BLANK_MEMBER: ProviderTeamMemberPayload = {
   phone: "",
   email: "",
   designation: "",
-  skills: null,
+  skill_ids: [],
   supported_offering_ids: null,
   supported_type_ids: null,
   supported_brand_ids: null,
@@ -289,9 +283,8 @@ interface MemberFormProps {
 function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberFormProps) {
   const isEdit = !!existing;
   const typeOptions = memberTypeOptions(categoryType);
-  const designations = designationOptions(categoryType);
-  const skillChoices = skillOptions(categoryType);
   const [form, setForm] = useState<ProviderTeamMemberPayload>({ ...BLANK_MEMBER, member_type: typeOptions[0]?.value ?? "staff" });
+  const designations = designationOptions(categoryType, form.member_type);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [step, setStep] = useState(0);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -306,6 +299,8 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
   // real ProviderTeamMemberPayload fields that the old form never exposed.
   const offerings = useApi(useCallback(() => providerOfferingsApi.listEnabled(), []), []);
   const areas = useApi(useCallback(() => providerServiceAreasApi.list(), []), []);
+  const skills = useApi(useCallback(() => providerTeamSkillsApi.list(), []), []);
+  const skillChoices = useMemo(() => (skills.data?.skills ?? []).map(skill => ({ id: skill.id, label: skill.name })), [skills.data]);
   const offeringOptions = useMemo(() =>
     (offerings.data?.offerings ?? []).map(o => ({ id: o.offering_id, label: o.provider_display_name || o.offering_name })),
     [offerings.data]);
@@ -331,7 +326,7 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
         phone: existing.phone ?? "",
         email: existing.email ?? "",
         designation: existing.designation ?? "",
-        skills: existing.skills,
+        skill_ids: existing.skill_ids ?? [],
         supported_offering_ids: existing.supported_offering_ids,
         supported_type_ids: existing.supported_type_ids,
         supported_brand_ids: existing.supported_brand_ids,
@@ -340,7 +335,7 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
         profile_photo_url: existing.profile_photo_url,
         create_login: false,
       });
-      setSelectedSkills(existing.skills ?? []);
+      setSelectedSkills(existing.skill_ids ?? []);
       setPhotoPreview(resolveMediaUrl(existing.profile_photo_url));
     } else {
       setForm({ ...BLANK_MEMBER, member_type: typeOptions[0]?.value ?? "staff" });
@@ -380,7 +375,7 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
   }
 
   const saveAction = useAction(useCallback(async () => {
-    const payload = { ...form, skills: selectedSkills.length ? selectedSkills : null };
+    const payload = { ...form, skill_ids: selectedSkills };
     if (isEdit && existing) {
       await providerTeamMembersApi.update(existing.member_id, payload);
       onSaved(null);
@@ -428,7 +423,10 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
   // rather than all validated at once, and Continue/Create stay disabled
   // until the current step's requirements are met.
   const step0Valid = form.full_name.trim() && (form.phone ?? "").trim() && (form.email ?? "").trim();
-  const step1Valid = (form.designation ?? "").trim().length > 0;
+  const technicianRequirementsReady = form.member_type !== "technician" || (
+    (form.supported_offering_ids ?? []).length > 0 && selectedSkills.length > 0 && !skills.loading
+  );
+  const step1Valid = (form.designation ?? "").trim().length > 0 && technicianRequirementsReady;
   const canContinue = step === 0 ? step0Valid : step === 1 ? step1Valid : true;
   const isLastStep = step === WIZARD_STEPS.length - 1;
 
@@ -481,7 +479,7 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
         )}
         {isLastStep ? (
           <Button size="sm" variant="primary" loading={saveAction.loading}
-            disabled={!step0Valid}
+            disabled={!step0Valid || !step1Valid}
             onClick={() => saveAction.execute()}>
             {isEdit ? "Save Changes" : "Create Member"}
           </Button>
@@ -570,9 +568,9 @@ function MemberModal({ open, existing, categoryType, onClose, onSaved }: MemberF
                     marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Skills
                   </label>
-                  <ChipMultiSelect options={skillChoices.map(s => ({ id: s, label: s }))} selected={selectedSkills}
+                  <ChipMultiSelect options={skillChoices} selected={selectedSkills}
                     onToggle={toggleSkill} emptyText="No predefined skills for this business category yet."/>
-                  <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>Select the skills that apply</p>
+                  <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>Select admin-approved skills for this category. Free-text skills are not accepted.</p>
                 </div>
 
                 <ToggleRow label="Can receive job assignments" helper="Allow this member to be assigned to jobs"
@@ -755,7 +753,7 @@ export default function TeamMembersPage() {
     else if (res.activation_token) {
       await navigator.clipboard?.writeText(res.activation_token);
       flash("Development activation code copied to the clipboard.");
-    } else if (res.already_had_login) flash("Login access already exists.");
+    } else if (res.already_had_login) flash("App access is already active.");
     else flash("Invitation created, but delivery could not be confirmed.", true);
   }, []));
 
@@ -906,8 +904,16 @@ export default function TeamMembersPage() {
                           )}
                           <Button size="sm" variant="ghost"
                             loading={createLoginAction.loading}
+                            disabled={m.login_active === true}
+                            title={m.login_active ? "App access is active" : m.email ? (m.password_generated ? "Resend app invitation" : "Send app invitation") : "Add an email before sending app access"}
                             onClick={() => {
-                              if (confirm(`Create login for ${m.full_name}? Credentials will be shown once.`))
+                              if (!m.email) {
+                                setEditMember(m);
+                                setModalOpen(true);
+                                flash("Add an email address, save, then send the app invitation.", true);
+                                return;
+                              }
+                              if (confirm(`Send an app activation invitation to ${m.email}?`))
                                 createLoginAction.execute(m.member_id);
                             }}>
                             <Key size={11}/>

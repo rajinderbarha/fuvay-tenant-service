@@ -81,6 +81,7 @@ class CustomerServiceCredit(Base):
             "customer_id": str(self.customer_id),
             "tenant_id": str(self.tenant_id) if self.tenant_id else None,
             "booking_id": str(self.booking_id) if self.booking_id else None,
+            "job_id": str(self.job_id) if self.job_id else None,
             "dispute_id": str(self.dispute_id) if self.dispute_id else None,
             "settlement_id": str(self.settlement_id) if self.settlement_id else None,
             "amount": float(self.amount),

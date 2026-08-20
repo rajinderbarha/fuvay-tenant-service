@@ -60,6 +60,8 @@ class TestApplyCreditLive:
             tmpl = await c.fetchrow(
                 "SELECT category_id, offering_id, booking_id, job_id, tenant_id "
                 "FROM service_invoices LIMIT 1")
+            if not tmpl:
+                return None
             iid = uuid.uuid4()
             await c.execute(
                 """INSERT INTO service_invoices

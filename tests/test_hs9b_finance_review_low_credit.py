@@ -22,29 +22,27 @@ TENANT_MODELS = (ROOT / "app/engines/tenant_engine/models.py").read_text(encodin
 ADMIN_ROUTER = (ROOT / "app/engines/tenant_engine/admin_router.py").read_text(encoding="utf-8-sig")
 
 
-# ── 1-4. Completed job deduction resolver specificity ────────────────────────
+# ── 1-4. Single Home Services monetization authority ─────────────────────────
 
-def test_resolver_scores_brand_type_match_highest():
-    fn = DEDUCTION.split("def _specificity")[1].split("\n\n")[0]
-    assert "return 3" in fn  # type+brand match
-    assert "return 2" in fn  # type-only match
-    assert "return 1" in fn  # service-only fallback
+def test_resolver_uses_published_vertical_policy_only():
+    assert "VerticalMonetizationPolicy" in DEDUCTION
+    assert "ServicePricingRule" not in DEDUCTION
+    assert "resolve_completed_job_deduction_credits" not in DEDUCTION
 
 
-def test_resolver_rejects_mismatched_type_or_brand():
-    fn = DEDUCTION.split("def _specificity")[1].split("\n\n")[0]
-    assert "return -1" in fn
+def test_resolver_has_no_hidden_no_policy_fallback():
+    assert '# With no published policy, no provider charge is created.' in DEDUCTION
+    assert 'return Decimal("0"), None' in DEDUCTION
 
 
 @pytest.mark.asyncio
-async def test_split_ac_lg_does_not_use_window_ac_deduction_live():
-    """Direct resolver call against the real dev DB — confirms two
-    different real pricing rules resolve independently (live-verified
-    in HS9B; skipped gracefully if no DB is reachable in CI)."""
+async def test_all_home_services_use_the_same_published_policy_live():
+    """The live resolver must return a vertical policy source, never a
+    service/type/brand pricing-rule source."""
     try:
         from app.database import create_engine
         from sqlalchemy.ext.asyncio import async_sessionmaker
-        from app.engines.execution.usage_credit_deduction import resolve_completed_job_deduction_credits
+        from app.engines.execution.usage_credit_deduction import resolve_commission_credits
     except Exception:
         pytest.skip("DB/engine imports unavailable in this environment")
 
@@ -52,17 +50,18 @@ async def test_split_ac_lg_does_not_use_window_ac_deduction_live():
         engine = create_engine()
         Session = async_sessionmaker(engine, expire_on_commit=False)
         async with Session() as db:
-            _, split_ac_lg_rule = await resolve_completed_job_deduction_credits(
-                db, uuid.UUID("a96e625a-60e1-46c0-bde4-ccbb88da50a2"),
-                uuid.UUID("c86dfcf3-53bd-4d83-bf0b-51257f382652"),
-                uuid.UUID("64a3b25f-23aa-4639-8baf-f67def0f60db"),
+            _, first_source = await resolve_commission_credits(
+                db, job_price=Decimal("1000"), category_id=uuid.uuid4(),
+                master_service_id=uuid.uuid4(), offering_type_id=uuid.uuid4(),
+                brand_id=uuid.uuid4(),
             )
-            _, window_ac_rule = await resolve_completed_job_deduction_credits(
-                db, uuid.UUID("a96e625a-60e1-46c0-bde4-ccbb88da50a2"),
-                uuid.UUID("e27f6591-9b8d-4d57-93d0-8ed86c19c8af"),
-                None,
+            _, second_source = await resolve_commission_credits(
+                db, job_price=Decimal("1000"), category_id=uuid.uuid4(),
+                master_service_id=uuid.uuid4(), offering_type_id=None,
+                brand_id=None,
             )
-            assert split_ac_lg_rule != window_ac_rule
+            assert first_source == second_source
+            assert first_source is None or first_source.startswith("monetization_policy:")
     except Exception:
         pytest.skip("Real dev database not reachable in this environment")
 

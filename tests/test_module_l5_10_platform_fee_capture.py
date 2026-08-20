@@ -11,7 +11,10 @@ def test_refresh_totals_adds_platform_fee_on_top_of_service_value():
     src = inspect.getsource(ServiceInvoiceService._refresh_totals)
     assert "platform_fee_amount" in src
     assert "customer_payable_amount" in src
-    assert "_resolve_customer_charge_pct" in src
+    assert "_resolve_customer_platform_fee" in src
+    resolver = inspect.getsource(ServiceInvoiceService._resolve_customer_platform_fee)
+    assert "get_current_policy_by_vertical_key" in resolver
+    assert "customer_charge_pct" not in resolver
 
 
 def test_commission_base_is_the_service_value_not_the_inclusive_amount():

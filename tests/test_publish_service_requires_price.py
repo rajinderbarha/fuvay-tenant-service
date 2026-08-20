@@ -27,23 +27,24 @@ class TestPublishServiceRequiresPrice:
         start = c.index("async def publish_service")
         end = c.index("async def save_draft")
         block = c[start:end]
-        assert "not ts.requires_type and not ts.requires_brand" in block
-        assert "has_range" in block and "has_visit_fee" in block
-        assert '"message": "No default price or visit fee configured for this service."' in block
+        assert "validation = await self.validate_for_publish(tenant_service_id)" in block
+        assert 'if not validation["valid"]' in block
 
     def test_check_happens_before_publish_commit(self):
         c = _read()
         start = c.index("async def publish_service")
         end = c.index("async def save_draft")
         block = c[start:end]
-        price_check_pos = block.index("not ts.requires_type and not ts.requires_brand")
+        price_check_pos = block.index("validation = await self.validate_for_publish")
         commit_pos = block.index('ts.setup_status = "published"')
         assert price_check_pos < commit_pos
 
     def test_matches_validate_for_publish_same_rule(self):
         c = _read()
         validate_start = c.index("async def validate_for_publish")
-        validate_end = c.index("def price_options_preview")
+        validate_end = c.index("async def get_blueprint_update_status")
         validate_block = c[validate_start:validate_end]
-        assert "not ts.requires_type and not ts.requires_brand" in validate_block
-        assert "No default price or visit fee configured for this service." in validate_block
+        assert "not requires_type and not requires_brand" in validate_block
+        assert "Set the provider price for this service." in validate_block
+        assert "is_inspection_pricing" in validate_block
+        assert "Set the visit or inspection fee for this service." in validate_block

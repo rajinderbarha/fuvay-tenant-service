@@ -8,10 +8,11 @@ token IS the credential, and it's single-use with a 15-min TTL.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.base import ApiResponse, ok
@@ -21,6 +22,31 @@ from app.engines.media.admin_service import MediaLibraryAdminService
 
 router = APIRouter(prefix="/v1/admin/media", tags=["Admin — Media Library"])
 signed_router = APIRouter(prefix="/v1/media", tags=["Media — Signed Access"])
+
+
+class ArchiveMediaBody(BaseModel):
+    reason: str = Field(default="Archived by administrator", min_length=3, max_length=500)
+
+
+class VisibilityBody(BaseModel):
+    is_public: bool
+
+
+class ModerationBody(BaseModel):
+    reason: str = Field(min_length=3, max_length=80)
+
+
+class BulkMediaBody(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class BulkDeleteBody(BulkMediaBody):
+    force: bool = False
+
+
+class BulkVisibilityBody(BulkMediaBody):
+    is_public: bool
 
 
 def _rid(r: Request) -> str:
@@ -68,6 +94,8 @@ async def list_media(
     file_type: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    sort: Literal["newest", "oldest", "largest", "smallest"] = Query("newest"),
+    cursor: str | None = Query(None, max_length=1000),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
     svc: MediaLibraryAdminService = Depends(_svc),
@@ -77,7 +105,8 @@ async def list_media(
         q=q, context=context, owner_type=owner_type, visibility=visibility,
         status=status, moderation_status=moderation_status, is_flagged=is_flagged,
         tenant_id=tenant_id, customer_id=customer_id, file_type=file_type,
-        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+        date_from=date_from, date_to=date_to, sort=sort, cursor=cursor,
+        page=page, page_size=page_size,
     ), _rid(r))
 
 
@@ -142,11 +171,11 @@ async def create_signed_download_url(
 async def archive_media(
     r: Request,
     media_id: uuid.UUID,
-    payload: dict = {},
+    payload: ArchiveMediaBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    return ok(await svc.archive_asset(media_id, reason=payload.get("reason")), _rid(r))
+    return ok(await svc.archive_asset(media_id, reason=payload.reason), _rid(r))
 
 
 @router.post("/{media_id}/restore", response_model=ApiResponse[dict])
@@ -174,12 +203,11 @@ async def delete_media(
 async def change_visibility(
     r: Request,
     media_id: uuid.UUID,
-    payload: dict,
+    payload: VisibilityBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    is_public = bool(payload.get("is_public", False))
-    return ok(await svc.change_visibility(media_id, is_public), _rid(r))
+    return ok(await svc.change_visibility(media_id, payload.is_public), _rid(r))
 
 
 # ── Moderation ───────────────────────────────────────────────────────────────
@@ -188,12 +216,11 @@ async def change_visibility(
 async def flag_media(
     r: Request,
     media_id: uuid.UUID,
-    payload: dict,
+    payload: ModerationBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    reason = str(payload.get("reason", "flagged by admin"))[:80]
-    return ok(await svc.flag_asset(media_id, reason=reason), _rid(r))
+    return ok(await svc.flag_asset(media_id, reason=payload.reason), _rid(r))
 
 
 @router.post("/{media_id}/mark-clean", response_model=ApiResponse[dict])
@@ -210,12 +237,11 @@ async def mark_clean(
 async def quarantine_media(
     r: Request,
     media_id: uuid.UUID,
-    payload: dict,
+    payload: ModerationBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    reason = str(payload.get("reason", "quarantined by admin"))[:80]
-    return ok(await svc.quarantine_asset(media_id, reason=reason), _rid(r))
+    return ok(await svc.quarantine_asset(media_id, reason=payload.reason), _rid(r))
 
 
 # ── Bulk ─────────────────────────────────────────────────────────────────────
@@ -223,40 +249,35 @@ async def quarantine_media(
 @router.post("/bulk/archive", response_model=ApiResponse[dict])
 async def bulk_archive(
     r: Request,
-    payload: dict,
+    payload: BulkMediaBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    ids = payload.get("ids", [])
-    return ok(await svc.bulk_archive(ids), _rid(r))
+    return ok(await svc.bulk_archive([str(value) for value in payload.ids]), _rid(r))
 
 
 @router.post("/bulk/delete", response_model=ApiResponse[dict])
 async def bulk_delete(
     r: Request,
-    payload: dict,
+    payload: BulkDeleteBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    ids = payload.get("ids", [])
-    force = bool(payload.get("force", False))
-    return ok(await svc.bulk_delete(ids, force=force), _rid(r))
+    return ok(await svc.bulk_delete([str(value) for value in payload.ids], force=payload.force), _rid(r))
 
 
 @router.post("/bulk/change-visibility", response_model=ApiResponse[dict])
 async def bulk_change_visibility(
     r: Request,
-    payload: dict,
+    payload: BulkVisibilityBody,
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    ids = payload.get("ids", [])
-    is_public = bool(payload.get("is_public", False))
     done, failed = [], []
-    for mid_str in ids[:50]:
+    for media_id in payload.ids:
+        mid_str = str(media_id)
         try:
-            import uuid as _uuid
-            await svc.change_visibility(_uuid.UUID(mid_str), is_public)
+            await svc.change_visibility(media_id, payload.is_public)
             done.append(mid_str)
         except Exception as e:
             failed.append({"id": mid_str, "error": str(e)})
@@ -268,13 +289,24 @@ async def bulk_change_visibility(
 @router.get("/export/csv")
 async def export_csv(
     r: Request,
+    q: str | None = Query(None),
     context: str | None = Query(None),
+    owner_type: str | None = Query(None),
+    visibility: str | None = Query(None),
     status: str | None = Query(None),
     is_flagged: bool | None = Query(None),
+    file_type: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    sort: Literal["newest", "oldest", "largest", "smallest"] = Query("newest"),
     svc: MediaLibraryAdminService = Depends(_svc),
     u: UserContext = Depends(require_super_admin),
 ):
-    csv_text = await svc.export_csv(context=context, status=status, is_flagged=is_flagged)
+    csv_text = await svc.export_csv(
+        q=q, context=context, owner_type=owner_type, visibility=visibility,
+        status=status, is_flagged=is_flagged, file_type=file_type,
+        date_from=date_from, date_to=date_to, sort=sort,
+    )
     return StreamingResponse(
         iter([csv_text]),
         media_type="text/csv",

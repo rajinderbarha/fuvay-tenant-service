@@ -20,7 +20,7 @@ from app.engines.vertical_monetization.models import (
     VerticalMonetizationPolicy, MonetizationJobTypeRule, PROVIDER_MODELS, CUSTOMER_FEE_MODELS, COLLECTION_STAGES,
 )
 from app.engines.vertical_monetization.calculation_service import (
-    calculate_customer_platform_fee, to_minor,
+    calculate_customer_platform_fee, to_minor, to_major,
 )
 from app.exceptions import ServiceOSException
 
@@ -118,29 +118,56 @@ class VerticalMonetizationPolicyService:
 
     def _validate(self, payload: dict) -> list[str]:
         errors = []
+        def decimal_field(name: str, *, minimum: Decimal | None = None,
+                          maximum: Decimal | None = None) -> Decimal | None:
+            raw = payload.get(name)
+            if raw is None or raw == "":
+                return None
+            try:
+                value = Decimal(str(raw))
+            except Exception:
+                errors.append(f"{name} must be numeric")
+                return None
+            if minimum is not None and value < minimum:
+                errors.append(f"{name} must be at least {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{name} must be at most {maximum}")
+            return value
+
         pm = payload.get("provider_model", "NONE")
         if pm not in PROVIDER_MODELS:
             errors.append(f"provider_model must be one of {sorted(PROVIDER_MODELS)}")
-        if pm == "PERCENTAGE_COMMISSION" and payload.get("provider_percentage") is None:
+        if pm == "PERCENTAGE_COMMISSION" and payload.get("provider_percentage") in (None, ""):
             errors.append("provider_percentage is required for PERCENTAGE_COMMISSION")
-        if pm == "FIXED_COMPLETION_CHARGE" and payload.get("provider_fixed_amount_minor") is None:
+        if pm == "FIXED_COMPLETION_CHARGE" and payload.get("provider_fixed_amount_minor") in (None, ""):
             errors.append("provider_fixed_amount_minor is required for FIXED_COMPLETION_CHARGE")
-        if pm == "COMPLETION_CREDITS" and payload.get("provider_credit_units") is None:
+        if pm == "COMPLETION_CREDITS" and payload.get("provider_credit_units") in (None, ""):
             errors.append("provider_credit_units is required for COMPLETION_CREDITS")
         if pm == "SUBSCRIPTION" and not payload.get("provider_subscription_plan_id"):
             errors.append("provider_subscription_plan_id is required for SUBSCRIPTION")
+        provider_pct = decimal_field("provider_percentage", minimum=Decimal("0"), maximum=Decimal("100"))
+        provider_fixed = decimal_field("provider_fixed_amount_minor", minimum=Decimal("0"))
+        provider_credits = decimal_field("provider_credit_units", minimum=Decimal("0"))
+        provider_min = decimal_field("provider_min_charge_minor", minimum=Decimal("0"))
+        provider_max = decimal_field("provider_max_charge_minor", minimum=Decimal("0"))
+        if provider_min is not None and provider_max is not None and provider_min > provider_max:
+            errors.append("provider_min_charge_minor cannot exceed provider_max_charge_minor")
 
         cf = payload.get("customer_fee_model", "NONE")
         if cf not in CUSTOMER_FEE_MODELS:
             errors.append(f"customer_fee_model must be one of {sorted(CUSTOMER_FEE_MODELS)}")
-        if cf in ("PERCENTAGE", "PERCENTAGE_WITH_MIN_MAX") and payload.get("customer_fee_percentage") is None:
+        if cf in ("PERCENTAGE", "PERCENTAGE_WITH_MIN_MAX") and payload.get("customer_fee_percentage") in (None, ""):
             errors.append("customer_fee_percentage is required for this customer_fee_model")
-        if cf == "FIXED" and payload.get("customer_fee_fixed_amount_minor") is None:
+        if cf == "FIXED" and payload.get("customer_fee_fixed_amount_minor") in (None, ""):
             errors.append("customer_fee_fixed_amount_minor is required for FIXED")
+        customer_pct = decimal_field("customer_fee_percentage", minimum=Decimal("0"), maximum=Decimal("100"))
+        customer_fixed = decimal_field("customer_fee_fixed_amount_minor", minimum=Decimal("0"))
+        customer_min = decimal_field("customer_fee_min_minor", minimum=Decimal("0"))
+        customer_max = decimal_field("customer_fee_max_minor", minimum=Decimal("0"))
         if cf == "PERCENTAGE_WITH_MIN_MAX":
-            if payload.get("customer_fee_min_minor") is None or payload.get("customer_fee_max_minor") is None:
+            if customer_min is None or customer_max is None:
                 errors.append("customer_fee_min_minor and customer_fee_max_minor are required for PERCENTAGE_WITH_MIN_MAX")
-            elif payload["customer_fee_min_minor"] > payload["customer_fee_max_minor"]:
+            elif customer_min > customer_max:
                 errors.append("customer_fee_min_minor cannot exceed customer_fee_max_minor")
 
         stage = payload.get("collection_stage", "after_estimate_approval")
@@ -158,10 +185,16 @@ class VerticalMonetizationPolicyService:
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.status == "draft",
         ))).scalar_one_or_none()
         if existing_draft:
+            before = existing_draft.to_dict()
             for k in _DRAFT_FIELDS:
                 if k in payload:
                     setattr(existing_draft, k, payload[k])
             await db.flush()
+            db.add(VerticalAuditLog(
+                vertical_id=v.id, actor_id=actor_id, action_type="monetization.policy.save_draft",
+                before_state=before, after_state=existing_draft.to_dict(),
+                notes=payload.get("change_summary") or "Draft updated.",
+            ))
             await db.commit()
             return existing_draft.to_dict()
 
@@ -174,6 +207,11 @@ class VerticalMonetizationPolicyService:
         )
         db.add(p)
         await db.flush()
+        db.add(VerticalAuditLog(
+            vertical_id=v.id, actor_id=actor_id, action_type="monetization.policy.save_draft",
+            before_state=None, after_state=p.to_dict(),
+            notes=payload.get("change_summary") or "Draft created.",
+        ))
         await db.commit()
         return p.to_dict()
 
@@ -220,6 +258,16 @@ class VerticalMonetizationPolicyService:
         )
         result["is_preview"] = True
         result["note"] = "This preview does not define or modify the tenant's service price."
+        from app.engines.vertical_monetization.calculation_service import calculate_provider_completion_credits
+        provider_result = calculate_provider_completion_credits(
+            policy=fake_policy,
+            service_amount=example_service_amount,
+        )
+        result.update(provider_result)
+        customer_recovery_units = Decimal(to_major(result["fee_amount_minor"]))
+        provider_units = Decimal(provider_result["provider_charge_credit_units"])
+        result["customer_charge_recovery_credit_units"] = str(customer_recovery_units)
+        result["total_credit_deduction"] = str((provider_units + customer_recovery_units).quantize(Decimal("0.01")))
         return result
 
     async def publish(self, db: AsyncSession, key: str, *, actor_id: uuid.UUID | None, reason: str) -> dict:
@@ -228,7 +276,7 @@ class VerticalMonetizationPolicyService:
         v = await self._vertical(db, key)
         draft = (await db.execute(select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.status == "draft",
-        ))).scalar_one_or_none()
+        ).with_for_update())).scalar_one_or_none()
         if not draft:
             raise ServiceOSException("NOT_FOUND", "No draft policy to publish.", status_code=404)
         errors = self._validate(draft.to_dict())
@@ -237,7 +285,7 @@ class VerticalMonetizationPolicyService:
 
         prior = (await db.execute(select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.is_current == True,  # noqa: E712
-        ))).scalar_one_or_none()
+        ).with_for_update())).scalar_one_or_none()
         before = prior.to_dict() if prior else None
         if prior:
             # Flushed BEFORE draft.is_current is set -- the partial unique
@@ -279,11 +327,47 @@ class VerticalMonetizationPolicyService:
             raise ServiceOSException("VALIDATION_ERROR",
                                      "Cannot modify job-type rules on a published policy -- create a new draft version.",
                                      status_code=422)
+        from app.engines.admin_catalog.models import JobTypeDefinition
+        if await db.get(JobTypeDefinition, job_type_id) is None:
+            raise ServiceOSException("NOT_FOUND", "Job Type not found", status_code=404)
+        if "provider_charge_credit_units" in payload and payload["provider_charge_credit_units"] not in (None, ""):
+            try:
+                credits = Decimal(str(payload["provider_charge_credit_units"]))
+            except Exception:
+                raise ServiceOSException("VALIDATION_ERROR", "provider_charge_credit_units must be numeric", status_code=422)
+            if credits < 0:
+                raise ServiceOSException("VALIDATION_ERROR", "provider_charge_credit_units cannot be negative", status_code=422)
+        if payload.get("status", "active") not in {"active", "inactive"}:
+            raise ServiceOSException("VALIDATION_ERROR", "status must be active or inactive", status_code=422)
+        if payload.get("customer_charge_basis", "booking_price_snapshot") != "booking_price_snapshot":
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                "Home Services customer charge basis must be booking_price_snapshot",
+                status_code=422,
+            )
+        if payload.get("provider_chargeable_event", "job_completed") not in {"job_completed", "consultation_completed"}:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                "provider_chargeable_event must be job_completed or consultation_completed",
+                status_code=422,
+            )
+        if payload.get("provider_charge_model", "INHERIT") not in {"INHERIT", "FIXED_CREDITS"}:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                "provider_charge_model must be INHERIT or FIXED_CREDITS",
+                status_code=422,
+            )
+        if payload.get("provider_charge_model") == "FIXED_CREDITS" and payload.get("provider_charge_credit_units") in (None, ""):
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                "provider_charge_credit_units is required for a FIXED_CREDITS Job Type rule",
+                status_code=422,
+            )
         existing = (await db.execute(select(MonetizationJobTypeRule).where(
             MonetizationJobTypeRule.policy_id == policy_id, MonetizationJobTypeRule.job_type_id == job_type_id,
         ))).scalar_one_or_none()
         fields = {"customer_charge_enabled", "customer_charge_basis", "provider_charge_enabled",
-                 "provider_charge_credit_units", "status"}
+                 "provider_charge_model", "provider_charge_credit_units", "provider_chargeable_event", "status"}
         if existing:
             for k in fields:
                 if k in payload:

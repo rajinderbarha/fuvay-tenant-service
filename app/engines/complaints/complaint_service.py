@@ -83,6 +83,7 @@ class ComplaintService:
         offering_id: uuid.UUID | None = None,
         requested_resolution: str | None = None,
         title: str | None = None,
+        commit: bool = True,
         request_id: str = "—",
     ) -> CustomerComplaint:
         # MODULE-L5-02 bug #25: the customer who files a complaint has no tenant
@@ -177,7 +178,8 @@ class ComplaintService:
             )
         except Exception:
             pass
-        await db.commit()
+        if commit:
+            await db.commit()
         return complaint
 
     # ── Customer read ─────────────────────────────────────────────────────────

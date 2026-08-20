@@ -37,6 +37,8 @@ async def list_policies(
     channel: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     u: UserContext = Depends(require_platform_staff),
     db: AsyncSession = Depends(get_db),
 ):
@@ -54,7 +56,9 @@ async def list_policies(
     rows = []
     active_policies = 0
     for cfg in all_events.values():
-        if vertical_key and cfg.vertical_key != vertical_key:
+        if vertical_key == "__global__" and cfg.vertical_key is not None:
+            continue
+        if vertical_key and vertical_key != "__global__" and cfg.vertical_key != vertical_key:
             continue
         if channel and channel not in cfg.default_channels:
             continue
@@ -91,8 +95,9 @@ async def list_policies(
         NotificationPolicy.published_at.isnot(None)).order_by(NotificationPolicy.published_at.desc()).limit(1)
     )).scalar_one_or_none()
 
+    total = len(rows)
     return ok({
-        "items": rows,
+        "items": rows[offset:offset + limit], "total": total, "limit": limit, "offset": offset,
         "summary": {
             "delivery_engine_active": True,  # the 60s dispatch/retry loop starts at app boot -- always true when the API answers
             "latest_publish_at": latest_publish.isoformat() if latest_publish else None,
@@ -157,9 +162,10 @@ async def get_policy_audit(
 @router.post("/validate", summary="Validate a draft payload without saving")
 async def validate_policy(
     r: Request, u: UserContext = Depends(require_platform_staff),
+    db: AsyncSession = Depends(get_db),
 ):
     body = await r.json()
-    return ok(_svc.validate(body.get("draft", {}), body.get("event_key", "")), _rid(r), "notification_policies")
+    return ok(await _svc.validate_with_db(db, body.get("draft", {}), body.get("event_key", "")), _rid(r), "notification_policies")
 
 
 @router.post("/{event_key}/draft", summary="Save (create or update) a draft policy")

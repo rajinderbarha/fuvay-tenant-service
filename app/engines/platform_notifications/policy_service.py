@@ -20,6 +20,8 @@ from app.engines.platform_notifications.policy_models import (
     NotificationPolicy, NotificationPolicyRecipientRule, NotificationPolicyAuditLog,
     DELIVERY_MODES, RECIPIENT_ROLES,
 )
+from app.engines.notification.models import NotificationChannelConfig
+from app.engines.platform_notifications.channel_config_service import PLATFORM_CONFIG_TENANT_ID
 from app.exceptions import ServiceOSException
 
 _DRAFT_FIELDS = {
@@ -76,7 +78,7 @@ class NotificationPolicyService:
         ).order_by(NotificationPolicy.version_number.desc()))).scalars().all()
         return [p.to_dict() for p in rows]
 
-    def _validate(self, payload: dict, event_key: str) -> list[str]:
+    def _validate(self, payload: dict, event_key: str, live_channels: set[str] | None = None) -> list[str]:
         errors = []
         cfg = NotificationEventRegistry.get(event_key)
         if cfg is None:
@@ -99,7 +101,7 @@ class NotificationPolicyService:
         # code exists, but in a different, unwired engine -- see
         # provider_status_service.py). Fallback channels are exempt: they
         # exist precisely to degrade to something that DOES work.
-        not_ready = (required | primary) - _LIVE_CHANNELS
+        not_ready = (required | primary) - (live_channels or _LIVE_CHANNELS)
         if not_ready:
             errors.append(f"channel(s) {sorted(not_ready)} have no working provider configured -- "
                           f"cannot be required or primary (see Delivery & Providers)")
@@ -127,9 +129,23 @@ class NotificationPolicyService:
         errors = self._validate(payload, event_key)
         return {"valid": len(errors) == 0, "errors": errors}
 
+    async def _configured_live_channels(self, db: AsyncSession) -> set[str]:
+        channels = set(_LIVE_CHANNELS)
+        rows = (await db.execute(select(NotificationChannelConfig.channel).where(
+            NotificationChannelConfig.tenant_id == PLATFORM_CONFIG_TENANT_ID,
+            NotificationChannelConfig.is_enabled == True,  # noqa: E712
+            NotificationChannelConfig.last_test_status == "passed",
+        ))).scalars().all()
+        channels.update(rows)
+        return channels
+
+    async def validate_with_db(self, db: AsyncSession, payload: dict, event_key: str) -> dict:
+        errors = self._validate(payload, event_key, await self._configured_live_channels(db))
+        return {"valid": len(errors) == 0, "errors": errors}
+
     async def save_draft(self, db: AsyncSession, event_key: str, vertical_key: str | None,
                          payload: dict, *, actor_id: uuid.UUID | None) -> dict:
-        errors = self._validate(payload, event_key)
+        errors = self._validate(payload, event_key, await self._configured_live_channels(db))
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)
 
@@ -185,7 +201,7 @@ class NotificationPolicyService:
             raise ServiceOSException("NOT_FOUND", "No draft policy to publish.", status_code=404)
 
         draft_dict = draft.to_dict()
-        errors = self._validate(draft_dict, event_key)
+        errors = self._validate(draft_dict, event_key, await self._configured_live_channels(db))
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)
 

@@ -9,7 +9,7 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import and_, select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -17,29 +17,67 @@ from app.engines.admin_catalog.models import (
     TenantService, TenantServiceType, TenantServiceBrand,
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
     ServiceBlueprintVersion, MasterServiceJobType, ServiceJobWorkflow,
-)
-from app.engines.admin_catalog.bargain_engine import (
-    compute_symmetric_customer_price_tiers, BargainValidationError,
+    ServiceJobDimension, CatalogDimension, JobTypeDefinition,
 )
 from app.engines.serviceability.models import TenantServiceArea
 from app.engines.entitlement.service import entitlement_service
+from app.engines.tenant_engine.models import TenantSettings
 from app.exceptions import ServiceOSException, NotFoundException
 
 utcnow = lambda: datetime.now(timezone.utc)
 
 
-def project_tenant_blueprint(master: MasterService | None, workflow: dict | None) -> dict:
-    """Canonical tenant-facing projection of Admin-owned service rules."""
+# Pricing behavior is structural and Admin-owned. For these workflows the
+# provider charges one visit/inspection fee; Type and Brand remain routing
+# dimensions and must never create a second price matrix.
+INSPECTION_PRICING_BEHAVIORS = {
+    "inspection_required", "inspection_quote", "visit_fee_plus_quote",
+    "quote", "custom_quote",
+}
+
+
+def project_tenant_blueprint(
+    master: MasterService | None,
+    workflow: dict | None,
+    dimension_rules: dict[str, dict] | None = None,
+) -> dict:
+    """Canonical tenant-facing projection of Admin-owned service rules.
+
+    Type/Brand requirements are owned by the normalized dimension blueprint
+    when one exists for this service/job-type.  The MasterService booleans are
+    retained only as a compatibility fallback for catalog rows that have not
+    been migrated to dimensions yet.
+    """
+    dimension_rules = dimension_rules or {}
+
+    def _dimension_required(key: str, legacy: bool) -> bool:
+        rule = dimension_rules.get(key)
+        if rule is None:
+            return legacy
+        return bool(
+            rule.get("enabled")
+            and rule.get("show_during_tenant_setup")
+            and rule.get("required")
+        )
+
+    type_required = _dimension_required("type", bool(master and master.is_type_required))
+    brand_required = _dimension_required("brand", bool(master and master.is_brand_required))
     return {
-        "type_mode": "required" if master and master.is_type_required else "optional",
-        "brand_mode": "required" if master and master.is_brand_required else "optional",
+        "type_mode": "required" if type_required else "optional",
+        "brand_mode": "required" if brand_required else "optional",
         "requires_issue_type": bool(master and master.requires_issue_type),
-        "requires_checklist": workflow["checklist_required"] if workflow else bool(master and master.requires_checklist),
-        "requires_estimate_approval": workflow["quote_approval_required"] if workflow else bool(
+        "requires_checklist": bool(workflow.get("checklist_required")) if workflow else bool(master and master.requires_checklist),
+        "requires_estimate_approval": bool(workflow.get("quote_approval_required")) if workflow else bool(
             master and master.pricing_model in {"inspection_based", "inspection_quote", "quote"}
         ),
-        "requires_technician": workflow["technician_required"] if workflow else True,
-        "requires_schedule": workflow["schedule_required"] if workflow else bool(master and master.requires_schedule),
+        "requires_technician": bool(workflow.get("technician_required")) if workflow else True,
+        "requires_schedule": bool(workflow.get("schedule_required")) if workflow else bool(master and master.requires_schedule),
+        "requires_service_area": bool(workflow.get("service_area_required")) if workflow else bool(master and master.requires_address),
+        "requires_availability": bool(workflow.get("availability_required")) if workflow else bool(master and master.requires_schedule),
+        "pricing_behavior": (
+            workflow.get("pricing_behavior") or (master.pricing_model if master else None)
+            if workflow else (master.pricing_model if master else None)
+        ),
         "workflow_version": workflow.get("version_number") if workflow else None,
         "source": "service_job_workflow" if workflow else "master_service_legacy",
     }
@@ -95,6 +133,103 @@ class TenantCatalogService:
                 "No Home Services category is configured.", status_code=422)
         return cat.id
 
+    async def _dimension_rules(
+        self, master_service_id: uuid.UUID, job_type_id: uuid.UUID | None,
+    ) -> dict[str, dict]:
+        """Return exact job-type setup dimensions, falling back to the
+        service-wide (NULL job_type_id) blueprint only when an exact row does
+        not exist.  This is the same ownership model used by Catalog Workspace.
+        """
+        rows = (await self.db.execute(
+            select(ServiceJobDimension, CatalogDimension)
+            .join(CatalogDimension, CatalogDimension.id == ServiceJobDimension.dimension_id)
+            .where(
+                ServiceJobDimension.master_service_id == master_service_id,
+                ServiceJobDimension.job_type_id.in_([job_type_id, None])
+                if job_type_id else ServiceJobDimension.job_type_id.is_(None),
+            )
+        )).all()
+        by_key: dict[str, tuple[bool, dict]] = {}
+        for config, dimension in rows:
+            exact = job_type_id is not None and config.job_type_id == job_type_id
+            previous = by_key.get(dimension.key)
+            if previous is None or (exact and not previous[0]):
+                by_key[dimension.key] = (exact, config.to_dict())
+        return {key: value for key, (_, value) in by_key.items()}
+
+    async def _published_workflow(
+        self, master_service_id: uuid.UUID, job_type_id: uuid.UUID | None,
+    ) -> dict | None:
+        if not job_type_id:
+            return None
+        row = (await self.db.execute(
+            select(ServiceJobWorkflow).where(
+                ServiceJobWorkflow.master_service_id == master_service_id,
+                ServiceJobWorkflow.job_type_id == job_type_id,
+                ServiceJobWorkflow.is_current.is_(True),
+                ServiceJobWorkflow.status == "published",
+            ).order_by(ServiceJobWorkflow.version_number.desc()).limit(1)
+        )).scalar_one_or_none()
+        return row.to_dict() if isinstance(row, ServiceJobWorkflow) else None
+
+    async def _tenant_setup_blueprint(self, master: MasterService, job_type_id: uuid.UUID | None) -> dict:
+        workflow = await self._published_workflow(master.id, job_type_id)
+        dimensions = await self._dimension_rules(master.id, job_type_id)
+        return project_tenant_blueprint(master, workflow, dimensions)
+
+    async def _setup_rule_revision(self, master_service_id: uuid.UUID,
+                                   job_type_id: uuid.UUID) -> int:
+        revision = (await self.db.execute(
+            select(MasterServiceJobType.setup_rules_revision).where(
+                MasterServiceJobType.master_service_id == master_service_id,
+                MasterServiceJobType.job_type_id == job_type_id,
+            )
+        )).scalar_one_or_none()
+        if revision is None:
+            raise ServiceOSException(
+                "JOB_TYPE_NOT_AVAILABLE",
+                "The selected job type is not configured for this service.", status_code=422,
+            )
+        return int(revision)
+
+    async def _resolve_active_job_type(
+        self, master_service_id: uuid.UUID, requested_job_type_id: object,
+    ) -> JobTypeDefinition:
+        if not requested_job_type_id:
+            active_ids = (await self.db.execute(
+                select(MasterServiceJobType.job_type_id).where(
+                    MasterServiceJobType.master_service_id == master_service_id,
+                    MasterServiceJobType.is_active.is_(True),
+                ).limit(2)
+            )).scalars().all()
+            if len(active_ids) != 1:
+                raise ServiceOSException(
+                    "JOB_TYPE_REQUIRED",
+                    "job_type_id is required when this service has more than one job type.",
+                    status_code=422,
+                )
+            requested_job_type_id = active_ids[0]
+        try:
+            job_type_id = uuid.UUID(str(requested_job_type_id))
+        except (TypeError, ValueError, AttributeError):
+            raise ServiceOSException("INVALID_JOB_TYPE_ID", "job_type_id must be a valid UUID.", status_code=422)
+        row = (await self.db.execute(
+            select(JobTypeDefinition)
+            .join(MasterServiceJobType, MasterServiceJobType.job_type_id == JobTypeDefinition.id)
+            .where(
+                MasterServiceJobType.master_service_id == master_service_id,
+                MasterServiceJobType.job_type_id == job_type_id,
+                MasterServiceJobType.is_active.is_(True),
+                JobTypeDefinition.is_active.is_(True),
+            )
+        )).scalar_one_or_none()
+        if not row:
+            raise ServiceOSException(
+                "JOB_TYPE_NOT_AVAILABLE",
+                "The selected job type is not active for this service.", status_code=422,
+            )
+        return row
+
     async def list_available_services(self, tenant_id_raw=None, category_id: uuid.UUID | None = None) -> dict:
         """All active master services — with is_enabled flag per tenant.
         category_id is optional and additive (existing callers unaffected);
@@ -116,15 +251,9 @@ class TenantCatalogService:
         # same projection, so an old workflow row or renamed field can no
         # longer make their Admin-blueprint cards disagree.
         workflows_by_pair: dict[tuple[uuid.UUID, uuid.UUID], dict] = {}
-        # Only services with the normalized UUID job_type_id can have an
-        # exact workflow projection. Legacy/null rows intentionally use the
-        # MasterService fallback. The isinstance guard also keeps old test
-        # fixtures that predate this column from triggering a meaningless
-        # workflow query through MagicMock attributes.
-        workflow_service_ids = {
-            service.id for service in services
-            if isinstance(service.job_type_id, uuid.UUID)
-        }
+        # Load exact normalized workflows in bulk; services without an active
+        # published workflow fail closed and are not tenant-configurable.
+        workflow_service_ids = {service.id for service in services}
         if workflow_service_ids:
             workflow_rows = (await self.db.execute(
                 select(ServiceJobWorkflow).where(
@@ -139,6 +268,38 @@ class TenantCatalogService:
                     workflow_row.to_dict(),
                 )
 
+        job_types_by_service: dict[uuid.UUID, list[JobTypeDefinition]] = {}
+        setup_revision_by_pair: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
+        if services:
+            link_rows = (await self.db.execute(
+                select(MasterServiceJobType, JobTypeDefinition)
+                .join(JobTypeDefinition, JobTypeDefinition.id == MasterServiceJobType.job_type_id)
+                .where(
+                    MasterServiceJobType.master_service_id.in_([s.id for s in services]),
+                    MasterServiceJobType.is_active.is_(True),
+                    JobTypeDefinition.is_active.is_(True),
+                )
+                .order_by(MasterServiceJobType.display_order, JobTypeDefinition.display_order)
+            )).all()
+            for link, job_type in link_rows:
+                job_types_by_service.setdefault(link.master_service_id, []).append(job_type)
+                setup_revision_by_pair[(link.master_service_id, job_type.id)] = link.setup_rules_revision
+
+        # Load normalized tenant-setup dimension rules in one query. Catalog
+        # lists can contain thousands of services, so per-row dimension
+        # lookups here would turn this endpoint into an N+1 bottleneck.
+        dimension_rules_by_scope: dict[tuple[uuid.UUID, uuid.UUID | None], dict[str, dict]] = {}
+        if services:
+            dimension_rows = (await self.db.execute(
+                select(ServiceJobDimension, CatalogDimension)
+                .join(CatalogDimension, CatalogDimension.id == ServiceJobDimension.dimension_id)
+                .where(ServiceJobDimension.master_service_id.in_([s.id for s in services]))
+            )).all()
+            for config, dimension in dimension_rows:
+                dimension_rules_by_scope.setdefault(
+                    (config.master_service_id, config.job_type_id), {}
+                )[dimension.key] = config.to_dict()
+
         # Which ones the tenant has already enabled
         enabled_res = await self.db.execute(
             select(TenantService).where(
@@ -146,7 +307,8 @@ class TenantCatalogService:
                 TenantService.is_enabled == True,
                 TenantService.deleted_at.is_(None),
             ))
-        enabled_set = {ts.master_service_id for ts in enabled_res.scalars().all()}
+        enabled_rows = enabled_res.scalars().all()
+        enabled_by_pair = {(ts.master_service_id, ts.job_type_id): ts for ts in enabled_rows}
 
         # Group names for the setup page's grouping (one query, not N).
         group_ids = {s.service_group_id for s in services if s.service_group_id}
@@ -159,9 +321,32 @@ class TenantCatalogService:
 
         projected_services = []
         for s in services:
-            workflow = workflows_by_pair.get((s.id, s.job_type_id)) if isinstance(s.job_type_id, uuid.UUID) else None
-            blueprint = project_tenant_blueprint(s, workflow)
-            projected_services.append({
+            job_types = job_types_by_service.get(s.id, [])
+            per_job_type = []
+            admin_blockers = []
+            for job_type in job_types:
+                workflow = workflows_by_pair.get((s.id, job_type.id))
+                dimensions = dict(dimension_rules_by_scope.get((s.id, None), {}))
+                dimensions.update(dimension_rules_by_scope.get((s.id, job_type.id), {}))
+                projected = project_tenant_blueprint(s, workflow, dimensions)
+                per_job_type.append({
+                    "job_type_id": str(job_type.id), "job_type_key": job_type.key,
+                    "job_type_label": job_type.label,
+                    "workflow_id": workflow.get("id") if workflow else None,
+                    **projected,
+                })
+                if not workflow:
+                    admin_blockers.append({
+                        "code": "MISSING_PUBLISHED_WORKFLOW", "job_type_id": str(job_type.id),
+                        "message": f"{job_type.label} has no published workflow.",
+                    })
+            if not per_job_type:
+                admin_blockers.append({"code": "NO_ACTIVE_JOB_TYPES", "message": "No active job type is configured."})
+            for job_type_row in per_job_type:
+                enabled_row = enabled_by_pair.get((s.id, uuid.UUID(job_type_row["job_type_id"])))
+                row_blockers = [b for b in admin_blockers if b.get("job_type_id") == job_type_row["job_type_id"]]
+                projected_services.append({
+                "offering_key": f"{s.id}:{job_type_row['job_type_id']}",
                 "service_id": str(s.id),
                 "category_id": str(s.category_id),
                 "service_name": s.service_name,
@@ -179,25 +364,35 @@ class TenantCatalogService:
                 # icon, silently falling back to a generic placeholder.
                 "icon_url": s.icon_url,
                 "image_url": s.image_url,
-                "job_type": s.job_type,
-                "pricing_model": s.pricing_model,
+                "job_type": job_type_row["job_type_key"],
+                "job_type_id": job_type_row["job_type_id"],
+                "job_type_label": job_type_row["job_type_label"],
+                "job_types": [job_type_row],
+                "pricing_model": job_type_row["pricing_behavior"],
                 "base_price": float(s.base_price),
                 "min_price": float(s.min_price) if s.min_price else None,
                 "max_price": float(s.max_price) if s.max_price else None,
                 "visit_fee": float(s.visit_fee),
-                "is_brand_required": s.is_brand_required,
-                "is_type_required": s.is_type_required,
-                "requires_issue_type": blueprint["requires_issue_type"],
-                "requires_checklist": blueprint["requires_checklist"],
-                "requires_estimate_approval": blueprint["requires_estimate_approval"],
-                "requires_technician": blueprint["requires_technician"],
-                "requires_schedule": blueprint["requires_schedule"],
-                "workflow_version": blueprint["workflow_version"],
-                "blueprint_source": blueprint["source"],
+                "is_brand_required": job_type_row["brand_mode"] == "required",
+                "is_type_required": job_type_row["type_mode"] == "required",
+                "requires_issue_type": job_type_row["requires_issue_type"],
+                "requires_checklist": job_type_row["requires_checklist"],
+                "requires_estimate_approval": job_type_row["requires_estimate_approval"],
+                "requires_technician": job_type_row["requires_technician"],
+                "requires_schedule": job_type_row["requires_schedule"],
+                "requires_service_area": job_type_row["requires_service_area"],
+                "requires_availability": job_type_row["requires_availability"],
+                "workflow_version": job_type_row["workflow_version"],
+                "blueprint_source": job_type_row["source"],
+                "admin_ready": not row_blockers,
+                "admin_blockers": row_blockers,
+                "setup_rules_revision": setup_revision_by_pair[(s.id, uuid.UUID(job_type_row["job_type_id"]))],
+                "tenant_setup_rules_revision": enabled_row.setup_rules_revision if enabled_row else None,
+                "setup_update_required": bool(enabled_row and enabled_row.setup_rules_revision != setup_revision_by_pair[(s.id, uuid.UUID(job_type_row["job_type_id"]))]),
                 "tenant_override_allowed": s.tenant_override_allowed,
                 "is_active": s.is_active,
-                "is_enabled": s.id in enabled_set,
-            })
+                "is_enabled": enabled_row is not None,
+                })
         return {"services": projected_services}
 
     # ═══════════════════════════════════════════════════════════
@@ -205,7 +400,8 @@ class TenantCatalogService:
     # ═══════════════════════════════════════════════════════════
 
     async def get_service_requirements(self, master_service_id: uuid.UUID,
-                                       tenant_id_raw=None) -> dict:
+                                       tenant_id_raw=None,
+                                       job_type_id: uuid.UUID | None = None) -> dict:
         """Read-only view of the Problems, Questions and Checklists the admin
         has attached to one of THIS tenant's enabled services.
 
@@ -235,6 +431,7 @@ class TenantCatalogService:
             select(TenantService).where(
                 TenantService.tenant_id == tenant_id,
                 TenantService.master_service_id == master_service_id,
+                *( [TenantService.job_type_id == job_type_id] if job_type_id else [] ),
                 TenantService.is_enabled == True,  # noqa: E712
                 TenantService.deleted_at.is_(None),
             )
@@ -244,6 +441,7 @@ class TenantCatalogService:
                 "SERVICE_NOT_ENABLED",
                 "You can only view requirements for services you have enabled.",
                 status_code=403)
+        resolved_job_type_id = job_type_id or enabled.job_type_id
 
         service = await self.db.get(MasterService, master_service_id)
         if not service:
@@ -253,14 +451,18 @@ class TenantCatalogService:
         # list_service_issue_mappings performs no writes and no audit.
         problems = await ServiceOptionService(
             self.db, actor_id=None, actor_role=None, request_id="—", tenant_id=tenant_id,
-        ).list_service_issue_mappings(master_service_id)
-        questions_res = await CatalogQuestionService(self.db).list_questions(master_service_id, None)
+        ).list_service_issue_mappings(master_service_id, resolved_job_type_id)
+        questions_res = await CatalogQuestionService(self.db).list_questions(
+            master_service_id, resolved_job_type_id,
+        )
 
         # Checklists resolve through the (master_service, job_type) child
         # record, then the published template VERSION -> template.
         job_type_ids = (await self.db.execute(
             select(MasterServiceJobType.id).where(
-                MasterServiceJobType.master_service_id == master_service_id)
+                MasterServiceJobType.master_service_id == master_service_id,
+                MasterServiceJobType.job_type_id == resolved_job_type_id,
+            )
         )).scalars().all()
         checklists: list[dict] = []
         if job_type_ids:
@@ -270,7 +472,13 @@ class TenantCatalogService:
                       JobTypeChecklistMapping.checklist_template_version_id == ChecklistTemplateVersion.id)
                 .join(ChecklistTemplate,
                       ChecklistTemplateVersion.checklist_template_id == ChecklistTemplate.id)
-                .where(JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids))
+                .where(
+                    JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids),
+                    JobTypeChecklistMapping.status == "active",
+                    ChecklistTemplateVersion.status == "PUBLISHED",
+                    ChecklistTemplate.status == "active",
+                )
+                .order_by(JobTypeChecklistMapping.display_order)
             )).all()
             for mapping, template, version in rows:
                 checklists.append({
@@ -286,6 +494,7 @@ class TenantCatalogService:
 
         return {
             "master_service_id": str(master_service_id),
+            "job_type_id": str(resolved_job_type_id),
             "service_name": service.service_name,
             "problems": [
                 {
@@ -325,16 +534,40 @@ class TenantCatalogService:
 
     async def list_enabled_services(self, tenant_id_raw=None, category_id: uuid.UUID | None = None) -> dict:
         tenant_id = self._require_tenant_id(tenant_id_raw)
-        stmt = select(TenantService).where(
+        stmt = (
+            select(
+                TenantService,
+                MasterService.service_name,
+                JobTypeDefinition.label.label("job_type_label"),
+                ServiceGroup.name.label("service_group_name"),
+            )
+            .join(MasterService, MasterService.id == TenantService.master_service_id)
+            .outerjoin(JobTypeDefinition, JobTypeDefinition.id == TenantService.job_type_id)
+            .outerjoin(ServiceGroup, ServiceGroup.id == MasterService.service_group_id)
+            .where(
             TenantService.tenant_id == tenant_id,
             TenantService.is_enabled == True,
             TenantService.deleted_at.is_(None),
         )
+        )
         if category_id:
             stmt = stmt.where(TenantService.category_id == category_id)
-        res = await self.db.execute(stmt.order_by(TenantService.created_at))
-        services = res.scalars().all()
-        return {"services": [self._ts_dict(ts) for ts in services]}
+        rows = (await self.db.execute(stmt.order_by(
+            ServiceGroup.display_order,
+            MasterService.display_order,
+            MasterService.service_name,
+            JobTypeDefinition.display_order,
+            TenantService.created_at,
+        ))).all()
+        return {"services": [
+            self._ts_dict(
+                ts,
+                service_name=service_name,
+                job_type_label=job_type_label,
+                service_group_name=service_group_name,
+            )
+            for ts, service_name, job_type_label, service_group_name in rows
+        ]}
 
     async def list_home_services_available(self, tenant_id_raw=None) -> dict:
         cat_id = await self.get_home_services_category_id()
@@ -348,6 +581,52 @@ class TenantCatalogService:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
         return self._ts_dict(ts)
+
+    async def get_home_services_pricing_policy(self, tenant_id_raw=None) -> dict:
+        """Provider-owned prices that apply once across Home Services.
+
+        Consultation is intentionally provider-wide: creating one price per
+        service/type/brand would be duplicate configuration and would produce
+        inconsistent customer prices for the same expert consultation.
+        """
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+        settings = (await self.db.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        extra = dict(settings.extra or {}) if settings else {}
+        home_services = dict(extra.get("home_services") or {})
+        fee = home_services.get("consultation_fee")
+        return {
+            "consultation_fee": float(fee) if fee is not None else None,
+            "currency": settings.currency if settings else "INR",
+            "scope": "provider_all_home_services",
+        }
+
+    async def update_home_services_pricing_policy(self, data: dict, tenant_id_raw=None) -> dict:
+        tenant_id = self._require_tenant_id(tenant_id_raw)
+        fee = _decimal_or_none(data.get("consultation_fee"))
+        if fee is None:
+            raise ServiceOSException(
+                "CONSULTATION_FEE_REQUIRED", "Consultation fee is required.", status_code=422)
+        if fee <= 0:
+            raise ServiceOSException(
+                "INVALID_CONSULTATION_FEE", "Consultation fee must be greater than zero.", status_code=422)
+
+        settings = (await self.db.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        if settings is None:
+            settings = TenantSettings(tenant_id=tenant_id)
+            self.db.add(settings)
+            await self.db.flush()
+
+        extra = dict(settings.extra or {})
+        home_services = dict(extra.get("home_services") or {})
+        home_services["consultation_fee"] = float(fee)
+        extra["home_services"] = home_services
+        settings.extra = extra
+        await self.db.flush()
+        return await self.get_home_services_pricing_policy(tenant_id)
 
     # ═══════════════════════════════════════════════════════════
     # Enable Service
@@ -391,11 +670,15 @@ class TenantCatalogService:
                     status_code=403,
                 )
 
-        # Check not already enabled
+        job_type = await self._resolve_active_job_type(svc_id, data.get("job_type_id"))
+        setup_rules_revision = await self._setup_rule_revision(svc_id, job_type.id)
+
+        # Check not already enabled for this exact Job Type.
         existing = await self.db.execute(
             select(TenantService).where(
                 TenantService.tenant_id == tenant_id,
                 TenantService.master_service_id == svc_id,
+                TenantService.job_type_id == job_type.id,
                 TenantService.deleted_at.is_(None),
             ))
         existing_ts = existing.scalar_one_or_none()
@@ -412,6 +695,7 @@ class TenantCatalogService:
             tenant_min   = _decimal_or_none(data.get("tenant_min_price"))
             tenant_max   = _decimal_or_none(data.get("tenant_max_price"))
             tenant_visit = _decimal_or_none(data.get("tenant_visit_fee"))
+            warranty_days = self._validate_warranty_days(data.get("warranty_days", 5))
 
             # MODULE-L5-03: `is not None`, not truthiness — Decimal('0') is falsy,
             # so the old `any([...])`/`if tenant_min and ...` skipped validation
@@ -422,11 +706,26 @@ class TenantCatalogService:
                         "Price override is not allowed for this service.", status_code=422)
                 self._validate_price_overrides(svc, tenant_base, tenant_min, tenant_max, tenant_visit)
 
+            job_type_id = job_type.id
+            blueprint = await self._tenant_setup_blueprint(svc, job_type_id)
+            if isinstance(svc, MasterService) and blueprint["source"] != "service_job_workflow":
+                raise ServiceOSException(
+                    "SERVICE_BLUEPRINT_INCOMPLETE",
+                    f"{job_type.label} is not ready for tenant setup. An administrator must publish its workflow.",
+                    status_code=422,
+                )
+            latest_blueprint = (await self.db.execute(
+                select(ServiceBlueprintVersion).where(
+                    ServiceBlueprintVersion.master_service_id == svc.id,
+                    ServiceBlueprintVersion.status == "published",
+                ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1)
+            )).scalar_one_or_none()
             ts = TenantService(
                 tenant_id=tenant_id,
                 master_service_id=svc_id,
                 category_id=svc.category_id,
-                job_type=svc.job_type,
+                job_type=job_type.key,
+                job_type_id=job_type_id,
                 is_enabled=True,
                 tenant_display_name=data.get("tenant_display_name"),
                 tenant_description=data.get("tenant_description"),
@@ -434,32 +733,61 @@ class TenantCatalogService:
                 tenant_min_price=tenant_min,
                 tenant_max_price=tenant_max,
                 tenant_visit_fee=tenant_visit,
+                warranty_days=warranty_days,
                 override_allowed=svc.tenant_override_allowed,
-                requires_brand=svc.is_brand_required,
-                requires_type=svc.is_type_required,
+                requires_brand=blueprint["brand_mode"] == "required",
+                requires_type=blueprint["type_mode"] == "required",
                 is_active=True,
+                blueprint_version_id=latest_blueprint.id if latest_blueprint else None,
+                setup_rules_revision=setup_rules_revision,
             )
             self.db.add(ts)
+
+        # Re-enabling an existing row must also adopt the current authoritative
+        # setup contract; otherwise a tenant could retain obsolete type/brand
+        # requirements indefinitely simply by disabling and enabling again.
+        if existing_ts:
+            job_type_id = job_type.id
+            blueprint = await self._tenant_setup_blueprint(svc, job_type_id)
+            if isinstance(svc, MasterService) and blueprint["source"] != "service_job_workflow":
+                raise ServiceOSException(
+                    "SERVICE_BLUEPRINT_INCOMPLETE",
+                    f"{job_type.label} is not ready for tenant setup. An administrator must publish its workflow.",
+                    status_code=422,
+                )
+            existing_ts.job_type_id = job_type_id
+            existing_ts.requires_brand = blueprint["brand_mode"] == "required"
+            existing_ts.requires_type = blueprint["type_mode"] == "required"
+            latest_blueprint = (await self.db.execute(
+                select(ServiceBlueprintVersion).where(
+                    ServiceBlueprintVersion.master_service_id == svc.id,
+                    ServiceBlueprintVersion.status == "published",
+                ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1)
+            )).scalar_one_or_none()
+            existing_ts.blueprint_version_id = latest_blueprint.id if latest_blueprint else existing_ts.blueprint_version_id
+            existing_ts.setup_rules_revision = setup_rules_revision
+            if "warranty_days" in data:
+                existing_ts.warranty_days = self._validate_warranty_days(data["warranty_days"])
 
         await self.db.flush()
         return self._ts_dict(ts)
 
     def _validate_price_overrides(self, svc, tenant_base, tenant_min, tenant_max, tenant_visit) -> None:
-        """MODULE-L5-03: canonical platform-floor / ceiling / non-negative
-        enforcement for tenant price overrides. Shared by create and update so
-        the platform floor cannot be bypassed through either path. Uses
-        `is not None` so a 0 override is validated, not silently skipped."""
+        """Validate provider-owned price amounts.
+
+        Admin owns workflow and monetization policy, not provider service
+        prices. Legacy MasterService min/max values must therefore never act
+        as hidden tenant price constraints.
+        """
         for lbl, val in (("tenant_min_price", tenant_min), ("tenant_max_price", tenant_max),
                          ("tenant_base_price", tenant_base), ("tenant_visit_fee", tenant_visit)):
             if val is not None and val < 0:
                 raise ServiceOSException("TENANT_PRICE_NEGATIVE",
                     f"{lbl} cannot be negative.", status_code=422)
-        if tenant_min is not None and svc is not None and svc.min_price is not None and tenant_min < svc.min_price:
-            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
-                f"Tenant min price cannot be below admin min (₹{svc.min_price}).", status_code=422)
-        if tenant_max is not None and svc is not None and svc.max_price is not None and tenant_max > svc.max_price:
-            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
-                f"Tenant max price cannot exceed admin max (₹{svc.max_price}).", status_code=422)
+        if tenant_min is not None and tenant_max is not None and tenant_min > tenant_max:
+            raise ServiceOSException(
+                "INVALID_PRICE_RANGE", "Minimum price cannot exceed maximum price.", status_code=422,
+            )
 
     async def update_enabled_service(self, tenant_service_id: uuid.UUID, data: dict) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
@@ -471,11 +799,8 @@ class TenantCatalogService:
                     raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
                         "Price override is not allowed for this service.", status_code=422)
 
-        # MODULE-L5-03 FIX: the update path previously did ZERO price validation
-        # and blindly setattr'd any provided price — a clean platform-floor
-        # bypass (a tenant could update below admin min, to 0, or negative).
-        # Validate the effective (post-update) override values against the
-        # master service's admin floor/ceiling before persisting.
+        # Validate the effective provider-owned range on every update path;
+        # partial updates must not create a negative or inverted range.
         svc = (await self.db.execute(
             select(MasterService).where(MasterService.id == ts.master_service_id)
         )).scalar_one_or_none()
@@ -494,6 +819,15 @@ class TenantCatalogService:
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
             if field in data and data[field] is not None:
                 setattr(ts, field, Decimal(str(data[field])))
+        if "tenant_emergency_surcharge" in data:
+            value = data["tenant_emergency_surcharge"]
+            if value is not None and Decimal(str(value)) < 0:
+                raise ServiceOSException(
+                    "TENANT_PRICE_NEGATIVE", "Emergency surcharge cannot be negative.", status_code=422,
+                )
+            ts.tenant_emergency_surcharge = Decimal(str(value)) if value is not None else None
+        if "warranty_days" in data:
+            ts.warranty_days = self._validate_warranty_days(data["warranty_days"])
 
         await self.db.flush()
         return self._ts_dict(ts)
@@ -504,10 +838,15 @@ class TenantCatalogService:
         if not svc_id_raw:
             raise ServiceOSException("MASTER_SERVICE_NOT_FOUND", "master_service_id is required.", status_code=422)
         svc_id = uuid.UUID(str(svc_id_raw))
+        job_type_id_raw = (data or {}).get("job_type_id")
+        if not job_type_id_raw:
+            raise ServiceOSException("JOB_TYPE_REQUIRED", "job_type_id is required.", status_code=422)
+        job_type_id = uuid.UUID(str(job_type_id_raw))
         res = await self.db.execute(
             select(TenantService).where(
                 TenantService.tenant_id == tenant_id,
                 TenantService.master_service_id == svc_id,
+                TenantService.job_type_id == job_type_id,
                 TenantService.deleted_at.is_(None),
             ))
         ts = res.scalar_one_or_none()
@@ -524,31 +863,41 @@ class TenantCatalogService:
     async def get_tenant_service_types(self, tenant_service_id: uuid.UUID) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
-        # Real bug fixed here: `is_required` / `is_default` live on
-        # MasterServiceType and the setup wizard uses them to pre-select the
-        # types a tenant MUST offer -- but this response never carried them,
-        # so that auto-selection silently selected nothing and tenants had to
-        # find the required types by hand. Outer-joined so a tenant type with
-        # no master mapping still returns (defaulting to not-required).
+        # This endpoint is the setup candidate list, not merely the tenant's
+        # already-selected rows. Start from the Admin mapping and left-join
+        # the tenant selection so a new provider sees every allowed type with
+        # is_enabled=False instead of an empty setup panel.
         res = await self.db.execute(
-            select(TenantServiceType, ServiceType, MasterServiceType)
-            .join(ServiceType, ServiceType.id == TenantServiceType.service_type_id)
+            select(MasterServiceType, ServiceType, TenantServiceType)
+            .join(ServiceType, ServiceType.id == MasterServiceType.service_type_id)
             .outerjoin(
-                MasterServiceType,
-                (MasterServiceType.service_type_id == TenantServiceType.service_type_id)
-                & (MasterServiceType.master_service_id == ts.master_service_id),
+                TenantServiceType,
+                and_(
+                    TenantServiceType.tenant_service_id == tenant_service_id,
+                    TenantServiceType.service_type_id == MasterServiceType.service_type_id,
+                ),
             )
-            .where(TenantServiceType.tenant_service_id == tenant_service_id,
-                   TenantServiceType.is_enabled == True))
+            .where(
+                MasterServiceType.master_service_id == ts.master_service_id,
+                MasterServiceType.is_active.is_(True),
+                ServiceType.is_active.is_(True),
+                ServiceType.deleted_at.is_(None),
+            )
+            .order_by(ServiceType.display_order, ServiceType.name)
+        )
         rows = res.all()
         return {"types": [
-            {"id": str(tst.id), "mapping_id": str(tst.id),
-             "service_type_id": str(tst.service_type_id),
-             "name": st.name, "is_enabled": tst.is_enabled,
-             "is_required": bool(mst.is_required) if mst else False,
-             "is_default": bool(mst.is_default) if mst else False,
-             "tenant_price_adjustment": float(tst.tenant_price_adjustment) if tst.tenant_price_adjustment else None}
-            for tst, st, mst in rows
+            {"id": str(tst.id if tst else mst.id),
+             "mapping_id": str(tst.id if tst else mst.id),
+             "service_type_id": str(mst.service_type_id),
+             "name": st.name, "is_enabled": bool(tst and tst.is_enabled),
+             "is_required": bool(mst.is_required),
+             "is_default": bool(mst.is_default),
+             "tenant_price_adjustment": (
+                 float(tst.tenant_price_adjustment)
+                 if tst and tst.tenant_price_adjustment is not None else None
+             )}
+            for mst, st, tst in rows
         ]}
 
     async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str]) -> dict:
@@ -602,18 +951,40 @@ class TenantCatalogService:
         (migration 120 — Type-Dependent Brand Pricing)."""
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        # Like Types, this is the Admin-authorized candidate list with the
+        # tenant selection projected onto it. Returning only selected rows
+        # made a new service impossible to configure because there was
+        # nothing available to select.
         res = await self.db.execute(
-            select(TenantServiceBrand, Brand)
-            .join(Brand, Brand.id == TenantServiceBrand.brand_id)
-            .where(TenantServiceBrand.tenant_service_id == tenant_service_id,
-                   TenantServiceBrand.service_type_id.is_(None),
-                   TenantServiceBrand.is_enabled == True))
+            select(MasterServiceBrand, Brand, TenantServiceBrand)
+            .join(Brand, Brand.id == MasterServiceBrand.brand_id)
+            .outerjoin(
+                TenantServiceBrand,
+                and_(
+                    TenantServiceBrand.tenant_service_id == tenant_service_id,
+                    TenantServiceBrand.brand_id == MasterServiceBrand.brand_id,
+                    TenantServiceBrand.service_type_id.is_(None),
+                ),
+            )
+            .where(
+                MasterServiceBrand.master_service_id == ts.master_service_id,
+                MasterServiceBrand.is_active.is_(True),
+                MasterServiceBrand.status == "active",
+                Brand.is_active.is_(True),
+                Brand.deleted_at.is_(None),
+            )
+            .order_by(MasterServiceBrand.display_order, Brand.display_order, Brand.name)
+        )
         rows = res.all()
         return {"brands": [
-            {"id": str(tsb.id), "brand_id": str(tsb.brand_id),
-             "name": b.name, "is_enabled": tsb.is_enabled,
-             "tenant_price_adjustment": float(tsb.tenant_price_adjustment) if tsb.tenant_price_adjustment else None}
-            for tsb, b in rows
+            {"id": str(tsb.id if tsb else msb.id), "brand_id": str(msb.brand_id),
+             "name": b.name, "is_enabled": bool(tsb and tsb.is_enabled),
+             "tenant_price_adjustment": (
+                 float(tsb.tenant_price_adjustment)
+                 if tsb and tsb.tenant_price_adjustment is not None else None
+             ),
+             "can_override_price": msb.can_override_price}
+            for msb, b, tsb in rows
         ]}
 
     async def set_tenant_service_brands(self, tenant_service_id: uuid.UUID, brand_ids: list[str]) -> dict:
@@ -633,7 +1004,10 @@ class TenantCatalogService:
                     f"Brand {bid} is not mapped to this service by admin.", status_code=422)
 
         existing_res = await self.db.execute(
-            select(TenantServiceBrand).where(TenantServiceBrand.tenant_service_id == tenant_service_id))
+            select(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_service_id == tenant_service_id,
+                TenantServiceBrand.service_type_id.is_(None),
+            ))
         existing_map = {str(x.brand_id): x for x in existing_res.scalars().all()}
 
         for bid in brand_ids:
@@ -657,6 +1031,21 @@ class TenantCatalogService:
     # Home Services Service Setup Wizard — per-type / per-brand pricing
     # (Step 3 / Step 3B), price preview, and publish (Step 6)
     # ═══════════════════════════════════════════════════════════
+
+    async def _is_inspection_pricing(self, ts: TenantService) -> bool:
+        master = await self.db.get(MasterService, ts.master_service_id)
+        if master is None:
+            return False
+        blueprint = await self._tenant_setup_blueprint(master, ts.job_type_id)
+        return str(blueprint.get("pricing_behavior") or "").lower() in INSPECTION_PRICING_BEHAVIORS
+
+    async def _reject_dimension_price_for_inspection(self, ts: TenantService) -> None:
+        if await self._is_inspection_pricing(ts):
+            raise ServiceOSException(
+                "DIMENSION_PRICING_NOT_APPLICABLE",
+                "Type and Brand are used for service matching on inspection jobs; set only the visit fee.",
+                status_code=422,
+            )
 
     async def _find_admin_pricing_rule(self, master_service_id: uuid.UUID,
                                         service_type_id: uuid.UUID | None,
@@ -692,15 +1081,19 @@ class TenantCatalogService:
             rule = await self._find_admin_pricing_rule(ts.master_service_id, tst.service_type_id, None)
             admin_floor = float(rule.min_price) if rule and rule.min_price is not None else None
             admin_ceiling = float(rule.max_price) if rule and rule.max_price is not None else None
-            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 0.0
             tenant_min = float(tst.tenant_min_price) if tst.tenant_min_price is not None else None
             tenant_max = float(tst.tenant_max_price) if tst.tenant_max_price is not None else None
-            preview = None
-            if tenant_min is not None and tenant_max is not None:
-                try:
-                    preview = compute_symmetric_customer_price_tiers(tenant_min, tenant_max, fee_pct)
-                except BargainValidationError:
-                    preview = None
+            preview = (
+                {
+                    "provider_min_price": tenant_min,
+                    "provider_max_price": tenant_max,
+                    "customer_min_price": tenant_min,
+                    "customer_max_price": tenant_max,
+                    "payment_mode": "customer_pays_provider_directly",
+                }
+                if tenant_min is not None and tenant_max is not None else None
+            )
             out.append({
                 "tenant_service_type_id": str(tst.id), "service_type_id": str(tst.service_type_id),
                 "name": st.name,
@@ -715,6 +1108,7 @@ class TenantCatalogService:
                                 tenant_min_price, tenant_max_price) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        await self._reject_dimension_price_for_inspection(ts)
         res = await self.db.execute(
             select(TenantServiceType).where(
                 TenantServiceType.tenant_service_id == tenant_service_id,
@@ -725,13 +1119,6 @@ class TenantCatalogService:
             raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
                 "This type is not selected for this service.", status_code=422)
 
-        rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, None)
-        admin_floor = rule.min_price if rule else None
-        admin_ceiling = rule.max_price if rule else None
-        if admin_floor is None or admin_ceiling is None:
-            raise ServiceOSException("ADMIN_PRICE_RANGE_NOT_CONFIGURED",
-                "Admin has not configured a price range for this type yet.", status_code=422)
-
         tmin = _decimal_or_none(tenant_min_price)
         tmax = _decimal_or_none(tenant_max_price)
         if tmin is None or tmax is None:
@@ -740,12 +1127,9 @@ class TenantCatalogService:
         if tmin > tmax:
             raise ServiceOSException("INVALID_PRICE_RANGE",
                 "Minimum price cannot exceed maximum price.", status_code=422)
-        if tmin < admin_floor:
-            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
-                f"Your minimum price cannot be below the admin floor (Rs. {admin_floor}).", status_code=422)
-        if tmax > admin_ceiling:
-            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
-                f"Your maximum price cannot exceed the admin ceiling (Rs. {admin_ceiling}).", status_code=422)
+        if tmin < 0 or tmax < 0:
+            raise ServiceOSException("TENANT_PRICE_NEGATIVE",
+                "Service prices cannot be negative.", status_code=422)
 
         tst.tenant_min_price = tmin
         tst.tenant_max_price = tmax
@@ -777,15 +1161,19 @@ class TenantCatalogService:
             rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, tsb.brand_id)
             admin_floor = float(rule.min_price) if rule and rule.min_price is not None else None
             admin_ceiling = float(rule.max_price) if rule and rule.max_price is not None else None
-            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 0.0
             tenant_min = float(tsb.tenant_min_price) if tsb.tenant_min_price is not None else None
             tenant_max = float(tsb.tenant_max_price) if tsb.tenant_max_price is not None else None
-            preview = None
-            if msb.can_override_price and tenant_min is not None and tenant_max is not None:
-                try:
-                    preview = compute_symmetric_customer_price_tiers(tenant_min, tenant_max, fee_pct)
-                except BargainValidationError:
-                    preview = None
+            preview = (
+                {
+                    "provider_min_price": tenant_min,
+                    "provider_max_price": tenant_max,
+                    "customer_min_price": tenant_min,
+                    "customer_max_price": tenant_max,
+                    "payment_mode": "customer_pays_provider_directly",
+                }
+                if msb.can_override_price and tenant_min is not None and tenant_max is not None else None
+            )
             out.append({
                 "tenant_service_brand_id": str(tsb.id), "brand_id": str(tsb.brand_id), "name": b.name,
                 "service_type_id": str(tsb.service_type_id) if tsb.service_type_id else None,
@@ -802,6 +1190,7 @@ class TenantCatalogService:
                                  service_type_id: uuid.UUID | None = None) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        await self._reject_dimension_price_for_inspection(ts)
 
         # Rule 1/2: type-based services require service_type_id for brand pricing.
         if ts.requires_type and service_type_id is None:
@@ -833,13 +1222,6 @@ class TenantCatalogService:
             raise ServiceOSException("BRAND_OVERRIDE_NOT_ALLOWED",
                 "This brand is not configured for price override by admin.", status_code=422)
 
-        rule = await self._find_admin_pricing_rule(ts.master_service_id, service_type_id, brand_id)
-        admin_floor = rule.min_price if rule else None
-        admin_ceiling = rule.max_price if rule else None
-        if admin_floor is None or admin_ceiling is None:
-            raise ServiceOSException("ADMIN_PRICE_RANGE_NOT_CONFIGURED",
-                "Admin has not configured a price range for this brand yet.", status_code=422)
-
         tmin = _decimal_or_none(tenant_min_price)
         tmax = _decimal_or_none(tenant_max_price)
         if tmin is None or tmax is None:
@@ -848,12 +1230,9 @@ class TenantCatalogService:
         if tmin > tmax:
             raise ServiceOSException("INVALID_PRICE_RANGE",
                 "Minimum price cannot exceed maximum price.", status_code=422)
-        if tmin < admin_floor:
-            raise ServiceOSException("TENANT_PRICE_BELOW_ADMIN_MIN",
-                f"Your minimum price cannot be below the admin floor (Rs. {admin_floor}).", status_code=422)
-        if tmax > admin_ceiling:
-            raise ServiceOSException("TENANT_PRICE_ABOVE_ADMIN_MAX",
-                f"Your maximum price cannot exceed the admin ceiling (Rs. {admin_ceiling}).", status_code=422)
+        if tmin < 0 or tmax < 0:
+            raise ServiceOSException("TENANT_PRICE_NEGATIVE",
+                "Service prices cannot be negative.", status_code=422)
 
         # Upsert scoped by (tenant_service_id, service_type_id, brand_id) —
         # this is the actual fix: previously this looked up by
@@ -943,27 +1322,89 @@ class TenantCatalogService:
         self._assert_tenant_owns_ts(ts)
         errors: list[dict] = []
 
-        if not ts.requires_type and not ts.requires_brand:
-            # Simple job type: only the tenant default price (or, for
-            # inspection-workflow services, the visit fee) is required.
+        master = (await self.db.execute(
+            select(MasterService).where(MasterService.id == ts.master_service_id)
+        )).scalar_one_or_none()
+        if master is None:
+            raise NotFoundException("MasterService", str(ts.master_service_id))
+        if isinstance(master, MasterService):
+            job_type_id = ts.job_type_id
+            blueprint = await self._tenant_setup_blueprint(master, job_type_id)
+        else:  # lightweight unit fixture / pre-normalized compatibility row
+            blueprint = {
+                "type_mode": "required" if ts.requires_type else "optional",
+                "brand_mode": "required" if ts.requires_brand else "optional",
+                "requires_service_area": False,
+                "requires_availability": False,
+                "pricing_behavior": (
+                    "inspection_required" if str(ts.job_type or "").lower() == "repair" else "fixed"
+                ),
+            }
+        has_authoritative_blueprint = isinstance(master, MasterService)
+        latest_setup_revision = (
+            await self._setup_rule_revision(ts.master_service_id, ts.job_type_id)
+            if has_authoritative_blueprint else ts.setup_rules_revision
+        )
+
+        if has_authoritative_blueprint:
+            if blueprint["source"] != "service_job_workflow":
+                errors.append({
+                    "step": "admin_catalog", "job_type_id": str(ts.job_type_id),
+                    "dimension_path": {}, "code": "MISSING_PUBLISHED_WORKFLOW",
+                    "message": "This job type has no published Admin workflow.",
+                })
+
+        # Existing tenant rows store the requirement snapshot they were
+        # configured against. If Admin publishes stricter current rules, the
+        # validator must use those rules immediately and require a tenant
+        # review instead of silently publishing an out-of-date setup.
+        requires_type = blueprint["type_mode"] == "required"
+        requires_brand = blueprint["brand_mode"] == "required"
+        pricing_behavior = str(blueprint.get("pricing_behavior") or "").lower()
+        is_inspection_pricing = pricing_behavior in INSPECTION_PRICING_BEHAVIORS
+        is_consultation = str(ts.job_type or "").lower() == "consultation"
+
+        if is_consultation:
+            settings = (await self.db.execute(
+                select(TenantSettings).where(TenantSettings.tenant_id == ts.tenant_id)
+            )).scalar_one_or_none()
+            fee = ((settings.extra or {}).get("home_services") or {}).get("consultation_fee") if settings else None
+            if fee is None or Decimal(str(fee)) <= 0:
+                errors.append({
+                    "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                    "dimension_path": {}, "code": "MISSING_CONSULTATION_FEE",
+                    "message": "Set the provider-wide consultation fee.",
+                })
+        elif is_inspection_pricing:
+            # Inspection/repair pricing is intentionally NOT resolved through
+            # Type or Brand. Those dimensions control matching only. The
+            # provider collects one visit fee and the eventual work amount is
+            # the estimate explicitly approved by the customer.
+            if ts.tenant_visit_fee is None:
+                errors.append({
+                    "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                    "dimension_path": {},
+                    "code": "MISSING_VISIT_FEE" if has_authoritative_blueprint else "MISSING_TENANT_PRICE",
+                    "message": "Set the visit or inspection fee for this service.",
+                })
+        elif not requires_type and not requires_brand:
             if ts.tenant_min_price is None or ts.tenant_max_price is None:
-                if ts.tenant_visit_fee is None:
-                    errors.append({
-                        "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
-                        "dimension_path": {}, "code": "MISSING_TENANT_PRICE",
-                        "message": "No default price or visit fee configured for this service.",
-                    })
+                errors.append({
+                    "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                    "dimension_path": {}, "code": "MISSING_TENANT_PRICE",
+                    "message": "Set the provider price for this service.",
+                })
         else:
             types_r = await self.db.execute(select(ServiceType.id, ServiceType.name).join(
                 MasterServiceType, MasterServiceType.service_type_id == ServiceType.id
             ).where(MasterServiceType.master_service_id == ts.master_service_id,
-                    MasterServiceType.is_active == True)) if ts.requires_type else None
+                    MasterServiceType.is_active == True)) if requires_type else None
             candidate_types = types_r.all() if types_r else [(None, None)]
 
             brands_r = await self.db.execute(select(Brand.id, Brand.name).join(
                 MasterServiceBrand, MasterServiceBrand.brand_id == Brand.id
             ).where(MasterServiceBrand.master_service_id == ts.master_service_id,
-                    MasterServiceBrand.is_active == True)) if ts.requires_brand else None
+                    MasterServiceBrand.is_active == True)) if requires_brand else None
             candidate_brands = brands_r.all() if brands_r else [(None, None)]
 
             # A required dimension with zero admin-configured values is
@@ -971,13 +1412,13 @@ class TenantCatalogService:
             # the loops below never execute, vacuously reporting "valid" for
             # a service that literally cannot be priced for anything).
             job_type_label = str(ts.job_type_id) if ts.job_type_id else ts.job_type
-            if ts.requires_type and not candidate_types:
+            if requires_type and not candidate_types:
                 errors.append({
                     "step": "coverage", "job_type_id": job_type_label, "dimension_path": {},
                     "code": "NO_TYPES_CONFIGURED",
                     "message": "This service requires a Type, but no types are configured for it yet.",
                 })
-            if ts.requires_brand and not candidate_brands:
+            if requires_brand and not candidate_brands:
                 errors.append({
                     "step": "coverage", "job_type_id": job_type_label, "dimension_path": {},
                     "code": "NO_BRANDS_CONFIGURED",
@@ -1001,7 +1442,97 @@ class TenantCatalogService:
                                        f"{' + '.join(v for v in (type_name, brand_name) if v) or 'this service'}.",
                         })
 
-        return {"valid": len(errors) == 0, "errors": errors}
+        if (requires_type or requires_brand) and not is_inspection_pricing and not is_consultation:
+            selected_types = (await self.db.execute(
+                select(TenantServiceType).where(
+                    TenantServiceType.tenant_service_id == tenant_service_id,
+                    TenantServiceType.is_enabled.is_(True),
+                )
+            )).scalars().all()
+            for selected_type in selected_types:
+                has_partial = ((selected_type.tenant_min_price is None)
+                               != (selected_type.tenant_max_price is None))
+                if has_partial:
+                    errors.append({
+                        "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                        "dimension_path": {"type_id": str(selected_type.service_type_id)},
+                        "code": "INCOMPLETE_TYPE_PRICE_OVERRIDE",
+                        "message": "Type override price range is incomplete.",
+                    })
+            selected_brands = (await self.db.execute(
+                select(TenantServiceBrand).where(
+                    TenantServiceBrand.tenant_service_id == tenant_service_id,
+                    TenantServiceBrand.is_enabled.is_(True),
+                )
+            )).scalars().all()
+            for selected_brand in selected_brands:
+                has_partial = ((selected_brand.tenant_min_price is None)
+                               != (selected_brand.tenant_max_price is None))
+                if has_partial:
+                    errors.append({
+                        "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
+                        "dimension_path": {"brand_id": str(selected_brand.brand_id)},
+                        "code": "INCOMPLETE_BRAND_PRICE_OVERRIDE",
+                        "message": "Brand override price range is incomplete.",
+                    })
+
+        if has_authoritative_blueprint:
+            # These are the same normalized setup gates edited by Admin's
+            # Tenant Setup Rules tab. Keep them in preflight so Review never
+            # reports ready and then fails only when Publish is clicked.
+            if requires_type:
+                count = int((await self.db.execute(
+                    select(func.count()).select_from(TenantServiceType).where(
+                        TenantServiceType.tenant_service_id == tenant_service_id,
+                        TenantServiceType.is_enabled.is_(True),
+                    )
+                )).scalar() or 0)
+                if count == 0:
+                    errors.append({"step": "coverage", "job_type_id": None,
+                                   "dimension_path": {"dimension": "type"}, "code": "MISSING_REQUIRED_TYPE_SELECTION",
+                                   "message": "Select at least one supported service type."})
+            if requires_brand:
+                count = int((await self.db.execute(
+                    select(func.count()).select_from(TenantServiceBrand).where(
+                        TenantServiceBrand.tenant_service_id == tenant_service_id,
+                        TenantServiceBrand.is_enabled.is_(True),
+                    )
+                )).scalar() or 0)
+                if count == 0:
+                    errors.append({"step": "coverage", "job_type_id": None,
+                                   "dimension_path": {"dimension": "brand"}, "code": "MISSING_REQUIRED_BRAND_SELECTION",
+                                   "message": "Select at least one supported brand."})
+            if blueprint["requires_service_area"]:
+                count = int((await self.db.execute(
+                    select(func.count()).select_from(TenantServiceArea).where(
+                        TenantServiceArea.tenant_id == ts.tenant_id,
+                        TenantServiceArea.is_active.is_(True),
+                    )
+                )).scalar() or 0)
+                if count == 0:
+                    errors.append({"step": "coverage", "job_type_id": None,
+                                   "dimension_path": {}, "code": "MISSING_SERVICE_AREA",
+                                   "message": "Add at least one active service area."})
+            if blueprint["requires_availability"]:
+                count = int((await self.db.execute(text(
+                    "SELECT count(*) FROM provider_availability_rules "
+                    "WHERE tenant_id=:tid AND scope_type='provider' AND is_active=true"
+                ), {"tid": str(ts.tenant_id)})).scalar() or 0)
+                if count == 0:
+                    errors.append({"step": "availability", "job_type_id": None,
+                                   "dimension_path": {}, "code": "MISSING_BUSINESS_HOURS",
+                                   "message": "Configure at least one active business-hours rule."})
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "setup_update_required": bool(
+                has_authoritative_blueprint
+                and ts.setup_rules_revision != latest_setup_revision
+            ),
+            "tenant_setup_rules_revision": ts.setup_rules_revision,
+            "latest_setup_rules_revision": latest_setup_revision if has_authoritative_blueprint else None,
+        }
 
     async def get_blueprint_update_status(self, tenant_service_id: uuid.UUID) -> dict:
         """Spec section 19: 'Service configuration update required' detection.
@@ -1010,6 +1541,18 @@ class TenantCatalogService:
         a null diff, never silently treated as up to date."""
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        master = await self.db.get(MasterService, ts.master_service_id)
+        latest_setup_revision = (
+            await self._setup_rule_revision(ts.master_service_id, ts.job_type_id)
+            if master else ts.setup_rules_revision
+        )
+        setup_update_required = bool(
+            master and ts.setup_rules_revision != latest_setup_revision
+        )
+        setup_change = (
+            f"Tenant setup rules changed from revision {ts.setup_rules_revision} to {latest_setup_revision}."
+            if setup_update_required and master else None
+        )
 
         latest_r = await self.db.execute(
             select(ServiceBlueprintVersion).where(
@@ -1019,18 +1562,28 @@ class TenantCatalogService:
         latest = latest_r.scalar_one_or_none()
 
         if not latest:
-            return {"update_required": False, "current_version": None, "latest_version": None, "changes": []}
+            return {
+                "update_required": setup_update_required, "current_version": None, "latest_version": None,
+                "changes": [setup_change] if setup_change else [],
+                "current_setup_rules_revision": ts.setup_rules_revision,
+                "latest_setup_rules_revision": latest_setup_revision if master else None,
+            }
 
         if ts.blueprint_version_id is None:
             return {
                 "update_required": True, "current_version": None,
-                "latest_version": latest.version_number, "changes": ["No recorded blueprint version for this setup."],
+                "latest_version": latest.version_number,
+                "changes": ["No recorded blueprint version for this setup."] + ([setup_change] if setup_change else []),
+                "current_setup_rules_revision": ts.setup_rules_revision,
+                "latest_setup_rules_revision": latest_setup_revision if master else None,
             }
 
         if ts.blueprint_version_id == latest.id:
             return {
-                "update_required": False, "current_version": latest.version_number,
-                "latest_version": latest.version_number, "changes": [],
+                "update_required": setup_update_required, "current_version": latest.version_number,
+                "latest_version": latest.version_number, "changes": [setup_change] if setup_change else [],
+                "current_setup_rules_revision": ts.setup_rules_revision,
+                "latest_setup_rules_revision": latest_setup_revision if master else None,
             }
 
         current_r = await self.db.execute(
@@ -1051,7 +1604,9 @@ class TenantCatalogService:
             "update_required": True,
             "current_version": current.version_number if current else None,
             "latest_version": latest.version_number,
-            "changes": changes,
+            "changes": changes + ([setup_change] if setup_change else []),
+            "current_setup_rules_revision": ts.setup_rules_revision,
+            "latest_setup_rules_revision": latest_setup_revision if master else None,
         }
 
     async def resolve_tenant_price(self, tenant_service_id: uuid.UUID,
@@ -1132,54 +1687,100 @@ class TenantCatalogService:
         # 5. No price resolves -- never invent, never fall back to admin/another tenant.
         return {"resolved": False, "reason": "NO_TENANT_PRICE_FOR_COMBINATION"}
 
-    def price_options_preview(self, data: dict) -> dict:
-        try:
-            return compute_symmetric_customer_price_tiers(
-                provider_min_price=data.get("tenant_min_price"),
-                provider_max_price=data.get("tenant_max_price"),
-                platform_fee_percent=data.get("platform_fee_percent", 0),
-                platform_fee_fixed_amount=data.get("platform_fee_fixed_amount", 0),
-            )
-        except BargainValidationError as e:
-            raise ServiceOSException(e.code, e.message, status_code=422) from e
-
     async def publish_service(self, tenant_service_id: uuid.UUID) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
 
         missing: list[dict] = []
 
+        master = (await self.db.execute(
+            select(MasterService).where(MasterService.id == ts.master_service_id)
+        )).scalar_one_or_none()
+        if master is None:
+            raise NotFoundException("MasterService", str(ts.master_service_id))
+        if isinstance(master, MasterService):
+            blueprint = await self._tenant_setup_blueprint(master, ts.job_type_id)
+        else:  # lightweight unit fixture / pre-normalized compatibility row
+            blueprint = {
+                "type_mode": "required" if ts.requires_type else "optional",
+                "brand_mode": "required" if ts.requires_brand else "optional",
+                "requires_service_area": False,
+                "requires_availability": False,
+                "pricing_behavior": None,
+                "source": "service_job_workflow",
+            }
+        requires_type = blueprint["type_mode"] == "required"
+        requires_brand = blueprint["brand_mode"] == "required"
+
+        # The preflight endpoint and the mutation must share one readiness
+        # authority. In particular, inspection workflows require one visit
+        # fee and never require Type/Brand price overrides.
+        validation = await self.validate_for_publish(tenant_service_id)
+        if not validation["valid"]:
+            missing = [{
+                "field": error["step"],
+                "job_type_id": error.get("job_type_id"),
+                "dimension_path": error.get("dimension_path", {}),
+                "code": error.get("code"),
+                "message": error["message"],
+            } for error in validation["errors"]]
+            raise ServiceOSException(
+                "SERVICE_SETUP_INCOMPLETE",
+                f"You must complete {len(missing)} item(s) before publishing.",
+                status_code=422,
+                context={"missing": missing, "missing_count": len(missing)},
+            )
+
+        for blocker in ([] if blueprint["source"] == "service_job_workflow" else [{
+            "code": "MISSING_PUBLISHED_WORKFLOW", "job_type_id": str(ts.job_type_id),
+            "message": "This job type has no published Admin workflow.",
+        }]):
+            missing.append({
+                "field": "admin_catalog",
+                "job_type_id": blocker.get("job_type_id"),
+                "code": blocker["code"],
+                "message": blocker["message"],
+            })
+
         types_res = await self.db.execute(
             select(TenantServiceType).where(
                 TenantServiceType.tenant_service_id == tenant_service_id,
                 TenantServiceType.is_enabled == True))
         types = types_res.scalars().all()
-        if ts.requires_type and not types:
+        if requires_type and not types:
             missing.append({"field": "types", "message": "Select at least one type."})
         # Any type the tenant selected — required or not — must be priced
         # before publish (ticket rule: "Price range set for every selected type").
-        for t in types:
-            if t.tenant_min_price is None or t.tenant_max_price is None:
-                missing.append({"field": f"type_pricing:{t.service_type_id}",
-                                "message": "Set a price range for every selected type."})
-
         brands_res = await self.db.execute(
             select(TenantServiceBrand).where(
                 TenantServiceBrand.tenant_service_id == tenant_service_id,
                 TenantServiceBrand.is_enabled == True))
-        for b in brands_res.scalars().all():
+        brands = brands_res.scalars().all()
+        if requires_brand and not brands:
+            missing.append({"field": "brands", "message": "Select at least one supported brand."})
+        for b in brands:
             has_partial = (b.tenant_min_price is None) != (b.tenant_max_price is None)
             if has_partial:
                 missing.append({"field": f"brand_pricing:{b.brand_id}",
                                  "message": "Brand override price range is incomplete."})
 
-        areas_res = await self.db.execute(
-            select(func.count()).select_from(TenantServiceArea).where(
-                TenantServiceArea.tenant_id == ts.tenant_id, TenantServiceArea.is_active.is_(True)))
-        active_areas = areas_res.scalar_one()
-        if active_areas == 0:
-            missing.append({"field": "service_areas",
-                             "message": "At least one active service area is required to publish."})
+        if blueprint["requires_service_area"]:
+            areas_res = await self.db.execute(
+                select(func.count()).select_from(TenantServiceArea).where(
+                    TenantServiceArea.tenant_id == ts.tenant_id, TenantServiceArea.is_active.is_(True)))
+            active_areas = areas_res.scalar_one()
+            if active_areas == 0:
+                missing.append({"field": "service_areas",
+                                 "message": "At least one active service area is required to publish."})
+
+        if blueprint["requires_availability"]:
+            availability_count = int((await self.db.execute(text(
+                "SELECT count(*) FROM provider_availability_rules "
+                "WHERE tenant_id=:tid AND scope_type='provider' AND is_active=true"
+            ), {"tid": str(ts.tenant_id)})).scalar() or 0)
+            if availability_count == 0:
+                missing.append({"field": "availability",
+                                 "message": "Configure at least one active business-hours rule."})
 
         if missing:
             raise ServiceOSException("SERVICE_SETUP_INCOMPLETE",
@@ -1189,6 +1790,19 @@ class TenantCatalogService:
         ts.setup_status = "published"
         ts.published_at = utcnow()
         ts.is_enabled = True
+        ts.requires_type = requires_type
+        ts.requires_brand = requires_brand
+        ts.setup_rules_revision = (
+            await self._setup_rule_revision(ts.master_service_id, ts.job_type_id)
+            if isinstance(master, MasterService) else ts.setup_rules_revision
+        )
+        latest_blueprint = (await self.db.execute(
+            select(ServiceBlueprintVersion).where(
+                ServiceBlueprintVersion.master_service_id == ts.master_service_id,
+                ServiceBlueprintVersion.status == "published",
+            ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1)
+        )).scalar_one_or_none()
+        ts.blueprint_version_id = latest_blueprint.id if latest_blueprint else ts.blueprint_version_id
         await self.db.flush()
         return self._ts_dict(ts)
 
@@ -1228,13 +1842,23 @@ class TenantCatalogService:
             if ts.tenant_id != self.actor_tenant_id:
                 raise NotFoundException("TenantService", str(ts.id))
 
-    def _ts_dict(self, ts: TenantService) -> dict:
+    def _ts_dict(
+        self,
+        ts: TenantService,
+        *,
+        service_name: str | None = None,
+        job_type_label: str | None = None,
+        service_group_name: str | None = None,
+    ) -> dict:
         return {
             "tenant_service_id": str(ts.id),
             "tenant_id": str(ts.tenant_id),
             "master_service_id": str(ts.master_service_id),
             "category_id": str(ts.category_id),
             "job_type": ts.job_type,
+            "service_name": service_name,
+            "job_type_label": job_type_label,
+            "service_group_name": service_group_name,
             "is_enabled": ts.is_enabled,
             "tenant_display_name": ts.tenant_display_name,
             "tenant_description": ts.tenant_description,
@@ -1242,6 +1866,8 @@ class TenantCatalogService:
             "tenant_min_price": float(ts.tenant_min_price) if ts.tenant_min_price else None,
             "tenant_max_price": float(ts.tenant_max_price) if ts.tenant_max_price else None,
             "tenant_visit_fee": float(ts.tenant_visit_fee) if ts.tenant_visit_fee else None,
+            "tenant_emergency_surcharge": float(ts.tenant_emergency_surcharge) if ts.tenant_emergency_surcharge is not None else None,
+            "warranty_days": ts.warranty_days,
             "override_allowed": ts.override_allowed,
             "requires_brand": ts.requires_brand,
             "requires_type": ts.requires_type,
@@ -1252,7 +1878,29 @@ class TenantCatalogService:
             "type_coverage_mode": ts.type_coverage_mode,
             "brand_coverage_mode": ts.brand_coverage_mode,
             "last_active_step": ts.last_active_step,
+            "job_type_id": str(ts.job_type_id) if ts.job_type_id else None,
+            "setup_rules_revision": ts.setup_rules_revision,
         }
+
+    @staticmethod
+    def _validate_warranty_days(value) -> int:
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            raise ServiceOSException(
+                "WARRANTY_DAYS_INVALID", "Warranty period must be a whole number of days.", status_code=422,
+            )
+        if days < 5:
+            raise ServiceOSException(
+                "WARRANTY_BELOW_PLATFORM_MINIMUM",
+                "Warranty period cannot be shorter than the 5-day platform minimum.",
+                status_code=422,
+            )
+        if days > 3650:
+            raise ServiceOSException(
+                "WARRANTY_DAYS_INVALID", "Warranty period cannot exceed 10 years.", status_code=422,
+            )
+        return days
 
 
 def _decimal_or_none(val) -> Decimal | None:

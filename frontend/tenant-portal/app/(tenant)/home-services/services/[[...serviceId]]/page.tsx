@@ -17,9 +17,8 @@
  * the same list/enable endpoints as onboarding. Bulk import and publication
  * history remain unavailable until their backend capabilities exist.
  *
- * Known gap (see backend module docstring): TenantService is scoped per
- * Master Service, not per (Master Service, Job Type) -- this workspace
- * reflects that live limitation rather than inventing UI for a hierarchy
+ * Tenant offerings are scoped per (Master Service, Job Type), so Repair and
+ * Installation keep independent setup, publication, and operational data.
  * the schema can't yet support for every tenant.
  */
 import React, { Suspense, useMemo, useState } from "react";
@@ -225,7 +224,8 @@ function AddServicesModal({ onClose, onAdded }: {
     setAddingId(service.service_id);
     setAddError(null);
     try {
-      const created = await homeServicesSetupApi.enable({ master_service_id: service.service_id });
+      if (!service.job_type_id) throw new Error("This service has no job type configured.");
+      const created = await homeServicesSetupApi.enable({ master_service_id: service.service_id, job_type_id: service.job_type_id });
       onAdded(created);
     } catch (error) {
       setAddError(error instanceof ServiceOSError ? error.message : "Could not add this service.");
@@ -296,11 +296,11 @@ function CatalogRow({ s, selected, onClick }: { s: SWCatalogService; selected: b
   );
 }
 
-const TABS = ["overview", "types-brands", "pricing", "visit-fee", "requirements"] as const;
+const TABS = ["overview", "types-brands", "pricing", "visit-fee", "warranty", "requirements"] as const;
 type Tab = typeof TABS[number];
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview", "types-brands": "Types & Brands", pricing: "Pricing",
-  "visit-fee": "Visit Fee", requirements: "Problems & Checklists",
+  "visit-fee": "Visit Fee", warranty: "Warranty", requirements: "Problems & Checklists",
 };
 
 /** Two-column detail+effective-pricing area, driven by one shared refetch so an
@@ -353,6 +353,9 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
         {tab === "visit-fee" && (
           <VisitFeeTab tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />
         )}
+        {tab === "warranty" && (
+          <WarrantyTab tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />
+        )}
         {/* Replaced a "not built yet" Activity placeholder with a real,
             read-only view of the admin-authored Problems / Questions /
             Checklists for this service -- previously invisible to tenants
@@ -361,6 +364,7 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
           <Card title="Configured by the platform (read-only)">
             <ServiceRequirementsPanel
               masterServiceId={String((ts as unknown as { master_service_id?: string }).master_service_id ?? "")}
+              jobTypeId={String((ts as unknown as { job_type_id?: string }).job_type_id ?? "")}
             />
           </Card>
         )}
@@ -585,6 +589,35 @@ function VisitFeeTab({ tenantServiceId, data, onChanged }: {
         <Input label="Visit fee (₹)" type="number" value={fee} onChange={e => setFee(e.target.value)} />
         <Input label="Emergency surcharge (₹)" type="number" value={surcharge} onChange={e => setSurcharge(e.target.value)} />
         <Button variant="primary" size="sm" loading={loading} onClick={() => save()}>Save</Button>
+      </div>
+    </Card>
+  );
+}
+
+function WarrantyTab({ tenantServiceId, data, onChanged }: {
+  tenantServiceId: string; data: SWOfferingDetail; onChanged: () => void;
+}) {
+  const ts = data.tenant_service as { warranty_days?: number };
+  const [days, setDays] = useState(String(ts.warranty_days ?? 5));
+  const { execute: save, loading, error } = useAction(
+    () => homeServicesSetupApi.updateEnabledService(tenantServiceId, { warranty_days: Number(days) }),
+    { onSuccess: onChanged },
+  );
+  const invalid = !Number.isInteger(Number(days)) || Number(days) < 5;
+
+  return (
+    <Card title="Service warranty">
+      {error && <Alert tone="danger">{error}</Alert>}
+      <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 12 }}>
+        This warranty is owned by your business and is captured on every completed job. You can extend it at any time;
+        completed jobs keep the warranty that applied when the work finished.
+      </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+        <Input label="Warranty period (days)" type="number" min={5} value={days} onChange={e => setDays(e.target.value)} />
+        <Button variant="primary" size="sm" loading={loading} disabled={invalid} onClick={() => save()}>Save warranty</Button>
+      </div>
+      <div style={{ fontSize: 11, color: invalid ? "var(--danger-text)" : "var(--text-tertiary)", marginTop: 8 }}>
+        Platform minimum: 5 days. Shorter warranties are rejected by both the API and database.
       </div>
     </Card>
   );

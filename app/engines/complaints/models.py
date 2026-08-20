@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint,
+    Boolean, Column, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.models.base import Base
@@ -322,6 +322,14 @@ class RefundRequest(Base):
     __tablename__ = "refund_requests"
     __table_args__ = (
         UniqueConstraint("refund_number", name="uq_rr_number"),
+        Index("ix_refund_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_refund_status_created_at", "status", "created_at"),
+        Index(
+            "uq_refund_active_customer_job",
+            "customer_id", "job_id",
+            unique=True,
+            postgresql_where=text("job_id IS NOT NULL AND status <> 'cancelled'"),
+        ),
     )
 
     id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -350,6 +358,13 @@ class RefundRequest(Base):
     approved_at         = Column(DateTime(timezone=True), nullable=True)
     recorded_at         = Column(DateTime(timezone=True), nullable=True)
     verified_at         = Column(DateTime(timezone=True), nullable=True)
+    provider_response_due_at = Column(DateTime(timezone=True), nullable=True)
+    escalated_at        = Column(DateTime(timezone=True), nullable=True)
+    escalation_reason   = Column(Text, nullable=True)
+    resolution_method   = Column(String(40), nullable=True)
+    customer_credit_id  = Column(UUID(as_uuid=True), nullable=True)
+    provider_credit_deducted = Column(Numeric(12,2), nullable=True)
+    security_deposit_deducted = Column(Numeric(12,2), nullable=True)
     created_at          = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at          = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
 
@@ -381,6 +396,13 @@ class RefundRequest(Base):
             "approved_at":         self.approved_at.isoformat() if self.approved_at else None,
             "recorded_at":         self.recorded_at.isoformat() if self.recorded_at else None,
             "verified_at":         self.verified_at.isoformat() if self.verified_at else None,
+            "provider_response_due_at": self.provider_response_due_at.isoformat() if self.provider_response_due_at else None,
+            "escalated_at":        self.escalated_at.isoformat() if self.escalated_at else None,
+            "escalation_reason":   self.escalation_reason,
+            "resolution_method":   self.resolution_method,
+            "customer_credit_id":  str(self.customer_credit_id) if self.customer_credit_id else None,
+            "provider_credit_deducted": str(self.provider_credit_deducted) if self.provider_credit_deducted is not None else None,
+            "security_deposit_deducted": str(self.security_deposit_deducted) if self.security_deposit_deducted is not None else None,
             "created_at":          self.created_at.isoformat() if self.created_at else None,
             "updated_at":          self.updated_at.isoformat() if self.updated_at else None,
         }

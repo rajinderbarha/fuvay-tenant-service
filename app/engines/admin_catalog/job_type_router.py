@@ -30,10 +30,12 @@ def _rid(r: Request) -> str:
 
 @router.get("", response_model=ApiResponse[dict], summary="List job types")
 async def list_job_types(r: Request, include_inactive: bool = Query(False),
+                          search: str | None = Query(None, max_length=120),
+                          page: int = Query(1, ge=1),
+                          page_size: int = Query(50, ge=1, le=100),
                           u: UserContext = Depends(get_current_user),
                           s: JobTypeService = Depends(_svc)):
-    data = await s.list_job_types(include_inactive)
-    return ok({"items": data, "total": len(data)}, _rid(r), ENGINE_ID)
+    return ok(await s.list_job_types(include_inactive, search, page, page_size), _rid(r), ENGINE_ID)
 
 
 @router.post("", response_model=ApiResponse[dict], status_code=201, summary="Create a job type")

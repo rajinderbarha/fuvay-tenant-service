@@ -44,12 +44,13 @@ class TestRouterStructure:
 
     def test_blueprint_prefers_real_job_type_workflow_over_legacy_fields(self):
         c = _read()
-        assert "ServiceJobWorkflow.master_service_id == ts_row.master_service_id" in c
-        # TenantService.job_type_id is nullable on older live rows; the
-        # workspace now falls back to MasterService.job_type_id and then uses
-        # the shared projection consumed by setup too.
-        assert "ServiceJobWorkflow.job_type_id == workflow_job_type_id" in c
-        assert "project_tenant_blueprint(master, workflow)" in c
+        # The workspace delegates workflow + dimension resolution to the
+        # canonical TenantCatalogService helper instead of re-querying and
+        # re-projecting a second copy here.
+        assert "svc._tenant_setup_blueprint(master, ts_row.job_type_id)" in c
+        # TenantService.job_type_id is now mandatory and scoped by the
+        # database uniqueness contract, so no legacy/arbitrary fallback is used.
+        assert "project_tenant_blueprint(master, workflow)" not in c
 
     def test_effective_pricing_uses_shared_resolver_not_a_second_calculation(self):
         c = _read()
@@ -62,7 +63,7 @@ class TestRouterStructure:
         for key in ("enabled_services", "published", "draft", "missing_pricing", "type_overrides", "brand_overrides"):
             assert f'"{key}"' in c
 
-    def test_documents_the_known_scoping_limitation(self):
+    def test_documents_exact_job_type_scoping(self):
         c = _read()
-        assert "UniqueConstraint(tenant_id, master_service_id)" in c or "master_service_id) --" in c
-        assert "job_type_id" in c
+        assert "ts_row.job_type_id" in c
+        assert "JobTypeDefinition.id == ts_row.job_type_id" in c

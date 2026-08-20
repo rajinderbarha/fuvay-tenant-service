@@ -42,17 +42,15 @@ test.describe('admin provider onboarding handoff', () => {
     await expect(page.getByText(/Approved identity stays published until/i)).toBeVisible({ timeout: 15_000 });
   });
 
-  test('provider export downloads and audit opens the real audit workspace', async ({ page }) => {
+  test('provider export is queued and audit opens the real audit workspace', async ({ page }) => {
     await loginAsSuperAdmin(page);
-    await page.goto('/admin/home-services/providers?tab=onboarding');
+    await page.goto('/admin/home-services/providers?tab=directory');
     await expect(page.getByRole('heading', { name: 'Home Services Providers' })).toBeVisible();
 
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Export' }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('home-services-providers.csv');
+    await page.getByRole('button', { name: 'Queue export' }).click();
+    await expect(page.getByText(/Export (pending|processing|completed)|Export could not be queued/)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: 'View Audit' }).click();
+    await page.getByRole('link', { name: 'Audit trail' }).click();
     await expect(page).toHaveURL(/\/admin\/audit-logs\?resource_type=tenant_onboarding/);
     await expect(page.getByText(/^\d+ results?$/)).toBeVisible({ timeout: 15_000 });
   });

@@ -15,11 +15,13 @@ const TABS: { id: LogSource; label: string }[] = [
 ];
 
 const ENGINE_COLUMNS: GridColumn[] = [
-  { key: "event_type",  label: "Event",    width: 180 },
-  { key: "engine_key",  label: "Engine",   width: 160 },
-  { key: "actor_type",  label: "Actor",    width: 120 },
-  { key: "reason",      label: "Reason",   width: 260 },
-  { key: "created_at",  label: "Time",     width: 180,
+  { key: "action",        label: "Action",    width: 220 },
+  { key: "engine_key",    label: "Engine",    width: 170 },
+  { key: "actor_role",    label: "Actor",     width: 120 },
+  { key: "resource_type", label: "Resource",  width: 160 },
+  { key: "resource_id",   label: "Resource ID", width: 180,
+    render: v => v ? String(v).slice(0, 12) : "—" },
+  { key: "created_at",    label: "Time",      width: 180,
     render: v => v ? String(v).replace("T", " ").slice(0, 19) : "—" },
 ];
 
@@ -35,11 +37,10 @@ const SECURITY_COLUMNS: GridColumn[] = [
 
 const AUTH_COLUMNS: GridColumn[] = [
   { key: "event_type",     label: "Event",   width: 180 },
+  { key: "email_attempted", label: "Email",   width: 220 },
   { key: "user_id",        label: "User",    width: 140,
     render: v => String(v ?? "").slice(0, 8) },
   { key: "ip_address",     label: "IP",      width: 130 },
-  { key: "success",        label: "OK",      width: 70,
-    render: v => v ? "✓" : "✗" },
   { key: "failure_reason", label: "Reason",  width: 220 },
   { key: "created_at",     label: "Time",    width: 180,
     render: v => v ? String(v).replace("T", " ").slice(0, 19) : "—" },
@@ -49,14 +50,18 @@ const DATE_FILTER: FilterDef = { key: "created", label: "Date Range", type: "dat
 
 const ENGINE_FILTERS: FilterDef[] = [
   {
-    key: "event_type", label: "Event Type", type: "select",
+    key: "action", label: "Action", type: "select",
     options: [
-      { value: "enabled",       label: "Enabled" },
-      { value: "disabled",      label: "Disabled" },
+      { value: "created",       label: "Created" },
       { value: "updated",       label: "Updated" },
-      { value: "health_check",  label: "Health Check" },
+      { value: "deleted",       label: "Deleted" },
+      { value: "approved",      label: "Approved" },
+      { value: "rejected",      label: "Rejected" },
+      { value: "export",        label: "Export" },
     ],
   },
+  { key: "engine_key", label: "Engine", type: "text" },
+  { key: "resource_type", label: "Resource Type", type: "text" },
   DATE_FILTER,
 ];
 
@@ -94,17 +99,21 @@ const TAB_CONFIG: Record<LogSource, {
 }> = {
   engine:   { endpoint: "/v1/admin/audit-logs",    columns: ENGINE_COLUMNS,   filters: ENGINE_FILTERS,   resourceKey: "admin_engine_audit" },
   security: { endpoint: "/v1/security/audit-log",  columns: SECURITY_COLUMNS, filters: SECURITY_FILTERS, resourceKey: "admin_security_audit" },
-  auth:     { endpoint: "/v1/auth/audit-log",      columns: AUTH_COLUMNS,     filters: AUTH_FILTERS,     resourceKey: "admin_auth_audit" },
+  auth:     { endpoint: "/v1/admin/audit-logs/login-events", columns: AUTH_COLUMNS, filters: AUTH_FILTERS, resourceKey: "admin_auth_audit" },
 };
 
 function wrapLegacy(d: unknown, params: Record<string, unknown>) {
   const raw   = (d as Record<string, unknown>)?.logs
              ?? (d as Record<string, unknown>)?.items
+             ?? (d as Record<string, unknown>)?.audit_logs
              ?? d;
   const items = Array.isArray(raw) ? raw : [];
-  const page     = Number(params.page ?? 1);
-  const pageSize = Number(params.page_size ?? 25);
-  const total    = (d as Record<string, unknown>)?.total ?? items.length;
+  const pageSize = Number((d as Record<string, unknown>)?.limit ?? params.limit ?? params.page_size ?? 25);
+  const offset   = Number((d as Record<string, unknown>)?.offset ?? ((Number(params.page ?? 1) - 1) * pageSize));
+  const page     = Math.floor(offset / pageSize) + 1;
+  const hasNext  = Boolean((d as Record<string, unknown>)?.has_next);
+  const total    = (d as Record<string, unknown>)?.total
+                ?? (hasNext ? offset + items.length + 1 : offset + items.length);
   return {
     items: items as Record<string, unknown>[],
     pagination: {
@@ -140,7 +149,24 @@ export default function AuditLogsPage() {
   }, []);
 
   const fetchFn = useCallback(async (params: Record<string, unknown>) => {
-    const d = await apiFetchPaginatedRaw(TAB_CONFIG[tab].endpoint, params);
+    const endpointParams = { ...params };
+    if (tab === "engine" || tab === "auth") {
+      endpointParams.limit = params.page_size ?? 25;
+      endpointParams.offset = (Number(params.page ?? 1) - 1) * Number(params.page_size ?? 25);
+      delete endpointParams.page;
+      delete endpointParams.page_size;
+      if (tab === "engine") {
+        if (params.created_from) endpointParams.date_from = params.created_from;
+        if (params.created_to) endpointParams.date_to = params.created_to;
+        delete endpointParams.created_from;
+        delete endpointParams.created_to;
+      }
+      if (params.sort_by || params.sort_direction) {
+        delete endpointParams.sort_by;
+        delete endpointParams.sort_direction;
+      }
+    }
+    const d = await apiFetchPaginatedRaw(TAB_CONFIG[tab].endpoint, endpointParams);
     if (d?.pagination) return d as unknown as GridData;
     return wrapLegacy(d, params);
   // eslint-disable-next-line react-hooks/exhaustive-deps

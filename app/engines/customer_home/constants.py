@@ -1,41 +1,21 @@
-"""Home layout constants.
+"""Customer Home section constants.
 
-`HOME_SECTION_KEYS` is the contract between admin and the app: exactly the
-sections the app has a renderer for. Admin can reorder, rename or hide any of
-them; it cannot invent a key, because a key with no renderer is a row that does
-nothing and would read to admin as a broken feature.
-
-Kept here rather than in the migration so the validation and the seed cannot
-drift apart -- the migration's list must stay a subset of this one.
+Home Layout admin control was retired on 2026-08-20. These keys remain as the
+app/backend vocabulary for the shipped Home screen only; promotional banner
+slots and Global Services are no longer part of the contract.
 """
 from __future__ import annotations
 
 HOME_SECTION_KEYS = (
     "active_booking",
     "quick_problems",
-    # Five banner slots (migration 237). Each is a section in its own right, so
-    # admin can re-order, rename or switch off any one of them, and each renders
-    # as a swipeable carousel once it holds more than one banner.
-    "campaign_top",
-    "campaign_after_problems",
     "service_grid",
-    "campaign_after_services",
     "assistant_entry",
-    "campaign_mid",
-    # A second, larger problem surface in circles (migration 238). Distinct from
-    # `quick_problems` so admin can order, rename or switch off either one on its
-    # own -- they draw from the same list but are different sections.
     "problem_circles",
-    # Grouped by what the customer is trying to do rather than by service (see
-    # intent.py). Either renders nothing when the catalogue has no items of that
-    # kind, which is why both are separate switchable sections.
     "repair_intent",
     "consult_intent",
-    "campaign_after_circles",
-    "global_services",
     "how_it_works",
     "trust_benefits",
-    "campaign_bottom",
 )
 
 ERR_UNKNOWN_SECTION = "HOME_SECTION_UNKNOWN"

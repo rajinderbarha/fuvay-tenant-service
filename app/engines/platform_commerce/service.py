@@ -144,6 +144,10 @@ class CommerceService:
                 "purchase_count": p.purchase_count}
 
     def _claim_dict(self, c):
+        overdue = bool(
+            c.provider_response_due_at and c.provider_response_due_at <= utcnow()
+            and c.status == "provider_action_required"
+        )
         return {"claim_id": str(c.id), "tenant_id": str(c.tenant_id), "job_id": c.job_id,
                 "customer_id": str(c.customer_id), "claim_type": c.claim_type,
                 "description": c.description,
@@ -151,6 +155,18 @@ class CommerceService:
                 "amount_approved": float(c.amount_approved) if c.amount_approved else None,
                 "status": c.status, "admin_notes": c.admin_notes,
                 "rejection_reason": c.rejection_reason,
+                "provider_response_due_at": c.provider_response_due_at.isoformat() if c.provider_response_due_at else None,
+                "provider_responded_at": c.provider_responded_at.isoformat() if c.provider_responded_at else None,
+                "provider_resolution": c.provider_resolution,
+                "provider_resolved_at": c.provider_resolved_at.isoformat() if c.provider_resolved_at else None,
+                "escalated_at": c.escalated_at.isoformat() if c.escalated_at else None,
+                "escalation_reason": c.escalation_reason,
+                "warranty_days": c.warranty_days_snapshot,
+                "warranty_expires_at": c.warranty_expires_at.isoformat() if c.warranty_expires_at else None,
+                "admin_attention_required": c.status == "admin_review" or overdue,
+                "provider_credit_deducted": float(c.provider_credit_deducted or 0),
+                "security_deposit_deducted": float(c.security_deposit_deducted or 0),
+                "customer_credit_id": str(c.customer_credit_id) if c.customer_credit_id else None,
                 "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
                 "created_at": c.created_at.isoformat()}
 
@@ -718,31 +734,117 @@ class CommerceService:
                 "forfeited_amount": float(res.reserved_amount)}
 
     # ── Warranty (6) ───────────────────────────────────────────────────────────
-    async def submit_claim(self, tid, cid, job_id, claim_type, description, media_ids, amount):
+    async def submit_claim(self, cid, job_id, claim_type, description, media_ids, amount=None):
         # Slice 2F-37: tid/job_id were previously fully client-supplied
         # with no proof the job belongs to that tenant or to the claiming
         # customer -- a caller could file a claim (with a client-supplied
         # amount_requested) against an arbitrary tenant/job pair. Verify
         # the parent job before creating the claim.
         from app.engines.final_records.models import ServiceJob
-        job_r = await self.db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
-        job = job_r.scalar_one_or_none()
-        if not job or job.tenant_id != tid or job.customer_id != cid:
+        try:
+            job_uuid = uuid.UUID(str(job_id))
+        except (TypeError, ValueError):
             raise NotFoundException("Job", str(job_id))
-        ex = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.job_id==job_id))
+        job_r = await self.db.execute(select(ServiceJob).where(ServiceJob.id == job_uuid))
+        job = job_r.scalar_one_or_none()
+        if not job or job.customer_id != cid:
+            raise NotFoundException("Job", str(job_id))
+        if job.status not in ("completed", "work_done", "invoice_issued", "paid"):
+            raise ServiceOSException(
+                "WARRANTY_JOB_NOT_COMPLETED", "Warranty claims are available only after job completion.", status_code=409,
+            )
+        expiry = job.warranty_expires_at
+        if not expiry and job.completion_data and job.completion_data.get("completed_at"):
+            expiry = datetime.fromisoformat(job.completion_data["completed_at"]) + timedelta(days=5)
+        if not expiry or expiry < utcnow():
+            raise ServiceOSException(
+                "WARRANTY_PERIOD_EXPIRED", "The warranty period for this service has expired.", status_code=409,
+                context={"warranty_expires_at": expiry.isoformat() if expiry else None},
+            )
+        from app.engines.invoice_payment.models import ServiceInvoice
+        invoice = await self.db.scalar(
+            select(ServiceInvoice).where(
+                ServiceInvoice.job_id == job_uuid,
+                ServiceInvoice.status != "cancelled",
+            ).order_by(ServiceInvoice.created_at.desc()).limit(1)
+        )
+        eligible_amount = Decimal(str(
+            invoice.total_amount if invoice else (job.completion_data or {}).get("collected_amount", 0)
+        ))
+        requested_amount = Decimal(str(amount if amount is not None else eligible_amount))
+        if requested_amount <= 0 or requested_amount > eligible_amount:
+            raise ServiceOSException(
+                "WARRANTY_AMOUNT_INVALID",
+                "Requested remedy cannot exceed the completed service amount.",
+                status_code=422,
+                context={"maximum_eligible_amount": float(eligible_amount)},
+            )
+        ex = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.job_id == str(job_uuid)))
         if ex.scalar_one_or_none():
             raise ServiceOSException("CONFLICT", f"Claim for job {job_id} already exists.")
-        c = WarrantyClaim(tenant_id=tid, customer_id=cid, job_id=job_id, claim_type=claim_type,
-            description=description, media_ids=media_ids, amount_requested=Decimal(str(amount)))
+        c = WarrantyClaim(
+            tenant_id=job.tenant_id, customer_id=cid, job_id=str(job_uuid), claim_type=claim_type,
+            description=description, media_ids=media_ids, amount_requested=requested_amount,
+            status="provider_action_required", provider_response_due_at=utcnow() + timedelta(hours=24),
+            warranty_days_snapshot=job.warranty_days_snapshot or 5, warranty_expires_at=expiry,
+        )
         self.db.add(c); await self.db.flush()
-        await self._publish("warranty_claim.submitted", str(tid), str(c.id),
-                            {"job_id": job_id, "amount": float(amount)})
-        return {"claim_id": str(c.id), "status": "pending", "job_id": job_id}
+        await self._publish("warranty_claim.submitted", str(job.tenant_id), str(c.id),
+                            {"job_id": str(job_uuid), "amount": float(requested_amount)})
+        return self._claim_dict(c)
 
-    async def get_claim(self, claim_id):
+    async def get_claim(self, claim_id, *, customer_id=None, tenant_id=None, is_admin=False):
         r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id))
         c = r.scalar_one_or_none()
         if not c: raise NotFoundException("WarrantyClaim", str(claim_id))
+        if not is_admin:
+            owns_customer = customer_id is not None and str(c.customer_id) == str(customer_id)
+            owns_tenant = tenant_id is not None and str(c.tenant_id) == str(tenant_id)
+            if not (owns_customer or owns_tenant):
+                raise NotFoundException("WarrantyClaim", str(claim_id))
+        return self._claim_dict(c)
+
+    async def provider_respond_claim(self, claim_id, tenant_id, resolution, *, resolved=False):
+        c = await self.db.scalar(select(WarrantyClaim).where(
+            WarrantyClaim.id == claim_id, WarrantyClaim.tenant_id == tenant_id,
+        ).with_for_update())
+        if not c:
+            raise NotFoundException("WarrantyClaim", str(claim_id))
+        if c.status not in ("provider_action_required", "provider_in_progress"):
+            raise ServiceOSException("WARRANTY_INVALID_STATE", f"Claim is already {c.status}.", status_code=409)
+        c.provider_resolution = resolution
+        c.provider_responded_at = utcnow()
+        if resolved:
+            c.status = "provider_resolved"
+            c.provider_resolved_at = utcnow()
+            c.resolved_at = utcnow()
+        else:
+            c.status = "provider_in_progress"
+        await self._publish("warranty_claim.provider_responded", str(c.tenant_id), str(c.id), {"resolved": resolved})
+        return self._claim_dict(c)
+
+    async def escalate_claim(self, claim_id, reason, *, customer_id=None, tenant_id=None):
+        c = await self.db.scalar(select(WarrantyClaim).where(WarrantyClaim.id == claim_id).with_for_update())
+        if not c:
+            raise NotFoundException("WarrantyClaim", str(claim_id))
+        owns_customer = customer_id is not None and str(c.customer_id) == str(customer_id)
+        owns_tenant = tenant_id is not None and str(c.tenant_id) == str(tenant_id)
+        if not (owns_customer or owns_tenant):
+            raise NotFoundException("WarrantyClaim", str(claim_id))
+        if c.status not in ("provider_action_required", "provider_in_progress", "provider_resolved"):
+            raise ServiceOSException("WARRANTY_INVALID_STATE", f"Claim cannot be escalated from {c.status}.", status_code=409)
+        # A customer gives the provider its response window unless the provider
+        # has already answered. A provider may explicitly concede immediately.
+        if owns_customer and not c.provider_responded_at and c.provider_response_due_at and c.provider_response_due_at > utcnow():
+            raise ServiceOSException(
+                "PROVIDER_RESPONSE_WINDOW_ACTIVE",
+                "The provider still has time to respond to this warranty claim.", status_code=409,
+                context={"provider_response_due_at": c.provider_response_due_at.isoformat()},
+            )
+        c.status = "admin_review"
+        c.escalated_at = utcnow()
+        c.escalation_reason = reason
+        await self._publish("warranty_claim.escalated", str(c.tenant_id), str(c.id), {"reason": reason})
         return self._claim_dict(c)
 
     async def list_tenant_claims(self, tid, status_filter, limit, cursor):
@@ -757,6 +859,24 @@ class CommerceService:
         claims = r.scalars().all(); has_next = len(claims) > limit; claims = claims[:limit]
         nc = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
         return {"claims": [self._claim_dict(c) for c in claims], "has_next": has_next, "next_cursor": nc}
+
+    async def list_customer_claims(self, customer_id, status_filter, limit, cursor):
+        q = (select(WarrantyClaim)
+             .where(WarrantyClaim.customer_id == customer_id)
+             .order_by(WarrantyClaim.created_at.desc(), WarrantyClaim.id.desc()))
+        if status_filter:
+            q = q.where(WarrantyClaim.status == status_filter)
+        if cursor:
+            try:
+                cr = decode_cursor(cursor)
+                q = q.where(WarrantyClaim.created_at < datetime.fromisoformat(cr["created_at"]))
+            except Exception:
+                pass
+        rows = (await self.db.execute(q.limit(limit + 1))).scalars().all()
+        has_next = len(rows) > limit
+        claims = rows[:limit]
+        next_cursor = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
+        return {"claims": [self._claim_dict(c) for c in claims], "has_next": has_next, "next_cursor": next_cursor}
 
     async def list_all_claims(self, status_filter, limit, cursor):
         q = select(WarrantyClaim).order_by(WarrantyClaim.created_at.desc())
@@ -773,29 +893,65 @@ class CommerceService:
                 "has_next": has_next, "next_cursor": nc}
 
     async def approve_claim(self, claim_id, amount_approved, admin_notes):
-        r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id))
+        r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id).with_for_update())
         c = r.scalar_one_or_none()
         if not c: raise NotFoundException("WarrantyClaim", str(claim_id))
-        if c.status != "pending":
-            raise ServiceOSException("CONFLICT", f"Claim is already {c.status}.")
-        d = await self._get_or_create_deposit(c.tenant_id)
-        dt = await debit_deposit(self.db, d, Decimal(str(amount_approved)),
-                                  DepositTxnType.WARRANTY_DRAW, str(claim_id),
-                                  f"Warranty approval: {admin_notes}", self.actor_id)
-        c.status = "approved"; c.amount_approved = Decimal(str(amount_approved))
-        c.admin_notes = admin_notes; c.resolver_id = self.actor_id
-        c.resolved_at = utcnow(); c.deposit_transaction_id = dt.id
+        overdue = bool(c.provider_response_due_at and c.provider_response_due_at <= utcnow())
+        if c.status != "admin_review" and not (c.status == "provider_action_required" and overdue):
+            raise ServiceOSException(
+                "PROVIDER_RESOLUTION_REQUIRED",
+                "Admin can issue service credit only after provider escalation or response timeout.",
+                status_code=409,
+            )
+        amount_approved = Decimal(str(amount_approved))
+        if amount_approved <= Decimal("0"):
+            raise ServiceOSException("VALIDATION_ERROR", "Approved amount must be positive.", status_code=422)
+        if amount_approved > c.amount_requested:
+            raise ServiceOSException("VALIDATION_ERROR",
+                "Approved amount cannot exceed the requested amount.", status_code=422)
+        if not admin_notes or len(admin_notes.strip()) < 5:
+            raise ServiceOSException(
+                "VALIDATION_ERROR", "A remedy reason of at least 5 characters is required.", status_code=422,
+            )
+        from app.engines.customer_credits.service import issue_provider_funded_customer_credit
+        from app.engines.final_records.models import ServiceJob
+        job = await self.db.get(ServiceJob, uuid.UUID(str(c.job_id)))
+        remedy = await issue_provider_funded_customer_credit(
+            self.db,
+            tenant_id=c.tenant_id,
+            customer_id=c.customer_id,
+            amount=amount_approved,
+            reference_type="warranty_claim",
+            reference_id=c.id,
+            reason=admin_notes.strip(),
+            actor_id=self.actor_id,
+            actor_role=self.actor_role,
+            request_id=self.request_id,
+            booking_id=job.booking_id if job else None,
+            job_id=job.id if job else None,
+        )
+        c.status = "credit_issued"; c.amount_approved = Decimal(str(amount_approved))
+        c.admin_notes = admin_notes.strip(); c.resolver_id = self.actor_id
+        c.resolved_at = utcnow(); c.settled_at = utcnow(); c.settled_amount = amount_approved
+        c.provider_credit_deducted = remedy["provider_credit_deducted"]
+        c.security_deposit_deducted = remedy["security_deposit_deducted"]
+        c.customer_credit_id = remedy["credit"].id
         await self._update_warranty_signal(c.tenant_id)
-        await self._publish("warranty_claim.approved", str(c.tenant_id), str(claim_id),
-                            {"amount": float(amount_approved)})
-        return {**self._claim_dict(c), "deposit_balance_after": float(d.current_balance)}
+        await self._publish("warranty_claim.credit_issued", str(c.tenant_id), str(claim_id),
+                            {"amount": float(amount_approved),
+                             "provider_credit_deducted": float(remedy["provider_credit_deducted"]),
+                             "security_deposit_deducted": float(remedy["security_deposit_deducted"])})
+        return self._claim_dict(c)
 
     async def reject_claim(self, claim_id, rejection_reason, admin_notes):
         r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id))
         c = r.scalar_one_or_none()
         if not c: raise NotFoundException("WarrantyClaim", str(claim_id))
-        if c.status != "pending":
-            raise ServiceOSException("CONFLICT", f"Claim is already {c.status}.")
+        overdue = bool(c.provider_response_due_at and c.provider_response_due_at <= utcnow())
+        if c.status != "admin_review" and not (c.status == "provider_action_required" and overdue):
+            raise ServiceOSException(
+                "PROVIDER_RESOLUTION_REQUIRED", "Admin can decide only an escalated or overdue claim.", status_code=409,
+            )
         c.status = "rejected"; c.rejection_reason = rejection_reason
         c.admin_notes = admin_notes; c.resolver_id = self.actor_id; c.resolved_at = utcnow()
         await self._update_warranty_signal(c.tenant_id)
@@ -805,11 +961,16 @@ class CommerceService:
     async def _update_warranty_signal(self, tid):
         try:
             from app.engines.tenant_engine.health import write_health_signal
-            total = await self.db.execute(select(func.count(CommissionRecord.id))
-                .where(CommissionRecord.tenant_id==tid))
+            from app.engines.final_records.models import ServiceJob
+            total = await self.db.execute(select(func.count(ServiceJob.id)).where(
+                ServiceJob.tenant_id == tid,
+                ServiceJob.status.in_(["completed", "work_done", "invoice_issued", "paid"]),
+            ))
             jobs = total.scalar_one_or_none() or 0
             cr = await self.db.execute(select(func.count(WarrantyClaim.id)).where(
-                WarrantyClaim.tenant_id==tid, WarrantyClaim.status.in_(["pending","approved"])))
+                WarrantyClaim.tenant_id == tid,
+                WarrantyClaim.status.notin_(["rejected", "closed"]),
+            ))
             claims = cr.scalar_one_or_none() or 0
             rate = claims / jobs if jobs > 0 else 0
             await write_health_signal(tid, "warranty_claim_rate", max(0.0, (1-rate*10)*100))

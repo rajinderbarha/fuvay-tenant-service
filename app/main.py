@@ -38,6 +38,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 2. Redis
     await init_redis()
 
+    # PostgreSQL is the durable source of truth for network blocks. Rebuild
+    # the hot-path Redis sets after every process/Redis restart.
+    try:
+        from app.engines.security.service import warm_ip_blocklist_cache
+        cache_counts = await warm_ip_blocklist_cache()
+        logger.info("security.ip_blocklist_cache_ready", **cache_counts)
+    except Exception as exc:
+        logger.error("security.ip_blocklist_cache_warm_failed", error=str(exc))
+
     # 3. Event Bus (Redis pub/sub)
     event_bus = EventBus(get_redis())
     set_event_bus(event_bus)
@@ -87,6 +96,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _expire_task = asyncio.create_task(_expire_loop())
     logger.info("expire_drafts_loop.started")
 
+    # 10. Trust & Quality recalculation worker — the platform-wide badge/health/
+    # risk sweep used to run inline in the admin's HTTP request, which cannot
+    # survive a large provider base. The endpoint now enqueues and this claims.
+    from app.jobs.trust_quality_worker import background_loop as _tq_loop
+    _tq_task = asyncio.create_task(_tq_loop())
+    logger.info("trust_quality_worker_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
@@ -114,6 +130,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _expire_task.cancel()
     try:
         await _expire_task
+    except asyncio.CancelledError:
+        pass
+    _tq_task.cancel()
+    try:
+        await _tq_task
     except asyncio.CancelledError:
         pass
     await close_redis()
@@ -406,6 +427,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.admin_catalog.home_services_catalog_console_router import (
         router as home_services_catalog_console_router,
     )
+    from app.engines.admin_catalog.skill_catalog_router import (
+        admin_router as category_skill_admin_router,
+        provider_router as category_skill_provider_router,
+    )
     app.include_router(catalog_enterprise_router)
     for _r in [admin_catalog_router, tenant_catalog_router, customer_master_catalog_router,
                catalog_dimension_router, catalog_job_type_router, catalog_impact_router,
@@ -416,7 +441,8 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
                svc_opt_provider_router, svc_opt_customer_router,
                sst_admin_router, sst_provider_router,
                auto_price_admin_router, auto_price_tenant_router,
-               home_services_catalog_console_router]:
+               home_services_catalog_console_router,
+               category_skill_admin_router, category_skill_provider_router]:
         app.include_router(_r)
     # Sprint 34H — Admin Bulk Setup Wizard
     from app.engines.admin_catalog.bulk_setup_router import router as bulk_setup_router
@@ -752,6 +778,11 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(support_tenant_router)
     app.include_router(support_admin_router)
 
+    from app.engines.tenant_assistant.tenant_router import router as assistant_tenant_router
+    from app.engines.tenant_assistant.admin_router import router as assistant_admin_router
+    app.include_router(assistant_tenant_router)
+    app.include_router(assistant_admin_router)
+
     # Home Services Direct Payments (tenant declaration + customer
     # confirm/dispute) -- found unmounted during the Final Phase
     # end-to-end pass: the customer could never confirm/dispute a direct
@@ -808,11 +839,8 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.customer_home.router import router as customer_home_router
     app.include_router(customer_home_router)
 
-    # Admin control of the Home layout (migration 236). Which sections appear
-    # and in what order was hardcoded in the app, so re-ordering Home or hiding
-    # a section needed an app release.
-    from app.engines.customer_home.section_admin_router import router as home_sections_admin_router
-    app.include_router(home_sections_admin_router)
+    # Retired 2026-08-20: admin Home Layout control. Customer Home now uses the
+    # app's shipped layout instead of a mutable admin ordering surface.
 
     # Address autocomplete. Proxied so the Places key never ships in the app bundle.
     from app.engines.places.router import router as places_router
@@ -825,18 +853,11 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     )
     app.include_router(staff_availability_router)
 
-    # Real bug fixed here: the customer_campaigns engine -- which powers the
-    # promotional banner carousel on the customer Home screen -- had BOTH of
-    # its routers written but NEITHER ever mounted. The carousel still
-    # rendered, because customer_home calls CampaignService in-process, but
-    # every HTTP route 404'd: there was no way for an admin to create,
-    # schedule or update a banner, and no way for a client to fetch them
-    # directly. Same dead-router class as the twelve mounted above.
     # Real bug fixed here: ELEVEN routers serving the tenant portal's Home
     # Services workspaces were written and never mounted. Every one of their
     # routes 404'd, which is why those pages appeared to have "no backend" --
     # the backends existed all along. Same dead-router class as the twelve
-    # mounted above and as customer_campaigns below.
+    # mounted above.
     for _tenant_hs_router in [
         "app.engines.final_records.tenant_bookings_jobs_router",
         "app.engines.admin_catalog.tenant_services_workspace_router",
@@ -856,10 +877,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         import importlib
         app.include_router(importlib.import_module(_tenant_hs_router).router)
 
-    from app.engines.customer_campaigns.admin_router import router as customer_campaigns_admin_router
-    from app.engines.customer_campaigns.customer_router import router as customer_campaigns_router
-    app.include_router(customer_campaigns_admin_router)
-    app.include_router(customer_campaigns_router)
+    # Retired 2026-08-20: customer Home promotional banners/campaign slots.
 
     # Sprint 27 — Notification + Chat + Audit Integration
     from app.engines.platform_notifications.customer_router import (
@@ -953,9 +971,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.dashboard_command_center.admin_router import router as dashboard_command_center_router
     app.include_router(dashboard_command_center_router)
 
-    # Workflow Templates Enterprise (migration 106)
-    from app.engines.workflows.workflow_router import router as workflow_enterprise_router
-    app.include_router(workflow_enterprise_router)
+    # Workflow Templates Enterprise (migration 106) is NOT mounted: migration
+    # 186 dropped its tables (workflow_templates / workflow_template_versions)
+    # as a confirmed-dead system and stated the router and service files would
+    # be removed with it. The unmount was missed, so the routes stayed live and
+    # every one of them returned 500 against tables that no longer existed.
+    # Its one genuinely missing idea — cross-app step choreography — now lives
+    # on the canonical service_job_workflow (migration 274).
 
     # Phase 1B — Admin Roles & Permissions read API
     from app.engines.roles_permissions.admin_router import router as roles_permissions_router
@@ -964,10 +986,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Global Services (migration 227) — platform-owned promotional listings
     # shown to every customer nationwide, independent of vertical/category/
     # tenant serviceability. Customer interest becomes a Lead an admin calls.
-    from app.engines.global_services.admin_router import router as global_services_admin_router
-    from app.engines.global_services.customer_router import router as global_services_customer_router
-    app.include_router(global_services_admin_router)
-    app.include_router(global_services_customer_router)
+    # Retired 2026-08-20: Global Services promotional lead-capture listings.
 
     # Phase 1B — safe, dev-only 500-error-envelope verification route.
     # Never mounted in production; requires super_admin even in dev/test.
@@ -1002,7 +1021,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.platform_notifications.policy_router import router as notification_policy_router
     from app.engines.settings_engine.configuration_router import router as platform_configuration_router
     from app.engines.customer_reviews.hs_review_router import router as hs_review_router
-    from app.engines.invoice_payment.direct_payments_router import router as direct_payments_router
     from app.engines.finance_hub.tenant_hs_finance_router import router as tenant_hs_finance_router
     from app.engines.finance_hub.admin_hs_finance_router import (
         router as admin_hs_finance_router,
@@ -1017,7 +1035,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         vertical_directory_router, hs_customer_directory_router,
         hs_provider_directory_router, hs_dashboard_router,
         notification_policy_router, platform_configuration_router,
-        hs_review_router, direct_payments_router, admin_hs_finance_router,
+        hs_review_router, admin_hs_finance_router,
         admin_hs_finance_canonical_router,
         tenant_hs_finance_router, hs_finance_monetization_router, hs_topup_plan_router,
     ]:
@@ -1034,6 +1052,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     _dynamic_guard_routes = {
         ("/v1/admin/onboarding/providers/{tenant_id}/send-reminder", "POST"),
         ("/v1/admin/onboarding/providers/{tenant_id}", "GET"),
+        ("/v1/admin/onboarding/providers/{tenant_id}/documents/{document_id}/review", "POST"),
         ("/v1/admin/onboarding/providers/{tenant_id}/approve", "POST"),
         ("/v1/admin/onboarding/providers/{tenant_id}/reject", "POST"),
         ("/v1/admin/onboarding/providers/{tenant_id}/request-changes", "POST"),

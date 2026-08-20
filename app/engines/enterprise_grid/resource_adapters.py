@@ -27,7 +27,7 @@ from __future__ import annotations
 import uuid
 from typing import Awaitable, Callable
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
@@ -129,6 +129,18 @@ async def _adapter_admin_tenants(db: AsyncSession, tenant_scope: uuid.UUID | Non
         q = q.where(Tenant.id == tenant_scope)
     if filters.get("status"):
         q = q.where(Tenant.status == filters["status"])
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(Tenant.business_name.ilike(term), Tenant.tenant_name.ilike(term),
+                        Tenant.email.ilike(term), Tenant.phone.ilike(term), Tenant.tenant_code.ilike(term)))
+    for key in ("vertical", "verification_status", "health_band"):
+        if filters.get(key):
+            q = q.where(getattr(Tenant, key) == filters[key])
+    if filters.get("city"):
+        q = q.where(Tenant.city.ilike(f"%{filters['city']}%"))
+    if filters.get("state"):
+        q = q.where(Tenant.state.ilike(f"%{filters['state']}%"))
     rows = (await db.execute(q)).scalars().all()
     return [
         {
@@ -206,6 +218,167 @@ async def _adapter_admin_service_groups(db: AsyncSession, tenant_scope: uuid.UUI
         "updated_at": row.updated_at.isoformat() if row.updated_at else "",
         "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
     } for row, category_name in rows]
+
+
+async def _adapter_admin_master_services(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.admin_catalog.models import MasterService, ServiceCategory, ServiceGroup, TenantService
+    retired = _optional_bool(filters.get("retired")) is True
+    provider_exists = exists().where(
+        TenantService.master_service_id == MasterService.id,
+        TenantService.is_enabled.is_(True), TenantService.deleted_at.is_(None),
+    )
+    q = (
+        select(MasterService, ServiceCategory.name, ServiceGroup.name)
+        .outerjoin(ServiceCategory, ServiceCategory.id == MasterService.category_id)
+        .outerjoin(ServiceGroup, ServiceGroup.id == MasterService.service_group_id)
+        .where(MasterService.deleted_at.isnot(None) if retired else MasterService.deleted_at.is_(None))
+    )
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(MasterService.service_name.ilike(term), MasterService.slug.ilike(term)))
+    if filters.get("category_id"):
+        q = q.where(MasterService.category_id == uuid.UUID(str(filters["category_id"])))
+    if filters.get("service_group_id"):
+        q = q.where(MasterService.service_group_id == uuid.UUID(str(filters["service_group_id"])))
+    for field in ("job_type", "pricing_model"):
+        if filters.get(field):
+            q = q.where(getattr(MasterService, field) == filters[field])
+    active = _optional_bool(filters.get("is_active"))
+    if active is not None:
+        q = q.where(MasterService.is_active == active)
+    has_providers = _optional_bool(filters.get("has_providers"))
+    if has_providers is not None:
+        q = q.where(provider_exists if has_providers else ~provider_exists)
+    rows = (await db.execute(q.order_by(MasterService.display_order, MasterService.service_name, MasterService.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{
+        "name": row.service_name, "slug": row.slug, "category_name": category_name or "Missing category",
+        "group_name": group_name or "", "job_type": row.job_type or "",
+        "pricing_model": row.pricing_model or "", "status": "active" if row.is_active else "inactive",
+        "display_order": row.display_order,
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+    } for row, category_name, group_name in rows]
+
+
+async def _adapter_admin_service_types(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.admin_catalog.models import ServiceType, ServiceTypeMapping
+    mapping_count = (select(ServiceTypeMapping.type_id, func.count(ServiceTypeMapping.id).label("count"))
+        .where(ServiceTypeMapping.status != "archived").group_by(ServiceTypeMapping.type_id).subquery())
+    retired = _optional_bool(filters.get("retired")) is True
+    q = (select(ServiceType, func.coalesce(mapping_count.c.count, 0))
+         .outerjoin(mapping_count, mapping_count.c.type_id == ServiceType.id)
+         .where(ServiceType.deleted_at.isnot(None) if retired else ServiceType.deleted_at.is_(None)))
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(ServiceType.name.ilike(term), ServiceType.code.ilike(term), ServiceType.slug.ilike(term)))
+    for field in ("status", "type_family"):
+        if filters.get(field): q = q.where(getattr(ServiceType, field) == filters[field])
+    rows = (await db.execute(q.order_by(ServiceType.name, ServiceType.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{"name": row.name, "code": row.code, "slug": row.slug, "type_family": row.type_family or "",
+             "status": row.status, "customer_visible": row.customer_visible, "mapping_count": int(count),
+             "display_order": row.display_order, "created_at": row.created_at.isoformat() if row.created_at else "",
+             "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+             "deleted_at": row.deleted_at.isoformat() if row.deleted_at else ""} for row, count in rows]
+
+
+async def _adapter_admin_brands(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.admin_catalog.models import Brand, BrandCategoryMapping, MasterServiceBrand, TenantSupportedBrand
+    svc = (select(MasterServiceBrand.brand_id, func.count(MasterServiceBrand.id).label("count"))
+           .where(MasterServiceBrand.is_active.is_(True)).group_by(MasterServiceBrand.brand_id).subquery())
+    cat = (select(BrandCategoryMapping.brand_id, func.count(BrandCategoryMapping.id).label("count"))
+           .where(BrandCategoryMapping.status == "active", BrandCategoryMapping.deleted_at.is_(None))
+           .group_by(BrandCategoryMapping.brand_id).subquery())
+    usage = (select(TenantSupportedBrand.brand_id, func.count(TenantSupportedBrand.id).label("count"))
+             .where(TenantSupportedBrand.status == "active").group_by(TenantSupportedBrand.brand_id).subquery())
+    retired = _optional_bool(filters.get("retired")) is True
+    q = (select(Brand, func.coalesce(svc.c.count, 0), func.coalesce(cat.c.count, 0), func.coalesce(usage.c.count, 0))
+         .outerjoin(svc, svc.c.brand_id == Brand.id).outerjoin(cat, cat.c.brand_id == Brand.id)
+         .outerjoin(usage, usage.c.brand_id == Brand.id)
+         .where(Brand.deleted_at.isnot(None) if retired else Brand.deleted_at.is_(None)))
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"; q = q.where(or_(Brand.name.ilike(term), Brand.code.ilike(term), Brand.slug.ilike(term)))
+    if filters.get("status"): q = q.where(Brand.status == filters["status"])
+    rows = (await db.execute(q.order_by(Brand.display_order, Brand.name, Brand.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{"name": row.name, "code": row.code or "", "slug": row.slug, "status": row.status,
+             "is_global": row.is_global, "service_mapping_count": int(sc), "category_mapping_count": int(cc),
+             "provider_usage_count": int(pc), "display_order": row.display_order,
+             "created_at": row.created_at.isoformat() if row.created_at else "", "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+             "deleted_at": row.deleted_at.isoformat() if row.deleted_at else ""} for row, sc, cc, pc in rows]
+
+
+async def _adapter_admin_checklist_templates(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.checklist_catalog.models import ChecklistTemplate, ChecklistTemplateVersion, JobTypeChecklistMapping
+    latest = (select(
+        ChecklistTemplateVersion.checklist_template_id.label("template_id"),
+        func.max(ChecklistTemplateVersion.version_number).label("version_number"),
+    ).group_by(ChecklistTemplateVersion.checklist_template_id).subquery())
+    latest_version = (select(ChecklistTemplateVersion)
+        .join(latest, (latest.c.template_id == ChecklistTemplateVersion.checklist_template_id) &
+              (latest.c.version_number == ChecklistTemplateVersion.version_number)).subquery())
+    active_mapping_count = (select(
+        ChecklistTemplateVersion.checklist_template_id.label("template_id"),
+        func.count(JobTypeChecklistMapping.id).label("count"),
+    ).join(JobTypeChecklistMapping, JobTypeChecklistMapping.checklist_template_version_id == ChecklistTemplateVersion.id)
+     .where(JobTypeChecklistMapping.status == "active")
+     .group_by(ChecklistTemplateVersion.checklist_template_id).subquery())
+    q = (select(ChecklistTemplate, latest_version.c.version_number, latest_version.c.status,
+                func.coalesce(active_mapping_count.c.count, 0))
+         .outerjoin(latest_version, latest_version.c.checklist_template_id == ChecklistTemplate.id)
+         .outerjoin(active_mapping_count, active_mapping_count.c.template_id == ChecklistTemplate.id))
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(ChecklistTemplate.name.ilike(term), ChecklistTemplate.code.ilike(term), ChecklistTemplate.description.ilike(term)))
+    for field in ("status", "purpose", "owner_scope"):
+        if filters.get(field):
+            q = q.where(getattr(ChecklistTemplate, field) == filters[field])
+    rows = (await db.execute(q.order_by(ChecklistTemplate.updated_at.desc(), ChecklistTemplate.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{
+        "name": row.name, "code": row.code, "description": row.description or "", "purpose": row.purpose,
+        "status": row.status, "owner_scope": row.owner_scope, "latest_version": version_number or "",
+        "version_status": version_status or "", "active_mapping_count": int(mapping_count),
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "archived_at": row.archived_at.isoformat() if row.archived_at else "",
+        "archive_reason": row.archive_reason or "",
+    } for row, version_number, version_status, mapping_count in rows]
+
+
+async def _adapter_admin_checklist_mappings(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
+    from app.engines.admin_catalog.models import JobTypeDefinition, MasterService, MasterServiceJobType
+    from app.engines.checklist_catalog.models import ChecklistTemplate, ChecklistTemplateVersion, JobTypeChecklistMapping
+    q = (select(JobTypeChecklistMapping, ChecklistTemplate.name, ChecklistTemplate.code,
+                ChecklistTemplateVersion.version_number, MasterService.service_name, JobTypeDefinition.label)
+         .join(ChecklistTemplateVersion, ChecklistTemplateVersion.id == JobTypeChecklistMapping.checklist_template_version_id)
+         .join(ChecklistTemplate, ChecklistTemplate.id == ChecklistTemplateVersion.checklist_template_id)
+         .join(MasterServiceJobType, MasterServiceJobType.id == JobTypeChecklistMapping.master_service_job_type_id)
+         .join(MasterService, MasterService.id == MasterServiceJobType.master_service_id)
+         .join(JobTypeDefinition, JobTypeDefinition.id == MasterServiceJobType.job_type_id))
+    search = filters.get("q") or filters.get("search")
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(ChecklistTemplate.name.ilike(term), ChecklistTemplate.code.ilike(term),
+                        MasterService.service_name.ilike(term), JobTypeDefinition.label.ilike(term),
+                        JobTypeChecklistMapping.phase.ilike(term)))
+    for field in ("status", "usage", "actor", "phase"):
+        if filters.get(field):
+            q = q.where(getattr(JobTypeChecklistMapping, field) == filters[field])
+    rows = (await db.execute(q.order_by(JobTypeChecklistMapping.updated_at.desc(), JobTypeChecklistMapping.id).limit(MAX_EXPORT_ROWS))).all()
+    return [{
+        "template_name": template_name, "template_code": template_code, "template_version": version_number,
+        "master_service_name": service_name, "job_type_label": job_type_label, "phase": row.phase,
+        "usage": row.usage, "actor": row.actor, "completion_gate": row.completion_gate, "status": row.status,
+        "effective_from": row.effective_from.isoformat() if row.effective_from else "",
+        "effective_until": row.effective_until.isoformat() if row.effective_until else "",
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "disabled_at": row.disabled_at.isoformat() if row.disabled_at else "",
+        "disable_reason": row.disable_reason or "",
+    } for row, template_name, template_code, version_number, service_name, job_type_label in rows]
 
 
 async def _adapter_admin_verticals(db: AsyncSession, tenant_scope: uuid.UUID | None, filters: dict) -> list[dict]:
@@ -316,6 +489,11 @@ RESOURCE_ADAPTERS: dict[str, AdapterFn] = {
     "admin_tenants":         _adapter_admin_tenants,
     "admin_categories":      _adapter_admin_categories,
     "admin_service_groups":  _adapter_admin_service_groups,
+    "admin_master_services": _adapter_admin_master_services,
+    "admin_service_types": _adapter_admin_service_types,
+    "admin_brands": _adapter_admin_brands,
+    "admin_checklist_templates": _adapter_admin_checklist_templates,
+    "admin_checklist_mappings": _adapter_admin_checklist_mappings,
     "admin_verticals":       _adapter_admin_verticals,
     "admin_customers":       _adapter_admin_customers,
     "admin_staff":           _adapter_admin_staff,

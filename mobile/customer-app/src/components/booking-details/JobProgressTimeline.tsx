@@ -5,6 +5,7 @@ import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
 import { Icon } from "../Icon";
 import { ActiveJobStage, JOB_PROGRESS_STEPS, resolveJobProgressStepState } from "../../domain/activeJobPresentation";
+import type { WorkflowStageDto } from "../../api/contracts/customerBookings";
 
 /** Mission's 5-step vertical "Job progress" timeline (Booked, Assigned,
  * Scheduled, On the way, Arrived). Only rendered once a real job has
@@ -12,8 +13,21 @@ import { ActiveJobStage, JOB_PROGRESS_STEPS, resolveJobProgressStepState } from 
  * never derived from time or guesswork, only from `resolveActiveJobStage`.
  * A non-color status signal (check / dot / empty ring) accompanies every
  * step so status is never conveyed by color alone. */
-export function JobProgressTimeline({ activeStage }: { activeStage: ActiveJobStage | "arrived" }) {
+type JobStepState = "complete" | "active" | "pending" | "skipped";
+
+export function JobProgressTimeline({ activeStage, stages }: {
+  activeStage: ActiveJobStage | "arrived";
+  /** Customer-visible steps of this job's configured workflow. When present
+   *  they replace the fixed five-step list: the journey an admin defined is
+   *  what the customer should see, and its progress is computed server-side
+   *  from the job's real event history rather than re-derived here. */
+  stages?: readonly WorkflowStageDto[];
+}) {
   const { theme } = useTheme();
+  const useWorkflow = !!stages && stages.length > 0;
+  const steps = useWorkflow
+    ? stages!.map(s => ({ key: s.step_key, label: s.label, description: "" }))
+    : JOB_PROGRESS_STEPS;
   return (
     <AppCard>
       <AppText variant="labelStrong" color="secondary">Job progress</AppText>
@@ -23,9 +37,13 @@ export function JobProgressTimeline({ activeStage }: { activeStage: ActiveJobSta
         accessibilityRole="progressbar"
         accessibilityLabel="Job progress"
       >
-        {JOB_PROGRESS_STEPS.map((step, i) => {
-          const state = resolveJobProgressStepState(step.key, activeStage);
-          const isLast = i === JOB_PROGRESS_STEPS.length - 1;
+        {steps.map((step, i) => {
+          // A workflow step already carries the state the server computed; only
+          // the fallback list needs deriving from activeStage.
+          const state: JobStepState = useWorkflow
+            ? ({ completed: "complete", current: "active", skipped: "skipped", upcoming: "pending" } as const)[stages![i].state]
+            : resolveJobProgressStepState(step.key, activeStage);
+          const isLast = i === steps.length - 1;
           const dotColor = state === "complete" ? theme.colors.statusSuccess
             : state === "active" ? theme.colors.brandPrimary
             : theme.colors.borderSubtle;
@@ -52,11 +70,15 @@ export function JobProgressTimeline({ activeStage }: { activeStage: ActiveJobSta
                 <AppText
                   variant="bodyStrong"
                   color={state === "pending" ? "secondary" : "primary"}
-                  accessibilityLabel={`${step.label}: ${state === "complete" ? "done" : state === "active" ? "in progress" : "not started yet"}`}
+                  accessibilityLabel={`${step.label}: ${state === "complete" ? "done" : state === "active" ? "in progress" : state === "skipped" ? "skipped" : "not started yet"}`}
                 >
                   {step.label}
                 </AppText>
-                <AppText variant="bodySmall" color="secondary">{step.description}</AppText>
+                {step.description ? (
+                  <AppText variant="bodySmall" color="secondary">{step.description}</AppText>
+                ) : state === "skipped" ? (
+                  <AppText variant="bodySmall" color="secondary">Not needed for this job</AppText>
+                ) : null}
               </View>
             </View>
           );

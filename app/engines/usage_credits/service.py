@@ -29,17 +29,19 @@ EVENT_COMPLETED_JOB_DEDUCTION = "completed_job_deduction"
 EVENT_CREDIT_REVERSAL = "credit_reversal"
 EVENT_MIGRATION_ADJUSTMENT = "migration_adjustment"
 EVENT_TOPUP_CREDIT_GRANTED = "topup_credit_granted"
+EVENT_TOPUP_CREDIT_REFUNDED = "topup_credit_refunded"
 
 VALID_EVENT_TYPES = {
     EVENT_MANUAL_CREDIT_ADDED, EVENT_MANUAL_CREDIT_REMOVED,
     EVENT_PACKAGE_CREDIT_GRANTED, EVENT_COMPLETED_JOB_DEDUCTION,
     EVENT_CREDIT_REVERSAL, EVENT_MIGRATION_ADJUSTMENT, EVENT_TOPUP_CREDIT_GRANTED,
+    EVENT_TOPUP_CREDIT_REFUNDED,
 }
 
 VALID_REASON_CODES = {
     "manual_operational_adjustment", "goodwill_credit", "correction",
     "package_purchase", "package_reactivation", "billing_dispute_resolution",
-    "migration_backfill", "credit_topup_purchase",
+    "migration_backfill", "credit_topup_purchase", "credit_topup_refund",
 }
 
 SOURCE_TYPE_FINANCE_HUB_CREDIT_TOPUP = "FINANCE_HUB_CREDIT_TOPUP"
@@ -177,6 +179,7 @@ class UsageCreditService:
             EVENT_CREDIT_REVERSAL: "usage_credit.reversal_created",
             EVENT_MIGRATION_ADJUSTMENT: "usage_credit.migration_adjustment",
             EVENT_TOPUP_CREDIT_GRANTED: "topup_credit.granted",
+            EVENT_TOPUP_CREDIT_REFUNDED: "topup_credit.refunded",
         }.get(event_type, "usage_credit.mutated")
         await record_platform_audit(
             self.db, operation=audit_op, engine_id="usage_credits",
@@ -257,6 +260,30 @@ class UsageCreditService:
             tenant_id=tenant_id, amount=amount, event_type=EVENT_TOPUP_CREDIT_GRANTED,
             source_type=SOURCE_TYPE_FINANCE_HUB_CREDIT_TOPUP, source_id=str(topup_order_id),
             reason_code="credit_topup_purchase", reason=reason, idempotency_key=idem_key,
+        )
+
+    async def revoke_topup_credit(
+        self, *, tenant_id: uuid.UUID, topup_order_id: str, amount: Decimal,
+        refund_version: str, reason: str,
+    ) -> dict:
+        """Remove credits corresponding to a monetary top-up refund.
+
+        ``refund_version`` is the cumulative refunded money amount. It makes
+        a retried posting idempotent while allowing multiple intentional
+        partial refunds. Refunds never create a negative usage-credit balance:
+        credits that have already been consumed must be resolved before cash
+        can be returned.
+        """
+        if amount <= 0:
+            raise ServiceOSException("TOPUP_INVALID_AMOUNT", "amount must be positive.", status_code=422)
+        if not reason or not reason.strip():
+            raise ServiceOSException("INVALID_ADJUSTMENT_REASON", "reason is required.", status_code=422)
+        idem_key = f"topup_credit_refund:{topup_order_id}:{refund_version}"
+        return await self._post(
+            tenant_id=tenant_id, amount=-amount, event_type=EVENT_TOPUP_CREDIT_REFUNDED,
+            source_type=SOURCE_TYPE_FINANCE_HUB_CREDIT_TOPUP, source_id=str(topup_order_id),
+            reason_code="credit_topup_refund", reason=reason, idempotency_key=idem_key,
+            allow_negative=False,
         )
 
     # ── Completed Job Deduction (delegates to the certified service) ──────

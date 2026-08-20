@@ -241,6 +241,7 @@ class ServiceabilityCheckIn(BaseModel):
     pincode: str
     master_service_id: uuid.UUID
     job_type: Optional[str] = None
+    job_type_id: Optional[uuid.UUID] = None
     brand_id: Optional[uuid.UUID] = None
     service_type_id: Optional[uuid.UUID] = None
     requested_at: Optional[dt.datetime] = None
@@ -256,7 +257,8 @@ async def check_serviceability(
     tenant_id = _tid(u)
     result = await resolve_exact_serviceability(
         db, tenant_id=tenant_id, pincode=body.pincode, master_service_id=body.master_service_id,
-        job_type=body.job_type, brand_id=body.brand_id, service_type_id=body.service_type_id,
+        job_type=body.job_type, job_type_id=body.job_type_id,
+        brand_id=body.brand_id, service_type_id=body.service_type_id,
         requested_at=body.requested_at,
     )
     return ok(result, _rid(r), "tenant.serviceability.check")

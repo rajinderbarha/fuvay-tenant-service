@@ -160,7 +160,10 @@ class RagQueryLog(ServiceOSBase):
 
 class IntelRiskScore(ServiceOSBase):
     __tablename__ = "intel_risk_scores"
-    __table_args__ = (Index("ix_intel_risk_entity", "entity_type", "entity_id"),)
+    __table_args__ = (
+        Index("ix_intel_risk_entity", "entity_type", "entity_id"),
+        UniqueConstraint("entity_type", "entity_id", name="uq_intel_risk_current_entity"),
+    )
 
     entity_type: Mapped[str] = mapped_column(Text, nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

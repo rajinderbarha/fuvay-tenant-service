@@ -8,6 +8,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { authApi } from "../../lib/api";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 
 type Step = "email" | "reset" | "done";
 
@@ -53,14 +54,7 @@ export default function ForgotPasswordPage() {
       <div style={{ width:"100%", maxWidth:420 }}>
         {/* Logo */}
         <div style={{ textAlign:"center", marginBottom:32 }}>
-          <div style={{ width:56, height:56, borderRadius:14, background:"var(--brand)",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            margin:"0 auto 16px", boxShadow:"var(--shadow-md)" }}>
-            <span style={{ color:"white", fontWeight:800, fontSize:22 }}>S</span>
-          </div>
-          <h1 style={{ fontSize:24, fontWeight:700, color:"var(--text-primary)", margin:"0 0 4px" }}>
-            ServiceOS
-          </h1>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:12 }}><FuvayLogo height={46}/></div>
           <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
             Reset your admin password
           </p>

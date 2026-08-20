@@ -320,7 +320,8 @@ export const catalogApi = {
 
 // ── Admin Master Catalog — browse + enable into own catalog (Catalog Engine) ──
 export interface AdminMasterServiceRow {
-  service_id:string; category_id:string; service_name:string; description?:string|null;
+  offering_key?:string; service_id:string; category_id:string; service_name:string; description?:string|null;
+  job_type_id?:string; job_type_label?:string;
   job_type:"repair"|"service"|"consultation"; pricing_model:string; base_price:number;
   min_price?:number|null; max_price?:number|null; visit_fee:number;
   is_brand_required:boolean; is_type_required:boolean; is_active:boolean; is_enabled?:boolean;
@@ -328,7 +329,16 @@ export interface AdminMasterServiceRow {
   service_group_id?:string|null; service_group_name?:string|null;
   requires_issue_type?:boolean; requires_checklist?:boolean;
   requires_estimate_approval?:boolean; requires_technician?:boolean; requires_schedule?:boolean;
+  requires_service_area?:boolean; requires_availability?:boolean;
   workflow_version?:number|null; blueprint_source?:"service_job_workflow"|"master_service_legacy";
+  job_types?: Array<{
+    job_type_id:string; job_type_key:string; job_type_label:string; workflow_id?:string|null;
+    type_mode:"required"|"optional"; brand_mode:"required"|"optional";
+    requires_service_area:boolean; requires_availability:boolean;
+  }>;
+  admin_ready?:boolean;
+  admin_blockers?:Array<{code:string; job_type_id?:string|null; message:string}>;
+  setup_rules_revision?:number; tenant_setup_rules_revision?:number|null; setup_update_required?:boolean;
   tenant_override_allowed?:boolean;
   /** Admin-set service artwork (MasterService.icon_url/image_url). Previously
    * dropped by the backend projection, so it was never available here. */
@@ -337,13 +347,22 @@ export interface AdminMasterServiceRow {
 export interface TenantEnabledService {
   tenant_service_id:string; tenant_id:string; master_service_id:string; category_id:string;
   job_type:string; is_enabled:boolean; tenant_display_name?:string|null; tenant_description?:string|null;
+  service_name?:string|null; job_type_label?:string|null; service_group_name?:string|null;
   tenant_base_price?:number|null; tenant_min_price?:number|null; tenant_max_price?:number|null;
   tenant_visit_fee?:number|null; override_allowed:boolean; requires_brand:boolean; requires_type:boolean; is_active:boolean;
   setup_status?: "draft" | "published"; published_at?: string | null;
   type_coverage_mode?: "all" | "selected" | "all_except";
   brand_coverage_mode?: "all" | "selected" | "all_except";
   last_active_step?: string | null;
+  job_type_id?: string | null;
+  setup_rules_revision?: number;
   tenant_emergency_surcharge?: number | null;
+  warranty_days: number;
+}
+export interface HomeServicesPricingPolicy {
+  consultation_fee: number | null;
+  currency: string;
+  scope: "provider_all_home_services";
 }
 /** GET /v1/tenant/catalog/services/{id}/requirements -- admin-authored,
  * read-only. `tenant_editable` is always false by design. */
@@ -438,13 +457,14 @@ export const masterCatalogApi = {
    * attached to one of THIS tenant's enabled services -- what the customer
    * gets asked at booking and what the technician must complete on site.
    * 403s (SERVICE_NOT_ENABLED) for a service the tenant hasn't enabled. */
-  getServiceRequirements: (masterServiceId: string) => {
+  getServiceRequirements: (masterServiceId: string, jobTypeId: string) => {
     const tid = getTenantId();
     return apiFetch<ServiceRequirements>(
-      `/v1/tenant/catalog/services/${masterServiceId}/requirements?tenant_id=${tid}`);
+      `/v1/tenant/catalog/services/${masterServiceId}/requirements?tenant_id=${tid}&job_type_id=${jobTypeId}`);
   },
   enable: (data: { master_service_id:string; tenant_display_name?:string; tenant_base_price?:number;
-                    tenant_min_price?:number; tenant_max_price?:number; tenant_visit_fee?:number }) => {
+                    job_type_id:string; tenant_min_price?:number; tenant_max_price?:number; tenant_visit_fee?:number;
+                    warranty_days?:number }) => {
     const tid = getTenantId();
     return apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enable-service?tenant_id=${tid}`,
       { method:"POST", body:JSON.stringify(data) });
@@ -452,18 +472,17 @@ export const masterCatalogApi = {
   updateEnabled: (tenantServiceId: string, data: Partial<TenantEnabledService>) =>
     apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}`,
       { method:"PUT", body:JSON.stringify(data) }),
-  disable: (masterServiceId: string) => {
+  disable: (masterServiceId: string, jobTypeId: string) => {
     const tid = getTenantId();
-    return apiFetch<void>(`/v1/tenant/catalog/disable-service?tenant_id=${tid}&master_service_id=${masterServiceId}`,
-      { method:"POST" });
+    return apiFetch<void>(`/v1/tenant/catalog/disable-service?tenant_id=${tid}`,
+      { method:"POST", body:JSON.stringify({ master_service_id: masterServiceId, job_type_id: jobTypeId }) });
   },
 };
 
 // ── Home Services Service Setup Wizard ────────────────────────────────────────
 export interface HsPricePreview {
   provider_min_price: number; provider_max_price: number;
-  platform_fee_percent: number; platform_fee_fixed_amount: number;
-  low_price: number; mid_price: number; high_price: number;
+  customer_min_price?: number; customer_max_price?: number;
   payment_mode: string;
 }
 
@@ -546,7 +565,7 @@ export const serviceSetupApi = {
   // services list -- NOT the home-services-branded routes).
   listAvailableServices: () => masterCatalogApi.listAvailable(),
   listEnabledServices: () => masterCatalogApi.listEnabled(),
-  enableService: (masterServiceId: string) => masterCatalogApi.enable({ master_service_id: masterServiceId }),
+  enableService: (masterServiceId: string, jobTypeId: string) => masterCatalogApi.enable({ master_service_id: masterServiceId, job_type_id: jobTypeId }),
   getEnabledService: (tenantServiceId: string) => homeServicesSetupApi.getEnabledService(tenantServiceId),
 
   // Step 3/4: dimensions, coverage, pricing (same generic endpoints)
@@ -560,7 +579,9 @@ export const serviceSetupApi = {
   getBrandPricing: (tenantServiceId: string, serviceTypeId?: string) =>
     homeServicesSetupApi.getBrandPricing(tenantServiceId, serviceTypeId),
   setBrandPricing: (tenantServiceId: string, brandId: string, min: number, max: number, serviceTypeId?: string) =>
-    homeServicesSetupApi.setBrandPricing(tenantServiceId, brandId, min, max, serviceTypeId),
+    apiFetch<{ brands: HsBrandPricing[] }>(
+      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands/${brandId}/pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
+      { method: "PUT", body: JSON.stringify({ tenant_min_price: min, tenant_max_price: max }) }),
 
   setTypeCoverageMode: (tenantServiceId: string, mode: CoverageMode) =>
     apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/type-coverage-mode`,
@@ -603,7 +624,16 @@ export const homeServicesSetupApi = {
     const tid = getTenantId();
     return apiFetch<{ services: TenantEnabledService[] }>(`/v1/tenant/catalog/home-services/enabled-services?tenant_id=${tid}`);
   },
-  enable: (data: { master_service_id: string }) => {
+  getPricingPolicy: () => {
+    const tid = getTenantId();
+    return apiFetch<HomeServicesPricingPolicy>(`/v1/tenant/catalog/home-services/pricing-policy?tenant_id=${tid}`);
+  },
+  updatePricingPolicy: (data: { consultation_fee: number }) => {
+    const tid = getTenantId();
+    return apiFetch<HomeServicesPricingPolicy>(`/v1/tenant/catalog/home-services/pricing-policy?tenant_id=${tid}`,
+      { method: "PUT", body: JSON.stringify(data) });
+  },
+  enable: (data: { master_service_id: string; job_type_id: string }) => {
     const tid = getTenantId();
     return apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enable-service?tenant_id=${tid}`,
       { method: "POST", body: JSON.stringify(data) });
@@ -645,16 +675,21 @@ export const homeServicesSetupApi = {
       `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands/${brandId}/pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
       { method: "PUT", body: JSON.stringify({ tenant_min_price: min, tenant_max_price: max }) }),
   pricePreview: (data: { tenant_min_price: number; tenant_max_price: number; platform_fee_percent?: number }) =>
-    apiFetch<HsPricePreview>("/v1/tenant/catalog/price-options/preview",
-      { method: "POST", body: JSON.stringify(data) }),
+    Promise.resolve({
+      provider_min_price: data.tenant_min_price,
+      provider_max_price: data.tenant_max_price,
+      customer_min_price: data.tenant_min_price,
+      customer_max_price: data.tenant_max_price,
+      payment_mode: "customer_pays_provider_directly",
+    } satisfies HsPricePreview),
   saveDraft: (tenantServiceId: string) =>
     apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/save-draft`, { method: "POST" }),
   publish: (tenantServiceId: string) =>
     apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/publish`, { method: "POST" }),
-  disable: (masterServiceId: string) => {
+  disable: (masterServiceId: string, jobTypeId: string) => {
     const tid = getTenantId();
-    return apiFetch<void>(`/v1/tenant/catalog/disable-service?tenant_id=${tid}&master_service_id=${masterServiceId}`,
-      { method: "POST" });
+    return apiFetch<void>(`/v1/tenant/catalog/disable-service?tenant_id=${tid}`,
+      { method: "POST", body: JSON.stringify({ master_service_id: masterServiceId, job_type_id: jobTypeId }) });
   },
 };
 
@@ -868,14 +903,15 @@ export const financeApi = {
   // Warranty claims
   warrantyClaims: (status?: string, limit = 20) => {
     const tid = getTenantId();
-    const qs  = status ? `?tenant_id=${tid}&status=${status}&limit=${limit}` : `?tenant_id=${tid}&limit=${limit}`;
-    return apiFetch<WarrantyClaimList>(`/v1/commerce/warranty/claims${qs}`);
+    const qs  = status ? `?status=${status}&limit=${limit}` : `?limit=${limit}`;
+    return apiFetch<WarrantyClaimList>(`/v1/commerce/tenants/${tid}/warranty/claims${qs}`);
   },
-  createWarrantyClaim: (jobId: string, issueDescription: string) => {
-    const tid = getTenantId();
-    return apiFetch<WarrantyClaim>("/v1/commerce/warranty/claims",
-      { method:"POST", body:JSON.stringify({ job_id: jobId, tenant_id: tid, issue_description: issueDescription }) });
-  },
+  respondWarrantyClaim: (claimId: string, resolution: string, resolved = false) =>
+    apiFetch<WarrantyClaim>(`/v1/commerce/warranty/claims/${claimId}/provider-response`,
+      { method:"POST", body:JSON.stringify({ resolution, resolved }) }),
+  escalateWarrantyClaim: (claimId: string, reason: string) =>
+    apiFetch<WarrantyClaim>(`/v1/commerce/warranty/claims/${claimId}/escalate`,
+      { method:"POST", body:JSON.stringify({ reason }) }),
 
   // Badges
   listBadges: () => {
@@ -2978,6 +3014,7 @@ export interface ProviderTeamMember {
   email: string | null;
   designation: string | null;
   skills: string[] | null;
+  skill_ids?: string[];
   supported_offering_ids: string[] | null;
   supported_type_ids: string[] | null;
   supported_brand_ids: string[] | null;
@@ -2985,8 +3022,11 @@ export interface ProviderTeamMember {
   can_receive_assignment: boolean;
   profile_photo_url: string | null;
   status: "active" | "inactive";
-  /** How many jobs this member can hold at once. The assignment resolver
-   * reads it to decide who can take another job. */
+  user_id?: string | null;
+  password_generated?: boolean;
+  login_active?: boolean | null;
+  /** Legacy database value retained in read projections only. Booking-slot
+   * capacity is derived automatically from ready technicians. */
   max_concurrent_jobs: number | null;
   created_at: string | null;
 }
@@ -2997,16 +3037,16 @@ export interface ProviderTeamMemberPayload {
   phone?: string | null;
   email?: string | null;
   designation?: string | null;
-  skills?: string[] | null;
+  skill_ids?: string[];
   supported_offering_ids?: string[] | null;
   supported_type_ids?: string[] | null;
   supported_brand_ids?: string[] | null;
   service_area_ids?: string[] | null;
   can_receive_assignment?: boolean;
   profile_photo_url?: string | null;
-  /** Now really persisted -- the backend allow-list was missing this, so
-   * capacity edits used to be silently discarded. */
-  max_concurrent_jobs?: number | null;
+  /** Creates staff-level availability from the provider's open business days
+   * in the same transaction as technician creation. */
+  inherit_business_hours?: boolean;
   create_login?: boolean;
 }
 
@@ -3017,6 +3057,8 @@ export interface TeamMemberLoginInvite {
   activation_token?: string | null;
   expires_at?: string;
   already_had_login?: boolean;
+  access_active?: boolean;
+  invite_resent?: boolean;
 }
 
 export const providerTeamMembersApi = {
@@ -3045,35 +3087,8 @@ export const providerTeamMembersApi = {
       method: "POST",
       body: JSON.stringify({ activation_token: activationToken, new_password: newPassword }),
     }),
-  /**
-   * Real bug fixed here: `readiness` used to call `/matching-readiness`,
-   * which (a) REQUIRES a `master_service_id` query param and so returned
-   * 422 on every call -- the Staff setup page's data error -- and (b)
-   * answers a different question entirely ("can this tenant be matched for
-   * ONE service?", returning `{matching_ready, message}`), nothing like the
-   * `{counts, per_member}` shape this page renders.
-   *
-   * The team directory already computes per-member readiness AND the
-   * roll-up counts in a single call, so both are projected from it.
-   */
-  readiness: async (): Promise<TeamReadinessSummary> => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d = await apiFetch<any>("/v1/tenant/home-services/team");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const staff: any[] = Array.isArray(d?.staff) ? d.staff : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const per_member: Record<string, any> = {};
-    for (const m of staff) {
-      per_member[String(m?.staff_id)] = { status: m?.readiness, missing: m?.readiness_missing ?? [] };
-    }
-    const total = Number(d?.summary?.total_team ?? staff.length);
-    const incomplete = Number(d?.summary?.setup_incomplete ?? 0);
-    return {
-      counts: { total, ready: Math.max(0, total - incomplete), not_ready: incomplete },
-      per_member,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
-  },
+  readiness: () =>
+    apiFetch<TeamReadinessSummary>("/v1/provider/team-members/readiness"),
   coverage: () =>
     apiFetch<{ coverage: ServiceCoverageRow[] }>("/v1/provider/team-members/service-coverage"),
 };
@@ -4476,11 +4491,27 @@ export const tenantPricingApi = {
       { method: "POST", body: JSON.stringify(data) },
     );
   },
-  // Admin endpoint for pricing-rules preview (requires admin permission — will 403 for tenants,
-  // but we try it for informational purposes in the UI)
-  adminPreviewPricing: (data: Record<string, unknown>) =>
-    apiFetch<Record<string, unknown>>("/v1/admin/pricing-rules/preview",
-      { method: "POST", body: JSON.stringify(data) }),
+};
+
+export interface CategoryTeamSkill {
+  id: string;
+  category_id: string;
+  service_group_id: string | null;
+  service_group_name: string | null;
+  code: string;
+  name: string;
+  description: string | null;
+  requires_verification: boolean;
+  display_order: number;
+}
+
+export const providerTeamSkillsApi = {
+  list: (q?: string) => {
+    const params = new URLSearchParams();
+    if (q?.trim()) params.set("q", q.trim());
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return apiFetch<{ category_id: string; skills: CategoryTeamSkill[] }>(`/v1/provider/team-skills${suffix}`);
+  },
 };
 
 // ── Phase 7B: Staff / Technician Self-Service APIs ────────────────────────────
@@ -4843,45 +4874,12 @@ export const offeringPricingApi = {
   },
 };
 
-// ── Deactivate Manual Bargain Module — Automatic Customer Price Options ──────
-// Tenant is read-only here: cannot edit platform fee, cannot configure a
-// manual bargain rule. Shows exactly what the customer will see.
-export interface TenantCustomerPricePreview {
-  service_name: string | null;
-  tenant_service_id?: string;
-  master_service_id?: string;
-  job_type_id?: string | null;
-  pricing_model?: string;
-  available: boolean;
-  message?: string;
-  currency?: string;
-  allowed_offer_min?: number;
-  allowed_offer_max?: number;
-  low_price?: number;
-  mid_price?: number;
-  high_price?: number;
-  platform_fee_percent?: number;
-  platform_fee_amount?: number;
-  payment_mode?: string;
-  calculation_source?: string;
-  calculation_source_rule_id?: string | null;
-  effective_date?: string | null;
-  completed_job_deduction_credits?: number;
-  explanation?: string;
-}
-
 export interface TenantMatchingReadiness {
   matching_ready: boolean;
   message: string;
 }
 
 export const tenantAutoPriceOptionsApi = {
-  getCustomerPricePreview: (masterServiceId: string, serviceTypeId?: string, brandId?: string) => {
-    const qs = new URLSearchParams({ master_service_id: masterServiceId });
-    if (serviceTypeId) qs.set("service_type_id", serviceTypeId);
-    if (brandId) qs.set("brand_id", brandId);
-    return apiFetch<TenantCustomerPricePreview>(`/v1/tenant/home-services/customer-price-preview?${qs}`);
-  },
   getMatchingReadiness: (masterServiceId: string) =>
     apiFetch<TenantMatchingReadiness>(`/v1/tenant/home-services/matching-readiness?master_service_id=${masterServiceId}`),
 };

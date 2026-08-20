@@ -4,8 +4,8 @@ import "@serviceos/design-system/src/theme.css";
 import { ToastViewport } from "@serviceos/design-system";
 
 export const metadata: Metadata = {
-  title: "ServiceOS — Super Admin",
-  description: "ServiceOS Platform Administration Portal",
+  title: "Fuvay — Super Admin",
+  description: "Fuvay Platform Administration Portal",
 };
 
 // Matches the key/logic in hooks/useTheme.ts — the actual theme source of

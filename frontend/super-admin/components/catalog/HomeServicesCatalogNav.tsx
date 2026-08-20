@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {
-  Boxes, ClipboardCheck, FolderTree, GitBranch, Layers3, Tags,
+  Boxes, ChevronRight, ClipboardCheck, FolderTree, GitBranch, Layers3, Tags,
 } from "lucide-react";
 
 const ITEMS = [
@@ -53,7 +53,7 @@ export default function HomeServicesCatalogNav({ active }: { active: HomeService
                   </span>
                 </span>
               </Link>
-              {index < ITEMS.length - 1 && <span aria-hidden style={{ color: "var(--text-tertiary)", padding: "0 2px" }}>›</span>}
+              {index < ITEMS.length - 1 && (<ChevronRight aria-hidden size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0, margin: "0 2px" }} />)}
             </div>
           );
         })}

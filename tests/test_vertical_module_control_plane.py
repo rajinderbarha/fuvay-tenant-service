@@ -14,6 +14,16 @@ def test_module_lifecycle_migration_classifies_retired_and_unbuilt_routes():
     assert "is_required = false" in source
 
 
+def test_current_module_scope_migration_repairs_stale_live_rows():
+    source = (ROOT / "alembic/versions/276_vertical_catalog_current_module_scope.py").read_text(encoding="utf-8")
+    for key in ("categories", "service_groups", "master_services", "types_brands", "checklist_templates", "hs_service_catalog"):
+        assert f'"{key}"' in source
+    for key in ("brands", "issue_types", "pricing_rules", "hs_completed_job_deduction"):
+        assert f'"{key}"' in source
+    assert "navigation_status <> 'available'" in source
+    assert "No production admin workspace is implemented" in source
+
+
 def test_admin_client_uses_real_vertical_diagnostic_endpoints():
     source = (ROOT / "frontend/super-admin/lib/api.ts").read_text(encoding="utf-8")
     assert "/capabilities`" in source
@@ -25,10 +35,11 @@ def test_admin_client_uses_real_vertical_diagnostic_endpoints():
 
 def test_module_manager_describes_navigation_scope_and_requires_reason():
     source = (ROOT / "frontend/super-admin/app/admin/verticals/page.tsx").read_text(encoding="utf-8")
-    assert "only control pages shown in the super-admin sidebar" in source
+    assert "only control current pages shown in the super-admin sidebar" in source
     assert "do not enable or disable tenant entitlements" in source
     assert "reason.trim().length < 10" in source
-    assert 'row.navigation_status !== "available"' in source
+    assert 'allModules.filter(module => module.navigation_status === "available")' in source
+    assert "retired or unavailable hidden" in source
 
 
 def test_category_page_does_not_present_effective_commission_as_owned_metric():

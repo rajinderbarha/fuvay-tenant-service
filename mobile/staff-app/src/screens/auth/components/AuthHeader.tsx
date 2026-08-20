@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Pressable } from "react-native";
+import { Image, View, Pressable } from "react-native";
 import { useTheme } from "../../../design-system/themes";
 import { AppText } from "../../../design-system/components/typography/AppText";
 import { Icon } from "../../../design-system/components/Icon";
@@ -16,10 +16,8 @@ export function AuthHeader() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing.lg }}>
       <View>
-        <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-          <AppText variant="headingLarge" style={{ color: theme.colors.textPrimary }}>Service</AppText>
-          <AppText variant="headingLarge" style={{ color: theme.colors.brandPrimary }}>OS</AppText>
-        </View>
+        <Image source={require("../../../../assets/fuvay-logo-native.png")} resizeMode="contain"
+          accessibilityLabel="Fuvay" style={{ width: 164, height: 44 }} />
         <AppText variant="label" color="tertiary">Technician App</AppText>
       </View>
       <Pressable

@@ -224,6 +224,15 @@ class MobileCompletionProofService:
         proof.submitted_by = user_id
         proof.submitted_at = _now()
         db.add(proof)
+        # Invoice generation is a required part of native closure, not an
+        # optional staff-portal action. Keep it atomic with proof submission so
+        # the payment screen and every admin/customer invoice projection read
+        # the same immutable financial snapshot.
+        from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
+        await ServiceInvoiceService().ensure_issued_for_job(
+            db, str(job.id), str(tenant_id), str(user_id),
+            request_id=None, notify_customer=True,
+        )
         await db.commit()
         return proof.to_dict()
 

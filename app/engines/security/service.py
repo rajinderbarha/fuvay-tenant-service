@@ -7,30 +7,53 @@
   ✅ API key rotation: old key marked ROTATED, new key issued atomically
 """
 from __future__ import annotations
+import ipaddress
 import uuid
 from datetime import datetime, timezone, timedelta
 
 import structlog
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.security.constants import (
     APIKeyStatus, ActivityType, ThreatLevel, HIGH_RISK_OPERATIONS,
-    ACTIVITY_THRESHOLDS, REDIS_IP_BLOCKLIST, REDIS_SESSION,
+    ACTIVITY_THRESHOLDS, REDIS_IP_BLOCKLIST, REDIS_CIDR_BLOCKLIST, REDIS_SESSION,
     REDIS_USER_SESSIONS, REDIS_ACTIVITY_COUNTER, REDIS_API_KEY_CACHE,
     MAX_CONCURRENT_SESSIONS, AUDIT_RETENTION_DAYS,
     generate_api_key, hash_api_key, extract_prefix, ALL_SCOPES,
 )
 from app.engines.security.models import (
     APIKey, IPBlocklistEntry, SuspiciousActivityLog,
-    PlatformAuditLog, SessionInventory,
+    PlatformAuditLog, SessionInventory, ApiKeyUsageLog,
 )
 from app.exceptions import ServiceOSException, NotFoundException
+from app.config import get_settings
 from app.redis_client import get_redis
 from app.schemas.base import encode_cursor, decode_cursor
 
 logger = structlog.get_logger("security.service")
 utcnow = lambda: datetime.now(timezone.utc)
+
+
+async def warm_ip_blocklist_cache() -> dict:
+    """Rebuild the Redis enforcement sets from PostgreSQL without loading all rows."""
+    from app.database import get_db_session
+    redis = get_redis()
+    await redis.delete(REDIS_IP_BLOCKLIST, REDIS_CIDR_BLOCKLIST)
+    exact = cidr = 0
+    async with get_db_session() as db:
+        stream = await db.stream_scalars(select(IPBlocklistEntry).where(
+            IPBlocklistEntry.status == "active",
+            or_(IPBlocklistEntry.expires_at.is_(None), IPBlocklistEntry.expires_at > utcnow()),
+        ).execution_options(yield_per=1000))
+        async for entry in stream:
+            target = REDIS_IP_BLOCKLIST if entry.entry_type == "ip" else REDIS_CIDR_BLOCKLIST
+            await redis.sadd(target, entry.ip_or_cidr)
+            if entry.entry_type == "ip":
+                exact += 1
+            else:
+                cidr += 1
+    return {"exact": exact, "cidr": cidr}
 
 
 class SecurityService:
@@ -128,6 +151,22 @@ class SecurityService:
             if cached:
                 data = json.loads(cached)
                 if data.get("key_hash") == key_hash and data.get("status") == APIKeyStatus.ACTIVE:
+                    denial = await self._api_key_runtime_denial(
+                        data["key_id"], data.get("allowed_ips"), data.get("rate_limit_per_minute"))
+                    if denial:
+                        self.db.add(ApiKeyUsageLog(
+                            api_key_id=uuid.UUID(data["key_id"]), endpoint="api_key.verify",
+                            method="POST", status_code=403, ip_address=self.actor_ip,
+                        ))
+                        return {"valid": False, "reason": denial}
+                    await self.db.execute(update(APIKey).where(
+                        APIKey.id == uuid.UUID(data["key_id"])
+                    ).values(last_used_at=utcnow(), last_used_ip=self.actor_ip,
+                             use_count=APIKey.use_count + 1))
+                    self.db.add(ApiKeyUsageLog(
+                        api_key_id=uuid.UUID(data["key_id"]), endpoint="api_key.verify",
+                        method="POST", status_code=200, ip_address=self.actor_ip,
+                    ))
                     return {"valid": True, "key_id": data["key_id"],
                             "tenant_id": data["tenant_id"], "scopes": data["scopes"],
                             "from_cache": True}
@@ -148,9 +187,22 @@ class SecurityService:
             key.status = APIKeyStatus.EXPIRED
             return {"valid": False, "reason": "API key has expired"}
 
+        denial = await self._api_key_runtime_denial(
+            str(key.id), key.allowed_ips_json, key.rate_limit_per_minute)
+        if denial:
+            self.db.add(ApiKeyUsageLog(
+                api_key_id=key.id, endpoint="api_key.verify", method="POST",
+                status_code=403, ip_address=self.actor_ip,
+            ))
+            return {"valid": False, "reason": denial}
+
         key.last_used_at = utcnow()
         key.last_used_ip = self.actor_ip
         key.use_count += 1
+        self.db.add(ApiKeyUsageLog(
+            api_key_id=key.id, endpoint="api_key.verify", method="POST",
+            status_code=200, ip_address=self.actor_ip,
+        ))
 
         # Cache for 5 min
         try:
@@ -159,12 +211,36 @@ class SecurityService:
                 REDIS_API_KEY_CACHE.format(key_prefix=prefix), 300,
                 json.dumps({"key_id": str(key.id), "key_hash": key_hash,
                              "tenant_id": str(key.tenant_id), "scopes": key.scopes,
-                             "status": key.status}))
+                             "status": key.status, "allowed_ips": key.allowed_ips_json,
+                             "rate_limit_per_minute": key.rate_limit_per_minute}))
         except Exception:
             pass
 
         return {"valid": True, "key_id": str(key.id), "tenant_id": str(key.tenant_id),
                 "scopes": key.scopes, "environment": key.environment, "from_cache": False}
+
+    async def _api_key_runtime_denial(self, key_id: str, allowed_ips: list | None,
+                                      rate_limit_per_minute: int | None) -> str | None:
+        """Apply the controls configured in the admin API-key workspace."""
+        if allowed_ips:
+            try:
+                caller = ipaddress.ip_address(self.actor_ip or "")
+                if not any(caller in ipaddress.ip_network(raw, strict=False) for raw in allowed_ips):
+                    return "API key is not permitted from this IP address"
+            except ValueError:
+                return "API key is not permitted from this IP address"
+        if rate_limit_per_minute:
+            try:
+                minute_bucket = int(utcnow().timestamp() // 60)
+                rate_key = f"serviceos:security:api_key_rate:{key_id}:{minute_bucket}"
+                count = await self.redis.incr(rate_key)
+                if count == 1:
+                    await self.redis.expire(rate_key, 90)
+                if count > rate_limit_per_minute:
+                    return "API key rate limit exceeded"
+            except Exception as exc:
+                logger.warning("security.api_key_rate_limit_unavailable", key_id=key_id, error=str(exc))
+        return None
 
     async def get_api_key(self, key_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
         r = await self.db.execute(select(APIKey).where(
@@ -203,11 +279,22 @@ class SecurityService:
         if old_key.status != APIKeyStatus.ACTIVE:
             raise ServiceOSException("CONFLICT", f"Key is {old_key.status}. Only active keys can be rotated.")
 
-        # Create new key with same scopes
+        # Preserve every policy control on rotation; rotation must never widen
+        # access or silently turn an expiring key into a permanent one.
+        expires_days = None
+        if old_key.expires_at:
+            remaining_seconds = max(1, int((old_key.expires_at - utcnow()).total_seconds()))
+            expires_days = max(1, (remaining_seconds + 86399) // 86400)
         new_result = await self.create_api_key(tenant_id, f"{old_key.name} (rotated)",
                                                 old_key.description, old_key.scopes,
-                                                old_key.environment, None)
+                                                old_key.environment, expires_days)
         new_key_id = uuid.UUID(new_result["key_id"])
+        new_r = await self.db.execute(select(APIKey).where(APIKey.id == new_key_id))
+        new_key = new_r.scalar_one()
+        new_key.owner_type = old_key.owner_type
+        new_key.allowed_ips_json = old_key.allowed_ips_json
+        new_key.rate_limit_per_minute = old_key.rate_limit_per_minute
+        new_key.permissions_json = old_key.permissions_json
 
         # Mark old key as rotated — atomically in same transaction
         old_key.status = APIKeyStatus.ROTATED
@@ -646,11 +733,6 @@ return redis.call('ZCARD', key)
 
     async def get_security_summary(self, tenant_id: uuid.UUID | None) -> dict:
         """Platform-wide security overview for super admin dashboard."""
-        active_key_r = await self.db.execute(select(func.count(APIKey.id)).where(
-            APIKey.status == APIKeyStatus.ACTIVE,
-            *([APIKey.tenant_id == tenant_id] if tenant_id else [])))
-        active_keys = active_key_r.scalar_one_or_none() or 0
-
         blocked_ip_r = await self.db.execute(select(func.count(IPBlocklistEntry.id)).where(
             IPBlocklistEntry.is_active == True))
         blocked_ips = blocked_ip_r.scalar_one_or_none() or 0
@@ -666,6 +748,11 @@ return redis.call('ZCARD', key)
             *([SessionInventory.tenant_id == tenant_id] if tenant_id else [])))
         active_sessions = session_r.scalar_one_or_none() or 0
 
-        return {"active_api_keys": active_keys, "blocked_ips": blocked_ips,
-                "open_high_threats": open_threats, "active_sessions": active_sessions,
-                "generated_at": utcnow().isoformat()}
+        result = {"blocked_ips": blocked_ips, "open_high_threats": open_threats,
+                  "active_sessions": active_sessions, "generated_at": utcnow().isoformat()}
+        if get_settings().API_KEYS_ENABLED:
+            active_key_r = await self.db.execute(select(func.count(APIKey.id)).where(
+                APIKey.status == APIKeyStatus.ACTIVE,
+                *([APIKey.tenant_id == tenant_id] if tenant_id else [])))
+            result["active_api_keys"] = active_key_r.scalar_one_or_none() or 0
+        return result

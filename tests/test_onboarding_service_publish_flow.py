@@ -1,18 +1,12 @@
-"""Regression: nothing in tenant onboarding ever called the publish endpoint.
+"""Regression coverage for the tenant service publication boundary.
 
 Services & Pricing (step 4) can only set draft pricing -- publish_service
 (admin_catalog/tenant_service.py) requires an active coverage area, which
-is configured in Coverage & Availability (step 5), one step LATER. No page
-anywhere in the onboarding flow ever called homeServicesSetupApi.publish(),
-so tenant_services stayed in setup_status='draft' forever no matter how
-completely a tenant configured pricing -- Services & Pricing showed
-"incomplete" on Review & Submit with no way to fix it.
+is configured in Coverage & Availability (step 5), one step later.
 
-Fix: Coverage & Availability's Save & Continue now publishes eligible
-draft services once coverage exists (the earliest point both of
-publish_service's requirements are satisfiable), and Review & Submit
-offers a "Publish now" retry for tenants who already passed that step
-before this fix existed.
+Coverage must not publish because an unrelated pricing omission must never
+trap a tenant on the coverage step. Review & Submit is the explicit, single
+publication boundary and reports named service blockers with an edit action.
 """
 import os
 import pathlib
@@ -34,28 +28,21 @@ def _read(path):
         return f.read()
 
 
-class TestCoverageAvailabilityAutoPublish:
-    def test_imports_setup_api(self):
+class TestCoverageAvailabilityDoesNotPublish:
+    def test_does_not_import_setup_api(self):
         c = _read(COVERAGE_PAGE)
-        assert "homeServicesSetupApi" in c
+        assert "homeServicesSetupApi" not in c
 
-    def test_save_and_continue_publishes_eligible_draft_services(self):
+    def test_save_and_continue_validates_only_coverage_owned_requirements(self):
         c = _read(COVERAGE_PAGE)
         start = c.index("async function handleSaveAndContinue")
         end = c.index("\n  }", start)
         block = c[start:end]
-        assert "listEnabled()" in block
-        assert 'svc.setup_status === "published"' in block
-        assert "homeServicesSetupApi.publish(svc.tenant_service_id)" in block
-
-    def test_publish_failures_block_navigation_with_a_visible_error(self):
-        c = _read(COVERAGE_PAGE)
-        start = c.index("async function handleSaveAndContinue")
-        end = c.index("\n  }", start)
-        block = c[start:end]
-        assert "publishErrors" in block
-        assert "setError(" in block
-        assert "return;" in block
+        assert "activeCoverageCount === 0" in block
+        assert "openDaysCount === 0" in block
+        assert 'router.push("/tenant/home-services/setup/staff")' in block
+        assert "listEnabled()" not in block
+        assert "publish(" not in block
 
 
 class TestReviewPagePublishRetry:
@@ -72,6 +59,16 @@ class TestReviewPagePublishRetry:
         c = _read(REVIEW_PAGE)
         assert 's.key === "SERVICES_PRICING" && s.status !== "complete"' in c
         assert "onRetryPublish" in c
+        assert "Validate & publish" in c
+
+    def test_publish_failures_name_the_service_and_offer_resolution(self):
+        c = _read(REVIEW_PAGE)
+        assert "serviceNameByPair" in c
+        assert "Some enabled services still need attention before publication" in c
+        assert "turn off an offering you do not want to publish" in c
+        load_call = c.index("      load();", c.index("async function retryPublishServices"))
+        error_call = c.index("        setError(`Some enabled services", load_call)
+        assert load_call < error_call
 
 
 class TestServicesPricingPageNeverPublishesItself:

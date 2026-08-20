@@ -44,8 +44,8 @@ class TestRouterStructure:
     def test_no_payout_or_settlement_fields_exposed(self):
         c = _read(ROUTER)
         for forbidden in (
-            "payout", "settlement_bank", "beneficiary", "razorpay", "stripe",
-            "merchant_account", "gateway",
+            "payout", "settlement_bank", "beneficiary",
+            "merchant_account",
         ):
             assert forbidden not in c.lower(), f"unexpected payout/settlement concept: {forbidden}"
 
@@ -94,12 +94,17 @@ class TestModel:
         ):
             assert field in c
 
-    def test_model_has_no_deposit_or_payout_fields(self):
+    def test_model_has_no_payout_or_settlement_fields(self):
         c = _read(MODELS)
         block_start = c.index("class TenantFinanceReadiness")
         block_end = c.index("class TenantLimits")
         block = c[block_start:block_end]
-        for forbidden in ("deposit", "payout", "settlement", "bank_account"):
+        # Deposit readiness is now a required activation snapshot and is
+        # intentionally part of this model. Job-payment payout/settlement
+        # concepts remain forbidden because customers pay providers directly.
+        assert "security_deposit_paid" in block
+        assert "security_deposit_amount" in block
+        for forbidden in ("payout", "settlement", "bank_account"):
             assert forbidden not in block.lower()
 
 

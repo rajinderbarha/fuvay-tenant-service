@@ -37,9 +37,60 @@ from app.dependencies.auth import require_super_admin, get_current_user, UserCon
 from app.dependencies.db import get_db
 from app.engines.admin_catalog.service import AdminCatalogService
 from app.engines.admin_catalog.models import ServiceCategory
+from app.exceptions import ServiceOSException
 from app.schemas.base import ok
 
 router = APIRouter(prefix="/v1/admin/categories", tags=["Category Runtime"])
+
+HOME_SERVICES_RUNTIME_ENGINE_OVERLAYS: list[dict] = [
+    {"engine_key": "auth_iam", "display_name": "Auth & IAM Engine", "is_required": True, "source": "runtime_identity", "runtime_reason": "Admin, tenant, staff and customer identity for every flow.", "dependencies": []},
+    {"engine_key": "service_catalog", "display_name": "Service Catalog Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Category, service group, master service, type/brand and customer catalog runtime.", "dependencies": ["auth_iam"]},
+    {"engine_key": "booking", "display_name": "Booking Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Native customer booking creation, quote decisions and booking lifecycle.", "dependencies": ["service_catalog", "job_dispatch"]},
+    {"engine_key": "field_ops", "display_name": "Field Ops Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Staff app job execution, status transitions, checklists and evidence.", "dependencies": ["booking"]},
+    {"engine_key": "job_dispatch", "display_name": "Job Dispatch Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Provider matching, technician assignment, availability and service-area routing.", "dependencies": ["service_catalog", "field_ops"]},
+    {"engine_key": "finance", "display_name": "Finance Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Home Services monetization, deposits, invoices, refunds and financial operations.", "dependencies": ["booking", "payment"]},
+    {"engine_key": "usage_credits", "display_name": "Usage Credit Engine", "is_required": True, "source": "runtime_finance", "runtime_reason": "Credit top-ups, ledger, completion/consultation deduction and provider-funded remedies.", "dependencies": ["finance", "payment"]},
+    {"engine_key": "payment", "display_name": "Payment Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Top-up/deposit payment records, refunds and reconciliation references.", "dependencies": ["finance"]},
+    {"engine_key": "commission", "display_name": "Commission Engine", "is_required": True, "source": "runtime_finance", "runtime_reason": "Customer-side and provider-side percentage/fixed charge calculation.", "dependencies": ["finance", "service_catalog"]},
+    {"engine_key": "customer_svc_credit", "display_name": "Customer Service Credit Engine", "is_required": True, "source": "runtime_support", "runtime_reason": "Warranty/refund compensation as customer service points funded from provider balances.", "dependencies": ["finance", "complaint_dispute"]},
+    {"engine_key": "complaint_dispute", "display_name": "Complaint & Dispute Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Customer complaints, warranty escalations, refund review and provider liability.", "dependencies": ["booking", "customer_svc_credit"]},
+    {"engine_key": "review_rating", "display_name": "Review & Rating Engine", "is_required": False, "source": "vertical_registry", "runtime_reason": "Post-job ratings, provider quality signal and admin review moderation.", "dependencies": ["booking"]},
+    {"engine_key": "notification", "display_name": "Notification Engine", "is_required": True, "source": "vertical_registry", "runtime_reason": "Booking, job, support, finance and admin decision notifications.", "dependencies": ["auth_iam"]},
+    {"engine_key": "media_vault", "display_name": "Media Vault Engine", "is_required": False, "source": "vertical_registry", "runtime_reason": "Documents, job evidence, profile media and support attachments.", "dependencies": ["auth_iam"]},
+    {"engine_key": "chat", "display_name": "Chat Engine", "is_required": False, "source": "vertical_registry", "runtime_reason": "Customer/provider/staff support and job conversations where enabled.", "dependencies": ["auth_iam"]},
+    {"engine_key": "pricing", "display_name": "Pricing Engine", "is_required": True, "source": "runtime_pricing", "runtime_reason": "Provider price setup, customer price preview, visit fee and job-type pricing rules.", "dependencies": ["service_catalog", "commission"]},
+    {"engine_key": "compliance", "display_name": "Compliance Engine", "is_required": True, "source": "runtime_governance", "runtime_reason": "Provider onboarding review, document checks and admin approval policy.", "dependencies": ["auth_iam", "media_vault"]},
+    {"engine_key": "audit", "display_name": "Audit Engine", "is_required": True, "source": "runtime_governance", "runtime_reason": "Admin changes, finance decisions, setup approvals and support actions are audit-backed.", "dependencies": ["auth_iam"]},
+    {"engine_key": "security", "display_name": "Security Engine", "is_required": True, "source": "runtime_governance", "runtime_reason": "Permission checks and safe access across admin, tenant and app APIs.", "dependencies": ["auth_iam"]},
+    {"engine_key": "settings_config", "display_name": "Settings & Config Engine", "is_required": True, "source": "runtime_configuration", "runtime_reason": "Published configuration, policy switches and app/runtime flags.", "dependencies": ["audit"]},
+    {"engine_key": "analytics", "display_name": "Analytics Engine", "is_required": False, "source": "runtime_observability", "runtime_reason": "Provider, customer, booking, finance and service quality dashboards.", "dependencies": ["booking", "finance"]},
+    {"engine_key": "trust_quality_engine", "display_name": "Trust & Quality Engine", "is_required": False, "source": "runtime_quality", "runtime_reason": "Provider trust, health, badges and quality controls.", "dependencies": ["review_rating", "complaint_dispute"]},
+    {"engine_key": "health_engine", "display_name": "Health Engine", "is_required": False, "source": "runtime_observability", "runtime_reason": "Operational health/readiness signal for vertical runtime surfaces.", "dependencies": ["analytics"]},
+]
+
+HOME_SERVICES_RUNTIME_MODULE_OVERLAYS: list[dict] = [
+    {"module_key": "hs_providers", "module_name": "Providers", "description": "Provider directory, onboarding state, activation and tenant health.", "dashboard_area": "business", "engine_key": "service_catalog", "route_path": "/admin/home-services/providers", "is_required": True, "display_order": 100},
+    {"module_key": "hs_bookings_jobs", "module_name": "Bookings & Jobs", "description": "Enterprise booking/job command center with assignment, status and finance context.", "dashboard_area": "operations", "engine_key": "booking", "route_path": "/admin/home-services/bookings-jobs", "is_required": True, "display_order": 110},
+    {"module_key": "hs_customers", "module_name": "Customers", "description": "Home Services customer directory, repeat behavior and payment reliability.", "dashboard_area": "operations", "engine_key": "booking", "route_path": "/admin/home-services/customers", "is_required": False, "display_order": 120},
+    {"module_key": "hs_staff", "module_name": "Staff & Technicians", "description": "Cross-provider staff visibility and technician operational controls.", "dashboard_area": "operations", "engine_key": "field_ops", "route_path": "/admin/home-services/staff", "is_required": False, "display_order": 130},
+    {"module_key": "hs_complaints", "module_name": "Complaints & Warranty", "description": "Complaint queue, warranty escalation and customer remedy workflow.", "dashboard_area": "support", "engine_key": "complaint_dispute", "route_path": "/admin/home-services/complaints", "is_required": True, "display_order": 140},
+    {"module_key": "hs_finance", "module_name": "Home Services Finance", "description": "Single Home Services finance authority: monetization, credits, deposits, invoices, refunds and warranty funding.", "dashboard_area": "finance", "engine_key": "finance", "route_path": "/admin/home-services/finance", "is_required": True, "display_order": 150},
+    {"module_key": "hs_provider_matching", "module_name": "Provider Matching", "description": "Matching rules, ranking logic and provider eligibility controls.", "dashboard_area": "operations", "engine_key": "job_dispatch", "route_path": "/admin/home-services/provider-matching", "is_required": True, "display_order": 170},
+    {"module_key": "hs_matching_diagnostics", "module_name": "Matching Diagnostics", "description": "Explain why a provider was or was not eligible for a customer request.", "dashboard_area": "operations", "engine_key": "job_dispatch", "route_path": "/admin/home-services/matching-diagnostics", "is_required": False, "display_order": 180},
+    {"module_key": "hs_service_area_requests", "module_name": "Service Area Requests", "description": "Provider coverage expansion requests and admin approval workflow.", "dashboard_area": "coverage", "engine_key": "job_dispatch", "route_path": "/admin/service-area-requests", "is_required": False, "display_order": 190},
+    {"module_key": "hs_bookability", "module_name": "Bookability & Availability", "description": "Provider availability, capacity and bookability diagnostics.", "dashboard_area": "coverage", "engine_key": "job_dispatch", "route_path": "/admin/bookability/providers", "is_required": False, "display_order": 200},
+    {"module_key": "hs_settings", "module_name": "Home Services Settings", "description": "Runtime settings and policy switches for the Home Services vertical.", "dashboard_area": "admin", "engine_key": "settings_config", "route_path": "/admin/home-services/settings", "is_required": False, "display_order": 210},
+    {"module_key": "hs_reviews", "module_name": "Reviews & Quality", "description": "Ratings, review moderation and quality feedback signals.", "dashboard_area": "quality", "engine_key": "review_rating", "route_path": "/admin/reviews", "is_required": False, "display_order": 220},
+]
+
+HOME_SERVICES_REGISTRY_MODULE_ENGINE_MAP: dict[str, str] = {
+    "categories": "service_catalog",
+    "service_groups": "service_catalog",
+    "master_services": "service_catalog",
+    "types_brands": "service_catalog",
+    "checklist_templates": "field_ops",
+    "hs_service_catalog": "service_catalog",
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +109,7 @@ def _compute_readiness(cat: dict) -> dict:
     """Return readiness_status + readiness_items from a category dict with linked_counts."""
     items: list[dict] = []
     counts = cat.get("linked_counts", {})
+    vertical_key = cat.get("vertical_type")
 
     if not cat.get("is_active", False):
         return {
@@ -74,10 +126,18 @@ def _compute_readiness(cat: dict) -> dict:
     if service_count == 0:
         items.append({"key": "services", "status": "missing", "message": "No active services or service groups linked."})
 
-    if cat.get("pricing_supported") and counts.get("pricing_rules", 0) == 0:
+    # Home Services no longer uses category-level service_pricing_rules as the
+    # authority. Provider-owned service pricing lives in Catalog Workspace and
+    # platform/customer/provider charges live in Home Services Finance >
+    # Monetization. Keeping the old category pricing rule here made the Home
+    # Services category appear broken even after the real finance/catalog setup
+    # was complete.
+    uses_category_pricing_rules = vertical_key not in {"home_services"}
+    if uses_category_pricing_rules and cat.get("pricing_supported") and counts.get("pricing_rules", 0) == 0:
         items.append({"key": "pricing_rules", "status": "missing", "message": "No active pricing rule configured for this category."})
 
-    if cat.get("tenant_selectable") and counts.get("packages", 0) == 0:
+    uses_service_packages = vertical_key not in {"home_services"}
+    if uses_service_packages and cat.get("tenant_selectable") and counts.get("packages", 0) == 0:
         items.append({"key": "packages", "status": "warning", "message": "No packages/plans configured for tenant selection."})
 
     if not items:
@@ -167,6 +227,225 @@ async def _linked_counts(db: AsyncSession, category_ids: list[str]) -> dict[str,
         }
         for row in rows
     }
+
+
+async def _vertical_engine_mappings(db: AsyncSession, vertical_key: str | None, primary_key: str | None) -> list[dict]:
+    """Resolve engines from the vertical registry plus proven runtime usage.
+
+    The vertical registry is the configuration authority.  For Home Services,
+    however, a category runtime view must also show engines that are consumed by
+    live routes/services but are not represented as ``vertical_engine_mappings``
+    rows (for example usage credits, compliance, audit, settings, analytics).
+    Otherwise the admin page under-reports the real dependency surface.
+    """
+    primary_aliases = {primary_key} if primary_key else set()
+    if primary_key == "booking_engine":
+        primary_aliases.add("booking")
+    elif primary_key == "appointment_engine":
+        primary_aliases.add("appointment")
+    elif primary_key == "lead_engine":
+        primary_aliases.add("leads")
+    rows = []
+    if vertical_key:
+        rows = (await db.execute(text("""
+            SELECT
+                vem.engine_key,
+                COALESCE(pe.display_name, vem.engine_key) AS display_name,
+                pe.lifecycle_status,
+                vem.is_required,
+                vem.sort_order
+            FROM verticals v
+            JOIN vertical_engine_mappings vem ON vem.vertical_id = v.id
+            LEFT JOIN platform_engines pe ON pe.engine_key = vem.engine_key
+            WHERE v.key = :vertical_key
+            ORDER BY vem.sort_order, vem.engine_key
+        """), {"vertical_key": vertical_key})).mappings().all()
+    engines = [
+        {
+            "engine_id": row["engine_key"],
+            "engine_key": row["engine_key"],
+            "name": row["display_name"] or str(row["engine_key"]).replace("_", " ").title(),
+            "display_name": row["display_name"] or str(row["engine_key"]).replace("_", " ").title(),
+            "is_primary": row["engine_key"] in primary_aliases or (not primary_key and idx == 0),
+            "is_required": bool(row["is_required"]),
+            "is_optional": not bool(row["is_required"]),
+            "is_enabled": True,
+            "display_order": int(row["sort_order"] or idx),
+            "health_status": "configured" if (row["lifecycle_status"] or "active") in ("active", "core", "locked") else "attention",
+            "status": row["lifecycle_status"] or "available",
+            "config": {},
+            "dependencies": [],
+            "source": "vertical_registry",
+            "runtime_reason": "Mapped in vertical_engine_mappings.",
+        }
+        for idx, row in enumerate(rows)
+    ]
+
+    if vertical_key == "home_services":
+        by_key = {e["engine_key"]: e for e in engines}
+        next_order = (max((int(e["display_order"]) for e in engines), default=-1) + 1)
+        for overlay in HOME_SERVICES_RUNTIME_ENGINE_OVERLAYS:
+            key = overlay["engine_key"]
+            if key in by_key:
+                existing = by_key[key]
+                existing["is_required"] = bool(existing.get("is_required")) or bool(overlay.get("is_required"))
+                existing["is_optional"] = not existing["is_required"]
+                existing["display_name"] = overlay.get("display_name") or existing.get("display_name")
+                existing["name"] = existing["display_name"]
+                existing["source"] = "vertical_registry+runtime_usage"
+                existing["runtime_reason"] = overlay.get("runtime_reason")
+                existing["dependencies"] = sorted(set(existing.get("dependencies") or []) | set(overlay.get("dependencies") or []))
+                continue
+            engines.append({
+                "engine_id": key,
+                "engine_key": key,
+                "name": overlay.get("display_name") or key.replace("_", " ").title(),
+                "display_name": overlay.get("display_name") or key.replace("_", " ").title(),
+                "is_primary": key in primary_aliases,
+                "is_required": bool(overlay.get("is_required")),
+                "is_optional": not bool(overlay.get("is_required")),
+                "is_enabled": True,
+                "display_order": next_order,
+                "health_status": "runtime_used",
+                "status": "runtime_used",
+                "config": {},
+                "dependencies": overlay.get("dependencies") or [],
+                "source": overlay.get("source") or "runtime_usage",
+                "runtime_reason": overlay.get("runtime_reason"),
+            })
+            next_order += 1
+
+    if not engines and primary_key:
+        engines.append({
+            "engine_id": primary_key,
+            "engine_key": primary_key,
+            "name": primary_key.replace("_", " ").title(),
+            "display_name": primary_key.replace("_", " ").title(),
+            "is_primary": True,
+            "is_required": True,
+            "is_optional": False,
+            "is_enabled": True,
+            "display_order": 0,
+            "health_status": "configured",
+            "status": "available",
+            "config": {},
+            "dependencies": [],
+            "source": "category_primary",
+            "runtime_reason": "Configured as the category primary engine.",
+        })
+    if engines and not any(e["is_primary"] for e in engines):
+        preferred = next((e for e in engines if e["engine_key"] in primary_aliases), engines[0])
+        preferred["is_primary"] = True
+    return sorted(engines, key=lambda e: (int(e.get("display_order") or 0), str(e.get("engine_key") or "")))
+
+
+async def _vertical_dashboard_modules(db: AsyncSession, category_id: uuid.UUID, vertical_key: str | None) -> list[dict]:
+    """Resolve category modules from the registry plus live Home Services routes."""
+    if not vertical_key:
+        return []
+    rows = (await db.execute(text("""
+        SELECT
+            cmd.id AS module_id,
+            cmd.key AS module_key,
+            COALESCE(vcm.custom_label, cmd.label) AS module_name,
+            cmd.description,
+            cmd.icon,
+            cmd.admin_path AS route_path,
+            cmd.module_group AS dashboard_area,
+            cmd.is_universal,
+            cmd.navigation_status,
+            cmd.navigation_status_reason,
+            vcm.is_enabled,
+            vcm.is_required,
+            vcm.sort_order
+        FROM verticals v
+        JOIN vertical_catalog_modules vcm ON vcm.vertical_id = v.id
+        JOIN catalog_module_definitions cmd ON cmd.id = vcm.module_id
+        WHERE v.key = :vertical_key
+          AND cmd.navigation_status = 'available'
+        ORDER BY vcm.sort_order, cmd.sort_order, cmd.label
+    """), {"vertical_key": vertical_key})).mappings().all()
+    retired_keys: set[str] = set()
+    if vertical_key == "home_services":
+        retired_rows = (await db.execute(text("""
+            SELECT cmd.key AS module_key
+            FROM verticals v
+            JOIN vertical_catalog_modules vcm ON vcm.vertical_id = v.id
+            JOIN catalog_module_definitions cmd ON cmd.id = vcm.module_id
+            WHERE v.key = :vertical_key
+              AND cmd.navigation_status <> 'available'
+        """), {"vertical_key": vertical_key})).mappings().all()
+        retired_keys = {str(row["module_key"]) for row in retired_rows}
+    modules = [
+        {
+            "module_id": str(row["module_id"]),
+            "category_id": str(category_id),
+            "module_key": row["module_key"],
+            "module_name": row["module_name"],
+            "display_name": row["module_name"],
+            "module_type": row["dashboard_area"] or "admin",
+            "dashboard_area": row["dashboard_area"],
+            "engine_key": HOME_SERVICES_REGISTRY_MODULE_ENGINE_MAP.get(str(row["module_key"])) if vertical_key == "home_services" else None,
+            "api_endpoint": None,
+            "route_path": row["route_path"],
+            "required_permission": "super_admin",
+            "frontend_component_key": None,
+            "description": row["description"],
+            "icon": row["icon"],
+            "is_enabled": bool(row["is_enabled"]),
+            "is_required": bool(row["is_required"]),
+            "display_order": int(row["sort_order"] or idx),
+            "config": {},
+            "navigation_status": row["navigation_status"],
+            "navigation_status_reason": row["navigation_status_reason"],
+            "is_universal": bool(row["is_universal"]),
+            "source": "vertical_registry",
+        }
+        for idx, row in enumerate(rows)
+    ]
+    if vertical_key == "home_services":
+        by_key = {m["module_key"]: m for m in modules}
+        for overlay in HOME_SERVICES_RUNTIME_MODULE_OVERLAYS:
+            key = overlay["module_key"]
+            # If the vertical registry explicitly retired a module key, do not
+            # resurrect it just because an old page route still exists.  This
+            # keeps the category Modules tab aligned to certified/current
+            # Home Services scope instead of stale navigation history.
+            if key in retired_keys:
+                continue
+            if key in by_key:
+                existing = by_key[key]
+                existing["source"] = "vertical_registry+runtime_route"
+                existing["engine_key"] = existing.get("engine_key") or overlay.get("engine_key")
+                existing["description"] = existing.get("description") or overlay.get("description")
+                existing["route_path"] = existing.get("route_path") or overlay.get("route_path")
+                existing["is_required"] = bool(existing.get("is_required")) or bool(overlay.get("is_required"))
+                continue
+            modules.append({
+                "module_id": key,
+                "category_id": str(category_id),
+                "module_key": key,
+                "module_name": overlay["module_name"],
+                "display_name": overlay["module_name"],
+                "module_type": overlay.get("dashboard_area") or "admin",
+                "dashboard_area": overlay.get("dashboard_area"),
+                "engine_key": overlay.get("engine_key"),
+                "api_endpoint": None,
+                "route_path": overlay.get("route_path"),
+                "required_permission": "super_admin",
+                "frontend_component_key": None,
+                "description": overlay.get("description"),
+                "icon": None,
+                "is_enabled": True,
+                "is_required": bool(overlay.get("is_required")),
+                "display_order": int(overlay.get("display_order") or 999),
+                "config": {},
+                "navigation_status": "available",
+                "navigation_status_reason": None,
+                "is_universal": False,
+                "source": "runtime_route",
+            })
+    return sorted(modules, key=lambda m: (int(m.get("display_order") or 0), str(m.get("module_name") or m.get("module_key") or "")))
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -297,15 +576,16 @@ async def list_categories(
     # exists for the category's vertical type. Tenant assignments are usage
     # records and intentionally do not own category identity.
     has_packages = "EXISTS (SELECT 1 FROM service_packages sp WHERE sp.vertical_type = service_categories.vertical_type AND sp.is_active AND sp.deleted_at IS NULL)"
-    pricing_ready = f"(NOT service_categories.pricing_supported OR {has_pricing})"
+    package_ready = f"(service_categories.vertical_type = 'home_services' OR NOT service_categories.tenant_selectable OR {has_packages})"
+    pricing_ready = f"(service_categories.vertical_type = 'home_services' OR NOT service_categories.pricing_supported OR {has_pricing})"
     readiness_filters = {
         "inactive": "NOT service_categories.is_active",
         "missing_services": f"service_categories.is_active AND NOT {has_services}",
-        "missing_pricing": f"service_categories.is_active AND {has_services} AND service_categories.pricing_supported AND NOT {has_pricing}",
+        "missing_pricing": f"service_categories.is_active AND {has_services} AND service_categories.vertical_type <> 'home_services' AND service_categories.pricing_supported AND NOT {has_pricing}",
         "missing_flow_config": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NULL",
-        "missing_package": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.tenant_selectable AND NOT {has_packages}",
-        "ready": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NOT NULL AND (NOT service_categories.tenant_selectable OR {has_packages})",
-        "incomplete": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NULL AND (NOT service_categories.tenant_selectable OR {has_packages})",
+        "missing_package": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.vertical_type <> 'home_services' AND service_categories.customer_flow_type IS NOT NULL AND service_categories.tenant_selectable AND NOT {has_packages}",
+        "ready": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NOT NULL AND {package_ready}",
+        "incomplete": f"service_categories.is_active AND {has_services} AND {pricing_ready} AND service_categories.customer_flow_type IS NOT NULL AND service_categories.finance_model IS NULL AND {package_ready}",
     }
     if readiness_status in readiness_filters:
         conditions.append(text(readiness_filters[readiness_status]))
@@ -446,24 +726,11 @@ async def get_category_runtime(
     data["readiness_items"] = rd["readiness_items"]
 
     # The detail console consumes a composite runtime view, not the flat
-    # category record returned by GET /{id}. This contract was accidentally
-    # flattened, causing the page to dereference a missing engine_summary and
-    # render blank. Build the view from canonical stored fields/counts.
-    engines = []
-    if data.get("primary_engine_key"):
-        key = data["primary_engine_key"]
-        engines.append({
-            "engine_id": key, "engine_key": key,
-            "name": key.replace("_", " ").title(), "display_name": key.replace("_", " ").title(),
-            "is_primary": True, "is_required": True, "is_enabled": True, "display_order": 0,
-        })
-    modules = []
-    if data.get("provider_dashboard_type"):
-        modules = [
-            {"module_id": "jobs", "module_key": "jobs", "display_name": "Jobs", "module_type": "table", "is_enabled": True, "is_required": True, "display_order": 1},
-            {"module_id": "wallet", "module_key": "wallet", "display_name": "Wallet", "module_type": "metric_card", "is_enabled": True, "is_required": False, "display_order": 2},
-            {"module_id": "analytics", "module_key": "analytics", "display_name": "Analytics", "module_type": "chart", "is_enabled": True, "is_required": False, "display_order": 3},
-        ]
+    # category record returned by GET /{id}. Resolve engines/modules from the
+    # canonical vertical registry so this page mirrors the actual admin menu
+    # and runtime capability contract instead of stale category-local stubs.
+    engines = await _vertical_engine_mappings(db, data.get("vertical_type"), data.get("primary_engine_key"))
+    modules = await _vertical_dashboard_modules(db, category_id, data.get("vertical_type"))
     tenant_row = (await db.execute(text("""
         SELECT COUNT(DISTINCT tenant_id) AS total,
                COUNT(DISTINCT tenant_id) FILTER (WHERE is_active = TRUE AND deleted_at IS NULL) AS active
@@ -472,8 +739,10 @@ async def get_category_runtime(
     return ok({
         "category": data,
         "running_engines": engines,
-        "engine_summary": {"total": len(engines), "required": len(engines), "optional": 0,
-                           "primary": engines[0] if engines else None},
+        "engine_summary": {"total": len(engines),
+                           "required": sum(1 for e in engines if e.get("is_required")),
+                           "optional": sum(1 for e in engines if not e.get("is_required")),
+                           "primary": next((e for e in engines if e.get("is_primary")), None)},
         "dashboard_modules": modules,
         "tenant_count": int(tenant_row["total"] or 0),
         "active_tenant_count": int(tenant_row["active"] or 0),
@@ -550,26 +819,17 @@ async def list_category_engines(
     category_id: uuid.UUID,
     r: Request,
     u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
     svc: AdminCatalogService = Depends(_svc),
 ):
     cat = await svc.get_category(category_id)
-    primary_key = cat.get("primary_engine_key")
-    engines = []
-    if primary_key:
-        engines.append({
-            "engine_id": primary_key,
-            "engine_key": primary_key,
-            "display_name": primary_key.replace("_", " ").title(),
-            "is_primary": True,
-            "is_enabled": True,
-            "display_order": 0,
-        })
+    engines = await _vertical_engine_mappings(db, cat.get("vertical_type"), cat.get("primary_engine_key"))
     return ok({
         "engines": engines,
         "total": len(engines),
-        "required_count": len(engines),
-        "optional_count": 0,
-        "primary_engine": engines[0] if engines else None,
+        "required_count": sum(1 for e in engines if e.get("is_required")),
+        "optional_count": sum(1 for e in engines if not e.get("is_required")),
+        "primary_engine": next((e for e in engines if e.get("is_primary")), None),
     }, _rid(r), "category_runtime")
 
 
@@ -612,18 +872,17 @@ async def list_dashboard_modules(
     category_id: uuid.UUID,
     r: Request,
     u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
     svc: AdminCatalogService = Depends(_svc),
 ):
     cat = await svc.get_category(category_id)
-    dash_type = cat.get("provider_dashboard_type")
-    modules = []
-    if dash_type:
-        modules = [
-            {"module_id": "jobs", "module_key": "jobs", "display_name": "Jobs", "is_enabled": True, "display_order": 1},
-            {"module_id": "wallet", "module_key": "wallet", "display_name": "Wallet", "is_enabled": True, "display_order": 2},
-            {"module_id": "analytics", "module_key": "analytics", "display_name": "Analytics", "is_enabled": True, "display_order": 3},
-        ]
-    return ok({"modules": modules, "total": len(modules), "enabled_count": len(modules)}, _rid(r), "category_runtime")
+    modules = await _vertical_dashboard_modules(db, category_id, cat.get("vertical_type"))
+    return ok({
+        "modules": modules,
+        "total": len(modules),
+        "enabled_count": sum(1 for m in modules if m.get("is_enabled")),
+        "required_count": sum(1 for m in modules if m.get("is_required")),
+    }, _rid(r), "category_runtime")
 
 
 @router.post("/{category_id}/dashboard-modules", summary="Create dashboard module")
@@ -633,15 +892,11 @@ async def create_dashboard_module(
     u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
 ):
-    body = await r.json()
-    module = {
-        "module_id": body.get("module_key", "custom"),
-        "module_key": body.get("module_key", "custom"),
-        "display_name": body.get("display_name", "Module"),
-        "is_enabled": body.get("is_enabled", True),
-        "display_order": body.get("display_order", 99),
-    }
-    return ok(module, _rid(r), "category_runtime")
+    raise ServiceOSException(
+        "CATEGORY_MODULES_VERTICAL_OWNED",
+        "Category dashboard modules are owned by the vertical module registry. Manage them from the vertical Modules tab.",
+        status_code=409,
+    )
 
 
 @router.put("/{category_id}/dashboard-modules/{module_id}", summary="Update dashboard module")
@@ -651,8 +906,11 @@ async def update_dashboard_module(
     u: UserContext = Depends(require_super_admin),
     svc: AdminCatalogService = Depends(_svc),
 ):
-    body = await r.json()
-    return ok({"module_id": module_id, **body}, _rid(r), "category_runtime")
+    raise ServiceOSException(
+        "CATEGORY_MODULES_VERTICAL_OWNED",
+        "Category dashboard modules are owned by the vertical module registry. Manage them from the vertical Modules tab.",
+        status_code=409,
+    )
 
 
 @router.post("/{category_id}/dashboard-modules/{module_id}/enable", summary="Enable module")
@@ -661,7 +919,11 @@ async def enable_module(
     r: Request,
     u: UserContext = Depends(require_super_admin),
 ):
-    return ok({"module_id": module_id, "is_enabled": True}, _rid(r), "category_runtime")
+    raise ServiceOSException(
+        "CATEGORY_MODULES_VERTICAL_OWNED",
+        "Use /v1/admin/verticals/{vertical_key}/modules/{module_key}/enable so module changes stay vertical-scoped.",
+        status_code=409,
+    )
 
 
 @router.post("/{category_id}/dashboard-modules/{module_id}/disable", summary="Disable module")
@@ -670,7 +932,11 @@ async def disable_module(
     r: Request,
     u: UserContext = Depends(require_super_admin),
 ):
-    return ok({"module_id": module_id, "is_enabled": False}, _rid(r), "category_runtime")
+    raise ServiceOSException(
+        "CATEGORY_MODULES_VERTICAL_OWNED",
+        "Use /v1/admin/verticals/{vertical_key}/modules/{module_key}/disable so module changes stay vertical-scoped.",
+        status_code=409,
+    )
 
 
 @router.post("/{category_id}/dashboard-modules/reorder", summary="Reorder modules")
@@ -679,6 +945,8 @@ async def reorder_modules(
     r: Request,
     u: UserContext = Depends(require_super_admin),
 ):
-    body = await r.json()
-    orders = body.get("module_orders", [])
-    return ok({"reordered": len(orders)}, _rid(r), "category_runtime")
+    raise ServiceOSException(
+        "CATEGORY_MODULES_VERTICAL_OWNED",
+        "Module ordering is owned by the vertical module registry.",
+        status_code=409,
+    )

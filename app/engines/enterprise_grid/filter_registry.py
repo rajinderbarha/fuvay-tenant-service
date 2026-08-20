@@ -73,6 +73,11 @@ RESOURCE_EXPORT_PERMISSIONS: dict[str, str] = {
     "admin_tenants":              "tenant:data:export",
     "admin_categories":           "catalog:export",
     "admin_service_groups":       "catalog:export",
+    "admin_master_services":      "catalog:export",
+    "admin_service_types":        "catalog:export",
+    "admin_brands":               "catalog:export",
+    "admin_checklist_templates":  "catalog:export",
+    "admin_checklist_mappings":   "catalog:export",
     "admin_verticals":            "catalog:export",
     "admin_engines":               "catalog:export",
     "admin_offerings":            "catalog:export",
@@ -110,10 +115,10 @@ _RESOURCE_CONFIGS: dict[str, dict] = {
 
     "admin_tenants": {
         "scope_type": SCOPE_ADMIN_GLOBAL,
-        "allowed_filters": ["status", "category_id", "search", "created_from", "created_to"],
+        "allowed_filters": ["status", "category_id", "q", "search", "vertical", "verification_status", "city", "state", "health_band", "created_from", "created_to"],
         "allowed_sort_fields": ["created_at", "updated_at", "status", "business_name"],
         "default_sort": {"sort_by": "created_at", "sort_direction": "desc"},
-        "search_fields": ["business_name", "contact_email", "subdomain"],
+        "search_fields": ["business_name", "contact_email", "subdomain", "tenant_code"],
         "available_columns": [
             col("business_name", "Business Name", 1),
             col("status", "Status", 2, width=120),
@@ -158,6 +163,86 @@ _RESOURCE_CONFIGS: dict[str, dict] = {
         ],
         "sensitive_fields": [],
         "allowed_export_fields": ["name", "code", "slug", "category_name", "status", "display_order", "created_at", "updated_at", "deleted_at"],
+    },
+
+    "admin_master_services": {
+        "scope_type": SCOPE_ADMIN_GLOBAL,
+        "allowed_filters": ["q", "search", "category_id", "service_group_id", "job_type", "pricing_model", "is_active", "retired", "has_providers"],
+        "allowed_sort_fields": ["name", "category_name", "group_name", "job_type", "pricing_model", "status", "display_order", "created_at", "updated_at", "deleted_at"],
+        "default_sort": {"sort_by": "display_order", "sort_direction": "asc"},
+        "search_fields": ["name", "slug"],
+        "available_columns": [
+            col("name", "Master Service", 1), col("slug", "Slug", 2),
+            col("category_name", "Category", 3), col("group_name", "Service Group", 4),
+            col("job_type", "Legacy Job Type", 5), col("pricing_model", "Legacy Pricing Behavior", 6),
+            col("status", "Status", 7, width=100), col("display_order", "Order", 8, width=80),
+            col("updated_at", "Updated", 9, width=140),
+        ],
+        "sensitive_fields": [],
+        "allowed_export_fields": ["name", "slug", "category_name", "group_name", "job_type", "pricing_model", "status", "display_order", "created_at", "updated_at", "deleted_at"],
+    },
+
+    "admin_service_types": {
+        "scope_type": SCOPE_ADMIN_GLOBAL,
+        "allowed_filters": ["q", "search", "status", "type_family", "customer_visible", "mapped", "has_providers", "retired"],
+        "allowed_sort_fields": ["name", "code", "type_family", "status", "display_order", "updated_at", "mapping_count"],
+        "default_sort": {"sort_by": "name", "sort_direction": "asc"},
+        "search_fields": ["name", "code", "slug"],
+        "available_columns": [
+            col("name", "Service Type", 1), col("code", "Code", 2),
+            col("type_family", "Family", 3), col("status", "Status", 4, width=100),
+            col("customer_visible", "Customer Visible", 5, width=130),
+            col("mapping_count", "Mappings", 6, width=90), col("updated_at", "Updated", 7, width=140),
+        ],
+        "sensitive_fields": [],
+        "allowed_export_fields": ["name", "code", "slug", "type_family", "status", "customer_visible", "mapping_count", "display_order", "created_at", "updated_at", "deleted_at"],
+    },
+
+    "admin_brands": {
+        "scope_type": SCOPE_ADMIN_GLOBAL,
+        "allowed_filters": ["q", "search", "status", "is_global", "mapped", "has_providers", "retired"],
+        "allowed_sort_fields": ["name", "code", "status", "display_order", "updated_at", "provider_usage_count", "service_mapping_count"],
+        "default_sort": {"sort_by": "display_order", "sort_direction": "asc"},
+        "search_fields": ["name", "code", "slug", "normalized_name"],
+        "available_columns": [
+            col("name", "Brand", 1), col("code", "Code", 2), col("status", "Status", 3, width=100),
+            col("is_global", "Global", 4, width=90), col("service_mapping_count", "Services", 5, width=90),
+            col("provider_usage_count", "Provider Usage", 6, width=110), col("updated_at", "Updated", 7, width=140),
+        ],
+        "sensitive_fields": [],
+        "allowed_export_fields": ["name", "code", "slug", "status", "is_global", "service_mapping_count", "category_mapping_count", "provider_usage_count", "display_order", "created_at", "updated_at", "deleted_at"],
+    },
+
+    "admin_checklist_templates": {
+        "scope_type": SCOPE_ADMIN_GLOBAL,
+        "allowed_filters": ["q", "search", "status", "purpose", "owner_scope", "readiness"],
+        "allowed_sort_fields": ["name", "code", "purpose", "status", "created_at", "updated_at", "archived_at"],
+        "default_sort": {"sort_by": "updated_at", "sort_direction": "desc"},
+        "search_fields": ["name", "code", "description"],
+        "available_columns": [
+            col("name", "Checklist", 1), col("code", "Code", 2), col("purpose", "Purpose", 3),
+            col("status", "Lifecycle", 4, width=100), col("latest_version", "Version", 5, width=80),
+            col("version_status", "Version Status", 6, width=110), col("active_mapping_count", "Active Mappings", 7, width=120),
+            col("updated_at", "Updated", 8, width=140),
+        ],
+        "sensitive_fields": [],
+        "allowed_export_fields": ["name", "code", "description", "purpose", "status", "owner_scope", "latest_version", "version_status", "active_mapping_count", "created_at", "updated_at", "archived_at", "archive_reason"],
+    },
+
+    "admin_checklist_mappings": {
+        "scope_type": SCOPE_ADMIN_GLOBAL,
+        "allowed_filters": ["q", "search", "status", "usage", "actor", "phase"],
+        "allowed_sort_fields": ["phase", "usage", "actor", "status", "created_at", "updated_at"],
+        "default_sort": {"sort_by": "updated_at", "sort_direction": "desc"},
+        "search_fields": ["template_name", "template_code", "master_service_name", "job_type_label", "phase"],
+        "available_columns": [
+            col("template_name", "Checklist", 1), col("master_service_name", "Master Service", 2),
+            col("job_type_label", "Job Type", 3), col("phase", "Phase", 4),
+            col("usage", "Usage", 5, width=100), col("actor", "Actor", 6, width=110),
+            col("completion_gate", "Completion Gate", 7), col("status", "Status", 8, width=100),
+        ],
+        "sensitive_fields": [],
+        "allowed_export_fields": ["template_name", "template_code", "template_version", "master_service_name", "job_type_label", "phase", "usage", "actor", "completion_gate", "status", "effective_from", "effective_until", "created_at", "updated_at", "disabled_at", "disable_reason"],
     },
 
     "admin_verticals": {

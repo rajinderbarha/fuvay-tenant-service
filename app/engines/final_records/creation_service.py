@@ -255,9 +255,22 @@ class HomeServiceFinalCreationService:
                     # Accept both rather than raising inside confirmation.
                     d = (offered_date if isinstance(offered_date, _dt.date)
                          else _dt.date.fromisoformat(str(offered_date)))
+                    # Serialize confirmations for the same provider/service/slot.
+                    # Without this transaction-scoped lock, two concurrent
+                    # requests could both observe the last place as free before
+                    # either inserted its job, exceeding technician capacity.
+                    slot_lock_key = (
+                        f"home-service-slot:{draft.selected_tenant_id}:"
+                        f"{draft.offering_id}:{d.isoformat()}:{offered_window}"
+                    )
+                    await self.db.execute(
+                        sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:slot_key, 0))"),
+                        {"slot_key": slot_lock_key},
+                    )
                     if await slot_has_capacity(
                         self.db, tenant_id=draft.selected_tenant_id,
                         day=d, time_window=offered_window,
+                        master_service_id=draft.offering_id,
                     ):
                         promised_date, promised_window = d, offered_window
                 except (ValueError, TypeError):
@@ -266,6 +279,7 @@ class HomeServiceFinalCreationService:
                 try:
                     fresh = await find_earliest_available_slot(
                         self.db, tenant_id=draft.selected_tenant_id,
+                        master_service_id=draft.offering_id,
                     )
                     if fresh:
                         promised_date = _dt.date.fromisoformat(str(fresh["date"]))

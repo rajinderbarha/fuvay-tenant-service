@@ -10,8 +10,11 @@ def test_topup_refund_accumulates_and_caps():
     over amount_paid."""
     from app.engines.finance_hub.service import FinanceHubService
     src = inspect.getsource(FinanceHubService.refund_topup)
-    assert "t.refunded_amount = already + amount" in src   # accumulates, not overwrites
+    assert "new_refunded = already + amount" in src
+    assert "t.refunded_amount = new_refunded" in src   # accumulates, not overwrites
     assert "t.refunded_amount = Decimal(str(amount))" not in src
     assert "TOPUP_ALREADY_REFUNDED" in src
     assert "TOPUP_REFUND_EXCEEDS_PAID" in src
     assert 'amount <= Decimal("0")' in src
+    assert "revoke_topup_credit" in src
+    assert "credits_to_revoke" in src

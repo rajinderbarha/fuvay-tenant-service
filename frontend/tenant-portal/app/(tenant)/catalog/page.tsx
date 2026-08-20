@@ -62,14 +62,15 @@ export default function CatalogPage() {
 function AdminCatalogSection() {
   const available = useApi(useCallback(() => masterCatalogApi.listAvailable(), []));
   const enableAction = useAction(useCallback(
-    (data: { master_service_id:string }) => masterCatalogApi.enable(data), []));
+    (data: { master_service_id:string; job_type_id:string }) => masterCatalogApi.enable(data), []));
   const disableAction = useAction(useCallback(
-    (masterServiceId: string) => masterCatalogApi.disable(masterServiceId), []));
+    (masterServiceId: string, jobTypeId: string) => masterCatalogApi.disable(masterServiceId, jobTypeId), []));
 
   async function handleToggle(svc: AdminMasterServiceRow) {
+    if (!svc.job_type_id) return;
     const res = svc.is_enabled
-      ? await disableAction.execute(svc.service_id)
-      : await enableAction.execute({ master_service_id: svc.service_id });
+      ? await disableAction.execute(svc.service_id, svc.job_type_id)
+      : await enableAction.execute({ master_service_id: svc.service_id, job_type_id: svc.job_type_id });
     if (res !== null) available.refetch();
   }
 
@@ -97,11 +98,11 @@ function AdminCatalogSection() {
       ) : (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12 }}>
           {services.map(svc => (
-            <Card key={svc.service_id} padding={18}>
+            <Card key={svc.offering_key ?? `${svc.service_id}:${svc.job_type_id}`} padding={18}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
                 <div>
                   <p style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", margin:"0 0 2px" }}>{svc.service_name}</p>
-                  <Badge variant={TYPE_COLOR[svc.job_type] ?? "muted"}>{svc.job_type}</Badge>
+                  <Badge variant={TYPE_COLOR[svc.job_type] ?? "muted"}>{svc.job_type_label || svc.job_type}</Badge>
                 </div>
                 <Badge variant={svc.is_enabled ? "success" : "muted"}>{svc.is_enabled ? "Enabled" : "Not enabled"}</Badge>
               </div>

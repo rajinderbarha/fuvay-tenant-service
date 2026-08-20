@@ -187,7 +187,6 @@ def test_admin_nav_intelligence_present():
     "/admin/intelligence",
     "/admin/engines",
     "/admin/security",
-    "/admin/workflow-templates",
     "/admin/audit-logs",
     "/admin/users",
     "/admin/media",

@@ -255,6 +255,11 @@ class MasterService(ServiceOSBase):
     # Migration 151: nullable FK alongside the legacy string column (kept for
     # compatibility) -- resolved by job_type key, backfilled from `job_type`.
     job_type_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Monotonic version of the normalized tenant-setup contract (active job
+    # types + their setup dimensions/workflow requirements). Admin edits bump
+    # this value and existing published tenant offerings are returned to draft
+    # until the provider reviews and republishes against the new contract.
+    setup_rules_revision:      Mapped[int]              = mapped_column(Integer, nullable=False, default=1)
     pricing_model:             Mapped[str]            = mapped_column(String(30), nullable=False)
     base_price:                Mapped[Decimal]        = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
     min_price:                 Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -311,12 +316,14 @@ class MasterServiceJobType(ServiceOSBase):
     job_type_id:        Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     is_active:          Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
     display_order:      Mapped[int]       = mapped_column(Integer, default=0, nullable=False)
+    setup_rules_revision: Mapped[int]     = mapped_column(Integer, nullable=False, default=1)
 
     def to_dict(self) -> dict:
         return {
             "id": str(self.id), "master_service_id": str(self.master_service_id),
             "job_type_id": str(self.job_type_id), "is_active": self.is_active,
             "display_order": self.display_order,
+            "setup_rules_revision": self.setup_rules_revision,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -334,9 +341,12 @@ class ServiceJobWorkflow(ServiceOSBase):
     """
     __tablename__ = "service_job_workflow"
     __table_args__ = (
-        UniqueConstraint("master_service_id", "job_type_id", name="uq_sjw_service_job_type"),
         Index("ix_sjw_master_service", "master_service_id"),
         Index("ix_sjw_job_type", "job_type_id"),
+        Index(
+            "uq_sjw_one_current_per_pair", "master_service_id", "job_type_id",
+            unique=True, postgresql_where=sa.text("is_current"),
+        ),
     )
 
     master_service_id:      Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -375,6 +385,14 @@ class ServiceJobWorkflow(ServiceOSBase):
     allows_cancellation:           Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
     allows_reschedule:             Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
     requires_direct_payment_record: Mapped[bool]            = mapped_column(Boolean, default=False, nullable=False)
+    # Cross-app step choreography (migration 274). The columns above say what a
+    # job REQUIRES; these say what actually happens, in order, in which app, and
+    # who may do it. Each step's `maps_to_status` carries a canonical
+    # service_jobs.status (or null for booking-level / post-completion steps),
+    # which is what lets a client mark steps done from the job's real state
+    # instead of a hard-coded sequence.
+    steps_json:                    Mapped[list]             = mapped_column(JSONB, default=list, nullable=False)
+    transitions_json:              Mapped[list]             = mapped_column(JSONB, default=list, nullable=False)
 
     def to_dict(self) -> dict:
         return {
@@ -392,6 +410,22 @@ class ServiceJobWorkflow(ServiceOSBase):
             "version_number": self.version_number,
             "is_current": self.is_current,
             "superseded_at": self.superseded_at.isoformat() if self.superseded_at else None,
+            # Publishing lifecycle and the two capability flags migration 186
+            # added. They were migrated and are enforced in the cancel/reschedule
+            # paths, but to_dict never returned them — so no API caller, and no
+            # admin screen, could see the state of the workflow they were editing.
+            "status": self.status,
+            "supersedes_workflow_id": str(self.supersedes_workflow_id) if self.supersedes_workflow_id else None,
+            "effective_from": self.effective_from.isoformat() if self.effective_from else None,
+            "effective_to": self.effective_to.isoformat() if self.effective_to else None,
+            "change_reason": self.change_reason,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "allows_cancellation": self.allows_cancellation,
+            "allows_reschedule": self.allows_reschedule,
+            "requires_direct_payment_record": self.requires_direct_payment_record,
+            # Cross-app choreography (migration 274).
+            "steps": self.steps_json or [],
+            "transitions": self.transitions_json or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -952,10 +986,10 @@ class LocationImportBatch(ServiceOSBase):
 
 # ── Tenant Services ───────────────────────────────────────────────────────────
 class TenantService(ServiceOSBase):
-    """A tenant's enablement of an admin master service, with optional price overrides."""
+    """A tenant's job-type-scoped offering, with tenant-owned price configuration."""
     __tablename__ = "tenant_services"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "master_service_id", name="uq_ts_tenant_service"),
+        UniqueConstraint("tenant_id", "master_service_id", "job_type_id", name="uq_ts_tenant_service_job_type"),
         Index("ix_ts_tenant",  "tenant_id"),
         Index("ix_ts_service", "master_service_id"),
         Index("ix_ts_active",  "tenant_id", "is_enabled"),
@@ -965,7 +999,7 @@ class TenantService(ServiceOSBase):
     master_service_id:   Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     category_id:         Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     job_type:            Mapped[str]            = mapped_column(String(20), nullable=False)
-    job_type_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    job_type_id:         Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     is_enabled:          Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
     tenant_display_name: Mapped[str | None]    = mapped_column(String(200), nullable=True)
     tenant_description:  Mapped[str | None]    = mapped_column(Text, nullable=True)
@@ -978,6 +1012,9 @@ class TenantService(ServiceOSBase):
     requires_type:       Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
     is_active:           Mapped[bool]          = mapped_column(Boolean, default=True, nullable=False)
     tenant_emergency_surcharge: Mapped[Decimal|None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Provider-owned workmanship warranty. Five days is the platform floor;
+    # providers may make it longer but never shorter.
+    warranty_days:       Mapped[int]            = mapped_column(Integer, nullable=False, default=5)
     deleted_at:          Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Tenant Home Services Service Setup Wizard additions
     setup_status:        Mapped[str]           = mapped_column(String(20), default="draft", nullable=False)
@@ -1001,6 +1038,10 @@ class TenantService(ServiceOSBase):
     # versioning existed -- treated as "no update-required check possible",
     # never as "up to date" (fail closed, not silently assumed current).
     blueprint_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # The MasterService.setup_rules_revision this tenant last accepted. This
+    # is intentionally separate from the legacy identity blueprint version:
+    # normalized per-job-type workflow/dimension edits are versioned here.
+    setup_rules_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 # ── Tenant Service Types ──────────────────────────────────────────────────────

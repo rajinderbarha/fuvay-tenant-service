@@ -57,7 +57,7 @@ class TestCommissionRateResolution:
     async def test_category_override_takes_precedence_over_published_default(self):
         db = AsyncMock()
         db.execute.side_effect = [
-            _result(_Category(commission_pct=Decimal("12.00"))),
+            _result(_Category(commission_pct=Decimal("12.00"), vertical_type="coaching")),
             _result(_Vertical()),
             _result(_Policy("PERCENTAGE_COMMISSION", Decimal("18.500"))),
         ]
@@ -87,7 +87,7 @@ class TestCommissionRateResolution:
     async def test_no_current_policy_falls_back_to_category_override(self):
         db = AsyncMock()
         db.execute.side_effect = [
-            _result(_Category(commission_pct=Decimal("7.50"))),
+            _result(_Category(commission_pct=Decimal("7.50"), vertical_type="coaching")),
             _result(_Vertical()),
             _result(None),
         ]
@@ -97,12 +97,32 @@ class TestCommissionRateResolution:
     async def test_no_category_override_and_no_policy_falls_back_to_platform_default(self):
         db = AsyncMock()
         db.execute.side_effect = [
-            _result(_Category(commission_pct=None)),
+            _result(_Category(commission_pct=None, vertical_type="coaching")),
             _result(_Vertical()),
             _result(None),
         ]
         rate = await resolve_provider_commission_rate(db, "cat-1")
         assert rate == Decimal(str(DEFAULT_COMMISSION_RATE))
+
+    async def test_home_services_ignores_category_override(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _result(_Category(commission_pct=Decimal("99.00"), vertical_type="home_services")),
+            _result(_Vertical()),
+            _result(_Policy("PERCENTAGE_COMMISSION", Decimal("8.50"))),
+        ]
+        rate = await resolve_provider_commission_rate(db, "cat-1")
+        assert rate == Decimal("8.50")
+
+    async def test_home_services_without_published_policy_charges_zero(self):
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _result(_Category(commission_pct=Decimal("99.00"), vertical_type="home_services")),
+            _result(_Vertical()),
+            _result(None),
+        ]
+        rate = await resolve_provider_commission_rate(db, "cat-1")
+        assert rate == Decimal("0")
 
     async def test_category_without_vertical_type_skips_policy_lookup(self):
         db = AsyncMock()

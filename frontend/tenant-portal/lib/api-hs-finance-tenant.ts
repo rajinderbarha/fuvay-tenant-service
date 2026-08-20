@@ -157,6 +157,15 @@ export const onboardingDeclarationsApi = {
  * with a purpose flag; they now call the real activation orders.
  */
 export const activationPaymentApi = {
+  getFundingQuote: <T = HsTopupOrder>() =>
+    apiFetch<T>("/v1/tenant/home-services/activation/funding/quote"),
+  createFundingOrder: <T = HsTopupOrder>() =>
+    apiFetch<T>("/v1/tenant/home-services/activation/funding/order", post()),
+  confirmFunding: <T = HsTopupOrder>(result: {
+    razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string;
+  }) => apiFetch<T>("/v1/tenant/home-services/activation/funding/confirm", post(result)),
+  reconcileFunding: <T = HsTopupOrder>(orderId: string) =>
+    apiFetch<T>(`/v1/tenant/home-services/activation/funding/${encodeURIComponent(orderId)}/reconcile`, post()),
   createSecurityDepositOrder: <T = HsTopupOrder>(payload?: Record<string, unknown>) =>
     apiFetch<T>("/v1/tenant/home-services/activation/security-deposit/order", post(payload)),
   createCreditPackageOrder: <T = HsTopupOrder>(packageId?: string, payload?: Record<string, unknown>) =>

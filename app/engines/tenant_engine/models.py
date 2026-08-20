@@ -180,6 +180,8 @@ class UsageCreditLedger(ServiceOSBase):
     __tablename__ = "usage_credit_ledger"
     __table_args__ = (
         Index("ix_ucl_tenant_id", "tenant_id"),
+        Index("ix_ucl_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_ucl_event_created_at", "event_type", "created_at"),
     )
     tenant_id:          Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
     job_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

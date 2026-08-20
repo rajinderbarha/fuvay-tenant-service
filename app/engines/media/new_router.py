@@ -76,6 +76,8 @@ async def upload_media(
     owner_type: Annotated[str, Form(description="Owner type (e.g. tenant, user, customer)")] = "user",
     owner_id: Annotated[str | None, Form(description="Owner UUID")] = None,
     is_public: Annotated[bool, Form(description="Make file publicly accessible")] = False,
+    description: Annotated[str | None, Form(description="Operational description")] = None,
+    tags: Annotated[str | None, Form(description="Comma-separated search tags")] = None,
     actor: UserContext = Depends(require_mutation_access_scope),
     svc: MediaAssetService = Depends(_svc),
 ) -> ApiResponse[dict]:
@@ -87,6 +89,8 @@ async def upload_media(
         owner_type=owner_type,
         owner_id=effective_owner_id,
         is_public=is_public,
+        description=description,
+        tags=[value.strip() for value in (tags or "").split(",") if value.strip()],
     )
     # Real bug fixed here: `ok()` ALREADY builds the {data, links, meta}
     # envelope, so wrapping the payload in another {"success", "data"} made

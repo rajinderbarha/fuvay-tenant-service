@@ -13,18 +13,18 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import select, and_, or_, func, update as sa_update, exists
+from sqlalchemy import select, and_, or_, func, text, update as sa_update, exists
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
     PricingTier, TierLocation, ServiceCategory, ServiceGroup, MasterService,
-    ServiceType, Brand, MasterServiceType, MasterServiceBrand,
+    ServiceType, Brand, MasterServiceType, MasterServiceBrand, ServiceTypeMapping, BrandMapping,
     ServicePricingRule, MasterOffering, CustomerFlowConfig,
     MasterIssueType, MasterServiceOption, MasterWorkflowTemplate, MasterDataAuditLog,
     TenantService, LocationImportBatch, WorkflowServiceMapping,
-    BargainRule, ProviderPricingOverride, ServiceIssueMapping,
-    TenantServiceType, ServiceBlueprintVersion,
+    BargainRule, ProviderPricingOverride, ServiceIssueMapping, ServiceOptionMapping,
+    TenantServiceType, ServiceBlueprintVersion, MasterServiceJobType, ServiceJobWorkflow,
 )
 from app.engines.tenant_engine.models import Tenant
 from app.engines.admin_catalog.bargain_engine import (
@@ -206,6 +206,42 @@ def _slugify(text: str) -> str:
 
 def _to_dict(obj) -> dict:
     return obj.to_dict() if hasattr(obj, "to_dict") else {}
+
+
+# ── Workflow-template readiness, expressed in SQL ────────────────────────────
+# Readiness is a pure function of a template's own JSONB plus whether anything
+# maps to it, so it can be evaluated in the database. Doing so is what lets the
+# list filter and the summary count it under a LIMIT instead of materialising
+# every template in Python first. Both fragments assume the templates table is
+# aliased `t`.
+#
+# `IS NOT DISTINCT FROM` rather than `=` / `IN` on the step-code comparison:
+# a step or transition with a null code must compare the way Python's
+# `code not in {…}` does, and SQL `NOT IN` yields NULL (not true) against a
+# null, which would silently mark a broken workflow as ready.
+_HAS_MAPPING_SQL = """EXISTS (
+    SELECT 1 FROM workflow_service_mappings m WHERE m.template_id = t.id
+)"""
+
+_READINESS_SQL = f"""CASE
+    WHEN COALESCE(jsonb_array_length(t.steps), 0) < 2 THEN 'missing_steps'
+    WHEN (SELECT count(*) FROM jsonb_array_elements(t.steps) e
+           WHERE (e->>'is_start')::boolean IS TRUE) <> 1
+      OR (SELECT count(*) FROM jsonb_array_elements(t.steps) e
+           WHERE (e->>'is_terminal')::boolean IS TRUE) < 1
+      THEN 'invalid_transitions'
+    WHEN EXISTS (
+        SELECT 1 FROM jsonb_array_elements(t.transitions) tr
+         WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(t.steps) e
+                            WHERE e->>'step_code' IS NOT DISTINCT FROM tr->>'from_step_code')
+            OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(t.steps) e
+                            WHERE e->>'step_code' IS NOT DISTINCT FROM tr->>'to_step_code')
+    ) THEN 'invalid_transitions'
+    WHEN NOT {_HAS_MAPPING_SQL}
+         AND t.category_id IS NULL
+         AND t.master_service_id IS NULL THEN 'missing_mapping'
+    ELSE 'ready'
+END"""
 
 
 class AdminCatalogService:
@@ -1441,6 +1477,13 @@ class AdminCatalogService:
         svc = await self._load_master_service(service_id)
         return self._svc_dict(svc)
 
+    async def _load_master_service_any(self, service_id: uuid.UUID) -> MasterService:
+        result = await self.db.execute(select(MasterService).where(MasterService.id == service_id))
+        svc = result.scalar_one_or_none()
+        if not svc:
+            raise NotFoundException("MasterService", str(service_id))
+        return svc
+
     # DEPRECATED entry point (kept for backward compatibility -- the Home
     # Services Catalog Console, bulk setup wizard, and existing tests still
     # call this with a scalar job_type/pricing_model/price/requirement
@@ -1448,6 +1491,29 @@ class AdminCatalogService:
     # see create_master_service_canonical below, which is what migration 160
     # actually adds. Left functionally unchanged -- see section 11's
     # instruction to preserve compatibility rather than break live callers.
+    async def _inherit_directory_mappings(self, svc: MasterService) -> None:
+        """Expand category/group directory rules into the canonical runtime tables."""
+        type_ids = (await self.db.execute(select(ServiceTypeMapping.type_id).where(
+            ServiceTypeMapping.status == "active",
+            or_(ServiceTypeMapping.service_id == svc.id,
+                and_(ServiceTypeMapping.service_id.is_(None), ServiceTypeMapping.service_group_id == svc.service_group_id),
+                and_(ServiceTypeMapping.service_id.is_(None), ServiceTypeMapping.service_group_id.is_(None),
+                     ServiceTypeMapping.category_id == svc.category_id)),
+        ).distinct())).scalars().all()
+        brand_ids = (await self.db.execute(select(BrandMapping.brand_id).where(
+            BrandMapping.status == "active",
+            or_(BrandMapping.service_id == svc.id,
+                and_(BrandMapping.service_id.is_(None), BrandMapping.service_group_id == svc.service_group_id),
+                and_(BrandMapping.service_id.is_(None), BrandMapping.service_group_id.is_(None),
+                     BrandMapping.category_id == svc.category_id)),
+        ).distinct())).scalars().all()
+        for type_id in type_ids:
+            self.db.add(MasterServiceType(master_service_id=svc.id, service_type_id=type_id, is_active=True))
+        for brand_id in brand_ids:
+            self.db.add(MasterServiceBrand(master_service_id=svc.id, brand_id=brand_id,
+                is_active=True, status="active", created_by_user_id=self.actor_id))
+        await self.db.flush()
+
     async def create_master_service(self, data: dict) -> dict:
         name     = (data.get("service_name") or "").strip()
         job_type = (data.get("job_type") or "").strip()
@@ -1467,6 +1533,18 @@ class AdminCatalogService:
         cat = await self._load_category(cat_id)
         if not cat.is_active:
             raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "The selected category is inactive.", status_code=422)
+
+        group_id = None
+        if data.get("service_group_id"):
+            group_id = uuid.UUID(str(data["service_group_id"]))
+            group = await self._load_service_group(group_id)
+            if group.category_id != cat_id:
+                raise ServiceOSException(
+                    "SERVICE_GROUP_CATEGORY_MISMATCH",
+                    "The selected service group does not belong to the selected category.",
+                    status_code=422,
+                )
+            svc.service_group_id = group_id
 
         _validate_pricing_config(model, data)
 
@@ -1512,12 +1590,13 @@ class AdminCatalogService:
             requires_address=bool(data.get("requires_address", False)),
             tenant_override_allowed=bool(data.get("tenant_override_allowed", False)),
             tenant_custom_name_allowed=bool(data.get("tenant_custom_name_allowed", True)),
-            service_group_id=uuid.UUID(str(data["service_group_id"])) if data.get("service_group_id") else None,
+            service_group_id=group_id,
             display_order=int(data.get("display_order", 0) or 0),
             is_active=True,
         )
         self.db.add(svc)
         await self.db.flush()
+        await self._inherit_directory_mappings(svc)
         return self._svc_dict(svc)
 
     # Ownership correction (migration 160) -- the CANONICAL creation path.
@@ -1558,6 +1637,21 @@ class AdminCatalogService:
         if not cat.is_active:
             raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "The selected category is inactive.", status_code=422)
 
+        group_id = uuid.UUID(str(data["service_group_id"]))
+        group = await self._load_service_group(group_id)
+        if group.category_id != cat_id:
+            raise ServiceOSException(
+                "SERVICE_GROUP_CATEGORY_MISMATCH",
+                "The selected service group does not belong to the selected category.",
+                status_code=422,
+            )
+        if group.status != "active":
+            raise ServiceOSException(
+                "SERVICE_GROUP_INACTIVE",
+                "A master service can only be created inside an active service group.",
+                status_code=422,
+            )
+
         slug = _slugify(name)
         existing = await self.db.execute(
             select(MasterService).where(MasterService.slug == slug, MasterService.deleted_at.is_(None)))
@@ -1575,13 +1669,17 @@ class AdminCatalogService:
             base_price=Decimal("0"), visit_fee=Decimal("0"),
             tenant_override_allowed=bool(data.get("tenant_override_allowed", False)),
             tenant_custom_name_allowed=bool(data.get("tenant_custom_name_allowed", True)),
-            service_group_id=uuid.UUID(str(data["service_group_id"])),
+            service_group_id=group_id,
             display_order=int(data.get("display_order", 0) or 0),
             is_active=True,
         )
         self.db.add(svc)
         await self.db.flush()
-        return self._svc_dict(svc)
+        await self._inherit_directory_mappings(svc)
+        result = self._svc_dict(svc)
+        await self._audit("master_service", svc.id, "create", None, result,
+                          f"Created master service '{svc.service_name}'")
+        return result
 
     # Structural fields that define the shape of the tenant setup wizard --
     # changing any of these means existing tenant setups may need review
@@ -1658,13 +1756,35 @@ class AdminCatalogService:
     async def update_master_service(self, service_id: uuid.UUID, data: dict, actor_id: uuid.UUID | None = None) -> dict:
         self._reject_admin_price_fields(data)
         svc = await self._load_master_service(service_id)
+        old = self._svc_dict(svc)
+        expected_updated_at = data.get("expected_updated_at")
+        if expected_updated_at and svc.updated_at and svc.updated_at.isoformat() != expected_updated_at:
+            raise ServiceOSException(
+                "MASTER_SERVICE_CONFLICT",
+                "This master service changed after you opened it. Refresh and review the latest values.",
+                status_code=409,
+            )
+        if "service_name" in data:
+            name = (data.get("service_name") or "").strip()
+            if not name:
+                raise ServiceOSException("MASTER_SERVICE_NAME_REQUIRED", "service_name is required.", status_code=422)
+            svc.service_name = name
+        if data.get("service_group_id"):
+            group_id = uuid.UUID(str(data["service_group_id"]))
+            group = await self._load_service_group(group_id)
+            if group.category_id != svc.category_id:
+                raise ServiceOSException(
+                    "SERVICE_GROUP_CATEGORY_MISMATCH",
+                    "The selected service group does not belong to this service's category.",
+                    status_code=422,
+                )
         for field in ("service_name", "description", "image_url", "icon_url", "display_order",
-                      "is_active", "requires_checklist", "is_brand_required", "is_type_required",
+                      "requires_checklist", "is_brand_required", "is_type_required",
                       "requires_issue_type", "requires_schedule", "requires_address",
                       "tenant_override_allowed", "tenant_custom_name_allowed",
                       "assessment_label", "show_estimated_range", "customer_note",
-                      "estimated_duration_minutes", "service_group_id"):
-            if field in data and data[field] is not None:
+                      "estimated_duration_minutes"):
+            if field != "service_name" and field in data and data[field] is not None:
                 setattr(svc, field, data[field])
         for field in ("pre_approval_limit", "default_estimate", "hourly_rate",
                       "minimum_billable_hours", "estimated_hours", "maximum_hours"):
@@ -1698,32 +1818,6 @@ class AdminCatalogService:
         # explicit POST /v1/admin/catalog/blueprint/publish endpoint
         # (BlueprintImpactService.publish_draft).
         return self._svc_dict(svc)
-
-    async def delete_master_service(self, service_id: uuid.UUID) -> dict:
-        svc = await self._load_master_service(service_id)
-        svc.is_active = False
-        svc.deleted_at = utcnow()
-        await self.db.flush()
-        return {"deleted": True, "service_id": str(service_id)}
-
-    async def hard_delete_master_service(self, service_id: uuid.UUID) -> dict:
-        svc = await self.db.execute(select(MasterService).where(MasterService.id == service_id))
-        svc = svc.scalar_one_or_none()
-        if not svc:
-            raise NotFoundException("MasterService", str(service_id))
-        rules_res = await self.db.execute(
-            select(ServicePricingRule).where(
-                ServicePricingRule.master_service_id == service_id,
-                ServicePricingRule.deleted_at.is_(None),
-            ).limit(1))
-        if rules_res.scalar_one_or_none():
-            raise ServiceOSException(
-                "MASTER_SERVICE_HAS_RULES",
-                "Cannot permanently delete a service that has pricing rules. Remove all pricing rules first.",
-                status_code=409)
-        await self.db.delete(svc)
-        await self.db.flush()
-        return {"deleted": True, "service_id": str(service_id), "hard_delete": True}
 
     async def _load_master_service(self, service_id: uuid.UUID) -> MasterService:
         result = await self.db.execute(
@@ -1768,6 +1862,8 @@ class AdminCatalogService:
             "service_group_id": str(s.service_group_id) if s.service_group_id else None,
             "display_order": s.display_order, "is_active": s.is_active,
             "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+            "deleted_at": s.deleted_at.isoformat() if s.deleted_at else None,
         }
 
     # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -2455,17 +2551,29 @@ class AdminCatalogService:
             .offset(offset).limit(limit))
         svcs = svcs_res.scalars().all()
 
-        # counts per service (types / brands) via a single grouped query each
-        type_counts = dict((await self.db.execute(
-            select(MasterServiceType.master_service_id, func.count())
-            .where(MasterServiceType.is_active == True)
-            .group_by(MasterServiceType.master_service_id)
-        )).all())
-        brand_counts = dict((await self.db.execute(
-            select(MasterServiceBrand.master_service_id, func.count())
-            .where(MasterServiceBrand.is_active == True)
-            .group_by(MasterServiceBrand.master_service_id)
-        )).all())
+        # Only aggregate the current page. The previous global GROUP BY scanned
+        # every service mapping even though the console can display at most 100
+        # services at once.
+        service_ids = [service.id for service in svcs]
+        type_counts: dict = {}
+        brand_counts: dict = {}
+        if service_ids:
+            type_counts = dict((await self.db.execute(
+                select(MasterServiceType.master_service_id, func.count())
+                .where(
+                    MasterServiceType.is_active == True,
+                    MasterServiceType.master_service_id.in_(service_ids),
+                )
+                .group_by(MasterServiceType.master_service_id)
+            )).all())
+            brand_counts = dict((await self.db.execute(
+                select(MasterServiceBrand.master_service_id, func.count())
+                .where(
+                    MasterServiceBrand.is_active == True,
+                    MasterServiceBrand.master_service_id.in_(service_ids),
+                )
+                .group_by(MasterServiceBrand.master_service_id)
+            )).all())
 
         service_rows = []
         for s in svcs:
@@ -2521,14 +2629,16 @@ class AdminCatalogService:
                 float(svc.min_price) if svc.min_price is not None else None)
             ceiling = float(rule.max_price) if rule and rule.max_price is not None else (
                 float(svc.max_price) if svc.max_price is not None else None)
-            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 0.0
             deduction = rule.completed_job_deduction_credits if rule else 0
-            preview = None
-            if floor is not None and ceiling is not None:
-                try:
-                    preview = compute_symmetric_customer_price_tiers(floor, ceiling, fee_pct)
-                except BargainValidationError:
-                    preview = None
+            preview = (
+                {
+                    "provider_min_price": floor,
+                    "provider_max_price": ceiling,
+                    "payment_mode": "customer_pays_provider_directly",
+                }
+                if floor is not None and ceiling is not None else None
+            )
             out.append({
                 **t,
                 "pricing_rule_id": str(rule.id) if rule else None,
@@ -2599,13 +2709,15 @@ class AdminCatalogService:
             rule = await self._find_scoped_pricing_rule(service_id, service_type_id, m.brand_id)
             floor = float(rule.min_price) if rule and rule.min_price is not None else None
             ceiling = float(rule.max_price) if rule and rule.max_price is not None else None
-            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 10.0
-            preview = None
-            if m.can_override_price and floor is not None and ceiling is not None:
-                try:
-                    preview = compute_symmetric_customer_price_tiers(floor, ceiling, fee_pct)
-                except BargainValidationError:
-                    preview = None
+            fee_pct = float(rule.platform_fee_percent) if rule and rule.platform_fee_percent is not None else 0.0
+            preview = (
+                {
+                    "provider_min_price": floor,
+                    "provider_max_price": ceiling,
+                    "payment_mode": "customer_pays_provider_directly",
+                }
+                if m.can_override_price and floor is not None and ceiling is not None else None
+            )
             out.append({
                 "mapping_id": str(m.id), "brand_id": str(m.brand_id), "name": b.name,
                 "is_required": m.is_required, "is_default": m.is_default,
@@ -2676,17 +2788,6 @@ class AdminCatalogService:
             self.db.add(rule)
             await self.db.flush()
         return await self.get_home_services_brand_pricing(service_id, service_type_id)
-
-    def preview_symmetric_customer_price(self, data: dict) -> dict:
-        try:
-            return compute_symmetric_customer_price_tiers(
-                provider_min_price=data.get("provider_min_price"),
-                provider_max_price=data.get("provider_max_price"),
-                platform_fee_percent=data.get("platform_fee_percent", 0),
-                platform_fee_fixed_amount=data.get("platform_fee_fixed_amount", 0),
-            )
-        except BargainValidationError as e:
-            raise ServiceOSException(e.code, e.message, status_code=422) from e
 
     async def get_home_services_service_audit(self, service_id: uuid.UUID, limit: int = 30) -> dict:
         rule_ids_res = await self.db.execute(
@@ -3751,37 +3852,43 @@ class AdminCatalogService:
     }
 
     async def get_workflow_templates_summary(self) -> dict:
-        rows = (await self.db.execute(
-            select(MasterWorkflowTemplate).where(MasterWorkflowTemplate.is_latest == True)
-        )).scalars().all()
-        total = len(rows)
-        active = sum(1 for r in rows if r.status == "active")
-        draft = sum(1 for r in rows if r.status == "draft")
-        used_by_services = sum(1 for r in rows if r.category_id or r.master_service_id)
-        missing_steps = sum(1 for r in rows if len(r.steps or []) < 2)
-        sla_enabled = sum(1 for r in rows if r.max_sla_hours)
-        approval_enabled = sum(1 for r in rows if any((s.get("approval_rule") for s in (r.steps or []))))
-        mapping_counts = {}
-        mrows = (await self.db.execute(select(WorkflowServiceMapping.template_id))).scalars().all()
-        for tid in mrows:
-            mapping_counts[tid] = mapping_counts.get(tid, 0) + 1
-        runtime_ready = 0
-        for r in rows:
-            readiness = self._compute_readiness(r, bool(mapping_counts.get(r.id)))
-            if readiness == "ready":
-                runtime_ready += 1
-        return {
-            "total_templates": total,
-            "active_templates": active,
-            "draft_templates": draft,
-            "used_by_services": used_by_services,
-            "unmapped_templates": total - sum(1 for r in rows if mapping_counts.get(r.id)),
-            "templates_missing_steps": missing_steps,
-            "sla_enabled": sla_enabled,
-            "approval_enabled": approval_enabled,
-            "runtime_ready": runtime_ready,
-        }
+        """The eight KPI tiles, as one aggregate query.
 
+        This used to load every `is_latest` template row — each carrying its full
+        steps and transitions JSONB — plus the entire mappings table, and count
+        in Python. Measured at 50k templates that took 4.3s, on a request the
+        page makes every time it opens. Counting in the database instead keeps
+        the work proportional to what is being counted rather than to what has
+        to be shipped to the API process first.
+        """
+        row = (await self.db.execute(text(f"""
+            SELECT
+              count(*)                                                        AS total_templates,
+              count(*) FILTER (WHERE status = 'active')                       AS active_templates,
+              count(*) FILTER (WHERE status = 'draft')                        AS draft_templates,
+              count(*) FILTER (WHERE category_id IS NOT NULL
+                                  OR master_service_id IS NOT NULL)           AS used_by_services,
+              count(*) FILTER (WHERE COALESCE(jsonb_array_length(steps), 0) < 2)
+                                                                              AS templates_missing_steps,
+              count(*) FILTER (WHERE max_sla_hours IS NOT NULL
+                                 AND max_sla_hours > 0)                       AS sla_enabled,
+              count(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(t.steps) e
+                     WHERE e ? 'approval_rule'
+                       AND e->'approval_rule' NOT IN ('null'::jsonb, 'false'::jsonb)))
+                                                                              AS approval_enabled,
+              count(*) FILTER (WHERE NOT {_HAS_MAPPING_SQL})                  AS unmapped_templates,
+              count(*) FILTER (WHERE {_READINESS_SQL} = 'ready')              AS runtime_ready
+            FROM master_workflow_templates t
+            WHERE is_latest IS TRUE
+        """))).mappings().one()
+        return {k: int(v or 0) for k, v in row.items()}
+
+    # `_compute_readiness` below is the Python definition, used when a single
+    # template is being inspected. `_READINESS_SQL` (module level, above) is the
+    # same rules expressed over the row's JSONB so the list can filter and the
+    # summary can count without pulling every template into the API process.
+    # The two must agree; `test_readiness_sql_matches_python` pins that.
     def _compute_readiness(self, row: MasterWorkflowTemplate, has_mapping: bool) -> str:
         steps = row.steps or []
         if len(steps) < 2:
@@ -3806,35 +3913,92 @@ class AdminCatalogService:
                                       q: str | None = None,
                                       readiness: str | None = None,
                                       page: int = 1, limit: int = 50) -> dict:
-        stmt = select(MasterWorkflowTemplate).where(MasterWorkflowTemplate.is_latest == True)
+        """One page of templates, filtered, counted and sliced in the database.
+
+        This previously ran the filter query with no LIMIT, materialised every
+        matching template as an ORM object — each carrying its whole steps and
+        transitions JSONB — and then took a Python slice for the page. Asking
+        for 50 rows therefore cost the whole table: measured at 50k templates,
+        4.2s to return one page, and the readiness filter additionally loaded
+        the entire mappings table to filter in Python.
+
+        Now: one COUNT, one id-page query with ORDER BY/LIMIT/OFFSET, and one
+        fetch of just that page's rows. Cost is proportional to the page, not to
+        the table.
+        """
+        where = ["t.is_latest IS TRUE"]
+        params: dict = {}
         if category_id is not None:
-            stmt = stmt.where(MasterWorkflowTemplate.category_id == category_id)
+            where.append("t.category_id = :category_id"); params["category_id"] = str(category_id)
         if master_service_id is not None:
-            stmt = stmt.where(MasterWorkflowTemplate.master_service_id == master_service_id)
+            where.append("t.master_service_id = :master_service_id")
+            params["master_service_id"] = str(master_service_id)
         if workflow_type is not None:
-            stmt = stmt.where(MasterWorkflowTemplate.workflow_type == workflow_type)
+            where.append("t.workflow_type = :workflow_type"); params["workflow_type"] = workflow_type
         if is_active is not None:
-            stmt = stmt.where(MasterWorkflowTemplate.is_active == is_active)
+            where.append("t.is_active = :is_active"); params["is_active"] = is_active
         if status is not None:
-            stmt = stmt.where(MasterWorkflowTemplate.status == status)
+            where.append("t.status = :status"); params["status"] = status
         if q:
-            like = f"%{q.lower()}%"
-            stmt = stmt.where(
-                func.lower(MasterWorkflowTemplate.name).like(like) |
-                func.lower(MasterWorkflowTemplate.slug).like(like))
-        stmt = stmt.order_by(MasterWorkflowTemplate.display_order, MasterWorkflowTemplate.name)
-        rows = (await self.db.execute(stmt)).scalars().all()
-
+            where.append("(lower(t.name) LIKE :q OR lower(t.slug) LIKE :q)")
+            params["q"] = f"%{q.lower()}%"
         if readiness:
-            mrows = (await self.db.execute(select(WorkflowServiceMapping.template_id))).scalars().all()
-            mapped_ids = set(mrows)
-            rows = [r for r in rows if self._compute_readiness(r, r.id in mapped_ids) == readiness]
+            where.append(f"({_READINESS_SQL}) = :readiness")
+            params["readiness"] = readiness
+        clause = " AND ".join(where)
 
-        total = len(rows)
-        start = (page - 1) * limit
-        page_rows = rows[start:start + limit]
+        total = int(await self.db.scalar(
+            text(f"SELECT count(*) FROM master_workflow_templates t WHERE {clause}"), params) or 0)
+
+        # Order by the same keys as before. `id` is appended so the ordering is
+        # total — without it, rows sharing a display_order and name could be
+        # returned in a different order per page and appear twice or not at all.
+        id_rows = (await self.db.execute(text(
+            f"""SELECT t.id FROM master_workflow_templates t
+                 WHERE {clause}
+                 ORDER BY t.display_order, t.name, t.id
+                 LIMIT :limit OFFSET :offset"""),
+            {**params, "limit": limit, "offset": max(0, (page - 1) * limit)})).scalars().all()
+
+        page_rows: list = []
+        derived: dict = {}
+        if id_rows:
+            found = {r.id: r for r in (await self.db.execute(
+                select(MasterWorkflowTemplate).where(MasterWorkflowTemplate.id.in_(id_rows))
+            )).scalars().all()}
+            page_rows = [found[i] for i in id_rows if i in found]
+
+            # Readiness is computed here, for this page only, and returned with
+            # the row. The console used to re-derive it in the browser from the
+            # row's steps — but its copy of the rule could not see
+            # workflow_service_mappings, so a template mapped to a service but
+            # carrying no category_id showed "Missing Mapping" while the server
+            # counted it ready and the readiness filter returned it. The badge
+            # and the filter disagreed on screen.
+            derived = {
+                r["id"]: r for r in (await self.db.execute(text(
+                    f"""SELECT t.id,
+                               {_READINESS_SQL} AS readiness,
+                               COALESCE(jsonb_array_length(t.steps), 0)       AS step_count,
+                               COALESCE(jsonb_array_length(t.transitions), 0) AS transition_count,
+                               {_HAS_MAPPING_SQL}                            AS has_mapping
+                          FROM master_workflow_templates t
+                         WHERE t.id = ANY(CAST(:ids AS uuid[]))"""),
+                    {"ids": [str(i) for i in id_rows]})).mappings().all()
+            }
+
+        def _row(r) -> dict:
+            d = r.to_dict()
+            extra = derived.get(r.id)
+            if extra is not None:
+                d["readiness"] = extra["readiness"]
+                d["step_count"] = int(extra["step_count"] or 0)
+                d["transition_count"] = int(extra["transition_count"] or 0)
+                d["has_mapping"] = bool(extra["has_mapping"])
+            return d
+
         return {
-            "workflow_templates": [r.to_dict() for r in page_rows],
+            "workflow_templates": [_row(r) for r in page_rows],
             "total": total,
             "meta": {"total": total, "page": page, "limit": limit,
                      "total_pages": max(1, (total + limit - 1) // limit)},
@@ -3843,6 +4007,63 @@ class AdminCatalogService:
     async def get_workflow_template(self, template_id: uuid.UUID) -> dict:
         row = await self._load_workflow_template(template_id)
         return row.to_dict()
+
+    async def _allocate_workflow_slug(self, base: str, workflow_type: str) -> str:
+        """Pick a free slug for a new template.
+
+        `master_workflow_templates.slug` is UNIQUE (uq_mwt_slug). The previous
+        code tried exactly two candidates — the slug, then `slug-{type}` — and
+        then inserted regardless, so creating a third template with the same
+        name violated the constraint and surfaced as a 500. Naming two things
+        the same is ordinary admin behaviour, not an error worth a stack trace.
+
+        All colliding slugs are read in one query and the first free candidate
+        is chosen in Python, so the cost does not grow with the number of
+        collisions.
+        """
+        taken = set((await self.db.execute(
+            select(MasterWorkflowTemplate.slug)
+            .where(MasterWorkflowTemplate.slug.like(f"{base}%"))
+        )).scalars().all())
+        if base not in taken:
+            return base
+        typed = f"{base}-{workflow_type}"
+        if typed not in taken:
+            return typed
+        for n in range(2, 1000):
+            candidate = f"{typed}-{n}"
+            if candidate not in taken:
+                return candidate
+        # Beyond a thousand identically-named templates, stop guessing and make
+        # the suffix unique outright rather than looping forever.
+        return f"{typed}-{uuid.uuid4().hex[:8]}"
+
+    @staticmethod
+    def _require_uuid(value, field: str, *, optional: bool = False) -> uuid.UUID | None:
+        """Parse an id from an unschema'd body, reporting the field on failure."""
+        if value in (None, ""):
+            if optional:
+                return None
+            raise ServiceOSException("WORKFLOW_TEMPLATE_INVALID_ID",
+                                     f"{field} is required.", status_code=422)
+        try:
+            return uuid.UUID(str(value))
+        except (ValueError, AttributeError, TypeError):
+            raise ServiceOSException("WORKFLOW_TEMPLATE_INVALID_ID",
+                                     f"{field} must be a valid UUID.", status_code=422) from None
+
+    async def _require_exists(self, table: str, value: uuid.UUID, field: str) -> None:
+        """Reject an id that parses but references nothing.
+
+        `table` is never caller-supplied — only the fixed literals below — so
+        interpolating it is safe; the id itself is bound.
+        """
+        found = await self.db.scalar(
+            text(f"SELECT 1 FROM {table} WHERE id = :id LIMIT 1"), {"id": str(value)})
+        if not found:
+            raise ServiceOSException("WORKFLOW_TEMPLATE_INVALID_ID",
+                                     f"{field} does not reference an existing record.",
+                                     status_code=422)
 
     async def create_workflow_template(self, data: dict) -> dict:
         name = (data.get("name") or "").strip()
@@ -3860,15 +4081,24 @@ class AdminCatalogService:
             raise ServiceOSException("WORKFLOW_TEMPLATE_INVALID_STATUS",
                                      f"status must be one of {sorted(self.VALID_TEMPLATE_STATUSES)}.", status_code=422)
 
-        slug = _slugify(data.get("template_code") or data.get("slug") or name)
-        existing = await self.db.execute(select(MasterWorkflowTemplate).where(MasterWorkflowTemplate.slug == slug))
-        if existing.scalar_one_or_none():
-            slug = f"{slug}-{workflow_type}"
+        slug = await self._allocate_workflow_slug(
+            _slugify(data.get("template_code") or data.get("slug") or name), workflow_type)
 
-        cat_id = uuid.UUID(str(data["category_id"]))
-        svc_id = uuid.UUID(str(data["master_service_id"])) if data.get("master_service_id") else None
-        grp_id = uuid.UUID(str(data["service_group_id"])) if data.get("service_group_id") else None
-        type_id = uuid.UUID(str(data["service_type_id"])) if data.get("service_type_id") else None
+        # These four arrive from a raw dict body with no request schema, so a
+        # malformed id used to reach uuid.UUID() unguarded and surface as a 500
+        # ("an unexpected error occurred") rather than telling the caller which
+        # field was wrong.
+        cat_id = self._require_uuid(data.get("category_id"), "category_id")
+        svc_id = self._require_uuid(data.get("master_service_id"), "master_service_id", optional=True)
+        grp_id = self._require_uuid(data.get("service_group_id"), "service_group_id", optional=True)
+        type_id = self._require_uuid(data.get("service_type_id"), "service_type_id", optional=True)
+
+        # A well-formed id for a category that does not exist was accepted with
+        # 201, producing a template permanently mapped to nothing — it can never
+        # resolve at runtime and shows as ready because it has a category_id.
+        await self._require_exists("service_categories", cat_id, "category_id")
+        if svc_id is not None:
+            await self._require_exists("master_services", svc_id, "master_service_id")
         steps = data.get("steps") or []
         if not isinstance(steps, list):
             raise ServiceOSException("WORKFLOW_TEMPLATE_INVALID_STEPS", "steps must be a list.", status_code=422)
@@ -4851,21 +5081,25 @@ class AdminCatalogService:
         )
         brand_counts = {str(r[0]): r[1] for r in brand_r.all()}
 
-        # Service options
+        # Canonical service-option mappings.  MasterServiceOption is the
+        # reusable option definition and its legacy master_service_id is not
+        # authoritative for the live job-type blueprint.
         opt_r = await self.db.execute(
-            select(MasterServiceOption.master_service_id, func.count().label("cnt"))
-            .where(MasterServiceOption.master_service_id.in_(service_ids),
-                   MasterServiceOption.is_active == True)
-            .group_by(MasterServiceOption.master_service_id)
+            select(ServiceOptionMapping.master_service_id, func.count().label("cnt"))
+            .where(ServiceOptionMapping.master_service_id.in_(service_ids),
+                   ServiceOptionMapping.status == "active",
+                   ServiceOptionMapping.deleted_at.is_(None))
+            .group_by(ServiceOptionMapping.master_service_id)
         )
         option_counts = {str(r[0]): r[1] for r in opt_r.all()}
 
-        # Issue types
+        # Canonical problem/issue mappings for the same reason.
         issue_r = await self.db.execute(
-            select(MasterIssueType.master_service_id, func.count().label("cnt"))
-            .where(MasterIssueType.master_service_id.in_(service_ids),
-                   MasterIssueType.is_active == True)
-            .group_by(MasterIssueType.master_service_id)
+            select(ServiceIssueMapping.master_service_id, func.count().label("cnt"))
+            .where(ServiceIssueMapping.master_service_id.in_(service_ids),
+                   ServiceIssueMapping.status == "active",
+                   ServiceIssueMapping.deleted_at.is_(None))
+            .group_by(ServiceIssueMapping.master_service_id)
         )
         issue_counts = {str(r[0]): r[1] for r in issue_r.all()}
 
@@ -4897,6 +5131,29 @@ class AdminCatalogService:
         )
         stype_counts = {str(r[0]): r[1] for r in stype_r.all()}
 
+        job_type_r = await self.db.execute(
+            select(
+                MasterServiceJobType.master_service_id,
+                func.count(func.distinct(MasterServiceJobType.id)).label("cnt"),
+            )
+            .where(MasterServiceJobType.master_service_id.in_(service_ids),
+                   MasterServiceJobType.is_active == True)
+            .group_by(MasterServiceJobType.master_service_id)
+        )
+        job_type_counts = {str(r[0]): r[1] for r in job_type_r.all()}
+
+        workflow_r = await self.db.execute(
+            select(
+                ServiceJobWorkflow.master_service_id,
+                func.count(func.distinct(ServiceJobWorkflow.job_type_id)).label("cnt"),
+            )
+            .where(ServiceJobWorkflow.master_service_id.in_(service_ids),
+                   ServiceJobWorkflow.is_current == True,
+                   ServiceJobWorkflow.status == "published")
+            .group_by(ServiceJobWorkflow.master_service_id)
+        )
+        workflow_counts = {str(r[0]): r[1] for r in workflow_r.all()}
+
         out: dict[str, dict] = {}
         for sid in [str(s) for s in service_ids]:
             out[sid] = {
@@ -4906,6 +5163,8 @@ class AdminCatalogService:
                 "pricing_rules": pricing_counts.get(sid, 0),
                 "providers":     provider_counts.get(sid, 0),
                 "service_types": stype_counts.get(sid, 0),
+                "job_types":     job_type_counts.get(sid, 0),
+                "workflows":     workflow_counts.get(sid, 0),
                 "checklists":    0,  # No master-level checklist count yet
             }
         return out
@@ -4922,44 +5181,82 @@ class AdminCatalogService:
     def _ms_runtime_readiness(self, svc: MasterService, counts: dict) -> str:
         if not svc.is_active:
             return "inactive"
+        if counts.get("job_types", 0) == 0:
+            return "missing_job_types"
+        if counts.get("workflows", 0) < counts.get("job_types", 0):
+            return "missing_workflows"
         if svc.is_brand_required and counts.get("brands", 0) == 0:
             return "missing_brand_mapping"
         if svc.is_type_required and counts.get("service_types", 0) == 0:
             return "missing_service_options"
         if getattr(svc, "requires_issue_type", False) and counts.get("issues", 0) == 0:
             return "missing_issue_types"
-        if counts.get("pricing_rules", 0) == 0 and (not svc.base_price or float(svc.base_price) == 0):
-            return "missing_pricing"
         return "ready"
 
     async def get_master_services_summary(self) -> dict:
-        stmt = select(MasterService).where(MasterService.deleted_at.is_(None))
-        result = await self.db.execute(stmt)
-        svcs = result.scalars().all()
-        service_ids = [s.id for s in svcs]
-        counts_map = await self._ms_linked_counts(service_ids)
-
-        total = len(svcs)
-        active = sum(1 for s in svcs if s.is_active)
-        inactive = sum(1 for s in svcs if not s.is_active)
-        by_type: dict[str, int] = {}
-        for s in svcs:
-            by_type[s.job_type] = by_type.get(s.job_type, 0) + 1
-
-        pricing_ready = sum(
-            1 for s in svcs
-            if counts_map.get(str(s.id), {}).get("pricing_rules", 0) > 0
+        live = MasterService.deleted_at.is_(None)
+        aggregate = (await self.db.execute(select(
+            func.count().filter(live).label("total"),
+            func.count().filter(and_(live, MasterService.is_active == True)).label("active"),
+            func.count().filter(and_(live, MasterService.is_active == False)).label("inactive"),
+            func.count().filter(MasterService.deleted_at.isnot(None)).label("retired"),
+        ).select_from(MasterService))).one()
+        pricing_exists = exists().where(
+            ServicePricingRule.master_service_id == MasterService.id,
+            ServicePricingRule.is_active == True,
+            ServicePricingRule.deleted_at.is_(None),
         )
-        provider_enabled = sum(
-            1 for s in svcs
-            if counts_map.get(str(s.id), {}).get("providers", 0) > 0
+        provider_exists = exists().where(
+            TenantService.master_service_id == MasterService.id,
+            TenantService.is_enabled == True,
+            TenantService.deleted_at.is_(None),
         )
+        pricing_ready = int(await self.db.scalar(
+            select(func.count()).select_from(MasterService).where(live, pricing_exists)
+        ) or 0)
+        provider_enabled = int(await self.db.scalar(
+            select(func.count()).select_from(MasterService).where(live, provider_exists)
+        ) or 0)
+        job_type_exists = exists().where(
+            MasterServiceJobType.master_service_id == MasterService.id,
+            MasterServiceJobType.is_active == True,
+        )
+        missing_workflow_exists = exists().where(
+            MasterServiceJobType.master_service_id == MasterService.id,
+            MasterServiceJobType.is_active == True,
+            ~exists().where(
+                ServiceJobWorkflow.master_service_id == MasterServiceJobType.master_service_id,
+                ServiceJobWorkflow.job_type_id == MasterServiceJobType.job_type_id,
+                ServiceJobWorkflow.is_current == True,
+                ServiceJobWorkflow.status == "published",
+            ),
+        )
+        blueprint_ready = int(await self.db.scalar(
+            select(func.count()).select_from(MasterService)
+            .join(ServiceCategory, ServiceCategory.id == MasterService.category_id)
+            .join(ServiceGroup, ServiceGroup.id == MasterService.service_group_id)
+            .where(
+                live, MasterService.is_active == True,
+                ServiceCategory.is_active == True,
+                ServiceGroup.status == "active", ServiceGroup.deleted_at.is_(None),
+                job_type_exists, ~missing_workflow_exists,
+            )
+        ) or 0)
+        type_rows = (await self.db.execute(
+            select(MasterService.job_type, func.count()).where(live)
+            .group_by(MasterService.job_type)
+        )).all()
+        by_type = {str(job_type): int(count) for job_type, count in type_rows if job_type}
+        total = int(aggregate.total or 0)
         return {
-            "total": total, "active": active, "inactive": inactive,
+            "total": total, "active": int(aggregate.active or 0),
+            "inactive": int(aggregate.inactive or 0), "retired": int(aggregate.retired or 0),
             "by_job_type": by_type,
             "pricing_ready": pricing_ready,
             "missing_pricing": total - pricing_ready,
             "provider_enabled": provider_enabled,
+            "blueprint_ready": blueprint_ready,
+            "blueprint_attention": total - blueprint_ready,
         }
 
     async def list_master_services_enterprise(
@@ -4970,18 +5267,21 @@ class AdminCatalogService:
         job_type: str | None = None,
         pricing_model: str | None = None,
         is_active: bool | None = None,
-        limit: int = 200,
+        retired: bool = False,
+        readiness: str | None = None,
+        has_providers: bool | None = None,
+        sort_by: str = "display_order",
+        sort_dir: str = "asc",
+        limit: int = 100,
         offset: int = 0,
     ) -> dict:
-        # Category + group name maps
-        cat_r = await self.db.execute(select(ServiceCategory.id, ServiceCategory.name))
-        cat_map = {str(r[0]): r[1] for r in cat_r.all()}
-        grp_r = await self.db.execute(
-            select(ServiceGroup.id, ServiceGroup.name).where(ServiceGroup.deleted_at.is_(None))
+        stmt = (
+            select(MasterService, ServiceCategory.name, ServiceCategory.is_active,
+                   ServiceGroup.name, ServiceGroup.status, ServiceGroup.deleted_at)
+            .outerjoin(ServiceCategory, ServiceCategory.id == MasterService.category_id)
+            .outerjoin(ServiceGroup, ServiceGroup.id == MasterService.service_group_id)
+            .where(MasterService.deleted_at.isnot(None) if retired else MasterService.deleted_at.is_(None))
         )
-        grp_map = {str(r[0]): r[1] for r in grp_r.all()}
-
-        stmt = select(MasterService).where(MasterService.deleted_at.is_(None))
         if category_id:
             stmt = stmt.where(MasterService.category_id == category_id)
         if service_group_id:
@@ -4992,64 +5292,227 @@ class AdminCatalogService:
             stmt = stmt.where(MasterService.pricing_model == pricing_model)
         if is_active is not None:
             stmt = stmt.where(MasterService.is_active == is_active)
+        provider_exists = exists().where(
+            TenantService.master_service_id == MasterService.id,
+            TenantService.is_enabled == True,
+            TenantService.deleted_at.is_(None),
+        )
+        if has_providers is not None:
+            stmt = stmt.where(provider_exists if has_providers else ~provider_exists)
+        job_type_exists = exists().where(
+            MasterServiceJobType.master_service_id == MasterService.id,
+            MasterServiceJobType.is_active == True,
+        )
+        workflow_exists = exists().where(
+            ServiceJobWorkflow.master_service_id == MasterService.id,
+            ServiceJobWorkflow.is_current == True,
+            ServiceJobWorkflow.status == "published",
+        )
+        missing_workflow_exists = exists().where(
+            MasterServiceJobType.master_service_id == MasterService.id,
+            MasterServiceJobType.is_active == True,
+            ~exists().where(
+                ServiceJobWorkflow.master_service_id == MasterServiceJobType.master_service_id,
+                ServiceJobWorkflow.job_type_id == MasterServiceJobType.job_type_id,
+                ServiceJobWorkflow.is_current == True,
+                ServiceJobWorkflow.status == "published",
+            ),
+        )
+        if readiness == "ready":
+            stmt = stmt.where(
+                MasterService.is_active == True,
+                ServiceCategory.is_active == True,
+                ServiceGroup.status == "active",
+                ServiceGroup.deleted_at.is_(None),
+                job_type_exists,
+                workflow_exists, ~missing_workflow_exists,
+            )
+        elif readiness == "inactive":
+            stmt = stmt.where(MasterService.is_active == False)
+        elif readiness == "missing_job_types":
+            stmt = stmt.where(MasterService.is_active == True, ~job_type_exists)
+        elif readiness == "missing_workflows":
+            stmt = stmt.where(MasterService.is_active == True, job_type_exists, missing_workflow_exists)
+        elif readiness == "category_inactive":
+            stmt = stmt.where(ServiceCategory.is_active == False)
+        elif readiness == "group_unavailable":
+            stmt = stmt.where(or_(ServiceGroup.status != "active", ServiceGroup.deleted_at.isnot(None)))
         if q:
             like = f"%{q.lower()}%"
             stmt = stmt.where(
                 func.lower(MasterService.service_name).like(like) |
                 func.lower(MasterService.slug).like(like)
             )
-        total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
-        stmt = stmt.order_by(MasterService.display_order, MasterService.service_name).limit(limit).offset(offset)
+        total = int(await self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        sort_columns = {
+            "name": MasterService.service_name,
+            "category_name": ServiceCategory.name,
+            "group_name": ServiceGroup.name,
+            "job_type": MasterService.job_type,
+            "pricing_model": MasterService.pricing_model,
+            "status": MasterService.is_active,
+            "display_order": MasterService.display_order,
+            "created_at": MasterService.created_at,
+            "updated_at": MasterService.updated_at,
+            "deleted_at": MasterService.deleted_at,
+        }
+        sort_column = sort_columns.get(sort_by, MasterService.display_order)
+        direction = sort_column.desc() if sort_dir.lower() == "desc" else sort_column.asc()
+        stmt = stmt.order_by(direction.nulls_last(), MasterService.service_name.asc(), MasterService.id.asc()).limit(limit).offset(offset)
         result = await self.db.execute(stmt)
-        svcs = result.scalars().all()
+        rows = result.all()
+        svcs = [row[0] for row in rows]
         service_ids = [s.id for s in svcs]
         counts_map = await self._ms_linked_counts(service_ids)
 
         out = []
-        for s in svcs:
+        for s, category_name, category_active, group_name, group_status, group_deleted_at in rows:
             d = self._svc_dict(s)
             sid = str(s.id)
             lc = counts_map.get(sid, {})
             d["id"] = sid
-            d["category_name"] = cat_map.get(str(s.category_id), "—")
-            d["group_name"] = grp_map.get(str(s.service_group_id), None) if s.service_group_id else None
+            d["category_name"] = category_name or "Missing category"
+            d["category_active"] = bool(category_active)
+            d["group_name"] = group_name
+            d["group_status"] = group_status
+            d["group_retired"] = group_deleted_at is not None
             d["linked_counts"] = lc
             d["pricing_readiness"] = self._ms_pricing_readiness(s, lc.get("pricing_rules", 0))
             d["runtime_readiness"] = self._ms_runtime_readiness(s, lc)
+            if not category_active:
+                d["runtime_readiness"] = "category_inactive"
+            elif s.service_group_id and (group_deleted_at is not None or group_status != "active"):
+                d["runtime_readiness"] = "group_unavailable"
             out.append(d)
         return {"services": out, "total": total, "limit": limit, "offset": offset}
 
-    async def activate_master_service(self, service_id: uuid.UUID) -> dict:
-        result = await self.db.execute(select(MasterService).where(MasterService.id == service_id))
-        svc = result.scalar_one_or_none()
-        if not svc:
+    async def get_master_service_enterprise(self, service_id: uuid.UUID, include_retired: bool = False) -> dict:
+        svc = await self._load_master_service_any(service_id)
+        if svc.deleted_at and not include_retired:
             raise NotFoundException("MasterService", str(service_id))
+        category = await self.db.get(ServiceCategory, svc.category_id)
+        group = await self.db.get(ServiceGroup, svc.service_group_id) if svc.service_group_id else None
+        counts = (await self._ms_linked_counts([svc.id])).get(str(svc.id), {})
+        row = self._svc_dict(svc)
+        row.update({
+            "id": str(svc.id), "category_name": category.name if category else "Unknown",
+            "category_active": bool(category and category.is_active),
+            "group_name": group.name if group else None,
+            "group_status": group.status if group else None,
+            "group_retired": bool(group and group.deleted_at), "linked_counts": counts,
+            "pricing_readiness": self._ms_pricing_readiness(svc, counts.get("pricing_rules", 0)),
+            "runtime_readiness": self._ms_runtime_readiness(svc, counts),
+        })
+        if not category or not category.is_active:
+            row["runtime_readiness"] = "category_inactive"
+        elif svc.service_group_id and (not group or group.deleted_at is not None or group.status != "active"):
+            row["runtime_readiness"] = "group_unavailable"
+        return row
+
+    async def get_master_service_audit(self, service_id: uuid.UUID, limit: int = 100) -> dict:
+        await self._load_master_service_any(service_id)
+        return await self.list_master_data_audit("master_service", service_id, limit)
+
+    async def activate_master_service(self, service_id: uuid.UUID) -> dict:
+        svc = await self._load_master_service(service_id)
+        category = await self._load_category(svc.category_id)
+        if not category.is_active:
+            raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "Activate the parent category first.", status_code=409)
+        if not svc.service_group_id:
+            raise ServiceOSException("SERVICE_GROUP_REQUIRED", "Assign an active service group before activation.", status_code=409)
+        group = await self._load_service_group(svc.service_group_id)
+        if group.status != "active":
+            raise ServiceOSException("SERVICE_GROUP_INACTIVE", "Activate the parent service group first.", status_code=409)
+        old = self._svc_dict(svc)
         svc.is_active = True
-        svc.deleted_at = None
         await self.db.flush()
-        return self._svc_dict(svc)
+        result = self._svc_dict(svc)
+        await self._audit("master_service", svc.id, "activate", old, result,
+                          f"Activated master service '{svc.service_name}'")
+        return result
 
     async def deactivate_master_service(self, service_id: uuid.UUID) -> dict:
         svc = await self._load_master_service(service_id)
+        old = self._svc_dict(svc)
         svc.is_active = False
         await self.db.flush()
-        return self._svc_dict(svc)
+        result = self._svc_dict(svc)
+        await self._audit("master_service", svc.id, "deactivate", old, result,
+                          f"Deactivated master service '{svc.service_name}'")
+        return result
 
-    async def archive_master_service(self, service_id: uuid.UUID) -> dict:
+    async def archive_master_service(self, service_id: uuid.UUID, reason: str) -> dict:
+        if len((reason or "").strip()) < 10:
+            raise ServiceOSException("RETIRE_REASON_REQUIRED", "A retirement reason of at least 10 characters is required.", status_code=422)
         svc = await self._load_master_service(service_id)
+        enabled = int(await self.db.scalar(select(func.count()).select_from(TenantService).where(
+            TenantService.master_service_id == service_id,
+            TenantService.deleted_at.is_(None), TenantService.is_enabled == True,
+        )) or 0)
+        if enabled:
+            raise ServiceOSException(
+                "MASTER_SERVICE_IN_USE",
+                f"This service is enabled by {enabled} provider workspace(s). Deactivate it and migrate providers before retiring it.",
+                status_code=409,
+            )
+        old = self._svc_dict(svc)
         svc.is_active = False
         svc.deleted_at = utcnow()
         await self.db.flush()
+        await self._audit("master_service", svc.id, "retire", old, self._svc_dict(svc), reason.strip())
         return {"archived": True, "service_id": str(service_id)}
+
+    async def restore_master_service(self, service_id: uuid.UUID, reason: str) -> dict:
+        if len((reason or "").strip()) < 10:
+            raise ServiceOSException("RESTORE_REASON_REQUIRED", "A restore reason of at least 10 characters is required.", status_code=422)
+        svc = await self._load_master_service_any(service_id)
+        if svc.deleted_at is None:
+            raise ServiceOSException("MASTER_SERVICE_NOT_RETIRED", "This master service is not retired.", status_code=409)
+        old = self._svc_dict(svc)
+        svc.deleted_at = None
+        svc.is_active = False
+        await self.db.flush()
+        result = self._svc_dict(svc)
+        await self._audit("master_service", svc.id, "restore", old, result, reason.strip())
+        return result
+
+    async def bulk_master_service_status(self, ids: list[uuid.UUID], action: str) -> dict:
+        if not ids:
+            raise ServiceOSException("NO_SERVICES_SELECTED", "Select at least one master service.", status_code=422)
+        if len(ids) > 100:
+            raise ServiceOSException("BULK_LIMIT_EXCEEDED", "At most 100 services can be changed at once.", status_code=422)
+        if action not in {"activate", "deactivate"}:
+            raise ServiceOSException("INVALID_BULK_ACTION", "Bulk action must be activate or deactivate.", status_code=422)
+        updated, errors = [], []
+        for service_id in ids:
+            try:
+                result = await (self.activate_master_service(service_id) if action == "activate" else self.deactivate_master_service(service_id))
+                updated.append(result["service_id"])
+            except (ServiceOSException, NotFoundException) as exc:
+                errors.append({"id": str(service_id), "error": str(exc)})
+        return {"action": action, "updated": updated, "updated_count": len(updated), "errors": errors}
 
     async def export_master_services(
         self, category_id: uuid.UUID | None = None,
         service_group_id: uuid.UUID | None = None,
         job_type: str | None = None,
         is_active: bool | None = None,
+        retired: bool = False,
     ) -> list[dict]:
         data = await self.list_master_services_enterprise(
             category_id=category_id, service_group_id=service_group_id,
-            job_type=job_type, is_active=is_active, limit=5000,
+            job_type=job_type, is_active=is_active, retired=retired, limit=100,
         )
-        return data["services"]
+        rows = list(data["services"])
+        while len(rows) < data["total"] and len(rows) < 10000:
+            page = await self.list_master_services_enterprise(
+                category_id=category_id, service_group_id=service_group_id,
+                job_type=job_type, is_active=is_active, retired=retired,
+                limit=100, offset=len(rows),
+            )
+            if not page["services"]:
+                break
+            rows.extend(page["services"])
+        if data["total"] > 10000:
+            raise ServiceOSException("EXPORT_TOO_LARGE", "This export exceeds 10,000 rows. Narrow the filters before exporting.", status_code=422)
+        return rows

@@ -86,28 +86,44 @@ export default function ActivationCenterPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const payGate = useCallback(async (gateKey: string) => {
+  const payActivationFunding = useCallback(async () => {
     setPaymentNotice(null);
-    setPayingGate(gateKey);
+    setPayingGate("funding");
+    let startedOrderId: string | null = null;
     try {
-      const order = gateKey === "security_deposit"
-        ? await activationPaymentApi.createSecurityDepositOrder()
-        : await activationPaymentApi.createCreditPackageOrder();
+      const order = await activationPaymentApi.createFundingOrder();
+      if (order.already_confirmed) {
+        setPaymentNotice("Your earlier payment was found and confirmed. The checklist has been refreshed.");
+        load();
+        return;
+      }
+      startedOrderId = order.order_id;
 
-      // Server-verified confirmation only: Razorpay Checkout's own success
-      // callback here is NOT what marks anything paid -- our backend
-      // webhook (activation_payment_router.py, HMAC-verified server-to-
-      // server) is the only thing that ever updates tenant_billing. This
-      // just tells the tenant their payment was submitted; the checklist
-      // updates itself via the existing 20s poll once the webhook lands.
-      await openCheckout({
+      // Backend verifies Razorpay's signed order/payment tuple and resolves
+      // all money allocations from its own stored order.
+      const payment = await openCheckout({
         keyId: order.key, orderId: order.order_id, amountPaise: order.amount_paise,
-        currency: order.currency, name: "ServiceOS — Home Services Activation",
-        description: gateKey === "security_deposit" ? "Security deposit" : "Starter credit package",
+        currency: order.currency, name: "Fuvay — Home Services Activation",
+        description: order.quote?.checkout_mode === "credits_only"
+          ? "Starter usage credits"
+          : "Security deposit and starter credits",
       });
-      setPaymentNotice("Payment submitted. This checklist updates automatically once it's confirmed — usually within a few seconds.");
+      await activationPaymentApi.confirmFunding(payment);
+      setPaymentNotice("Payment confirmed. The activation checklist has been refreshed.");
       load();
     } catch (e: unknown) {
+      if (startedOrderId) {
+        try {
+          const reconciled = await activationPaymentApi.reconcileFunding(startedOrderId);
+          if (reconciled.status === "captured" || reconciled.captured) {
+            setPaymentNotice("Payment was captured and reconciled successfully.");
+            load();
+            return;
+          }
+        } catch {
+          // The next retry performs the same server-side reconciliation.
+        }
+      }
       setPaymentNotice(e instanceof ServiceOSError ? e.message
         : (e instanceof Error ? e.message : "Payment could not be started."));
     } finally {
@@ -155,6 +171,9 @@ export default function ActivationCenterPage() {
   const totalRequired = requiredGates.length;
   const pct = totalRequired > 0 ? Math.round((readyCount / totalRequired) * 100) : 100;
   const isActive = data.status === "active";
+  const fundingGateKey = gates.find(g =>
+    (g.key === "security_deposit" || g.key === "category_wallet") && g.state === "action_required"
+  )?.key;
   const activityRows = data.review_activity.filter(a => a.action in ACTIVITY_LABEL || a.action.startsWith("enrollment.activ"));
 
   return (
@@ -236,10 +255,10 @@ export default function ActivationCenterPage() {
                     </p>
                   </div>
                   <Badge variant={badge.variant} size="sm">{badge.label}</Badge>
-                  {canAct && (g.key === "security_deposit" || g.key === "category_wallet") && (
-                    <Btn variant="secondary" size="sm" disabled={payingGate === g.key}
-                         onClick={() => payGate(g.key)}>
-                      {payingGate === g.key ? "Opening…" : (g.key === "security_deposit" ? "Pay deposit" : "Buy credit package")}
+                  {canAct && g.key === fundingGateKey && (
+                    <Btn variant="secondary" size="sm" disabled={payingGate === "funding"}
+                         onClick={payActivationFunding}>
+                      {payingGate === "funding" ? "Opening…" : (finance?.activation_requirements?.funding_quote?.checkout_label ?? "Complete funding")}
                     </Btn>
                   )}
                   {canAct && g.key !== "security_deposit" && g.key !== "category_wallet" && (

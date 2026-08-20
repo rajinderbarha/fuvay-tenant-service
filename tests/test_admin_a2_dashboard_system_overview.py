@@ -39,19 +39,19 @@ def test_route_exists():
 
 # ── 2. Dashboard layout / header ──────────────────────────────────────────────
 def test_page_header_title_and_subtitle():
-    assert "Platform Command Center" in PAGE
-    assert "Monitor ServiceOS health, tenants, operations, finance, trust, compliance, and system engines in real time." in PAGE
+    assert "Platform command center" in PAGE
+    assert "One operational view of provider readiness, native bookings" in PAGE
 
 
 def test_header_actions_present():
-    for action in ["Refresh", "Export Snapshot", "Open Audit Logs"]:
+    for action in ["Refresh", "Export Snapshot", "Reports"]:
         assert action in PAGE
 
 
 # ── 3. Platform health hero / KPI cards ───────────────────────────────────────
 def test_kpi_cards_present():
     for label in ["Platform Health", "Active Tenants", "Live Operations",
-                  "Pending Admin Actions", "At-Risk Tenants", "Critical Alerts"]:
+                  "Pending Admin Actions", "At-Risk Tenants"]:
         assert label in PAGE
 
 
@@ -79,50 +79,29 @@ def test_home_services_summary_section_exists():
 
 
 def test_home_services_summary_shown_separately_not_merged():
-    # Must be its own <Card>, not folded into the 4-column snapshot row.
-    hs_section = PAGE.split('>Home Services Summary<')[1][:4000]
-    assert "Bookable Providers" in hs_section
-    assert "Not Bookable Providers" in hs_section
-    assert "Service Catalog Health" in hs_section
-    assert "Pricing Rule Health" in hs_section
-    assert "Service Area Coverage" in hs_section
-    assert "Provider Matching" in hs_section
-    assert "Auto Price Options" in hs_section
-    assert "Completed Job Deduction" in hs_section
+    assert 'SectionTitle title="Home Services Summary"' in PAGE
+    for label in ["Service Catalog", "Finance Rules",
+                  "Tenant Service Areas", "Bookability & Trust Gates", "Completion Deductions"]:
+        assert label in PAGE
+    assert "Auto Price Options" not in PAGE
 
 
 def test_home_services_quick_links_route_under_home_services_prefix():
-    hs_section = PAGE.split('>Home Services Summary<')[1][:4000]
-    # Service Catalog moved to the Catalog Workspace (admin catalog ownership
-    # correction); Service Areas / Zones (retired Pricing Tiers UI) replaced
-    # by Service Area Requests -- both real routes, neither under the
-    # /admin/home-services/ prefix, so checked separately below. Pricing
-    # Rules quick link removed entirely -- that screen is retired (admin no
-    # longer sets price boundaries).
-    for href in ["/admin/home-services/price-experience", "/admin/home-services/provider-matching",
-                 "/admin/home-services/matching-diagnostics",
-                 "/admin/home-services/completed-job-deduction"]:
-        assert href in hs_section, f"missing quick link: {href}"
-    assert "/admin/catalog-workspace" in hs_section
-    assert "/admin/service-area-requests" in hs_section
-    assert "/admin/home-services/pricing-rules" not in hs_section
+    for href in ["/admin/catalog-workspace", "/admin/home-services/providers",
+                 "/admin/bookability/providers",
+                 "/admin/home-services/finance?tab=monetization",
+                 "/admin/home-services/finance?tab=provider-charges"]:
+        assert href in PAGE, f"missing quick link: {href}"
+    assert "/admin/service-area-requests" not in PAGE
+    assert "/admin/home-services/provider-matching" not in PAGE
+    assert "/admin/home-services/price-experience" not in PAGE
+    assert "/admin/home-services/pricing-rules" not in PAGE
 
 
 def test_home_services_hardgate_no_loose_common_route():
-    hs_section = PAGE.split('>Home Services Summary<')[1][:4000]
-    # Every href must be prefixed /admin/home-services/ EXCEPT the two real,
-    # deliberate exceptions: the Catalog Workspace (moved out of the
-    # home-services-specific catalog console) and Service Area Requests
-    # (the retired Pricing Tiers / Service Areas page's real replacement,
-    # a cross-vertical serviceability workflow, not home-services-scoped).
-    ALLOWED_EXCEPTIONS = {"/admin/catalog-workspace", "/admin/service-area-requests"}
-    import re
-    hrefs = re.findall(r'href:\s*"(/admin/[^"]+)"', hs_section)
-    assert hrefs, "expected at least one href in Home Services section"
-    for href in hrefs:
-        if href in ALLOWED_EXCEPTIONS:
-            continue
-        assert href.startswith("/admin/home-services/"), f"loose common route inside Home Services section: {href}"
+    assert 'vertical: "home_services"' in PAGE
+    assert 'dashboardApi.getOperationsSnapshot("home_services")' in PAGE
+    assert '"/admin/tenants"' not in PAGE
 
 
 def test_backend_home_services_summary_endpoint_real():
@@ -131,11 +110,14 @@ def test_backend_home_services_summary_endpoint_real():
     # real SQL, not mock data
     assert "SELECT COUNT(*) FROM tenants WHERE vertical = 'home_services'" in DASHBOARD_SERVICE
     assert "provider_visibility_statuses" in DASHBOARD_SERVICE
+    assert "tenant_service_area_health" in DASHBOARD_SERVICE
+    assert "provider_bookability_health" in DASHBOARD_SERVICE
+    assert "provider_matching_health" not in DASHBOARD_SERVICE
 
 
 # ── 7. Operations summary ─────────────────────────────────────────────────────
 def test_operations_summary():
-    assert "Operations Snapshot" in PAGE
+    assert "Live operations board" in PAGE
     for label in ["Live Jobs", "Today's Bookings", "Pending Provider Acceptance", "SLA Breaches"]:
         assert label in PAGE
 
@@ -204,7 +186,9 @@ def test_section_error_component_exists():
 
 
 def test_section_error_wired_into_finance_tenant_ops_trust_and_home_services():
-    for anchor in ["finance.error", "lifecycle.error", "ops.error", "trust.error", "homeServices.error"]:
+    for anchor in ["finance.error", "lifecycle.error", "data.error", "live.error",
+                   "risk.error", "trust.error", "home.error", "engines.error",
+                   "compliance.error", "categories.error"]:
         assert anchor in PAGE
 
 
@@ -246,6 +230,7 @@ def test_all_api_calls_use_real_dashboard_api():
 
 
 # ── Data normalization ────────────────────────────────────────────────────────
-def test_safe_number_fallback_in_ministat():
-    assert "function MiniStat" in PAGE
-    assert "isFinite(value)" in PAGE
+def test_safe_number_fallbacks_in_kpi_and_metrics():
+    assert "function Kpi" in PAGE
+    assert "?? 0" in PAGE
+    assert "Number(provider.credit_balance || 0)" in PAGE

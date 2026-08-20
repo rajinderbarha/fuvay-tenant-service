@@ -9,11 +9,12 @@ import {
   type HsConsoleService, type CatalogJobType, type DimensionGridRow, type CatalogDimensionDef,
   type BlueprintReadiness, type BlueprintImpactReport, type BlueprintDraftStatus, type CatalogQuestionItem,
   type CatalogIssueTypeMapping, type CatalogOptionMapping, type ServiceJobWorkflow,
-  type ChecklistTemplateRow, type JobTypeChecklistMappingRow, type ChecklistUsage, type ChecklistActor,
+  type ChecklistUsage, type ChecklistActor,
   type ChecklistCompletionGate, type ChecklistPurpose, type ChecklistItemType,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { WorkflowStepBuilder } from "./WorkflowStepBuilder";
 import {
   ChevronRight, RefreshCw, XCircle, CheckCircle2, Layers, Lock, Plus,
   CircleDot, ListChecks, SlidersHorizontal, HelpCircle, Search, ClipboardList,
@@ -60,6 +61,10 @@ const WORKSPACE_TABS = [
 ] as const;
 type WorkspaceTabKey = typeof WORKSPACE_TABS[number]["key"];
 
+function isWorkspaceTabKey(value: string | null): value is WorkspaceTabKey {
+  return !!value && WORKSPACE_TABS.some(tab => tab.key === value);
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminCatalogWorkspacePage() {
   const searchParams = useSearchParams();
@@ -68,19 +73,21 @@ export default function AdminCatalogWorkspacePage() {
   const canWrite = perm.has("catalog:services:write");
 
   const [serviceQuery, setServiceQuery] = useState("");
+  const [debouncedServiceQuery, setDebouncedServiceQuery] = useState("");
   const [serviceGroupFilter, setServiceGroupFilter] = useState("");
   const [servicePage, setServicePage] = useState(1);
-  const servicePageSize = 50;
+  const [servicePageSize, setServicePageSize] = useState(25);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedServiceQuery(serviceQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [serviceQuery]);
   const listApi = useApi(useCallback(() => homeServicesCatalogConsoleApi.listServices({
-    q: serviceQuery || undefined,
+    q: debouncedServiceQuery || undefined,
     service_id: searchParams.get("service_id") || undefined,
     service_group_id: serviceGroupFilter || undefined,
     limit: servicePageSize,
     offset: (servicePage - 1) * servicePageSize,
-  }), [serviceQuery, serviceGroupFilter, servicePage, searchParams]), [serviceQuery, serviceGroupFilter, servicePage, searchParams]);
-  // Global job-type catalog (platform-wide definitions) -- used only to pick
-  // from when attaching a job type to a service, never as the tab source.
-  const jobTypesApi = useApi(useCallback(() => catalogWorkspaceApi.listJobTypes(), []), []);
+  }), [debouncedServiceQuery, serviceGroupFilter, servicePage, servicePageSize, searchParams]), [debouncedServiceQuery, serviceGroupFilter, servicePage, servicePageSize, searchParams]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedJobTypeId, setSelectedJobTypeId] = useState<string | null>(null);
@@ -90,12 +97,12 @@ export default function AdminCatalogWorkspacePage() {
   function notify(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500);
   }
+  const requestedTab = searchParams.get("tab");
 
   const services = listApi.data?.services ?? [];
   const groups = listApi.data?.groups ?? [];
   const grouped = groups.map(g => ({ group: g, services: services.filter(s => s.service_group_id === g.group_id) }));
   const ungrouped = services.filter(s => !s.service_group_id);
-  const jobTypes = jobTypesApi.data?.items ?? [];
 
   useEffect(() => {
     const requested = searchParams.get("service_id");
@@ -103,6 +110,12 @@ export default function AdminCatalogWorkspacePage() {
       setSelectedId(requested);
     }
   }, [searchParams, services]);
+
+  useEffect(() => {
+    if (isWorkspaceTabKey(requestedTab)) {
+      setTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   // Job types actually added to the SELECTED service (master_service_job_types)
   // -- the real, per-service tab source. Fixes a gap where the tabs used to
@@ -115,7 +128,6 @@ export default function AdminCatalogWorkspacePage() {
     [selectedId], { enabled: !!selectedId },
   );
   const serviceJobTypeLinks = (serviceJobTypesApi.data?.items ?? []).filter(l => l.is_active);
-  const unlinkedJobTypes = jobTypes.filter(jt => jt.is_active && !serviceJobTypeLinks.some(l => l.job_type_id === jt.id));
 
   const readinessApi = useApi(
     useCallback(() => selectedId ? catalogWorkspaceApi.getReadiness(selectedId, selectedJobTypeId) : Promise.resolve(null as unknown as BlueprintReadiness),
@@ -146,7 +158,9 @@ export default function AdminCatalogWorkspacePage() {
   }
 
   function selectService(id: string) {
-    setSelectedId(id); setSelectedJobTypeId(null); setTab("dimensions");
+    setSelectedId(id);
+    setSelectedJobTypeId(null);
+    setTab(isWorkspaceTabKey(requestedTab) ? requestedTab : "dimensions");
   }
 
   if (!perm.loading && !canRead) {
@@ -166,9 +180,12 @@ export default function AdminCatalogWorkspacePage() {
       <style>{`
         @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-        .cw-shell{display:grid;grid-template-columns:260px 1fr 300px;gap:16px;align-items:start}
-        @media(max-width:1300px){.cw-shell{grid-template-columns:220px 1fr 280px}}
+        .cw-shell{display:grid;grid-template-columns:minmax(240px,280px) minmax(0,1fr) minmax(280px,320px);gap:16px;align-items:start}
+        @media(max-width:1300px){.cw-shell{grid-template-columns:220px minmax(0,1fr) 280px}}
         @media(max-width:1000px){.cw-shell{grid-template-columns:1fr}}
+        .cw-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+        .cw-side{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow:auto}
+        @media(max-width:1000px){.cw-side{position:static;max-height:none}}
         .cw-jt-tab{padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;border-radius:999px;border:1px solid var(--border);background:var(--surface-sunken);cursor:pointer;color:var(--text-secondary)}
         .cw-jt-tab.active{color:white;background:var(--brand);border-color:var(--brand)}
         .cw-wtab{padding:9px 14px;font-size:12px;font-weight:600;white-space:nowrap;border:none;background:none;cursor:pointer;color:var(--text-secondary);border-bottom:2px solid transparent;display:flex;align-items:center;gap:6}
@@ -196,11 +213,10 @@ export default function AdminCatalogWorkspacePage() {
             Catalog Workspace
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Structural configuration only — pricing is never set here. Choose a service, then a job type, to configure
-            its generic dimensions, customer problems &amp; questions, and see live blueprint readiness.
+            Configure platform-owned service behavior, customer questions, options, checklists, and tenant setup rules. Price amounts remain tenant-owned.
           </p>
         </div>
-        <button onClick={() => { listApi.refetch(); jobTypesApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}
+        <button onClick={() => { listApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}
           style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
           <RefreshCw size={12}/> Refresh
         </button>
@@ -210,7 +226,7 @@ export default function AdminCatalogWorkspacePage() {
 
       <div className="cw-shell">
         {/* ── Column 1: Catalog Structure ─────────────────────────────────── */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 14, maxHeight: 760, overflowY: "auto" }}>
+        <div className="cw-panel cw-side" style={{ padding: 14 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px", padding: "0 4px" }}>
             Catalog Structure
           </p>
@@ -247,17 +263,21 @@ export default function AdminCatalogWorkspacePage() {
               {services.length === 0 && <p style={{ fontSize: 12, color: "var(--text-tertiary)", padding: 8 }}>No services configured yet.</p>}
             </>
           )}
-          {(listApi.data?.total ?? 0) > servicePageSize && (
+          {(listApi.data?.total ?? 0) > 0 && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--border)" }}>
               <button disabled={servicePage <= 1} onClick={() => setServicePage(p => p - 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage <= 1 ? "default" : "pointer" }}>Previous</button>
-              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{servicePage} / {Math.ceil((listApi.data?.total ?? 0) / servicePageSize)}</span>
+              <select aria-label="Services per page" value={servicePageSize} onChange={event => { setServicePageSize(Number(event.target.value)); setServicePage(1); }}
+                style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 6px", background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 10 }}>
+                {[25, 50, 100].map(size => <option key={size} value={size}>{size} / page</option>)}
+              </select>
+              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{servicePage} / {Math.max(1, Math.ceil((listApi.data?.total ?? 0) / servicePageSize))}</span>
               <button disabled={servicePage * servicePageSize >= (listApi.data?.total ?? 0)} onClick={() => setServicePage(p => p + 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage * servicePageSize >= (listApi.data?.total ?? 0) ? "default" : "pointer" }}>Next</button>
             </div>
           )}
         </div>
 
         {/* ── Column 2: Service Workspace ──────────────────────────────────── */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "20px 22px", minHeight: 500 }}>
+        <div className="cw-panel" style={{ padding: "20px 22px", minHeight: 500, minWidth: 0 }}>
           {!selectedId ? (
             <div style={{ padding: "60px 20px", textAlign: "center", color: "var(--text-tertiary)" }}>
               <Layers size={30} style={{ opacity: 0.3, marginBottom: 10 }}/>
@@ -273,12 +293,12 @@ export default function AdminCatalogWorkspacePage() {
                   {draftApi.data && draftApi.data.has_pending_changes && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--warning-bg, var(--surface-sunken))", color: "var(--warning-text, var(--text-secondary))", border: "1px solid var(--border)" }}>
-                        Draft changes · {draftApi.data.pending_change_count}
+                        Identity draft · {draftApi.data.pending_change_count}
                       </span>
                       {canWrite && (
                         <button onClick={handlePublish} disabled={publishAction.loading}
                           style={{ fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white", cursor: publishAction.loading ? "default" : "pointer" }}>
-                          {publishAction.loading ? "Publishing…" : "Publish"}
+                          {publishAction.loading ? "Publishing..." : "Publish identity"}
                         </button>
                       )}
                     </div>
@@ -304,9 +324,8 @@ export default function AdminCatalogWorkspacePage() {
                 )}
                 {showAddJobType && (
                   <AddJobTypeToServicePicker masterServiceId={selectedId}
-                    unlinkedJobTypes={unlinkedJobTypes}
+                    linkedJobTypeIds={serviceJobTypeLinks.map(link => link.job_type_id)}
                     onAdded={() => { setShowAddJobType(false); serviceJobTypesApi.refetch(); notify("Job type added to this service."); }}
-                    onNewJobTypeCreated={() => jobTypesApi.refetch()}
                     onError={(msg) => notify(msg, "error")}/>
                 )}
               </div>
@@ -349,7 +368,7 @@ export default function AdminCatalogWorkspacePage() {
                 <PreviewTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId}/>
               )}
               {tab === "tenant_rules" && (
-                <TenantSetupRulesTab s={services.find(s => s.service_id === selectedId)} canWrite={canWrite}
+                <TenantSetupRulesTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
                   notify={notify} onChanged={() => { listApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}/>
               )}
             </>
@@ -357,8 +376,8 @@ export default function AdminCatalogWorkspacePage() {
         </div>
 
         {/* ── Column 3: Readiness + Impact ─────────────────────────────────── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 16 }}>
+        <div className="cw-side" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="cw-panel" style={{ padding: 16 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               Blueprint Readiness
             </p>
@@ -373,7 +392,7 @@ export default function AdminCatalogWorkspacePage() {
             )}
           </div>
 
-          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 16 }}>
+          <div className="cw-panel" style={{ padding: 16 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               Last Publish Impact
             </p>
@@ -675,6 +694,15 @@ function WorkflowTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged }
             Side branches: quote_required, customer_not_available, cancelled. Work start additionally requires an
             approved current estimate whenever this job type's quote approval requirement is on.
           </p>
+
+          {/* Cross-app journey (migration 274). The graph above is the platform's
+              fixed status vocabulary; this is the per-job-type sequence built on
+              top of it — which app owns each stage, who acts, and who sees it. */}
+          <WorkflowStepBuilder
+            masterServiceId={masterServiceId} jobTypeId={jobTypeId}
+            workflow={workflowApi.data!} canWrite={canWrite} notify={notify}
+            onSaved={() => { workflowApi.refetch(); onChanged(); }}
+          />
         </>
       )}
     </div>
@@ -781,12 +809,22 @@ const DIMENSION_DATA_TYPES = ["single_select", "multi_select", "boolean", "numbe
 // service just needs them as a master_service_job_types child record), or
 // define a brand-new platform-wide job type (rare) and auto-attach it here
 // so it doesn't just vanish into the global catalog with no visible effect.
-function AddJobTypeToServicePicker({ masterServiceId, unlinkedJobTypes, onAdded, onNewJobTypeCreated, onError }: {
-  masterServiceId: string; unlinkedJobTypes: CatalogJobType[];
-  onAdded: () => void; onNewJobTypeCreated: () => void; onError: (msg: string) => void;
+function AddJobTypeToServicePicker({ masterServiceId, linkedJobTypeIds, onAdded, onError }: {
+  masterServiceId: string; linkedJobTypeIds: string[];
+  onAdded: () => void; onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"attach" | "define">("attach");
   const [pickedId, setPickedId] = useState("");
+  const [jobTypeQuery, setJobTypeQuery] = useState("");
+  const [debouncedJobTypeQuery, setDebouncedJobTypeQuery] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedJobTypeQuery(jobTypeQuery.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [jobTypeQuery]);
+  const jobTypesApi = useApi(useCallback(
+    () => catalogWorkspaceApi.listJobTypes({ search: debouncedJobTypeQuery || undefined, pageSize: 50 }),
+    [debouncedJobTypeQuery]), [debouncedJobTypeQuery]);
+  const unlinkedJobTypes = (jobTypesApi.data?.items ?? []).filter(jt => jt.is_active && !linkedJobTypeIds.includes(jt.id));
   const attachAction = useAction(catalogWorkspaceApi.addServiceJobType);
 
   const [label, setLabel] = useState("");
@@ -810,7 +848,6 @@ function AddJobTypeToServicePicker({ masterServiceId, unlinkedJobTypes, onAdded,
       requires_assessment: requiresAssessment, allows_quote: allowsQuote, requires_checklist: requiresChecklist,
     });
     if (!created) { onError(createAction.error ?? "Couldn't create job type."); return; }
-    onNewJobTypeCreated();
     const attached = await attachAction.execute(masterServiceId, created.id);
     if (attached) { setLabel(""); onAdded(); }
     else onError(attachAction.error ?? "Job type created but couldn't be added to this service.");
@@ -830,10 +867,12 @@ function AddJobTypeToServicePicker({ masterServiceId, unlinkedJobTypes, onAdded,
       </div>
 
       {mode === "attach" ? (
-        unlinkedJobTypes.length === 0 ? (
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Every platform job type is already added to this service.</p>
-        ) : (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
+              Search
+              <input value={jobTypeQuery} onChange={event => { setJobTypeQuery(event.target.value); setPickedId(""); }} placeholder="Find platform job type"
+                style={{ display: "block", marginTop: 4, fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", minWidth: 180 }}/>
+            </label>
             <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
               Job type
               <select value={pickedId} onChange={e => setPickedId(e.target.value)}
@@ -848,7 +887,6 @@ function AddJobTypeToServicePicker({ masterServiceId, unlinkedJobTypes, onAdded,
               {attachAction.loading ? "Adding…" : "Add to Service"}
             </button>
           </div>
-        )
       ) : (
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -1341,10 +1379,16 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
   masterServiceJobTypeId: string | null; canWrite: boolean;
   notify: (m: string, t?: "success" | "error") => void; onChanged: () => void;
 }) {
-  const templatesApi = useApi(useCallback(() => checklistCatalogApi.listTemplates(), []), []);
-  const mappingsApi = useApi(useCallback(() => checklistCatalogApi.listMappings(), []), []);
+  const mappingsApi = useApi(useCallback(
+    () => masterServiceJobTypeId
+      ? checklistCatalogApi.listMappingsDirectory({ master_service_job_type_id: masterServiceJobTypeId, page_size: 100 })
+      : Promise.resolve({ items: [], total: 0, page: 1, page_size: 100, pages: 1 }),
+    [masterServiceJobTypeId]), [masterServiceJobTypeId], { enabled: !!masterServiceJobTypeId });
   const [showAdd, setShowAdd] = useState(false);
-  const disableAction = useAction(checklistCatalogApi.disableMapping);
+  const [disableTarget, setDisableTarget] = useState<string | null>(null);
+  const [disableReason, setDisableReason] = useState("");
+  const disableAction = useAction((mappingId: string, reason: string) => checklistCatalogApi.disableMapping(mappingId, reason));
+  const enableAction = useAction(checklistCatalogApi.enableMapping);
   const [disablingId, setDisablingId] = useState<string | null>(null);
 
   if (!masterServiceJobTypeId) {
@@ -1355,21 +1399,24 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
       </div>
     );
   }
-  if (templatesApi.error) return <SectionError title="Couldn't load checklist templates" error={templatesApi.error} requestId={templatesApi.requestId} onRetry={templatesApi.refetch}/>;
   if (mappingsApi.error) return <SectionError title="Couldn't load checklist mappings" error={mappingsApi.error} requestId={mappingsApi.requestId} onRetry={mappingsApi.refetch}/>;
-  if (templatesApi.loading || mappingsApi.loading) return <Skeleton height={140}/>;
+  if (mappingsApi.loading) return <Skeleton height={140}/>;
 
-  const published = (templatesApi.data ?? []).filter(t => t.latest_version?.status === "PUBLISHED");
-  const ownMappings = (mappingsApi.data ?? []).filter(m => m.master_service_job_type_id === masterServiceJobTypeId);
-  const templateByVersion = new Map(published.map(t => [t.latest_version!.id, t]));
+  const ownMappings = mappingsApi.data?.items ?? [];
 
-  async function disable(mappingId: string) {
+  async function disable(mappingId: string, reason: string) {
     if (!canWrite) return;
     setDisablingId(mappingId);
-    const result = await disableAction.execute(mappingId);
+    const result = await disableAction.execute(mappingId, reason);
     setDisablingId(null);
-    if (result) { mappingsApi.refetch(); onChanged(); notify("Checklist mapping disabled."); }
+    if (result) { setDisableTarget(null); setDisableReason(""); mappingsApi.refetch(); onChanged(); notify("Checklist mapping disabled."); }
     else notify(disableAction.error || "Couldn't disable this mapping.", "error");
+  }
+
+  async function enable(mappingId: string) {
+    const result = await enableAction.execute(mappingId);
+    if (result) { mappingsApi.refetch(); onChanged(); notify("Checklist mapping enabled."); }
+    else notify(enableAction.error || "Couldn't enable this mapping.", "error");
   }
 
   return (
@@ -1387,7 +1434,7 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
         )}
       </div>
       {showAdd && (
-        <AddChecklistMappingForm masterServiceJobTypeId={masterServiceJobTypeId} publishedTemplates={published}
+        <AddChecklistMappingForm masterServiceJobTypeId={masterServiceJobTypeId}
           onAdded={() => { setShowAdd(false); mappingsApi.refetch(); onChanged(); notify("Checklist mapped to this Job Type."); }}
           onError={(msg) => notify(msg, "error")}/>
       )}
@@ -1396,24 +1443,38 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ownMappings.map(m => {
-            const template = templateByVersion.get(m.checklist_template_version_id);
             return (
               <div key={m.id} style={{ padding: "10px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{template?.name ?? "Checklist"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{m.template_name ?? "Checklist"}{m.template_version ? ` v${m.template_version}` : ""}</span>
                     <Chip>{m.phase}</Chip>
                     <Chip tone={m.usage === "REQUIRED" ? "brand" : "default"}>{m.usage}</Chip>
                     <Chip>{m.actor}</Chip>
                     <Chip>{m.completion_gate.replace(/^REQUIRE_/, "").replace(/_/g, " ")}</Chip>
                   </div>
-                  {canWrite && m.status === "active" && (
-                    <button onClick={() => disable(m.id)} disabled={disablingId === m.id}
+                  {canWrite && m.status === "active" && disableTarget !== m.id && (
+                    <button onClick={() => setDisableTarget(m.id)} disabled={disablingId === m.id}
                       style={{ fontSize: 11, fontWeight: 600, color: "var(--danger-text)", background: "none", border: "none", cursor: disablingId === m.id ? "default" : "pointer", opacity: disablingId === m.id ? 0.6 : 1 }}>
                       {disablingId === m.id ? "Disabling…" : "Disable"}
                     </button>
                   )}
+                  {canWrite && m.status === "disabled" && (
+                    <button onClick={() => enable(m.id)} disabled={enableAction.loading}
+                      style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)", background: "none", border: "none", cursor: "pointer" }}>
+                      {enableAction.loading ? "Enabling..." : "Enable"}
+                    </button>
+                  )}
                 </div>
+                {disableTarget === m.id && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <input autoFocus value={disableReason} onChange={event => setDisableReason(event.target.value)} placeholder="Reason for disabling (minimum 10 characters)"
+                      style={{ flex: 1, minWidth: 260, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)", fontSize: 12 }}/>
+                    <button onClick={() => disable(m.id, disableReason.trim())} disabled={disableReason.trim().length < 10 || disablingId === m.id}
+                      style={{ fontSize: 11, fontWeight: 700, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--danger-border)", background: "var(--danger-bg)", color: "var(--danger-text)" }}>Confirm disable</button>
+                    <button onClick={() => { setDisableTarget(null); setDisableReason(""); }} style={{ fontSize: 11, border: 0, background: "none", color: "var(--text-secondary)" }}>Cancel</button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1433,12 +1494,22 @@ function Chip({ children, tone = "default" }: { children: React.ReactNode; tone?
   );
 }
 
-function AddChecklistMappingForm({ masterServiceJobTypeId, publishedTemplates, onAdded, onError }: {
-  masterServiceJobTypeId: string; publishedTemplates: ChecklistTemplateRow[];
+function AddChecklistMappingForm({ masterServiceJobTypeId, onAdded, onError }: {
+  masterServiceJobTypeId: string;
   onAdded: () => void; onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [versionId, setVersionId] = useState("");
+  const [templateQuery, setTemplateQuery] = useState("");
+  const [debouncedTemplateQuery, setDebouncedTemplateQuery] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedTemplateQuery(templateQuery.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [templateQuery]);
+  const templatesApi = useApi(useCallback(
+    () => checklistCatalogApi.listPublishedTemplateOptions(debouncedTemplateQuery, 50),
+    [debouncedTemplateQuery]), [debouncedTemplateQuery]);
+  const publishedTemplates = templatesApi.data ?? [];
   const [phase, setPhase] = useState("inspection");
   const [usage, setUsage] = useState<ChecklistUsage>("REQUIRED");
   const [actor, setActor] = useState<ChecklistActor>("TECHNICIAN");
@@ -1485,10 +1556,13 @@ function AddChecklistMappingForm({ masterServiceJobTypeId, publishedTemplates, o
       </div>
 
       {mode === "existing" ? (
-        <select value={versionId} onChange={e => setVersionId(e.target.value)} style={smallSelect}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, .7fr) minmax(240px, 1fr)", gap: 8 }}>
+          <input value={templateQuery} onChange={event => { setTemplateQuery(event.target.value); setVersionId(""); }} placeholder="Search published checklists" style={smallSelect}/>
+          <select value={versionId} onChange={e => setVersionId(e.target.value)} style={smallSelect}>
           <option value="">— Select published checklist —</option>
-          {publishedTemplates.map(t => <option key={t.id} value={t.latest_version!.id}>{t.name} (v{t.latest_version!.version_number})</option>)}
-        </select>
+            {publishedTemplates.map(t => <option key={t.id} value={t.latest_version!.id}>{t.name} (v{t.latest_version!.version_number})</option>)}
+          </select>
+        </div>
       ) : (
         <>
           <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New checklist name (e.g. Pre-Installation Safety Check)" style={{ ...smallSelect, width: "100%", boxSizing: "border-box" }}/>
@@ -1831,7 +1905,10 @@ function QuestionsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChang
   // Fetched once per sub-tab visit -- the reference lists the rule builder
   // needs to resolve condition_type -> a concrete picker (job type / problem
   // mapped to this service / dimension / another question on this service).
-  const jobTypesApi = useApi(useCallback(() => catalogWorkspaceApi.listJobTypes(), []), []);
+  const jobTypesApi = useApi(useCallback(async () => {
+    const result = await catalogWorkspaceApi.getJobTypesForService(masterServiceId);
+    return { items: result.items.map(link => link.job_type) };
+  }, [masterServiceId]), [masterServiceId]);
   const issuesApi = useApi(
     useCallback(() => catalogWorkspaceApi.listServiceIssues(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]),
     [masterServiceId, jobTypeId],
@@ -1915,45 +1992,85 @@ function QuestionsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChang
 }
 
 // ── Tenant Setup Rules tab ────────────────────────────────────────────────────
-// These 5 flags are real, individually-editable columns on the master service
-// record (app/engines/admin_catalog/service.py update_master_service). There
-// is still no unified, independently-versioned "Tenant Setup Rules" resource
-// distinct from the master service (a real, smaller remaining gap versus a
-// dedicated sub-entity) -- but the values below are live and this tab writes
-// them for real, not a read-only mock.
-const TENANT_SETUP_RULES: { field: keyof HsConsoleService; label: string }[] = [
-  { field: "is_type_required",   label: "Provider must select service type" },
-  { field: "is_brand_required",  label: "Provider must select supported brands" },
-  { field: "requires_address",   label: "Provider must configure service area" },
-  { field: "requires_schedule",  label: "Provider must configure availability" },
-  { field: "requires_issue_type", label: "Customer photo/issue upload allowed" },
-];
-
-function TenantSetupRulesTab({ s, canWrite, notify, onChanged }: {
-  s: HsConsoleService | undefined; canWrite: boolean;
+// This is a focused view over the same normalized dimension and workflow
+// records used by the other tabs. It never writes deprecated service flags.
+function TenantSetupRulesTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged }: {
+  masterServiceId: string; jobTypeId: string | null; canWrite: boolean;
   notify: (m: string, t?: "success" | "error") => void; onChanged: () => void;
 }) {
-  const updateAction = useAction(homeServicesCatalogConsoleApi.updateService);
-  if (!s) return <Skeleton height={140}/>;
+  const dimensionsApi = useApi(
+    useCallback(() => catalogWorkspaceApi.getDimensionGrid(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]),
+    [masterServiceId, jobTypeId], { enabled: !!jobTypeId },
+  );
+  const workflowApi = useApi(
+    useCallback(() => jobTypeId ? catalogWorkspaceApi.getJobTypeWorkflow(masterServiceId, jobTypeId) : Promise.resolve(null as unknown as ServiceJobWorkflow),
+      [masterServiceId, jobTypeId]),
+    [masterServiceId, jobTypeId], { enabled: !!jobTypeId },
+  );
+  const setDimension = useAction(catalogWorkspaceApi.setDimensionConfig);
+  const setWorkflow = useAction(catalogWorkspaceApi.setJobTypeWorkflow);
 
-  async function toggle(field: keyof HsConsoleService, label: string) {
-    if (!canWrite || !s) return;
-    const result = await updateAction.execute(s.service_id, { [field]: !s[field] });
-    if (result) { notify(`${label} updated.`); onChanged(); }
-    else notify("Couldn't update this rule.", "error");
+  if (!jobTypeId) {
+    return <div style={{ padding: "36px 20px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
+      Select a job type above. Tenant setup rules are job-type specific.
+    </div>;
+  }
+  if (dimensionsApi.error || workflowApi.error) {
+    return <SectionError title="Couldn't load tenant setup rules" error={dimensionsApi.error || workflowApi.error || "Unknown error"}
+      requestId={dimensionsApi.requestId || workflowApi.requestId}
+      onRetry={() => { dimensionsApi.refetch(); workflowApi.refetch(); }}/>;
+  }
+  if (dimensionsApi.loading || workflowApi.loading || !workflowApi.data) return <Skeleton height={210}/>;
+
+  const setupDimensions = (dimensionsApi.data?.dimensions ?? []).filter(row =>
+    row.dimension.key === "type" || row.dimension.key === "brand");
+
+  async function toggleRequiredDimension(row: DimensionGridRow) {
+    if (!canWrite) return;
+    const nextRequired = !(row.config.enabled && row.config.show_during_tenant_setup && row.config.required);
+    const result = await setDimension.execute(masterServiceId, jobTypeId, row.dimension.id, {
+      enabled: nextRequired ? true : row.config.enabled,
+      show_during_tenant_setup: nextRequired ? true : row.config.show_during_tenant_setup,
+      required: nextRequired,
+    });
+    if (result) {
+      notify(`${row.dimension.name} setup requirement updated.`);
+      dimensionsApi.refetch(); onChanged();
+    } else notify("Couldn't update this setup requirement.", "error");
+  }
+
+  async function toggleWorkflow(field: "service_area_required" | "availability_required", label: string) {
+    if (!canWrite || !workflowApi.data) return;
+    const result = await setWorkflow.execute(masterServiceId, jobTypeId, { [field]: !workflowApi.data[field] });
+    if (result) {
+      notify(`${label} updated.`);
+      workflowApi.refetch(); onChanged();
+    } else notify("Couldn't update this setup requirement.", "error");
   }
 
   return (
     <div>
       <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 12px" }}>
-        What a tenant must configure before this service can be published and bookable. Changing a rule here
-        publishes a new blueprint version, the same as any other structural edit.
+        These are the requirements the tenant publish endpoint enforces for this exact job type. Type and Brand
+        reuse Dimensions; Service Area and Availability reuse Workflow. Customer questions and photo capture are
+        configured under Problems & Questions because they are booking rules, not tenant setup tasks.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {TENANT_SETUP_RULES.map(r => (
-          <div key={r.field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{r.label}</span>
-            <FlagPill on={!!s[r.field]} onClick={() => toggle(r.field, r.label)} disabled={!canWrite || updateAction.loading}/>
+        {setupDimensions.map(row => {
+          const on = row.config.enabled && row.config.show_during_tenant_setup && row.config.required;
+          return (
+          <div key={row.dimension.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>Provider must select {row.dimension.name.toLowerCase()}</span>
+            <FlagPill on={on} onClick={() => toggleRequiredDimension(row)} disabled={!canWrite || setDimension.loading}/>
+          </div>
+        )})}
+        {([
+          ["service_area_required", "Provider must configure service area"],
+          ["availability_required", "Provider must configure availability"],
+        ] as const).map(([field, label]) => (
+          <div key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{label}</span>
+            <FlagPill on={workflowApi.data![field]} onClick={() => toggleWorkflow(field, label)} disabled={!canWrite || setWorkflow.loading}/>
           </div>
         ))}
       </div>

@@ -24,13 +24,14 @@
  * always recomputed server-side; this component never claims a member is
  * "ready" itself.
  */
-import React, { useEffect, useState } from "react";
-import { X, CheckCircle2, Loader2, Copy } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { X, CheckCircle2, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
 import { Btn } from "../shared/ui";
 import { MediaUploader } from "../media/MediaUploader";
 import {
-  providerTeamMembersApi, providerAvailabilityApi, homeServicesSetupApi, getTenantId,
+  providerTeamMembersApi, providerTeamSkillsApi, homeServicesSetupApi, getTenantId,
   ServiceOSError, type ProviderTeamMember, type MediaAsset, type TenantEnabledService,
+  type CategoryTeamSkill,
 } from "../../lib/api";
 
 const MEMBER_TYPES = [
@@ -39,7 +40,26 @@ const MEMBER_TYPES = [
   { value: "manager", label: "Manager", hint: "Oversees operations" },
 ];
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DESIGNATIONS_BY_MEMBER_TYPE: Record<string, string[]> = {
+  technician: [
+    "Technician", "Junior Technician", "Senior Technician", "Lead Technician",
+    "AC Technician", "Installation Specialist", "Maintenance Specialist", "Field Supervisor",
+  ],
+  staff: [
+    "Operations Coordinator", "Dispatcher", "Customer Support Executive", "Back Office Executive",
+  ],
+  manager: [
+    "Team Manager", "Operations Manager", "Service Manager", "Branch Manager",
+  ],
+};
+
+const ALL_DESIGNATIONS = Array.from(
+  new Set(Object.values(DESIGNATIONS_BY_MEMBER_TYPE).flat()),
+).sort((a, b) => a.localeCompare(b));
+
+function humanizeJobType(value: string) {
+  return value.split("_").filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join(" ");
+}
 
 export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   existing: ProviderTeamMember | null;
@@ -49,6 +69,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [completed, setCompleted] = useState(false);
   const tenantId = getTenantId() ?? "";
   const isEdit = !!existing?.member_id;
 
@@ -62,10 +83,11 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   // ── Role & capacity ──
   const [memberType, setMemberType] = useState<string>(existing?.member_type ?? "technician");
   const [canReceive, setCanReceive] = useState<boolean>(existing?.can_receive_assignment ?? true);
-  const [maxConcurrent, setMaxConcurrent] = useState<string>(
-    existing?.max_concurrent_jobs != null ? String(existing.max_concurrent_jobs) : "4",
-  );
-  const [skillsText, setSkillsText] = useState((existing?.skills ?? []).join(", "));
+  const [availableSkills, setAvailableSkills] = useState<CategoryTeamSkill[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(existing?.skill_ids ?? []);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [skillsLoadFailed, setSkillsLoadFailed] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // ── Reporting ──
   const [reportsToName, setReportsToName] = useState("");
@@ -73,13 +95,12 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
 
   // ── Services ──
   const [availableServices, setAvailableServices] = useState<TenantEnabledService[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesLoadFailed, setServicesLoadFailed] = useState(false);
   const [selectedOfferingIds, setSelectedOfferingIds] = useState<string[]>(existing?.supported_offering_ids ?? []);
 
-  // ── Optional weekly availability (separate endpoint, create only) ──
-  const [addAvailability, setAddAvailability] = useState(false);
-  const [dayOfWeek, setDayOfWeek] = useState(1);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("18:00");
+  // New technicians inherit the provider's active business schedule by
+  // default. Readiness and booking capacity both use these staff-level rules.
 
   // ── Optional login (separate endpoint, runs after member exists) ──
   const [wantsLogin, setWantsLogin] = useState(false);
@@ -88,25 +109,97 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   >(null);
 
   const isTechnician = memberType === "technician";
+  const hasDeliverableEmail = email.trim().length > 0;
+  const designationOptions = React.useMemo(() => {
+    const values = DESIGNATIONS_BY_MEMBER_TYPE[memberType] ?? [];
+    return designation && !values.includes(designation) ? [designation, ...values] : values;
+  }, [memberType, designation]);
+  const groupedServices = React.useMemo(() => {
+    const byMasterService = new Map<string, {
+      id: string;
+      name: string;
+      serviceGroupName: string | null;
+      offerings: TenantEnabledService[];
+    }>();
+    for (const offering of availableServices) {
+      const existingGroup = byMasterService.get(offering.master_service_id);
+      if (existingGroup) {
+        if (!existingGroup.offerings.some(item => item.tenant_service_id === offering.tenant_service_id)) {
+          existingGroup.offerings.push(offering);
+        }
+        continue;
+      }
+      byMasterService.set(offering.master_service_id, {
+        id: offering.master_service_id,
+        name: offering.tenant_display_name || offering.service_name || "Unnamed service",
+        serviceGroupName: offering.service_group_name ?? null,
+        offerings: [offering],
+      });
+    }
+    return Array.from(byMasterService.values());
+  }, [availableServices]);
+
+  useEffect(() => {
+    if (!hasDeliverableEmail) setWantsLogin(false);
+  }, [hasDeliverableEmail]);
 
   // Services load as soon as the form opens for a technician -- the old
   // wizard only fetched them once you reached step 3.
   useEffect(() => {
-    if (!isTechnician) return;
-    homeServicesSetupApi.listEnabled()
-      .then(r => setAvailableServices(r.services.filter(s => s.is_enabled)))
-      .catch(() => {});
+    if (!isTechnician) {
+      setServicesLoading(false);
+      setServicesLoadFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setServicesLoading(true);
+    setServicesLoadFailed(false);
+    Promise.all([homeServicesSetupApi.listEnabled(), providerTeamSkillsApi.list()])
+      .then(([services, skills]) => {
+        if (!cancelled) {
+          setAvailableServices(services.services.filter(s => s.is_enabled));
+          setAvailableSkills(skills.skills);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setServicesLoadFailed(true);
+          setSkillsLoadFailed(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setServicesLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [isTechnician]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, saving]);
 
   function validate(): string | null {
     if (!fullName.trim()) return "Full name is required.";
     if (!email.trim() && !phone.trim()) return "Enter an email address or a mobile number.";
-    if (maxConcurrent !== "") {
-      const cap = Number(maxConcurrent);
-      if (!Number.isFinite(cap) || !Number.isInteger(cap) || cap < 1) {
-        return "Maximum simultaneous jobs must be a whole number of at least 1.";
-      }
+    if (!designation.trim()) return "Select a designation.";
+    if (isTechnician && servicesLoading) return "Wait for the enabled services to finish loading.";
+    if (isTechnician && servicesLoadFailed) return "Enabled services could not be loaded. Close this dialog and try again.";
+    if (isTechnician && availableServices.length === 0) return "Configure at least one enabled service before adding a technician.";
+    if (isTechnician && availableServices.length > 0 && selectedOfferingIds.length === 0) {
+      return "Select at least one service this technician can perform.";
     }
+    if (isTechnician && skillsLoadFailed) return "The approved skill catalog could not be loaded. Close this dialog and try again.";
+    if (isTechnician && availableSkills.length === 0) return "No active technician skills are configured for this category. Ask an administrator to configure the skill catalog.";
+    if (isTechnician && selectedSkillIds.length === 0) return "Select at least one approved skill for this technician.";
     return null;
   }
 
@@ -122,10 +215,10 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
       email: email.trim() || null,
       designation: designation.trim() || null,
       can_receive_assignment: canReceive,
-      max_concurrent_jobs: maxConcurrent === "" ? null : Number(maxConcurrent),
-      skills: skillsText.split(",").map(s => s.trim()).filter(Boolean),
+      skill_ids: isTechnician ? selectedSkillIds : [],
       supported_offering_ids: isTechnician ? selectedOfferingIds : [],
       profile_photo_url: photoAsset?.preview_url ?? (isEdit ? undefined : null),
+      ...(!isEdit ? { inherit_business_hours: isTechnician } : {}),
       reports_to_display_name: reportsToName.trim() || null,
       reports_to_designation: reportsToDesignation.trim() || null,
     };
@@ -144,18 +237,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
       // member still exists -- surfaced as a warning, never as "save failed".
       const problems: string[] = [];
 
-      if (!isEdit && addAvailability && isTechnician) {
-        try {
-          await providerAvailabilityApi.create({
-            scope_type: "staff_member", scope_id: memberId,
-            day_of_week: dayOfWeek, start_time: startTime, end_time: endTime,
-            max_bookings_per_slot: undefined, is_active: true,
-          });
-        } catch {
-          problems.push("weekly availability could not be saved");
-        }
-      }
-
       if (wantsLogin) {
         try {
           setActivation(await providerTeamMembersApi.createLogin(memberId));
@@ -166,13 +247,14 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
 
       if (problems.length > 0) {
         setWarning(`Team member saved, but ${problems.join(" and ")}. You can retry from their profile.`);
+        setCompleted(true);
         setSaving(false);
         return;
       }
 
       // Credentials are shown once and cannot be retrieved again, so never
       // auto-close over them -- the tenant must copy them first.
-      if (wantsLogin) { setSaving(false); return; }
+      if (wantsLogin) { setCompleted(true); setSaving(false); return; }
 
       onSaved();
     } catch (e) {
@@ -182,17 +264,22 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "var(--bg-gradient)", display: "flex", flexDirection: "column" }}>
+    <div
+      role="presentation"
+      onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(7, 12, 20, 0.68)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="team-member-dialog-title" style={{ width: "min(900px, 100%)", maxHeight: "calc(100vh - 40px)", borderRadius: 16, border: "1px solid var(--border)", background: "var(--surface)", boxShadow: "var(--shadow-lg)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
         <div>
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 2px" }}>
             {MEMBER_TYPES.find(t => t.value === memberType)?.label ?? "Team member"} details
           </p>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+          <h2 id="team-member-dialog-title" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
             {isEdit ? "Edit team member" : "Add team member"}
           </h2>
         </div>
-        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}><X size={22}/></button>
+        <button ref={closeButtonRef} onClick={onClose} aria-label="Close team member dialog" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}><X size={22}/></button>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
@@ -212,8 +299,12 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           </Field>
           <Row>
             <Field label="Full name" required><Input value={fullName} onChange={setFullName} placeholder="Enter full name"/></Field>
-            <Field label="Designation" hint="Shown to customers, e.g. Senior Technician">
-              <Input value={designation} onChange={setDesignation} placeholder="Senior Technician"/>
+            <Field label="Designation" required hint="Shown to customers and used in team directories.">
+              <select value={designation} onChange={event => setDesignation(event.target.value)}
+                style={{ width: "100%", height: 40, padding: "0 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)" }}>
+                <option value="">Select designation</option>
+                {designationOptions.map(value => <option key={value} value={value}>{value}</option>)}
+              </select>
             </Field>
           </Row>
           <Row>
@@ -231,7 +322,10 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
               {MEMBER_TYPES.map(t => (
                 <label key={t.value} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 8, border: `1px solid ${memberType === t.value ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
-                  <input type="radio" checked={memberType === t.value} onChange={() => setMemberType(t.value)}/>
+                  <input type="radio" checked={memberType === t.value} onChange={() => {
+                    setMemberType(t.value);
+                    if (!(DESIGNATIONS_BY_MEMBER_TYPE[t.value] ?? []).includes(designation)) setDesignation("");
+                  }}/>
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.label}</p>
                     <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{t.hint}</p>
@@ -241,26 +335,66 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
             </div>
           </Field>
           <Row>
-            <Field label="Maximum simultaneous jobs" hint="Used when deciding who can take another job">
-              <input type="number" min={1} value={maxConcurrent}
-                onChange={e => setMaxConcurrent(e.target.value)} style={selectStyle}/>
-            </Field>
-            <Field label="Assignment">
+            <Field label="Assignment" hint="Slot capacity is calculated automatically from ready technicians; it cannot exceed the available team.">
               <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer", height: 40 }}>
                 <input type="checkbox" checked={canReceive} onChange={e => setCanReceive(e.target.checked)}/>
                 Can be assigned jobs
               </label>
             </Field>
           </Row>
-          <Field label="Skills" hint="Comma separated, e.g. AC Repair, Installation">
-            <Input value={skillsText} onChange={setSkillsText} placeholder="AC Repair, Installation"/>
-          </Field>
+          {isTechnician && (
+            <Field label="Approved skills" required hint="Skills are controlled by the platform administrator for this business category.">
+              {servicesLoading ? (
+                <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Loading approved skills...</p>
+              ) : skillsLoadFailed ? (
+                <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>The approved skill catalog could not be loaded.</p>
+              ) : availableSkills.length === 0 ? (
+                <div style={{ padding: 12, borderRadius: 8, border: "1px solid var(--warning-border)", background: "var(--warning-bg)", color: "var(--warning-text)", fontSize: 12 }}>
+                  No active skills are configured for this category. An administrator must add skills before technicians can be created.
+                </div>
+              ) : (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ position: "relative", borderBottom: "1px solid var(--border)" }}>
+                    <Search size={14} style={{ position: "absolute", left: 12, top: 12, color: "var(--text-tertiary)" }}/>
+                    <input value={skillSearch} onChange={e => setSkillSearch(e.target.value)} placeholder="Search approved skills..."
+                      style={{ width: "100%", height: 38, padding: "0 12px 0 36px", border: 0, outline: 0, background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }}/>
+                  </div>
+                  <div style={{ maxHeight: 230, overflowY: "auto", padding: 8, display: "grid", gap: 6 }}>
+                    {availableSkills.filter(skill => `${skill.name} ${skill.description ?? ""} ${skill.service_group_name ?? ""}`.toLowerCase().includes(skillSearch.trim().toLowerCase())).map(skill => {
+                      const checked = selectedSkillIds.includes(skill.id);
+                      return (
+                        <label key={skill.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 11px", borderRadius: 8, cursor: "pointer", border: `1px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "color-mix(in srgb, var(--brand) 7%, var(--surface))" : "var(--surface)" }}>
+                          <input type="checkbox" checked={checked} onChange={e => setSelectedSkillIds(prev => e.target.checked ? [...prev, skill.id] : prev.filter(id => id !== skill.id))} style={{ marginTop: 2 }}/>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>{skill.name}</span>
+                              {skill.service_group_name && <span style={{ fontSize: 10, color: "var(--text-tertiary)", padding: "2px 6px", borderRadius: 999, background: "var(--surface-sunken)" }}>{skill.service_group_name}</span>}
+                              {skill.requires_verification && <span title="Verification required" style={{ display: "inline-flex", color: "var(--warning)" }}><ShieldCheck size={13}/></span>}
+                            </div>
+                            {skill.description && <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>{skill.description}</p>}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{ padding: "8px 11px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-tertiary)" }}>
+                    {selectedSkillIds.length} skill{selectedSkillIds.length === 1 ? "" : "s"} selected. Shield-marked skills require verification.
+                  </div>
+                </div>
+              )}
+            </Field>
+          )}
           <Row>
             <Field label="Reports to" hint="Shown on the member's Help &amp; Support screen">
               <Input value={reportsToName} onChange={setReportsToName} placeholder="Manager name"/>
             </Field>
             <Field label="Reports-to designation">
-              <Input value={reportsToDesignation} onChange={setReportsToDesignation} placeholder="Operations Manager"/>
+              <select value={reportsToDesignation} onChange={event => setReportsToDesignation(event.target.value)}
+                aria-label="Reports-to designation"
+                style={{ width: "100%", height: 40, padding: "0 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)" }}>
+                <option value="">Select reporting designation (optional)</option>
+                {ALL_DESIGNATIONS.map(value => <option key={value} value={value}>{value}</option>)}
+              </select>
             </Field>
           </Row>
 
@@ -269,55 +403,84 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
             <>
               <SectionTitle>Services this technician can perform</SectionTitle>
               <Field label="Services &amp; job types" hint="A technician can only be assigned jobs for the services selected here.">
-                {availableServices.length === 0 ? (
+                {servicesLoading ? (
+                  <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+                    Loading enabled services…
+                  </p>
+                ) : servicesLoadFailed ? (
+                  <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>
+                    Enabled services could not be loaded. Close this dialog and try again.
+                  </p>
+                ) : availableServices.length === 0 ? (
                   <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
                     No services enabled yet — configure Services &amp; Pricing first.
                   </p>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
-                    {availableServices.map(s => (
-                      <label key={s.tenant_service_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}>
-                        <input type="checkbox" checked={selectedOfferingIds.includes(s.tenant_service_id)}
-                          onChange={e => setSelectedOfferingIds(prev => e.target.checked
-                            ? [...prev, s.tenant_service_id]
-                            : prev.filter(id => id !== s.tenant_service_id))}/>
-                        <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{s.tenant_display_name || s.job_type}</span>
-                      </label>
-                    ))}
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {groupedServices.map(service => {
+                      const offeringIds = service.offerings.map(item => item.tenant_service_id);
+                      const selectedCount = offeringIds.filter(id => selectedOfferingIds.includes(id)).length;
+                      const allSelected = selectedCount === offeringIds.length;
+                      return (
+                        <div key={service.id} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface)" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer", background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
+                            <input type="checkbox" checked={allSelected}
+                              ref={input => { if (input) input.indeterminate = selectedCount > 0 && !allSelected; }}
+                              onChange={event => setSelectedOfferingIds(previous => event.target.checked
+                                ? Array.from(new Set([...previous, ...offeringIds]))
+                                : previous.filter(id => !offeringIds.includes(id)))}/>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{service.name}</p>
+                              {service.serviceGroupName && <p style={{ margin: "2px 0 0", fontSize: 10, color: "var(--text-tertiary)" }}>{service.serviceGroupName}</p>}
+                            </div>
+                            <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{selectedCount}/{offeringIds.length} job types</span>
+                          </label>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 6, padding: 8 }}>
+                            {service.offerings.map(offering => {
+                              const checked = selectedOfferingIds.includes(offering.tenant_service_id);
+                              const jobTypeLabel = offering.job_type_label || humanizeJobType(offering.job_type);
+                              return (
+                                <label key={offering.tenant_service_id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderRadius: 7, border: `1px solid ${checked ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
+                                  <input type="checkbox" checked={checked}
+                                    onChange={event => setSelectedOfferingIds(previous => event.target.checked
+                                      ? Array.from(new Set([...previous, offering.tenant_service_id]))
+                                      : previous.filter(id => id !== offering.tenant_service_id))}/>
+                                  <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{jobTypeLabel}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </Field>
             </>
           )}
 
-          {/* ── Optional weekly availability (create only) ── */}
+          {/* ── Weekly availability (create only) ── */}
           {isTechnician && !isEdit && (
             <>
-              <SectionTitle>Weekly availability<Optional/></SectionTitle>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer", marginBottom: 12 }}>
-                <input type="checkbox" checked={addAvailability} onChange={e => setAddAvailability(e.target.checked)}/>
-                Set a working window now (you can add more later)
-              </label>
-              {addAvailability && (
-                <Row3>
-                  <Field label="Day">
-                    <select value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))} style={selectStyle}>
-                      {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Start time"><input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={selectStyle}/></Field>
-                  <Field label="End time"><input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={selectStyle}/></Field>
-                </Row3>
-              )}
+              <SectionTitle>Weekly availability</SectionTitle>
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+                This technician will use the business hours configured in Coverage &amp; availability. Each inherited open day creates one technician place in each matching slot; individual availability can be customized after setup.
+              </p>
             </>
           )}
 
           {/* ── Optional login ── */}
           <SectionTitle>Login access<Optional/></SectionTitle>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-primary)", cursor: "pointer" }}>
-            <input type="checkbox" checked={wantsLogin} onChange={e => setWantsLogin(e.target.checked)}/>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: hasDeliverableEmail ? "var(--text-primary)" : "var(--text-tertiary)", cursor: hasDeliverableEmail ? "pointer" : "not-allowed" }}>
+            <input type="checkbox" checked={wantsLogin} disabled={!hasDeliverableEmail}
+              onChange={e => setWantsLogin(e.target.checked)}/>
             Create login access so this member can use the app
           </label>
+          {!hasDeliverableEmail && (
+            <p style={{ margin: "6px 0 0 24px", fontSize: 11, color: "var(--text-tertiary)" }}>
+              You can add this technician now. Add an email later, then use “Send app invitation” from the actions menu.
+            </p>
+          )}
           {activation && (
             <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginTop: 12 }}>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
@@ -354,15 +517,19 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
       <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 24px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
         <div style={{ display: "flex", gap: 10 }}>
-          {activation && <Btn variant="secondary" onClick={onSaved}>Done</Btn>}
-          <Btn variant="primary" disabled={saving} onClick={handleSave}>
-            {saving
-              ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/>
-              : <>{isEdit ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/></>}
-          </Btn>
+          {completed ? (
+            <Btn variant="primary" onClick={onSaved}>Done</Btn>
+          ) : (
+            <Btn variant="primary" disabled={saving} onClick={handleSave}>
+              {saving
+                ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/>
+                : <>{isEdit ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/></>}
+            </Btn>
+          )}
         </div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     </div>
   );
 }
@@ -381,9 +548,6 @@ function Optional() {
 }
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>{children}</div>;
-}
-function Row3({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>{children}</div>;
 }
 function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (

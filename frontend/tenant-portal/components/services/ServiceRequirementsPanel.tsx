@@ -34,10 +34,10 @@ const CHIP: React.CSSProperties = {
   background: "var(--surface-sunken)", color: "var(--text-tertiary)",
 };
 
-export function ServiceRequirementsPanel({ masterServiceId }: { masterServiceId: string }) {
+export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { masterServiceId: string; jobTypeId: string }) {
   const req = useApi(
-    useCallback(() => masterCatalogApi.getServiceRequirements(masterServiceId), [masterServiceId]),
-    [masterServiceId],
+    useCallback(() => masterCatalogApi.getServiceRequirements(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]),
+    [masterServiceId, jobTypeId],
   );
   const d = req.data as ServiceRequirements | undefined;
 

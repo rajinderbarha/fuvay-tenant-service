@@ -301,7 +301,11 @@ class TestStartServiceEndToEnd:
             with patch.object(svc, "_resolve_job_type_workflow", AsyncMock(return_value=_mock_workflow(True))):
                 db.execute = AsyncMock(return_value=_first_result(_mock_quote("customer_approved")))
                 with patch.object(svc, "sync_booking_status", AsyncMock()):
-                    result = await svc.start_service(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
+                    with patch(
+                        "app.engines.vertical_monetization.charge_service.assert_customer_platform_fee_paid_if_required",
+                        new=AsyncMock(),
+                    ):
+                        result = await svc.start_service(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
         assert job.status == "service_started"
         assert result["status"] == "service_started"
 

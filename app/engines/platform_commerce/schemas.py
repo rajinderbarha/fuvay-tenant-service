@@ -173,7 +173,14 @@ class WarrantyClaimRequest(BaseModel):
     claim_type: str = "service_quality"
     description: str = Field(min_length=20, max_length=2000)
     media_ids: list[str] = Field(default_factory=list)
-    amount_requested: Decimal = Field(gt=0)
+    amount_requested: Decimal | None = Field(None, gt=0)
+
+class WarrantyProviderResponseRequest(BaseModel):
+    resolution: str = Field(min_length=10, max_length=2000)
+    resolved: bool = False
+
+class WarrantyEscalationRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000)
 
 class ClaimResolveRequest(BaseModel):
     amount_approved: Decimal | None = Field(None, ge=0)

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, CardHeader, SectionHeader, StatCard, Badge, Btn, Modal, DataTable,
@@ -8,7 +8,7 @@ import {
   Search, RefreshCw, Image, FileText, Video, File, Trash2, AlertCircle,
   Download, Eye, Archive, Flag, Shield, CheckCircle, X, Filter, MoreVertical,
   ChevronDown, Lock, Unlock, HardDrive, Upload, Grid, List, Tag, Clock,
-  Link2, FolderOpen, BarChart2, ChevronRight, ChevronLeft, Plus, Copy,
+  Link2, BarChart2, ChevronRight, ChevronLeft,
   ExternalLink, RotateCcw, ZoomIn, Layers,
 } from "lucide-react";
 import {
@@ -55,7 +55,6 @@ const statusV = (s: string): BV => ({
 } as Record<string, BV>)[s] ?? "muted";
 
 const PAGE_SIZE = 25;
-const STORAGE_LIMIT_BYTES = 500 * 1024 * 1024 * 1024; // 500 GB
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -79,6 +78,15 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "recent",    label: "Recently Uploaded",icon: <Clock size={13} />      },
   { key: "archived",  label: "Archived",         icon: <Archive size={13} />    },
 ];
+const EMPTY_STATE_COPY: Record<TabKey, { title: string; description: string; upload: boolean }> = {
+  all: { title: "No media files found", description: "Files from bookings, jobs, complaints, provider verification, and catalog workflows will appear here.", upload: true },
+  images: { title: "No images found", description: "Upload a platform image or wait for image-producing workflows to create one.", upload: true },
+  documents: { title: "No documents found", description: "Verification, policy, invoice, and other document workflows will appear here.", upload: true },
+  videos: { title: "No videos found", description: "Uploaded video evidence and platform video assets will appear here.", upload: true },
+  flagged: { title: "Moderation queue is clear", description: "No files currently require administrator review.", upload: false },
+  recent: { title: "No recent uploads", description: "No files were uploaded during the last seven days.", upload: false },
+  archived: { title: "No archived files", description: "Files removed from active use will remain available here according to retention policy.", upload: false },
+};
 
 type ActiveModal =
   | { type: "flag"; asset: MediaAssetAdmin }
@@ -90,62 +98,23 @@ type ActiveModal =
 
 // ── Summary Cards ─────────────────────────────────────────────────────────────
 
-function SummaryCards({ s }: { s: MediaSummary }) {
-  const pct = (n: number) => s.total > 0 ? `${((n / s.total) * 100).toFixed(1)}% of total` : "—";
-  const storagePct = ((s.total_size_bytes / STORAGE_LIMIT_BYTES) * 100).toFixed(1);
-
+function SummaryCards({ s, onOpenTab }: { s: MediaSummary; onOpenTab: (tab: TabKey) => void }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 24 }}>
-      <StatCard
-        label="Total Files"
-        value={s.total.toLocaleString()}
-        change={s.recent_count > 0 ? `+${s.recent_count} this week` : undefined}
-        trend="up"
-        icon={<HardDrive />}
-        accent="var(--brand)"
-      />
-      <StatCard
-        label="Images"
-        value={s.images_count.toLocaleString()}
-        change={pct(s.images_count)}
-        trend="neutral"
-        icon={<Image />}
-        accent="#8b5cf6"
-      />
-      <StatCard
-        label="Documents"
-        value={s.documents_count.toLocaleString()}
-        change={pct(s.documents_count)}
-        trend="neutral"
-        icon={<FileText />}
-        accent="var(--warning)"
-      />
-      <StatCard
-        label="Videos"
-        value={s.videos_count.toLocaleString()}
-        change={pct(s.videos_count)}
-        trend="neutral"
-        icon={<Video />}
-        accent="#ef4444"
-      />
-      <StatCard
-        label="Storage Used"
-        value={fmtBytes(s.total_size_bytes)}
-        change={`${storagePct}% of 500 GB`}
-        trend={Number(storagePct) > 80 ? "down" : "neutral"}
-        icon={<BarChart2 />}
-        accent="var(--success)"
-      />
-      <StatCard
-        label="Flagged Files"
-        value={s.flagged.toLocaleString()}
-        change={s.flagged > 0 ? "Need review" : "All clear"}
-        trend={s.flagged > 0 ? "down" : "neutral"}
-        icon={<Flag />}
-        alert={s.flagged > 0}
-      />
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginBottom: 20 }}>
+      <button onClick={() => onOpenTab("all")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Managed assets" value={s.total.toLocaleString()} change={`${s.active.toLocaleString()} active`} trend="neutral" icon={<HardDrive />} accent="var(--brand)" /></button>
+      <button onClick={() => onOpenTab("all")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Active storage" value={fmtBytes(s.active_size_bytes)} change={`${s.public_count.toLocaleString()} public · ${s.private_count.toLocaleString()} private`} trend="neutral" icon={<BarChart2 />} accent="var(--success)" /></button>
+      <button onClick={() => onOpenTab("flagged")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Moderation queue" value={(s.flagged + s.quarantined).toLocaleString()} change={s.flagged + s.quarantined ? "Requires administrator review" : "Queue clear"} trend={s.flagged + s.quarantined ? "down" : "neutral"} icon={<Shield />} alert={s.flagged + s.quarantined > 0} /></button>
+      <button onClick={() => onOpenTab("recent")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Uploaded in 7 days" value={s.recent_count.toLocaleString()} change={`${s.images_count.toLocaleString()} images · ${s.documents_count.toLocaleString()} documents`} trend="neutral" icon={<Clock />} accent="#8b5cf6" /></button>
     </div>
   );
+}
+interface MediaFilterOptions {
+  contexts: Array<{ value: string; count: number }>;
+  owner_types: Array<{ value: string; count: number }>;
+  statuses: string[];
+  file_types: string[];
+  visibilities: string[];
+  upload_contexts: Array<{ value: string; max_mb: number; allowed_types: string[] }>;
 }
 
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
@@ -184,10 +153,10 @@ function TabBar({ active, onChange, summary }: { active: TabKey; onChange: (t: T
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
-function Toolbar({ filters, onChange, viewMode, onViewMode, onUpload }: {
+function Toolbar({ filters, onChange, viewMode, onViewMode, onUpload, options }: {
   filters: Filters; onChange: (f: Filters) => void;
   viewMode: "grid" | "list"; onViewMode: (v: "grid" | "list") => void;
-  onUpload: () => void;
+  onUpload: () => void; options?: MediaFilterOptions | null;
 }) {
   const [showMore, setShowMore] = useState(false);
   const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -204,22 +173,17 @@ function Toolbar({ filters, onChange, viewMode, onViewMode, onUpload }: {
         </div>
         <select value={filters.context} onChange={set("context")} style={inp}>
           <option value="">All Contexts</option>
-          {["provider_document","profile_photo","shop_photo","complaint_evidence","job_photo","chat_attachment","review_media","marketing_asset","booking_photo","catalog_icon"].map(c => (
-            <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
+          {(options?.contexts ?? []).map(({ value, count }) => (
+            <option key={value} value={value}>{value.replace(/_/g, " ")} ({count})</option>
           ))}
         </select>
         <select value={filters.fileType} onChange={set("fileType")} style={inp}>
           <option value="">All Types</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
-          <option value="application">Documents</option>
-          <option value="text">Text</option>
+          {(options?.file_types ?? ["image", "video", "application", "text"]).map((value) => <option key={value} value={value}>{value === "application" ? "Documents" : value.charAt(0).toUpperCase() + value.slice(1) + "s"}</option>)}
         </select>
         <select value={filters.status} onChange={set("status")} style={inp}>
           <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="archived">Archived</option>
-          <option value="quarantined">Quarantined</option>
+          {(options?.statuses ?? ["active", "archived", "quarantined"]).filter((value) => value !== "deleted").map((value) => <option key={value} value={value}>{value.replace(/_/g, " ")}</option>)}
         </select>
         <select value={filters.sort} onChange={set("sort")} style={inp}>
           <option value="newest">Newest First</option>
@@ -231,10 +195,10 @@ function Toolbar({ filters, onChange, viewMode, onViewMode, onUpload }: {
           <Filter size={12} /> More {showMore ? <ChevronDown size={11} style={{ transform: "rotate(180deg)" }} /> : <ChevronDown size={11} />}
         </Btn>
         <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
-          <button onClick={() => onViewMode("grid")} style={{ padding: "6px 10px", background: viewMode === "grid" ? "var(--brand)" : "var(--surface)", color: viewMode === "grid" ? "#fff" : "var(--text-secondary)", border: "none", cursor: "pointer" }}>
+          <button title="Grid view" aria-label="Grid view" aria-pressed={viewMode === "grid"} onClick={() => onViewMode("grid")} style={{ padding: "6px 10px", background: viewMode === "grid" ? "var(--brand)" : "var(--surface)", color: viewMode === "grid" ? "#fff" : "var(--text-secondary)", border: "none", cursor: "pointer" }}>
             <Grid size={14} />
           </button>
-          <button onClick={() => onViewMode("list")} style={{ padding: "6px 10px", background: viewMode === "list" ? "var(--brand)" : "var(--surface)", color: viewMode === "list" ? "#fff" : "var(--text-secondary)", border: "none", cursor: "pointer" }}>
+          <button title="List view" aria-label="List view" aria-pressed={viewMode === "list"} onClick={() => onViewMode("list")} style={{ padding: "6px 10px", background: viewMode === "list" ? "var(--brand)" : "var(--surface)", color: viewMode === "list" ? "#fff" : "var(--text-secondary)", border: "none", cursor: "pointer" }}>
             <List size={14} />
           </button>
         </div>
@@ -245,11 +209,8 @@ function Toolbar({ filters, onChange, viewMode, onViewMode, onUpload }: {
       {showMore && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select value={filters.ownerType} onChange={set("ownerType")} style={inp}>
-            <option value="">All Owners</option>
-            <option value="tenant">Tenant</option>
-            <option value="user">User</option>
-            <option value="customer">Customer</option>
-            <option value="admin">Admin</option>
+          <option value="">All Owners</option>
+          {(options?.owner_types ?? []).map(({ value, count }) => <option key={value} value={value}>{value} ({count})</option>)}
           </select>
           <select value={filters.visibility} onChange={set("visibility")} style={inp}>
             <option value="">All Visibility</option>
@@ -319,104 +280,36 @@ function BulkActionBar({ count, onArchive, onDelete, onChangeVisibility, onClear
 
 // ── Filter Sidebar ────────────────────────────────────────────────────────────
 
-function FilterSidebar({ filters, onChange, onSaveView }: {
-  filters: Filters; onChange: (f: Filters) => void; onSaveView?: () => void;
-}) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggle = (k: string) => setCollapsed((p) => ({ ...p, [k]: !p[k] }));
-  const sel: React.CSSProperties = { width: "100%", height: 32, border: "1px solid var(--border)", borderRadius: 6, padding: "0 8px", background: "var(--surface)", color: "var(--text)", fontSize: 12 };
+// ── Media Grid Card ───────────────────────────────────────────────────────────
 
-  const Section = ({ title, k, children }: { title: string; k: string; children: React.ReactNode }) => (
-    <div style={{ marginBottom: 14, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
-      <button onClick={() => toggle(k)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0 0 6px", color: "var(--text)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        {title} {collapsed[k] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-      </button>
-      {!collapsed[k] && <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>}
-    </div>
-  );
+function SecureThumbnail({ asset, fit = "cover" }: { asset: MediaAssetAdmin; fit?: "cover" | "contain" }) {
+  const [source, setSource] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    if (!asset.mime_type?.startsWith("image/") || !asset.preview_url) return;
+    mediaAdminApi.fetchSignedFile(asset.preview_url)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSource(objectUrl);
+      })
+      .catch(() => active && setFailed(true));
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [asset.id, asset.mime_type, asset.preview_url]);
 
+  if (source) return <img src={source} alt="" style={{ width: "100%", height: "100%", objectFit: fit }} />;
   return (
-    <div style={{ width: 200, flexShrink: 0, padding: "0 16px 0 0" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 16, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Filters</div>
-
-      <Section title="Context" k="ctx">
-        <select value={filters.context} onChange={(e) => onChange({ ...filters, context: e.target.value })} style={sel}>
-          <option value="">All</option>
-          {["provider_document","profile_photo","shop_photo","complaint_evidence","job_photo","chat_attachment","review_media","marketing_asset","booking_photo","catalog_icon"].map(c => (
-            <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
-          ))}
-        </select>
-      </Section>
-
-      <Section title="Owner Type" k="own">
-        {["tenant","user","customer","admin"].map((o) => (
-          <label key={o} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-            <input type="radio" name="ownerType" checked={filters.ownerType === o} onChange={() => onChange({ ...filters, ownerType: o })} />
-            {o.charAt(0).toUpperCase() + o.slice(1)}
-          </label>
-        ))}
-        {filters.ownerType && <Btn variant="ghost" size="sm" onClick={() => onChange({ ...filters, ownerType: "" })} style={{ fontSize: 10, padding: "2px 6px" }}>Clear</Btn>}
-      </Section>
-
-      <Section title="File Type" k="ft">
-        {[["image","Images"],["video","Videos"],["application","Documents"],["text","Text"]].map(([v, l]) => (
-          <label key={v} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-            <input type="radio" name="fileType" checked={filters.fileType === v} onChange={() => onChange({ ...filters, fileType: v })} />
-            {l}
-          </label>
-        ))}
-        {filters.fileType && <Btn variant="ghost" size="sm" onClick={() => onChange({ ...filters, fileType: "" })} style={{ fontSize: 10, padding: "2px 6px" }}>Clear</Btn>}
-      </Section>
-
-      <Section title="Visibility" k="vis">
-        {[["","All"],["public","Public"],["private","Private"]].map(([v, l]) => (
-          <label key={l} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-            <input type="radio" name="visibility" checked={filters.visibility === v} onChange={() => onChange({ ...filters, visibility: v })} />
-            {l}
-          </label>
-        ))}
-      </Section>
-
-      <Section title="Status" k="sta">
-        {[["","All"],["active","Active"],["archived","Archived"],["quarantined","Quarantined"]].map(([v, l]) => (
-          <label key={l} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-            <input type="radio" name="status" checked={filters.status === v} onChange={() => onChange({ ...filters, status: v })} />
-            {l}
-          </label>
-        ))}
-      </Section>
-
-      <Section title="Flagged" k="flg">
-        {[["","All"],["true","Flagged only"],["false","Not flagged"]].map(([v, l]) => (
-          <label key={l} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-            <input type="radio" name="isFlagged" checked={filters.isFlagged === v} onChange={() => onChange({ ...filters, isFlagged: v })} />
-            {l}
-          </label>
-        ))}
-      </Section>
-
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Upload Date</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <input type="date" value={filters.dateFrom} onChange={(e) => onChange({ ...filters, dateFrom: e.target.value })} style={{ ...sel, fontSize: 11 }} />
-          <input type="date" value={filters.dateTo} onChange={(e) => onChange({ ...filters, dateTo: e.target.value })} style={{ ...sel, fontSize: 11 }} />
-        </div>
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Saved Views</div>
-        {["Complaint Evidence","Provider Docs","Booking Photos","Flagged Files"].map((v) => (
-          <button key={v} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 12, padding: "3px 0", textAlign: "left" }}
-            onClick={() => onChange({ ...DEFAULT_FILTERS, context: v.toLowerCase().replace(/ /g, "_") })}>
-            <FolderOpen size={11} /> {v}
-          </button>
-        ))}
-      </div>
+    <div style={{ color: getMimeColor(asset.mime_type), display: "grid", placeItems: "center", gap: 5 }}>
+      {getMimeIcon(asset.mime_type, 36)}
+      <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{failed ? "Preview unavailable" : "Loading preview"}</span>
     </div>
   );
 }
-
-// ── Media Grid Card ───────────────────────────────────────────────────────────
 
 function MediaCard({ asset, selected, onSelect, onPreview, onDetail, onArchive, onDelete, onFlag, onCopyLink }: {
   asset: MediaAssetAdmin; selected: boolean;
@@ -436,11 +329,11 @@ function MediaCard({ asset, selected, onSelect, onPreview, onDetail, onArchive, 
       <div style={{ height: 120, background: isImage ? "#f3f4f6" : `${mColor}12`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}
         onClick={onDetail}>
         {isImage && asset.preview_url
-          ? <img src={asset.preview_url} alt={asset.file_name_original} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ? <SecureThumbnail asset={asset} />
           : <div style={{ color: mColor }}>{getMimeIcon(asset.mime_type, 36)}</div>
         }
         {/* Checkbox overlay */}
-        <div style={{ position: "absolute", top: 8, left: 8 }} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
+        <div role="checkbox" aria-checked={selected} aria-label={(selected ? "Deselect " : "Select ") + asset.file_name_original} tabIndex={0} style={{ position: "absolute", top: 8, left: 8 }} onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onSelect(); } }} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
           <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selected ? "var(--brand)" : "#fff"}`, background: selected ? "var(--brand)" : "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {selected && <CheckCircle size={10} color="#fff" />}
           </div>
@@ -448,8 +341,7 @@ function MediaCard({ asset, selected, onSelect, onPreview, onDetail, onArchive, 
         {/* Hover actions */}
         {hov && (
           <div style={{ position: "absolute", bottom: 8, right: 8, display: "flex", gap: 4 }}>
-            <button onClick={(e) => { e.stopPropagation(); onPreview(); }} style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(0,0,0,.6)", border: "none", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><ZoomIn size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onCopyLink(); }} style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(0,0,0,.6)", border: "none", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Copy size={12} /></button>
+            <button title="Open secure preview" aria-label="Open secure preview" onClick={(e) => { e.stopPropagation(); onPreview(); }} style={{ width: 30, height: 30, borderRadius: 7, background: "rgba(0,0,0,.72)", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><ZoomIn size={13} /></button>
           </div>
         )}
         {/* Badges */}
@@ -472,9 +364,11 @@ function MediaCard({ asset, selected, onSelect, onPreview, onDetail, onArchive, 
           <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{fmtDate(asset.created_at)}</span>
         </div>
         <div style={{ marginTop: 6, display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-          <Btn variant="ghost" size="sm" onClick={onDetail} style={{ padding: "3px 6px", fontSize: 11 }}><Eye size={11} /></Btn>
-          <Btn variant="ghost" size="sm" onClick={onArchive} style={{ padding: "3px 6px", fontSize: 11 }}><Archive size={11} /></Btn>
-          <Btn variant="ghost" size="sm" onClick={onDelete} style={{ padding: "3px 6px", fontSize: 11, color: "#ef4444" }}><Trash2 size={11} /></Btn>
+          <Btn aria-label="View details" variant="ghost" size="sm" onClick={onDetail} style={{ padding: "3px 6px", fontSize: 11 }}><Eye size={11} /></Btn>
+          {asset.status === "archived"
+            ? <Btn aria-label="Restore file" variant="ghost" size="sm" onClick={onArchive} style={{ padding: "3px 6px", fontSize: 11 }}><RotateCcw size={11} /></Btn>
+            : <Btn aria-label="Archive file" variant="ghost" size="sm" onClick={onArchive} style={{ padding: "3px 6px", fontSize: 11 }}><Archive size={11} /></Btn>}
+          <Btn aria-label="Move to trash" variant="ghost" size="sm" onClick={onDelete} style={{ padding: "3px 6px", fontSize: 11, color: "#ef4444" }}><Trash2 size={11} /></Btn>
         </div>
       </div>
     </div>
@@ -506,6 +400,15 @@ function MediaGrid({ items, selected, onSelect, onPreview, onDetail, onArchive, 
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 
+function linkedRecordHref(link: MediaLinkedRecord): string | null {
+  const moduleName = link.module_name.toLowerCase();
+  if (moduleName === "booking" || moduleName === "job") return "/admin/home-services/bookings-jobs?" + moduleName + "_id=" + encodeURIComponent(link.record_id);
+  if (moduleName === "complaint") return "/admin/home-services/complaints/" + encodeURIComponent(link.record_id);
+  if (moduleName === "provider") return "/admin/home-services/providers/" + encodeURIComponent(link.record_id);
+  if (moduleName === "invoice") return "/admin/home-services/finance?tab=invoices&invoice_id=" + encodeURIComponent(link.record_id);
+  return null;
+}
+
 function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete }: {
   asset: MediaAssetAdmin; onClose: () => void;
   onArchive: () => void; onFlag: () => void;
@@ -516,11 +419,17 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
   const [tab, setTab]   = useState<"info" | "access" | "links" | "audit">("info");
   const { execute: execPreview } = useAction(async () => {
     const signed = await mediaAdminApi.createSignedPreviewUrl(asset.id);
-    window.open(signed.url, "_blank");
+    const blob = await mediaAdminApi.fetchSignedFile(signed.url);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   });
   const { execute: execDownload } = useAction(async () => {
     const signed = await mediaAdminApi.createSignedDownloadUrl(asset.id);
-    const a = document.createElement("a"); a.href = signed.url; a.click();
+    const blob = await mediaAdminApi.fetchSignedFile(signed.url);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = asset.file_name_original; a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   });
 
   const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
@@ -531,7 +440,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 1200, display: "flex" }}>
       <div style={{ flex: 1, background: "rgba(0,0,0,.4)" }} onClick={onClose} />
       <div style={{ width: 520, background: "var(--surface)", borderLeft: "1px solid var(--border)", overflowY: "auto", display: "flex", flexDirection: "column" }}>
         {/* Header */}
@@ -544,16 +453,18 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
               ? <Btn variant="success" size="sm" onClick={onMarkClean}><Shield size={12} /> Mark Clean</Btn>
               : <Btn variant="warning" size="sm" onClick={onFlag}><Flag size={12} /> Flag</Btn>
             }
-            <Btn variant="danger" size="sm" onClick={onDelete}><Trash2 size={12} /></Btn>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 4 }}><X size={16} /></button>
+            <Btn aria-label={asset.status === "archived" ? "Restore file" : "Archive file"} variant="secondary" size="sm" onClick={onArchive}>
+              {asset.status === "archived" ? <RotateCcw size={12} /> : <Archive size={12} />}
+            </Btn>
+            <Btn aria-label="Move to trash" variant="danger" size="sm" onClick={onDelete}><Trash2 size={12} /></Btn>
+            <button aria-label="Close file detail" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 4 }}><X size={16} /></button>
           </div>
         </div>
 
         {/* Preview */}
         {asset.mime_type?.startsWith("image/") && asset.preview_url && (
-          <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
-            <img src={asset.preview_url} alt={asset.file_name_original}
-              style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius:"var(--radius-md)" }} />
+          <div style={{ padding: "12px 20px", height: 244, borderBottom: "1px solid var(--border)", background: "var(--bg)", display: "grid", placeItems: "center", overflow: "hidden" }}>
+            <SecureThumbnail asset={asset} fit="contain" />
           </div>
         )}
         {!asset.mime_type?.startsWith("image/") && (
@@ -583,6 +494,11 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
               <Row label="Size"       value={fmtBytes(asset.file_size_bytes)} />
               <Row label="Context"    value={asset.media_context?.replace(/_/g, " ")} />
               <Row label="Owner Type" value={asset.owner_type} />
+              <Row label="Owner ID"   value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{asset.owner_id}</span>} />
+              {asset.tenant_id && <Row label="Tenant ID" value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{asset.tenant_id}</span>} />}
+              {asset.customer_id && <Row label="Customer ID" value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{asset.customer_id}</span>} />}
+              {asset.description && <Row label="Description" value={asset.description} />}
+              {asset.tags_json?.length > 0 && <Row label="Tags" value={<div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{asset.tags_json.map((tag) => <Badge key={tag} variant="info" size="sm">{tag}</Badge>)}</div>} />}
               <Row label="Status"     value={<Badge variant={statusV(asset.status)}>{asset.status}</Badge>} />
               <Row label="Visibility" value={asset.is_public ? <Badge variant="info"><Unlock size={10} /> Public</Badge> : <Badge variant="muted"><Lock size={10} /> Private</Badge>} />
               <Row label="Flagged"    value={asset.is_flagged ? <Badge variant="danger"><Flag size={10} /> Yes — {asset.flag_reason}</Badge> : <Badge variant="success">No</Badge>} />
@@ -614,7 +530,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{l.module_name} / {l.record_type}</div>
                       <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{l.display_name || l.record_id} · <Badge variant={l.status === "active" ? "success" : "muted"} size="sm">{l.status}</Badge></div>
                     </div>
-                    <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><ExternalLink size={12} /></button>
+                    {linkedRecordHref(l) && <button aria-label={"Open " + l.record_type} onClick={() => window.open(linkedRecordHref(l)!, "_blank", "noopener,noreferrer")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}><ExternalLink size={12} /></button>}
                   </div>
                 ))
               }
@@ -646,16 +562,21 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
 
 // ── Upload Modal ──────────────────────────────────────────────────────────────
 
-function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function UploadModal({ onClose, onDone, options }: { onClose: () => void; onDone: () => void; options?: MediaFilterOptions | null }) {
   const [file, setFile]             = useState<File | null>(null);
-  const [context, setContext]       = useState("general");
-  const [ownerType, setOwnerType]   = useState("admin");
+  const [context, setContext]       = useState("marketing_asset");
   const [isPublic, setIsPublic]     = useState(false);
   const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadContexts = options?.upload_contexts ?? [
+    { value: "marketing_asset", max_mb: 20, allowed_types: ["image/jpeg", "image/png", "image/webp", "image/gif"] },
+  ];
+  const contextRule = uploadContexts.find((item) => item.value === context) ?? uploadContexts[0];
   const { execute, loading, error } = useAction(async () => {
     if (!file) throw new Error("Please select a file.");
-    await mediaAdminApi.uploadMedia(file, context, ownerType, isPublic);
+    await mediaAdminApi.uploadMedia(file, context, "admin", isPublic, description, tags.split(",").map((value) => value.trim()).filter(Boolean));
     onDone();
   });
   const inp: React.CSSProperties = { width: "100%", height: 36, border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", background: "var(--surface)", color: "var(--text)", fontSize: 13 };
@@ -667,7 +588,10 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>File *</label>
           <div
             onClick={() => inputRef.current?.click()}
-            style={{ border: `2px dashed ${file ? "var(--brand)" : "var(--border)"}`, borderRadius:"var(--radius-md)", padding: "20px", textAlign: "center", cursor: "pointer", background: file ? "var(--accent-muted)" : "var(--surface-sunken)" }}
+            onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(event) => { event.preventDefault(); setDragActive(false); setFile(event.dataTransfer.files?.[0] ?? null); }}
+            style={{ border: `2px dashed ${file || dragActive ? "var(--brand)" : "var(--border)"}`, borderRadius:"var(--radius-md)", padding: "24px", textAlign: "center", cursor: "pointer", background: file || dragActive ? "var(--accent-muted)" : "var(--surface-sunken)" }}
           >
             {file ? (
               <div style={{ fontSize: 13 }}>{file.name} · {fmtBytes(file.size)}</div>
@@ -675,27 +599,25 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
               <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
                 <Upload size={20} style={{ display: "block", margin: "0 auto 6px" }} />
                 Click to select or drag and drop
+                <span style={{ display: "block", fontSize: 11, marginTop: 5 }}>Files are validated and access-controlled before publication.</span>
               </div>
             )}
           </div>
-          <input ref={inputRef} type="file" style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input ref={inputRef} type="file" accept={(contextRule?.allowed_types ?? []).join(",")} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Context *</label>
           <select value={context} onChange={(e) => setContext(e.target.value)} style={inp}>
-            {["general","provider_document","profile_photo","shop_photo","complaint_evidence","job_photo","marketing_asset","catalog_icon"].map(c => (
-              <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
+            {uploadContexts.map((item) => (
+              <option key={item.value} value={item.value}>{item.value.replace(/_/g, " ")}</option>
             ))}
           </select>
+          <div style={{ marginTop: 5, fontSize: 11, color: "var(--text-tertiary)" }}>Up to {contextRule?.max_mb ?? 10} MB · {(contextRule?.allowed_types ?? []).map((value) => value.replace("image/", "").replace("application/", "")).join(", ")}</div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Owner Type</label>
-            <select value={ownerType} onChange={(e) => setOwnerType(e.target.value)} style={inp}>
-              <option value="admin">Admin</option>
-              <option value="tenant">Tenant</option>
-              <option value="user">User</option>
-            </select>
+            <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Ownership</label>
+            <div style={{ ...inp, display: "flex", alignItems: "center", color: "var(--text-secondary)" }}><Shield size={13} style={{ marginRight: 7 }} /> Platform managed</div>
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Visibility</label>
@@ -708,6 +630,10 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Description</label>
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description…" style={inp} />
+        </div>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Search tags</label>
+          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="catalog, campaign, policy (comma separated)" style={inp} />
         </div>
         {error && <div style={{ fontSize: 12, color: "#ef4444", padding: "8px 12px", background: "var(--danger-bg)", borderRadius: 6 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
@@ -752,23 +678,19 @@ function FlagModal({ open, asset, onClose, onDone }: { open: boolean; asset: Med
 }
 
 function DeleteModal({ open, asset, onClose, onDone }: { open: boolean; asset: MediaAssetAdmin | null; onClose: () => void; onDone: () => void }) {
-  const [force, setForce] = useState(false);
   const { execute, loading, error } = useAction(async () => {
     if (!asset) return;
-    await mediaAdminApi.deleteMedia(asset.id, force);
-    setForce(false); onDone();
+    await mediaAdminApi.deleteMedia(asset.id, false);
+    onDone();
   });
   return (
-    <Modal open={open} title="Delete File" onClose={onClose}>
-      <p style={{ fontSize: 13, marginBottom: 12 }}>Delete <strong>{asset?.file_name_original}</strong>? This action cannot be undone.</p>
+    <Modal open={open} title="Move file to trash" onClose={onClose}>
+      <p style={{ fontSize: 13, marginBottom: 12 }}>Move <strong>{asset?.file_name_original}</strong> to trash? The stored object is retained according to the platform retention policy.</p>
       {error && <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>{error}</div>}
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 16, cursor: "pointer" }}>
-        <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-        Force delete (bypass active-link guard)
-      </label>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", padding: "10px 12px", background: "var(--surface-sunken)", borderRadius: 7, marginBottom: 16 }}>Files linked to active bookings, jobs, complaints, invoices, disputes, or compliance records cannot be trashed.</div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" onClick={() => execute()} disabled={loading}>Delete</Btn>
+        <Btn variant="danger" onClick={() => execute()} disabled={loading}>Move to trash</Btn>
       </div>
     </Modal>
   );
@@ -804,6 +726,8 @@ export default function MediaLibraryPage() {
   const [tab, setTab]           = useState<TabKey>("all");
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [detail, setDetail]     = useState<MediaAssetAdmin | null>(null);
   const [modal, setModal]       = useState<ActiveModal>(null);
@@ -830,6 +754,7 @@ export default function MediaLibraryPage() {
   const efKey = JSON.stringify(ef);
 
   const { data: summary, refetch: reloadSummary } = useApi(() => mediaAdminApi.getSummary(), []);
+  const { data: filterOptions } = useApi(() => mediaAdminApi.getFilterOptions(), []);
   const { data: listData, loading, refetch: reload } = useApi(
     () => {
       const f: Filters = JSON.parse(efKey) as Filters;
@@ -843,11 +768,13 @@ export default function MediaLibraryPage() {
         isFlagged: f.isFlagged === "" ? undefined : f.isFlagged === "true",
         dateFrom: f.dateFrom || undefined,
         dateTo: f.dateTo || undefined,
+        sort: f.sort as "newest" | "oldest" | "largest" | "smallest",
+        cursor: cursor || undefined,
         page,
         pageSize,
       });
     },
-    [efKey, page, pageSize],
+    [efKey, cursor, page, pageSize],
   );
 
   const refresh = useCallback(() => { reload(); reloadSummary(); setSelected(new Set()); }, [reload, reloadSummary]);
@@ -855,9 +782,12 @@ export default function MediaLibraryPage() {
   const { execute: execArchive }   = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.archiveMedia(a.id); refresh(); });
   const { execute: execRestore }   = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.restoreMedia(a.id); refresh(); });
   const { execute: execMarkClean } = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.markClean(a.id); refresh(); });
-  const { execute: execCopyLink }  = useAction(async (a: MediaAssetAdmin) => {
+  const { execute: execPreview }  = useAction(async (a: MediaAssetAdmin) => {
     const signed = await mediaAdminApi.createSignedPreviewUrl(a.id);
-    await navigator.clipboard.writeText(window.location.origin + signed.url).catch(() => {});
+    const blob = await mediaAdminApi.fetchSignedFile(signed.url);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   });
   const { execute: execBulkArchive, loading: bulkArchiving } = useAction(async () => {
     await mediaAdminApi.bulkArchive(Array.from(selected));
@@ -874,7 +804,13 @@ export default function MediaLibraryPage() {
 
   const handleExport = async () => {
     try {
-      const blob = await mediaAdminApi.exportCsv({ context: ef.context, status: ef.status, isFlagged: ef.isFlagged === "true" ? true : undefined });
+      const blob = await mediaAdminApi.exportCsv({
+        q: ef.q || undefined, context: ef.context || undefined, ownerType: ef.ownerType || undefined,
+        visibility: ef.visibility || undefined, status: ef.status || undefined,
+        isFlagged: ef.isFlagged === "" ? undefined : ef.isFlagged === "true",
+        fileType: ef.fileType || undefined, dateFrom: ef.dateFrom || undefined,
+        dateTo: ef.dateTo || undefined, sort: ef.sort,
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = "media_export.csv"; a.click();
     } catch { /* silent */ }
@@ -883,6 +819,8 @@ export default function MediaLibraryPage() {
   const items      = (listData?.items ?? []) as Row[];
   const total      = listData?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
+  const hasActiveFilters = Object.entries(filters).some(([key, value]) => key !== "sort" && Boolean(value));
+  const emptyCopy = EMPTY_STATE_COPY[tab];
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -891,8 +829,33 @@ export default function MediaLibraryPage() {
   const clearAll  = () => setSelected(new Set());
 
   const handleTabChange = (t: TabKey) => {
-    setTab(t); setPage(1); clearAll();
+    setTab(t); setPage(1); setCursor(null); setCursorHistory([]); clearAll();
     setFilters((f) => ({ ...f, fileType: "", status: "", isFlagged: "", dateFrom: "" }));
+  };
+
+  const applyFilters = (next: Filters) => {
+    setFilters(next);
+    setPage(1);
+    setCursor(null);
+    setCursorHistory([]);
+    clearAll();
+  };
+
+  const goNext = () => {
+    if (!listData?.next_cursor) return;
+    setCursorHistory((history) => [...history, cursor]);
+    setCursor(listData.next_cursor);
+    setPage((value) => value + 1);
+    clearAll();
+  };
+
+  const goPrevious = () => {
+    if (!cursorHistory.length) return;
+    const previous = cursorHistory[cursorHistory.length - 1] ?? null;
+    setCursorHistory((history) => history.slice(0, -1));
+    setCursor(previous);
+    setPage((value) => Math.max(1, value - 1));
+    clearAll();
   };
 
   // Table columns
@@ -942,9 +905,9 @@ export default function MediaLibraryPage() {
       key: "actions", label: "",
       render: (_v, row) => (
         <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-          <Btn variant="ghost" size="sm" onClick={() => setDetail(row as MediaAssetAdmin)} style={{ padding: "3px 6px" }}><Eye size={11} /></Btn>
-          <Btn variant="ghost" size="sm" onClick={() => execArchive(row as MediaAssetAdmin)} style={{ padding: "3px 6px" }}><Archive size={11} /></Btn>
-          <Btn variant="ghost" size="sm" onClick={() => setModal({ type: "delete", asset: row as MediaAssetAdmin })} style={{ padding: "3px 6px", color: "#ef4444" }}><Trash2 size={11} /></Btn>
+          <Btn aria-label="View details" variant="ghost" size="sm" onClick={() => setDetail(row as MediaAssetAdmin)} style={{ padding: "3px 6px" }}><Eye size={11} /></Btn>
+          <Btn aria-label={(row as MediaAssetAdmin).status === "archived" ? "Restore file" : "Archive file"} variant="ghost" size="sm" onClick={() => (row as MediaAssetAdmin).status === "archived" ? execRestore(row as MediaAssetAdmin) : execArchive(row as MediaAssetAdmin)} style={{ padding: "3px 6px" }}>{(row as MediaAssetAdmin).status === "archived" ? <RotateCcw size={11} /> : <Archive size={11} />}</Btn>
+          <Btn aria-label="Move to trash" variant="ghost" size="sm" onClick={() => setModal({ type: "delete", asset: row as MediaAssetAdmin })} style={{ padding: "3px 6px", color: "#ef4444" }}><Trash2 size={11} /></Btn>
         </div>
       ),
     },
@@ -952,11 +915,11 @@ export default function MediaLibraryPage() {
 
   return (
     <AdminLayout>
-      <div style={{ padding: "28px 32px", minHeight: "100vh" }}>
+      <div style={{ padding: "28px 32px 48px", minHeight: "100vh", maxWidth: 1680, margin: "0 auto" }}>
         {/* Header */}
         <SectionHeader
           title="Media Library"
-          subtitle="All uploaded files across the platform"
+          subtitle="Securely find, review, govern, and export files across every platform workflow"
           icon={<HardDrive />}
           actions={
             <div style={{ display: "flex", gap: 8 }}>
@@ -968,27 +931,25 @@ export default function MediaLibraryPage() {
         />
 
         {/* KPI Cards */}
-        {summary && <SummaryCards s={summary} />}
+        {summary && <SummaryCards s={summary} onOpenTab={handleTabChange} />}
 
         {/* Tabs */}
         <TabBar active={tab} onChange={handleTabChange} summary={summary ?? null} />
 
-        {/* Main layout: sidebar + content */}
-        <div style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
-          <FilterSidebar filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
-
-          <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Search and operational results */}
+        <div style={{ minWidth: 0 }}>
             {/* Toolbar */}
             <Toolbar
               filters={filters}
-              onChange={(f) => { setFilters(f); setPage(1); }}
+              onChange={applyFilters}
               viewMode={viewMode}
               onViewMode={setViewMode}
               onUpload={() => setModal({ type: "upload" })}
+              options={filterOptions as MediaFilterOptions | null}
             />
 
             {/* Active filter chips */}
-            <ActiveChips filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+            <ActiveChips filters={filters} onChange={applyFilters} />
 
             {/* Bulk action bar */}
             {selected.size > 0 && (
@@ -1018,7 +979,7 @@ export default function MediaLibraryPage() {
               )}
 
               {/* Loading */}
-              {loading && (
+              {loading && items.length === 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="skeleton" style={{ height: 180, borderRadius: 10 }} />
@@ -1032,36 +993,38 @@ export default function MediaLibraryPage() {
                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
                     <HardDrive size={28} style={{ color: "var(--text-tertiary)" }} />
                   </div>
-                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>No media files found</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{emptyCopy.title}</div>
                   <div style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 400, margin: "0 auto 20px" }}>
-                    {Object.values(filters).some(Boolean)
+                    {hasActiveFilters
                       ? "No files match these filters. Try changing or clearing your filters."
-                      : "Files uploaded from bookings, jobs, complaints, provider verification, and catalog assets will appear here."}
+                      : emptyCopy.description}
                   </div>
-                  {Object.values(filters).some(Boolean)
-                    ? <Btn variant="secondary" size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>Clear Filters</Btn>
-                    : <Btn variant="primary" size="sm" onClick={() => setModal({ type: "upload" })}><Upload size={12} /> Upload First File</Btn>
+                  {hasActiveFilters
+                    ? <Btn variant="secondary" size="sm" onClick={() => applyFilters(DEFAULT_FILTERS)}>Clear Filters</Btn>
+                    : emptyCopy.upload
+                      ? <Btn variant="primary" size="sm" onClick={() => setModal({ type: "upload" })}><Upload size={12} /> Upload media</Btn>
+                      : null
                   }
                 </div>
               )}
 
               {/* Grid view */}
-              {!loading && items.length > 0 && viewMode === "grid" && (
+              {items.length > 0 && viewMode === "grid" && (
                 <MediaGrid
                   items={items as MediaAssetAdmin[]}
                   selected={selected}
                   onSelect={toggleSelect}
-                  onPreview={(a) => { execCopyLink(a); /* opens signed preview */ }}
+                  onPreview={(a) => execPreview(a)}
                   onDetail={(a) => setDetail(a)}
-                  onArchive={(a) => execArchive(a)}
+                  onArchive={(a) => a.status === "archived" ? execRestore(a) : execArchive(a)}
                   onDelete={(a) => setModal({ type: "delete", asset: a })}
                   onFlag={(a) => setModal({ type: "flag", asset: a })}
-                  onCopyLink={(a) => execCopyLink(a)}
+                  onCopyLink={(a) => execPreview(a)}
                 />
               )}
 
               {/* List view */}
-              {!loading && items.length > 0 && viewMode === "list" && (
+              {items.length > 0 && viewMode === "list" && (
                 <DataTable<Row>
                   columns={columns}
                   rows={items}
@@ -1070,23 +1033,22 @@ export default function MediaLibraryPage() {
               )}
 
               {/* Pagination */}
-              {totalPages > 1 && (
+              {(cursorHistory.length > 0 || Boolean(listData?.has_next)) && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
                     Rows per page:
                     {[10, 25, 50, 100].map((n) => (
-                      <button key={n} onClick={() => { setPageSize(n); setPage(1); }} style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)", background: pageSize === n ? "var(--brand)" : "var(--surface)", color: pageSize === n ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 11 }}>{n}</button>
+                      <button key={n} onClick={() => { setPageSize(n); setPage(1); setCursor(null); setCursorHistory([]); }} style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)", background: pageSize === n ? "var(--brand)" : "var(--surface)", color: pageSize === n ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 11 }}>{n}</button>
                     ))}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page} of {totalPages}</span>
-                    <Btn variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={13} /></Btn>
-                    <Btn variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight size={13} /></Btn>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page}{totalPages > 0 ? ` of ${totalPages.toLocaleString()}` : ""}</span>
+                    <Btn aria-label="Previous page" variant="secondary" size="sm" disabled={!cursorHistory.length} onClick={goPrevious}><ChevronLeft size={13} /></Btn>
+                    <Btn aria-label="Next page" variant="secondary" size="sm" disabled={!listData?.has_next} onClick={goNext}><ChevronRight size={13} /></Btn>
                   </div>
                 </div>
               )}
             </Card>
-          </div>
         </div>
       </div>
 
@@ -1095,7 +1057,7 @@ export default function MediaLibraryPage() {
         <DetailDrawer
           asset={detail}
           onClose={() => setDetail(null)}
-          onArchive={() => { execArchive(detail); setDetail(null); }}
+          onArchive={() => { detail.status === "archived" ? execRestore(detail) : execArchive(detail); setDetail(null); }}
           onFlag={() => { setModal({ type: "flag", asset: detail }); setDetail(null); }}
           onMarkClean={() => { execMarkClean(detail); }}
           onDelete={() => { setModal({ type: "delete", asset: detail }); setDetail(null); }}
@@ -1104,7 +1066,7 @@ export default function MediaLibraryPage() {
 
       {/* Modals */}
       {modal?.type === "upload" && (
-        <UploadModal onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />
+        <UploadModal options={filterOptions as MediaFilterOptions | null} onClose={() => setModal(null)} onDone={() => { setModal(null); refresh(); }} />
       )}
       <FlagModal
         open={modal?.type === "flag"}

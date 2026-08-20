@@ -32,6 +32,18 @@ from app.engines.vertical_monetization.calculation_service import calculate_cust
 router = APIRouter(prefix="/v1/admin/home-services/finance/monetization", tags=["Home Services Finance — Monetization"])
 _svc = VerticalMonetizationPolicyService()
 _HS_KEY = "home_services"
+_HS_LIVE_PROVIDER_MODELS = {
+    "NONE", "COMPLETION_CREDITS", "PERCENTAGE_COMMISSION", "FIXED_COMPLETION_CHARGE",
+}
+
+
+def _validate_hs_runtime(payload: dict) -> list[str]:
+    model = payload.get("provider_model", "NONE")
+    if model not in _HS_LIVE_PROVIDER_MODELS:
+        return [
+            f"{model} can be saved as a draft but cannot be published for Home Services because its runtime charging engine is not implemented."
+        ]
+    return []
 
 
 def _rid(r: Request) -> str:
@@ -95,7 +107,10 @@ async def discard_draft(r: Request, db: AsyncSession = Depends(get_db),
 @router.post("/validate", response_model=ApiResponse)
 async def validate(r: Request, v: Vertical = Depends(_require_hs_action("validate"))):
     body = await r.json()
-    return ok(_svc.validate(body), _rid(r))
+    result = _svc.validate(body)
+    result["errors"] = [*result["errors"], *_validate_hs_runtime(body)]
+    result["valid"] = len(result["errors"]) == 0
+    return ok(result, _rid(r))
 
 
 @router.post("/preview", response_model=ApiResponse)
@@ -111,6 +126,11 @@ async def publish(r: Request, db: AsyncSession = Depends(get_db),
                   user: UserContext = Depends(get_current_user),
                   v: Vertical = Depends(_require_hs_action("publish"))):
     body = await r.json()
+    draft = await _svc.get_draft(db, _HS_KEY)
+    if draft:
+        runtime_errors = _validate_hs_runtime(draft)
+        if runtime_errors:
+            raise ServiceOSException("VALIDATION_ERROR", "; ".join(runtime_errors), status_code=422)
     data = await _svc.publish(db, _HS_KEY, actor_id=uuid.UUID(user.user_id) if user.user_id else None,
                               reason=body.get("reason", ""))
     return ok(data, _rid(r))

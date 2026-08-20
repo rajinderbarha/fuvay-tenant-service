@@ -2,9 +2,15 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@serviceos/design-system": ["../packages/design-system/src/index.ts"],
-      "@serviceos/design-system/*": ["../packages/design-system/src/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@serviceos/design-system": [
+        "../packages/design-system/src/index.ts"
+      ],
+      "@serviceos/design-system/*": [
+        "../packages/design-system/src/*"
+      ]
     },
     "target": "ES2017",
     "lib": [
@@ -19,7 +25,10 @@
     "incremental": true,
     "module": "esnext",
     "esModuleInterop": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -32,11 +41,11 @@
   },
   "include": [
     "next-env.d.ts",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
     "**/*.mts",
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

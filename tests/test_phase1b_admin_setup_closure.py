@@ -13,6 +13,8 @@ ROUTER = (ROOT / "app/engines/roles_permissions/admin_router.py").read_text(enco
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
 ROLES_PAGE = (ROOT / "frontend/super-admin/app/admin/users/roles/page.tsx").read_text(encoding="utf-8")
 PERMISSIONS_PAGE = (ROOT / "frontend/super-admin/app/admin/users/permissions/page.tsx").read_text(encoding="utf-8")
+ROLES_ALIAS = ROOT / "frontend/super-admin/app/admin/roles/page.tsx"
+PERMISSIONS_ALIAS = ROOT / "frontend/super-admin/app/admin/permissions/page.tsx"
 
 
 def test_roles_list_endpoint_exists():
@@ -20,11 +22,13 @@ def test_roles_list_endpoint_exists():
     assert "async def list_roles" in SERVICE
 
 
-def test_all_ten_required_roles_present_in_order():
-    for role in ("super_admin", "platform_admin", "finance_admin", "operations_admin",
-                 "support_admin", "compliance_officer", "tenant_owner", "tenant_manager",
-                 "technician", "customer"):
+def test_all_required_roles_present_in_order():
+    for role in ("super_admin", "admin_operations", "admin_finance", "admin_security",
+                 "admin_readonly", "tenant_owner", "staff", "technician", "customer", "guest"):
         assert f'"{role}"' in SERVICE
+    for retired in ("platform_admin", "finance_admin", "operations_admin",
+                    "support_admin", "compliance_officer", "tenant_manager"):
+        assert retired not in SERVICE.split("REQUIRED_ROLE_ORDER = [", 1)[1].split("]", 1)[0]
 
 
 def test_role_detail_endpoint_exists():
@@ -89,4 +93,21 @@ def test_role_detail_useapi_passes_deps_so_drawer_refetches():
 
 
 def test_permissions_filters_useapi_passes_deps_so_filters_refetch():
-    assert "[moduleFilter, scopeFilter, riskFilter, search]), [moduleFilter, scopeFilter, riskFilter, search]);" in PERMISSIONS_PAGE
+    assert "[moduleFilter, scopeFilter, riskFilter, search, page, pageSize])" in PERMISSIONS_PAGE
+    assert "[moduleFilter, scopeFilter, riskFilter, search, page, pageSize]);" in PERMISSIONS_PAGE
+
+
+def test_permissions_are_paginated_for_admin_scale():
+    assert "page: int = Query(1, ge=1)" in ROUTER
+    assert "limit: int = Query(50, ge=1, le=200)" in ROUTER
+    assert '"meta": {' in SERVICE
+    assert '"total_pages"' in SERVICE
+    assert "page, limit: pageSize" in PERMISSIONS_PAGE
+    assert "Page {page} of {totalPages}" in PERMISSIONS_PAGE
+
+
+def test_top_level_roles_and_permissions_routes_exist():
+    assert ROLES_ALIAS.exists()
+    assert PERMISSIONS_ALIAS.exists()
+    assert 'redirect("/admin/users/roles")' in ROLES_ALIAS.read_text(encoding="utf-8")
+    assert 'redirect("/admin/users/permissions")' in PERMISSIONS_ALIAS.read_text(encoding="utf-8")

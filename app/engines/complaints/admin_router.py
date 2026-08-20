@@ -9,6 +9,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from app.dependencies.auth import get_current_user, require_super_admin, UserContext
+from app.core.permissions import P, require_permission
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.complaints.complaint_service import ComplaintService
@@ -79,6 +80,10 @@ class RefundRejectIn(BaseModel):
 class RefundRecordIn(BaseModel):
     recorded_amount: Decimal
     proof_media_url: Optional[str] = None
+
+class RefundCreditRemedyIn(BaseModel):
+    amount: Decimal
+    reason: str
 
 
 class PolicyIn(BaseModel):
@@ -684,7 +689,7 @@ async def list_refund_requests(
     customer_id: Optional[uuid.UUID] = None,
     status:      Optional[str]       = None,
     r: Request       = None,
-    u: UserContext   = Depends(require_super_admin),
+    u: UserContext   = Depends(require_permission(P.PAYMENT_READ)),
     db: AsyncSession = Depends(get_db),
 ):
     refunds = await _refund.list_refund_requests(db, tenant_id=tenant_id, customer_id=customer_id, status=status)
@@ -700,7 +705,7 @@ async def approve_refund(
     refund_id: uuid.UUID,
     body: RefundApproveIn,
     r: Request       = None,
-    u: UserContext   = Depends(require_super_admin),
+    u: UserContext   = Depends(require_permission(P.PAYMENT_REFUND)),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.admin_approve_refund(
@@ -715,7 +720,7 @@ async def reject_refund(
     refund_id: uuid.UUID,
     body: RefundRejectIn,
     r: Request       = None,
-    u: UserContext   = Depends(require_super_admin),
+    u: UserContext   = Depends(require_permission(P.PAYMENT_REFUND)),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.admin_reject_refund(db, refund_id, u.user_id, body.reason, request_id=_rid(r))
@@ -727,7 +732,7 @@ async def record_refund(
     refund_id: uuid.UUID,
     body: RefundRecordIn,
     r: Request       = None,
-    u: UserContext   = Depends(require_super_admin),
+    u: UserContext   = Depends(require_permission(P.PAYMENT_REFUND)),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.complaints.constants import ACTOR_ADMIN
@@ -743,12 +748,23 @@ async def record_refund(
 async def verify_refund(
     refund_id: uuid.UUID,
     r: Request       = None,
-    u: UserContext   = Depends(require_super_admin),
+    u: UserContext   = Depends(require_permission(P.PAYMENT_REFUND)),
     db: AsyncSession = Depends(get_db),
 ):
     rf = await _refund.verify_refund(db, refund_id, u.user_id, request_id=_rid(r))
     return ok({"id": str(rf.id), "status": rf.status, "verified_at": str(rf.verified_at)},
               _rid(r), "admin.refund.verified")
+
+@admin_refund_router.post("/{refund_id}/credit-remedy")
+async def issue_refund_credit_remedy(
+    refund_id: uuid.UUID, body: RefundCreditRemedyIn, r: Request = None,
+    u: UserContext = Depends(require_permission(P.PAYMENT_REFUND)),
+    db: AsyncSession = Depends(get_db),
+):
+    rf = await _refund.admin_issue_credit_remedy(
+        db, refund_id, u.user_id, body.amount, body.reason, request_id=_rid(r),
+    )
+    return ok(rf.to_dict(), _rid(r), "admin.refund.credit_remedy_issued")
 
 
 # ── Admin Complaint Policies ──────────────────────────────────────────────────

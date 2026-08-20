@@ -29,3 +29,12 @@ async def provider_public_badges(
     """A provider's customer-visible badges — safe to show to anyone."""
     svc = TrustQualityService(db, None, "public")
     return ok({"items": await svc.list_earned_badges("tenant", tenant_id, "customer")}, _rid(r))
+
+
+@public_trust_quality_router.get("/technicians/{technician_id}/badges")
+async def technician_public_badges(
+    r: Request, technician_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    """A technician's customer-visible badges — safe to show on job/customer surfaces."""
+    svc = TrustQualityService(db, None, "public")
+    return ok({"items": await svc.list_earned_badges("technician", technician_id, "customer")}, _rid(r))

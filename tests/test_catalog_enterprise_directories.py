@@ -63,6 +63,55 @@ def test_category_runtime_detail_keeps_composite_contract():
     assert '"engine_summary":' in src
     assert '"dashboard_modules": modules' in src
     assert '"active_tenant_count":' in src
+    assert "_vertical_engine_mappings" in src
+    assert "_vertical_dashboard_modules" in src
+    assert "vertical_catalog_modules" in src
+    assert "cmd.navigation_status = 'available'" in src
+
+
+def test_category_runtime_includes_home_services_runtime_engine_overlays():
+    src = (ROOT / "app/engines/admin_catalog/category_runtime_router.py").read_text(encoding="utf-8")
+    assert "HOME_SERVICES_RUNTIME_ENGINE_OVERLAYS" in src
+    for engine in ("usage_credits", "commission", "customer_svc_credit", "pricing", "compliance", "audit", "settings_config"):
+        assert f'"engine_key": "{engine}"' in src
+    assert "vertical_registry+runtime_usage" in src
+
+
+def test_category_runtime_includes_live_home_services_module_routes():
+    src = (ROOT / "app/engines/admin_catalog/category_runtime_router.py").read_text(encoding="utf-8")
+    assert "HOME_SERVICES_RUNTIME_MODULE_OVERLAYS" in src
+    for route in (
+        "/admin/home-services/providers",
+        "/admin/home-services/bookings-jobs",
+        "/admin/home-services/customers",
+        "/admin/home-services/staff",
+        "/admin/home-services/finance",
+        "/admin/home-services/complaints",
+        "/admin/service-area-requests",
+    ):
+        assert route in src
+    assert "runtime_route" in src
+    assert "if key in retired_keys:" in src
+    assert "HOME_SERVICES_REGISTRY_MODULE_ENGINE_MAP" in src
+
+
+def test_category_detail_page_exposes_connected_tabs():
+    src = (ROOT / "frontend/super-admin/app/admin/categories/[id]/page.tsx").read_text(encoding="utf-8")
+    for label in ("Readiness", "Catalog Links", "Engines", "Modules"):
+        assert label in src
+    assert "useSearchParams" in src
+    assert "categoryRuntimeApi.getCategoryRuntime" in src
+    assert "adminCustomerFlowApi.getFlowConfig" in src
+    assert "catalogApi.getCategoryCommissionAuthority" in src
+
+
+def test_category_detail_engine_and_module_tabs_are_filterable_and_sourced():
+    src = (ROOT / "frontend/super-admin/app/admin/categories/[id]/page.tsx").read_text(encoding="utf-8")
+    assert "Search engines..." in src
+    assert "Search modules..." in src
+    assert "runtime_reason" in src
+    assert "module.source" in src
+    assert "engine.source" in src
 
 
 def test_vertical_release_filter_matches_canonical_seed_values():

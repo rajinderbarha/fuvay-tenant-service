@@ -50,6 +50,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.execution.models import ServiceJobExecutionEvent
 from app.exceptions import ServiceOSException
 
 _TERMINAL_STATUSES = {"completed", "cancelled", "failed", "closed_estimate_declined"}
@@ -104,7 +105,10 @@ class TechnicianJobDetailService:
         service_label, type_required, brand_required, visit_fee = await self._resolve_catalog(db, job)
         type_brand_value = (job.address_snapshot or {}).get("type_brand") if job.address_snapshot else None
 
-        workflow_stages = self._build_workflow_stages(job, work_start_status)
+        # Prefer the job's own workflow definition; fall back to the static
+        # sequence for workflows that have not defined steps.
+        workflow_stages = (await self._build_workflow_stages_from_definition(db, job)
+                           or self._build_workflow_stages(job, work_start_status))
         requirements = await self._build_requirements(db, job)
         blocker = None
         if work_start_status.get("start_work_block_code"):
@@ -223,7 +227,30 @@ class TechnicianJobDetailService:
 
         return service_label, type_required, brand_required, visit_fee
 
+    async def _build_workflow_stages_from_definition(self, db: AsyncSession, job) -> list[dict] | None:
+        """Stages from the job's OWN snapshotted workflow, if it defines steps.
+
+        The job's `service_job_workflow_id` is an immutable snapshot taken at
+        booking time, so an admin publishing a new step sequence never rewrites
+        the journey of a job already in flight.
+
+        Returns None when the workflow has no step definition, so the static
+        fallback below still serves every workflow authored before migration 274.
+        """
+        from app.engines.admin_catalog.workflow_steps import (
+            resolve_job_workflow_stages, to_client_stages,
+        )
+        annotated = await resolve_job_workflow_stages(db, job, "staff")
+        if annotated is None:
+            return None
+        return to_client_stages(annotated)
+
     def _build_workflow_stages(self, job, work_start_status: dict) -> list[dict]:
+        """Static fallback for workflows with no step definition.
+
+        Kept because every workflow authored before migration 274 has empty
+        `steps_json`, and those jobs must keep rendering exactly as they do now.
+        """
         sequence = list(_REPAIR_SEQUENCE)
         # Drop the estimate stage entirely when this job/blueprint never requires one.
         if work_start_status.get("quote_approval_required") is False:

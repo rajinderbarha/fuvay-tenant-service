@@ -15,6 +15,7 @@ app.engines.payment.service.process_payment_webhook.
 """
 from __future__ import annotations
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +25,8 @@ from app.models.base import ServiceOSBase
 
 PAYMENT_KIND_DEPOSIT = "security_deposit"
 PAYMENT_KIND_CREDIT = "credit_package"
-VALID_PAYMENT_KINDS = (PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT)
+PAYMENT_KIND_FUNDING = "activation_funding"
+VALID_PAYMENT_KINDS = (PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING)
 
 STATUS_CREATED = "created"
 STATUS_CAPTURED = "captured"
@@ -49,7 +51,7 @@ class ActivationPaymentOrder(ServiceOSBase):
     # Gross amount the order was created for (== required_deposit_amount, or
     # required_credit_amount incl. GST for credit_package).
     amount:             Mapped[Numeric]         = mapped_column(Numeric(12, 2), nullable=False)
-    # For credit_package only: the split actually posted on capture --
+    # For credit_package and activation_funding: the split actually posted on capture --
     # credited_amount goes to tenant_billing.credit_balance, tax_amount is
     # recorded as a separate FinancialEvent. Never blended.
     credited_amount:    Mapped[Numeric | None]  = mapped_column(Numeric(12, 2), nullable=True)
@@ -62,6 +64,13 @@ class ActivationPaymentOrder(ServiceOSBase):
     captured_at:        Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def to_dict(self) -> dict:
+        credited = Decimal(str(self.credited_amount or 0))
+        tax = Decimal(str(self.tax_amount or 0))
+        deposit_allocation = (
+            Decimal(str(self.amount)) - credited - tax
+            if self.payment_kind == PAYMENT_KIND_FUNDING else
+            (Decimal(str(self.amount)) if self.payment_kind == PAYMENT_KIND_DEPOSIT else Decimal("0"))
+        )
         return {
             "id": str(self.id), "tenant_id": str(self.tenant_id),
             "payment_kind": self.payment_kind, "gateway": self.gateway,
@@ -70,6 +79,7 @@ class ActivationPaymentOrder(ServiceOSBase):
             "amount": float(self.amount),
             "credited_amount": float(self.credited_amount) if self.credited_amount is not None else None,
             "tax_amount": float(self.tax_amount) if self.tax_amount is not None else None,
+            "deposit_amount": float(deposit_allocation),
             "currency": self.currency, "status": self.status,
             "captured_at": self.captured_at.isoformat() if self.captured_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

@@ -311,7 +311,7 @@ export default function PlatformAnalyticsDashboard() {
         <KpiCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/home-services/providers?status=active" loading={sumLoading} />
         <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/bookings-jobs" loading={sumLoading} />
         <KpiCard label="Platform Revenue" value={fmtMoney(s.platform_revenue)} helpText="Top-ups + packages" loading={sumLoading} />
-        <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/completed-job-deduction" loading={sumLoading} />
+        <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/finance?tab=provider-charges" loading={sumLoading} />
         <KpiCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} helpText="Paid directly to provider" loading={sumLoading} />
         <KpiCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
         <KpiCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />

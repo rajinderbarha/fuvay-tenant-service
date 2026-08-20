@@ -245,6 +245,10 @@ async def test_completion_proof_full_lifecycle_live():
                 assert reminder_resp2.status_code == 429
         finally:
             app.dependency_overrides.pop(get_current_user, None)
+            await db.execute(text("DELETE FROM in_app_notifications WHERE source_record_id IN (SELECT id FROM service_invoices WHERE job_id=:jid)"), {"jid": job_id})
+            await db.execute(text("DELETE FROM financial_events WHERE record_id IN (SELECT id FROM service_invoices WHERE job_id=:jid)"), {"jid": job_id})
+            await db.execute(text("DELETE FROM service_invoice_items WHERE job_id=:jid"), {"jid": job_id})
+            await db.execute(text("DELETE FROM service_invoices WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_job_completion_proofs WHERE job_id=:jid"), {"jid": job_id})
             await db.execute(text("DELETE FROM service_job_parts_requests WHERE id=:pid"), {"pid": parts_id})
             await db.execute(text("DELETE FROM service_job_quotes WHERE id=:qid"), {"qid": quote_id})

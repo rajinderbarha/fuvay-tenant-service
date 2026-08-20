@@ -1,25 +1,27 @@
 {
   "expo": {
-    "name": "ServiceOS Staff",
+    "name": "Fuvay Staff",
     "slug": "serviceos-staff",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/fuvay-logo-native.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E3A5F"
+      "backgroundColor": "#071633"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.serviceos.staff",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ServiceOS needs location to track your jobs."
+        "NSLocationWhenInUseUsageDescription": "Fuvay needs location to track your jobs."
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#1E3A5F"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#071633"
       },
       "package": "com.serviceos.staff",
       "permissions": [

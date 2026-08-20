@@ -23,6 +23,10 @@ from app.exceptions import ServiceOSException
 from app.core.permissions import P, require_tenant_mutation_permission, require_tenant_owner_mutation
 from app.config import get_settings
 from app.models.base import utcnow
+from app.engines.admin_catalog.skill_catalog_router import (
+    member_skill_ids, replace_member_skills, resolve_team_category_id,
+    validate_skill_ids,
+)
 
 router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 
@@ -31,7 +35,34 @@ router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 # call site that needs it instead of a bare magic number.
 DEFAULT_MAX_CONCURRENT_JOBS = 4
 VALID_MEMBER_TYPES = {"technician", "staff", "manager"}
+DESIGNATIONS_BY_MEMBER_TYPE = {
+    "technician": {
+        "Technician", "Junior Technician", "Senior Technician", "Lead Technician",
+        "AC Technician", "Installation Specialist", "Maintenance Specialist", "Field Supervisor",
+    },
+    "staff": {
+        "Operations Coordinator", "Dispatcher", "Customer Support Executive", "Back Office Executive",
+    },
+    "manager": {
+        "Team Manager", "Operations Manager", "Service Manager", "Branch Manager",
+    },
+}
 settings = get_settings()
+
+
+def _validate_designation(member_type: str, value: Any) -> str:
+    designation = str(value or "").strip()
+    if not designation:
+        raise ServiceOSException(
+            "TEAM_DESIGNATION_REQUIRED", "Select a designation for this team member.", status_code=422,
+        )
+    if designation not in DESIGNATIONS_BY_MEMBER_TYPE.get(member_type, set()):
+        raise ServiceOSException(
+            "INVALID_TEAM_DESIGNATION",
+            "The selected designation is not available for this team-member role.",
+            status_code=422,
+        )
+    return designation
 
 
 def _validate_availability_time_range(start_time: str | None, end_time: str | None) -> None:
@@ -120,7 +151,10 @@ async def list_team_members(
     user: UserContext = Depends(get_current_user),
 ):
     tid = _tid(user)
-    q = "SELECT * FROM provider_team_members WHERE tenant_id = :tid AND deleted_at IS NULL"
+    q = (
+        "SELECT ptm.*, (SELECT u.is_active FROM users u WHERE u.id=ptm.user_id) AS login_active "
+        "FROM provider_team_members ptm WHERE ptm.tenant_id = :tid AND ptm.deleted_at IS NULL"
+    )
     params: Dict[str, Any] = {"tid": str(tid)}
     if status:
         q += " AND status = :status"
@@ -128,6 +162,9 @@ async def list_team_members(
     q += " ORDER BY created_at DESC"
     result = await db.execute(text(q), params)
     rows = [_member_row(r) for r in result.fetchall()]
+    skills_by_member = await member_skill_ids(db, tid, [row["member_id"] for row in rows])
+    for row in rows:
+        row["skill_ids"] = skills_by_member.get(row["member_id"], [])
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     return ok({"members": rows, "count": len(rows)}, request_id=rid)
 
@@ -150,16 +187,7 @@ async def create_team_member(
             "INVALID_MEMBER_TYPE", "Choose technician, staff, or manager.", status_code=422
         )
 
-    tenant_row = (await db.execute(
-        text("SELECT category_id FROM tenants WHERE id=:tid"), {"tid": str(tid)}
-    )).fetchone()
-    if tenant_row is None or tenant_row.category_id is None:
-        raise ServiceOSException(
-            "TENANT_CATEGORY_REQUIRED",
-            "Complete the business workspace setup before adding team members.",
-            status_code=422,
-        )
-    cat_id = str(tenant_row.category_id)
+    cat_id = str(await resolve_team_category_id(db, tid))
 
     requested_offering_ids = [str(value) for value in (payload.get("supported_offering_ids") or [])]
     valid_offering_ids = await _validate_offering_ids(db, tid, requested_offering_ids)
@@ -169,6 +197,46 @@ async def create_team_member(
             "One or more selected services are not enabled for this workspace.",
             status_code=422,
         )
+    designation = _validate_designation(member_type, payload.get("designation"))
+    if member_type == "technician" and not valid_offering_ids:
+        raise ServiceOSException(
+            "TECHNICIAN_SERVICE_REQUIRED",
+            "Select at least one enabled service this technician can perform.",
+            status_code=422,
+        )
+
+    requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
+    selected_skills = await validate_skill_ids(db, uuid.UUID(cat_id), requested_skill_ids)
+    if member_type == "technician" and not selected_skills:
+        raise ServiceOSException(
+            "TECHNICIAN_SKILL_REQUIRED",
+            "Select at least one admin-approved skill for this technician.",
+            status_code=422,
+        )
+
+    # Technician creation during onboarding is atomic with schedule setup.
+    # The earlier frontend created the member first and copied hours through
+    # separate requests; a dropped request left an incomplete roster row that
+    # blocked Review. Load the provider schedule before inserting anything and
+    # write both records in this transaction.
+    inherit_business_hours = (
+        member_type == "technician" and payload.get("inherit_business_hours", False) is True
+    )
+    business_rules = []
+    if inherit_business_hours:
+        business_rules = (await db.execute(text(
+            "SELECT day_of_week, start_time, end_time, slot_duration_minutes, "
+            "break_start_time, break_end_time, max_jobs_per_day, timezone, emergency_available "
+            "FROM provider_availability_rules WHERE tenant_id=:tid "
+            "AND scope_type='provider' AND scope_id IS NULL AND is_active=true "
+            "ORDER BY day_of_week, start_time"
+        ), {"tid": str(tid)})).fetchall()
+        if not business_rules:
+            raise ServiceOSException(
+                "BUSINESS_HOURS_REQUIRED",
+                "Configure Coverage & availability before adding a technician.",
+                status_code=422,
+            )
 
     # Capacity is validated the same way the PUT path validates it -- it
     # feeds the assignment resolver, and 0/negative would make the member
@@ -219,10 +287,10 @@ async def create_team_member(
         "full_name": str(payload.get("full_name")).strip(),
         "phone": payload.get("phone"),
         "email": payload.get("email"),
-        "designation": payload.get("designation"),
+        "designation": designation,
         "status": payload.get("status") or "active",
         "recv": payload.get("can_receive_assignment", True),
-        "skills": _arr("skills"),
+        "skills": json.dumps([skill["name"] for skill in selected_skills]),
         "offering_ids": json.dumps(valid_offering_ids),
         "type_ids": _arr("supported_type_ids"),
         "brand_ids": _arr("supported_brand_ids"),
@@ -233,9 +301,32 @@ async def create_team_member(
         "reports_name": payload.get("reports_to_display_name"),
         "reports_desig": payload.get("reports_to_designation"),
     })
+
+    for rule in business_rules:
+        await db.execute(text("""
+            INSERT INTO provider_availability_rules
+                (id, tenant_id, scope_type, scope_id, day_of_week, start_time, end_time,
+                 slot_duration_minutes, max_bookings_per_slot, is_active, category_id,
+                 break_start_time, break_end_time, max_jobs_per_day, timezone, emergency_available)
+            VALUES (:id, :tid, 'staff_member', :scope_id, :dow, :start, :end,
+                    :slot, NULL, true, :cat_id, :break_start, :break_end,
+                    :max_jobs, :timezone, :emergency)
+        """), {
+            "id": str(uuid.uuid4()), "tid": str(tid), "scope_id": new_id,
+            "dow": rule.day_of_week, "start": rule.start_time, "end": rule.end_time,
+            "slot": rule.slot_duration_minutes, "cat_id": cat_id,
+            "break_start": rule.break_start_time, "break_end": rule.break_end_time,
+            "max_jobs": rule.max_jobs_per_day, "timezone": rule.timezone,
+            "emergency": rule.emergency_available,
+        })
+    await replace_member_skills(
+        db, tenant_id=tid, member_id=uuid.UUID(new_id), selected=selected_skills,
+        actor_id=user.user_id,
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": new_id})
     member = _member_row(row.fetchone())
+    member["skill_ids"] = [skill["id"] for skill in selected_skills]
     return ok({"member": member}, request_id=rid)
 
 
@@ -258,6 +349,29 @@ async def get_team_member_service_coverage(
     rid = (getattr(request.state, "request_id", None)
            or request.headers.get("X-Request-ID", "—"))
     return ok({"coverage": coverage}, request_id=rid)
+
+
+@router.get("/team-members/readiness")
+async def get_team_member_readiness(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Canonical onboarding roster readiness, without directory pagination.
+
+    The setup page previously reconstructed this from the first page of the
+    operational team directory and returned a different counts shape than its
+    own UI consumed. A workspace with more than 50 people therefore displayed
+    incomplete member states and ``undefined`` totals.
+    """
+    from app.engines.home_service_assignment.team_readiness_service import (
+        compute_team_summary,
+    )
+
+    summary = await compute_team_summary(db, _tid(user))
+    rid = (getattr(request.state, "request_id", None)
+           or request.headers.get("X-Request-ID", "â€”"))
+    return ok(summary, request_id=rid)
 
 
 @router.post("/team-members/activate")
@@ -324,7 +438,9 @@ async def get_team_member(
     row = result.fetchone()
     if not row:
         raise HTTPException(404, "Team member not found")
-    return ok(_member_row(row), request_id=rid)
+    member = _member_row(row)
+    member["skill_ids"] = (await member_skill_ids(db, tid, [member["member_id"]])).get(member["member_id"], [])
+    return ok(member, request_id=rid)
 
 
 @router.put("/team-members/{member_id}")
@@ -345,14 +461,14 @@ async def update_team_member(
     # the assignment resolver reads to decide who can take another job, so
     # this was silently pinning every technician at the default.
     allowed = {"full_name", "phone", "email", "designation", "member_type",
-                "can_receive_assignment", "skills", "supported_offering_ids",
+                "can_receive_assignment", "supported_offering_ids",
                 "supported_type_ids", "supported_brand_ids", "service_area_ids",
                 "max_concurrent_jobs",
                 # Same class of omission as max_concurrent_jobs above: real
                 # columns the Team form collects, previously silently
                 # unsaveable because they were missing from this allow-list.
                 "profile_photo_url", "reports_to_display_name",
-                "reports_to_designation", "status", "category_id"}
+                "reports_to_designation", "status"}
     # Capacity feeds the assignment resolver's "can this member take another
     # job?" check, and it lands in a raw SQL UPDATE below -- so it is
     # validated here rather than trusted. Zero or negative would make the
@@ -384,20 +500,75 @@ async def update_team_member(
             )
         payload["supported_offering_ids"] = valid
 
+    selected_skills = None
+    if "skill_ids" in payload:
+        current_type = payload.get("member_type")
+        if not current_type:
+            current_type = (await db.execute(text(
+                "SELECT member_type FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
+            ), {"id": str(member_id), "tid": str(tid)})).scalar()
+        cat_id = await resolve_team_category_id(db, tid)
+        requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
+        selected_skills = await validate_skill_ids(db, cat_id, requested_skill_ids)
+        if current_type == "technician" and not selected_skills:
+            raise ServiceOSException(
+                "TECHNICIAN_SKILL_REQUIRED",
+                "Select at least one admin-approved skill for this technician.",
+                status_code=422,
+            )
+
+    if "designation" in payload or "member_type" in payload:
+        effective_type = payload.get("member_type")
+        current = None
+        if not effective_type or "designation" not in payload:
+            current = (await db.execute(text(
+                "SELECT member_type, designation FROM provider_team_members "
+                "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
+            ), {"id": str(member_id), "tid": str(tid)})).fetchone()
+            if current is None:
+                raise HTTPException(404, "Team member not found")
+        effective_type = effective_type or current.member_type
+        effective_designation = payload.get("designation") if "designation" in payload else current.designation
+        payload["designation"] = _validate_designation(effective_type, effective_designation)
+        payload.pop("skill_ids", None)
+
     sets = ", ".join(f"{k}=:{k}" for k in payload if k in allowed)
-    if not sets:
+    if not sets and selected_skills is None:
         raise HTTPException(400, "No valid fields to update")
     params = {k: v for k, v in payload.items() if k in allowed}
+    # These columns are JSONB in PostgreSQL.  Raw ``text()`` statements do
+    # not run values through the ORM JSON serializer, so asyncpg expects an
+    # encoded JSON string here (the POST path already does the same thing).
+    # Passing a Python list raises ``'list' object has no attribute encode``
+    # and made every edit to a technician's service assignment fail with a
+    # 500 response.
+    json_array_fields = {
+        "supported_offering_ids",
+        "supported_type_ids",
+        "supported_brand_ids",
+        "service_area_ids",
+    }
+    for field in json_array_fields.intersection(params):
+        value = params[field]
+        params[field] = json.dumps(value if isinstance(value, list) else [])
     params["id"] = str(member_id)
     params["tid"] = str(tid)
-    await db.execute(text(f"UPDATE provider_team_members SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
+    if sets:
+        await db.execute(text(f"UPDATE provider_team_members SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
+    if selected_skills is not None:
+        await replace_member_skills(
+            db, tenant_id=tid, member_id=member_id, selected=selected_skills,
+            actor_id=user.user_id,
+        )
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
     fetched = row.fetchone()
     if fetched is None:
         raise HTTPException(404, "Team member not found")
-    return ok(_member_row(fetched), request_id=rid)
+    member = _member_row(fetched)
+    member["skill_ids"] = (await member_skill_ids(db, tid, [member["member_id"]])).get(member["member_id"], [])
+    return ok(member, request_id=rid)
 
 
 @router.delete("/team-members/{member_id}")
@@ -532,13 +703,6 @@ async def create_member_login(
     if member is None:
         raise HTTPException(404, "Team member not found")
 
-    # Idempotent: never create a second login for the same member.
-    if member.user_id:
-        return ok({
-            "member_id": str(member_id), "user_id": str(member.user_id),
-            "credentials": None, "already_had_login": True,
-        }, request_id=rid)
-
     full_name = (member.full_name or "").strip()
     if not full_name:
         raise ServiceOSException("TEAM_MEMBER_NAME_REQUIRED",
@@ -546,43 +710,71 @@ async def create_member_login(
                                  status_code=422)
 
     email = (member.email or "").lower().strip()
-    if email:
-        existing = await db.execute(select(User).where(User.email == email))
-        existing_user = existing.scalar_one_or_none()
-        if existing_user and str(existing_user.tenant_id) != str(tid):
+    if not email:
+        raise ServiceOSException(
+            "TEAM_MEMBER_EMAIL_REQUIRED",
+            "Add the team member's email before sending app access.",
+            status_code=422,
+        )
+
+    linked_user = await db.get(User, member.user_id) if member.user_id else None
+    if linked_user and linked_user.is_active:
+        return ok({
+            "member_id": str(member_id), "user_id": str(linked_user.id),
+            "activation_sent": False, "already_had_login": True,
+            "access_active": True, "invite_resent": False,
+        }, request_id=rid)
+
+    existing = await db.execute(select(User).where(User.email == email))
+    existing_user = existing.scalar_one_or_none()
+    if existing_user and (not linked_user or existing_user.id != linked_user.id):
+        if str(existing_user.tenant_id) != str(tid):
             raise ServiceOSException(
                 "CROSS_TENANT_ACCOUNT_EXISTS",
                 "That email already belongs to an account in another workspace.",
                 status_code=409,
             )
-        if existing_user:
-            raise ServiceOSException(
-                "TEAM_MEMBER_EMAIL_IN_USE",
-                f"A user with email {email} already exists. Change this member's email, "
-                "or link the existing account instead.",
-                status_code=409)
-    else:
-        # No email on file -- generate a non-deliverable placeholder so the
-        # NOT NULL users.email constraint is satisfied without inventing a
-        # real-looking address. Same shape as create_staff's fallback.
-        email = f"member.{uuid.uuid4().hex[:8]}@tenant.local"
+        raise ServiceOSException(
+            "TEAM_MEMBER_EMAIL_IN_USE",
+            f"A user with email {email} already exists. Change this member's email, "
+            "or link the existing account instead.",
+            status_code=409)
 
-    # The random placeholder is deliberately unknowable and the account is
-    # inactive until the invitee proves possession of the one-time token.
-    unusable_password = secrets.token_urlsafe(48)
-    new_user = User(
-        email=email,
-        phone=member.phone,
-        full_name=full_name,
-        role=_MEMBER_TYPE_TO_ROLE.get(member.member_type, "staff"),
-        tenant_id=tid,
-        hashed_password=hash_password(unusable_password),
-        is_active=False,
-        is_verified=False,
-        force_password_change=False,
-    )
-    db.add(new_user)
-    await db.flush()
+    invite_resent = linked_user is not None
+    if linked_user:
+        # Supports the deliberate "add email later" flow and repairs legacy
+        # placeholder accounts without ever creating a duplicate user.
+        linked_user.email = email
+        linked_user.phone = member.phone
+        linked_user.full_name = full_name
+        linked_user.role = _MEMBER_TYPE_TO_ROLE.get(member.member_type, "staff")
+        linked_user.is_active = False
+        linked_user.is_verified = False
+        new_user = linked_user
+        old_tokens = (await db.execute(select(PasswordResetToken).where(
+            PasswordResetToken.user_id == linked_user.id,
+            PasswordResetToken.purpose == "team_member_activation",
+            PasswordResetToken.status == "active",
+        ))).scalars().all()
+        for old_token in old_tokens:
+            old_token.status = "revoked"
+    else:
+        # No account is created until a deliverable email exists. This keeps
+        # an operational technician profile independent from optional app access.
+        unusable_password = secrets.token_urlsafe(48)
+        new_user = User(
+            email=email,
+            phone=member.phone,
+            full_name=full_name,
+            role=_MEMBER_TYPE_TO_ROLE.get(member.member_type, "staff"),
+            tenant_id=tid,
+            hashed_password=hash_password(unusable_password),
+            is_active=False,
+            is_verified=False,
+            force_password_change=False,
+        )
+        db.add(new_user)
+        await db.flush()
 
     token_plain = secrets.token_urlsafe(32)
     activation_token = PasswordResetToken(
@@ -605,18 +797,17 @@ async def create_member_login(
     await db.commit()
 
     activation_sent = False
-    if member.email:
-        try:
-            from app.email_client import send_email
-            activation_sent = await send_email(
-                email,
-                "Activate your ServiceOS team account",
-                (f"Hi {full_name},\n\nYour ServiceOS team account is ready. "
-                 f"Open the team activation page and enter this one-time code:\n\n"
-                 f"{token_plain}\n\nThis code expires in 24 hours."),
-            )
-        except Exception:
-            activation_sent = False
+    try:
+        from app.email_client import send_email
+        activation_sent = await send_email(
+            email,
+            "Activate your ServiceOS team account",
+            (f"Hi {full_name},\n\nYour ServiceOS team account is ready. "
+             f"Open the team activation page and enter this one-time code:\n\n"
+             f"{token_plain}\n\nThis code expires in 24 hours."),
+        )
+    except Exception:
+        activation_sent = False
 
     return ok({
         "member_id": str(member_id),
@@ -625,6 +816,8 @@ async def create_member_login(
         "activation_token": token_plain if settings.DEBUG else None,
         "expires_at": activation_token.expires_at.isoformat(),
         "already_had_login": False,
+        "access_active": False,
+        "invite_resent": invite_resent,
     }, request_id=rid)
 
 

@@ -18,11 +18,11 @@ export const SETUP_STEP_DEFS = [
   { key: "package_active",          label: "Package Active",         desc: "Activate your subscription package",        href: "/finance/package",            icon: "Package" },
   { key: "credits_available",       label: "Usage Credits",          desc: "Ensure credits are available",              href: "/finance/usage-credit-ledger",icon: "CreditCard" },
   { key: "security_deposit_ok",     label: "Security Deposit",       desc: "₹5,000 deposit required",                  href: "/finance/security-deposit",   icon: "Shield" },
-  { key: "service_areas_count",     label: "Service Areas",          desc: "Add at least one coverage area",            href: "/provider/service-areas",     icon: "ArrowRight" },
-  { key: "active_services_count",   label: "Enable a Service",       desc: "Enable AC Repair or another service",       href: "/tenant/setup/services",      icon: "Zap" },
-  { key: "coverage_configured",     label: "Service Coverage",       desc: "Set types, brands & issue types",           href: "/provider/service-coverage",  icon: "Shield" },
-  { key: "staff_count",             label: "Add Technician",         desc: "Add at least one technician",               href: "/provider/staff",             icon: "Users2" },
-  { key: "availability_configured", label: "Business Hours",          desc: "Set working hours",                         href: "/tenant/setup/availability",  icon: "CalendarCheck" },
+  { key: "service_areas_count",     label: "Service Areas",          desc: "Add at least one coverage area",            href: "/home-services/coverage",     icon: "ArrowRight" },
+  { key: "active_services_count",   label: "Enable a Service",       desc: "Enable and price a service",                href: "/home-services/services",     icon: "Zap" },
+  { key: "coverage_configured",     label: "Service Coverage",       desc: "Set types, brands & job types",             href: "/home-services/services",     icon: "Shield" },
+  { key: "staff_count",             label: "Add Technician",         desc: "Add at least one technician",               href: "/home-services/team",         icon: "Users2" },
+  { key: "availability_configured", label: "Business Hours",          desc: "Set working hours",                         href: "/tenant/home-services/setup/coverage-availability",  icon: "CalendarCheck" },
   { key: "documents_submitted",     label: "Documents",              desc: "Submit required business documents",        href: "/documents",                  icon: "FileText" },
 ] as const;
 

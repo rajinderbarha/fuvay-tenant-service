@@ -3,16 +3,17 @@ import React, { useState, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
+import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
+import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   catalogApi,
-  type MasterService, type MasterServiceEnriched,
-  type MasterServicesSummary, type ServiceCategory, type ServiceGroup,
+  type MasterServiceEnriched, type ServiceCategory, type ServiceGroup,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { ChevronRight, Download, RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, CheckSquare, Square, X } from "lucide-react";
 
 // ── Constant maps ───────────────────────────────────────────────────────────────
 const JOB_TYPES = [
@@ -32,67 +33,47 @@ const PRICING_MODELS = [
   { value: "post_assessment", label: "Post-Assessment" },
   { value: "hourly",          label: "Hourly" },
 ];
-const PRICING_MODEL_HELP: Record<string, string> = {
-  fixed:           "Customer sees one fixed service price.",
-  range:           "Customer sees estimated min–max range.",
-  post_assessment: "Customer pays inspection visit fee; quote shared after assessment.",
-  hourly:          "Customer is charged based on time spent.",
-};
-const JOB_TYPE_DEFAULTS: Record<string, Partial<FormRequirements>> = {
-  repair:         { requires_issue_type: true,  is_brand_required: true,  is_type_required: true,  requires_checklist: true,  requires_schedule: false, requires_address: false },
-  installation:   { requires_issue_type: false, is_brand_required: true,  is_type_required: true,  requires_checklist: true,  requires_schedule: true,  requires_address: true  },
-  uninstallation: { requires_issue_type: false, is_brand_required: false, is_type_required: true,  requires_checklist: true,  requires_schedule: false, requires_address: false },
-  inspection:     { requires_issue_type: true,  is_brand_required: false, is_type_required: false, requires_checklist: true,  requires_schedule: true,  requires_address: false },
-  maintenance:    { requires_issue_type: false, is_brand_required: false, is_type_required: true,  requires_checklist: true,  requires_schedule: true,  requires_address: false },
-  cleaning:       { requires_issue_type: false, is_brand_required: false, is_type_required: true,  requires_checklist: true,  requires_schedule: false, requires_address: false },
-  consultation:   { requires_issue_type: false, is_brand_required: false, is_type_required: false, requires_checklist: false, requires_schedule: true,  requires_address: false },
-  service:        { requires_issue_type: false, is_brand_required: false, is_type_required: false, requires_checklist: true,  requires_schedule: false, requires_address: false },
-  custom:         { requires_issue_type: false, is_brand_required: false, is_type_required: false, requires_checklist: false, requires_schedule: false, requires_address: false },
-};
-
 const READINESS_VARIANT: Record<string, "success" | "warning" | "muted" | "danger"> = {
   ready: "success", fallback_only: "warning", missing_rules: "danger",
   inactive: "muted", not_required: "muted",
   missing_brand_mapping: "warning", missing_service_options: "warning",
   missing_issue_types: "warning", missing_pricing: "danger",
+  missing_job_types: "danger", missing_workflows: "warning",
+  category_inactive: "danger", group_unavailable: "danger",
 };
 const READINESS_LABEL: Record<string, string> = {
   ready: "Ready", fallback_only: "Fallback", missing_rules: "No Rules",
   inactive: "Inactive", not_required: "—",
   missing_brand_mapping: "No Brands", missing_service_options: "No Options",
   missing_issue_types: "No Issues", missing_pricing: "No Pricing",
+  missing_job_types: "No Job Types", missing_workflows: "Workflow Missing",
+  category_inactive: "Category Inactive", group_unavailable: "Group Unavailable",
 };
 
+const DEFAULT_COLUMNS: ColumnDef[] = [
+  { key:"select", label:"Select", visible:true, order:0 },
+  { key:"name", label:"Master Service", visible:true, order:1 },
+  { key:"job_type", label:"Legacy Job Type", visible:false, order:2 },
+  { key:"pricing_model", label:"Legacy Pricing Behavior", visible:false, order:3 },
+  { key:"requires_issue_type", label:"Requirements", visible:true, order:4 },
+  { key:"linked_counts", label:"Blueprint", visible:true, order:5 },
+  { key:"runtime_readiness", label:"Readiness", visible:true, order:6 },
+  { key:"is_active", label:"Status", visible:true, order:7 },
+  { key:"id", label:"Actions", visible:true, order:8 },
+];
+
 // ── Form types ─────────────────────────────────────────────────────────────────
-type FormRequirements = {
-  requires_issue_type: boolean;
-  is_brand_required: boolean;
-  is_type_required: boolean;
-  requires_checklist: boolean;
-  requires_schedule: boolean;
-  requires_address: boolean;
-};
 type FormState = {
   name: string;
   category_id: string;
   service_group_id: string;
-  job_type: string;
-  pricing_model: string;
-  base_price: string;
-  min_price: string;
-  max_price: string;
   description: string;
-  unit_label: string;
-  is_active: boolean;
   icon_url: string;
-} & FormRequirements;
+};
 
 const BLANK: FormState = {
-  name: "", category_id: "", service_group_id: "", job_type: "service",
-  pricing_model: "fixed", base_price: "", min_price: "", max_price: "",
-  description: "", unit_label: "per visit", is_active: true, icon_url: "",
-  ...JOB_TYPE_DEFAULTS.service,
-} as FormState;
+  name: "", category_id: "", service_group_id: "", description: "", icon_url: "",
+};
 
 // ── Summary card ───────────────────────────────────────────────────────────────
 
@@ -156,7 +137,7 @@ function ServiceActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, o
     null,
     !row.is_active ? { label: "Activate", action: onActivate } : null,
     row.is_active ? { label: "Deactivate", action: onDeactivate } : null,
-    { label: "Archive", action: onArchive, danger: true },
+    { label: "Retire", action: onArchive, danger: true },
   ];
   return (
     <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
@@ -186,201 +167,6 @@ function ServiceActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, o
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// ── Brand management modal ──────────────────────────────────────────────────────
-function BrandManagementModal({ svc, onClose }: { svc: MasterServiceEnriched; onClose: () => void }) {
-  const brandMgmtService = svc;
-  const mappings = useApi(useCallback(() => catalogApi.listBrandMappings(brandMgmtService.id), [brandMgmtService.id]));
-  const allBrands = useApi(useCallback(() => catalogApi.listBrands({ status: "active", page_size: 200 }), []));
-  const [selectedBrandToAdd, setSelectedBrandToAdd] = useState("");
-
-  const mapBrandServices = useAction(async (brandId: string) => {
-    await catalogApi.mapBrand(brandMgmtService.id, brandId);
-  });
-
-  const mapped = mappings.data?.brands ?? [];
-  const mappedIds = new Set(mapped.map(m => m.brand_id));
-  const available = (allBrands.data?.brands ?? []).filter(b => !mappedIds.has(b.brand_id));
-
-  const handleAdd = async () => {
-    if (!selectedBrandToAdd) return;
-    await mapBrandServices.execute(selectedBrandToAdd);
-    setSelectedBrandToAdd("");
-    mappings.refetch();
-  };
-
-  return (
-    <Modal open onClose={onClose} title={`Manage Brands — ${brandMgmtService.name}`}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 380 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Select value={selectedBrandToAdd} onChange={setSelectedBrandToAdd}
-            options={[{ value: "", label: "Select a brand to add…" },
-              ...available.map(b => ({ value: b.brand_id, label: b.name }))]} />
-          <Btn variant="primary" size="sm" onClick={handleAdd} disabled={!selectedBrandToAdd || mapBrandServices.loading}>
-            {mapBrandServices.loading ? "Adding…" : "Add"}
-          </Btn>
-        </div>
-        <div>
-          {mappings.loading ? (
-            <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Loading brand mappings…</p>
-          ) : mapped.length === 0 ? (
-            <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>No brands mapped to this service yet.</p>
-          ) : (
-            mapped.map(m => (
-              <div key={m.mapping_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "8px 0", borderBottom: "1px solid var(--border-subtle, var(--border))" }}>
-                <span style={{ fontSize: 13 }}>{m.name}</span>
-                {m.is_required && <Badge variant="warning">Required</Badge>}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Detail drawer ──────────────────────────────────────────────────────────────
-function ServiceDetailDrawer({ svc, catMap, groupMap, onClose }: {
-  svc: MasterServiceEnriched | null;
-  catMap: Record<string, string>;
-  groupMap: Record<string, string>;
-  onClose: () => void;
-}) {
-  const [showBrandMgmt, setShowBrandMgmt] = useState(false);
-  if (!svc) return null;
-  const lc = svc.linked_counts;
-  const reqFlags = [
-    ["Brand Required", svc.is_brand_required],
-    ["Type Required", svc.is_type_required],
-    ["Issue Type", svc.requires_issue_type],
-    ["Checklist", svc.requires_checklist],
-    ["Schedule", svc.requires_schedule],
-    ["Address", svc.requires_address],
-  ] as [string, boolean | undefined][];
-
-  const priceDisplay = svc.pricing_model === "range"
-    ? `${svc.min_price ?? 0} – ${svc.max_price ?? 0} ${svc.currency ?? "AED"}`
-    : svc.pricing_model === "post_assessment"
-    ? `Visit fee: ${svc.base_price ?? 0} ${svc.currency ?? "AED"}`
-    : `${svc.base_price ?? 0} ${svc.currency ?? "AED"} / ${svc.unit_label ?? "visit"}`;
-
-  return (
-    <div style={{
-      position: "fixed", right: 0, top: 0, height: "100vh", width: 440, zIndex: 2000,
-      background: "var(--surface)", borderLeft: "1px solid var(--border)",
-      overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,.12)",
-    }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{svc.name}</h3>
-          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-            <Badge variant={svc.is_active ? "success" : "muted"}>{svc.is_active ? "Active" : "Inactive"}</Badge>
-            <Badge variant={READINESS_VARIANT[svc.runtime_readiness] ?? "muted"}>
-              Runtime: {READINESS_LABEL[svc.runtime_readiness] ?? svc.runtime_readiness}
-            </Badge>
-          </div>
-        </div>
-        <Btn variant="ghost" size="xs" onClick={onClose}>✕</Btn>
-      </div>
-
-      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
-        {/* Catalog hierarchy */}
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span>{catMap[svc.category_id] ?? "—"}</span>
-          {svc.service_group_id && <><ChevronRight size={12} /><span>{groupMap[svc.service_group_id] ?? "—"}</span></>}
-          <ChevronRight size={12} />
-          <span style={{ color: "var(--brand, #1a56db)", fontWeight: 600 }}>{svc.name}</span>
-        </div>
-
-        {/* Core info */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Service Details</p>
-          {[
-            ["Job Type",       JOB_TYPES.find(j => j.value === svc.job_type)?.label ?? svc.job_type],
-            ["Pricing Model",  PRICING_MODELS.find(p => p.value === svc.pricing_model)?.label ?? svc.pricing_model],
-            ["Base Pricing",   priceDisplay],
-            ["Description",    svc.description || "—"],
-          ].map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--border-subtle, var(--border))", fontSize: 13 }}>
-              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{k}</span>
-              <span style={{ color: "var(--text-primary)", textAlign: "right", maxWidth: 250, wordBreak: "break-word" }}>{v}</span>
-            </div>
-          ))}
-        </section>
-
-        {/* Pricing readiness */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Pricing Readiness</p>
-          <Badge variant={READINESS_VARIANT[svc.pricing_readiness] ?? "muted"}>
-            {READINESS_LABEL[svc.pricing_readiness] ?? svc.pricing_readiness}
-          </Badge>
-          <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
-            {lc.pricing_rules} pricing rule{lc.pricing_rules !== 1 ? "s" : ""} linked
-          </p>
-        </section>
-
-        {/* Requirements */}
-        <section>
-          <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Requirements</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {reqFlags.map(([label, on]) => (
-              <span key={label} style={{
-                fontSize: 12, padding: "4px 10px", borderRadius: 6, fontWeight: 500,
-                background: on ? "var(--brand-muted, rgba(26,86,219,.08))" : "var(--surface-alt, var(--surface))",
-                color: on ? "var(--brand, #1a56db)" : "var(--text-tertiary, var(--text-secondary))",
-                border: `1px solid ${on ? "var(--brand-border, rgba(26,86,219,.2))" : "var(--border)"}`,
-              }}>{label}: {on ? "Yes" : "No"}</span>
-            ))}
-          </div>
-        </section>
-
-        {/* Linked resources */}
-        <section>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-secondary)" }}>Linked Resources</p>
-            <Btn variant="ghost" size="xs" onClick={() => setShowBrandMgmt(true)}>Manage Brands</Btn>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            {[
-              { label: "Brands",       count: lc.brands },
-              { label: "Options",      count: lc.options },
-              { label: "Issues",       count: lc.issues },
-              { label: "Pricing Rules", count: lc.pricing_rules },
-              { label: "Providers",    count: lc.providers },
-              { label: "Service Types", count: lc.service_types },
-            ].map(({ label, count }) => (
-              <div key={label} style={{ background: "var(--surface-alt, var(--surface))", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
-                <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: count === 0 ? "var(--text-tertiary, var(--text-secondary))" : "var(--text-primary)" }}>{count}</p>
-                <p style={{ margin: "3px 0 0", fontSize: 10, color: "var(--text-secondary)" }}>{label}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      {showBrandMgmt && <BrandManagementModal svc={svc} onClose={() => setShowBrandMgmt(false)} />}
-    </div>
-  );
-}
-
-// ── Requirement toggle row ────────────────────────────────────────────────────
-function ReqToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
-      <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{label}</span>
-      <button onClick={() => onChange(!value)} style={{
-        width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", position: "relative",
-        background: value ? "var(--brand, #1a56db)" : "var(--border)",
-        transition: "background .2s",
-      }}>
-        <span style={{
-          position: "absolute", top: 2, left: value ? 20 : 2, width: 18, height: 18,
-          borderRadius: "50%", background: "#fff", transition: "left .2s",
-        }} />
-      </button>
     </div>
   );
 }
@@ -430,12 +216,39 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
             <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{createAction.error}</p>
           </div>
         )}
+        {/* A master service cannot exist without a category and a group, so when
+            none exist the form is unfillable. It used to just render two empty
+            dropdowns and a permanently disabled Create button, with nothing
+            saying why — say it, and link to where the prerequisite is made. */}
+        {catOptions.length === 0 && (
+          <div style={{ padding: "10px 14px", borderRadius: "var(--radius-md)",
+            background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
+            <p style={{ fontSize: 12, color: "var(--warning-text)", margin: 0 }}>
+              No categories exist yet. A master service must belong to a category and a
+              service group, so create those first in{" "}
+              <a href="/admin/categories" style={{ color: "inherit", fontWeight: 700 }}>Categories</a>
+              {" "}and{" "}
+              <a href="/admin/service-groups" style={{ color: "inherit", fontWeight: 700 }}>Service Groups</a>.
+            </p>
+          </div>
+        )}
         <Input label="Service Name *" placeholder="e.g. Air Conditioner" value={name} onChange={setName}/>
-        <Select label="Business Vertical *" value={categoryId}
+        {/* Labelled "Category" to match the filter bar, the edit modal and the
+            Categories page — this one field called itself "Business Vertical"
+            while everything else called the same thing a Category. */}
+        <Select label="Category *" value={categoryId}
           onChange={v => { setCategoryId(v); setGroupId(""); }}
-          options={catOptions} placeholder="Select…"/>
+          options={catOptions}
+          placeholder={catOptions.length ? "Select…" : "No categories available"}/>
         <Select label="Service Group *" value={groupId} onChange={setGroupId}
-          options={groupOptions} placeholder={categoryId ? "Select…" : "Select a vertical first"}/>
+          options={groupOptions}
+          placeholder={!categoryId ? "Select a category first"
+            : groupOptions.length ? "Select…" : "No groups in this category"}/>
+        {categoryId && groupOptions.length === 0 && (
+          <p style={{ fontSize: 11, color: "var(--warning-text)", margin: "-6px 0 0" }}>
+            This category has no service groups yet — create one in Service Groups first.
+          </p>
+        )}
         <Input label="Description" placeholder="Optional description for this service"
           value={description} onChange={setDescription}/>
         <Input label="Display Order" type="number" value={String(displayOrder)}
@@ -461,12 +274,18 @@ export default function MasterServicesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Filters
+  // `qInput` is what the box shows; `q` is what the API is asked for. They are
+  // separate because `q` is a refetch dependency — bound directly to the input
+  // it fired one request per keystroke, so typing "air conditioner" cost 16
+  // round trips and the results flickered through every prefix on the way.
+  const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [groupFilter, setGroupFilter] = useState(() => searchParams.get("service_group_id") ?? "");
   const [jobTypeFilter, setJobTypeFilter] = useState("");
   const [pricingModelFilter, setPricingModelFilter] = useState("");
   const [isActiveFilter, setIsActiveFilter] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState<"current" | "retired">(() => searchParams.get("lifecycle") === "retired" ? "retired" : "current");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -474,8 +293,14 @@ export default function MasterServicesPage() {
   // Modal / detail
   const [modal, setModal] = useState<"none" | "create-service" | "edit">("none");
   const [editing, setEditing] = useState<MasterServiceEnriched | null>(null);
-  const [detailSvc, setDetailSvc] = useState<MasterServiceEnriched | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [columnsConfig, setColumnsConfig] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
+  const [readinessFilter, setReadinessFilter] = useState("");
+  const [hasProvidersFilter, setHasProvidersFilter] = useState("");
+  const [sortBy, setSortBy] = useState("display_order");
+  const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [form, setForm] = useState<FormState>({ ...BLANK });
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -499,16 +324,34 @@ export default function MasterServicesPage() {
       jobType: jobTypeFilter || undefined,
       pricingModel: pricingModelFilter || undefined,
       isActive: isActiveFilter === "" ? undefined : isActiveFilter === "true",
+      retired: lifecycleFilter === "retired",
+      readiness: readinessFilter || undefined,
+      hasProviders: hasProvidersFilter === "" ? undefined : hasProvidersFilter === "true",
+      sortBy, sortDir,
       limit: pageSize,
       offset: (page - 1) * pageSize,
     }),
-    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, page],
-  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, page]);
+    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page],
+  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page]);
 
-  const notify = (msg: string, ok = true) => {
+  // Debounce the search box into the fetch dependency.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (qInput.trim() !== q) { setQ(qInput.trim()); setPage(1); }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [qInput, q]);
+
+  // One shared timer: every notify() used to start its own without cancelling
+  // the previous one, so a second toast inherited the first's countdown and
+  // vanished early — and an unmount left the timer running.
+  const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notify = React.useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3500);
-  };
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
+  React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   const catMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -533,14 +376,12 @@ export default function MasterServicesPage() {
   // Actions
   const editAction = useAction(async ({ id, data }: { id: string; data: FormState }) => {
     await catalogApi.updateMasterService(id, {
-      service_name: data.name, job_type: data.job_type, pricing_model: data.pricing_model as "fixed" | "range" | "post_assessment" | "hourly",
+      service_name: data.name,
       service_group_id: data.service_group_id || undefined,
       // base_price/min_price/max_price are no longer admin-writable
       // (MODULE-L5-56) -- pricing is tenant-owned only.
       description: data.description || undefined,
-      unit_label: data.unit_label || undefined,
       icon_url: data.icon_url || undefined,
-      is_active: data.is_active,
       // Brand/Type/Issue/Checklist/Schedule/Address requirements are no
       // longer edited from this form -- they are configured per exact Job
       // Type in the Job-Type Blueprint (Dimensions/Problems & Questions/
@@ -560,71 +401,80 @@ export default function MasterServicesPage() {
   });
 
   const archiveAction = useAction(async (id: string) => {
-    await catalogApi.archiveMasterService(id);
-    services.refetch(); summary.refetch(); setArchiveId(null); notify("Service archived.");
+    await catalogApi.archiveMasterService(id, archiveReason);
+    services.refetch(); summary.refetch(); setArchiveId(null); setArchiveReason(""); notify("Service retired and recorded in the audit trail.");
   });
 
-  const exportAction = useAction(async () => {
-    const result = await catalogApi.exportMasterServices({
-      categoryId: categoryFilter || undefined,
-      jobType: jobTypeFilter || undefined,
-    });
-    const rows = result?.rows ?? [];
-    const csv = [
-      ["Name", "Category", "Group", "Job Type", "Pricing Model", "Brands", "Options", "Issues", "Pricing Rules", "Providers", "Pricing Readiness", "Runtime Readiness", "Active"].join(","),
-      ...rows.map((r: MasterServiceEnriched) => [
-        `"${r.name}"`,
-        `"${catMap[r.category_id] ?? r.category_id}"`,
-        `"${r.service_group_id ? (groupMap[r.service_group_id] ?? r.service_group_id) : ""}"`,
-        r.job_type, r.pricing_model,
-        r.linked_counts?.brands ?? 0, r.linked_counts?.options ?? 0,
-        r.linked_counts?.issues ?? 0, r.linked_counts?.pricing_rules ?? 0,
-        r.linked_counts?.providers ?? 0,
-        r.pricing_readiness, r.runtime_readiness, r.is_active ? "Yes" : "No",
-      ].join(","))
-    ].join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = "master-services.csv"; a.click();
-    notify("Exported.");
+  const bulkAction = useAction(async (action: "activate"|"deactivate") => {
+    const result = await catalogApi.bulkMasterServiceStatus(selectedIds, action);
+    setSelectedIds([]); await services.refetch(); await summary.refetch();
+    notify(`${result.updated_count} service${result.updated_count === 1 ? "" : "s"} updated${result.errors.length ? `; ${result.errors.length} skipped` : ""}.`, result.errors.length === 0);
   });
+
+  // Every filter that narrows the list, including the ones behind "Advanced".
+  // The chip row and the Clear button previously ignored readiness/provider
+  // usage, so a list could be filtered by them with nothing on screen saying so
+  // and no way to undo it without reopening Advanced and hunting for the field.
+  const activeFilters = useMemo(() => {
+    const items: { key: string; label: string; clear: () => void }[] = [];
+    if (q) items.push({ key: "q", label: `Search: ${q}`, clear: () => { setQInput(""); setQ(""); } });
+    if (categoryFilter) items.push({ key: "cat", label: `Category: ${catMap[categoryFilter] ?? categoryFilter}`,
+      clear: () => { setCategoryFilter(""); setGroupFilter(""); } });
+    if (groupFilter) items.push({ key: "grp", label: `Group: ${groupMap[groupFilter] ?? groupFilter}`,
+      clear: () => setGroupFilter("") });
+    if (jobTypeFilter) items.push({ key: "jt", label: `Job Type: ${JOB_TYPES.find(j => j.value === jobTypeFilter)?.label ?? jobTypeFilter}`,
+      clear: () => setJobTypeFilter("") });
+    if (pricingModelFilter) items.push({ key: "pm", label: `Model: ${PRICING_MODELS.find(p => p.value === pricingModelFilter)?.label ?? pricingModelFilter}`,
+      clear: () => setPricingModelFilter("") });
+    if (isActiveFilter) items.push({ key: "act", label: `Status: ${isActiveFilter === "true" ? "Active" : "Inactive"}`,
+      clear: () => setIsActiveFilter("") });
+    if (readinessFilter) items.push({ key: "rdy", label: `Readiness: ${READINESS_LABEL[readinessFilter] ?? readinessFilter}`,
+      clear: () => setReadinessFilter("") });
+    if (hasProvidersFilter) items.push({ key: "prov", label: `Provider usage: ${hasProvidersFilter === "true" ? "Used" : "Not used"}`,
+      clear: () => setHasProvidersFilter("") });
+    return items;
+  }, [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter,
+      readinessFilter, hasProvidersFilter, catMap, groupMap]);
+
+  const advancedFilterCount = (readinessFilter ? 1 : 0) + (hasProvidersFilter ? 1 : 0)
+    + (jobTypeFilter ? 1 : 0) + (pricingModelFilter ? 1 : 0);
+
+  function clearAllFilters() {
+    setQInput(""); setQ(""); setCategoryFilter(""); setGroupFilter("");
+    setJobTypeFilter(""); setPricingModelFilter(""); setIsActiveFilter("");
+    setReadinessFilter(""); setHasProvidersFilter("");
+    // Without this the page number survived the clear, so clearing filters on
+    // page 4 left an empty table over a list that now had one page.
+    setPage(1);
+  }
 
   function openCreate() { setModal("create-service"); }
   function openEdit(svc: MasterServiceEnriched) {
     setForm({
       name: svc.name, category_id: svc.category_id,
       service_group_id: svc.service_group_id ?? "",
-      job_type: svc.job_type, pricing_model: svc.pricing_model,
-      base_price: svc.base_price != null ? String(svc.base_price) : "",
-      min_price: svc.min_price != null ? String(svc.min_price) : "",
-      max_price: svc.max_price != null ? String(svc.max_price) : "",
-      description: svc.description ?? "", unit_label: svc.unit_label ?? "per visit",
+      description: svc.description ?? "",
       icon_url: svc.icon_url ?? "",
-      is_active: svc.is_active,
-      requires_issue_type: !!svc.requires_issue_type,
-      is_brand_required: !!svc.is_brand_required,
-      is_type_required: !!svc.is_type_required,
-      requires_checklist: !!svc.requires_checklist,
-      requires_schedule: !!svc.requires_schedule,
-      requires_address: !!svc.requires_address,
     });
     setEditing(svc); setModal("edit");
   }
   function setF<K extends keyof FormState>(k: K, v: FormState[K]) { setForm(p => ({ ...p, [k]: v })); }
-  function applyJobTypeDefaults(jt: string) {
-    const defaults = JOB_TYPE_DEFAULTS[jt] ?? {};
-    setForm(p => ({ ...p, job_type: jt, ...defaults }));
-  }
-
-  const canSave = !!form.name && !!form.category_id && !!form.job_type && !!form.pricing_model;
+  const canSave = !!form.name && !!form.category_id && !!form.service_group_id;
   const s = summary.data;
   const rows = services.data?.services ?? [];
   const activeAction = editAction;
 
-  const columns = [
+  const allSelected = rows.length > 0 && rows.every(row => selectedIds.includes(row.id));
+  const allColumns = [
+    {
+      key: "select", label: "",
+      render: (_: unknown, row: MasterServiceEnriched) => <button aria-label={`Select ${row.name}`} onClick={event => { event.stopPropagation(); setSelectedIds(current => current.includes(row.id) ? current.filter(id => id !== row.id) : [...current, row.id]); }} style={{ border:0, background:"none", color:"var(--brand)", cursor:"pointer", padding:2 }}>{selectedIds.includes(row.id) ? <CheckSquare size={16}/> : <Square size={16}/>}</button>,
+    },
     {
       key: "name", label: "Service",
-      render: (_: unknown, row: MasterServiceEnriched) => (
+      render: (_: unknown, row: MasterServiceEnriched) => row.deleted_at ? (
+        <Btn variant="ghost" size="xs" onClick={() => router.push(`/admin/master-services/${row.id}`)}>View / restore</Btn>
+      ) : (
         <div>
           <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</span>
           <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>
@@ -635,13 +485,13 @@ export default function MasterServicesPage() {
       ),
     },
     {
-      key: "job_type", label: "Job Type", width: 110,
+      key: "job_type", label: "Legacy Job Type", width: 120,
       render: (_: unknown, row: MasterServiceEnriched) => (
         <Badge variant="muted">{JOB_TYPES.find(j => j.value === row.job_type)?.label ?? row.job_type}</Badge>
       ),
     },
     {
-      key: "pricing_model", label: "Pricing Model", width: 110,
+      key: "pricing_model", label: "Legacy Behavior", width: 120,
       render: (_: unknown, row: MasterServiceEnriched) => (
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {PRICING_MODELS.find(p => p.value === row.pricing_model)?.label ?? row.pricing_model}
@@ -653,16 +503,8 @@ export default function MasterServicesPage() {
       render: (_: unknown, row: MasterServiceEnriched) => <ReqChips svc={row} />,
     },
     {
-      key: "linked_counts", label: "Linked Setup",
+      key: "linked_counts", label: "Blueprint",
       render: (_: unknown, row: MasterServiceEnriched) => <LinkedCounts lc={row.linked_counts} />,
-    },
-    {
-      key: "pricing_readiness", label: "Pricing",
-      render: (_: unknown, row: MasterServiceEnriched) => (
-        <Badge variant={READINESS_VARIANT[row.pricing_readiness] ?? "muted"}>
-          {READINESS_LABEL[row.pricing_readiness] ?? row.pricing_readiness}
-        </Badge>
-      ),
     },
     {
       key: "runtime_readiness", label: "Runtime",
@@ -683,7 +525,7 @@ export default function MasterServicesPage() {
       render: (_: unknown, row: MasterServiceEnriched) => (
         <ServiceActionMenu
           row={row}
-          onView={() => setDetailSvc(row)}
+          onView={() => router.push(`/admin/master-services/${row.id}`)}
           onEdit={() => openEdit(row)}
           onActivate={() => activateAction.execute(row.id)}
           onDeactivate={() => deactivateAction.execute(row.id)}
@@ -692,17 +534,17 @@ export default function MasterServicesPage() {
       ),
     },
   ];
+  const visibleKeys = new Set(columnsConfig.filter(column => column.visible).map(column => column.key));
+  const columns = allColumns.filter(column => visibleKeys.has(column.key));
 
   return (
     <AdminLayout activeNav="master-services">
+      <div className="catalog-admin-page">
       <SectionHeader
         title="Master Services"
-        subtitle="Platform-wide service catalog. Pricing rules are managed in Pricing → Pricing Rules, not stored here."
+        subtitle="Canonical service identity and hierarchy. Configure job-type behavior in Catalog Workspace; providers own price amounts."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" size="sm" loading={exportAction.loading} onClick={() => exportAction.execute()}>
-              <Download size={14} style={{ marginRight: 4 }} /> Export
-            </Btn>
             <Btn variant="secondary" size="sm" onClick={() => { services.refetch(); summary.refetch(); }}>
               <RefreshCw size={14} style={{ marginRight: 4 }} /> Refresh
             </Btn>
@@ -711,6 +553,19 @@ export default function MasterServicesPage() {
         }
       />
       <HomeServicesCatalogNav active="services" />
+
+      <OperationsDirectoryControls resourceKey="admin_master_services"
+        filters={{ q, category_id:categoryFilter, service_group_id:groupFilter, job_type:jobTypeFilter, pricing_model:pricingModelFilter, is_active:isActiveFilter, lifecycle:lifecycleFilter, readiness:readinessFilter, has_providers:hasProvidersFilter }}
+        sort={{ sort_by:sortBy, sort_direction:sortDir }} columns={columnsConfig}
+        onColumnsChange={setColumnsConfig}
+        onApplyView={(filters, sort) => {
+          setQ(String(filters.q ?? filters.search ?? "")); setCategoryFilter(String(filters.category_id ?? ""));
+          setGroupFilter(String(filters.service_group_id ?? "")); setJobTypeFilter(String(filters.job_type ?? ""));
+          setPricingModelFilter(String(filters.pricing_model ?? "")); setIsActiveFilter(String(filters.is_active ?? ""));
+          setLifecycleFilter(filters.lifecycle === "retired" ? "retired" : "current");
+          setReadinessFilter(String(filters.readiness ?? "")); setHasProvidersFilter(String(filters.has_providers ?? ""));
+          setSortBy(String(sort.sort_by ?? "display_order")); setSortDir(String(sort.sort_direction ?? "asc") as "asc"|"desc"); setPage(1);
+        }}/>
 
       {/* Toast */}
       {toast && (
@@ -728,8 +583,8 @@ export default function MasterServicesPage() {
           <SummaryCard label="Total Services" value={s.total} />
           <SummaryCard label="Active" value={s.active} accent="var(--success-text, #22543d)" />
           <SummaryCard label="Inactive" value={s.inactive} accent="var(--warning-text, #744210)" />
-          <SummaryCard label="Pricing Ready" value={s.pricing_ready} accent="var(--brand, #1a56db)" />
-          <SummaryCard label="Missing Pricing" value={s.missing_pricing} accent="var(--danger-text, #c53030)" />
+          <SummaryCard label="Blueprint Ready" value={s.blueprint_ready} accent="var(--brand, #1a56db)" />
+          <SummaryCard label="Needs Blueprint Work" value={s.blueprint_attention} accent="var(--danger-text, #c53030)" />
           <SummaryCard label="Provider Enabled" value={s.provider_enabled} />
         </div>
       )}
@@ -740,12 +595,27 @@ export default function MasterServicesPage() {
           ))}
         </div>
       )}
+      {/* A failed summary used to render nothing at all — not the cards, not the
+          skeleton, not an error — so the KPI row silently disappeared and looked
+          like a layout glitch rather than a failed request. */}
+      {!summary.loading && summary.error && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "10px 14px",
+          borderRadius: "var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
+          <AlertCircle size={14} style={{ color: "var(--danger-text)", flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: "var(--danger-text)" }}>
+            Summary counts unavailable: {summary.error}
+          </span>
+          <Btn size="xs" variant="ghost" onClick={() => summary.refetch()}>Retry</Btn>
+        </div>
+      )}
+
+      {lifecycleFilter === "current" && selectedIds.length > 0 && <Card padding={12} style={{ marginBottom:14, borderColor:"var(--brand)" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}><span style={{ fontSize:13, fontWeight:650 }}>{selectedIds.length} selected</span><div style={{ display:"flex", gap:8 }}><Btn size="sm" variant="secondary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("activate")}>Activate</Btn><Btn size="sm" variant="secondary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("deactivate")}>Deactivate</Btn><Btn size="sm" variant="ghost" onClick={()=>setSelectedIds([])}>Clear</Btn></div></div>{bulkAction.error && <p style={{ color:"var(--danger-text)", fontSize:12 }}>{bulkAction.error}</p>}</Card>}
 
       {/* By job type breakdown */}
       {s?.by_job_type && Object.keys(s.by_job_type).length > 0 && (
         <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {Object.entries(s.by_job_type).map(([jt, count]) => (
-            <button key={jt} onClick={() => setJobTypeFilter(jobTypeFilter === jt ? "" : jt)} style={{
+            <button key={jt} onClick={() => { setJobTypeFilter(jobTypeFilter === jt ? "" : jt); setPage(1); }} style={{
               padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 500,
               border: `1px solid ${jobTypeFilter === jt ? "var(--brand, #1a56db)" : "var(--border)"}`,
               background: jobTypeFilter === jt ? "var(--brand-muted, rgba(26,86,219,.08))" : "var(--surface)",
@@ -764,7 +634,8 @@ export default function MasterServicesPage() {
           <div style={{ flex: 1, minWidth: 200 }}>
             <input
               placeholder="Search by service name…"
-              value={q} onChange={e => { setQ(e.target.value); setPage(1); }}
+              aria-label="Search master services"
+              value={qInput} onChange={e => setQInput(e.target.value)}
               style={{
                 width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
                 border: "1px solid var(--border)", background: "var(--surface)",
@@ -787,12 +658,19 @@ export default function MasterServicesPage() {
               placeholder="Any Status"
               options={[{ value: "", label: "Any Status" }, { value: "true", label: "Active" }, { value: "false", label: "Inactive" }]} />
           </div>
+          <div style={{ minWidth: 150 }}>
+            <Select label="" value={lifecycleFilter} onChange={value => { setLifecycleFilter(value as "current" | "retired"); setIsActiveFilter(""); setSelectedIds([]); setPage(1); }}
+              options={[{ value: "current", label: "Current records" }, { value: "retired", label: `Retired (${s?.retired ?? 0})` }]} />
+          </div>
+          {/* The count makes filters hidden behind this panel visible from the
+              outside — previously an Advanced filter could be narrowing the
+              list with no on-screen trace of it at all. */}
           <Btn variant="ghost" size="sm" onClick={() => setShowAdvanced(p => !p)}>
-            Advanced {showAdvanced ? "▲" : "▼"}
+            Advanced{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""} {showAdvanced ? "▲" : "▼"}
           </Btn>
-          {(q || categoryFilter || groupFilter || jobTypeFilter || pricingModelFilter || isActiveFilter) && (
-            <Btn variant="ghost" size="sm" onClick={() => { setQ(""); setCategoryFilter(""); setGroupFilter(""); setJobTypeFilter(""); setPricingModelFilter(""); setIsActiveFilter(""); }}>
-              Clear
+          {activeFilters.length > 0 && (
+            <Btn variant="ghost" size="sm" onClick={clearAllFilters}>
+              Clear {activeFilters.length > 1 ? `all (${activeFilters.length})` : ""}
             </Btn>
           )}
         </div>
@@ -800,26 +678,52 @@ export default function MasterServicesPage() {
         {showAdvanced && (
           <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
             <div style={{ minWidth: 160 }}>
-              <Select label="Job Type" value={jobTypeFilter} onChange={setJobTypeFilter}
+              {/* setPage(1) like every other filter — without it, changing job
+                  type while on page 3 asked for page 3 of a shorter list. */}
+              <Select label="Job Type" value={jobTypeFilter} onChange={v => { setJobTypeFilter(v); setPage(1); }}
                 options={[{ value: "", label: "All Job Types" }, ...JOB_TYPES]} />
             </div>
             <div style={{ minWidth: 180 }}>
-              <Select label="Pricing Model" value={pricingModelFilter} onChange={setPricingModelFilter}
+              <Select label="Pricing Model" value={pricingModelFilter} onChange={v => { setPricingModelFilter(v); setPage(1); }}
                 options={[{ value: "", label: "All Models" }, ...PRICING_MODELS]} />
+            </div>
+            <div style={{ minWidth: 190 }}>
+              <Select label="Runtime Readiness" value={readinessFilter} onChange={v=>{setReadinessFilter(v);setPage(1)}} options={[{value:"",label:"All readiness"},{value:"ready",label:"Ready"},{value:"missing_job_types",label:"Missing job types"},{value:"missing_workflows",label:"Missing workflow"},{value:"category_inactive",label:"Category inactive"},{value:"group_unavailable",label:"Group unavailable"},{value:"inactive",label:"Inactive"}]}/>
+            </div>
+            <div style={{ minWidth: 170 }}>
+              <Select label="Provider Usage" value={hasProvidersFilter} onChange={v=>{setHasProvidersFilter(v);setPage(1)}} options={[{value:"",label:"Any usage"},{value:"true",label:"Used by providers"},{value:"false",label:"Not used"}]}/>
+            </div>
+            <div style={{ minWidth: 160 }}>
+              <Select label="Sort" value={sortBy} onChange={v=>{setSortBy(v);setPage(1)}} options={[{value:"display_order",label:"Display order"},{value:"name",label:"Service name"},{value:"updated_at",label:"Last updated"},{value:"created_at",label:"Created"}]}/>
+            </div>
+            <div style={{ minWidth: 120 }}>
+              <Select label="Direction" value={sortDir} onChange={v=>{setSortDir(v as "asc"|"desc");setPage(1)}} options={[{value:"asc",label:"Ascending"},{value:"desc",label:"Descending"}]}/>
             </div>
           </div>
         )}
       </Card>
 
-      {/* Active filter chips */}
-      {(categoryFilter || groupFilter || jobTypeFilter || pricingModelFilter || isActiveFilter || q) && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          {categoryFilter && <Badge variant="muted">Category: {catMap[categoryFilter] ?? categoryFilter}</Badge>}
-          {groupFilter && <Badge variant="muted">Group: {groupMap[groupFilter] ?? groupFilter}</Badge>}
-          {jobTypeFilter && <Badge variant="muted">Job Type: {JOB_TYPES.find(j => j.value === jobTypeFilter)?.label ?? jobTypeFilter}</Badge>}
-          {pricingModelFilter && <Badge variant="muted">Model: {PRICING_MODELS.find(p => p.value === pricingModelFilter)?.label ?? pricingModelFilter}</Badge>}
-          {isActiveFilter && <Badge variant="muted">Status: {isActiveFilter === "true" ? "Active" : "Inactive"}</Badge>}
-          {q && <Badge variant="muted">Search: {q}</Badge>}
+      {/* Active filter chips — every filter including Advanced, each removable
+          on its own. They were previously read-only badges that also omitted
+          the Advanced filters entirely. */}
+      {activeFilters.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+          {activeFilters.map(f => (
+            <span key={f.key} style={{
+              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12,
+              padding: "4px 8px 4px 10px", borderRadius: 999,
+              background: "var(--surface-sunken)", border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+            }}>
+              {f.label}
+              <button type="button" aria-label={`Remove filter ${f.label}`}
+                onClick={() => { f.clear(); setPage(1); }}
+                style={{ border: 0, background: "none", cursor: "pointer", padding: 0,
+                  display: "flex", color: "var(--text-tertiary)" }}>
+                <X size={12}/>
+              </button>
+            </span>
+          ))}
         </div>
       )}
 
@@ -833,21 +737,25 @@ export default function MasterServicesPage() {
       )}
 
       {/* Table */}
+      {lifecycleFilter === "current" && rows.length > 0 && <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:8 }}><Btn size="xs" variant="ghost" onClick={()=>setSelectedIds(allSelected ? [] : rows.map(row=>row.id))}>{allSelected ? <CheckSquare size={14}/> : <Square size={14}/>} {allSelected ? "Clear page selection" : "Select this page"}</Btn></div>}
       <DataTable
         columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
         rows={rows as unknown as Record<string, unknown>[]}
         loading={services.loading}
-        onRowClick={row => setDetailSvc(row as unknown as MasterServiceEnriched)}
-        emptyText="No master services found. Create your first service to populate the catalog."
+        onRowClick={row => router.push(`/admin/master-services/${(row as unknown as MasterServiceEnriched).id}`)}
+        emptyText={
+          lifecycleFilter === "retired" ? "No retired master services."
+          : activeFilters.length > 0
+            // Distinguish "nothing matches your filters" from "the catalog is
+            // empty" — the old text told an admin whose filter simply matched
+            // nothing to go and create a service.
+            ? "No master services match these filters. Clear them to see everything."
+            : catOptions.length === 0
+              ? "No master services yet — and no categories exist to create one under. Start with Categories, then Service Groups."
+              : "No master services found. Create your first service to populate the catalog."
+        }
       />
       <MasterServicesPagination page={page} pageSize={pageSize} total={services.data?.total ?? 0} onPage={setPage} />
-
-      {/* Detail drawer */}
-      <ServiceDetailDrawer svc={detailSvc} catMap={catMap} groupMap={groupMap} onClose={() => setDetailSvc(null)} />
-      {detailSvc && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1999, background: "rgba(0,0,0,.4)" }}
-          onClick={() => setDetailSvc(null)} />
-      )}
 
       {/* Edit Modal (existing services only -- job_type/pricing_model/prices/
           Brand/Type/workflow requirements kept here ONLY for backward
@@ -871,50 +779,23 @@ export default function MasterServicesPage() {
             <p style={{ fontSize: 13, color: "var(--text-tertiary, var(--text-secondary))", margin: "6px 0 0" }}>{catMap[form.category_id] ?? form.category_id}</p>
           </div>
 
-          <Select label="Service Group" value={form.service_group_id}
+          <Select label="Service Group *" value={form.service_group_id}
             onChange={v => setF("service_group_id", v)}
-            options={[{ value: "", label: "No group (top-level)" }, ...groupOptions]}
-            placeholder="No group (top-level)" />
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Select label="Job Type *" value={form.job_type}
-              onChange={applyJobTypeDefaults} options={JOB_TYPES} />
-            <Select label="Pricing Model *" value={form.pricing_model}
-              onChange={v => setF("pricing_model", v)} options={PRICING_MODELS} />
-          </div>
+            options={groupOptions}
+            placeholder="Choose service group" />
 
           <div style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
             <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
-              Pricing (base/min/max/visit fee) is tenant-owned only — each tenant sets its own price for this
-              service in Tenant Setup. Admin no longer enters a price amount here.
+              Job types and runtime behavior are configured in Catalog Workspace. Price amounts are tenant-owned.
+              Activation and deactivation use separate audited lifecycle actions.
             </p>
           </div>
-          <Input label="Unit Label" placeholder="per visit" value={form.unit_label}
-            onChange={v => setF("unit_label", v)} />
 
           <Input label="Description" placeholder="Optional description for this service"
             value={form.description} onChange={v => setF("description", v)} />
 
           <IconPicker label="Icon" context="service_icon" value={form.icon_url}
             onChange={v => setF("icon_url", v ?? "")} />
-
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-            <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              Requirements
-            </p>
-            <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)" }}>
-              Brand, Type, Issue, Checklist, Schedule and Address requirements are configured per exact Job Type in
-              the Job-Type Blueprint (Dimensions, Problems &amp; Questions, Checklist and Workflow tabs) — not here.
-              These per-service flags are retained on existing records for history but are no longer authoritative
-              once a Job-Type Blueprint exists for a job type.
-            </p>
-          </div>
-
-          {editing && (
-            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-              <ReqToggle label="Active" value={form.is_active} onChange={v => setF("is_active", v)} />
-            </div>
-          )}
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="secondary" size="sm" onClick={() => setModal("none")}>Cancel</Btn>
@@ -938,22 +819,23 @@ export default function MasterServicesPage() {
         }}/>
 
       {/* Archive confirm */}
-      <Modal open={!!archiveId} onClose={() => setArchiveId(null)} title="Archive Master Service">
+      <Modal open={!!archiveId} onClose={() => setArchiveId(null)} title="Retire Master Service">
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
-          This will archive the master service. Providers who have enabled it will no longer see it.
-          This action cannot be undone without re-activating.
+          Retirement is blocked while any provider workspace still has this service enabled. Retired services remain auditable and can be restored as inactive.
         </p>
+        <textarea value={archiveReason} onChange={event=>setArchiveReason(event.target.value)} rows={3} placeholder="Reason for retiring (minimum 10 characters)" style={{ width:"100%", boxSizing:"border-box", padding:10, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)", color:"var(--text-primary)" }}/>
         {archiveAction.error && (
           <p style={{ fontSize: 13, color: "var(--danger-text)", marginBottom: 12 }}>{archiveAction.error}</p>
         )}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <Btn variant="secondary" size="sm" onClick={() => setArchiveId(null)}>Cancel</Btn>
-          <Btn variant="danger" size="sm" loading={archiveAction.loading}
+          <Btn variant="danger" size="sm" loading={archiveAction.loading} disabled={archiveReason.trim().length<10}
             onClick={() => archiveId && archiveAction.execute(archiveId)}>
-            Archive
+            Retire service
           </Btn>
         </div>
       </Modal>
+      </div>
     </AdminLayout>
   );
 }

@@ -66,6 +66,7 @@ async def resolve_exact_serviceability(
     pincode: str,
     master_service_id: uuid.UUID,
     job_type: str | None = None,
+    job_type_id: uuid.UUID | None = None,
     brand_id: uuid.UUID | None = None,
     service_type_id: uuid.UUID | None = None,
     requested_at: dt.datetime | None = None,
@@ -113,9 +114,14 @@ async def resolve_exact_serviceability(
         select(TenantService).where(
             TenantService.tenant_id == tenant_id,
             TenantService.master_service_id == master_service_id,
+            *( [TenantService.job_type_id == job_type_id] if job_type_id else [] ),
+            *( [TenantService.job_type == job_type] if job_type else [] ),
+            TenantService.is_active.is_(True),
+            TenantService.is_enabled.is_(True),
+            TenantService.setup_status == "published",
         )
     )).scalars().first()
-    if not offering or offering.setup_status != "published" or not offering.is_enabled:
+    if not offering:
         reasons.append(R_OFFERING_NOT_PUBLISHED)
         result["reasons"] = reasons
         return result

@@ -36,7 +36,7 @@ class TestRouterHardening:
 
     def test_category_id_is_server_derived_not_client_trusted(self):
         c = _read(ROUTER)
-        assert "cat_id = str(tenant_row.category_id)" in c
+        assert "cat_id = str(await resolve_team_category_id(db, tid))" in c
         idx = c.index("async def create_team_member")
         block = c[idx:idx + 2500]
         assert 'payload.get("category_id")' not in block
@@ -52,6 +52,26 @@ class TestRouterHardening:
         c = _read(ROUTER)
         assert "async def _validate_offering_ids" in c
         assert "INVALID_SERVICE_ASSIGNMENT" in c
+
+    def test_jsonb_assignments_are_serialized_on_update(self):
+        """Editing service assignments must use the same JSON encoding as create.
+
+        asyncpg's JSONB codec accepts an encoded JSON string for a raw text()
+        statement; handing it a Python list caused the live Team modal to
+        return HTTP 500 for every assignment edit.
+        """
+        c = _read(ROUTER)
+        idx = c.index("async def update_team_member")
+        block = c[idx:idx + 6500]
+        assert 'json_array_fields = {' in block
+        for field in (
+            "supported_offering_ids",
+            "supported_type_ids",
+            "supported_brand_ids",
+            "service_area_ids",
+        ):
+            assert f'"{field}"' in block
+        assert "params[field] = json.dumps" in block
 
     def test_cross_tenant_account_takeover_rejected(self):
         c = _read(ROUTER)

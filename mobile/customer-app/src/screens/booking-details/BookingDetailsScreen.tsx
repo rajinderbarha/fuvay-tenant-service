@@ -36,6 +36,7 @@ import { RatingCard } from "../../components/booking-details/RatingCard";
 import { useBookingReviewQuery, useSubmitBookingRatingMutation } from "../../api/customerReview/useCustomerReviewQueries";
 import { useCustomerClosureQueries } from "../../api/customerClosure/useCustomerClosureQueries";
 import { CompletionConfirmationCard } from "../../components/booking-details/CompletionConfirmationCard";
+import { ServiceProtectionCard } from "../../components/booking-details/ServiceProtectionCard";
 
 type Route = RouteProp<CustomerAppStackParamList, "BookingDetails">;
 
@@ -165,6 +166,13 @@ export function BookingDetailsScreen() {
           <ServiceOverviewCard service={details.service} bookingNumber={details.bookingNumber} createdAt={details.createdAt} />
           <FinalizedAddressCard address={details.address} />
           <BookingActivity events={details.activity} />
+          <ServiceProtectionCard
+            warrantyDays={details.job?.warrantyDays ?? 5}
+            warrantyExpiresAt={details.job?.warrantyExpiresAt ?? null}
+            warrantyActive={details.job?.warrantyActive ?? false}
+            onClaimWarranty={() => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate("ServiceRemedies", { bookingId, mode: "warranty" })}
+            onRequestRefund={() => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate("ServiceRemedies", { bookingId, mode: "refund" })}
+          />
           <BookingDetailsActions
             onRefresh={() => query.refetch()} refreshing={query.isRefetching}
             onContactSupport={() => (navigation as unknown as { navigate: (name: string, params?: object) => void })
@@ -235,9 +243,9 @@ export function BookingDetailsScreen() {
         />
 
         {activeStage ? (
-          <JobProgressTimeline activeStage={activeStage} />
+          <JobProgressTimeline activeStage={activeStage} stages={details.workflowStages} />
         ) : arrivalStage ? (
-          <JobProgressTimeline activeStage="arrived" />
+          <JobProgressTimeline activeStage="arrived" stages={details.workflowStages} />
         ) : (
           <RequestJourneyStepper stage={details.stage} />
         )}

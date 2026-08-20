@@ -54,12 +54,14 @@ class TestBusinessProfileCompleteness:
 
     def test_complete_when_all_fields_present(self):
         row = self._Row(business_name="Acme", business_type="llp", phone="+911234567890",
-                         email="a@b.com", address_line1="1 Rd", city="Mumbai", state="MH")
+                         email="a@b.com", address_line1="1 Rd", district="Andheri",
+                         city="Mumbai", state="MH", zipcode="400001")
         assert is_business_profile_complete(row) is True
 
     def test_incomplete_when_missing_field(self):
         row = self._Row(business_name="Acme", business_type="llp", phone="+911234567890",
-                         email="a@b.com", address_line1=None, city="Mumbai", state="MH")
+                         email="a@b.com", address_line1=None, district="Andheri",
+                         city="Mumbai", state="MH", zipcode="400001")
         assert is_business_profile_complete(row) is False
 
     def test_incomplete_when_row_is_none(self):

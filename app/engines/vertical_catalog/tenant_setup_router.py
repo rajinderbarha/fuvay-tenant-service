@@ -71,7 +71,22 @@ async def accept_declarations_endpoint(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    keys = payload.get("keys") or []
+    # Canonical request field is ``declaration_keys`` (the tenant client has
+    # always used that descriptive name).  The endpoint previously looked
+    # only for ``keys`` and silently treated a valid request as an empty
+    # acceptance, so Submit immediately failed with DECLARATIONS_REQUIRED.
+    # Keep ``keys`` as a compatibility alias for older clients, but never
+    # acknowledge an empty/malformed consent write as successful.
+    raw_keys = payload.get("declaration_keys")
+    if raw_keys is None:
+        raw_keys = payload.get("keys")
+    if not isinstance(raw_keys, list) or not raw_keys:
+        raise HTTPException(422, "Select all required declarations before saving.")
+    if any(not isinstance(key, str) or not key.strip() for key in raw_keys):
+        raise HTTPException(422, "Declaration keys must be non-empty strings.")
+    # Deduplicate without changing order. Duplicate keys would otherwise add
+    # two rows in one transaction and violate the append-only unique key.
+    keys = list(dict.fromkeys(key.strip() for key in raw_keys))
     v = await _svc._by_key(db, HOME_SERVICES_VERTICAL_KEY)
     if not v:
         raise HTTPException(404, "Vertical not found")

@@ -57,6 +57,7 @@ def _cat(
     customer_flow_type="service_booking",
     frontend_component_key="ServiceBookingFlow",
     primary_engine_key="booking_engine",
+    vertical_type="home_services",
     name="Plumbing",
     slug="plumbing",
 ):
@@ -69,6 +70,7 @@ def _cat(
     cat.customer_flow_type = customer_flow_type
     cat.frontend_component_key = frontend_component_key
     cat.primary_engine_key = primary_engine_key
+    cat.vertical_type = vertical_type
     cat.is_active = is_active
     cat.is_customer_visible = is_customer_visible
     cat.icon_url = None
@@ -464,8 +466,8 @@ async def test_admin_upsert_creates_new_config():
     cat = _cat()
     cat.id = cat_id
     db = db_seq(
+        _scalar(cat),     # load category for vertical guard
         _scalar(None),    # no existing flow config
-        _scalar(cat),     # load category for mirroring
     )
     svc = CustomerCategoryFlowService(db=db)
     result = await svc.admin_upsert_flow_config(cat_id, {
@@ -481,7 +483,9 @@ async def test_admin_upsert_creates_new_config():
 
 async def test_admin_upsert_rejects_invalid_flow_type():
     cat_id = _id()
-    db = db_seq()
+    cat = _cat()
+    cat.id = cat_id
+    db = db_seq(_scalar(cat), _scalar(None))
     svc = CustomerCategoryFlowService(db=db)
     with pytest.raises(ServiceOSException) as exc:
         await svc.admin_upsert_flow_config(cat_id, {"customer_flow_type": "INVALID_TYPE"})
@@ -490,11 +494,67 @@ async def test_admin_upsert_rejects_invalid_flow_type():
 
 async def test_admin_upsert_rejects_invalid_component_key():
     cat_id = _id()
-    db = db_seq()
+    cat = _cat()
+    cat.id = cat_id
+    db = db_seq(_scalar(cat), _scalar(None))
     svc = CustomerCategoryFlowService(db=db)
     with pytest.raises(ServiceOSException) as exc:
         await svc.admin_upsert_flow_config(cat_id, {"frontend_component_key": "BadComponent"})
     assert exc.value.error_code == ERR_FLOW_COMPONENT
+
+
+async def test_admin_upsert_rejects_mismatched_component_for_flow():
+    cat_id = _id()
+    cat = _cat(vertical_type="coaching", customer_flow_type="appointment_booking")
+    cat.id = cat_id
+    db = db_seq(_scalar(cat), _scalar(None))
+    svc = CustomerCategoryFlowService(db=db)
+    with pytest.raises(ServiceOSException) as exc:
+        await svc.admin_upsert_flow_config(cat_id, {
+            "customer_flow_type": "appointment_booking",
+            "frontend_component_key": "ServiceBookingFlow",
+            "primary_engine_key": "appointment_engine",
+        })
+    assert exc.value.error_code == ERR_FLOW_COMPONENT
+
+
+async def test_admin_upsert_rejects_mismatched_engine_for_flow():
+    cat_id = _id()
+    cat = _cat(vertical_type="coaching", customer_flow_type="appointment_booking")
+    cat.id = cat_id
+    db = db_seq(_scalar(cat), _scalar(None))
+    svc = CustomerCategoryFlowService(db=db)
+    with pytest.raises(ServiceOSException) as exc:
+        await svc.admin_upsert_flow_config(cat_id, {
+            "customer_flow_type": "appointment_booking",
+            "frontend_component_key": "AppointmentBookingFlow",
+            "primary_engine_key": "booking_engine",
+        })
+    assert exc.value.error_code == ERR_FLOW_INVALID
+
+
+async def test_admin_upsert_rejects_non_service_booking_for_home_services():
+    cat_id = _id()
+    cat = _cat(vertical_type="home_services")
+    cat.id = cat_id
+    db = db_seq(_scalar(cat), _scalar(None))
+    svc = CustomerCategoryFlowService(db=db)
+    with pytest.raises(ServiceOSException) as exc:
+        await svc.admin_upsert_flow_config(cat_id, {
+            "customer_flow_type": "appointment_booking",
+            "frontend_component_key": "AppointmentBookingFlow",
+            "primary_engine_key": "appointment_engine",
+        })
+    assert exc.value.error_code == ERR_FLOW_INVALID
+
+
+async def test_admin_get_flow_config_can_read_inactive_config():
+    cat_id = _id()
+    flow = _flow_cfg(cat_id, active=False)
+    db = db_seq(_scalar(flow))
+    svc = CustomerCategoryFlowService(db=db)
+    result = await svc.admin_get_flow_config(cat_id)
+    assert result["is_active"] is False
 
 
 async def test_admin_upsert_updates_existing_config():
@@ -503,8 +563,8 @@ async def test_admin_upsert_updates_existing_config():
     cat = _cat()
     cat.id = cat_id
     db = db_seq(
-        _scalar(existing_flow),
         _scalar(cat),
+        _scalar(existing_flow),
     )
     svc = CustomerCategoryFlowService(db=db)
     result = await svc.admin_upsert_flow_config(cat_id, {
@@ -551,6 +611,7 @@ async def test_search_returns_categories_and_offerings():
     db = db_seq(
         _scalars([cat]),   # category matches
         _scalars([o]),     # offering matches
+        _scalars([]),      # master service matches
     )
     svc = CustomerCategoryFlowService(db=db)
     result = await svc.search("plumb")
@@ -561,6 +622,7 @@ async def test_search_returns_categories_and_offerings():
 
 async def test_search_empty_query_returns_empty():
     db = db_seq(
+        _scalars([]),
         _scalars([]),
         _scalars([]),
     )

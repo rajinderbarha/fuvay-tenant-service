@@ -200,11 +200,11 @@ class DirectPaymentsService:
         expected amount is never authoritative anywhere in this module.
 
         Precedence:
-          1. A CURRENT APPROVED quote (Repair / post-assessment) -- the
-             approved estimate version, with the visit fee adjusted out when
-             the published snapshot charged one.
-          2. The issued invoice's own immutable customer_payable_amount
-             snapshot (fixed / range-final / per-unit already resolved there).
+          1. The issued invoice's immutable customer_payable_amount snapshot.
+             It includes the approved service value, visit-fee adjustment and
+             snapshotted customer platform charge.
+          2. A CURRENT APPROVED quote when an invoice has not yet been
+             materialized (legacy/read-only projection fallback).
           3. The booking's immutable price_snapshot (fixed price + approved
              options), visit-fee adjusted.
         Anything else -> unresolved, reported honestly, never guessed.
@@ -246,7 +246,10 @@ class DirectPaymentsService:
         unresolved_reason = None
         visit_fee_adjustment = Decimal("0")
 
-        if quote is not None and quote.status == QS_CUSTOMER_APPROVED:
+        if invoice is not None and _d(invoice.customer_payable_amount) > 0:
+            expected = _d(invoice.customer_payable_amount)
+            source = "invoice_snapshot"
+        elif quote is not None and quote.status == QS_CUSTOMER_APPROVED:
             work_amount = _d(quote.customer_payable_amount) or _d(quote.total_amount)
             # Customer continued after inspection: the visit fee already
             # charged on the published snapshot is credited against the work.
@@ -256,9 +259,6 @@ class DirectPaymentsService:
             source = "approved_estimate"
         elif repair_like and quote is not None and quote.status != QS_CUSTOMER_APPROVED:
             unresolved_reason = ERR_DP_NO_APPROVED_ESTIMATE
-        elif invoice is not None and _d(invoice.customer_payable_amount) > 0:
-            expected = _d(invoice.customer_payable_amount)
-            source = "invoice_snapshot"
         else:
             candidates = [
                 snap.get("selected_price_amount"), snap.get("standard_price"),
@@ -800,7 +800,14 @@ class DirectPaymentsService:
                        "Correct the existing declaration instead.", 409)
 
         booking = await self._booking(job.booking_id)
-        invoice = await self._invoice_for_job(job.id)
+        # A payment may never point at a job UUID masquerading as invoice_id.
+        # Materialize the canonical invoice here as a compatibility safety net
+        # for work_done records created before proof submission did so.
+        from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
+        invoice = await ServiceInvoiceService().ensure_issued_for_job(
+            self.db, str(job.id), str(self.tenant_id), actor_user_id,
+            request_id=self.request_id, notify_customer=True,
+        )
         exp = await self.resolve_expected_amount(job, booking, invoice)
         if exp["unresolved_reason"] == ERR_DP_NO_APPROVED_ESTIMATE:
             raise _err(ERR_DP_NO_APPROVED_ESTIMATE,
@@ -821,7 +828,7 @@ class DirectPaymentsService:
         now = _utcnow()
         pay = ServicePaymentRecord(
             id=uuid.uuid4(),
-            invoice_id=invoice.id if invoice is not None else job.id,
+            invoice_id=invoice.id,
             booking_id=job.booking_id,
             job_id=job.id,
             tenant_id=self.tenant_id,
@@ -849,6 +856,10 @@ class DirectPaymentsService:
         )
         self.db.add(pay)
         await self.db.flush()
+        invoice.payment_mode = method
+        await ServiceInvoiceService().update_payment_status(
+            self.db, invoice.id, "collected", paid_at=now,
+        )
         await self._log(pay, FEV_DP_DECLARED, "staff", actor_user_id, new_value={
             "declared_amount": str(amt), "expected_amount": str(expected),
             "method": method, "reference_id": reference_id,
@@ -1086,6 +1097,10 @@ class DirectPaymentsService:
         pay.reconciliation_status = RS_CONFIRMED
         pay.updated_at = now
         self.tenant_id = pay.tenant_id
+        from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
+        await ServiceInvoiceService().update_payment_status(
+            self.db, pay.invoice_id, "verified", paid_at=now,
+        )
         await self._log(pay, FEV_DP_CONFIRMED, "customer", customer_id, new_value={
             "confirmed_amount": str(pay.collected_amount),
             "method": pay.payment_mode,

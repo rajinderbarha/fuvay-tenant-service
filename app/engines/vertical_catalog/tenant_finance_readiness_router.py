@@ -7,9 +7,8 @@ debits the tenant's platform wallet for commission on the invoice value, it
 never routes the customer's payment through ServiceOS). This router only
 lets the tenant declare HOW it accepts that direct payment and its invoice
 preferences (`TenantFinanceReadiness`), and surfaces the already-resolved,
-read-only Home Services finance policy: category commission rate
-(ServiceCategory.commission_pct, the live authority — NOT the frozen
-package_commerce commission path), usage-credit balance (tenant_billing),
+read-only Home Services finance policy from the published vertical
+Monetization policy, usage-credit balance (tenant_billing),
 and security deposit (tenant_billing.security_deposit_amount/paid — the
 real, live deposit fields; collected only after admin approval, never here).
 """
@@ -28,14 +27,12 @@ from app.dependencies.db import get_db
 from app.dependencies.vertical_guard import require_vertical_not_active
 from app.core.permissions import require_tenant_owner_mutation
 from app.schemas.base import ok
-from app.exceptions import NotFoundException
+from app.exceptions import NotFoundException, ServiceOSException
 from app.engines.tenant_engine.models import TenantFinanceReadiness, TenantBilling
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.invoice_payment.commission_service import resolve_provider_commission_rate
-from app.engines.vertical_catalog.service import VerticalCatalogService
-from app.engines.vertical_catalog.finance_policy_service import (
-    resolve_published_policy, resolve_qualifying_technician_count, FinancePolicyResolutionError,
-)
+from app.engines.vertical_catalog.finance_policy_service import FinancePolicyResolutionError
+from app.engines.vertical_catalog.activation_payment_service import resolve_activation_funding_quote
 
 router = APIRouter(prefix="/v1/tenant/home-services/setup/finance", tags=["Tenant Finance Readiness"])
 
@@ -106,18 +103,14 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
     # activation_payment_service already uses to size the Razorpay order.
     required_deposit_amount = 0.0
     required_credit_amount = 0.0
+    funding_quote = None
     policy_resolved = False
     try:
-        v = await VerticalCatalogService()._by_key(db, HOME_SERVICES_VERTICAL_KEY)
-        policy = await resolve_published_policy(db, v.id)
-        qualifying = await resolve_qualifying_technician_count(db, tid)
-        required_deposit_amount = max(
-            float(policy.minimum_deposit),
-            float(policy.deposit_amount_per_technician) * max(1, qualifying),
-        )
-        required_credit_amount = float(policy.credit_package_base_amount)
+        funding_quote = await resolve_activation_funding_quote(db, tid)
+        required_deposit_amount = funding_quote["deposit_required"]
+        required_credit_amount = funding_quote["credit_gross"]
         policy_resolved = True
-    except FinancePolicyResolutionError:
+    except (FinancePolicyResolutionError, ServiceOSException):
         # No published policy yet -- nothing to pay, nothing to gate on.
         pass
 
@@ -130,7 +123,10 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
                     else (profile_row.trade_name if profile_row else None) or tenant_row.business_name)
     invoice_details_complete = bool(invoice_name) and bool(readiness_row and readiness_row.invoice_prefix)
 
-    activation_requirements_pending = (deposit_amount > 0 and not deposit_paid)
+    # Missing policy is a blocking configuration error, never "nothing is
+    # required".  The previous fail-open value let the UI show a green gate
+    # precisely when no payable amount could be resolved.
+    activation_requirements_pending = not policy_resolved or bool(funding_quote and funding_quote["can_pay"])
 
     checks = {
         "direct_methods_selected": methods_selected,
@@ -159,23 +155,30 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
             "job_settlement": "Outside ServiceOS",
             "pricing_ownership": "Tenant business",
             "provider_commission_pct": commission_rate,
-            "policy_version": "HS_COMMISSION_LIVE",
+            "policy_version": "HS_VERTICAL_MONETIZATION_LIVE",
         },
         "activation_requirements": {
             "security_deposit": {
                 "amount": deposit_amount,
                 "required_amount": required_deposit_amount,
-                "status": "paid" if deposit_paid else (
+                "shortfall_amount": funding_quote["deposit_shortfall"] if funding_quote else 0.0,
+                "qualifying_technician_count": funding_quote["qualifying_technician_count"] if funding_quote else 0,
+                "amount_per_technician": funding_quote["deposit_per_technician"] if funding_quote else 0.0,
+                "status": "paid" if funding_quote and funding_quote["deposit_funded"] else (
                     "not_required" if not policy_resolved or required_deposit_amount <= 0 else "required_after_approval"
                 ),
-                "can_pay": policy_resolved and required_deposit_amount > 0 and not deposit_paid,
+                "can_pay": bool(funding_quote and funding_quote["deposit_shortfall"] > 0),
             },
             "usage_credit_wallet": {
                 "balance": credit_balance,
                 "required_amount": required_credit_amount,
-                "status": "active" if (billing_row and credit_balance >= required_credit_amount and required_credit_amount > 0) else "not_active",
-                "can_pay": policy_resolved and required_credit_amount > 0 and credit_balance < required_credit_amount,
+                "base_credit_amount": funding_quote["starter_credit_base"] if funding_quote else 0.0,
+                "tax_amount": funding_quote["credit_tax"] if funding_quote else 0.0,
+                "status": "active" if funding_quote and funding_quote["credits_funded"] else "not_active",
+                "can_pay": bool(funding_quote and funding_quote["credit_gross"] > 0),
             },
+            "funding_quote": funding_quote,
+            "policy_resolved": policy_resolved,
         },
         "notice": "Customers pay your business directly. ServiceOS records the payment but does not hold or settle job funds.",
     }

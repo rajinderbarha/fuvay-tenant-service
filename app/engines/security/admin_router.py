@@ -7,7 +7,8 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
@@ -72,8 +73,8 @@ async def assign_threat(r: Request, threat_id: uuid.UUID, body: AssignThreatBody
 
 
 class ThreatStatusBody(BaseModel):
-    status: str
-    notes: str | None = None
+    status: Literal["open", "investigating", "contained", "resolved", "false_positive", "ignored"]
+    notes: str | None = Field(None, max_length=1000)
 
 
 @router.post("/threats/{threat_id}/status", response_model=ApiResponse[dict], summary="Update threat status")
@@ -84,8 +85,8 @@ async def update_threat_status(r: Request, threat_id: uuid.UUID, body: ThreatSta
 
 
 class BlockIpFromThreatBody(BaseModel):
-    reason: str
-    expires_hours: int | None = 720
+    reason: str = Field(min_length=5, max_length=500)
+    expires_hours: int | None = Field(720, ge=1, le=8760)
 
 
 @router.post("/threats/{threat_id}/block-ip", response_model=ApiResponse[dict], summary="Block IP from threat")
@@ -96,13 +97,13 @@ async def block_ip_from_threat(r: Request, threat_id: uuid.UUID, body: BlockIpFr
 
 
 class RevokeSessionsBody(BaseModel):
-    reason: str
+    reason: str = Field(min_length=5, max_length=500)
 
 
 @router.post("/threats/{threat_id}/revoke-sessions", response_model=ApiResponse[dict],
              summary="Revoke sessions from threat")
 async def revoke_sessions_from_threat(r: Request, threat_id: uuid.UUID, body: RevokeSessionsBody,
-                                       u: UserContext = Depends(require_permission(P.SECURITY_THREATS_UPDATE)),
+                                       u: UserContext = Depends(require_permission(P.SECURITY_SESSIONS_REVOKE)),
                                        s: SecurityAdminService = Depends(_svc)):
     return ok(await s.revoke_sessions_from_threat(threat_id, body.reason), _rid(r), ENGINE_ID)
 
@@ -129,7 +130,7 @@ async def session_detail(r: Request, session_id: uuid.UUID,
 
 
 class RevokeSessionBody(BaseModel):
-    reason: str
+    reason: str = Field(min_length=5, max_length=255)
 
 
 @router.post("/sessions/{session_id}/revoke", response_model=ApiResponse[dict], summary="Revoke session")
@@ -140,7 +141,7 @@ async def revoke_session(r: Request, session_id: uuid.UUID, body: RevokeSessionB
 
 
 class RevokeAllSessionsBody(BaseModel):
-    reason: str
+    reason: str = Field(min_length=5, max_length=255)
 
 
 @router.post("/sessions/user/{user_id}/revoke-all", response_model=ApiResponse[dict],
@@ -166,13 +167,14 @@ async def list_ip_blocklist(r: Request,
 
 
 class CreateIpBlockBody(BaseModel):
-    ip_or_cidr: str
-    entry_type: str = "ip"
-    reason: str
-    threat_level: str = "medium"
-    scope: str = "all"
+    ip_or_cidr: str = Field(min_length=3, max_length=50)
+    entry_type: Literal["ip", "cidr"] = "ip"
+    reason: str = Field(min_length=5, max_length=500)
+    threat_level: Literal["low", "medium", "high", "critical"] = "medium"
+    scope: Literal["all", "admin", "tenant", "customer", "staff"] = "all"
     tenant_id: uuid.UUID | None = None
-    expires_hours: int | None = None
+    expires_hours: int | None = Field(None, ge=1, le=8760)
+    permanent: bool = False
     override_self_block: bool = False
 
 
@@ -182,13 +184,13 @@ async def create_ip_block(r: Request, body: CreateIpBlockBody,
                            s: SecurityAdminService = Depends(_svc)):
     return ok(await s.create_ip_block(body.ip_or_cidr, body.entry_type, body.reason, body.threat_level,
                                        body.scope, body.tenant_id, body.expires_hours,
-                                       body.override_self_block), _rid(r), ENGINE_ID)
+                                       body.override_self_block, body.permanent), _rid(r), ENGINE_ID)
 
 
 class UpdateIpBlockBody(BaseModel):
-    scope: str | None = None
-    threat_level: str | None = None
-    reason: str | None = None
+    scope: Literal["all", "admin", "tenant", "customer", "staff"] | None = None
+    threat_level: Literal["low", "medium", "high", "critical"] | None = None
+    reason: str | None = Field(None, min_length=5, max_length=500)
 
 
 @router.patch("/ip-blocklist/{entry_id}", response_model=ApiResponse[dict], summary="Update IP block")
@@ -199,7 +201,7 @@ async def update_ip_block(r: Request, entry_id: uuid.UUID, body: UpdateIpBlockBo
 
 
 class RevokeIpBlockBody(BaseModel):
-    reason: str
+    reason: str = Field(min_length=5, max_length=500)
 
 
 @router.post("/ip-blocklist/{entry_id}/revoke", response_model=ApiResponse[dict], summary="Revoke IP block")
@@ -232,14 +234,14 @@ async def list_api_keys(r: Request,
 
 class CreateApiKeyBody(BaseModel):
     tenant_id: uuid.UUID
-    name: str
-    description: str | None = None
-    scopes: list[str]
-    environment: str = "live"
-    expires_days: int | None = None
-    owner_type: str = "tenant"
+    name: str = Field(min_length=3, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    scopes: list[str] = Field(min_length=1)
+    environment: Literal["live", "test"] = "live"
+    expires_days: int | None = Field(None, ge=1, le=730)
+    owner_type: Literal["tenant", "integration", "service_account"] = "tenant"
     allowed_ips: list[str] | None = None
-    rate_limit_per_minute: int | None = None
+    rate_limit_per_minute: int | None = Field(None, ge=1, le=100000)
     permissions: list[str] | None = None
 
 
@@ -262,18 +264,19 @@ async def api_key_detail(r: Request, key_id: uuid.UUID,
 
 class RotateApiKeyBody(BaseModel):
     tenant_id: uuid.UUID
+    reason: str = Field(min_length=5, max_length=500)
 
 
 @router.post("/api-keys/{key_id}/rotate", response_model=ApiResponse[dict], summary="Rotate API key")
 async def rotate_api_key(r: Request, key_id: uuid.UUID, body: RotateApiKeyBody,
                           u: UserContext = Depends(require_permission(P.SECURITY_API_KEYS_ROTATE)),
                           s: SecurityAdminService = Depends(_svc)):
-    return ok(await s.rotate_api_key(key_id, body.tenant_id), _rid(r), ENGINE_ID)
+    return ok(await s.rotate_api_key(key_id, body.tenant_id, body.reason), _rid(r), ENGINE_ID)
 
 
 class RevokeApiKeyBody(BaseModel):
     tenant_id: uuid.UUID
-    reason: str
+    reason: str = Field(min_length=5, max_length=500)
 
 
 @router.post("/api-keys/{key_id}/revoke", response_model=ApiResponse[dict], summary="Revoke API key")
@@ -338,7 +341,7 @@ async def get_policies(r: Request,
 
 class UpdatePolicyBody(BaseModel):
     value: object
-    reason: str
+    reason: str = Field(min_length=8, max_length=500)
 
 
 @router.patch("/policies/{policy_key}", response_model=ApiResponse[dict], summary="Update a security policy")
@@ -346,3 +349,10 @@ async def update_policy(r: Request, policy_key: str, body: UpdatePolicyBody,
                          u: UserContext = Depends(require_permission(P.SECURITY_POLICIES_UPDATE)),
                          s: SecurityAdminService = Depends(_svc)):
     return ok(await s.update_policy(policy_key, body.value, body.reason), _rid(r), ENGINE_ID)
+
+
+# Admin key management is hidden and non-callable under the same server-side
+# feature gate as tenant key management.
+from app.core.feature_flags import hide_disabled_api_key_routes
+
+hide_disabled_api_key_routes(router)

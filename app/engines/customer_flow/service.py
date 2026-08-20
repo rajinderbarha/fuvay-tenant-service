@@ -26,7 +26,7 @@ from app.engines.admin_catalog.models import (
     ServiceCategory, MasterOffering, CustomerFlowConfig,
 )
 from app.engines.customer_flow.constants import (
-    VALID_FLOW_TYPES, VALID_COMPONENT_KEYS, FLOW_COMPONENT_MAP,
+    VALID_FLOW_TYPES, VALID_COMPONENT_KEYS, FLOW_COMPONENT_MAP, FLOW_ENGINE_MAP,
 )
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -414,7 +414,7 @@ class CustomerCategoryFlowService:
 
     # ── Admin: CRUD on CustomerFlowConfig ────────────────────────────────────
     async def admin_get_flow_config(self, category_id: uuid.UUID) -> dict:
-        cfg = await self._load_flow_config_for_cat(category_id)
+        cfg = await self._load_any_flow_config_for_cat(category_id)
         if not cfg:
             raise ServiceOSException(
                 ERR_CAT_FLOW_MISSING,
@@ -424,33 +424,60 @@ class CustomerCategoryFlowService:
         return self._flow_config_dict(cfg)
 
     async def admin_upsert_flow_config(self, category_id: uuid.UUID, data: dict) -> dict:
-        flow_type = data.get("customer_flow_type", "")
+        cat = await self._load_category_for_admin(category_id)
+        cfg = await self._load_any_flow_config_for_cat(category_id)
+
+        flow_type = data.get("customer_flow_type") or (cfg.customer_flow_type if cfg else None) or cat.customer_flow_type or ""
         if flow_type and flow_type not in VALID_FLOW_TYPES:
             raise ServiceOSException(
                 ERR_FLOW_INVALID,
                 f"'{flow_type}' is not a valid customer_flow_type.",
                 status_code=422,
             )
-        component_key = data.get("frontend_component_key", "")
+        if cat.vertical_type == "home_services" and flow_type != "service_booking":
+            raise ServiceOSException(
+                ERR_FLOW_INVALID,
+                "Home Services native customer booking supports only the service_booking flow. "
+                "Use ServiceBookingFlow with booking_engine.",
+                status_code=422,
+            )
+
+        expected_component = FLOW_COMPONENT_MAP.get(flow_type or "unsupported", "UnsupportedFlow")
+        expected_engine = FLOW_ENGINE_MAP.get(flow_type or "unsupported", "none")
+        component_key = data.get("frontend_component_key") or (cfg.frontend_component_key if cfg else expected_component)
         if component_key and component_key not in VALID_COMPONENT_KEYS:
             raise ServiceOSException(
                 ERR_FLOW_COMPONENT,
                 f"'{component_key}' is not a valid frontend_component_key.",
                 status_code=422,
             )
+        if component_key != expected_component:
+            raise ServiceOSException(
+                ERR_FLOW_COMPONENT,
+                f"'{flow_type}' must use frontend_component_key '{expected_component}', not '{component_key}'.",
+                status_code=422,
+            )
+        engine_key = data.get("primary_engine_key") or (cfg.primary_engine_key if cfg else expected_engine)
+        if engine_key != expected_engine:
+            raise ServiceOSException(
+                ERR_FLOW_INVALID,
+                f"'{flow_type}' must use primary_engine_key '{expected_engine}', not '{engine_key}'.",
+                status_code=422,
+            )
 
-        cfg = await self._load_flow_config_for_cat(category_id)
         if cfg:
-            for field in ("customer_flow_type", "frontend_component_key", "primary_engine_key",
-                          "required_steps", "optional_steps", "config", "is_active"):
+            for field in ("required_steps", "optional_steps", "config", "is_active"):
                 if field in data:
                     setattr(cfg, field, data[field])
+            cfg.customer_flow_type = flow_type
+            cfg.frontend_component_key = component_key
+            cfg.primary_engine_key = engine_key
         else:
             cfg = CustomerFlowConfig(
                 category_id=category_id,
                 customer_flow_type=flow_type or "unsupported",
-                frontend_component_key=component_key or "UnsupportedFlow",
-                primary_engine_key=data.get("primary_engine_key", "none"),
+                frontend_component_key=component_key,
+                primary_engine_key=engine_key,
                 required_steps=data.get("required_steps"),
                 optional_steps=data.get("optional_steps"),
                 config=data.get("config"),
@@ -458,24 +485,17 @@ class CustomerCategoryFlowService:
             )
             self.db.add(cfg)
 
-        # Mirror flow fields onto the category row
-        cat_res = await self.db.execute(
-            select(ServiceCategory).where(ServiceCategory.id == category_id)
-        )
-        cat = cat_res.scalar_one_or_none()
-        if cat:
-            if "customer_flow_type" in data:
-                cat.customer_flow_type = data["customer_flow_type"]
-            if "frontend_component_key" in data:
-                cat.frontend_component_key = data["frontend_component_key"]
-            if "primary_engine_key" in data:
-                cat.primary_engine_key = data["primary_engine_key"]
+        # Mirror flow fields onto the category row so customer/runtime category
+        # lists and native booking resolution read one consistent contract.
+        cat.customer_flow_type = flow_type
+        cat.frontend_component_key = component_key
+        cat.primary_engine_key = engine_key
 
         await self.db.flush()
         return self._flow_config_dict(cfg)
 
     async def admin_activate_flow_config(self, category_id: uuid.UUID) -> dict:
-        cfg = await self._load_flow_config_for_cat(category_id)
+        cfg = await self._load_any_flow_config_for_cat(category_id)
         if not cfg:
             raise ServiceOSException(
                 ERR_CAT_FLOW_MISSING, f"No flow config for category {category_id}.", status_code=404
@@ -485,7 +505,7 @@ class CustomerCategoryFlowService:
         return {"activated": True, "category_id": str(category_id)}
 
     async def admin_deactivate_flow_config(self, category_id: uuid.UUID) -> dict:
-        cfg = await self._load_flow_config_for_cat(category_id)
+        cfg = await self._load_any_flow_config_for_cat(category_id)
         if not cfg:
             raise ServiceOSException(
                 ERR_CAT_FLOW_MISSING, f"No flow config for category {category_id}.", status_code=404
@@ -495,6 +515,16 @@ class CustomerCategoryFlowService:
         return {"deactivated": True, "category_id": str(category_id)}
 
     # ── Private helpers ───────────────────────────────────────────────────────
+    async def _load_category_for_admin(self, category_id: uuid.UUID) -> ServiceCategory:
+        cat = (await self.db.execute(
+            select(ServiceCategory).where(ServiceCategory.id == category_id)
+        )).scalar_one_or_none()
+        if not cat:
+            raise ServiceOSException(
+                ERR_CAT_NOT_FOUND, f"Category '{category_id}' not found.", status_code=404
+            )
+        return cat
+
     async def _load_visible_category(self, slug_or_id: str) -> ServiceCategory:
         # Try by slug first, then by UUID
         stmt = select(ServiceCategory).where(ServiceCategory.slug == slug_or_id)
@@ -555,6 +585,16 @@ class CustomerCategoryFlowService:
                 CustomerFlowConfig.category_id == category_id,
                 CustomerFlowConfig.is_active == True,
             )
+        )
+        return res.scalar_one_or_none()
+
+    async def _load_any_flow_config_for_cat(
+        self, category_id: uuid.UUID
+    ) -> CustomerFlowConfig | None:
+        res = await self.db.execute(
+            select(CustomerFlowConfig)
+            .where(CustomerFlowConfig.category_id == category_id)
+            .order_by(CustomerFlowConfig.is_active.desc(), CustomerFlowConfig.updated_at.desc().nullslast())
         )
         return res.scalar_one_or_none()
 

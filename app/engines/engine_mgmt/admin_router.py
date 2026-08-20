@@ -21,6 +21,30 @@ def _svc(db: AsyncSession, u) -> EngineMgmtService:
     return EngineMgmtService(db, u.user_id, u.role)
 
 
+def _mounted_route_paths(app) -> set[str]:
+    """Collect routes from FastAPI, including lazy ``_IncludedRouter`` nodes."""
+    paths: set[str] = set()
+    seen: set[int] = set()
+
+    def visit(routes) -> None:
+        for route in routes or []:
+            if id(route) in seen:
+                continue
+            seen.add(id(route))
+            path = getattr(route, "path", None) or getattr(route, "path_format", None)
+            if path:
+                paths.add(str(path))
+            nested = getattr(route, "routes", None)
+            if nested:
+                visit(nested)
+            original = getattr(route, "original_router", None)
+            if original is not None:
+                visit(getattr(original, "routes", None))
+
+    visit(getattr(app, "routes", None))
+    return paths
+
+
 # ── Registry (static routes BEFORE /{engine_key}) ────────────────────────────
 
 @router.get("/summary")
@@ -30,6 +54,29 @@ async def get_summary(
     u=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
     return ok(await _svc(db, u).get_summary(), _rid(r), "engine_management")
+
+
+@router.get("/control-plane")
+async def get_control_plane(
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    u=Depends(require_super_admin),
+) -> ApiResponse[dict]:
+    route_paths = _mounted_route_paths(r.app)
+    return ok(
+        await _svc(db, u).get_control_plane(route_paths),
+        _rid(r),
+        "engine_management",
+    )
+
+
+@router.get("/vertical-usage")
+async def get_vertical_usage(
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+    u=Depends(require_super_admin),
+) -> ApiResponse[dict]:
+    return ok(await _svc(db, u).get_vertical_usage(), _rid(r), "engine_management")
 
 
 @router.get("")
@@ -487,6 +534,7 @@ async def list_audit_logs(
     action_type: Optional[str] = Query(None),
     scope_type: Optional[str] = Query(None),
     scope_id: Optional[uuid.UUID] = Query(None),
+    exclude_health_checks: bool = Query(False),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -494,7 +542,8 @@ async def list_audit_logs(
 ) -> ApiResponse[dict]:
     return ok(await _svc(db, u).list_audit_logs(
         engine_key=engine_key, action_type=action_type,
-        scope_type=scope_type, scope_id=scope_id, page=page, limit=limit),
+        scope_type=scope_type, scope_id=scope_id,
+        exclude_health_checks=exclude_health_checks, page=page, limit=limit),
         _rid(r), "engine_management")
 
 

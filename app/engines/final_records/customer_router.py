@@ -12,6 +12,7 @@ Endpoints:
 """
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func, or_
@@ -93,6 +94,9 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
         "technician":            technician,
         "updated_at":            job.updated_at.isoformat() if job.updated_at else None,
         "completion":            completion,
+        "warranty_days":         job.warranty_days_snapshot,
+        "warranty_expires_at":   job.warranty_expires_at.isoformat() if job.warranty_expires_at else None,
+        "warranty_active":       bool(job.warranty_expires_at and job.warranty_expires_at >= datetime.now(timezone.utc)),
     }
 
 
@@ -366,6 +370,18 @@ async def get_my_booking(
     data = booking.to_dict()
     data["job"] = await _customer_safe_job(db, job) if job else None
     data.update(await _catalog_labels(db, booking))
+    # The journey as the CUSTOMER should see it: only steps flagged
+    # customer_visible on the job's own snapshotted workflow, so internal
+    # stages never leak. Empty list when the job's workflow defines no steps —
+    # the app then falls back to its fixed progress timeline.
+    data["workflow_stages"] = []
+    if job is not None:
+        from app.engines.admin_catalog.workflow_steps import (
+            resolve_job_workflow_stages, to_client_stages,
+        )
+        stages = await resolve_job_workflow_stages(db, job, "customer")
+        if stages:
+            data["workflow_stages"] = to_client_stages(stages)
     return ok(data, _RID(r), "final_records")
 
 

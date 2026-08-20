@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.platform_notifications.constants import (
@@ -24,6 +24,7 @@ from app.engines.platform_notifications.constants import (
     ERR_NOTIF_OUTBOX_ACCESS_DENIED, ERR_NOTIF_RETRY_NOT_ALLOWED,
     ERR_IN_APP_NOT_FOUND, ERR_IN_APP_ACCESS_DENIED,
     ERR_NOTIF_INVALID_PREFERENCE,
+    DELIVERY_SKIPPED,
     MAX_RETRY_COUNT,
 )
 from app.engines.platform_notifications.models import (
@@ -32,6 +33,8 @@ from app.engines.platform_notifications.models import (
 )
 from app.engines.platform_notifications.channel_providers import CHANNEL_PROVIDERS
 from app.engines.platform_notifications.event_registry import NotificationEventRegistry
+from app.engines.platform_notifications.policy_models import NotificationPolicy
+from app.exceptions import ServiceOSException
 
 log = structlog.get_logger("platform_notifications")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -68,16 +71,19 @@ class NotificationService:
                 actor_user_id=actor_user_id,
                 payload=payload,
                 severity=cfg.severity,
+                is_mandatory=cfg.is_mandatory,
+                vertical_key=cfg.vertical_key,
                 status=NOTIF_EVENT_CREATED,
             )
             db.add(event)
             await db.flush()
 
             if recipients:
+                channels = await self._resolve_delivery_channels(db, event_key, cfg.vertical_key, cfg.default_channels)
                 for recip in recipients:
                     await self._create_outbox_for_recipient(
                         db, event, cfg, recip, payload,
-                        source_record_type, source_record_id,
+                        source_record_type, source_record_id, channels,
                     )
 
             event.status = NOTIF_EVENT_PROCESSED
@@ -97,13 +103,14 @@ class NotificationService:
         payload: dict,
         source_record_type: str | None,
         source_record_id: uuid.UUID | None,
+        channels: list[str],
     ) -> None:
         user_id = recip.get("user_id")
         if not user_id:
             return
         recipient_type = recip.get("recipient_type", "customer")
 
-        for channel in cfg.default_channels:
+        for channel in channels:
             pref_enabled = await self._check_preference(db, uuid.UUID(str(user_id)), event.event_key, channel)
 
             tmpl = await self._get_template(db, f"{event.event_key}.{channel}")
@@ -124,6 +131,7 @@ class NotificationService:
                 recipient_user_id=uuid.UUID(str(user_id)),
                 recipient_type=recipient_type,
                 tenant_id=event.tenant_id,
+                vertical_key=event.vertical_key,
                 channel=channel,
                 template_key=tmpl.template_key,
                 title=title,
@@ -138,7 +146,29 @@ class NotificationService:
             await db.flush()
 
             if pref_enabled:
-                await self._dispatch_outbox(db, outbox, source_record_type, source_record_id)
+                await self._dispatch_outbox(db, outbox, source_record_type, source_record_id,
+                                            event.severity, event.vertical_key, event.is_mandatory, event.event_key)
+
+    async def _resolve_delivery_channels(
+        self, db: AsyncSession, event_key: str, vertical_key: str | None, defaults: list[str],
+    ) -> list[str]:
+        """Resolve the published event policy into the live dispatch path.
+
+        Required channels and primary channels are fan-out deliveries. Fallback
+        channels remain policy metadata until a primary attempt fails; they are
+        deliberately not sent eagerly because that would duplicate messages.
+        """
+        vertical_clause = NotificationPolicy.vertical_key.is_(None) if vertical_key is None else NotificationPolicy.vertical_key == vertical_key
+        policy = (await db.execute(select(NotificationPolicy).where(
+            NotificationPolicy.event_key == event_key,
+            vertical_clause,
+            NotificationPolicy.is_current == True,  # noqa: E712
+            NotificationPolicy.status == "published",
+        ))).scalar_one_or_none()
+        if not policy:
+            return list(dict.fromkeys(defaults))
+        configured = list(policy.required_channels or []) + list(policy.primary_channels or [])
+        return list(dict.fromkeys(configured or defaults))
 
     async def dispatch_pending(self, db: AsyncSession, limit: int = 50) -> dict:
         """Process pending outbox records. Safe to run repeatedly."""
@@ -152,7 +182,8 @@ class NotificationService:
         processed = failed = skipped = 0
         for outbox in items:
             try:
-                await self._dispatch_outbox(db, outbox, None, None)
+                vertical_key, is_mandatory, event_key, severity = await self._resolve_event_flags(db, outbox)
+                await self._dispatch_outbox(db, outbox, None, None, severity, vertical_key, is_mandatory, event_key)
                 processed += 1
             except Exception as exc:
                 # MODULE-L5-11: a raised delivery error (gateway down, network
@@ -197,19 +228,24 @@ class NotificationService:
         r = await db.execute(select(NotificationOutbox).where(NotificationOutbox.id == outbox_id))
         outbox = r.scalars().first()
         if not outbox:
-            raise ValueError(ERR_NOTIF_OUTBOX_NOT_FOUND)
+            raise ServiceOSException(ERR_NOTIF_OUTBOX_NOT_FOUND, "Notification delivery record was not found.", status_code=404)
         return outbox
 
-    async def retry_outbox(
-        self,
-        db: AsyncSession,
-        outbox_id: uuid.UUID,
-    ) -> NotificationOutbox:
+    async def retry_outbox(self, db: AsyncSession, outbox_id: uuid.UUID) -> NotificationOutbox:
         outbox = await self.get_outbox_record(db, outbox_id)
-        if outbox.retry_count >= outbox.max_retries:
-            raise ValueError(ERR_NOTIF_RETRY_NOT_ALLOWED)
+        if outbox.retry_count >= outbox.max_retries: raise ServiceOSException(ERR_NOTIF_RETRY_NOT_ALLOWED, "Retry limit.", 409)
+        if outbox.delivery_status != DELIVERY_FAILED: raise ServiceOSException(ERR_NOTIF_RETRY_NOT_ALLOWED, "Not failed.", 409)
         outbox.retry_count += 1
         outbox.delivery_status = DELIVERY_PENDING
+        await db.commit()
+        return outbox
+
+    async def cancel_outbox(self, db: AsyncSession, outbox_id: uuid.UUID) -> NotificationOutbox:
+        outbox = await self.get_outbox_record(db, outbox_id)
+        if outbox.delivery_status != DELIVERY_PENDING: raise ServiceOSException(ERR_NOTIF_RETRY_NOT_ALLOWED, "Delivery is not pending.", 409)
+        outbox.delivery_status = DELIVERY_SKIPPED
+        outbox.failure_code = "CANCELLED_BY_ADMIN"
+        outbox.failure_message = "Cancelled by a platform administrator before dispatch."
         await db.commit()
         return outbox
 
@@ -220,6 +256,9 @@ class NotificationService:
         channel: str | None = None,
         recipient_type: str | None = None,
         tenant_id: uuid.UUID | None = None,
+        search: str | None = None,
+        vertical_key: str | None = None,
+        event_key: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> dict:
@@ -232,6 +271,21 @@ class NotificationService:
             q = q.where(NotificationOutbox.recipient_type == recipient_type)
         if tenant_id:
             q = q.where(NotificationOutbox.tenant_id == tenant_id)
+        if vertical_key:
+            q = q.where(NotificationOutbox.vertical_key == vertical_key)
+        if event_key:
+            q = q.join(NotificationEvent, NotificationOutbox.notification_event_id == NotificationEvent.id).where(
+                NotificationEvent.event_key == event_key)
+        if search:
+            term = f"%{search.strip()}%"
+            q = q.where(or_(
+                NotificationOutbox.title.ilike(term),
+                NotificationOutbox.body.ilike(term),
+                NotificationOutbox.template_key.ilike(term),
+                NotificationOutbox.failure_code.ilike(term),
+                cast(NotificationOutbox.id, String).ilike(term),
+                cast(NotificationOutbox.recipient_user_id, String).ilike(term),
+            ))
         total_r = await db.execute(select(func.count()).select_from(q.subquery()))
         total = total_r.scalar_one()
         r = await db.execute(q.order_by(NotificationOutbox.created_at.desc()).limit(limit).offset(offset))
@@ -245,17 +299,38 @@ class NotificationService:
         db: AsyncSession,
         user_id: uuid.UUID,
         read_status: str | None = None,
+        notification_type: str | None = None,
+        severity: str | None = None,
+        search: str | None = None,
         limit: int = 30,
         offset: int = 0,
     ) -> dict:
         q = select(InAppNotification).where(InAppNotification.user_id == user_id)
+        q = q.where(InAppNotification.read_status != READ_ARCHIVED)
         if read_status:
             q = q.where(InAppNotification.read_status == read_status)
+        if notification_type:
+            q = q.where(InAppNotification.notification_type.ilike(f"{notification_type}%"))
+        if severity:
+            q = q.where(InAppNotification.severity == severity)
+        if search:
+            term = f"%{search.strip()}%"
+            q = q.where(or_(InAppNotification.title.ilike(term), InAppNotification.body.ilike(term)))
         total_r = await db.execute(select(func.count()).select_from(q.subquery()))
         total = total_r.scalar_one()
         r = await db.execute(q.order_by(InAppNotification.created_at.desc()).limit(limit).offset(offset))
         items = r.scalars().all()
         return {"items": [i.to_dict() for i in items], "total": total, "unread_count": None}
+
+    async def get_user_notification_summary(self, db: AsyncSession, user_id: uuid.UUID) -> dict:
+        row = (await db.execute(select(
+            func.count(InAppNotification.id).label("total"),
+            func.count(InAppNotification.id).filter(InAppNotification.read_status == READ_UNREAD).label("unread"),
+            func.count(InAppNotification.id).filter(InAppNotification.read_status == READ_READ).label("read"),
+            func.count(InAppNotification.id).filter(InAppNotification.severity.in_(["high", "critical"])).label("high_priority"),
+        ).where(InAppNotification.user_id == user_id))).one()
+        return {"total": int(row.total or 0), "unread": int(row.unread or 0),
+                "read": int(row.read or 0), "high_priority": int(row.high_priority or 0)}
 
     async def get_unread_count(self, db: AsyncSession, user_id: uuid.UUID) -> int:
         r = await db.execute(
@@ -301,6 +376,45 @@ class NotificationService:
         await db.commit()
         return len(items)
 
+    async def mark_read_bulk(self, db: AsyncSession, user_id: uuid.UUID,
+                             notification_ids: list[uuid.UUID]) -> int:
+        rows = (await db.execute(select(InAppNotification).where(
+            InAppNotification.user_id == user_id,
+            InAppNotification.id.in_(notification_ids),
+            InAppNotification.read_status != READ_ARCHIVED,
+        ))).scalars().all()
+        now = utcnow()
+        for notif in rows:
+            notif.read_status = READ_READ
+            notif.read_at = now
+        await db.commit()
+        return len(rows)
+
+    async def archive_notification(self, db: AsyncSession, user_id: uuid.UUID,
+                                   notification_id: uuid.UUID) -> InAppNotification:
+        notif = await self._owned_notification(db, user_id, notification_id)
+        notif.read_status = READ_ARCHIVED
+        await db.commit()
+        return notif
+
+    async def unarchive_notification(self, db: AsyncSession, user_id: uuid.UUID,
+                                     notification_id: uuid.UUID) -> InAppNotification:
+        notif = await self._owned_notification(db, user_id, notification_id)
+        notif.read_status = READ_READ
+        notif.read_at = notif.read_at or utcnow()
+        await db.commit()
+        return notif
+
+    async def _owned_notification(self, db: AsyncSession, user_id: uuid.UUID,
+                                  notification_id: uuid.UUID) -> InAppNotification:
+        notif = (await db.execute(select(InAppNotification).where(
+            InAppNotification.id == notification_id,
+            InAppNotification.user_id == user_id,
+        ))).scalar_one_or_none()
+        if not notif:
+            raise ServiceOSException(ERR_IN_APP_NOT_FOUND, "Notification was not found.", status_code=404)
+        return notif
+
     # ── Notification preferences ──────────────────────────────────────────────
 
     async def get_preferences(
@@ -323,9 +437,14 @@ class NotificationService:
         is_enabled: bool,
     ) -> NotificationPreference:
         if channel not in ALL_CHANNELS:
-            raise ValueError(ERR_NOTIF_INVALID_PREFERENCE)
+            raise ServiceOSException(ERR_NOTIF_INVALID_PREFERENCE, "Unknown notification channel.", status_code=422)
         if NotificationEventRegistry.get(event_key) is None:
-            raise ValueError(ERR_NOTIF_INVALID_PREFERENCE)
+            raise ServiceOSException(ERR_NOTIF_INVALID_PREFERENCE, "Unknown notification event.", status_code=422)
+        cfg = NotificationEventRegistry.get(event_key)
+        if cfg.is_mandatory and channel == CHANNEL_IN_APP and not is_enabled:
+            raise ServiceOSException(ERR_NOTIF_INVALID_PREFERENCE, "Mandatory in-app notifications cannot be disabled.", status_code=422)
+        if channel not in cfg.default_channels:
+            raise ServiceOSException(ERR_NOTIF_INVALID_PREFERENCE, "This channel is not configured for the selected event.", status_code=422)
         r = await db.execute(
             select(NotificationPreference).where(
                 NotificationPreference.user_id == user_id,
@@ -392,6 +511,10 @@ class NotificationService:
         outbox: NotificationOutbox,
         source_record_type: str | None,
         source_record_id: uuid.UUID | None,
+        severity: str,
+        vertical_key: str | None,
+        is_mandatory: bool,
+        notification_type: str,
     ) -> None:
         provider = CHANNEL_PROVIDERS.get(outbox.channel)
         if not provider:
@@ -405,17 +528,22 @@ class NotificationService:
                 outbox_id=outbox.id,
                 user_id=outbox.recipient_user_id,
                 tenant_id=outbox.tenant_id,
-                notification_type=outbox.template_key,
+                notification_type=notification_type,
                 title=outbox.title,
                 body=outbox.body,
                 action_url=outbox.action_url,
                 action_label=outbox.action_label,
                 source_record_type=source_record_type,
                 source_record_id=source_record_id,
-                severity=DELIVERY_PENDING,
+                severity=severity,
+                vertical_key=vertical_key,
+                is_mandatory=is_mandatory,
             )
         else:
-            result = await provider.deliver()
+            result = await provider.deliver(
+                db=db, user_id=outbox.recipient_user_id, title=outbox.title,
+                body=outbox.body, payload=outbox.payload,
+            )
 
         outbox.delivery_status = result.status
         outbox.provider_name = result.provider_name
@@ -424,6 +552,21 @@ class NotificationService:
         outbox.failure_message = result.failure_message
         if result.success:
             outbox.sent_at = utcnow()
+            outbox.delivered_at = utcnow()
+
+    async def _resolve_event_flags(
+        self, db: AsyncSession, outbox: NotificationOutbox,
+    ) -> tuple[str | None, bool, str, str]:
+        event = None
+        if outbox.notification_event_id:
+            event = (await db.execute(select(NotificationEvent).where(
+                NotificationEvent.id == outbox.notification_event_id))).scalar_one_or_none()
+        if event:
+            return event.vertical_key, event.is_mandatory, event.event_key, event.severity
+        cfg = NotificationEventRegistry.get(outbox.template_key.removesuffix(".in_app"))
+        return (outbox.vertical_key, cfg.is_mandatory if cfg else False,
+                cfg.event_key if cfg else outbox.template_key,
+                cfg.severity if cfg else "info")
 
     async def _get_template(
         self, db: AsyncSession, template_key: str,

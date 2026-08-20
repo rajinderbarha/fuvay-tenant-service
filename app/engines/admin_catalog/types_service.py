@@ -5,12 +5,13 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import func, select, and_, or_, case
+from sqlalchemy import func, select, and_, or_, case, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
     ServiceType, ServiceTypeMapping, BrandMapping, Brand,
-    ServiceCategory, ServiceGroup, MasterService,
+    ServiceCategory, ServiceGroup, MasterService, MasterServiceType, MasterServiceBrand,
+    TenantServiceType, MasterDataAuditLog,
 )
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -55,6 +56,7 @@ class TypesService:
             "mapping_count":    mc.get("total", 0),
             "created_at":       t.created_at.isoformat(),
             "updated_at":       t.updated_at.isoformat(),
+            "deleted_at":       t.deleted_at.isoformat() if t.deleted_at else None,
         }
 
     def _mapping_dict(self, m: ServiceTypeMapping) -> dict:
@@ -122,11 +124,28 @@ class TypesService:
     async def list_types(
         self, q: str | None = None, category_id: uuid.UUID | None = None,
         status: str | None = None, mapped: bool | None = None,
-        customer_visible: bool | None = None,
+        customer_visible: bool | None = None, type_family: str | None = None,
+        has_providers: bool | None = None,
         page: int = 1, page_size: int = 50, sort_by: str = "name",
-        sort_dir: str = "asc",
+        sort_dir: str = "asc", retired: bool = False,
     ) -> dict:
-        query = select(ServiceType).where(ServiceType.deleted_at.is_(None))
+        mapping_counts = (
+            select(
+                ServiceTypeMapping.type_id.label("type_id"),
+                func.count(ServiceTypeMapping.id).filter(ServiceTypeMapping.status != "archived").label("mapping_count"),
+                func.count(func.distinct(ServiceTypeMapping.category_id)).filter(ServiceTypeMapping.status != "archived").label("category_count"),
+                func.count(func.distinct(ServiceTypeMapping.service_id)).filter(ServiceTypeMapping.status != "archived").label("service_count"),
+            ).group_by(ServiceTypeMapping.type_id).subquery()
+        )
+        query = select(
+            ServiceType,
+            func.coalesce(mapping_counts.c.mapping_count, 0),
+            func.coalesce(mapping_counts.c.category_count, 0),
+            func.coalesce(mapping_counts.c.service_count, 0),
+        ).outerjoin(mapping_counts, mapping_counts.c.type_id == ServiceType.id)
+        query = query.where(
+            ServiceType.deleted_at.isnot(None) if retired else ServiceType.deleted_at.is_(None)
+        )
         if q:
             query = query.where(or_(
                 ServiceType.name.ilike(f"%{q}%"),
@@ -137,6 +156,14 @@ class TypesService:
             query = query.where(ServiceType.status == status)
         if customer_visible is not None:
             query = query.where(ServiceType.customer_visible == customer_visible)
+        if type_family:
+            query = query.where(ServiceType.type_family == type_family)
+        if has_providers is not None:
+            provider_exists = exists().where(
+                TenantServiceType.service_type_id == ServiceType.id,
+                TenantServiceType.is_enabled.is_(True),
+            )
+            query = query.where(provider_exists if has_providers else ~provider_exists)
         if mapped is not None:
             mapped_subq = select(ServiceTypeMapping.type_id).where(
                 ServiceTypeMapping.status != "archived").distinct().scalar_subquery()
@@ -151,29 +178,37 @@ class TypesService:
             ).scalar_subquery()
             query = query.where(ServiceType.id.in_(cat_subq))
 
-        col = getattr(ServiceType, sort_by, ServiceType.name)
-        query = query.order_by(col.asc() if sort_dir == "asc" else col.desc())
+        sort_columns = {
+            "name": ServiceType.name, "code": ServiceType.code,
+            "status": ServiceType.status, "type_family": ServiceType.type_family,
+            "display_order": ServiceType.display_order, "updated_at": ServiceType.updated_at,
+            "mapping_count": mapping_counts.c.mapping_count,
+        }
+        col = sort_columns.get(sort_by, ServiceType.name)
+        direction = col.asc() if sort_dir == "asc" else col.desc()
+        query = query.order_by(direction.nulls_last(), ServiceType.name.asc(), ServiceType.id.asc())
 
         count_r = await self.db.execute(
-            select(func.count()).select_from(query.subquery()))
+            select(func.count()).select_from(query.order_by(None).subquery()))
         total = count_r.scalar_one_or_none() or 0
 
         offset = (page - 1) * page_size
         query = query.limit(page_size).offset(offset)
-        rows = (await self.db.execute(query)).scalars().all()
-
-        items = []
-        for t in rows:
-            mc = await self._mapping_counts(t.id)
-            items.append(self._type_dict(t, mc))
+        rows = (await self.db.execute(query)).all()
+        items = [self._type_dict(t, {
+            "total": int(mapping_count), "categories": int(category_count),
+            "services": int(service_count),
+        }) for t, mapping_count, category_count, service_count in rows]
 
         return {"types": items, "total": total, "page": page,
                 "page_size": page_size, "pages": max(1, -(-total // page_size))}
 
-    async def get_type(self, type_id: uuid.UUID) -> dict:
+    async def get_type(self, type_id: uuid.UUID, include_retired: bool = False) -> dict:
         r = await self.db.execute(
-            select(ServiceType).where(ServiceType.id == type_id,
-                                      ServiceType.deleted_at.is_(None)))
+            select(ServiceType).where(
+                ServiceType.id == type_id,
+                ServiceType.deleted_at.isnot(None) if include_retired else ServiceType.deleted_at.is_(None),
+            ))
         t = r.scalar_one_or_none()
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
@@ -215,8 +250,10 @@ class TypesService:
 
         # Optional initial mappings
         for m in data.get("mappings", []):
-            await self._create_mapping_row(t.id, m)
+            mapping = await self._create_mapping_row(t.id, m)
+            await self._sync_type_mapping(mapping, active=mapping.status == "active")
 
+        await self._audit_type(t, "service_type.created")
         await self.db.commit()
         await self.db.refresh(t)
         return self._type_dict(t)
@@ -229,23 +266,28 @@ class TypesService:
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
 
+        old_name, old_code = t.name, t.code
         for field in ("name", "code", "description", "icon_url", "type_family", "display_order"):
             if field in data:
                 setattr(t, field, data[field])
         if "customer_visible" in data:
             t.customer_visible = data["customer_visible"]
-        if "status" in data:
-            if data["status"] not in VALID_STATUSES:
-                raise ServiceOSException("VALIDATION_ERROR",
-                    f"status must be one of {sorted(VALID_STATUSES)}", status_code=422)
-            t.status = data["status"]
-            t.is_active = data["status"] == "active"
+        if "status" in data and data["status"] != t.status:
+            raise ServiceOSException("LIFECYCLE_ENDPOINT_REQUIRED",
+                "Use the activate, deactivate, retire, or restore action for status changes.", status_code=409)
+        duplicate = await self.db.scalar(select(func.count(ServiceType.id)).where(
+            ServiceType.id != type_id, ServiceType.deleted_at.is_(None),
+            or_(ServiceType.name.ilike(t.name), ServiceType.code.ilike(t.code))
+        ))
+        if duplicate:
+            raise ServiceOSException("DUPLICATE", "A live service type already uses this name or code.", status_code=409)
         t.updated_at = utcnow()
+        await self._audit_type(t, "service_type.updated", f"Updated {old_name} ({old_code})")
         await self.db.commit()
         await self.db.refresh(t)
         return self._type_dict(t)
 
-    async def _set_status(self, type_id: uuid.UUID, new_status: str) -> dict:
+    async def _set_status(self, type_id: uuid.UUID, new_status: str, reason: str | None = None) -> dict:
         r = await self.db.execute(
             select(ServiceType).where(ServiceType.id == type_id,
                                       ServiceType.deleted_at.is_(None)))
@@ -255,6 +297,7 @@ class TypesService:
         t.status = new_status
         t.is_active = new_status == "active"
         t.updated_at = utcnow()
+        await self._audit_type(t, f"service_type.{new_status}", reason)
         await self.db.commit()
         return {"type_id": str(type_id), "status": new_status}
 
@@ -264,16 +307,60 @@ class TypesService:
     async def deactivate_type(self, type_id: uuid.UUID) -> dict:
         return await self._set_status(type_id, "inactive")
 
-    async def archive_type(self, type_id: uuid.UUID) -> dict:
-        return await self._set_status(type_id, "archived")
+    async def archive_type(self, type_id: uuid.UUID, reason: str) -> dict:
+        if len(reason.strip()) < 10:
+            raise ServiceOSException("RETIRE_REASON_REQUIRED", "A retirement reason of at least 10 characters is required.", status_code=422)
+        in_use = await self.db.scalar(select(func.count(TenantServiceType.id)).where(
+            TenantServiceType.service_type_id == type_id, TenantServiceType.is_enabled == True))
+        if in_use:
+            raise ServiceOSException("SERVICE_TYPE_IN_USE", "This type is enabled by providers. Deactivate provider usage before retiring it.", status_code=409,
+                                     context={"provider_mappings": int(in_use)})
+        t = (await self.db.execute(select(ServiceType).where(
+            ServiceType.id == type_id, ServiceType.deleted_at.is_(None)))).scalar_one_or_none()
+        if not t:
+            raise NotFoundException("ServiceType", str(type_id))
+        t.status = "archived"; t.is_active = False; t.deleted_at = utcnow(); t.updated_at = utcnow()
+        await self._audit_type(t, "service_type.retired", reason)
+        await self.db.commit()
+        return {"type_id": str(type_id), "status": "archived"}
+
+    async def restore_type(self, type_id: uuid.UUID, reason: str) -> dict:
+        if len(reason.strip()) < 10:
+            raise ServiceOSException("RESTORE_REASON_REQUIRED", "A restore reason of at least 10 characters is required.", status_code=422)
+        t = (await self.db.execute(select(ServiceType).where(
+            ServiceType.id == type_id, ServiceType.deleted_at.isnot(None)))).scalar_one_or_none()
+        if not t:
+            raise NotFoundException("ServiceType", str(type_id))
+        t.deleted_at = None; t.status = "inactive"; t.is_active = False; t.updated_at = utcnow()
+        await self._audit_type(t, "service_type.restored", reason)
+        await self.db.commit()
+        return {"type_id": str(type_id), "status": "inactive"}
+
+    async def get_type_audit(self, type_id: uuid.UUID, limit: int = 100) -> dict:
+        rows = (await self.db.execute(select(MasterDataAuditLog).where(
+            MasterDataAuditLog.entity_type == "service_type",
+            MasterDataAuditLog.entity_id == type_id,
+        ).order_by(MasterDataAuditLog.created_at.desc()).limit(min(limit, 200)))).scalars().all()
+        return {"audit_log": [row.to_dict() for row in rows], "total": len(rows)}
+
+    async def _audit_type(self, t: ServiceType, action: str, reason: str | None = None) -> None:
+        self.db.add(MasterDataAuditLog(
+            entity_type="service_type", entity_id=t.id, action=action,
+            actor_user_id=self.actor_id, actor_role=self.actor_role,
+            new_value={"name": t.name, "status": t.status, "reason": reason},
+            change_summary=reason or action, request_id=self.request_id,
+        ))
+        await self.db.flush()
 
     async def summary(self) -> dict:
-        base = select(func.count(ServiceType.id)).where(ServiceType.deleted_at.is_(None))
-        total      = (await self.db.execute(base)).scalar_one_or_none() or 0
-        active     = (await self.db.execute(base.where(ServiceType.status == "active"))).scalar_one_or_none() or 0
-        inactive   = (await self.db.execute(base.where(ServiceType.status == "inactive"))).scalar_one_or_none() or 0
-        archived   = (await self.db.execute(base.where(ServiceType.status == "archived"))).scalar_one_or_none() or 0
-        cust_vis   = (await self.db.execute(base.where(ServiceType.customer_visible == True))).scalar_one_or_none() or 0
+        totals = (await self.db.execute(select(
+            func.count(ServiceType.id).filter(ServiceType.deleted_at.is_(None)),
+            func.count(ServiceType.id).filter(ServiceType.deleted_at.is_(None), ServiceType.status == "active"),
+            func.count(ServiceType.id).filter(ServiceType.deleted_at.is_(None), ServiceType.status == "inactive"),
+            func.count(ServiceType.id).filter(ServiceType.deleted_at.isnot(None)),
+            func.count(ServiceType.id).filter(ServiceType.deleted_at.is_(None), ServiceType.customer_visible.is_(True)),
+        ))).one()
+        total, active, inactive, retired, cust_vis = (int(v or 0) for v in totals)
 
         mapped_subq = select(ServiceTypeMapping.type_id).where(
             ServiceTypeMapping.status != "archived").distinct().scalar_subquery()
@@ -284,7 +371,7 @@ class TypesService:
         unmapped = total - mapped
 
         return {"total": total, "active": active, "inactive": inactive,
-                "archived": archived, "mapped": mapped, "unmapped": unmapped,
+                "archived": retired, "retired": retired, "mapped": mapped, "unmapped": unmapped,
                 "customer_visible": cust_vis}
 
     # ── Type Mappings ─────────────────────────────────────────────────────────
@@ -336,12 +423,101 @@ class TypesService:
         await self.db.flush()
         return m
 
+    async def _mapping_service_ids(self, category_id: uuid.UUID | None,
+                                   group_id: uuid.UUID | None,
+                                   service_id: uuid.UUID | None) -> list[uuid.UUID]:
+        if not any((category_id, group_id, service_id)):
+            raise ServiceOSException("MAPPING_SCOPE_REQUIRED",
+                "Select a category, service group, or master service.", status_code=422)
+        q = select(MasterService.id).where(MasterService.deleted_at.is_(None))
+        if service_id:
+            q = q.where(MasterService.id == service_id)
+        if group_id:
+            q = q.where(MasterService.service_group_id == group_id)
+        if category_id:
+            q = q.where(MasterService.category_id == category_id)
+        ids = list((await self.db.execute(q)).scalars().all())
+        if service_id and not ids:
+            raise ServiceOSException("INVALID_MAPPING_HIERARCHY",
+                "The selected service does not belong to the selected category/group.", status_code=422)
+        return ids
+
+    async def _sync_type_mapping(self, m: ServiceTypeMapping, active: bool) -> None:
+        service_ids = await self._mapping_service_ids(m.category_id, m.service_group_id, m.service_id)
+        for service_id in service_ids:
+            if not active and await self._type_has_other_scope(m, service_id):
+                continue
+            row = (await self.db.execute(select(MasterServiceType).where(
+                MasterServiceType.master_service_id == service_id,
+                MasterServiceType.service_type_id == m.type_id,
+            ))).scalar_one_or_none()
+            if row:
+                row.is_active = active
+            elif active:
+                self.db.add(MasterServiceType(master_service_id=service_id,
+                                               service_type_id=m.type_id, is_active=True))
+        await self.db.flush()
+
+    async def _type_has_other_scope(self, mapping: ServiceTypeMapping, service_id: uuid.UUID) -> bool:
+        svc = (await self.db.execute(select(MasterService).where(MasterService.id == service_id))).scalar_one()
+        return bool(await self.db.scalar(select(func.count(ServiceTypeMapping.id)).where(
+            ServiceTypeMapping.id != mapping.id, ServiceTypeMapping.type_id == mapping.type_id,
+            ServiceTypeMapping.status == "active",
+            or_(ServiceTypeMapping.service_id == service_id,
+                and_(ServiceTypeMapping.service_id.is_(None), ServiceTypeMapping.service_group_id == svc.service_group_id),
+                and_(ServiceTypeMapping.service_id.is_(None), ServiceTypeMapping.service_group_id.is_(None),
+                     ServiceTypeMapping.category_id == svc.category_id)),
+        )))
+
+    async def _sync_brand_mapping(self, m: BrandMapping, active: bool) -> None:
+        service_ids = await self._mapping_service_ids(m.category_id, m.service_group_id, m.service_id)
+        for service_id in service_ids:
+            if not active and await self._brand_has_other_scope(m, service_id):
+                continue
+            row = (await self.db.execute(select(MasterServiceBrand).where(
+                MasterServiceBrand.master_service_id == service_id,
+                MasterServiceBrand.brand_id == m.brand_id,
+            ))).scalar_one_or_none()
+            if row:
+                row.is_active = active
+                row.status = "active" if active else "inactive"
+            elif active:
+                self.db.add(MasterServiceBrand(master_service_id=service_id,
+                    brand_id=m.brand_id, is_active=True, status="active",
+                    created_by_user_id=self.actor_id))
+        await self.db.flush()
+
+    async def _brand_has_other_scope(self, mapping: BrandMapping, service_id: uuid.UUID) -> bool:
+        svc = (await self.db.execute(select(MasterService).where(MasterService.id == service_id))).scalar_one()
+        return bool(await self.db.scalar(select(func.count(BrandMapping.id)).where(
+            BrandMapping.id != mapping.id, BrandMapping.brand_id == mapping.brand_id,
+            BrandMapping.status == "active",
+            or_(BrandMapping.service_id == service_id,
+                and_(BrandMapping.service_id.is_(None), BrandMapping.service_group_id == svc.service_group_id),
+                and_(BrandMapping.service_id.is_(None), BrandMapping.service_group_id.is_(None),
+                     BrandMapping.category_id == svc.category_id)),
+        )))
+
+    async def _audit_mapping(self, entity_type: str, entity_id: uuid.UUID,
+                             action: str, value: dict | None = None) -> None:
+        self.db.add(MasterDataAuditLog(
+            entity_type=entity_type, entity_id=entity_id, action=action,
+            actor_user_id=self.actor_id, actor_role=self.actor_role,
+            new_value=value, change_summary=action, request_id=self.request_id,
+        ))
+        await self.db.flush()
+
     async def list_type_mappings(
         self, type_id: uuid.UUID | None = None, category_id: uuid.UUID | None = None,
         service_id: uuid.UUID | None = None, status: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
-        q = select(ServiceTypeMapping)
+        q = (select(ServiceTypeMapping, ServiceType.name, ServiceCategory.name,
+                    ServiceGroup.name, MasterService.service_name)
+             .join(ServiceType, ServiceType.id == ServiceTypeMapping.type_id)
+             .outerjoin(ServiceCategory, ServiceCategory.id == ServiceTypeMapping.category_id)
+             .outerjoin(ServiceGroup, ServiceGroup.id == ServiceTypeMapping.service_group_id)
+             .outerjoin(MasterService, MasterService.id == ServiceTypeMapping.service_id))
         if type_id:
             q = q.where(ServiceTypeMapping.type_id == type_id)
         if category_id:
@@ -356,27 +532,12 @@ class TypesService:
         total = (await self.db.execute(
             select(func.count()).select_from(q.subquery()))).scalar_one_or_none() or 0
         q = q.order_by(ServiceTypeMapping.display_order).limit(page_size).offset((page-1)*page_size)
-        rows = (await self.db.execute(q)).scalars().all()
-
-        # Enrich with names
+        rows = (await self.db.execute(q)).all()
         items = []
-        for m in rows:
+        for m, type_name, category_name, group_name, service_name in rows:
             d = self._mapping_dict(m)
-            # Fetch type name
-            tr = await self.db.execute(select(ServiceType).where(ServiceType.id == m.type_id))
-            tp = tr.scalar_one_or_none()
-            d["type_name"] = tp.name if tp else None
-            # Fetch category name
-            if m.category_id:
-                cr = await self.db.execute(select(ServiceCategory).where(
-                    ServiceCategory.id == m.category_id))
-                cat = cr.scalar_one_or_none()
-                d["category_name"] = cat.name if cat else None
-            if m.service_id:
-                svr = await self.db.execute(select(MasterService).where(
-                    MasterService.id == m.service_id))
-                svc = svr.scalar_one_or_none()
-                d["service_name"] = getattr(svc, "name", None)
+            d.update(type_name=type_name, category_name=category_name,
+                     group_name=group_name, service_name=service_name)
             items.append(d)
 
         return {"mappings": items, "total": total, "page": page, "page_size": page_size}
@@ -389,6 +550,8 @@ class TypesService:
         if not tr.scalar_one_or_none():
             raise NotFoundException("ServiceType", str(type_id))
         m = await self._create_mapping_row(type_id, data)
+        await self._sync_type_mapping(m, active=m.status == "active")
+        await self._audit_mapping("service_type_mapping", m.id, "mapping.created", data)
         await self.db.commit()
         await self.db.refresh(m)
         return self._mapping_dict(m)
@@ -403,6 +566,8 @@ class TypesService:
             if field in data:
                 setattr(m, field, data[field])
         m.updated_at = utcnow()
+        await self._sync_type_mapping(m, active=m.status == "active")
+        await self._audit_mapping("service_type_mapping", m.id, "mapping.updated", data)
         await self.db.commit()
         return self._mapping_dict(m)
 
@@ -414,31 +579,35 @@ class TypesService:
             raise NotFoundException("ServiceTypeMapping", str(mapping_id))
         m.status = "archived"
         m.updated_at = utcnow()
+        await self._sync_type_mapping(m, active=False)
+        await self._audit_mapping("service_type_mapping", m.id, "mapping.retired")
         await self.db.commit()
         return {"mapping_id": str(mapping_id), "deleted": True}
 
     # ── Brand Summary ─────────────────────────────────────────────────────────
 
     async def brand_summary(self) -> dict:
-        base = select(func.count(Brand.id)).where(Brand.deleted_at.is_(None))
-        total    = (await self.db.execute(base)).scalar_one_or_none() or 0
-        active   = (await self.db.execute(base.where(Brand.status == "active"))).scalar_one_or_none() or 0
-        inactive = (await self.db.execute(base.where(Brand.status == "inactive"))).scalar_one_or_none() or 0
-        archived = (await self.db.execute(base.where(Brand.status == "archived"))).scalar_one_or_none() or 0
-        glbl     = (await self.db.execute(base.where(Brand.is_global == True))).scalar_one_or_none() or 0
+        totals = (await self.db.execute(select(
+            func.count(Brand.id).filter(Brand.deleted_at.is_(None)),
+            func.count(Brand.id).filter(Brand.deleted_at.is_(None), Brand.status == "active"),
+            func.count(Brand.id).filter(Brand.deleted_at.is_(None), Brand.status == "inactive"),
+            func.count(Brand.id).filter(Brand.deleted_at.isnot(None)),
+            func.count(Brand.id).filter(Brand.deleted_at.is_(None), Brand.is_global.is_(True)),
+        ))).one()
+        total, active, inactive, retired, glbl = (int(v or 0) for v in totals)
 
-        mapped_subq = select(BrandMapping.brand_id).where(
-            BrandMapping.status != "archived").distinct().scalar_subquery()
+        mapped_subq = select(MasterServiceBrand.brand_id).where(
+            MasterServiceBrand.is_active.is_(True)).distinct().scalar_subquery()
         mapped   = (await self.db.execute(
             select(func.count(Brand.id)).where(
                 Brand.id.in_(mapped_subq), Brand.deleted_at.is_(None))
         )).scalar_one_or_none() or 0
         unmapped = total - mapped
 
-        cust_vis = (await self.db.execute(
-            base.where(Brand.is_active == True))).scalar_one_or_none() or 0
+        cust_vis = int(await self.db.scalar(select(func.count(Brand.id)).where(
+            Brand.deleted_at.is_(None), Brand.is_active.is_(True))) or 0)
 
-        return {"total": total, "active": active, "inactive": inactive, "archived": archived,
+        return {"total": total, "active": active, "inactive": inactive, "archived": retired, "retired": retired,
                 "mapped": mapped, "unmapped": unmapped, "global": glbl,
                 "customer_visible": cust_vis}
 
@@ -449,7 +618,12 @@ class TypesService:
         service_id: uuid.UUID | None = None, status: str | None = None,
         page: int = 1, page_size: int = 50,
     ) -> dict:
-        q = select(BrandMapping)
+        q = (select(BrandMapping, Brand.name, ServiceCategory.name,
+                    ServiceGroup.name, MasterService.service_name)
+             .join(Brand, Brand.id == BrandMapping.brand_id)
+             .outerjoin(ServiceCategory, ServiceCategory.id == BrandMapping.category_id)
+             .outerjoin(ServiceGroup, ServiceGroup.id == BrandMapping.service_group_id)
+             .outerjoin(MasterService, MasterService.id == BrandMapping.service_id))
         if brand_id:
             q = q.where(BrandMapping.brand_id == brand_id)
         if category_id:
@@ -464,24 +638,13 @@ class TypesService:
         total = (await self.db.execute(
             select(func.count()).select_from(q.subquery()))).scalar_one_or_none() or 0
         q = q.order_by(BrandMapping.display_order).limit(page_size).offset((page-1)*page_size)
-        rows = (await self.db.execute(q)).scalars().all()
+        rows = (await self.db.execute(q)).all()
 
         items = []
-        for m in rows:
+        for m, brand_name, category_name, group_name, service_name in rows:
             d = self._brand_mapping_dict(m)
-            br = await self.db.execute(select(Brand).where(Brand.id == m.brand_id))
-            brand = br.scalar_one_or_none()
-            d["brand_name"] = brand.name if brand else None
-            if m.category_id:
-                cr = await self.db.execute(select(ServiceCategory).where(
-                    ServiceCategory.id == m.category_id))
-                cat = cr.scalar_one_or_none()
-                d["category_name"] = cat.name if cat else None
-            if m.service_id:
-                svr = await self.db.execute(select(MasterService).where(
-                    MasterService.id == m.service_id))
-                svc = svr.scalar_one_or_none()
-                d["service_name"] = getattr(svc, "name", None)
+            d.update(brand_name=brand_name, category_name=category_name,
+                     group_name=group_name, service_name=service_name)
             items.append(d)
 
         return {"mappings": items, "total": total, "page": page, "page_size": page_size}
@@ -514,6 +677,8 @@ class TypesService:
             existing.customer_visible = data.get("customer_visible", True)
             existing.provider_visible = data.get("provider_visible", True)
             await self.db.flush()
+            await self._sync_brand_mapping(existing, active=existing.status == "active")
+            await self._audit_mapping("brand_mapping", existing.id, "mapping.reactivated", data)
             await self.db.commit()
             await self.db.refresh(existing)
             return self._brand_mapping_dict(existing)
@@ -530,6 +695,8 @@ class TypesService:
         )
         self.db.add(m)
         await self.db.flush()
+        await self._sync_brand_mapping(m, active=m.status == "active")
+        await self._audit_mapping("brand_mapping", m.id, "mapping.created", data)
         await self.db.commit()
         await self.db.refresh(m)
         return self._brand_mapping_dict(m)
@@ -544,6 +711,8 @@ class TypesService:
             if field in data:
                 setattr(m, field, data[field])
         m.updated_at = utcnow()
+        await self._sync_brand_mapping(m, active=m.status == "active")
+        await self._audit_mapping("brand_mapping", m.id, "mapping.updated", data)
         await self.db.commit()
         return self._brand_mapping_dict(m)
 
@@ -555,6 +724,8 @@ class TypesService:
             raise NotFoundException("BrandMapping", str(mapping_id))
         m.status = "archived"
         m.updated_at = utcnow()
+        await self._sync_brand_mapping(m, active=False)
+        await self._audit_mapping("brand_mapping", m.id, "mapping.retired")
         await self.db.commit()
         return {"mapping_id": str(mapping_id), "deleted": True}
 

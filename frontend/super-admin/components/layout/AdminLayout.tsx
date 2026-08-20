@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 import React, { useState, useEffect, useCallback, createContext, useContext } from "react";
 import Link from "next/link";
+import FuvayLogo from "../brand/FuvayLogo";
 
 // Prevents double-rendering when a page already wraps itself with AdminLayout
 // AND the route-level layout also renders AdminLayout.
@@ -24,9 +25,9 @@ import {
   Settings, Sun, Moon, ChevronRight,
   Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
   Megaphone, Package, ScrollText, ListChecks, BarChart3,
-  HelpCircle, GitBranch, Image, AlertOctagon, Globe,
-  PercentSquare, FileText as FileTextIcon,
-  IdCard, UserCog, KeyRound, Link2, Stethoscope, CalendarCheck, PhoneCall,
+  HelpCircle, Image, AlertOctagon, Globe,
+  FileText as FileTextIcon,
+  IdCard, UserCog, KeyRound, CalendarCheck,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -43,7 +44,7 @@ import { SUPER_ADMIN_ONLY } from "../../lib/permission-catalog";
 // gating alongside isNavItemVisible's module/category gating below. A
 // real backend permission key filters the item via usePermissions().has();
 // SUPER_ADMIN_ONLY marks items whose backing route is still gated by the
-// coarse require_super_admin check (not yet converted — see
+// coarse require_super_admin check (not yet converted â€” see
 // FINAL_L5_05L_ADMIN_ROLE_RUNTIME.md), matching real backend behavior
 // rather than inventing a permission the backend doesn't enforce.
 type NavItem = {
@@ -77,8 +78,8 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Marketplace verticals management. Brands/Brand Requests are NOT global —
-    // they live inside each vertical's catalog section (e.g. Home Services →
+    // Marketplace verticals management. Brands/Brand Requests are NOT global â€”
+    // they live inside each vertical's catalog section (e.g. Home Services â†’
     // Types & Brands) to avoid the same route appearing twice in the sidebar.
     label: "Catalog",
     items: [
@@ -90,20 +91,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Marketing & Growth",
     items: [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Platform-owned promotional service cards shown to every customer
-      // nationwide (mobile app's fixed section) -- independent of vertical/
-      // category/tenant serviceability, see app/engines/global_services.
-      { id: "global-services", href: "/admin/global-services", label: "Global Services", icon: <PhoneCall size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Ad banners on the customer app home screen (customer_campaigns
-      // engine: artwork light/dark, CTA deeplink, schedule window, ZIP/city
-      // targeting). The page existed with full CRUD but had NO nav entry,
-      // so admins had no way to reach it -- the whole banner feature was
-      // unusable from the console.
-      { id: "home-banners",  href: "/admin/home-banners",  label: "Home Banners",    icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Order and visibility of every section on the customer Home screen
-      // (home_section_settings, migration 236/237). Without a nav entry the
-      // layout could only be changed by raw API calls.
-      { id: "home-layout",   href: "/admin/home-layout",   label: "Home Layout",     icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate
@@ -132,11 +119,11 @@ const NAV_GROUPS: NavGroup[] = [
       // request -- it was the only item left there after earlier cleanups
       // (Packages & Subscriptions removed), leaving a single-item group.
       { id: "trust-quality",      href: "/admin/trust-quality",      label: "Trust & Quality", icon: <Star size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      { id: "workflow-templates", href: "/admin/workflow-templates", label: "Workflows",  icon: <GitBranch size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
+      // Workflow authoring lives in Home Services -> Service Catalog -> Catalog Workspace.
       { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/>, requiredPermission: "auth:audit:read" },
       { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
-      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
-      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
+      { id: "roles",              href: "/admin/roles",              label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
+      { id: "permissions",        href: "/admin/permissions",        label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
       { id: "media",              href: "/admin/media",              label: "Media",      icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "settings",           href: "/admin/settings",           label: "Settings",   icon: <Settings size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
     ],
@@ -172,27 +159,21 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // correctly cover every field-ops-style vertical, not just literal
   // "home_services". See the Operations/Finance group comments above.
   { id: "hs-service-catalog", href: "/admin/catalog-workspace", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  // "Pricing Rules" and "Customer Price Experience" removed per product
-  // decision (same one that already removed Pricing Tiers/City-Zip Mapping/
-  // Provider Pricing Overrides): this platform is provider-set-price, not
-  // admin-defined price boundaries. Both pages let/assumed an admin sets a
-  // min/max/base price that "providers can only set prices inside" -- the
-  // exact model this platform doesn't use. Service Catalog above already
-  // explicitly defers pricing to the provider ("set by the tenant in
-  // Service Setup... not here"). The two pages/APIs remain live, just
-  // unlinked, matching the rest of this cleanup.
-  { id: "hs-provider-matching", href: "/admin/home-services/provider-matching", label: "Provider Matching", icon: <Link2 size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  { id: "hs-matching-diagnostics", href: "/admin/home-services/matching-diagnostics", label: "Matching Diagnostics", icon: <Stethoscope size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Retired admin pricing/tier surfaces were removed per product decision:
+  // this platform uses provider-owned prices plus Home Services Finance, not
+  // admin-defined min/max/base customer price boundaries.
+  // Matching is a backend booking engine fed by tenant service areas,
+  // bookability, finance, availability and Trust & Quality. It is not a
+  // separate admin setup page.
   // "Service Areas / Zones" removed alongside Pricing Tiers/City-Zip
   // Mapping/Provider Pricing Overrides -- its own page description says it
   // scopes Home Services pricing rules by admin-defined city tier, the same
   // deprecated concept. Providers already declare their own mandatory city/
   // zipcode Service Area (see hooks/useSetupStatus.ts), which this page
   // itself calls out as the separate, real per-tenant mechanism.
-  { id: "hs-completed-job-deduction", href: "/admin/home-services/completed-job-deduction", label: "Completed Job Deduction", icon: <PercentSquare size={16}/>, requiredPermission: "finance.completed_job_deduction_rules.read" },
   { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
-  // (adminBookabilityApi-backed) but had zero sidebar entry — confirmed
+  // (adminBookabilityApi-backed) but had zero sidebar entry â€” confirmed
   // orphaned in the Phase 1 frontend audit and still true.
   { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <CalendarCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
 ];
@@ -208,7 +189,7 @@ const FIELD_OPS_VERTICALS = new Set(["home_services", "repair_services", "cleani
 
 // Bookings/Jobs/Reviews/Category Rates/Warranty Claims/Service Invoices/
 // Security Deposits/Credit Top-ups/Usage Credits/Commission Records/Provider
-// Wallets — moved out of the generic top-level Operations/Finance NAV_GROUPS
+// Wallets â€” moved out of the generic top-level Operations/Finance NAV_GROUPS
 // (see those groups' comments) so they render inside the relevant field-ops
 // vertical's Catalog section instead, and therefore visually group with --
 // and hide/show alongside -- that vertical as a whole via
@@ -220,12 +201,9 @@ const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
   // "bookability" above. Only reachable via direct URL until this line.
   { id: "home-services-providers", href: "/admin/home-services/providers", label: "Providers", icon: <Building2 size={16}/>, requiredPermission: "admin:jobs:read" },
   // HOME-SERVICES-OPERATIONS unified workspace (canonical service_bookings +
-  // service_jobs pipeline only). "Bookings"/"Jobs" below are the two
-  // pre-existing pages this replaces for daily ops use -- kept live,
-  // unredirected, until parity is proven per the phase's own rule (don't
-  // delete/redirect before that). "Bookings" also still separately serves
-  // the legacy, non-canonical bookings/field_ops.jobs pipeline, which this
-  // unified page deliberately excludes (confirmed disconnected via audit).
+  // service_jobs pipeline only). The former booking-drafts list now routes
+  // into this workspace's Requests view, avoiding a second operational list
+  // and status presentation while preserving bookmarked URLs.
   { id: "home-services-operations", href: "/admin/home-services/bookings-jobs", label: "Bookings & Jobs", icon: <Wrench size={16}/>, requiredPermission: "admin:jobs:read" },
   // "Bookings (legacy)" list page removed 2026-08-04 at explicit user
   // request -- Bookings & Jobs above is the unified replacement. The
@@ -262,7 +240,7 @@ const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
 // modules instead of their own NAV_GROUPS entry), used by app/admin/layout.tsx
 // to compute the
 // active nav id via longest-href-prefix matching. This is the single source of
-// truth for "what's really in the sidebar" — see
+// truth for "what's really in the sidebar" â€” see
 // ADMIN_TENANT_E2E_02_ADMIN_SIDEBAR_ACTIVE_STATE_REPORT.md for why a second,
 // hand-maintained section-name map (lib/nav-config.ts) drifted out of sync and
 // failed to highlight nested sub-routes correctly.
@@ -273,7 +251,7 @@ export const FLAT_NAV_HREFS: { id: string; href: string }[] =
 
 /**
  * Resolve a pathname to the nav item id whose href is the longest matching
- * prefix (exact segment boundary — "/admin/catalog" does not match
+ * prefix (exact segment boundary â€” "/admin/catalog" does not match
  * "/admin/catalog-module"). Falls back to the first path segment under /admin
  * if nothing matches, so unknown/new routes still degrade gracefully instead
  * of highlighting the wrong parent item.
@@ -290,7 +268,7 @@ export function resolveActiveNavId(pathname: string): string {
   return segs[1] ?? "dashboard";
 }
 
-// FINAL-L5-05N — Part 3 route-permission registry: every nav item's
+// FINAL-L5-05N â€” Part 3 route-permission registry: every nav item's
 // requiredPermission, keyed by id. Detail/tab/wizard/create/edit routes
 // that don't have their own NAV_GROUPS entry inherit their nearest
 // (longest-prefix-matched) parent's permission via resolveActiveNavId,
@@ -322,13 +300,13 @@ export function getRequiredPermissionForRoute(pathname: string): string {
 }
 
 // Nav items that are Home-Services-specific or otherwise vertical-gated, rather than
-// global admin concepts — hidden when the backing vertical/operation is disabled so the
+// global admin concepts â€” hidden when the backing vertical/operation is disabled so the
 // sidebar doesn't show irrelevant modules for Coaching/Real Estate/Restaurant/Product tenants.
 // Source of truth is the backend effective-menu resolver (operation_visibility / enabled_vertical_keys);
 // while the menu is still loading (effectiveMenu === null) items are shown to avoid flicker/false-hides.
 // NOTE: the field-ops items (Bookings/Jobs/Reviews/Category Rates/Warranty
 // Claims/Service Invoices/Security Deposits/Credit Top-ups/Usage Credits/
-// Commission Records/Provider Wallets) are no longer gated here — they moved
+// Commission Records/Provider Wallets) are no longer gated here â€” they moved
 // to FIELD_OPS_SHARED_ITEMS and are gated structurally by FIELD_OPS_VERTICALS
 // membership inside VerticalCatalogSection instead, so this function is only
 // ever called for plain NAV_GROUPS items now (currently none need per-item
@@ -340,15 +318,15 @@ function isNavItemVisible(itemId: string, effectiveMenu: EffectiveMenu | null): 
 
 // FINAL-L5-05M: permission gating, orthogonal to the module/category gating
 // above. `perms === null` means the effective-permission fetch has not
-// resolved yet — items are hidden (fail closed), not shown, to avoid
+// resolved yet â€” items are hidden (fail closed), not shown, to avoid
 // flashing unauthorized content before the real server payload arrives.
 function isNavItemPermitted(
   item: { requiredPermission: string },
   perms: string[] | null,
   role: string | null,
 ): boolean {
-  if (item.requiredPermission === "") return true; // Dashboard — visible to any authenticated admin role
-  if (perms === null) return false; // still loading — fail closed
+  if (item.requiredPermission === "") return true; // Dashboard â€” visible to any authenticated admin role
+  if (perms === null) return false; // still loading â€” fail closed
   if (item.requiredPermission === SUPER_ADMIN_ONLY) return role === "super_admin";
   return perms.includes("*") || perms.includes(item.requiredPermission);
 }
@@ -379,7 +357,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
     if (!token) return;
     verticalCatalogApi.getEffectiveMenu()
       .then(r => setEffectiveMenu(r))
-      .catch(() => {/* non-critical — sidebar degrades gracefully */});
+      .catch(() => {/* non-critical â€” sidebar degrades gracefully */});
   }, []);
 
   useEffect(() => { loadEffectiveMenu(); }, [loadEffectiveMenu]);
@@ -436,7 +414,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
         Skip to main content
       </a>
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <aside className="admin-sidebar" style={{
         width: w, flexShrink: 0,
         background: "var(--sidebar-bg)",
@@ -452,17 +430,12 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
           display: "flex", alignItems: "center", gap: 12,
           borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0,
         }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: "var(--radius-lg)",
-            background: "var(--brand)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-          }}>
-            <Zap size={16} color="var(--text-on-brand)" fill="var(--text-on-brand)"/>
-          </div>
+          {/* The admin sidebar is navy in both themes (globals.css scopes
+              --sidebar-bg to #101A31 under [data-theme="light"]), so it always
+              needs the white-wordmark artwork rather than the theme swap. */}
+          <FuvayLogo compact={collapsed} height={34} tone="onDark"/>
           {!collapsed && (
             <div>
-              <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 14, margin: 0, letterSpacing: "-0.02em" }}>ServiceOS</p>
               <p style={{ color: "var(--sidebar-category)", fontSize: 10, margin: 0, fontWeight: 600, letterSpacing: "0.08em" }}>SUPER ADMIN</p>
             </div>
           )}
@@ -502,7 +475,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               ))}
             </div>
           ) : NAV_GROUPS.map((group) => {
-            // FINAL-L5-05M: two independent gates, both must pass — module/
+            // FINAL-L5-05M: two independent gates, both must pass â€” module/
             // category entitlement (isNavItemVisible, pre-existing) AND
             // effective-permission (isNavItemPermitted, this sprint). An
             // empty group (0 permitted items, and no enabled-verticals
@@ -513,7 +486,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
               .filter(item => isNavItemPermitted(item, effectivePermissions, effectiveRole));
             // Catalog group only: inject one expandable section per real,
             // backend-enabled vertical (Home Services, Coaching, Real Estate,
-            // etc.) via VerticalCatalogSection — same mechanism, no
+            // etc.) via VerticalCatalogSection â€” same mechanism, no
             // special-casing per vertical. Visibility/enable-disable is
             // automatic: a vertical only appears here when effectiveMenu
             // reports it enabled, so there is nothing extra to gate.
@@ -566,7 +539,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
                 ))}
               {/* After the Catalog group, inject one expandable sub-menu per
                   enabled vertical (Home Services, Coaching, Real Estate,
-                  etc.) — same VerticalCatalogSection for all, no special
+                  etc.) â€” same VerticalCatalogSection for all, no special
                   top-level group for any one vertical. */}
               {verticalsForFlyout.map(v => (
                   <VerticalCatalogSection
@@ -584,7 +557,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
 
       </aside>
 
-      {/* ── Main ────────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         <TopNav theme={theme} onToggleTheme={toggle} onLogout={handleLogout}/>
         <main id="admin-main-content" className="admin-main" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
@@ -604,7 +577,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
   );
 }
 
-// ── Per-Vertical catalog sub-section ─────────────────────────────────────────
+// â”€â”€ Per-Vertical catalog sub-section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   vertical: import("../../lib/api").EffectiveMenuVertical;
@@ -616,8 +589,8 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const flyoutRef = React.useRef<HTMLDivElement>(null);
   const modules = vertical.modules.filter(m => m.is_enabled);
-  // Home Services' bespoke pages (Overview/Service Catalog/Provider Matching/
-  // Matching Diagnostics/Completed Job Deduction/Settings/Bookability) are now
+  // Home Services' bespoke pages (Overview/Service Catalog/Completed Job
+  // Deduction/Settings/Bookability) are now
   // real registered catalog modules (CatalogModuleDefinition +
   // VerticalCatalogModule rows) rather than a hardcoded `vertical_key ===
   // "home_services"` escape hatch -- they arrive through `modules` above like
@@ -709,7 +682,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
             <div style={{ padding: 6 }}>
               {modules.map(m => {
                 const navId = `catalog-${vertical.vertical_key}-${m.key}`;
-                const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
+                const path = m.admin_path || `/admin/verticals/${vertical.vertical_key}?tab=capabilities`;
                 const isActive = activeNav === navId;
                 return (
                   <Link
@@ -793,7 +766,7 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
         <div style={{ paddingLeft: 14 }}>
           {modules.map(m => {
             const navId = `catalog-${vertical.vertical_key}-${m.key}`;
-            const path = m.admin_path || `/admin/catalog/${vertical.vertical_key}`;
+            const path = m.admin_path || `/admin/verticals/${vertical.vertical_key}?tab=capabilities`;
             return (
               <SidebarItem
                 key={m.key}
@@ -975,10 +948,10 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
         </div>
       </div>
 
-      <div style={{ flex: 1 }}/>
+      <div className="admin-topbar-spacer" style={{ flex: 1 }}/>
 
       {/* Status badge */}
-      <div style={{
+      <div className="admin-system-status" style={{
         display: "flex", alignItems: "center", gap: 6,
         padding: "5px 12px", borderRadius: 999,
         background: "var(--success-bg)", border: "1px solid var(--success-border)",
@@ -1033,7 +1006,7 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
 
             <div style={{ overflowY: "auto", flex: 1 }}>
               {recentNotifs === null ? (
-                <div style={{ padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</div>
+                <div style={{ padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>Loadingâ€¦</div>
               ) : recentNotifs.length === 0 ? (
                 <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
                   No notifications
@@ -1083,8 +1056,8 @@ function TopNav({ theme, onToggleTheme, onLogout }: {
         )}
       </div>
 
-      {/* User → My Profile */}
-      <Link href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+      {/* User â†’ My Profile */}
+      <Link className="admin-profile-link" href="/admin/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || "Super Admin"}</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform</p>

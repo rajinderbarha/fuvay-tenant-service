@@ -46,9 +46,116 @@ async def get_current_policy(db: AsyncSession, vertical_id: uuid.UUID) -> Vertic
     )).scalar_one_or_none()
 
 
+async def get_current_policy_by_vertical_key(
+    db: AsyncSession, vertical_key: str,
+) -> VerticalMonetizationPolicy | None:
+    """Canonical cross-system policy lookup by business vertical.
+
+    Each vertical owns one published monetization policy. Runtime callers
+    use this helper instead of reading service-category finance fields, so a
+    Home Services policy can never leak into Coaching/Food and vice versa.
+    """
+    from app.engines.vertical_catalog.models import Vertical
+    return (await db.execute(
+        select(VerticalMonetizationPolicy)
+        .join(Vertical, Vertical.id == VerticalMonetizationPolicy.vertical_id)
+        .where(
+            Vertical.key == vertical_key,
+            VerticalMonetizationPolicy.is_current.is_(True),
+            VerticalMonetizationPolicy.status == "published",
+        )
+    )).scalar_one_or_none()
+
+
+async def get_active_job_type_rule(
+    db: AsyncSession,
+    policy_id: uuid.UUID,
+    job_type_id: uuid.UUID | None,
+):
+    """Return the active override for this exact policy version and Job Type."""
+    if job_type_id is None:
+        return None
+    from app.engines.vertical_monetization.models import MonetizationJobTypeRule
+    return (await db.execute(
+        select(MonetizationJobTypeRule).where(
+            MonetizationJobTypeRule.policy_id == policy_id,
+            MonetizationJobTypeRule.job_type_id == job_type_id,
+            MonetizationJobTypeRule.status == "active",
+        )
+    )).scalar_one_or_none()
+
+
 def _pct_of(amount_minor: int, pct: Decimal) -> int:
     raw = (Decimal(amount_minor) * pct / Decimal("100"))
     return int(raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def calculate_provider_completion_credits(
+    *,
+    policy: VerticalMonetizationPolicy | None,
+    service_amount: Decimal | str | float | int,
+    provider_charge_enabled: bool = True,
+    credit_units_override: Decimal | str | float | int | None = None,
+    charge_model_override: str | None = None,
+) -> dict[str, Any]:
+    """Canonical provider-side completion charge in usage-credit units.
+
+    Home Services credits are rupee-equivalent units. Percentage charges are
+    calculated from the provider's service value only (never the customer
+    platform fee), while fixed-credit rules can be overridden per Job Type.
+    Optional provider min/max values are stored in minor currency units and
+    clamp percentage commission deterministically.
+    """
+    amount = Decimal(str(service_amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if policy is None or not provider_charge_enabled or policy.provider_model == "NONE":
+        return {
+            "provider_model": policy.provider_model if policy else "NONE",
+            "provider_charge_credit_units": "0.00",
+            "provider_charge_note": "No provider-side completion charge.",
+            "provider_charge_breakdown": {"reason": "disabled_or_not_configured"},
+        }
+
+    model = "COMPLETION_CREDITS" if charge_model_override == "FIXED_CREDITS" else policy.provider_model
+    units = Decimal("0")
+    breakdown: dict[str, Any] = {
+        "model": model, "policy_model": policy.provider_model,
+        "job_type_model_override": charge_model_override,
+        "service_amount": str(amount),
+    }
+    if model == "PERCENTAGE_COMMISSION":
+        pct = Decimal(str(policy.provider_percentage or 0))
+        units = amount * pct / Decimal("100")
+        raw_units = units
+        minimum = (Decimal(str(policy.provider_min_charge_minor)) / Decimal("100")) if policy.provider_min_charge_minor is not None else None
+        maximum = (Decimal(str(policy.provider_max_charge_minor)) / Decimal("100")) if policy.provider_max_charge_minor is not None else None
+        clamped = None
+        if minimum is not None and units < minimum:
+            units, clamped = minimum, "min"
+        if maximum is not None and units > maximum:
+            units, clamped = maximum, "max"
+        breakdown.update({"percentage": str(pct), "raw_credit_units": str(raw_units),
+                          "minimum_credit_units": str(minimum) if minimum is not None else None,
+                          "maximum_credit_units": str(maximum) if maximum is not None else None,
+                          "clamped": clamped})
+        note = f"{pct.normalize()}% of provider service value"
+    elif model == "COMPLETION_CREDITS":
+        configured = credit_units_override if credit_units_override is not None else policy.provider_credit_units
+        units = Decimal(str(configured or 0))
+        breakdown.update({"credit_units_override": str(credit_units_override) if credit_units_override is not None else None})
+        note = "Fixed usage credits per eligible completed job"
+    elif model == "FIXED_COMPLETION_CHARGE":
+        units = Decimal(str(policy.provider_fixed_amount_minor or 0)) / Decimal("100")
+        note = "Fixed completion amount converted to usage credits"
+    else:
+        note = f"{model} is not a completion-credit runtime model"
+
+    units = max(Decimal("0"), units).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {
+        "provider_model": model,
+        "provider_charge_credit_units": str(units),
+        "provider_charge_note": note,
+        "provider_charge_breakdown": breakdown,
+    }
 
 
 def calculate_customer_platform_fee(

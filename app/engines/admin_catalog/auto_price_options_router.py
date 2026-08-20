@@ -1,17 +1,8 @@
-"""Automatic Customer Price Options — admin + tenant endpoints.
+"""Home Services provider matching diagnostics and tenant readiness endpoints.
 
-Replaces manual Bargain Rule setup for Home Services. Admin configures
-platform pricing + platform fee; the backend automatically derives
-Low/Mid/High customer price options (no manual "bargain rule" authoring
-required). Reuses the certified pure engines built in prior sprints:
-  - app.engines.admin_catalog.bargain_engine (floor formula, validation)
-  - app.engines.home_service_booking.matching_engine (Low/Mid/High tiers,
-    provider-first matching, area comparison)
-
-Feature flags (see app/core/feature_flags.py):
-  - manual_bargain_rules_enabled   (default False)
-  - auto_price_options_enabled     (default True)
-  - provider_first_matching_enabled (default True)
+Pricing is provider-owned. Customer-facing charges are resolved by Home
+Services Finance during booking. The retired Low/Mid/High price-option model
+is intentionally not exposed here.
 """
 from __future__ import annotations
 
@@ -24,20 +15,15 @@ from app.core.feature_flags import get_home_services_pricing_flags
 from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
-from app.engines.admin_catalog.bargain_engine import (
-    BargainValidationError, compute_symmetric_customer_price_tiers,
-)
-from app.engines.admin_catalog.models import BargainRule, ServicePricingRule, MasterService
 from app.engines.home_service_booking.matching_engine import (
-    compute_price_tiers, select_best_provider, get_area_market_comparison,
-    build_customer_safe_provider, build_admin_provider,
-    assert_home_services_vertical, VerticalFlowNotSupported,
+    select_best_provider, get_area_market_comparison,
+    build_admin_provider,
 )
 from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 
-admin_router = APIRouter(prefix="/v1/admin/home-services", tags=["Home Services Price Experience"])
-tenant_router = APIRouter(prefix="/v1/tenant/home-services", tags=["Home Services Customer Price Preview"])
+admin_router = APIRouter(prefix="/v1/admin/home-services", tags=["Home Services Matching"])
+tenant_router = APIRouter(prefix="/v1/tenant/home-services", tags=["Home Services Matching Readiness"])
 
 ENGINE_ID = "auto_price_options"
 
@@ -67,7 +53,7 @@ async def get_matching_policy(
     return ok(get_policy_manifest(), _rid(r), ENGINE_ID)
 
 
-# Customer Price Experience preview endpoint removed (2026-07) -- it was an
+# Admin price preview endpoint removed -- it was an
 # admin testing tool built entirely around admin_min_price/admin_max_price/
 # admin_base_price, the same deprecated "admin sets price boundaries" model
 # as Pricing Rules. This platform is provider-set-price.
@@ -145,7 +131,6 @@ async def admin_matching_diagnostics(
         "excluded_providers": match.get("excluded_providers", []),
         "selected_provider": None,
         "top_candidates": [],
-        "price_options": None,
         "area_market_comparison": None,
         # HS6B — canonical sources this diagnostic run actually used, so
         # admins can see which model is authoritative (not the old,
@@ -163,27 +148,6 @@ async def admin_matching_diagnostics(
         result["top_candidates"] = [
             _attach_provider_level(build_admin_provider(s, sc)) for s, sc in match.get("all_scored", [])[:5]
         ]
-
-        bargain_rule = await db.scalar(
-            select(BargainRule).where(
-                BargainRule.master_service_id == master_service_id,
-                BargainRule.status == "active", BargainRule.deleted_at.is_(None),
-            ).order_by(BargainRule.created_at.desc()).limit(1)
-        )
-        if bargain_rule and bargain_rule.customer_min_price is not None and bargain_rule.customer_max_price is not None:
-            pricing_rule = await db.get(ServicePricingRule, bargain_rule.pricing_rule_id) if bargain_rule.pricing_rule_id else None
-            try:
-                result["price_options"] = compute_price_tiers(
-                    admin_min_price=pricing_rule.min_price if pricing_rule else None,
-                    admin_max_price=pricing_rule.max_price if pricing_rule else None,
-                    admin_base_price=pricing_rule.base_price if pricing_rule else None,
-                    customer_min_price=bargain_rule.customer_min_price,
-                    customer_max_price=bargain_rule.customer_max_price,
-                    platform_fee_percent=bargain_rule.platform_fee_percent or (pricing_rule.platform_fee_percent if pricing_rule else 0),
-                    platform_fee_fixed_amount=bargain_rule.platform_fee_fixed_amount,
-                )
-            except BargainValidationError:
-                result["price_options"] = None
 
         result["area_market_comparison"] = await get_area_market_comparison(
             db, category_id=category_id, offering_id=master_service_id,
@@ -266,90 +230,12 @@ def _tenant_id(u: UserContext) -> uuid.UUID:
     return uuid.UUID(u.tenant_id)
 
 
-@tenant_router.get("/customer-price-preview", response_model=ApiResponse[dict],
-                    summary="See what customers will see: Low/Mid/High for this tenant's own service (read-only)")
-async def tenant_customer_price_preview(
-    r: Request,
-    master_service_id: uuid.UUID,
-    service_type_id: uuid.UUID | None = None,
-    brand_id: uuid.UUID | None = None,
-    u: UserContext = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """MODULE-L5-57: rewired off the legacy BargainRule/ServicePricingRule
-    path (both admin-owned, not tenant-scoped -- the master_service_id-only
-    query previously returned the SAME range to every tenant offering that
-    service, never this tenant's own configured price). Now resolves through
-    TenantCatalogService.resolve_tenant_price -- the exact same tenant-owned,
-    type/brand-precedence resolver real customer bookings use
-    (home_service_booking/service.py::_resolve_selected_tenant_price) -- so
-    tenant preview and customer runtime share one calculation, per the
-    Customer Price Experience consolidation."""
-    from app.engines.admin_catalog.models import TenantService, ServiceCategory
-    from app.engines.admin_catalog.tenant_service import TenantCatalogService
-
-    tid = _tenant_id(u)
-    svc = await db.get(MasterService, master_service_id)
-    if not svc:
-        raise ServiceOSException("MASTER_SERVICE_NOT_FOUND", "Master service not found.", status_code=404)
-
-    ts = await db.scalar(
-        select(TenantService).where(
-            TenantService.tenant_id == tid,
-            TenantService.master_service_id == master_service_id,
-            TenantService.is_active.is_(True),
-        )
+async def tenant_customer_price_preview_removed():
+    raise ServiceOSException(
+        "CUSTOMER_PRICE_PREVIEW_RETIRED",
+        "Customer price preview was removed with the retired tier-based pricing model.",
+        status_code=410,
     )
-    if ts is None:
-        return ok({
-            "service_name": svc.service_name,
-            "available": False,
-            "message": "You have not enabled this service yet, so there is no customer price to preview.",
-        }, _rid(r), ENGINE_ID)
-
-    tenant_svc = TenantCatalogService(db=db)
-    resolved = await tenant_svc.resolve_tenant_price(ts.id, service_type_id=service_type_id, brand_id=brand_id)
-    if not resolved.get("resolved"):
-        return ok({
-            "service_name": svc.service_name,
-            "tenant_service_id": str(ts.id),
-            "available": False,
-            "message": "Customer price options are not available yet for this service — "
-                       "you have not configured a price range for this combination.",
-        }, _rid(r), ENGINE_ID)
-
-    cat = await db.get(ServiceCategory, svc.category_id) if svc.category_id else None
-    fee_pct = float(cat.customer_charge_pct) if (cat and cat.customer_charge_pct is not None) else 0.0
-
-    try:
-        tiers = compute_price_tiers(
-            admin_min_price=None, admin_max_price=None, admin_base_price=None,
-            customer_min_price=resolved["minimum_price"], customer_max_price=resolved["maximum_price"],
-            platform_fee_percent=fee_pct, platform_fee_fixed_amount=0,
-        )
-    except BargainValidationError as e:
-        raise ServiceOSException(e.code, e.message, status_code=422) from e
-
-    result = {
-        "service_name": svc.service_name,
-        "tenant_service_id": str(ts.id),
-        "master_service_id": str(master_service_id),
-        "job_type_id": str(ts.job_type_id) if ts.job_type_id else None,
-        "pricing_model": "range",
-        "available": True,
-        **tiers,
-        "currency": tiers.get("currency", "INR"),
-        "calculation_source": resolved["source"],
-        "calculation_source_rule_id": resolved.get("source_rule_id"),
-        "unit": None,
-        "effective_date": None,
-        "explanation": (
-            "These are the price options your customers see, derived from your own configured "
-            "price plus the platform's customer-facing fee. Admin does not set or own this amount."
-        ),
-    }
-    return ok(result, _rid(r), ENGINE_ID)
-
 
 @tenant_router.get("/matching-readiness", response_model=ApiResponse[dict],
                     summary="Check whether this tenant currently passes provider-first matching eligibility (read-only)")

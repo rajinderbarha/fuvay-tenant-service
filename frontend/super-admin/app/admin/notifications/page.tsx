@@ -1,456 +1,99 @@
 "use client";
-import React, { useState, useCallback } from "react";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Activity, Bell, CheckCheck, CircleAlert, Eye, FileText, LayoutList, MailCheck, RefreshCw, Route, Search, Settings2, SlidersHorizontal } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import {
-  Card, Badge, Btn, Modal, SectionHeader, Skeleton, EmptyState, Select, Input, Spinner,
-} from "../../../components/shared/ui";
-import { sprint27AdminApi } from "../../../lib/api";
-import type { InAppNotification } from "../../../lib/api";
-import { useApi, useAction } from "../../../hooks/useApi";
-import { Bell, CheckCheck, RefreshCw, Eye, Settings } from "lucide-react";
-import { RequirePermission } from "../../../components/shared/PermissionGate";
-import { NotificationTemplatesContent } from "./templates/page";
+import { Badge, Btn, Card, EmptyState, Input, Modal, Pagination, SectionHeader, Select, Skeleton, Spinner } from "../../../components/shared/ui";
+import { sprint27AdminApi, type InAppNotification, type NotificationPreferenceEvent } from "../../../lib/api";
+import { useAction, useApi } from "../../../hooks/useApi";
+import { RuntimeTemplatesPanel } from "./RuntimeTemplatesPanel";
 import { EventPoliciesPanel } from "./EventPoliciesPanel";
 import { DeliveryProvidersPanel } from "./DeliveryProvidersPanel";
 import { LogsFailuresPanel } from "./LogsFailuresPanel";
 
-const CHANNELS = [
-  { key: "in_app",   label: "In-app" },
-  { key: "email",    label: "Email" },
-  { key: "sms",      label: "SMS" },
-  { key: "whatsapp", label: "WhatsApp" },
-  { key: "push",     label: "Push" },
+type Tab = "feed" | "templates" | "policies" | "providers" | "logs" | "settings";
+const PAGE_SIZE = 25;
+const TABS: { key: Tab; label: string; icon: React.ReactNode; description: string }[] = [
+  { key: "feed", label: "Admin inbox", icon: <LayoutList size={15}/>, description: "Alerts addressed to your administrator account" },
+  { key: "templates", label: "Templates", icon: <FileText size={15}/>, description: "Copy used by the live outbox pipeline" },
+  { key: "policies", label: "Event policies", icon: <Route size={15}/>, description: "Versioned delivery and recipient rules" },
+  { key: "providers", label: "Channels", icon: <MailCheck size={15}/>, description: "Real provider connectivity and health" },
+  { key: "logs", label: "Delivery logs", icon: <Activity size={15}/>, description: "Trace, retry, and cancel queued deliveries" },
+  { key: "settings", label: "My alerts", icon: <Settings2 size={15}/>, description: "Personal preferences for admin-directed events" },
 ];
+const SEVERITY_VARIANT: Record<string, "danger" | "warning" | "success" | "muted"> = { critical: "danger", high: "danger", warning: "warning", medium: "warning", success: "success", low: "muted", info: "muted" };
 
-// Curated set of admin-relevant notification events. Toggling a channel writes a
-// per-(event, channel) preference; the key matches what the backend fires.
-const EVENT_GROUPS: { group: string; events: { key: string; label: string }[] }[] = [
-  { group: "Complaints & Disputes", events: [
-    { key: "complaint.filed",                 label: "New complaint filed" },
-    { key: "complaint.sla.escalated",         label: "Complaint SLA escalated" },
-    { key: "complaint.ai_settlement.escalated", label: "AI settlement escalated to admin" },
-    { key: "complaint.settlement_proposed",   label: "Settlement proposed" },
-  ]},
-  { group: "Providers & Onboarding", events: [
-    { key: "tenant.activated",     label: "Provider activated" },
-    { key: "tenant.onboarding",    label: "New onboarding request" },
-  ]},
-  { group: "Finance", events: [
-    { key: "wallet.low_balance",   label: "Provider wallet low balance" },
-    { key: "deposit.refund",       label: "Security deposit refunded" },
-    { key: "topup.credited",       label: "Credit top-up received" },
-  ]},
-  { group: "Jobs & Bookings", events: [
-    { key: "booking.confirmed",    label: "Booking confirmed" },
-    { key: "job.completed",        label: "Job completed" },
-  ]},
-];
-
-// ── Settings tab (was a separate /admin/notifications/settings page +
-// nav item, folded in here 2026-08-05 at explicit user request). ──────────
-function NotificationSettingsPanel() {
-  const prefs = useApi(useCallback(() => sprint27AdminApi.getPreferences(), []), []);
-  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const rows = prefs.data ?? [];
-  const prefMap: Record<string, boolean> = {};
-  for (const p of rows) prefMap[`${p.event_key}::${p.channel}`] = p.is_enabled;
-
-  const isOn = (event: string, channel: string) => {
-    const k = `${event}::${channel}`;
-    if (k in overrides) return overrides[k];
-    if (k in prefMap) return prefMap[k];
-    return true; // no preference row = default enabled
-  };
-
-  const toggle = async (event: string, channel: string) => {
-    const k = `${event}::${channel}`;
-    const next = !isOn(event, channel);
-    setOverrides(o => ({ ...o, [k]: next }));
-    setSavingKey(k); setError(null);
-    try {
-      await sprint27AdminApi.updatePreference(event, channel, next);
-    } catch (e) {
-      setOverrides(o => ({ ...o, [k]: !next })); // revert on failure
-      setError(e instanceof Error ? e.message : "Could not save preference.");
-    } finally {
-      setSavingKey(null);
-    }
-  };
-
-  return (
-    <RequirePermission requiredPermission="" parentLabel="Settings">
-      {prefs.loading ? <Spinner /> : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-            Choose which channels you receive each notification on. An unset toggle uses the platform default (on).
-          </p>
-          {error && <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>}
-          {EVENT_GROUPS.map(g => (
-            <Card key={g.group} padding={0}>
-              <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)",
-                fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-                {g.group}
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ textAlign: "left" }}>
-                      <th style={{ padding: "10px 16px", color: "var(--text-tertiary)", fontWeight: 600 }}>Event</th>
-                      {CHANNELS.map(c => (
-                        <th key={c.key} style={{ padding: "10px 12px", textAlign: "center",
-                          color: "var(--text-tertiary)", fontWeight: 600 }}>{c.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {g.events.map(ev => (
-                      <tr key={ev.key} style={{ borderTop: "1px solid var(--border)" }}>
-                        <td style={{ padding: "11px 16px", color: "var(--text-primary)" }}>{ev.label}</td>
-                        {CHANNELS.map(c => {
-                          const on = isOn(ev.key, c.key);
-                          const k = `${ev.key}::${c.key}`;
-                          return (
-                            <td key={c.key} style={{ padding: "8px 12px", textAlign: "center" }}>
-                              <button
-                                role="switch" aria-checked={on}
-                                disabled={savingKey === k}
-                                onClick={() => toggle(ev.key, c.key)}
-                                title={on ? "On" : "Off"}
-                                style={{
-                                  width: 38, height: 22, borderRadius: 999, border: "none",
-                                  cursor: "pointer", position: "relative", verticalAlign: "middle",
-                                  background: on ? "var(--accent)" : "var(--surface-sunken, #d0d0d0)",
-                                  opacity: savingKey === k ? 0.5 : 1, transition: "background 0.15s",
-                                }}>
-                                <span style={{
-                                  position: "absolute", top: 2, left: on ? 18 : 2, width: 18, height: 18,
-                                  borderRadius: "50%", background: "#fff", transition: "left 0.15s",
-                                  boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                }} />
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            Changes save automatically. <Badge variant="muted">in-app</Badge> notifications also appear in the bell.
-          </p>
-        </div>
-      )}
-    </RequirePermission>
-  );
+function useDebounced(value: string, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => { const id = setTimeout(() => setDebounced(value), delay); return () => clearTimeout(id); }, [value, delay]);
+  return debounced;
 }
 
-const SEVERITY_VARIANT: Record<string, "danger" | "warning" | "success" | "muted"> = {
-  critical: "danger", high: "danger", medium: "warning", low: "muted", info: "muted",
-};
+function Toggle({ checked, disabled, busy, label, onChange }: { checked: boolean; disabled?: boolean; busy?: boolean; label: string; onChange: () => void }) {
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled || busy} onClick={onChange} className="nc-switch" data-on={checked ? "true" : "false"} title={disabled ? label : checked ? "Disable" : "Enable"}><span/></button>;
+}
+
+function NotificationSettingsPanel() {
+  const catalog = useApi(useCallback(() => sprint27AdminApi.getPreferenceCatalog(), []), []);
+  const [query, setQuery] = useState(""); const [source, setSource] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
+  const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const events = useMemo(() => { const q = query.trim().toLowerCase(); return (catalog.data?.items ?? []).filter(event => (!source || event.source_engine === source) && (!q || event.event_name.toLowerCase().includes(q) || event.event_key.toLowerCase().includes(q))); }, [catalog.data, query, source]);
+  const sources = Array.from(new Set((catalog.data?.items ?? []).map(e => e.source_engine))).sort();
+  const providers = catalog.data?.providers ?? []; const liveChannels = providers.filter(p => p.configured).length;
+  async function toggle(event: NotificationPreferenceEvent, channel: string, current: boolean) {
+    const key = `${event.event_key}::${channel}`; const next = !current;
+    setOptimistic(v => ({ ...v, [key]: next })); setSaving(key); setMessage(null);
+    try { await sprint27AdminApi.updatePreference(event.event_key, channel, next); setMessage({ ok: true, text: `${event.event_name} ${channel.replace("_", "-")} alerts ${next ? "enabled" : "disabled"}.` }); catalog.refetch(); }
+    catch (error) { setOptimistic(v => { const copy = { ...v }; delete copy[key]; return copy; }); setMessage({ ok: false, text: error instanceof Error ? error.message : "Preference could not be saved." }); }
+    finally { setSaving(null); }
+  }
+  if (catalog.loading) return <div className="nc-centered"><Spinner/></div>;
+  if (catalog.error) return <EmptyState title="Preferences are unavailable" description={`${catalog.error}${catalog.requestId ? ` · ${catalog.requestId}` : ""}`} action={<Btn size="sm" onClick={catalog.refetch}>Retry</Btn>}/>;
+  return <div className="nc-stack">
+    <div className="nc-settings-hero"><div><span className="nc-eyebrow">PERSONAL DELIVERY CONTROL</span><h2>Administrator alert preferences</h2><p>Only events that can actually notify an administrator are listed. Mandatory alerts remain locked on.</p></div><div className="nc-health-chip"><strong>{liveChannels}</strong><span>of {providers.length} channels live</span></div></div>
+    {message && <div className={`nc-message ${message.ok ? "success" : "danger"}`}>{message.text}</div>}
+    <Card padding={0}><div className="nc-filterbar"><div className="nc-search"><Search size={15}/><Input placeholder="Search registered admin events" value={query} onChange={setQuery}/></div><Select value={source} onChange={setSource} options={[{ value: "", label: "All source engines" }, ...sources.map(v => ({ value: v, label: v.replace(/_/g, " ") }))]}/><div className="nc-legend"><span><i className="live"/>Available</span><span><i/>Unavailable</span><span><i className="locked"/>Mandatory</span></div></div>
+      {events.length === 0 ? <EmptyState title="No matching admin events" description="Try another event name or source engine."/> : <div className="nc-pref-table-wrap"><table className="nc-table nc-pref-table"><thead><tr><th>Event</th>{providers.map(p => <th key={p.channel} className="center"><span>{p.channel.replace("_", "-")}</span><small className={p.configured ? "ok" : "off"}>{p.configured ? "LIVE" : "NOT CONNECTED"}</small></th>)}</tr></thead><tbody>{events.map(event => <tr key={event.event_key}><td><div className="nc-event-name">{event.event_name}{event.is_mandatory && <Badge variant="warning" size="sm">Mandatory</Badge>}</div><code>{event.event_key}</code><span className="nc-source">{event.source_engine.replace(/_/g, " ")}{event.vertical_key ? ` · ${event.vertical_key.replace(/_/g, " ")}` : " · global"}</span></td>{event.channels.map(channel => { const key = `${event.event_key}::${channel.channel}`; const on = key in optimistic ? optimistic[key] : channel.effective_enabled; const title = channel.locked_reason ?? `${event.event_name} via ${channel.channel}`; return <td key={channel.channel} className="center"><Toggle checked={on} disabled={!channel.configurable} busy={saving === key} label={title} onChange={() => toggle(event, channel.channel, on)}/><small className="nc-cell-note">{channel.configurable ? (channel.explicit_value === null ? "Platform default" : "Custom") : channel.locked_reason ?? channel.provider_state}</small></td>; })}</tr>)}</tbody></table></div>}
+    </Card>
+    <div className="nc-callout"><CircleAlert size={17}/><div><strong>Why most channels are unavailable</strong><p>Email, SMS, WhatsApp, and push are not connected to this outbox runtime. They are intentionally disabled so an administrator cannot save a preference the system cannot deliver.</p></div></div>
+  </div>;
+}
 
 export default function NotificationCenterPage() {
-  const [tab, setTab] = useState<"feed" | "templates" | "policies" | "providers" | "logs" | "settings">("feed");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<InAppNotification | null>(null);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-
-  const notify = (msg: string, ok = true) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const feed = useApi(useCallback(() =>
-    sprint27AdminApi.listNotifications({
-      read_status: statusFilter || undefined,
-      limit: 100,
-    }), [statusFilter]));
-
-  const unreadCountApi = useApi(useCallback(() =>
-    sprint27AdminApi.getUnreadCount(), []));
-
-  const markReadAction = useAction(useCallback((id: string) =>
-    sprint27AdminApi.markRead(id), []));
-
-  const markAllReadAction = useAction(useCallback(() =>
-    sprint27AdminApi.markAllRead(), []));
-
-  async function handleMarkRead(id: string) {
-    const res = await markReadAction.execute(id);
-    if (res) { feed.refetch(); unreadCountApi.refetch(); notify("Notification marked as read."); }
-  }
-
-  async function handleMarkAllRead() {
-    const res = await markAllReadAction.execute();
-    if (res) { feed.refetch(); unreadCountApi.refetch(); notify(`Marked ${res.marked_read} notifications as read.`); }
-  }
-
-  const items: InAppNotification[] = (feed.data?.items ?? []).filter(n => {
-    if (typeFilter && !n.notification_type.includes(typeFilter)) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const total = feed.data?.total ?? 0;
-  const unread = unreadCountApi.data?.unread_count ?? 0;
-  const failed = items.filter(n => n.severity === "critical" || n.severity === "high").length;
-  const delivered = items.filter(n => n.read_status === "read").length;
-
-  return (
-    <AdminLayout activeNav="notifications">
-      <style>{`
-        .nc-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-        .nc-kpi-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
-        .nc-kpi-card.accent { border-top: 3px solid var(--brand); }
-        .nc-kpi-card.danger { border-top: 3px solid var(--danger); }
-        .nc-kpi-value { font-size: 28px; font-weight: 800; color: var(--text-primary); }
-        .nc-kpi-value.danger { color: var(--danger-text); }
-        .nc-kpi-label { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
-        .nc-toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-        .nc-toolbar-search { flex: 1 1 220px; }
-        .nc-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-        .nc-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 12px; align-items: center;
-          padding: 14px 18px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
-        .nc-row:last-child { border-bottom: none; }
-        .nc-row:hover { background: var(--surface-hover, var(--surface-sunken)); }
-        .nc-row.unread { background: var(--brand-bg, rgba(0,80,255,.04)); font-weight: 600; }
-        .nc-col-header { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 12px;
-          padding: 10px 18px; background: var(--surface-sunken); border-bottom: 1px solid var(--border);
-          font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .05em; }
-        .nc-detail-field { margin-bottom: 12px; }
-        .nc-detail-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
-        .nc-detail-value { font-size: 13px; color: var(--text-primary); }
-        @media (max-width: 768px) {
-          .nc-kpi-grid { grid-template-columns: repeat(2,1fr); }
-          .nc-row, .nc-col-header { grid-template-columns: 1fr auto; }
-          .nc-row > *:nth-child(2), .nc-row > *:nth-child(3), .nc-row > *:nth-child(4),
-          .nc-col-header > *:nth-child(2), .nc-col-header > *:nth-child(3), .nc-col-header > *:nth-child(4) { display: none; }
-        }
-      `}</style>
-
-      <SectionHeader
-        title="Notification Center"
-        subtitle="Real-time feed of platform, tenant, and system notifications."
-        actions={tab === "feed" ? (
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="secondary" onClick={handleMarkAllRead} loading={markAllReadAction.loading}>
-              <CheckCheck size={14} style={{ marginRight: 4 }}/> Mark All Read
-            </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => { feed.refetch(); unreadCountApi.refetch(); }}>
-              <RefreshCw size={14}/>
-            </Btn>
-          </div>
-        ) : undefined}
-      />
-
-      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 20, overflowX: "auto" }}>
-        {([
-          ["feed", "Feed"], ["templates", "Templates"], ["policies", "Event Policies"],
-          ["providers", "Delivery Providers"], ["logs", "Logs & Failures"], ["settings", "Settings"],
-        ] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            style={{ padding: "10px 16px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
-              borderBottom: tab === key ? "2px solid var(--brand)" : "2px solid transparent",
-              color: tab === key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-            {key === "settings" && <Settings size={13} />} {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "templates" && <NotificationTemplatesContent />}
-      {tab === "policies" && <EventPoliciesPanel />}
-      {tab === "providers" && <DeliveryProvidersPanel />}
-      {tab === "logs" && <LogsFailuresPanel />}
-      {tab === "settings" && <NotificationSettingsPanel />}
-
-      {tab === "feed" && <>
-      {toast && (
-        <div style={{ padding: "10px 16px", marginBottom: 16, borderRadius: 10,
-          background: toast.ok ? "var(--success-bg)" : "var(--danger-bg)",
-          border: `1px solid ${toast.ok ? "var(--success-border)" : "var(--danger-border)"}`,
-          color: toast.ok ? "var(--success-text)" : "var(--danger-text)", fontSize: 13 }}>
-          {toast.msg}
-        </div>
-      )}
-
-      {/* KPI cards */}
-      <div className="nc-kpi-grid">
-        {feed.loading ? [...Array(4)].map((_, i) => <Skeleton key={i} height={90} style={{ borderRadius: 14 }}/>) : <>
-          <div className="nc-kpi-card">
-            <div className="nc-kpi-value">{total}</div>
-            <div className="nc-kpi-label">Total</div>
-          </div>
-          <div className={`nc-kpi-card${unread > 0 ? " accent" : ""}`}>
-            <div className="nc-kpi-value">{unread}</div>
-            <div className="nc-kpi-label">Unread</div>
-          </div>
-          <div className={`nc-kpi-card${failed > 0 ? " danger" : ""}`}>
-            <div className={`nc-kpi-value${failed > 0 ? " danger" : ""}`}>{failed}</div>
-            <div className="nc-kpi-label">High/Critical</div>
-          </div>
-          <div className="nc-kpi-card">
-            <div className="nc-kpi-value">{delivered}</div>
-            <div className="nc-kpi-label">Read</div>
-          </div>
-        </>}
-      </div>
-
-      {/* Toolbar */}
-      <div className="nc-toolbar">
-        <div className="nc-toolbar-search">
-          <Input placeholder="Search notifications…" value={search} onChange={setSearch}/>
-        </div>
-        <Select
-          value={statusFilter}
-          onChange={setStatusFilter}
-          placeholder="Status"
-          options={[
-            { value: "", label: "All Status" },
-            { value: "unread", label: "Unread" },
-            { value: "read", label: "Read" },
-          ]}
-        />
-        <Select
-          value={typeFilter}
-          onChange={setTypeFilter}
-          placeholder="Type"
-          options={[
-            { value: "", label: "All Types" },
-            { value: "booking", label: "Booking" },
-            { value: "payment", label: "Payment" },
-            { value: "complaint", label: "Complaint" },
-            { value: "tenant", label: "Tenant" },
-            { value: "security", label: "Security" },
-            { value: "system", label: "System" },
-          ]}
-        />
-      </div>
-
-      {/* Notification list */}
-      {feed.loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...Array(6)].map((_, i) => <Skeleton key={i} height={56}/>)}
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState
-          title="No notifications yet"
-          description="No notifications yet. System and tenant alerts will appear here."
-          icon={<Bell size={40} style={{ color: "var(--text-tertiary)" }}/>}
-        />
-      ) : (
-        <div className="nc-list">
-          <div className="nc-col-header">
-            <span>Notification</span>
-            <span>Type</span>
-            <span>Severity</span>
-            <span>Created</span>
-            <span>Actions</span>
-          </div>
-          {items.map(n => (
-            <div
-              key={n.id}
-              className={`nc-row${n.read_status === "unread" ? " unread" : ""}`}
-              onClick={() => setSelected(n)}
-            >
-              <div>
-                <div style={{ fontSize: 13, fontWeight: n.read_status === "unread" ? 700 : 500, color: "var(--text-primary)", marginBottom: 2 }}>
-                  {n.title}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>
-                  {n.body}
-                </div>
-              </div>
-              <div>
-                <Badge variant="muted">{n.notification_type.replace(/_/g, " ")}</Badge>
-              </div>
-              <div>
-                <Badge variant={SEVERITY_VARIANT[n.severity] ?? "muted"}>{n.severity}</Badge>
-              </div>
-              <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                {new Date(n.created_at).toLocaleString()}
-              </div>
-              <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
-                <Btn size="xs" variant="ghost" onClick={() => setSelected(n)}><Eye size={12}/></Btn>
-                {n.read_status === "unread" && (
-                  <Btn size="xs" variant="secondary" loading={markReadAction.loading}
-                    onClick={() => handleMarkRead(n.id)}>Read</Btn>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Detail modal */}
-      {selected && (
-        <Modal open onClose={() => setSelected(null)} title={selected.title} size="md">
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Badge variant={SEVERITY_VARIANT[selected.severity] ?? "muted"}>{selected.severity}</Badge>
-              <Badge variant={selected.read_status === "unread" ? "warning" : "success"}>{selected.read_status}</Badge>
-              <Badge variant="muted">{selected.notification_type.replace(/_/g, " ")}</Badge>
-            </div>
-
-            <div className="nc-detail-field">
-              <div className="nc-detail-label">Message</div>
-              <div className="nc-detail-value" style={{ padding: "12px 14px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", whiteSpace: "pre-wrap" }}>
-                {selected.body}
-              </div>
-            </div>
-
-            {selected.action_url && (
-              <div className="nc-detail-field">
-                <div className="nc-detail-label">Action</div>
-                <Link href={selected.action_url} style={{ color: "var(--brand)", fontSize: 13 }}>
-                  {selected.action_label ?? selected.action_url}
-                </Link>
-              </div>
-            )}
-
-            {selected.source_record_type && (
-              <div className="nc-detail-field">
-                <div className="nc-detail-label">Related Record</div>
-                <div className="nc-detail-value">{selected.source_record_type} — {selected.source_record_id}</div>
-              </div>
-            )}
-
-            <div className="nc-detail-field">
-              <div className="nc-detail-label">Created</div>
-              <div className="nc-detail-value">{new Date(selected.created_at).toLocaleString()}</div>
-            </div>
-
-            {selected.read_at && (
-              <div className="nc-detail-field">
-                <div className="nc-detail-label">Read At</div>
-                <div className="nc-detail-value">{new Date(selected.read_at).toLocaleString()}</div>
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-              {selected.read_status === "unread" && (
-                <Btn size="sm" variant="secondary" loading={markReadAction.loading}
-                  onClick={() => { handleMarkRead(selected.id); setSelected(null); }}>
-                  Mark as Read
-                </Btn>
-              )}
-              <Btn size="sm" variant="ghost" onClick={() => setSelected(null)}>Close</Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
-      </>}
-    </AdminLayout>
-  );
+  const [tab, setTabState] = useState<Tab>("feed"); const [status, setStatus] = useState(""); const [severity, setSeverity] = useState(""); const [type, setType] = useState(""); const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounced(search); const [page, setPage] = useState(1); const [selected, setSelected] = useState<InAppNotification | null>(null); const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => { const requested = new URLSearchParams(window.location.search).get("tab") as Tab | null; if (requested && TABS.some(t => t.key === requested)) setTabState(requested); }, []);
+  function setTab(next: Tab) { setTabState(next); const url = new URL(window.location.href); url.searchParams.set("tab", next); window.history.replaceState({}, "", url); }
+  useEffect(() => setPage(1), [status, severity, type, debouncedSearch]);
+  const feed = useApi(useCallback(() => sprint27AdminApi.listNotifications({ read_status: status || undefined, notification_type: type || undefined, severity: severity || undefined, search: debouncedSearch || undefined, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }), [status, severity, type, debouncedSearch, page]));
+  const summary = useApi(useCallback(() => sprint27AdminApi.getNotificationSummary(), []), []);
+  const markRead = useAction((id: string) => sprint27AdminApi.markRead(id)); const markAll = useAction(() => sprint27AdminApi.markAllRead());
+  function notify(text: string) { setToast(text); setTimeout(() => setToast(null), 3200); }
+  async function handleMarkRead(id: string) { const result = await markRead.execute(id); if (result) { feed.refetch(); summary.refetch(); notify("Notification marked as read."); } }
+  async function handleMarkAll() { const result = await markAll.execute(); if (result) { feed.refetch(); summary.refetch(); notify(`${result.marked_read} notifications marked as read.`); } }
+  const active = TABS.find(t => t.key === tab)!; const items = feed.data?.items ?? [];
+  return <AdminLayout activeNav="notifications"><style>{`
+    .nc-shell{--nc-soft:color-mix(in srgb,var(--brand) 7%,var(--surface));max-width:1680px;margin:0 auto}.nc-stack{display:flex;flex-direction:column;gap:16px}.nc-centered{min-height:240px;display:grid;place-items:center}.nc-eyebrow{font-size:10px;letter-spacing:.14em;font-weight:800;color:var(--brand)}
+    .nc-tabs{display:flex;gap:6px;padding:6px;border:1px solid var(--border);background:var(--surface-sunken);border-radius:14px;overflow:auto;margin:4px 0 22px}.nc-tab{display:flex;align-items:center;gap:8px;white-space:nowrap;padding:10px 13px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--text-secondary);font:600 12px/1 inherit;cursor:pointer}.nc-tab:hover{color:var(--text-primary);background:var(--surface)}.nc-tab.active{color:var(--text-primary);background:var(--surface);border-color:var(--border);box-shadow:var(--shadow-sm)}
+    .nc-context{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-10px 2px 18px}.nc-context p{margin:0;color:var(--text-tertiary);font-size:12px}.nc-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.nc-kpi{padding:17px 18px;border:1px solid var(--border);border-radius:13px;background:var(--surface);position:relative;overflow:hidden}.nc-kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-strong)}.nc-kpi.brand:before{background:var(--brand)}.nc-kpi.danger:before{background:var(--danger)}.nc-kpi strong{font-size:27px;line-height:1;color:var(--text-primary)}.nc-kpi span{display:block;margin-top:7px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);font-weight:700}
+    .nc-filterbar{display:flex;align-items:center;gap:9px;padding:13px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}.nc-search{position:relative;display:flex;align-items:center;flex:1 1 260px}.nc-search>svg{position:absolute;left:11px;z-index:2;color:var(--text-tertiary)}.nc-search input{padding-left:34px!important}.nc-legend{display:flex;align-items:center;gap:12px;margin-left:auto;font-size:11px;color:var(--text-tertiary)}.nc-legend span{display:flex;align-items:center;gap:5px}.nc-legend i{width:7px;height:7px;border-radius:50%;background:var(--text-tertiary)}.nc-legend i.live{background:var(--success)}.nc-legend i.locked{background:var(--warning)}
+    .nc-table{width:100%;border-collapse:collapse;font-size:12px}.nc-table th{padding:10px 14px;background:var(--surface-sunken);color:var(--text-tertiary);text-align:left;font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:800;border-bottom:1px solid var(--border)}.nc-table td{padding:12px 14px;border-bottom:1px solid var(--border);color:var(--text-secondary);vertical-align:middle}.nc-table tbody tr:last-child td{border-bottom:0}.nc-table tbody tr:hover{background:var(--surface-hover)}.nc-table .center{text-align:center}.nc-notif-title{font-weight:700;color:var(--text-primary);margin-bottom:3px}.nc-notif-body{max-width:560px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)}.nc-unread{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--brand);margin-right:8px}.nc-empty-error{padding:14px;color:var(--danger-text);font-size:12px}
+    .nc-settings-hero{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 24px;border:1px solid color-mix(in srgb,var(--brand) 24%,var(--border));border-radius:16px;background:linear-gradient(135deg,var(--nc-soft),var(--surface))}.nc-settings-hero h2{font-size:20px;margin:4px 0;color:var(--text-primary)}.nc-settings-hero p{font-size:12px;color:var(--text-secondary);margin:0}.nc-health-chip{display:flex;align-items:baseline;gap:7px;padding:11px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;white-space:nowrap}.nc-health-chip strong{font-size:22px;color:var(--success-text)}.nc-health-chip span{font-size:11px;color:var(--text-tertiary)}.nc-message{padding:10px 13px;border-radius:9px;font-size:12px}.nc-message.success{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success-text)}.nc-message.danger{background:var(--danger-bg);border:1px solid var(--danger-border);color:var(--danger-text)}
+    .nc-pref-table-wrap{overflow:auto}.nc-pref-table th:first-child,.nc-pref-table td:first-child{min-width:340px}.nc-pref-table th:not(:first-child),.nc-pref-table td:not(:first-child){min-width:118px}.nc-pref-table th small{display:block;margin-top:3px;font-size:8px;letter-spacing:.05em}.nc-pref-table th small.ok{color:var(--success-text)}.nc-pref-table th small.off{color:var(--text-tertiary)}.nc-event-name{display:flex;align-items:center;gap:7px;font-weight:700;color:var(--text-primary);margin-bottom:4px}.nc-pref-table code{display:block;font-size:10px;color:var(--text-tertiary)}.nc-source{display:block;margin-top:4px;font-size:10px;color:var(--text-tertiary);text-transform:capitalize}.nc-cell-note{display:block;margin-top:5px;font-size:9px;color:var(--text-tertiary)}
+    .nc-switch{width:40px;height:23px;padding:2px;border:0;border-radius:999px;background:var(--border-strong);cursor:pointer;transition:.16s;position:relative}.nc-switch span{display:block;width:19px;height:19px;border-radius:50%;background:white;box-shadow:0 1px 4px rgba(0,0,0,.25);transform:translateX(0);transition:.16s}.nc-switch[data-on=true]{background:var(--brand)}.nc-switch[data-on=true] span{transform:translateX(17px)}.nc-switch:disabled{cursor:not-allowed;opacity:.48}.nc-callout{display:flex;gap:11px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface-sunken);color:var(--text-secondary)}.nc-callout svg{color:var(--brand);flex:none}.nc-callout strong{font-size:12px;color:var(--text-primary)}.nc-callout p{font-size:11px;margin:3px 0 0;line-height:1.55}
+    @media(max-width:980px){.nc-kpis{grid-template-columns:repeat(2,1fr)}.nc-settings-hero{align-items:flex-start}.nc-table .optional-col{display:none}}@media(max-width:620px){.nc-kpis{grid-template-columns:1fr 1fr}.nc-settings-hero{flex-direction:column}.nc-legend{width:100%;margin-left:0}.nc-context{align-items:flex-start;flex-direction:column}}
+  `}</style><div className="nc-shell">
+    <SectionHeader title="Notification Center" subtitle="Operate admin alerts, runtime templates, delivery policy, providers, and failure recovery from one workspace." actions={<Btn size="sm" variant="secondary" onClick={() => { feed.refetch(); summary.refetch(); }}><RefreshCw size={14}/> Refresh</Btn>}/>
+    <nav className="nc-tabs" aria-label="Notification center sections">{TABS.map(item => <button key={item.key} className={`nc-tab ${tab === item.key ? "active" : ""}`} onClick={() => setTab(item.key)}>{item.icon}{item.label}</button>)}</nav>
+    <div className="nc-context"><p>{active.description}</p>{tab === "feed" && <Btn size="sm" variant="secondary" onClick={handleMarkAll} loading={markAll.loading}><CheckCheck size={14}/> Mark all read</Btn>}</div>
+    {tab === "templates" && <RuntimeTemplatesPanel/>}{tab === "policies" && <EventPoliciesPanel/>}{tab === "providers" && <DeliveryProvidersPanel/>}{tab === "logs" && <LogsFailuresPanel/>}{tab === "settings" && <NotificationSettingsPanel/>}
+    {tab === "feed" && <div className="nc-stack">{toast && <div className="nc-message success">{toast}</div>}<div className="nc-kpis">{summary.loading ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} height={84}/>) : <><div className="nc-kpi"><strong>{summary.data?.total ?? 0}</strong><span>Total addressed</span></div><div className="nc-kpi brand"><strong>{summary.data?.unread ?? 0}</strong><span>Unread</span></div><div className="nc-kpi danger"><strong>{summary.data?.high_priority ?? 0}</strong><span>High priority</span></div><div className="nc-kpi"><strong>{summary.data?.read ?? 0}</strong><span>Reviewed</span></div></>}</div>
+      <Card padding={0}><div className="nc-filterbar"><div className="nc-search"><Search size={15}/><Input placeholder="Search title or message" value={search} onChange={setSearch}/></div><Select value={status} onChange={setStatus} options={[{ value: "", label: "All states" }, { value: "unread", label: "Unread" }, { value: "read", label: "Read" }]}/><Select value={severity} onChange={setSeverity} options={[{ value: "", label: "All priorities" }, { value: "critical", label: "Critical" }, { value: "warning", label: "Warning" }, { value: "info", label: "Information" }, { value: "success", label: "Success" }]}/><Select value={type} onChange={setType} options={[{ value: "", label: "All event families" }, { value: "complaint.", label: "Complaints" }, { value: "review.", label: "Reviews" }, { value: "auth.", label: "Security" }, { value: "commission.", label: "Finance" }]}/>{(status || severity || type || search) && <Btn size="sm" variant="ghost" onClick={() => { setStatus(""); setSeverity(""); setType(""); setSearch(""); }}><SlidersHorizontal size={14}/> Clear</Btn>}</div>
+        {feed.error ? <div className="nc-empty-error">{feed.error}{feed.requestId ? ` · ${feed.requestId}` : ""}</div> : feed.loading ? <div style={{ padding: 18 }}>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} height={52} style={{ marginBottom: 8 }}/>)}</div> : items.length === 0 ? <EmptyState title={feed.data?.total === 0 && !search && !status && !severity && !type ? "No admin alerts have been generated" : "No alerts match these filters"} description={feed.data?.total === 0 ? "The inbox is connected and ready. Admin-directed events will appear here when they occur." : "Clear or change the filters to widen the result set."} icon={<Bell size={36}/>}/> : <div style={{ overflowX: "auto" }}><table className="nc-table"><thead><tr><th>Notification</th><th>Event</th><th>Priority</th><th className="optional-col">Vertical</th><th>Created</th><th></th></tr></thead><tbody>{items.map(row => <tr key={row.id} onClick={() => setSelected(row)} style={{ cursor: "pointer" }}><td><div className="nc-notif-title">{row.read_status === "unread" && <span className="nc-unread"/>}{row.title}</div><div className="nc-notif-body">{row.body}</div></td><td><Badge variant="muted">{row.notification_type.replace(/_/g, " ")}</Badge></td><td><Badge variant={SEVERITY_VARIANT[row.severity] ?? "muted"}>{row.severity}</Badge></td><td className="optional-col">{row.vertical_key?.replace(/_/g, " ") ?? "Global"}</td><td>{new Date(row.created_at).toLocaleString()}</td><td onClick={e => e.stopPropagation()}><Btn size="xs" variant="ghost" onClick={() => setSelected(row)}><Eye size={13}/></Btn>{row.read_status === "unread" && <Btn size="xs" variant="secondary" onClick={() => handleMarkRead(row.id)}>Read</Btn>}</td></tr>)}</tbody></table></div>}<Pagination page={page} total={feed.data?.total ?? 0} pageSize={PAGE_SIZE} onPage={setPage}/>
+      </Card></div>}
+    {selected && <Modal open onClose={() => setSelected(null)} title={selected.title} size="md"><div className="nc-stack"><div style={{ display: "flex", gap: 7 }}><Badge variant={SEVERITY_VARIANT[selected.severity] ?? "muted"}>{selected.severity}</Badge><Badge variant={selected.read_status === "unread" ? "warning" : "success"}>{selected.read_status}</Badge>{selected.is_mandatory && <Badge variant="warning">Mandatory</Badge>}</div><div className="nc-callout"><Bell size={17}/><div><strong>{selected.notification_type}</strong><p>{selected.body}</p></div></div><div style={{ fontSize: 12, color: "var(--text-secondary)" }}><strong>Created:</strong> {new Date(selected.created_at).toLocaleString()}<br/><strong>Scope:</strong> {selected.vertical_key ?? "Global"}{selected.source_record_type ? <><br/><strong>Related:</strong> {selected.source_record_type} · {selected.source_record_id}</> : null}</div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>{selected.action_url && <Link href={selected.action_url}><Btn size="sm">{selected.action_label ?? "Open record"}</Btn></Link>}{selected.read_status === "unread" && <Btn size="sm" variant="secondary" onClick={() => handleMarkRead(selected.id)}>Mark read</Btn>}<Btn size="sm" variant="ghost" onClick={() => setSelected(null)}>Close</Btn></div></div></Modal>}
+  </div></AdminLayout>;
 }

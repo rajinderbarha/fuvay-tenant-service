@@ -15,6 +15,7 @@ from app.engines.platform_notifications.notification_service import Notification
 from app.engines.platform_notifications.chat_service import ChatThreadService, ChatMessageService
 from app.engines.platform_notifications.audit_service import PlatformAuditLogService
 from app.engines.platform_notifications.constants import RECIP_PROVIDER, RECIP_STAFF, RECIP_TECHNICIAN
+from app.engines.platform_notifications.workspace_projection import get_workspace_summary, get_workspace_items, project_item
 
 # Slice 2F-18: `provider_*` routers are the tenant_owner/office-staff surface
 # (the same persona convention as every other `provider_router.py` in this
@@ -91,6 +92,18 @@ async def provider_list_notifications(
     return ok(result, _rid(r), "provider.notifications.list")
 
 
+@provider_notif_router.get("/workspace", summary="Provider notification workspace")
+async def provider_notification_workspace(
+    r: Request, limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0),
+    u: UserContext = Depends(_provider_guard), db: AsyncSession = Depends(get_db),
+):
+    user_id = uuid.UUID(u.user_id)
+    result = await get_workspace_items(db, user_id, limit=limit, offset=offset)
+    workspace = await get_workspace_summary(db, user_id)
+    workspace.update(result)
+    return ok(workspace, _rid(r), "provider.notifications.workspace")
+
+
 @provider_notif_router.get("/unread-count", summary="Provider unread notification count")
 async def provider_unread_count(
     r: Request,
@@ -149,6 +162,46 @@ async def provider_update_pref(
         db, uuid.UUID(u.user_id), _tid(u), body.event_key, body.channel, body.is_enabled,
     )
     return ok(pref.to_dict(), _rid(r), "provider.notifications.preferences.update")
+
+
+class BulkReadIn(BaseModel):
+    notification_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+
+@provider_notif_router.post("/mark-read-bulk", summary="Mark selected provider notifications read")
+async def provider_mark_read_bulk(
+    body: BulkReadIn, r: Request, u: UserContext = Depends(_provider_guard),
+    db: AsyncSession = Depends(get_db),
+):
+    count = await _notif_svc.mark_read_bulk(db, uuid.UUID(u.user_id), body.notification_ids)
+    return ok({"marked_read": count}, _rid(r), "provider.notifications.mark_read_bulk")
+
+
+@provider_notif_router.get("/{notification_id}", summary="Get provider notification")
+async def provider_get_notification(
+    notification_id: uuid.UUID, r: Request, u: UserContext = Depends(_provider_guard),
+    db: AsyncSession = Depends(get_db),
+):
+    notif = await _notif_svc._owned_notification(db, uuid.UUID(u.user_id), notification_id)
+    return ok(project_item(notif), _rid(r), "provider.notifications.get")
+
+
+@provider_notif_router.post("/{notification_id}/archive", summary="Archive provider notification")
+async def provider_archive_notification(
+    notification_id: uuid.UUID, r: Request, u: UserContext = Depends(_provider_guard),
+    db: AsyncSession = Depends(get_db),
+):
+    notif = await _notif_svc.archive_notification(db, uuid.UUID(u.user_id), notification_id)
+    return ok(project_item(notif), _rid(r), "provider.notifications.archive")
+
+
+@provider_notif_router.post("/{notification_id}/unarchive", summary="Restore provider notification")
+async def provider_unarchive_notification(
+    notification_id: uuid.UUID, r: Request, u: UserContext = Depends(_provider_guard),
+    db: AsyncSession = Depends(get_db),
+):
+    notif = await _notif_svc.unarchive_notification(db, uuid.UUID(u.user_id), notification_id)
+    return ok(project_item(notif), _rid(r), "provider.notifications.unarchive")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

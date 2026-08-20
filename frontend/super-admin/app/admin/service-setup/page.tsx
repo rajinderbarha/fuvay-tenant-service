@@ -10,7 +10,7 @@ import {
 import { useApi } from "../../../hooks/useApi";
 import {
   Wrench, History, Tag, FolderTree, FileStack,
-  Settings, HelpCircle, ArrowRight, CheckCircle2, Clock, AlertTriangle,
+  Settings, ArrowRight, CheckCircle2, Clock, AlertTriangle,
   RefreshCw, Sparkles,
 } from "lucide-react";
 
@@ -64,9 +64,11 @@ const MODULES: ModuleDef[] = [
   { key: "option-groups", label: "Option Groups", href: "/admin/service-setup/option-groups",
     icon: <Settings size={18}/>, description: "Grouping of service options (e.g. AC Tonnage, Vehicle Type) used to build provider-facing option pickers." },
   { key: "service-options", label: "Service Options", href: "/admin/service-setup/service-options",
-    icon: <Settings size={18}/>, description: "Individual selectable options a customer picks when booking, mapped to services and pricing tiers." },
-  { key: "issue-types", label: "Issue Types", href: "/admin/service-setup/issue-types",
-    icon: <HelpCircle size={18}/>, description: "Customer-facing issue/complaint categories mapped to services, driving diagnosis and severity flows." },
+    icon: <Settings size={18}/>, description: "Individual selectable options a customer picks when booking, mapped to services and job-type setup." },
+  // "Issue Types" removed from this hub at explicit user request. The
+  // /admin/service-setup/issue-types route and its /v1/admin/issue-types-v2
+  // API stay live (both verified 200) -- unlinked only, matching the rest of
+  // this menu cleanup.
 ];
 
 const STATUS_VARIANT: Record<string, "default"|"success"|"warning"|"danger"|"info"|"muted"> = {

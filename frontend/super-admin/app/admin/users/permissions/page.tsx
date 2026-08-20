@@ -4,7 +4,7 @@
  * Renders live permission constants from app/core/permissions.py::class P,
  * grouped and enriched with real role assignments.
  */
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, StatCard, SectionHeader, Skeleton, EmptyState, Input, Select } from "../../../../components/shared/ui";
 import { Key, Shield, Users, AlertTriangle } from "lucide-react";
@@ -31,16 +31,29 @@ export default function PermissionsPage() {
   const [riskFilter, setRiskFilter] = useState("");
   const [search, setSearch] = useState("");
   const [detailKey, setDetailKey] = useState<PermissionListItem | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const perms = useApi(useCallback(() => rolesPermissionsApi.listPermissions({
     module: moduleFilter || undefined, app_scope: scopeFilter || undefined,
     risk_level: riskFilter || undefined, search: search || undefined,
-  }), [moduleFilter, scopeFilter, riskFilter, search]), [moduleFilter, scopeFilter, riskFilter, search]);
+    page, limit: pageSize,
+  }), [moduleFilter, scopeFilter, riskFilter, search, page, pageSize]),
+    [moduleFilter, scopeFilter, riskFilter, search, page, pageSize]);
 
   const s = perms.data?.summary;
+  const meta = perms.data?.meta;
+  const total = meta?.total ?? s?.total_permissions ?? 0;
+  const totalPages = Math.max(1, meta?.total_pages ?? (Math.ceil(total / pageSize) || 1));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [moduleFilter, scopeFilter, riskFilter, search, pageSize]);
 
   return (
-    <AdminLayout activeNav="users">
+    <AdminLayout activeNav="permissions">
       <RequirePermission requiredPermission="platform:permissions:read" parentLabel="Dashboard">
       {detailKey && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200,
@@ -102,6 +115,14 @@ export default function PermissionsPage() {
           options={[{ value: "admin", label: "Admin" }, { value: "tenant", label: "Tenant" }, { value: "customer", label: "Customer" }]}/>
         <Select value={riskFilter} onChange={setRiskFilter} placeholder="All Risk Levels"
           options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]}/>
+        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+          style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
+            border: "1px solid var(--border)", background: "var(--surface-raised)",
+            color: "var(--text-primary)", fontSize: 12 }}>
+          {[25, 50, 100, 200].map(size => (
+            <option key={size} value={size}>{size} / page</option>
+          ))}
+        </select>
       </div>
 
       {perms.error ? (
@@ -137,6 +158,22 @@ export default function PermissionsPage() {
               ))}
             </tbody>
           </table>
+          <div style={{
+            padding: "10px 16px", borderTop: "1px solid var(--border)",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            gap: 12, flexWrap: "wrap", fontSize: 12, color: "var(--text-tertiary)",
+          }}>
+            <span>Showing {start}-{end} of {total.toLocaleString()} permissions</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                Previous
+              </Btn>
+              <span>Page {page} of {totalPages}</span>
+              <Btn size="xs" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                Next
+              </Btn>
+            </div>
+          </div>
         </Card>
       )}
       </RequirePermission>

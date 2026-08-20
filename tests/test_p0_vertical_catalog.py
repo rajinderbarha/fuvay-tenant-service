@@ -520,29 +520,16 @@ def test_verticals_page_has_admin_layout():
     assert "AdminLayout" in src
 
 
-def test_per_vertical_catalog_page_exists():
+def test_retired_per_vertical_catalog_page_removed():
     p = ROOT / "frontend" / "super-admin" / "app" / "admin" / "catalog" / "[vertical]" / "page.tsx"
-    assert p.exists(), "/admin/catalog/[vertical] page not found"
+    assert not p.exists(), "/admin/catalog/[vertical] is retired; use /admin/verticals/[key]"
 
 
-def test_per_vertical_catalog_page_uses_api():
-    src = (ROOT / "frontend" / "super-admin" / "app" / "admin" / "catalog" / "[vertical]" / "page.tsx").read_text()
-    assert "verticalCatalogApi" in src
-
-
-def test_per_vertical_catalog_page_has_module_cards():
-    src = (ROOT / "frontend" / "super-admin" / "app" / "admin" / "catalog" / "[vertical]" / "page.tsx").read_text()
-    assert "ModuleCard" in src or "module" in src.lower()
-
-
-def test_per_vertical_catalog_page_groups_modules_by_section():
-    src = (ROOT / "frontend" / "super-admin" / "app" / "admin" / "catalog" / "[vertical]" / "page.tsx").read_text()
-    assert "module_group" in src or "group" in src.lower()
-
-
-def test_per_vertical_catalog_page_has_admin_layout():
-    src = (ROOT / "frontend" / "super-admin" / "app" / "admin" / "catalog" / "[vertical]" / "page.tsx").read_text()
-    assert "AdminLayout" in src
+def test_vertical_detail_page_is_current_management_surface():
+    src = (ROOT / "frontend" / "super-admin" / "app" / "admin" / "verticals" / "[key]" / "page.tsx").read_text()
+    assert "Current admin workspaces" in src
+    assert "navigation_status === \"available\"" in src
+    assert "verticalCatalogApi.getCapabilities" in src
 
 
 # ══════════════════════════════════════════════════════════════════════════════

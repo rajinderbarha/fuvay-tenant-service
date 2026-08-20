@@ -292,8 +292,8 @@ def test_sg_page_has_retire_confirm():
 
 def test_sg_page_has_export_button():
     src = _read(SG_PAGE)
-    assert "Export" in src
-    assert "exportServiceGroups" in src or "exportAction" in src
+    assert "OperationsDirectoryControls" in src
+    assert 'resourceKey="admin_service_groups"' in src
 
 def test_sg_page_has_advanced_filters():
     src = _read(SG_PAGE)
@@ -327,14 +327,14 @@ def test_ms_page_has_summary_cards():
     assert "SummaryCard" in src
 
 def test_ms_page_no_direct_price_column():
-    """Price column must be removed; pricing readiness replaces it."""
+    """Price amounts are tenant-owned and do not belong in this directory."""
     src = _read(MS_PAGE)
     col_labels = re.findall(r'label:\s*["\']([^"\']+)["\']', src)
     assert "Price" not in col_labels, f"Direct 'Price' column must be removed from Master Services table. Found columns: {col_labels}"
 
-def test_ms_page_shows_pricing_readiness():
+def test_ms_page_shows_blueprint_readiness():
     src = _read(MS_PAGE)
-    assert "pricing_readiness" in src
+    assert "blueprint_ready" in src
 
 def test_ms_page_shows_runtime_readiness():
     src = _read(MS_PAGE)
@@ -356,7 +356,9 @@ def test_ms_page_has_labeled_action_menu():
 
 def test_ms_page_has_detail_drawer():
     src = _read(MS_PAGE)
-    assert "DetailDrawer" in src or "detailSvc" in src
+    detail = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "master-services", "[id]", "page.tsx"))
+    assert "/admin/master-services/${row.id}" in src
+    assert "getMasterServiceAudit" in detail
 
 def test_ms_page_has_activate_deactivate_actions():
     src = _read(MS_PAGE)
@@ -365,8 +367,8 @@ def test_ms_page_has_activate_deactivate_actions():
 
 def test_ms_page_has_export_button():
     src = _read(MS_PAGE)
-    assert "Export" in src
-    assert "exportMasterServices" in src or "exportAction" in src
+    assert "OperationsDirectoryControls" in src
+    assert 'resourceKey="admin_master_services"' in src
 
 def test_ms_page_create_form_submits_service_group_id():
     """Bug fix: service_group_id must be included in create payload."""

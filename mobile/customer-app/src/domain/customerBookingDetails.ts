@@ -3,6 +3,7 @@ import { BookingReceiptStage } from "./bookingStatus";
 import { ReceiptAddress, FinalizedPricingPresentation } from "./bookingReceipt";
 import { NotificationCapability } from "./notificationCapability";
 import { CustomerBookingEvent } from "./bookingActivity";
+import type { WorkflowStageDto } from "../api/contracts/customerBookings";
 
 /** Reuses `BookingReceiptStage` from the Confirmation Receipt phase as
  * `CustomerBookingStage` (spec section 3: "Reuse the Booking Confirmation
@@ -49,6 +50,9 @@ export interface CustomerActiveJob {
   scheduledTimeWindow: string | null;
   technician: CustomerJobTechnician | null;
   completion: CustomerJobCompletion | null;
+  warrantyDays: number | null;
+  warrantyExpiresAt: string | null;
+  warrantyActive: boolean;
 }
 
 export interface CustomerBookingDetails {
@@ -74,4 +78,8 @@ export interface CustomerBookingDetails {
   note: string | null;
   activity: CustomerBookingEvent[];
   notifications: NotificationCapability;
+  /** Customer-visible steps of this job's configured workflow, already
+   *  progress-annotated by the server. Empty when the job's workflow defines
+   *  no journey, in which case the fixed progress timeline is used. */
+  workflowStages?: WorkflowStageDto[];
 }

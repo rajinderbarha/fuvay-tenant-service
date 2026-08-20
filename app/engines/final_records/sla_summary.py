@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_SLA_MINUTES = 60
@@ -38,11 +38,22 @@ async def resolve_sla_minutes_for_jobs(db: AsyncSession, jobs: list) -> dict[str
     if not zipcodes and not cities:
         return {str(j.id): DEFAULT_SLA_MINUTES for j in jobs}
 
+    # Built as a list because a bare Python `False` cannot be the LEFT operand
+    # of `|` against a SQLAlchemy expression — `False | <clause>` raises
+    # TypeError, which meant every batch of jobs that had cities but no
+    # zipcodes (zipcode is nullable) crashed this call with a 500. Collecting
+    # the clauses that actually apply and OR-ing them keeps both one-sided
+    # cases working.
+    location_match = []
+    if zipcodes:
+        location_match.append(TierLocation.zipcode.in_(zipcodes))
+    if cities:
+        location_match.append(TierLocation.city.in_(cities))
+
     locs = (await db.execute(
         select(TierLocation).where(
             TierLocation.is_active.is_(True),
-            (TierLocation.zipcode.in_(zipcodes) if zipcodes else False) |
-            (TierLocation.city.in_(cities) if cities else False),
+            or_(*location_match),
         )
     )).scalars().all()
     if not locs:

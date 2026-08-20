@@ -86,6 +86,14 @@ class TestNavigationConsolidation:
         assert '"accounts"' in src and '"topups"' in src and '"ledger"' in src and '"adjustments"' in src
         assert "function CreditsTab" in src
 
+    def test_credit_subtabs_are_url_driven_and_accessible(self):
+        import pathlib
+        src = pathlib.Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
+        assert 'next.set("credits_tab", nextTab)' in src
+        assert 'router.replace(`/admin/home-services/finance?${next.toString()}`' in src
+        assert 'aria-label="Credits and top-ups sections"' in src
+        assert 'aria-selected={subTab === key}' in src
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. CANONICAL CREDIT ACCOUNT / DATA INTEGRITY
@@ -122,6 +130,35 @@ class TestCanonicalCreditAccount:
         rows = exact.json()["data"]["items"]
         assert rows
         assert all(row["tenant_id"] == tenant_id and row["job_id"] == entry["job_id"] for row in rows)
+
+    async def test_topup_and_ledger_enterprise_filters_keep_server_pagination(self, admin):
+        topups = await admin.get("/v1/admin/finance/home-services/topups", params={"page": 1, "page_size": 1})
+        assert topups.status_code == 200, topups.text
+        topup_data = topups.json()["data"]
+        assert topup_data["page"] == 1 and topup_data["page_size"] == 1
+        if topup_data["items"]:
+            row = topup_data["items"][0]
+            filtered = await admin.get("/v1/admin/finance/home-services/topups", params={
+                "q": row["order_ref"], "payment_status": row["payment_status"],
+                "date_from": row["created_at"][:10], "date_to": row["created_at"][:10],
+                "page": 1, "page_size": 1,
+            })
+            assert filtered.status_code == 200, filtered.text
+            assert filtered.json()["data"]["total"] >= 1
+
+        ledger = await admin.get("/v1/admin/finance/home-services/credit-ledger", params={"page": 1, "page_size": 1})
+        assert ledger.status_code == 200, ledger.text
+        ledger_data = ledger.json()["data"]
+        assert ledger_data["page"] == 1 and ledger_data["page_size"] == 1
+        if ledger_data["items"]:
+            row = ledger_data["items"][0]
+            filtered = await admin.get("/v1/admin/finance/home-services/credit-ledger", params={
+                "q": row["ledger_id"], "direction": row["direction"],
+                "event_type": row["event_type"], "date_from": row["created_at"][:10],
+                "date_to": row["created_at"][:10], "page": 1, "page_size": 1,
+            })
+            assert filtered.status_code == 200, filtered.text
+            assert filtered.json()["data"]["total"] == 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════

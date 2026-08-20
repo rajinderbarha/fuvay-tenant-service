@@ -252,6 +252,36 @@ def test_storage_extract_extension():
     assert svc._extract_extension("nodot", "image/jpeg") in (".jpeg", ".jpg")
 
 
+@pytest.mark.asyncio
+async def test_storage_routes_images_to_cloudinary_and_documents_to_override(monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.engines.media.storage import MediaStorageService, StoredFile
+
+    monkeypatch.setenv("FILE_STORAGE_DRIVER", "cloudinary")
+    monkeypatch.setenv("FILE_STORAGE_DOCUMENT_DRIVER", "local")
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    svc = MediaStorageService()
+
+    async def cloudinary(*args, **kwargs):
+        return StoredFile(
+            "cloudinary", "image-key", "bucket", "https://example.test/image",
+            "image.png", "sum",
+        )
+
+    monkeypatch.setattr(svc, "_store_cloudinary", cloudinary)
+    image = await svc.store_file(
+        b"image", "image.png", "image/png", "category_icon", "owner"
+    )
+    document = await svc.store_file(
+        b"pdf", "proof.pdf", "application/pdf", "provider_document", "owner"
+    )
+
+    assert image.storage_driver == "cloudinary"
+    assert document.storage_driver == "local"
+    get_settings.cache_clear()
+
+
 # ── 4. MediaAsset Model ───────────────────────────────────────────────────────
 
 def test_media_asset_model_fields():
@@ -373,7 +403,7 @@ def test_migration_049_adds_profile_photo_to_users():
 
 def test_config_has_storage_vars():
     from app.config import Settings
-    fields = ["FILE_STORAGE_DRIVER", "FILE_STORAGE_BUCKET", "FILE_STORAGE_ENDPOINT",
+    fields = ["FILE_STORAGE_DRIVER", "FILE_STORAGE_DOCUMENT_DRIVER", "FILE_STORAGE_BUCKET", "FILE_STORAGE_ENDPOINT",
               "FILE_STORAGE_ACCESS_KEY", "FILE_STORAGE_SECRET_KEY",
               "MAX_UPLOAD_SIZE_MB"]
     for f in fields:

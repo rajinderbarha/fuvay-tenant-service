@@ -221,8 +221,10 @@ class TestService:
         content = _read(SERVICE)
         assert "FinanceAuditLog" in content or "_audit(" in content
 
-    def test_execute_creates_wallet_transaction(self):
-        assert "WalletTransaction" in _read(SERVICE)
+    def test_execute_creates_canonical_usage_credit_ledger(self):
+        source = _read(SERVICE)
+        assert "UsageCreditLedger" in source
+        assert "WalletTransaction" not in source
 
     def test_execute_creates_deposit_transaction(self):
         assert "SecurityDepositTransaction" in _read(SERVICE)

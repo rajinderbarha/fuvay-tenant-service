@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Badge, Btn, StatCard, Modal, Skeleton,
@@ -53,6 +53,48 @@ const HEALTH_BAND_VARIANT: Record<string, "success" | "warning" | "danger"> = {
 const PRIORITY_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = {
   critical: "danger", high: "warning", medium: "info", low: "muted",
 };
+
+function Pager({
+  page, limit, total, onPage, onLimit,
+}: {
+  page: number;
+  limit: number;
+  total: number;
+  onPage: (page: number) => void;
+  onLimit: (limit: number) => void;
+}) {
+  const safeTotal = Math.max(0, total);
+  const totalPages = Math.max(1, Math.ceil(safeTotal / limit));
+  const start = safeTotal === 0 ? 0 : (page - 1) * limit + 1;
+  const end = Math.min(safeTotal, page * limit);
+
+  return (
+    <div style={{
+      padding: "10px 14px", borderTop: "1px solid var(--border)",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--text-tertiary)",
+    }}>
+      <span>Showing {start}-{end} of {safeTotal.toLocaleString()}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <select value={limit} onChange={e => onLimit(Number(e.target.value))}
+          style={{ padding: "6px 8px", borderRadius:"var(--radius-md)",
+            border: "1px solid var(--border)", background: "var(--surface-raised)",
+            color: "var(--text-primary)", fontSize: 11 }}>
+          {[25, 50, 100, 200].map(size => (
+            <option key={size} value={size}>{size} / page</option>
+          ))}
+        </select>
+        <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          Previous
+        </Btn>
+        <span>Page {page} of {totalPages}</span>
+        <Btn size="xs" variant="ghost" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
+          Next
+        </Btn>
+      </div>
+    </div>
+  );
+}
 
 // ── Request detail drawer ──────────────────────────────────────────────────────
 function RequestDetailDrawer({
@@ -362,6 +404,10 @@ export default function CompliancePage() {
     subject_type: "customer", request_type: "right_to_erasure",
     subject_id: "", subject_email: "", subject_name: "", reason: "",
   });
+  const [requestPage,     setRequestPage]     = useState(1);
+  const [requestPageSize, setRequestPageSize] = useState(50);
+  const [auditPage,       setAuditPage]       = useState(1);
+  const [auditPageSize,   setAuditPageSize]   = useState(100);
 
   // ── API calls ───────────────────────────────────────────────────────────────
   const summary = useApi(useCallback(() => complianceApi.enterpriseSummary(), []));
@@ -370,18 +416,29 @@ export default function CompliancePage() {
     status: statusFilter || undefined,
     sla_status: slaFilter || undefined,
     search: search || undefined,
-    limit: 50,
-  }), [typeFilter, statusFilter, slaFilter, search]));
+    page: requestPage,
+    limit: requestPageSize,
+  }), [typeFilter, statusFilter, slaFilter, search, requestPage, requestPageSize]));
   const consents   = useApi(useCallback(() => complianceApi.listConsents({ limit: 50 }),    []));
   const exports_   = useApi(useCallback(() => complianceApi.listExports(),                  []));
   const retention  = useApi(useCallback(() => complianceApi.listRetentionPolicies(),         []));
-  const auditLogs  = useApi(useCallback(() => complianceApi.listAuditTrail({ limit: 100 }), []));
+  const auditLogs  = useApi(useCallback(() => complianceApi.listAuditTrail({
+    page: auditPage, limit: auditPageSize,
+  }), [auditPage, auditPageSize]));
   const health     = useApi(useCallback(() => complianceApi.getHealth(),                    []));
   const actionQueue= useApi(useCallback(() => complianceApi.getActionQueue(50),              []));
   const legalHolds = useApi(useCallback(() => complianceApi.listLegalHolds(),                []));
 
   const s = summary.data;
   const h = health.data;
+
+  useEffect(() => {
+    setRequestPage(1);
+  }, [typeFilter, statusFilter, slaFilter, search, requestPageSize]);
+
+  useEffect(() => {
+    setAuditPage(1);
+  }, [auditPageSize]);
 
   // ── Legal hold apply form ─────────────────────────────────────────────────
   const [showHoldForm, setShowHoldForm] = useState(false);
@@ -902,12 +959,13 @@ export default function CompliancePage() {
                 </table>
               </div>
             )}
-            {(requests.data?.meta?.total ?? 0) > 0 && (
-              <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)",
-                fontSize: 11, color: "var(--text-tertiary)" }}>
-                {requests.data?.meta?.total} total requests
-              </div>
-            )}
+            <Pager
+              page={requestPage}
+              limit={requestPageSize}
+              total={requests.data?.meta?.total ?? 0}
+              onPage={setRequestPage}
+              onLimit={setRequestPageSize}
+            />
           </Card>
         </div>
       )}
@@ -1209,6 +1267,13 @@ export default function CompliancePage() {
               )}
             </div>
           )}
+          <Pager
+            page={auditPage}
+            limit={auditPageSize}
+            total={auditLogs.data?.meta?.total ?? 0}
+            onPage={setAuditPage}
+            onLimit={setAuditPageSize}
+          />
         </Card>
       )}
 

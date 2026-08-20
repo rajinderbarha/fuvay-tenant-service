@@ -209,6 +209,13 @@ class P:
     SUPPORT_ADMIN_INTERNAL_NOTE   = "support:admin:internal_note"
     SUPPORT_ADMIN_INCIDENT_MANAGE = "support:admin:incident_manage"
 
+    # ── Tenant AI Assistant ───────────────────────────────────────────────────
+    # ASSISTANT_USE is the tenant-side gate; the two admin permissions gate the
+    # configuration console, which is platform-side only.
+    ASSISTANT_USE              = "assistant:use"
+    ASSISTANT_ADMIN_VIEW       = "assistant:admin:view"
+    ASSISTANT_ADMIN_CONFIGURE  = "assistant:admin:configure"
+
     # ── Settings ──────────────────────────────────────────────────────────────
     SETTINGS_READ           = "settings:read"
     SETTINGS_WRITE          = "settings:write"
@@ -642,6 +649,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.SETTINGS_READ, P.SETTINGS_WRITE, P.SETTINGS_BRANDING,
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_VIEW_ALL,
         P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN, P.SUPPORT_INCIDENT_REPORT,
+        P.ASSISTANT_USE,
         # Service areas — own tenant only (service enforces tenant scoping)
         P.TENANT_SERVICE_AREA_READ, P.TENANT_SERVICE_AREA_CREATE,
         P.TENANT_SERVICE_AREA_UPDATE, P.TENANT_SERVICE_AREA_DELETE,
@@ -693,7 +701,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.TENANT_SERVICE_AREA_READ, # View (not edit) tenant's configured service areas
         P.RAG_QUERY,               # Query knowledge base mid-job
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
-        P.SUPPORT_INCIDENT_REPORT,
+        P.SUPPORT_INCIDENT_REPORT, P.ASSISTANT_USE,
     ],
 
     # "technician" is the role value actually seeded onto real staff/User rows
@@ -706,7 +714,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.INVENTORY_READ, P.BOOKING_READ, P.CHAT_READ, P.CHAT_WRITE, P.REVIEW_READ,
         P.NOTIFICATION_LOGS_READ, P.SETTINGS_READ, P.TENANT_SERVICE_AREA_READ, P.RAG_QUERY,
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
-        P.SUPPORT_INCIDENT_REPORT,
+        P.SUPPORT_INCIDENT_REPORT, P.ASSISTANT_USE,
     ],
 
     "customer": [
@@ -737,6 +745,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     # ── FINAL-L5-05L — canonical least-privilege platform Admin roles ──────────
     # None of these get P.ALL; super_admin remains the sole wildcard role.
     "admin_operations": [
+        P.ASSISTANT_ADMIN_VIEW, P.ASSISTANT_ADMIN_CONFIGURE,
         P.ADMIN_JOBS_READ, P.ADMIN_JOBS_REASSIGN, P.ADMIN_JOBS_STATUS_OVERRIDE,
         P.ADMIN_JOBS_FORCE_CLOSE, P.ADMIN_JOBS_VOID,
         P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ, P.FIELD_OPS_JOBS_EXPORT,
@@ -833,6 +842,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 
     "admin_readonly": [
+        P.ASSISTANT_ADMIN_VIEW,
         P.ADMIN_JOBS_READ, P.FIELD_OPS_JOBS_READ,
         P.TENANT_READ, P.TENANT_HEALTH_READ,
         P.STAFF_READ,

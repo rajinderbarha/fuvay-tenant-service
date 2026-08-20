@@ -110,4 +110,5 @@ def test_bug_fix_migration_108_adds_missing_updated_at_column():
 def test_bug_fix_workflow_mapping_status_endpoint_exists():
     assert "workflow-mapping-status" in WORKFLOW_ROUTER_SNIPPET
     assert "missing_mapping" in WORKFLOW_ROUTER_SNIPPET
-    assert '"/admin/workflows/templates"' in WORKFLOW_ROUTER_SNIPPET
+    assert "service_job_workflow" in WORKFLOW_ROUTER_SNIPPET
+    assert '"/admin/catalog-workspace?service_id=' in WORKFLOW_ROUTER_SNIPPET

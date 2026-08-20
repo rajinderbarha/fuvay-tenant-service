@@ -284,14 +284,14 @@ async def resolve_price_estimate(
 @router.post(
     "/{draft_id}/match-and-price",
     response_model=ApiResponse[dict],
-    summary="Backend selects the single best provider, then computes its price options",
+    summary="Backend selects the single best provider and resolves the booking price",
     description=(
-        "Provider-First Matching + Customer Price Choice: the backend runs the full "
+        "Provider-first matching: the backend runs the full "
         "eligibility gate (bookable, coverage, technician, availability, pricing, "
         "package, credits, deposit) over every candidate, scores them, and selects "
         "exactly ONE provider — the customer never sees or picks from a list. "
-        "Returns that provider's public info, its Low/Mid/High price options "
-        "(fee-inclusive floor), and a separate, non-authoritative area price "
+        "Returns that provider's public info, the single server-resolved price "
+        "contract, and a separate, non-authoritative area price "
         "comparison. Internal scoring is never included unless the caller has "
         "debug/admin permission."
     ),
@@ -321,12 +321,11 @@ async def match_and_price(
 @router.post(
     "/{draft_id}/confirm-price-choice",
     response_model=ApiResponse[dict],
-    summary="Customer chooses Low / Mid / High for the already-selected provider",
+    summary="Customer confirms the already-selected provider's fixed price",
     description=(
-        "Customer submits only a tier name ('low' | 'mid' | 'high') — never a raw "
-        "amount and never a provider. The backend resolves the exact stored "
-        "price_options value for that tier and stores it as the booking's "
-        "customer_offer, along with the selected-provider snapshot."
+        "Customer confirms price_tier='standard' only. Low/Mid/High tier "
+        "pricing has been retired; the backend stores the server-resolved "
+        "customer payable amount from the selected-provider snapshot."
     ),
 )
 async def confirm_price_choice(
@@ -338,7 +337,7 @@ async def confirm_price_choice(
     body        = await r.json() if r.headers.get("content-length", "0") != "0" else {}
     customer_id = uuid.UUID(user.user_id)
     result = await svc.confirm_price_choice(
-        draft_id=draft_id, price_tier=body["price_tier"], customer_id=customer_id
+        draft_id=draft_id, price_tier=body.get("price_tier", "standard"), customer_id=customer_id
     )
     return ok(result, _rid(r), "home_service_booking")
 

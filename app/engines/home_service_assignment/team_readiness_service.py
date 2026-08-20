@@ -54,7 +54,7 @@ async def compute_member_readiness(db: AsyncSession, tenant_id: uuid.UUID, membe
             "SELECT is_active FROM users WHERE id=:uid"
         ), {"uid": str(member["user_id"])})).fetchone()
         if user_row and not user_row.is_active:
-            return {"status": "access_disabled", "missing": ["reactivate_access"]}
+            return {"status": "invitation_pending", "missing": ["activate_invitation"]}
     elif member.get("email") or member.get("phone"):
         # Has contact info but no linked login yet and no login was ever
         # requested — not itself blocking (operational profile without
@@ -84,15 +84,66 @@ async def _validate_offering_ids(db: AsyncSession, tenant_id: uuid.UUID, offerin
 
 
 async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Batch readiness projection for the complete onboarding roster.
+
+    The former implementation called ``compute_member_readiness`` once per
+    member, issuing up to three queries per person. That made a simple setup
+    status request grow linearly with roster size. The same facts are loaded in
+    three bounded queries here and evaluated in memory.
+    """
     members_rows = (await db.execute(text(
         "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL"
     ), {"tid": str(tenant_id)})).fetchall()
     members = [dict(r._mapping) for r in members_rows]
 
+    enabled_offering_ids = {
+        str(r[0]) for r in (await db.execute(text(
+            "SELECT id::text FROM tenant_services WHERE tenant_id=:tid "
+            "AND is_enabled=true AND deleted_at IS NULL"
+        ), {"tid": str(tenant_id)})).fetchall()
+    }
+    scheduled_member_ids = {
+        str(r[0]) for r in (await db.execute(text(
+            "SELECT DISTINCT scope_id::text FROM provider_availability_rules "
+            "WHERE tenant_id=:tid AND scope_type='staff_member' "
+            "AND scope_id IS NOT NULL AND is_active=true"
+        ), {"tid": str(tenant_id)})).fetchall()
+    }
+    user_ids = [str(m["user_id"]) for m in members if m.get("user_id")]
+    user_active: dict[str, bool] = {}
+    if user_ids:
+        user_active = {
+            str(r.id): bool(r.is_active) for r in (await db.execute(text(
+                "SELECT id, is_active FROM users WHERE id::text = ANY(:ids)"
+            ), {"ids": user_ids})).fetchall()
+        }
+
     counts = {"total": len(members), "ready": 0, "needs_setup": 0, "invitation_pending": 0, "disabled": 0}
     per_member = {}
     for m in members:
-        readiness = await compute_member_readiness(db, tenant_id, m)
+        missing: list[str] = []
+        if m["status"] == "inactive":
+            readiness = {"status": "access_disabled", "missing": ["reactivate_access"]}
+        elif m.get("user_id") and not user_active.get(str(m["user_id"]), True):
+            readiness = {"status": "invitation_pending", "missing": ["activate_invitation"]}
+        else:
+            if not m.get("full_name") or not (m.get("phone") or m.get("email")):
+                missing.append("identity")
+            member_type = (m.get("member_type") or "").lower()
+            if member_type not in VALID_MEMBER_TYPES:
+                missing.append("role")
+            if member_type in TECHNICIAN_DESIGNATIONS:
+                assigned = {str(value) for value in (m.get("supported_offering_ids") or [])}
+                if not (assigned & enabled_offering_ids):
+                    missing.append("service_assignment")
+                if str(m["id"]) not in scheduled_member_ids:
+                    missing.append("availability")
+            if missing:
+                order = ["identity", "role", "service_assignment", "availability"]
+                headline = next((key for key in order if key in missing), missing[0])
+                readiness = {"status": f"needs_{headline}", "missing": missing}
+            else:
+                readiness = {"status": "ready", "missing": []}
         per_member[str(m["id"])] = readiness
         if readiness["status"] == "ready":
             counts["ready"] += 1
@@ -127,6 +178,7 @@ async def compute_service_coverage(db: AsyncSession, tenant_id: uuid.UUID) -> li
         "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL AND status='active'"
     ), {"tid": str(tenant_id)})).fetchall()
     members = [dict(r._mapping) for r in members_rows]
+    readiness_by_member = (await compute_team_summary(db, tenant_id))["per_member"]
 
     coverage = []
     for o in offerings:
@@ -139,7 +191,7 @@ async def compute_service_coverage(db: AsyncSession, tenant_id: uuid.UUID) -> li
             offering_ids = m.get("supported_offering_ids") or []
             if o.id not in offering_ids:
                 continue
-            readiness = await compute_member_readiness(db, tenant_id, m)
+            readiness = readiness_by_member.get(str(m["id"]), {"status": "needs_identity"})
             if readiness["status"] == "ready":
                 ready_count += 1
         coverage.append({"offering_id": o.id, "name": o.name, "ready_technician_count": ready_count})

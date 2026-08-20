@@ -5,6 +5,7 @@ import {
   Search, Info, ArrowRight, Tag, RefreshCw,
 } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
+import { ServiceRequirementsPanel } from "../../../../../../components/services/ServiceRequirementsPanel";
 import { Card, Btn, Badge, Skeleton, Input } from "../../../../../../components/shared/ui";
 import {
   homeServicesSetupApi, ServiceOSError,
@@ -72,17 +73,25 @@ function ServicesPricingPageContent() {
   const [defaultMax, setDefaultMax] = useState("");
   const [visitFee, setVisitFee] = useState("");
   const [emergencySurcharge, setEmergencySurcharge] = useState("");
+  const [warrantyDays, setWarrantyDays] = useState("5");
   const [toggling, setToggling] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
+  const [consultationFee, setConsultationFee] = useState("");
+  const [savingConsultationFee, setSavingConsultationFee] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([homeServicesSetupApi.listAvailable(), homeServicesSetupApi.listEnabled()])
-      .then(([a, e]) => {
+    Promise.all([
+      homeServicesSetupApi.listAvailable(),
+      homeServicesSetupApi.listEnabled(),
+      homeServicesSetupApi.getPricingPolicy(),
+    ])
+      .then(([a, e, policy]) => {
         setAvailable(a.services);
         setEnabledList(e.services);
+        setConsultationFee(policy.consultation_fee != null ? String(policy.consultation_fee) : "");
       })
       .catch((err: unknown) => setError(err instanceof ServiceOSError ? err.message : "We couldn't load your services catalog."))
       .finally(() => setLoading(false));
@@ -110,7 +119,7 @@ function ServicesPricingPageContent() {
 
   const enabledByMasterService = useMemo(() => {
     const map = new Map<string, TenantEnabledService>();
-    for (const e of enabledList) map.set(e.master_service_id, e);
+    for (const e of enabledList) map.set(`${e.master_service_id}:${e.job_type_id}`, e);
     return map;
   }, [enabledList]);
 
@@ -120,58 +129,89 @@ function ServicesPricingPageContent() {
   }, [groups, selectedGroupId]);
   useEffect(() => {
     const group = groups.find(g => g.id === selectedGroupId);
-    if (group && !group.services.some(s => s.service_id === selectedServiceId)) {
-      setSelectedServiceId(group.services[0]?.service_id ?? null);
+    if (group && !group.services.some(s => (s.offering_key ?? s.service_id) === selectedServiceId)) {
+      setSelectedServiceId(group.services[0]?.offering_key ?? group.services[0]?.service_id ?? null);
     }
   }, [selectedGroupId, groups, selectedServiceId]);
 
   const selectedGroup = groups.find(g => g.id === selectedGroupId) ?? null;
-  const selectedService = selectedGroup?.services.find(s => s.service_id === selectedServiceId) ?? null;
-  const enrolled = selectedService ? enabledByMasterService.get(selectedService.service_id) ?? null : null;
-  const isInspectionMode = selectedService?.pricing_model === "inspection_quote" || selectedService?.pricing_model === "quote";
+  const selectedService = selectedGroup?.services.find(s => (s.offering_key ?? s.service_id) === selectedServiceId) ?? null;
+  const enrolled = selectedService ? enabledByMasterService.get(`${selectedService.service_id}:${selectedService.job_type_id}`) ?? null : null;
+  const isInspectionMode = ["inspection_required", "inspection_quote", "visit_fee_plus_quote", "quote", "custom_quote"]
+    .includes(selectedService?.pricing_model || "");
 
   // Load type/brand detail whenever the enrolled tenant_service changes.
   useEffect(() => {
     setTypes(null); setBrands(null); setTypePricing(null); setBrandPricing(null); setBrandPricingByType({}); setBrandOverrideOpen({});
     if (!enrolled) {
-      setDefaultMin(""); setDefaultMax(""); setVisitFee(""); setEmergencySurcharge("");
+      setDefaultMin(""); setDefaultMax(""); setVisitFee(""); setEmergencySurcharge(""); setWarrantyDays("5");
       return;
     }
     setDefaultMin(enrolled.tenant_min_price != null ? String(enrolled.tenant_min_price) : "");
     setDefaultMax(enrolled.tenant_max_price != null ? String(enrolled.tenant_max_price) : "");
     setVisitFee(enrolled.tenant_visit_fee != null ? String(enrolled.tenant_visit_fee) : "");
     setEmergencySurcharge(enrolled.tenant_emergency_surcharge != null ? String(enrolled.tenant_emergency_surcharge) : "");
+    setWarrantyDays(String(enrolled.warranty_days ?? 5));
     setDetailLoading(true);
     const tsid = enrolled.tenant_service_id;
     Promise.all([
       enrolled.requires_type ? homeServicesSetupApi.getAvailableTypes(tsid) : Promise.resolve({ types: [] }),
       enrolled.requires_brand ? homeServicesSetupApi.getAvailableBrands(tsid) : Promise.resolve({ brands: [] }),
-      enrolled.requires_type ? homeServicesSetupApi.getTypePricing(tsid) : Promise.resolve({ types: [] }),
+      enrolled.requires_type && !isInspectionMode ? homeServicesSetupApi.getTypePricing(tsid) : Promise.resolve({ types: [] }),
       // Brand pricing must be scoped per type for type-required services
       // (the backend rejects a type-less brand override in that case) --
       // fetched below, once typePricing tells us which types are selected.
-      enrolled.requires_brand && !enrolled.requires_type ? homeServicesSetupApi.getBrandPricing(tsid) : Promise.resolve({ brands: [] }),
+      enrolled.requires_brand && !enrolled.requires_type && !isInspectionMode ? homeServicesSetupApi.getBrandPricing(tsid) : Promise.resolve({ brands: [] }),
     ])
       .then(async ([t, b, tp, bp]) => {
         setTypes(t.types); setBrands(b.brands);
         setTypePricing(tp.types); setBrandPricing(bp.brands);
-        if (enrolled.requires_brand && enrolled.requires_type && tp.types.length > 0) {
+        if (!isInspectionMode && enrolled.requires_brand && enrolled.requires_type && tp.types.length > 0) {
           await reloadBrandPricingByType(tsid, tp.types, b.brands);
         }
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        setTypes([]); setBrands([]); setTypePricing([]); setBrandPricing([]);
+        setError(err instanceof ServiceOSError
+          ? err.message
+          : "We couldn't load the Admin-approved Types and Brands for this service.");
+      })
       .finally(() => setDetailLoading(false));
-  }, [enrolled?.tenant_service_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enrolled?.tenant_service_id, isInspectionMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSaveConsultationFee() {
+    const fee = Number(consultationFee);
+    if (!Number.isFinite(fee) || fee <= 0) {
+      setError("Enter a consultation fee greater than zero.");
+      return;
+    }
+    setSavingConsultationFee(true);
+    setError(null);
+    try {
+      const policy = await homeServicesSetupApi.updatePricingPolicy({ consultation_fee: fee });
+      setConsultationFee(String(policy.consultation_fee ?? fee));
+    } catch (err) {
+      setError(err instanceof ServiceOSError ? err.message : "Could not save the consultation fee.");
+    } finally {
+      setSavingConsultationFee(false);
+    }
+  }
 
   async function handleToggleOffer(next: boolean) {
     if (!selectedService) return;
+    if (next && selectedService.admin_ready === false) {
+      setError(selectedService.admin_blockers?.[0]?.message || "This service is waiting for Admin to finish its booking workflow.");
+      return;
+    }
     setToggling(true);
     setError(null);
     try {
       if (next) {
-        await homeServicesSetupApi.enable({ master_service_id: selectedService.service_id });
+        if (!selectedService.job_type_id) throw new Error("This service has no job type configured.");
+        await homeServicesSetupApi.enable({ master_service_id: selectedService.service_id, job_type_id: selectedService.job_type_id });
       } else {
-        await homeServicesSetupApi.disable(selectedService.service_id);
+        if (!selectedService.job_type_id) throw new Error("This service has no job type configured.");
+        await homeServicesSetupApi.disable(selectedService.service_id, selectedService.job_type_id);
       }
       const [a, e] = await Promise.all([homeServicesSetupApi.listAvailable(), homeServicesSetupApi.listEnabled()]);
       setAvailable(a.services); setEnabledList(e.services);
@@ -184,9 +224,16 @@ function ServicesPricingPageContent() {
 
   async function handleSaveDefaultPrice() {
     if (!enrolled) return;
+    const parsedWarrantyDays = Number(warrantyDays);
+    if (!Number.isInteger(parsedWarrantyDays) || parsedWarrantyDays < 5) {
+      setError("Service warranty must be a whole number of at least 5 days.");
+      return;
+    }
     setSavingPrice(true);
     try {
-      const payload: { tenant_min_price?: number; tenant_max_price?: number; tenant_visit_fee?: number; tenant_emergency_surcharge?: number } = {};
+      const payload: { tenant_min_price?: number; tenant_max_price?: number; tenant_visit_fee?: number; tenant_emergency_surcharge?: number; warranty_days:number } = {
+        warranty_days: parsedWarrantyDays,
+      };
       if (defaultMin) payload.tenant_min_price = Number(defaultMin);
       if (defaultMax) payload.tenant_max_price = Number(defaultMax);
       if (visitFee) payload.tenant_visit_fee = Number(visitFee);
@@ -245,11 +292,11 @@ function ServicesPricingPageContent() {
     await homeServicesSetupApi.setTypes(enrolled.tenant_service_id, next);
     const [avail, tp] = await Promise.all([
       homeServicesSetupApi.getAvailableTypes(enrolled.tenant_service_id),
-      homeServicesSetupApi.getTypePricing(enrolled.tenant_service_id),
+      isInspectionMode ? Promise.resolve({ types: [] }) : homeServicesSetupApi.getTypePricing(enrolled.tenant_service_id),
     ]);
     setTypes(avail.types);
     setTypePricing(tp.types);
-    if (enrolled.requires_brand && brands) await reloadBrandPricingByType(enrolled.tenant_service_id, tp.types, brands);
+    if (!isInspectionMode && enrolled.requires_brand && brands) await reloadBrandPricingByType(enrolled.tenant_service_id, tp.types, brands);
   }
 
   async function toggleBrand(brand: HsSetupBrand) {
@@ -259,7 +306,10 @@ function ServicesPricingPageContent() {
     await homeServicesSetupApi.setBrands(enrolled.tenant_service_id, next);
     const avail = await homeServicesSetupApi.getAvailableBrands(enrolled.tenant_service_id);
     setBrands(avail.brands);
-    if (enrolled.requires_type) {
+    if (isInspectionMode) {
+      setBrandPricing([]);
+      setBrandPricingByType({});
+    } else if (enrolled.requires_type) {
       await reloadBrandPricingByType(enrolled.tenant_service_id, typePricing ?? [], avail.brands);
     } else {
       const bp = await homeServicesSetupApi.getBrandPricing(enrolled.tenant_service_id);
@@ -386,6 +436,28 @@ function ServicesPricingPageContent() {
         @media (max-width: 480px) { .svc-row2 { grid-template-columns: 1fr; } }
       `}</style>
 
+      <Card style={{ marginTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 420px" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 5px" }}>
+              Provider-wide consultation fee
+            </p>
+            <p style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+              Set this once. It applies to every Home Services consultation, regardless of service Type or Brand.
+              A later repair is a separate job and uses its own approved estimate.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flex: "0 1 360px" }}>
+            <div style={{ flex: 1 }}>
+              <Input label="Consultation fee" type="number" value={consultationFee} onChange={setConsultationFee} placeholder="299"/>
+            </div>
+            <Btn variant="secondary" loading={savingConsultationFee} onClick={handleSaveConsultationFee}>
+              Save fee
+            </Btn>
+          </div>
+        </div>
+      </Card>
+
       <div className="svc-grid">
         {/* Left: Service Groups */}
         <Card padding={0}>
@@ -436,15 +508,16 @@ function ServicesPricingPageContent() {
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>{selectedGroup.name}</h2>
               <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 16, overflowX: "auto" }}>
                 {selectedGroup.services.map(s => {
-                  const active = s.service_id === selectedServiceId;
+                  const key = s.offering_key ?? s.service_id;
+                  const active = key === selectedServiceId;
                   return (
-                    <button key={s.service_id} role="tab" aria-selected={active} onClick={() => setSelectedServiceId(s.service_id)}
+                    <button key={key} role="tab" aria-selected={active} onClick={() => setSelectedServiceId(key)}
                       style={{
                         padding: "10px 14px", background: "none", border: "none", borderBottom: active ? "2px solid var(--brand)" : "2px solid transparent",
                         color: active ? "var(--brand)" : "var(--text-secondary)", fontWeight: active ? 700 : 500, fontSize: 13,
                         cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
                       }}>
-                      {s.job_type ? s.job_type.charAt(0).toUpperCase() + s.job_type.slice(1) : s.service_name}
+                      {s.job_type_label || s.service_name}
                     </button>
                   );
                 })}
@@ -458,19 +531,30 @@ function ServicesPricingPageContent() {
                   }}>
                     <Info size={14} style={{ color: "var(--info-text)", flexShrink: 0 }}/>
                     <p style={{ fontSize: 12.5, color: "var(--info-text)", margin: 0 }}>
-                      Pricing by {selectedService.is_type_required ? "Type" : ""}{selectedService.is_type_required && selectedService.is_brand_required ? " + " : ""}{selectedService.is_brand_required ? "Brand" : ""}
-                      {!selectedService.is_type_required && !selectedService.is_brand_required ? "Fixed offering" : ""}
-                      {isInspectionMode ? " · Inspection estimate required" : ""}
+                      {isInspectionMode
+                        ? "Type and Brand control eligibility and matching. The visit fee is charged now; work starts only after the customer approves the inspection estimate."
+                        : `Pricing by ${selectedService.is_type_required ? "Type" : ""}${selectedService.is_type_required && selectedService.is_brand_required ? " + " : ""}${selectedService.is_brand_required ? "Brand" : ""}${!selectedService.is_type_required && !selectedService.is_brand_required ? "fixed offering" : ""}.`}
                     </p>
                   </div>
+
+                  {selectedService.admin_ready === false && (
+                    <div role="alert" style={{ padding: "10px 12px", marginBottom: 14, borderRadius: "var(--radius-md)", border: "1px solid var(--warning-border)", background: "var(--warning-bg)", color: "var(--warning-text)", fontSize: 12.5 }}>
+                      This service is waiting for Admin configuration and cannot be enabled yet. {selectedService.admin_blockers?.[0]?.message}
+                    </div>
+                  )}
+                  {selectedService.setup_update_required && (
+                    <div role="status" style={{ padding: "10px 12px", marginBottom: 14, borderRadius: "var(--radius-md)", border: "1px solid var(--info-border)", background: "var(--info-bg)", color: "var(--info-text)", fontSize: 12.5 }}>
+                      Admin updated this service&apos;s setup rules. Review the requirements below and publish the service again.
+                    </div>
+                  )}
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Offer this service</span>
                     <label style={{ position: "relative", display: "inline-block", width: 44, height: 24 }}>
-                      <input type="checkbox" aria-label={`Offer ${selectedService.service_name}`} checked={!!enrolled} disabled={toggling}
+                      <input type="checkbox" aria-label={`Offer ${selectedService.service_name}`} checked={!!enrolled} disabled={toggling || selectedService.admin_ready === false}
                         onChange={e => handleToggleOffer(e.target.checked)}
                         style={{ opacity: 0, width: 0, height: 0 }}/>
-                      <span onClick={() => !toggling && handleToggleOffer(!enrolled)} style={{
+                      <span onClick={() => !toggling && selectedService.admin_ready !== false && handleToggleOffer(!enrolled)} style={{
                         position: "absolute", inset: 0, borderRadius: 999, cursor: "pointer",
                         background: enrolled ? "var(--brand)" : "var(--border)", transition: "background 0.15s",
                       }}>
@@ -511,14 +595,22 @@ function ServicesPricingPageContent() {
                           </p>
                         </div>
                       </div>
+                      <div className="svc-row2" style={{ marginBottom: 18 }}>
+                        <Input label="Service warranty (days)" type="number" value={warrantyDays} onChange={setWarrantyDays} placeholder="5"/>
+                        <div style={{ display: "flex", alignItems: "flex-end" }}>
+                          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>
+                            You own the service warranty. The platform minimum is 5 days; you can offer a longer period.
+                          </p>
+                        </div>
+                      </div>
                       <Btn variant="secondary" size="sm" loading={savingPrice} onClick={handleSaveDefaultPrice} style={{ marginBottom: 20 }}>
-                        Save default price
+                        Save pricing &amp; warranty
                       </Btn>
 
                       {selectedService.is_type_required !== undefined && enrolled.requires_type && (
                         <div style={{ marginBottom: 20 }}>
                           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
-                            Type {selectedService.is_type_required ? "(required)" : "(optional)"}
+                            Type {selectedService.is_type_required ? "(required)" : "(optional)"}{isInspectionMode ? " for matching" : ""}
                           </p>
                           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                             {(types ?? []).map(t => (
@@ -527,6 +619,11 @@ function ServicesPricingPageContent() {
                                 {t.name}
                               </label>
                             ))}
+                            {types?.length === 0 && (
+                              <p role="status" style={{ margin: 0, fontSize: 12.5, color: "var(--warning-text)" }}>
+                                No Types are mapped to this service yet. Ask an administrator to complete the service blueprint.
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}
@@ -534,7 +631,7 @@ function ServicesPricingPageContent() {
                       {enrolled.requires_brand && (
                         <div style={{ marginBottom: 20 }}>
                           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
-                            Brand {selectedService.is_brand_required ? "(required)" : "(optional)"}
+                            Brand {selectedService.is_brand_required ? "(required)" : "(optional)"}{isInspectionMode ? " for matching" : ""}
                           </p>
                           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                             {(brands ?? []).map(b => (
@@ -543,11 +640,16 @@ function ServicesPricingPageContent() {
                                 {b.name}
                               </label>
                             ))}
+                            {brands?.length === 0 && (
+                              <p role="status" style={{ margin: 0, fontSize: 12.5, color: "var(--warning-text)" }}>
+                                No Brands are mapped to this service yet. Ask an administrator to complete the service blueprint.
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}
 
-                      {((typePricing && typePricing.length > 0) || (brandPricing && brandPricing.length > 0)) && (
+                      {!isInspectionMode && ((typePricing && typePricing.length > 0) || (brandPricing && brandPricing.length > 0)) && (
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>Pricing rules</p>
                           <div style={{ overflowX: "auto" }}>
@@ -619,6 +721,17 @@ function ServicesPricingPageContent() {
               )}
             </Card>
           )}
+          {selectedService && enrolled && selectedService.job_type_id && (
+            <Card style={{ marginTop: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>
+                Booking &amp; job requirements
+              </h3>
+              <ServiceRequirementsPanel
+                masterServiceId={selectedService.service_id}
+                jobTypeId={selectedService.job_type_id}
+              />
+            </Card>
+          )}
         </div>
 
         {/* Right: Readiness / hierarchy / blueprint */}
@@ -640,17 +753,39 @@ function ServicesPricingPageContent() {
           </Card>
 
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>Pricing hierarchy</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
-              <span>Default</span><ArrowRight size={12}/><span>Type</span><ArrowRight size={12}/><span>Brand</span>
-            </div>
-            <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0" }}>Most specific price wins.</p>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>
+              {isInspectionMode ? "Inspection pricing" : "Pricing hierarchy"}
+            </h3>
+            {isInspectionMode ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
+                  <span>Visit fee</span><ArrowRight size={12}/><span>Diagnosis</span><ArrowRight size={12}/><span>Approved estimate</span>
+                </div>
+                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                  Type and Brand never change the Repair price. The customer sees and approves the estimate before work begins.
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", flexWrap: "wrap" }}>
+                  <span>Default</span><ArrowRight size={12}/><span>Type</span><ArrowRight size={12}/><span>Brand</span>
+                </div>
+                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0" }}>Most specific provider price wins.</p>
+              </>
+            )}
           </Card>
 
           <Card>
             <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>Admin blueprint</h3>
             {selectedService ? (
               <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                {(selectedService.job_types ?? []).map(jobType => (
+                  <li key={jobType.job_type_id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, paddingBottom: 8, borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: jobType.workflow_id ? "var(--success)" : "var(--warning)", flexShrink: 0 }}/>
+                    <span style={{ color: "var(--text-secondary)", flex: 1 }}>{jobType.job_type_label} workflow</span>
+                    <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{jobType.workflow_id ? "Published" : "Admin action needed"}</span>
+                  </li>
+                ))}
                 {[
                   { label: "Type", value: selectedService.is_type_required ? "Required" : "Optional" },
                   { label: "Brand", value: selectedService.is_brand_required ? "Required" : "Optional" },
@@ -659,6 +794,8 @@ function ServicesPricingPageContent() {
                   { label: "Estimate approval", value: selectedService.requires_estimate_approval ? "Required" : "Not required" },
                   { label: "Technician", value: selectedService.requires_technician ? "Required" : "Optional" },
                   { label: "Schedule", value: selectedService.requires_schedule ? "Required" : "Optional" },
+                  { label: "Service area", value: selectedService.requires_service_area ? "Required before publish" : "Optional" },
+                  { label: "Business hours", value: selectedService.requires_availability ? "Required before publish" : "Optional" },
                 ].map(row => (
                   <li key={row.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }}/>

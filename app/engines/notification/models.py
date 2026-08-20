@@ -165,3 +165,13 @@ class NotificationChannelConfig(ServiceOSBase):
     is_enabled:  Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
     config:      Mapped[dict]      = mapped_column(JSONB, default=dict, nullable=False)
     verified_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Platform delivery control-plane fields (migration 285). Tenant rows and
+    # the platform sentinel row share one canonical table, avoiding a second
+    # provider configuration store.
+    provider_name: Mapped[str|None] = mapped_column(String(80), nullable=True)
+    encrypted_credentials: Mapped[str|None] = mapped_column(Text, nullable=True)
+    credential_fingerprint: Mapped[str|None] = mapped_column(String(20), nullable=True)
+    configured_by_user_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    last_tested_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_test_status: Mapped[str|None] = mapped_column(String(20), nullable=True)
+    last_test_message: Mapped[str|None] = mapped_column(String(500), nullable=True)

@@ -6,24 +6,59 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import text, select, func, update
+from sqlalchemy import String, and_, cast, text, select, func, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.analytics.models import AnalyticsEvent
 from app.engines.analytics.intelligence_models import (
     RagKnowledgeBase, RagQueryLog, IntelRiskScore, IntelAnomaly,
     IntelModelRegistry, IntelPredictionJob, IntelDataQualityCheck, AiUsageLog,
 )
+from app.engines.security.models import PlatformAuditLog
+from app.engines.tenant_engine.models import Tenant
 
 logger = structlog.get_logger("intelligence_service")
 
 DEFAULT_CHECKS = [
-    {"check_key": "missing_tenant_profiles", "check_name": "Missing Tenant Profiles", "severity": "high"},
-    {"check_key": "orphan_jobs", "check_name": "Orphan Jobs (no tenant)", "severity": "medium"},
-    {"check_key": "duplicate_catalog_codes", "check_name": "Duplicate Catalog Codes", "severity": "high"},
-    {"check_key": "stale_health_scores", "check_name": "Stale Health Scores (>7 days)", "severity": "low"},
-    {"check_key": "invalid_credit_deductions", "check_name": "Invalid Credit Deductions", "severity": "critical"},
-    {"check_key": "missing_booking_prices", "check_name": "Missing Booking Prices", "severity": "medium"},
+    {
+        "check_key": "missing_tenant_profiles",
+        "check_name": "Incomplete provider business profiles",
+        "description": "Active Home Services providers missing a business name, email, or phone.",
+        "severity": "high",
+    },
+    {
+        "check_key": "orphan_jobs",
+        "check_name": "Jobs without a provider",
+        "description": "Jobs whose provider workspace no longer exists.",
+        "severity": "critical",
+    },
+    {
+        "check_key": "duplicate_catalog_codes",
+        "check_name": "Duplicate service-group codes",
+        "description": "Service-group codes that violate the globally unique catalog contract.",
+        "severity": "high",
+    },
+    {
+        "check_key": "invalid_credit_deductions",
+        "check_name": "Invalid completion-credit ledger rows",
+        "description": "Ledger arithmetic, sign, or idempotency violations in provider completion deductions.",
+        "severity": "critical",
+    },
+    {
+        "check_key": "missing_booking_prices",
+        "check_name": "Confirmed bookings without a price",
+        "description": "Non-draft bookings missing every authoritative price field.",
+        "severity": "high",
+    },
+    {
+        "check_key": "orphan_bookings",
+        "check_name": "Bookings without a provider",
+        "description": "Bookings whose provider workspace no longer exists.",
+        "severity": "critical",
+    },
 ]
+
+RETIRED_CHECK_KEYS = {"stale_health_scores"}
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -72,21 +107,21 @@ class IntelligenceService:
         except Exception:
             open_anomalies = 0
 
-        # predictions
+        # Current provider scores.  Risk rows are now one-per-entity, so this
+        # is not inflated by historical runs.
         try:
             r = await db.execute(
-                select(func.sum(IntelPredictionJob.total_processed))
-                .where(IntelPredictionJob.status == "completed")
+                select(func.count()).select_from(IntelRiskScore)
             )
             predictions_computed = r.scalar() or 0
         except Exception:
             predictions_computed = 0
 
-        # events today (rag queries as proxy)
+        # Real cross-engine domain events, not RAG queries as a proxy.
         try:
             r = await db.execute(
-                select(func.count()).select_from(RagQueryLog)
-                .where(RagQueryLog.created_at >= today_start)
+                select(func.count()).select_from(AnalyticsEvent)
+                .where(AnalyticsEvent.occurred_at >= today_start)
             )
             events_today = r.scalar() or 0
         except Exception:
@@ -137,12 +172,83 @@ class IntelligenceService:
         except Exception:
             failed_jobs = 0
 
-        # active tenants (from tenants table)
+        # This workspace currently governs Home Services.  Do not mix future
+        # verticals into its risk denominator.
         try:
-            r = await db.execute(text("SELECT COUNT(*) FROM tenants WHERE status = 'active'"))
+            r = await db.execute(text("""
+                SELECT COUNT(*) FROM tenants
+                WHERE status = 'active' AND vertical = 'home_services'
+            """))
             active_tenants = r.scalar() or 0
         except Exception:
             active_tenants = 0
+
+        try:
+            r = await db.execute(
+                select(func.max(AnalyticsEvent.occurred_at))
+            )
+            last_event_at = r.scalar()
+        except Exception:
+            last_event_at = None
+
+        try:
+            r = await db.execute(
+                select(IntelPredictionJob)
+                .order_by(IntelPredictionJob.created_at.desc()).limit(1)
+            )
+            last_prediction = r.scalar_one_or_none()
+        except Exception:
+            last_prediction = None
+
+        try:
+            r = await db.execute(
+                select(func.count()).select_from(IntelDataQualityCheck)
+                .where(IntelDataQualityCheck.last_status.in_(["failed", "warning"]))
+            )
+            dq_issues = r.scalar() or 0
+        except Exception:
+            dq_issues = 0
+
+        event_is_fresh = bool(last_event_at and last_event_at >= now - timedelta(hours=24))
+        engine_health = [
+            {
+                "key": "events", "label": "Event pipeline",
+                "status": "healthy" if event_is_fresh else "idle",
+                "detail": "Events received in the last 24 hours" if event_is_fresh else "No events received in the last 24 hours",
+            },
+            {
+                "key": "risk", "label": "Provider risk scoring",
+                "status": (
+                    "healthy" if last_prediction and last_prediction.status == "completed"
+                    else "degraded" if last_prediction and last_prediction.status == "failed"
+                    else "idle"
+                ),
+                "detail": (
+                    f"Last run processed {last_prediction.total_processed or 0:,} providers"
+                    if last_prediction else "No risk-scoring run has completed"
+                ),
+            },
+            {
+                "key": "quality", "label": "Data quality",
+                "status": "degraded" if dq_issues else "healthy",
+                "detail": f"{dq_issues} checks need attention" if dq_issues else "No failed checks",
+            },
+            {
+                "key": "rag", "label": "Knowledge retrieval",
+                "status": "healthy" if indexed_documents else "idle",
+                "detail": f"{int(indexed_documents):,} indexed documents" if indexed_documents else "No indexed documents",
+            },
+        ]
+
+        action_items = []
+        if tenants_at_risk:
+            action_items.append({"type": "risk", "count": tenants_at_risk, "label": "Providers need risk review", "tab": "risk"})
+        if open_anomalies:
+            action_items.append({"type": "anomaly", "count": open_anomalies, "label": "Open anomalies need investigation", "tab": "anomalies"})
+        if dq_issues:
+            action_items.append({"type": "quality", "count": dq_issues, "label": "Data-quality checks need attention", "tab": "data-quality"})
+        if failed_jobs:
+            action_items.append({"type": "prediction", "count": failed_jobs, "label": "Failed automation runs", "tab": "prediction-jobs"})
 
         return {
             "tenants_at_risk": tenants_at_risk,
@@ -155,6 +261,9 @@ class IntelligenceService:
             "ai_cost_today": ai_cost_today,
             "failed_jobs": failed_jobs,
             "active_tenants": active_tenants,
+            "engine_health": engine_health,
+            "action_items": action_items,
+            "generated_at": now.isoformat(),
         }
 
     # ── RAG ──────────────────────────────────────────────────────────────────
@@ -308,42 +417,110 @@ class IntelligenceService:
         now = _utcnow()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         try:
-            r = await db.execute(
-                select(func.count()).select_from(RagQueryLog)
-                .where(RagQueryLog.created_at >= today_start)
-            )
-            rag_today = r.scalar() or 0
+            r = await db.execute(text("""
+                SELECT
+                    COUNT(*) FILTER (WHERE occurred_at >= :today_start) AS events_today,
+                    COUNT(*) FILTER (
+                        WHERE occurred_at >= :today_start
+                          AND event_type ~* '(failed|failure|error|dead_letter)'
+                    ) AS failure_signals,
+                    MAX(occurred_at) AS last_event_at,
+                    COUNT(DISTINCT engine_id) FILTER (WHERE occurred_at >= :today_start) AS active_sources
+                FROM analytics_events
+            """), {"today_start": today_start})
+            row = r.one()
+            events_today = int(row.events_today or 0)
+            failure_signals = int(row.failure_signals or 0)
+            last_event_at = row.last_event_at
+            active_sources = int(row.active_sources or 0)
         except Exception:
-            rag_today = 0
+            events_today, failure_signals, last_event_at, active_sources = 0, 0, None, 0
 
-        sources = [
-            {"source": "rag_queries", "events_today": rag_today, "success_rate": 100.0, "status": "healthy"},
-            {"source": "booking_events", "events_today": 0, "success_rate": 100.0, "status": "no_data"},
-            {"source": "job_events", "events_today": 0, "success_rate": 100.0, "status": "no_data"},
-            {"source": "payment_events", "events_today": 0, "success_rate": 100.0, "status": "no_data"},
-        ]
+        status = "healthy" if last_event_at and last_event_at >= now - timedelta(hours=24) else "idle"
+        if failure_signals:
+            status = "degraded"
         return {
-            "sources": sources,
-            "total_events_today": rag_today,
-            "pipeline_status": "operational",
+            "total_events_today": events_today,
+            "failure_signals_today": failure_signals,
+            "active_sources_today": active_sources,
+            "last_event_at": last_event_at.isoformat() if last_event_at else None,
+            "pipeline_status": status,
         }
 
     @staticmethod
     async def get_event_sources(db: AsyncSession) -> dict[str, Any]:
-        summary = await IntelligenceService.get_event_summary(db)
-        return {"items": summary["sources"], "total": len(summary["sources"])}
-
-    @staticmethod
-    async def get_event_failures(db: AsyncSession) -> dict[str, Any]:
+        now = _utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         try:
-            r = await db.execute(
-                select(RagQueryLog).where(RagQueryLog.status == "error")
-                .order_by(RagQueryLog.created_at.desc()).limit(50)
-            )
-            items = [row.to_dict() for row in r.scalars()]
+            r = await db.execute(text("""
+                SELECT
+                    engine_id AS source,
+                    COUNT(*) FILTER (WHERE occurred_at >= :today_start) AS events_today,
+                    COUNT(*) FILTER (
+                        WHERE occurred_at >= :today_start
+                          AND event_type ~* '(failed|failure|error|dead_letter)'
+                    ) AS failure_signals,
+                    MAX(occurred_at) AS last_event_at,
+                    COUNT(*) AS total_events
+                FROM analytics_events
+                GROUP BY engine_id
+                ORDER BY events_today DESC, engine_id ASC
+            """), {"today_start": today_start})
+            items = []
+            for row in r:
+                if row.last_event_at and row.last_event_at >= now - timedelta(hours=24):
+                    status = "degraded" if row.failure_signals else "healthy"
+                else:
+                    status = "idle"
+                items.append({
+                    "source": row.source,
+                    "events_today": int(row.events_today or 0),
+                    "failure_signals": int(row.failure_signals or 0),
+                    "total_events": int(row.total_events or 0),
+                    "last_event_at": row.last_event_at.isoformat() if row.last_event_at else None,
+                    "status": status,
+                })
         except Exception:
             items = []
         return {"items": items, "total": len(items)}
+
+    @staticmethod
+    async def get_event_failures(
+        db: AsyncSession, *, engine_id: str | None = None, q: str | None = None,
+        page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
+        offset = (page - 1) * page_size
+        try:
+            where = ["event_type ~* '(failed|failure|error|dead_letter)'"]
+            params: dict[str, Any] = {"limit": page_size, "offset": offset}
+            if engine_id:
+                where.append("engine_id = :engine_id")
+                params["engine_id"] = engine_id
+            if q:
+                where.append("(event_type ILIKE :q OR entity_type ILIKE :q OR entity_id ILIKE :q OR event_id ILIKE :q)")
+                params["q"] = f"%{q}%"
+            predicate = " AND ".join(where)
+            total = (await db.execute(text(f"SELECT COUNT(*) FROM analytics_events WHERE {predicate}"), params)).scalar() or 0
+            r = await db.execute(text(f"""
+                SELECT event_id, event_type, engine_id, entity_type, entity_id,
+                       tenant_id::text, occurred_at
+                FROM analytics_events
+                WHERE {predicate}
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
+            """), params)
+            items = [{
+                "event_id": row.event_id,
+                "event_type": row.event_type,
+                "engine_id": row.engine_id,
+                "entity_type": row.entity_type,
+                "entity_id": row.entity_id,
+                "tenant_id": row.tenant_id,
+                "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
+            } for row in r]
+        except Exception:
+            items, total = [], 0
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     # ── Risk ──────────────────────────────────────────────────────────────────
 
@@ -366,22 +543,46 @@ class IntelligenceService:
     @staticmethod
     async def list_risk_entities(
         db: AsyncSession, *, risk_level: str | None = None,
-        entity_type: str | None = None, page: int = 1, page_size: int = 25
+        entity_type: str | None = None, q: str | None = None,
+        page: int = 1, page_size: int = 25
     ) -> dict[str, Any]:
         offset = (page - 1) * page_size
         try:
-            stmt = select(IntelRiskScore).order_by(IntelRiskScore.risk_score.desc())
+            stmt = (
+                select(IntelRiskScore, Tenant.tenant_name, Tenant.business_name, Tenant.tenant_code)
+                .outerjoin(
+                    Tenant,
+                    and_(
+                        IntelRiskScore.entity_type.in_(["tenant", "provider"]),
+                        IntelRiskScore.entity_id == Tenant.id,
+                    ),
+                )
+                .order_by(IntelRiskScore.risk_score.desc(), IntelRiskScore.computed_at.desc())
+            )
             if risk_level:
                 stmt = stmt.where(IntelRiskScore.risk_level == risk_level)
             if entity_type:
                 stmt = stmt.where(IntelRiskScore.entity_type == entity_type)
-            r = await db.execute(select(func.count()).select_from(stmt.subquery()))
+            if q:
+                pattern = f"%{q.strip()}%"
+                stmt = stmt.where(or_(
+                    Tenant.tenant_name.ilike(pattern),
+                    Tenant.business_name.ilike(pattern),
+                    Tenant.tenant_code.ilike(pattern),
+                    cast(IntelRiskScore.entity_id, String).ilike(pattern),
+                ))
+            r = await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
             total = r.scalar() or 0
             r2 = await db.execute(stmt.offset(offset).limit(page_size))
-            items = [row.to_dict() for row in r2.scalars()]
+            items = []
+            for score, tenant_name, business_name, tenant_code in r2:
+                item = score.to_dict()
+                item["entity_label"] = business_name or tenant_name or str(score.entity_id)
+                item["entity_code"] = tenant_code
+                items.append(item)
         except Exception:
             total, items = 0, []
-        return {"items": items, "total": total}
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     @staticmethod
     async def get_risk_entity(db: AsyncSession, entity_type: str, entity_id: str) -> dict[str, Any] | None:
@@ -399,44 +600,73 @@ class IntelligenceService:
 
     @staticmethod
     async def recompute_risk(db: AsyncSession, entity_type: str, entity_id: str, user_id: str | None) -> dict[str, Any]:
+        if entity_type not in {"tenant", "provider"}:
+            raise ValueError("Only Home Services providers can be risk-scored")
         score = 0.0
-        reasons = []
+        reasons: list[str] = []
+        contributions: dict[str, float] = {}
         try:
             eid = uuid.UUID(entity_id)
-            if entity_type == "tenant":
-                r = await db.execute(
-                    text("SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid"),
-                    {"tid": eid}
-                )
-                complaint_count = r.scalar() or 0
-                r2 = await db.execute(
-                    text("SELECT COUNT(*) FROM jobs WHERE tenant_id = :tid"),
-                    {"tid": eid}
-                )
-                job_count = r2.scalar() or 0
-                score = min(complaint_count / max(job_count, 1) * 100, 100.0)
-                if complaint_count > 0:
-                    reasons.append(f"{complaint_count} complaints")
-            elif entity_type == "provider":
-                r = await db.execute(
-                    text("SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid"),
-                    {"tid": eid}
-                )
-                score = min(float(r.scalar() or 0) * 5, 100.0)
-        except Exception:
-            pass
+            r = await db.execute(text("""
+                SELECT
+                    (SELECT COUNT(*) FROM jobs WHERE tenant_id = :tid
+                        AND created_at >= now() - interval '90 days') AS jobs_90d,
+                    (SELECT COUNT(*) FROM jobs WHERE tenant_id = :tid
+                        AND created_at >= now() - interval '90 days'
+                        AND (sla_breach = true OR sla_breached = true)) AS sla_breaches_90d,
+                    (SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid
+                        AND created_at >= now() - interval '90 days') AS complaints_90d,
+                    (SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid
+                        AND status NOT IN ('resolved', 'closed', 'withdrawn')) AS open_complaints,
+                    (SELECT COALESCE(credit_balance, 0) FROM tenant_billing
+                        WHERE tenant_id = :tid ORDER BY updated_at DESC LIMIT 1) AS credit_balance
+            """), {"tid": eid})
+            row = r.one()
+            job_count = int(row.jobs_90d or 0)
+            complaint_count = int(row.complaints_90d or 0)
+            open_complaints = int(row.open_complaints or 0)
+            sla_breaches = int(row.sla_breaches_90d or 0)
+            credit_balance = float(row.credit_balance or 0)
+
+            complaint_component = min((complaint_count / max(job_count, 1)) * 250, 45.0)
+            unresolved_component = min(open_complaints * 5.0, 20.0)
+            sla_component = min((sla_breaches / max(job_count, 1)) * 100, 25.0)
+            credit_component = 10.0 if credit_balance <= 0 else 5.0 if credit_balance < 1000 else 0.0
+            contributions = {
+                "complaint_rate": round(complaint_component, 2),
+                "unresolved_complaints": round(unresolved_component, 2),
+                "sla_breaches": round(sla_component, 2),
+                "usage_credit_readiness": round(credit_component, 2),
+            }
+            score = min(sum(contributions.values()), 100.0)
+            if complaint_count:
+                reasons.append(f"{complaint_count} complaints in 90 days")
+            if open_complaints:
+                reasons.append(f"{open_complaints} unresolved complaints")
+            if sla_breaches:
+                reasons.append(f"{sla_breaches} SLA breaches in 90 days")
+            if credit_component:
+                reasons.append("Usage-credit balance needs attention")
+        except Exception as exc:
+            logger.exception("intelligence.risk.recompute_failed", entity_id=entity_id, error=str(exc))
+            raise
 
         level = _risk_level(score)
-        rs = IntelRiskScore(
-            entity_type=entity_type,
-            entity_id=uuid.UUID(entity_id),
-            risk_score=Decimal(str(round(score, 2))),
-            risk_level=level,
-            top_reasons_json=reasons,
-            confidence_score=Decimal("75.00"),
-            model_version="heuristic-v1",
-        )
-        db.add(rs)
+        r = await db.execute(select(IntelRiskScore).where(
+            IntelRiskScore.entity_type == entity_type,
+            IntelRiskScore.entity_id == uuid.UUID(entity_id),
+        ))
+        rs = r.scalar_one_or_none()
+        if rs is None:
+            rs = IntelRiskScore(entity_type=entity_type, entity_id=uuid.UUID(entity_id))
+            db.add(rs)
+        rs.risk_score = Decimal(str(round(score, 2)))
+        rs.risk_level = level
+        rs.top_reasons_json = reasons[:4]
+        rs.feature_contributions_json = contributions
+        rs.confidence_score = Decimal("90.00" if contributions else "50.00")
+        rs.model_version = "home-services-risk-v2"
+        rs.computed_at = _utcnow()
         await db.commit()
         await db.refresh(rs)
         return rs.to_dict()
@@ -446,7 +676,8 @@ class IntelligenceService:
     @staticmethod
     async def list_anomalies(
         db: AsyncSession, *, status: str | None = None,
-        severity: str | None = None, page: int = 1, page_size: int = 25
+        severity: str | None = None, entity_type: str | None = None,
+        q: str | None = None, page: int = 1, page_size: int = 25
     ) -> dict[str, Any]:
         offset = (page - 1) * page_size
         try:
@@ -455,13 +686,22 @@ class IntelligenceService:
                 stmt = stmt.where(IntelAnomaly.status == status)
             if severity:
                 stmt = stmt.where(IntelAnomaly.severity == severity)
-            r = await db.execute(select(func.count()).select_from(stmt.subquery()))
+            if entity_type:
+                stmt = stmt.where(IntelAnomaly.entity_type == entity_type)
+            if q:
+                pattern = f"%{q.strip()}%"
+                stmt = stmt.where(or_(
+                    IntelAnomaly.summary.ilike(pattern),
+                    IntelAnomaly.anomaly_type.ilike(pattern),
+                    cast(IntelAnomaly.entity_id, String).ilike(pattern),
+                ))
+            r = await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
             total = r.scalar() or 0
             r2 = await db.execute(stmt.offset(offset).limit(page_size))
             items = [row.to_dict() for row in r2.scalars()]
         except Exception:
             total, items = 0, []
-        return {"items": items, "total": total}
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     @staticmethod
     async def get_anomaly(db: AsyncSession, anomaly_id: str) -> dict[str, Any] | None:
@@ -509,13 +749,25 @@ class IntelligenceService:
         # Check for tenants with high complaint rate
         try:
             r = await db.execute(text("""
-                SELECT t.id::text, COUNT(c.id) as complaints, COUNT(j.id) as jobs
+                WITH complaint_stats AS (
+                    SELECT tenant_id, COUNT(*) AS complaints
+                    FROM customer_complaints
+                    WHERE created_at >= now() - interval '90 days' AND tenant_id IS NOT NULL
+                    GROUP BY tenant_id
+                ), job_stats AS (
+                    SELECT tenant_id, COUNT(*) AS jobs
+                    FROM jobs
+                    WHERE created_at >= now() - interval '90 days'
+                    GROUP BY tenant_id
+                )
+                SELECT t.id::text, c.complaints, COALESCE(j.jobs, 0) AS jobs
                 FROM tenants t
-                LEFT JOIN customer_complaints c ON c.tenant_id = t.id
-                LEFT JOIN jobs j ON j.tenant_id = t.id
-                GROUP BY t.id
-                HAVING COUNT(c.id) > 0 AND COUNT(c.id) * 10 > COUNT(j.id)
-                LIMIT 20
+                JOIN complaint_stats c ON c.tenant_id = t.id
+                LEFT JOIN job_stats j ON j.tenant_id = t.id
+                WHERE t.status = 'active' AND t.vertical = 'home_services'
+                  AND c.complaints * 10 > GREATEST(COALESCE(j.jobs, 0), 1)
+                ORDER BY (c.complaints::numeric / GREATEST(COALESCE(j.jobs, 0), 1)) DESC
+                LIMIT 1000
             """))
             rows = r.fetchall()
             scanned = len(rows)
@@ -542,14 +794,47 @@ class IntelligenceService:
                     new_count += 1
                 else:
                     updated += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("intelligence.anomaly.provider_scan_failed", error=str(exc))
+            raise
+
+        # Completion-credit arithmetic is a financial invariant.  Surface one
+        # system anomaly without duplicating it on every scan.
+        try:
+            bad_credits = int((await db.execute(text("""
+                SELECT COUNT(*) FROM usage_credit_ledger
+                WHERE balance_after <> balance_before + credit_delta
+                   OR (event_type = 'job_completion_deduction' AND credit_delta >= 0)
+            """))).scalar() or 0)
+            if bad_credits:
+                existing = await db.execute(select(IntelAnomaly).where(
+                    IntelAnomaly.anomaly_type == "credit_ledger_integrity",
+                    IntelAnomaly.status.in_(["open", "investigating"]),
+                ))
+                if not existing.scalar_one_or_none():
+                    db.add(IntelAnomaly(
+                        anomaly_type="credit_ledger_integrity",
+                        severity="critical",
+                        entity_type="system",
+                        summary=f"{bad_credits} usage-credit ledger rows violate completion-deduction invariants",
+                        confidence_score=Decimal("100.0"),
+                        status="open",
+                    ))
+                    new_count += 1
+                else:
+                    updated += 1
+        except Exception as exc:
+            logger.exception("intelligence.anomaly.credit_scan_failed", error=str(exc))
+            raise
 
         # Check RAG latency spikes
         try:
             r = await db.execute(
                 select(func.count()).select_from(RagQueryLog)
-                .where(RagQueryLog.latency_ms > 5000)
+                .where(
+                    RagQueryLog.latency_ms > 5000,
+                    RagQueryLog.created_at >= _utcnow() - timedelta(hours=24),
+                )
             )
             spike_count = r.scalar() or 0
             if spike_count > 0:
@@ -570,8 +855,8 @@ class IntelligenceService:
                     )
                     db.add(a)
                     new_count += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("intelligence.anomaly.rag_scan_failed", error=str(exc))
 
         await db.commit()
         return {"scanned": scanned, "new_anomalies": new_count, "updated": updated}
@@ -579,15 +864,28 @@ class IntelligenceService:
     # ── Models ────────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def list_models(db: AsyncSession) -> dict[str, Any]:
+    async def list_models(
+        db: AsyncSession, *, q: str | None = None, status: str | None = None,
+        model_type: str | None = None, page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
+        offset = (page - 1) * page_size
         try:
+            stmt = select(IntelModelRegistry)
+            if q:
+                pattern = f"%{q.strip()}%"
+                stmt = stmt.where(or_(IntelModelRegistry.name.ilike(pattern), IntelModelRegistry.version.ilike(pattern)))
+            if status:
+                stmt = stmt.where(IntelModelRegistry.status == status)
+            if model_type:
+                stmt = stmt.where(IntelModelRegistry.model_type == model_type)
+            total = int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0)
             r = await db.execute(
-                select(IntelModelRegistry).order_by(IntelModelRegistry.created_at.desc())
+                stmt.order_by(IntelModelRegistry.created_at.desc()).offset(offset).limit(page_size)
             )
             items = [row.to_dict() for row in r.scalars()]
         except Exception:
-            items = []
-        return {"items": items, "total": len(items)}
+            items, total = [], 0
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     @staticmethod
     async def get_model(db: AsyncSession, model_id: str) -> dict[str, Any] | None:
@@ -627,27 +925,60 @@ class IntelligenceService:
         m = await IntelligenceService.get_model(db, model_id)
         if not m:
             raise ValueError("Model not found")
+        r = await db.execute(text("""
+            SELECT COUNT(*) AS calls,
+                   COUNT(*) FILTER (WHERE status = 'success') AS successful_calls,
+                   AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS avg_latency_ms,
+                   COALESCE(SUM(cost_amount), 0) AS cost,
+                   MAX(created_at) AS last_used_at
+            FROM ai_usage_logs
+            WHERE model_name = :model_name
+              AND created_at >= now() - interval '30 days'
+        """), {"model_name": m["name"]})
+        row = r.one()
+        calls = int(row.calls or 0)
+        success_rate = round(int(row.successful_calls or 0) / max(calls, 1) * 100, 2)
+        evaluation_status = "healthy" if calls and success_rate >= 98 else "degraded" if calls else "no_data"
+        return {**m, "evaluation": {
+            "status": evaluation_status,
+            "period_days": 30,
+            "calls": calls,
+            "success_rate": success_rate if calls else None,
+            "avg_latency_ms": round(float(row.avg_latency_ms), 1) if row.avg_latency_ms is not None else None,
+            "cost": float(row.cost or 0),
+            "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        }}
         return {**m, "evaluation": {"status": "ok", "message": "Evaluation stub — connect to ML pipeline for live eval"}}
 
     # ── Prediction Jobs ───────────────────────────────────────────────────────
 
     @staticmethod
-    async def list_prediction_jobs(db: AsyncSession, *, page: int = 1, page_size: int = 25) -> dict[str, Any]:
+    async def list_prediction_jobs(
+        db: AsyncSession, *, status: str | None = None, job_type: str | None = None,
+        page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
         offset = (page - 1) * page_size
         try:
-            r = await db.execute(select(func.count()).select_from(IntelPredictionJob))
+            stmt = select(IntelPredictionJob)
+            if status:
+                stmt = stmt.where(IntelPredictionJob.status == status)
+            if job_type:
+                stmt = stmt.where(IntelPredictionJob.job_type == job_type)
+            r = await db.execute(select(func.count()).select_from(stmt.subquery()))
             total = r.scalar() or 0
             r2 = await db.execute(
-                select(IntelPredictionJob).order_by(IntelPredictionJob.created_at.desc())
+                stmt.order_by(IntelPredictionJob.created_at.desc())
                 .offset(offset).limit(page_size)
             )
             items = [row.to_dict() for row in r2.scalars()]
         except Exception:
             total, items = 0, []
-        return {"items": items, "total": total}
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     @staticmethod
     async def create_prediction_job(db: AsyncSession, payload: dict, user_id: str | None) -> dict[str, Any]:
+        if payload.get("job_type", "daily_tenant_risk") != "daily_tenant_risk":
+            raise ValueError("Unsupported prediction job type")
         job = IntelPredictionJob(
             job_type=payload.get("job_type", "daily_tenant_risk"),
             status="running",
@@ -656,26 +987,108 @@ class IntelligenceService:
             started_at=_utcnow(),
         )
         db.add(job)
-        await db.flush()
+        # Persist the run record before starting the scoring transaction. If
+        # the set-based workload fails, the operator still gets an auditable
+        # failed run instead of losing the record with the rolled-back work.
+        await db.commit()
+        await db.refresh(job)
 
-        # Run simple heuristic predictions for all tenants
-        processed = 0
+        # One set-based upsert replaces the old Python loop (and its LIMIT
+        # 100).  PostgreSQL can plan this over indexed aggregates and update
+        # every active Home Services provider without N+1 queries.
         try:
-            r = await db.execute(text("SELECT id FROM tenants WHERE status = 'active' LIMIT 100"))
-            tenant_ids = [str(row[0]) for row in r.fetchall()]
-            for tid in tenant_ids:
-                try:
-                    await IntelligenceService.recompute_risk(db, "tenant", tid, user_id)
-                    processed += 1
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        job.status = "completed"
+            r = await db.execute(text("""
+                WITH job_stats AS (
+                    SELECT tenant_id,
+                           COUNT(*) FILTER (WHERE created_at >= now() - interval '90 days') AS jobs_90d,
+                           COUNT(*) FILTER (
+                               WHERE created_at >= now() - interval '90 days'
+                                 AND (sla_breach = true OR sla_breached = true)
+                           ) AS sla_breaches_90d
+                    FROM jobs GROUP BY tenant_id
+                ), complaint_stats AS (
+                    SELECT tenant_id,
+                           COUNT(*) FILTER (WHERE created_at >= now() - interval '90 days') AS complaints_90d,
+                           COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed', 'withdrawn')) AS open_complaints
+                    FROM customer_complaints
+                    WHERE tenant_id IS NOT NULL
+                    GROUP BY tenant_id
+                ), inputs AS (
+                    SELECT t.id AS tenant_id,
+                           COALESCE(j.jobs_90d, 0) AS jobs_90d,
+                           COALESCE(j.sla_breaches_90d, 0) AS sla_breaches_90d,
+                           COALESCE(c.complaints_90d, 0) AS complaints_90d,
+                           COALESCE(c.open_complaints, 0) AS open_complaints,
+                           COALESCE(b.credit_balance, 0) AS credit_balance
+                    FROM tenants t
+                    LEFT JOIN job_stats j ON j.tenant_id = t.id
+                    LEFT JOIN complaint_stats c ON c.tenant_id = t.id
+                    LEFT JOIN tenant_billing b ON b.tenant_id = t.id
+                    WHERE t.status = 'active' AND t.vertical = 'home_services'
+                ), scored AS (
+                    SELECT *, LEAST(100.0,
+                        LEAST((complaints_90d::numeric / GREATEST(jobs_90d, 1)) * 250.0, 45.0)
+                        + LEAST(open_complaints * 5.0, 20.0)
+                        + LEAST((sla_breaches_90d::numeric / GREATEST(jobs_90d, 1)) * 100.0, 25.0)
+                        + CASE WHEN credit_balance <= 0 THEN 10.0 WHEN credit_balance < 1000 THEN 5.0 ELSE 0.0 END
+                    ) AS score
+                    FROM inputs
+                )
+                INSERT INTO intel_risk_scores (
+                    entity_type, entity_id, risk_score, risk_level,
+                    top_reasons_json, feature_contributions_json,
+                    confidence_score, model_version, computed_at
+                )
+                SELECT 'tenant', tenant_id, ROUND(score, 2),
+                       CASE WHEN score > 75 THEN 'critical'
+                            WHEN score > 50 THEN 'high'
+                            WHEN score > 25 THEN 'medium' ELSE 'low' END,
+                       to_jsonb(array_remove(ARRAY[
+                           CASE WHEN complaints_90d > 0 THEN complaints_90d || ' complaints in 90 days' END,
+                           CASE WHEN open_complaints > 0 THEN open_complaints || ' unresolved complaints' END,
+                           CASE WHEN sla_breaches_90d > 0 THEN sla_breaches_90d || ' SLA breaches in 90 days' END,
+                           CASE WHEN credit_balance < 1000 THEN 'Usage-credit balance needs attention' END
+                       ]::text[], NULL)),
+                       jsonb_build_object(
+                           'complaint_rate', ROUND(LEAST((complaints_90d::numeric / GREATEST(jobs_90d, 1)) * 250.0, 45.0), 2),
+                           'unresolved_complaints', ROUND(LEAST(open_complaints * 5.0, 20.0), 2),
+                           'sla_breaches', ROUND(LEAST((sla_breaches_90d::numeric / GREATEST(jobs_90d, 1)) * 100.0, 25.0), 2),
+                           'usage_credit_readiness', CASE WHEN credit_balance <= 0 THEN 10.0 WHEN credit_balance < 1000 THEN 5.0 ELSE 0.0 END
+                       ),
+                       90.0, 'home-services-risk-v2', now()
+                FROM scored
+                ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+                    risk_score = EXCLUDED.risk_score,
+                    risk_level = EXCLUDED.risk_level,
+                    top_reasons_json = EXCLUDED.top_reasons_json,
+                    feature_contributions_json = EXCLUDED.feature_contributions_json,
+                    confidence_score = EXCLUDED.confidence_score,
+                    model_version = EXCLUDED.model_version,
+                    computed_at = EXCLUDED.computed_at,
+                    updated_at = now()
+                RETURNING entity_id
+            """))
+            processed = len(r.fetchall())
+            job.status = "completed"
+            job.total_processed = processed
+            job.total_failed = 0
+            job.result_summary_json = {
+                "providers_scored": processed,
+                "scope": "active_home_services",
+                "model_version": "home-services-risk-v2",
+            }
+        except Exception as exc:
+            logger.exception("intelligence.prediction.failed", job_id=str(job.id), error=str(exc))
+            await db.rollback()
+            r = await db.execute(
+                select(IntelPredictionJob).where(IntelPredictionJob.id == job.id)
+            )
+            job = r.scalar_one()
+            job.status = "failed"
+            job.total_processed = 0
+            job.total_failed = 1
+            job.error_message = str(exc)[:1000]
         job.completed_at = _utcnow()
-        job.total_processed = processed
-        job.result_summary_json = {"tenants_scored": processed}
         await db.commit()
         await db.refresh(job)
         return job.to_dict()
@@ -730,12 +1143,19 @@ class IntelligenceService:
 
     @staticmethod
     async def _ensure_default_checks(db: AsyncSession) -> None:
-        r = await db.execute(select(func.count()).select_from(IntelDataQualityCheck))
-        count = r.scalar() or 0
-        if count == 0:
-            for chk in DEFAULT_CHECKS:
-                db.add(IntelDataQualityCheck(**chk))
-            await db.commit()
+        await db.execute(text("DELETE FROM intel_data_quality_checks WHERE check_key = 'stale_health_scores'"))
+        r = await db.execute(select(IntelDataQualityCheck))
+        existing = {row.check_key: row for row in r.scalars()}
+        for definition in DEFAULT_CHECKS:
+            row = existing.get(definition["check_key"])
+            if row is None:
+                db.add(IntelDataQualityCheck(**definition))
+                continue
+            row.check_name = definition["check_name"]
+            row.description = definition["description"]
+            row.severity = definition["severity"]
+            row.is_enabled = True
+        await db.commit()
 
     @staticmethod
     async def get_data_quality_summary(db: AsyncSession) -> dict[str, Any]:
@@ -782,21 +1202,43 @@ class IntelligenceService:
         new_status = "passed"
         try:
             if check_key == "missing_tenant_profiles":
-                r2 = await db.execute(text("SELECT COUNT(*) FROM tenants WHERE name IS NULL OR name = ''"))
+                r2 = await db.execute(text("""
+                    SELECT COUNT(*) FROM tenants
+                    WHERE status = 'active' AND vertical = 'home_services'
+                      AND (COALESCE(NULLIF(TRIM(business_name), ''), NULLIF(TRIM(tenant_name), '')) IS NULL
+                           OR email IS NULL OR TRIM(email) = ''
+                           OR phone IS NULL OR TRIM(phone) = '')
+                """))
                 failure_count = r2.scalar() or 0
             elif check_key == "orphan_jobs":
-                r2 = await db.execute(text("SELECT COUNT(*) FROM jobs j WHERE j.tenant_id NOT IN (SELECT id FROM tenants)"))
+                r2 = await db.execute(text("SELECT COUNT(*) FROM jobs j WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = j.tenant_id)"))
                 failure_count = r2.scalar() or 0
             elif check_key == "duplicate_catalog_codes":
-                r2 = await db.execute(text("SELECT COUNT(*) FROM (SELECT code FROM service_categories GROUP BY code HAVING COUNT(*) > 1) sub"))
-                failure_count = r2.scalar() or 0
-            elif check_key == "stale_health_scores":
-                r2 = await db.execute(text("SELECT COUNT(*) FROM tenants WHERE updated_at < now() - INTERVAL '7 days'"))
+                r2 = await db.execute(text("SELECT COUNT(*) FROM (SELECT code FROM service_groups GROUP BY code HAVING COUNT(*) > 1) sub"))
                 failure_count = r2.scalar() or 0
             elif check_key == "invalid_credit_deductions":
-                failure_count = 0  # Stub
+                r2 = await db.execute(text("""
+                    SELECT COUNT(*) FROM usage_credit_ledger
+                    WHERE balance_after <> balance_before + credit_delta
+                       OR (event_type = 'job_completion_deduction' AND credit_delta >= 0)
+                       OR (idempotency_key IS NOT NULL AND idempotency_key IN (
+                            SELECT idempotency_key FROM usage_credit_ledger
+                            WHERE idempotency_key IS NOT NULL
+                            GROUP BY idempotency_key HAVING COUNT(*) > 1
+                       ))
+                """))
+                failure_count = r2.scalar() or 0
             elif check_key == "missing_booking_prices":
-                failure_count = 0  # Stub
+                r2 = await db.execute(text("""
+                    SELECT COUNT(*) FROM bookings
+                    WHERE status NOT IN ('draft', 'cancelled', 'rejected')
+                      AND quoted_price IS NULL AND estimated_price IS NULL
+                      AND final_price IS NULL AND payable_amount IS NULL
+                """))
+                failure_count = r2.scalar() or 0
+            elif check_key == "orphan_bookings":
+                r2 = await db.execute(text("SELECT COUNT(*) FROM bookings b WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = b.tenant_id)"))
+                failure_count = r2.scalar() or 0
 
             if failure_count > 0:
                 new_status = "failed"
@@ -813,12 +1255,82 @@ class IntelligenceService:
         return chk.to_dict()
 
     @staticmethod
-    async def get_check_failures(db: AsyncSession, check_key: str) -> dict[str, Any]:
+    async def get_check_failures(
+        db: AsyncSession, check_key: str, *, page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
         r = await db.execute(
             select(IntelDataQualityCheck).where(IntelDataQualityCheck.check_key == check_key)
         )
         chk = r.scalar_one_or_none()
-        return {"check_key": check_key, "failures": [], "total": chk.failure_count if chk else 0}
+        if not chk:
+            raise ValueError(f"Check {check_key!r} not found")
+        offset = (page - 1) * page_size
+        queries = {
+            "missing_tenant_profiles": """
+                SELECT id::text AS entity_id, 'provider' AS entity_type,
+                       tenant_name AS label, 'Business name, email, or phone is missing' AS reason
+                FROM tenants
+                WHERE status = 'active' AND vertical = 'home_services'
+                  AND (COALESCE(NULLIF(TRIM(business_name), ''), NULLIF(TRIM(tenant_name), '')) IS NULL
+                       OR email IS NULL OR TRIM(email) = '' OR phone IS NULL OR TRIM(phone) = '')
+                ORDER BY created_at DESC
+            """,
+            "orphan_jobs": """
+                SELECT j.id::text AS entity_id, 'job' AS entity_type,
+                       j.job_number AS label, 'Provider workspace does not exist' AS reason
+                FROM jobs j WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = j.tenant_id)
+                ORDER BY j.created_at DESC
+            """,
+            "duplicate_catalog_codes": """
+                SELECT (array_agg(id ORDER BY id))[1]::text AS entity_id, 'service_group' AS entity_type,
+                       code AS label, COUNT(*) || ' rows use this code' AS reason
+                FROM service_groups GROUP BY code HAVING COUNT(*) > 1
+                ORDER BY COUNT(*) DESC, code
+            """,
+            "invalid_credit_deductions": """
+                SELECT id::text AS entity_id, 'usage_credit_ledger' AS entity_type,
+                       COALESCE(request_id, id::text) AS label,
+                       CASE
+                         WHEN balance_after <> balance_before + credit_delta THEN 'Ledger arithmetic does not balance'
+                         WHEN event_type = 'job_completion_deduction' AND credit_delta >= 0 THEN 'Completion deduction has a non-negative delta'
+                         ELSE 'Idempotency key is duplicated'
+                       END AS reason
+                FROM usage_credit_ledger u
+                WHERE balance_after <> balance_before + credit_delta
+                   OR (event_type = 'job_completion_deduction' AND credit_delta >= 0)
+                   OR (idempotency_key IS NOT NULL AND idempotency_key IN (
+                        SELECT idempotency_key FROM usage_credit_ledger
+                        WHERE idempotency_key IS NOT NULL GROUP BY idempotency_key HAVING COUNT(*) > 1))
+                ORDER BY created_at DESC
+            """,
+            "missing_booking_prices": """
+                SELECT id::text AS entity_id, 'booking' AS entity_type,
+                       booking_number AS label, 'Confirmed booking has no authoritative price' AS reason
+                FROM bookings
+                WHERE status NOT IN ('draft', 'cancelled', 'rejected')
+                  AND quoted_price IS NULL AND estimated_price IS NULL
+                  AND final_price IS NULL AND payable_amount IS NULL
+                ORDER BY created_at DESC
+            """,
+            "orphan_bookings": """
+                SELECT b.id::text AS entity_id, 'booking' AS entity_type,
+                       b.booking_number AS label, 'Provider workspace does not exist' AS reason
+                FROM bookings b WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = b.tenant_id)
+                ORDER BY b.created_at DESC
+            """,
+        }
+        base_query = queries.get(check_key)
+        if not base_query:
+            return {"check_key": check_key, "items": [], "total": 0, "page": page, "page_size": page_size}
+        total = int((await db.execute(text(f"SELECT COUNT(*) FROM ({base_query}) failures"))).scalar() or 0)
+        rows = await db.execute(text(f"{base_query} LIMIT :limit OFFSET :offset"), {"limit": page_size, "offset": offset})
+        items = [{
+            "entity_id": row.entity_id,
+            "entity_type": row.entity_type,
+            "label": row.label,
+            "reason": row.reason,
+        } for row in rows]
+        return {"check_key": check_key, "items": items, "total": total, "page": page, "page_size": page_size}
 
     # ── AI Usage ──────────────────────────────────────────────────────────────
 
@@ -880,19 +1392,42 @@ class IntelligenceService:
         }
 
     @staticmethod
-    async def list_ai_usage_logs(db: AsyncSession, *, page: int = 1, page_size: int = 25) -> dict[str, Any]:
+    async def list_ai_usage_logs(
+        db: AsyncSession, *, feature_key: str | None = None, status: str | None = None,
+        model_name: str | None = None, q: str | None = None,
+        date_from: datetime | None = None, date_to: datetime | None = None,
+        page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
         offset = (page - 1) * page_size
         try:
-            r = await db.execute(select(func.count()).select_from(AiUsageLog))
+            stmt = select(AiUsageLog)
+            if feature_key:
+                stmt = stmt.where(AiUsageLog.feature_key == feature_key)
+            if status:
+                stmt = stmt.where(AiUsageLog.status == status)
+            if model_name:
+                stmt = stmt.where(AiUsageLog.model_name == model_name)
+            if date_from:
+                stmt = stmt.where(AiUsageLog.created_at >= date_from)
+            if date_to:
+                stmt = stmt.where(AiUsageLog.created_at <= date_to)
+            if q:
+                pattern = f"%{q.strip()}%"
+                stmt = stmt.where(or_(
+                    AiUsageLog.feature_key.ilike(pattern),
+                    AiUsageLog.model_name.ilike(pattern),
+                    AiUsageLog.error_code.ilike(pattern),
+                ))
+            r = await db.execute(select(func.count()).select_from(stmt.subquery()))
             total = r.scalar() or 0
             r2 = await db.execute(
-                select(AiUsageLog).order_by(AiUsageLog.created_at.desc())
+                stmt.order_by(AiUsageLog.created_at.desc())
                 .offset(offset).limit(page_size)
             )
             items = [row.to_dict() for row in r2.scalars()]
         except Exception:
             total, items = 0, []
-        return {"items": items, "total": total}
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     @staticmethod
     async def get_cost_breakdown(db: AsyncSession) -> dict[str, Any]:
@@ -908,25 +1443,47 @@ class IntelligenceService:
         return {"breakdown": breakdown, "total_features": len(breakdown)}
 
     @staticmethod
-    async def get_audit_logs(db: AsyncSession) -> dict[str, Any]:
-        """Return recent audit events from analytics_events or stub."""
+    async def get_audit_logs(
+        db: AsyncSession, *, q: str | None = None, engine_id: str | None = None,
+        operation: str | None = None, high_risk: bool | None = None,
+        page: int = 1, page_size: int = 25,
+    ) -> dict[str, Any]:
+        """Return the append-only platform audit trail for intelligence engines."""
+        offset = (page - 1) * page_size
         try:
-            r = await db.execute(text("""
-                SELECT created_at, actor_id::text, event_type, entity_type, event_id
-                FROM analytics_events
-                ORDER BY created_at DESC
-                LIMIT 50
-            """))
-            items = [
-                {
-                    "time": row[0].isoformat() if row[0] else None,
-                    "actor": row[1],
-                    "action": row[2],
-                    "target": row[3],
-                    "request_id": row[4],
-                }
-                for row in r.fetchall()
-            ]
+            intelligence_engines = ["analytics", "intelligence", "rag", "ai_conversation", "data_science"]
+            stmt = select(PlatformAuditLog).where(PlatformAuditLog.engine_id.in_(intelligence_engines))
+            if q:
+                pattern = f"%{q.strip()}%"
+                stmt = stmt.where(or_(
+                    PlatformAuditLog.operation.ilike(pattern),
+                    PlatformAuditLog.entity_type.ilike(pattern),
+                    PlatformAuditLog.entity_id.ilike(pattern),
+                    PlatformAuditLog.request_id.ilike(pattern),
+                    cast(PlatformAuditLog.actor_id, String).ilike(pattern),
+                ))
+            if engine_id:
+                stmt = stmt.where(PlatformAuditLog.engine_id == engine_id)
+            if operation:
+                stmt = stmt.where(PlatformAuditLog.operation == operation)
+            if high_risk is not None:
+                stmt = stmt.where(PlatformAuditLog.is_high_risk == high_risk)
+            total = int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0)
+            r = await db.execute(
+                stmt.order_by(PlatformAuditLog.created_at.desc()).offset(offset).limit(page_size)
+            )
+            items = [{
+                "id": str(row.id),
+                "time": row.created_at.isoformat() if row.created_at else None,
+                "actor": str(row.actor_id) if row.actor_id else None,
+                "actor_role": row.actor_role,
+                "action": row.operation,
+                "engine_id": row.engine_id,
+                "target": row.entity_type,
+                "target_id": row.entity_id,
+                "request_id": row.request_id,
+                "is_high_risk": row.is_high_risk,
+            } for row in r.scalars()]
         except Exception:
-            items = []
-        return {"items": items, "total": len(items)}
+            items, total = [], 0
+        return {"items": items, "total": total, "page": page, "page_size": page_size}

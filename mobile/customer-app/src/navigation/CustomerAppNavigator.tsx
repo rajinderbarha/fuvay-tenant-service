@@ -28,6 +28,7 @@ import { SupportRequestsScreen } from "../screens/support/SupportRequestsScreen"
 import { SupportRequestDetailsScreen } from "../screens/support/SupportRequestDetailsScreen";
 import { SafetyReportScreen } from "../screens/support/SafetyReportScreen";
 import { SupportRequestWizardNavigator } from "./SupportRequestWizardNavigator";
+import { ServiceRemediesScreen } from "../screens/service-remedies/ServiceRemediesScreen";
 
 const Stack = createNativeStackNavigator<CustomerAppStackParamList>();
 
@@ -42,6 +43,7 @@ export function CustomerAppNavigator() {
       <Stack.Screen name="BookingReview" component={BookingReviewScreen} />
       <Stack.Screen name="BookingConfirmation" component={BookingConfirmationScreen} />
       <Stack.Screen name="BookingDetails" component={BookingDetailsScreen} />
+      <Stack.Screen name="ServiceRemedies" component={ServiceRemediesScreen} />
       <Stack.Screen name="Notifications" component={NotificationCenterScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Security" component={SecurityScreen} />

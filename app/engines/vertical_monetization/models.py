@@ -111,7 +111,9 @@ class MonetizationJobTypeRule(ServiceOSBase):
     customer_charge_enabled:      Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
     customer_charge_basis:        Mapped[str]            = mapped_column(String(30), default="booking_price_snapshot", nullable=False)
     provider_charge_enabled:      Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
+    provider_charge_model:        Mapped[str]            = mapped_column(String(30), default="INHERIT", nullable=False)
     provider_charge_credit_units: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    provider_chargeable_event:    Mapped[str]            = mapped_column(String(40), default="job_completed", nullable=False)
     status:                       Mapped[str]            = mapped_column(String(20), default="active", nullable=False)
 
     def to_dict(self) -> dict:
@@ -119,7 +121,9 @@ class MonetizationJobTypeRule(ServiceOSBase):
             "id": str(self.id), "policy_id": str(self.policy_id), "job_type_id": str(self.job_type_id),
             "customer_charge_enabled": self.customer_charge_enabled, "customer_charge_basis": self.customer_charge_basis,
             "provider_charge_enabled": self.provider_charge_enabled,
+            "provider_charge_model": self.provider_charge_model,
             "provider_charge_credit_units": str(self.provider_charge_credit_units) if self.provider_charge_credit_units is not None else None,
+            "provider_chargeable_event": self.provider_chargeable_event,
             "status": self.status,
         }
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -131,10 +131,36 @@ class CatalogDimensionService:
                 if job_type_id else ServiceJobDimension.job_type_id.is_(None)))).scalars().all()
         by_dim = {str(c.dimension_id): c for c in cfg_rows}
 
+        # Batch all value counts. This replaces one COUNT query per dimension,
+        # which made readiness latency grow linearly with the platform schema.
+        generic_ids = [d.id for d in dims if not d.legacy_source]
+        generic_counts: dict[uuid.UUID, int] = {}
+        if generic_ids:
+            generic_counts = dict((await self.db.execute(
+                select(CatalogDimensionValue.dimension_id, func.count(CatalogDimensionValue.id))
+                .where(
+                    CatalogDimensionValue.dimension_id.in_(generic_ids),
+                    CatalogDimensionValue.is_active == True,  # noqa: E712
+                )
+                .group_by(CatalogDimensionValue.dimension_id)
+            )).all())
+        needs_types = any(d.legacy_source == "service_types" for d in dims)
+        needs_brands = any(d.legacy_source == "brands" for d in dims)
+        type_count = int(await self.db.scalar(
+            select(func.count(ServiceType.id)).where(ServiceType.is_active == True)  # noqa: E712
+        ) or 0) if needs_types else 0
+        brand_count = int(await self.db.scalar(
+            select(func.count(Brand.id)).where(Brand.is_active == True)  # noqa: E712
+        ) or 0) if needs_brands else 0
+
         items = []
         for d in dims:
             cfg = by_dim.get(str(d.id))
-            value_count = await self._value_count(d)
+            value_count = (
+                type_count if d.legacy_source == "service_types"
+                else brand_count if d.legacy_source == "brands"
+                else int(generic_counts.get(d.id, 0))
+            )
             base = {"dimension": d.to_dict(), "value_count": value_count}
             base["config"] = cfg.to_dict() if cfg else {
                 "enabled": False, "required": False, "ask_customer": False,
@@ -164,6 +190,7 @@ class CatalogDimensionService:
                 ServiceJobDimension.job_type_id == job_type_id
                 if job_type_id else ServiceJobDimension.job_type_id.is_(None)))).scalar_one_or_none()
 
+        changed = existing is None or any(getattr(existing, key) != value for key, value in flags.items())
         if existing:
             for k, v in flags.items():
                 setattr(existing, k, v)
@@ -172,6 +199,9 @@ class CatalogDimensionService:
             row = ServiceJobDimension(master_service_id=master_service_id, job_type_id=job_type_id,
                                       dimension_id=dimension_id, **flags)
             self.db.add(row)
+        if changed:
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            await bump_tenant_setup_revision(self.db, master_service_id, job_type_id)
         await self.db.commit()
         await self.db.refresh(row)
         return row.to_dict()
@@ -183,7 +213,6 @@ class CatalogDimensionService:
         the approved mockup's right panel shows: a checklist of pass/fail
         checks + a derived percentage + affected-tenant count. The frontend
         must NOT compute this itself -- it renders exactly what this returns."""
-        from sqlalchemy import func
         svc = (await self.db.execute(
             select(MasterService).where(MasterService.id == master_service_id))).scalar_one_or_none()
         if not svc:
@@ -260,16 +289,3 @@ class CatalogDimensionService:
         if not d:
             raise NotFoundException("CatalogDimension", str(dimension_id))
         return d
-
-    async def _value_count(self, d: CatalogDimension) -> int:
-        from sqlalchemy import func
-        if d.legacy_source == "service_types":
-            return (await self.db.execute(
-                select(func.count(ServiceType.id)).where(ServiceType.is_active == True))).scalar() or 0  # noqa: E712
-        if d.legacy_source == "brands":
-            return (await self.db.execute(
-                select(func.count(Brand.id)).where(Brand.is_active == True))).scalar() or 0  # noqa: E712
-        return (await self.db.execute(
-            select(func.count(CatalogDimensionValue.id)).where(
-                CatalogDimensionValue.dimension_id == d.id,
-                CatalogDimensionValue.is_active == True))).scalar() or 0  # noqa: E712

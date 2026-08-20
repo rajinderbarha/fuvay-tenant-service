@@ -9,7 +9,7 @@ import { StepProgressBar } from "../../../../../../components/onboarding/StepPro
 import { Card, Btn, Badge, Skeleton, Input } from "../../../../../../components/shared/ui";
 import {
   providerServiceAreasApi, providerAvailabilityApi, bookingWindowApi, availabilityExceptionsApi,
-  homeServicesSetupApi, ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
+  ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
   type BookingWindowSettings, type AvailabilityException,
 } from "../../../../../../lib/api";
 
@@ -311,28 +311,10 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
     }
     setSaving(true);
     try {
-      // Publishing a service requires an active coverage area
-      // (admin_catalog/tenant_service.py::publish_service), and Services &
-      // Pricing (step 4) runs before this step -- so no service configured
-      // there could ever be published yet. This is the first point in the
-      // flow both requirements (pricing + coverage) are met, so eligible
-      // draft services are published here rather than staying in draft
-      // forever with no other trigger anywhere in onboarding.
-      const { services } = await homeServicesSetupApi.listEnabled();
-      const publishErrors: string[] = [];
-      for (const svc of services) {
-        if (svc.setup_status === "published") continue;
-        try {
-          await homeServicesSetupApi.publish(svc.tenant_service_id);
-        } catch (err) {
-          const name = svc.tenant_display_name ?? "A service";
-          publishErrors.push(err instanceof ServiceOSError ? `${name}: ${err.message}` : `${name}: could not be published.`);
-        }
-      }
-      if (publishErrors.length) {
-        setError(`Some services still need attention before they can be published: ${publishErrors.join(" ")}`);
-        return;
-      }
+      // This step owns only coverage, hours and booking controls. Publishing
+      // here made unrelated service-pricing omissions trap the tenant on the
+      // Coverage page. Review & Submit is the single publication boundary and
+      // shows service-specific blockers with the appropriate edit action.
       router.push("/tenant/home-services/setup/staff");
     } finally {
       setSaving(false);

@@ -46,11 +46,18 @@ async def list_brands(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    retired: bool = Query(False),
+    mapped: bool | None = Query(None),
+    has_providers: bool | None = Query(None),
+    sort_by: str = Query("display_order"),
+    sort_dir: str = Query("asc"),
     u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brands(status=status, category_id=category_id, search=search,
-                                   page=page, page_size=page_size), _rid(r))
+                                   page=page, page_size=page_size, retired=retired,
+                                   mapped=mapped, has_providers=has_providers,
+                                   sort_by=sort_by, sort_dir=sort_dir), _rid(r))
 
 
 @router.post("", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
@@ -80,10 +87,11 @@ async def seed_brands(
 async def get_brand(
     brand_id: uuid.UUID,
     r: Request,
+    include_retired: bool = Query(False),
     u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
-    return ok(await s.get_brand(brand_id), _rid(r))
+    return ok(await s.get_brand(brand_id, include_retired=include_retired), _rid(r))
 
 
 @router.put("/{brand_id}", response_model=ApiResponse[dict], summary="Update brand",
@@ -128,7 +136,23 @@ async def archive_brand(
     u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
-    return ok(await s.archive_brand(brand_id), _rid(r))
+    body = await r.json()
+    return ok(await s.archive_brand(brand_id, body.get("reason", "")), _rid(r))
+
+
+@router.post("/{brand_id}/restore", response_model=ApiResponse[dict], summary="Restore retired brand")
+async def restore_brand(brand_id: uuid.UUID, r: Request,
+                        u: UserContext = Depends(require_super_admin),
+                        s: BrandService = Depends(_svc)):
+    body = await r.json()
+    return ok(await s.restore_brand(brand_id, body.get("reason", "")), _rid(r))
+
+
+@router.get("/{brand_id}/audit", response_model=ApiResponse[dict], summary="Brand audit history")
+async def brand_audit(brand_id: uuid.UUID, r: Request, limit: int = Query(100, ge=1, le=200),
+                      u: UserContext = Depends(require_super_admin),
+                      s: BrandService = Depends(_svc)):
+    return ok(await s.get_brand_audit(brand_id, limit), _rid(r))
 
 
 # ═══════════════════════════════════════════════════════════

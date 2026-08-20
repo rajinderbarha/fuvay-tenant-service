@@ -7,7 +7,7 @@ import { enterpriseApi, EnterpriseSavedView } from "../../lib/api";
 import EnterpriseColumnManager, { ColumnDef } from "./EnterpriseColumnManager";
 
 interface Props {
-  resourceKey: "admin_customers" | "admin_staff" | "admin_complaints" | "admin_categories" | "admin_verticals" | "admin_service_groups";
+  resourceKey: "admin_customers" | "admin_staff" | "admin_complaints" | "admin_categories" | "admin_verticals" | "admin_service_groups" | "admin_master_services" | "admin_service_types" | "admin_brands" | "admin_checklist_templates" | "admin_checklist_mappings" | "admin_tenants";
   filters: Record<string, unknown>;
   sort?: { sort_by: string; sort_direction: string };
   columns: ColumnDef[];
@@ -16,12 +16,18 @@ interface Props {
 }
 
 const EXPORT_FIELDS: Record<Props["resourceKey"], Set<string>> = {
+  admin_tenants: new Set(["business_name", "status", "contact_email", "subdomain", "created_at"]),
   admin_customers: new Set(["full_name", "phone", "email", "city", "state", "zipcode", "health_band", "total_bookings", "completed_bookings", "cancelled_bookings", "complaints_count", "reviews_count", "average_rating", "last_booking_at", "created_at"]),
   admin_staff: new Set(["full_name", "email", "phone", "role", "tenant_name", "tenant_city", "availability_status", "is_active", "is_verified", "total_jobs", "completed_jobs", "active_jobs", "average_rating", "last_job_at", "created_at"]),
   admin_complaints: new Set(["complaint_number", "status", "priority", "complaint_type", "created_at"]),
   admin_categories: new Set(["name", "slug", "vertical_type", "finance_model", "customer_flow_type", "status", "is_customer_visible", "tenant_selectable", "pricing_supported", "display_order", "created_at", "updated_at"]),
   admin_verticals: new Set(["label", "key", "status", "finance_model", "lifecycle_status", "release_stage", "registration_allowed", "is_beta", "sort_order", "updated_at"]),
   admin_service_groups: new Set(["name", "code", "slug", "category_name", "status", "display_order", "created_at", "updated_at", "deleted_at"]),
+  admin_master_services: new Set(["name", "slug", "category_name", "group_name", "job_type", "pricing_model", "status", "display_order", "created_at", "updated_at", "deleted_at"]),
+  admin_service_types: new Set(["name", "code", "slug", "type_family", "status", "customer_visible", "mapping_count", "display_order", "created_at", "updated_at", "deleted_at"]),
+  admin_brands: new Set(["name", "code", "slug", "status", "is_global", "service_mapping_count", "category_mapping_count", "provider_usage_count", "display_order", "created_at", "updated_at", "deleted_at"]),
+  admin_checklist_templates: new Set(["name", "code", "description", "purpose", "status", "owner_scope", "latest_version", "version_status", "active_mapping_count", "created_at", "updated_at", "archived_at", "archive_reason"]),
+  admin_checklist_mappings: new Set(["template_name", "template_code", "template_version", "master_service_name", "job_type_label", "phase", "usage", "actor", "completion_gate", "status", "effective_from", "effective_until", "created_at", "updated_at", "disabled_at", "disable_reason"]),
 };
 
 const buttonStyle: React.CSSProperties = {

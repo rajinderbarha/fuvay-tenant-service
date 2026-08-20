@@ -32,16 +32,17 @@ export default function NewServiceSetupPage() {
   // exists it's auto-selected -- avoids an unnecessary screen per spec.
   const services = availableRes.data?.services ?? [];
 
-  const enableAction = useAction(useCallback(async (masterServiceId: string) => {
-    const existing = (enabledRes.data?.services ?? []).find(s => s.master_service_id === masterServiceId);
+  const enableAction = useAction(useCallback(async (service: AdminMasterServiceRow) => {
+    if (!service.job_type_id) throw new Error("This service has no job type configured.");
+    const existing = (enabledRes.data?.services ?? []).find(s => s.master_service_id === service.service_id && s.job_type_id === service.job_type_id);
     if (existing) return existing; // never create a duplicate tenant setup for the same service
-    return serviceSetupApi.enableService(masterServiceId);
+    return serviceSetupApi.enableService(service.service_id, service.job_type_id);
   }, [enabledRes.data]));
 
   async function handleContinueFromService() {
     if (!selectedService) return;
     setError(null);
-    const result = await enableAction.execute(selectedService.service_id);
+    const result = await enableAction.execute(selectedService);
     if (result) {
       router.push(`/services/setup/${result.tenant_service_id}`);
     } else if (enableAction.error) {

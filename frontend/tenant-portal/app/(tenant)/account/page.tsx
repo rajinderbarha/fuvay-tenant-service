@@ -5,10 +5,14 @@ import { Card, SectionHeader, Btn, Input, Badge, Spinner, Modal, AddBtn, DeleteB
 import { authApi, type UserSession, type ApiKey, type ApiKeyCreated, type MfaSetup, type InviteStaffPayload } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 
+const API_KEYS_ENABLED = false;
+
 export default function AccountPage() {
   const me       = useApi(() => authApi.me(), []);
   const sessions = useApi(() => authApi.getSessions(), []);
-  const keys     = useApi(() => authApi.listApiKeys(), []);
+  const keys     = useApi(() => API_KEYS_ENABLED
+    ? authApi.listApiKeys()
+    : Promise.resolve({ keys: [], total: 0 }), []);
 
   const [tab,  setTab]  = useState<"profile"|"password"|"mfa"|"sessions"|"apikeys"|"team">("profile");
   const [toast, setToast] = useState("");
@@ -110,7 +114,6 @@ export default function AccountPage() {
     { id:"password", label:"Password"  },
     { id:"mfa",      label:"MFA"       },
     { id:"sessions", label:"Sessions"  },
-    { id:"apikeys",  label:"API Keys"  },
     { id:"team",     label:"Team"      },
   ] as const;
 

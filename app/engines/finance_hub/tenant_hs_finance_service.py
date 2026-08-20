@@ -42,7 +42,8 @@ from app.engines.finance_hub.deposit_refund_models import (
     TERMINAL_STATUSES, STATUS_LABELS,
 )
 from app.engines.usage_credits.service import (
-    UsageCreditService, EVENT_TOPUP_CREDIT_GRANTED, EVENT_COMPLETED_JOB_DEDUCTION,
+    UsageCreditService, EVENT_TOPUP_CREDIT_GRANTED, EVENT_TOPUP_CREDIT_REFUNDED,
+    EVENT_COMPLETED_JOB_DEDUCTION,
     EVENT_CREDIT_REVERSAL, EVENT_MANUAL_CREDIT_ADDED, EVENT_MANUAL_CREDIT_REMOVED,
     EVENT_PACKAGE_CREDIT_GRANTED,
 )
@@ -51,7 +52,7 @@ from app.engines.vertical_catalog.finance_policy_service import (
     resolve_published_policy, resolve_qualifying_technician_count, FinancePolicyResolutionError,
 )
 from app.engines.vertical_catalog.activation_payment_models import (
-    ActivationPaymentOrder, PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, STATUS_CAPTURED,
+    ActivationPaymentOrder, PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING, STATUS_CAPTURED,
 )
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.vertical_catalog.service import VerticalCatalogService
@@ -82,6 +83,7 @@ ACTIVE_JOB_STATUSES = (
 
 EVENT_TYPE_LABELS = {
     EVENT_TOPUP_CREDIT_GRANTED: "Credit top-up posted",
+    EVENT_TOPUP_CREDIT_REFUNDED: "Credit top-up refunded",
     EVENT_COMPLETED_JOB_DEDUCTION: "Completed-job deduction",
     EVENT_CREDIT_REVERSAL: "Credit reversal",
     EVENT_MANUAL_CREDIT_ADDED: "Admin credit adjustment (added)",
@@ -364,11 +366,11 @@ class TenantHomeServicesFinanceService:
         pending_rows = (await self.db.execute(
             select(ActivationPaymentOrder).where(
                 ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind == PAYMENT_KIND_DEPOSIT,
+                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
                 ActivationPaymentOrder.status == "created",
             )
         )).scalars().all()
-        pending_deposit = sum((_d(r.amount) for r in pending_rows), Decimal("0"))
+        pending_deposit = sum((_d(r.to_dict()["deposit_amount"]) for r in pending_rows), Decimal("0"))
 
         top_up_due = Decimal("0")
         if required is not None and held_effective < required:
@@ -387,7 +389,7 @@ class TenantHomeServicesFinanceService:
         last_txn = (await self.db.execute(
             select(ActivationPaymentOrder).where(
                 ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind == PAYMENT_KIND_DEPOSIT,
+                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
             ).order_by(ActivationPaymentOrder.created_at.desc()).limit(1)
         )).scalar_one_or_none()
 
@@ -556,13 +558,8 @@ class TenantHomeServicesFinanceService:
         completed jobs, and how it is derived.
 
         Deliberately mirrors execution/usage_credit_deduction.py::
-        resolve_commission_credits -- the ONE function that decides the real
-        charge -- rather than reporting a separately-stored "monetization
-        status". Precedence there is: the job's own category
-        (ServiceCategory.commission_pct) -> the vertical policy's
-        provider_percentage default. Reproducing that here (instead of
-        inventing a second source) is what makes this number trustworthy;
-        if the two ever diverge, this is the copy that is wrong.
+        resolve_commission_credits. The published Home Services vertical
+        policy is the sole authority; categories never override it.
 
         Only categories the tenant actually has enabled services in are
         listed, since a rate for a category they don't serve is noise.
@@ -608,14 +605,13 @@ class TenantHomeServicesFinanceService:
                 .order_by(ServiceCategory.name)
             )).scalars().all()
             for c in rows:
-                own = _d(c.commission_pct) if c.commission_pct is not None else None
-                effective = own if own is not None else default_pct
                 categories.append({
                     "category_id": str(c.id),
                     "category_name": c.name,
-                    "category_rate_pct": str(own) if own is not None else None,
-                    "effective_rate_pct": str(effective) if effective is not None else None,
-                    "using_default": own is None,
+                    "category_rate_pct": None,
+                    "effective_rate_pct": str(default_pct) if default_pct is not None else None,
+                    "using_default": True,
+                    "source": "home_services_vertical_policy",
                 })
 
         return {
@@ -625,9 +621,8 @@ class TenantHomeServicesFinanceService:
             "basis": "Percentage of the amount you collect from the customer for each completed job",
             "charged_as": "Usage credits deducted from your balance at job completion",
             "categories": categories,
-            # Honest disclosure rather than showing a rate that isn't charged:
-            # every other provider_model leaves job completion falling back to
-            # the legacy per-service flat-credit rules, not this percentage.
+            # Honest disclosure rather than showing a percentage that is not
+            # charged by the selected provider model.
             "not_live_reason": None if is_live else (
                 f"Percentage commission is not the active model"
                 + (f" (currently {model})" if model else "")
@@ -674,11 +669,14 @@ class TenantHomeServicesFinanceService:
         dep_rows = (await self.db.execute(
             select(ActivationPaymentOrder).where(
                 ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind == PAYMENT_KIND_DEPOSIT,
+                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
             ).order_by(ActivationPaymentOrder.created_at.desc())
         )).scalars().all()
         for r in dep_rows:
             captured = r.status == STATUS_CAPTURED
+            deposit_amount = _d(r.to_dict()["deposit_amount"])
+            if deposit_amount <= 0:
+                continue
             rows.append({
                 "row_id": f"dep:{r.id}",
                 "occurred_at": (r.captured_at or r.created_at).isoformat() if (r.captured_at or r.created_at) else None,
@@ -689,7 +687,7 @@ class TenantHomeServicesFinanceService:
                 "event_label": "Security deposit payment",
                 "description": f"Security deposit payment ({r.status})",
                 "debit": None,
-                "credit": str(_d(r.amount)) if captured else None,
+                "credit": str(deposit_amount) if captured else None,
                 # NEVER a usage-credit balance on a deposit row — UI renders "—".
                 "usage_credit_balance_after": None,
                 "status": "posted" if captured else ("failed" if r.status == "failed" else "pending"),

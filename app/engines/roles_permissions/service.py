@@ -23,25 +23,34 @@ from app.core.permissions import P, ROLE_PERMISSIONS
 # Ticket's 10 required roles, in order. Roles present in ROLE_PERMISSIONS are
 # "implemented"; the rest are documented gaps (see PHASE_1B_ROLES_UI_REPORT.md).
 REQUIRED_ROLE_ORDER = [
-    "super_admin", "platform_admin", "finance_admin", "operations_admin",
-    "support_admin", "compliance_officer", "tenant_owner", "tenant_manager",
-    "technician", "customer",
+    "super_admin", "admin_operations", "admin_finance", "admin_security",
+    "admin_readonly", "tenant_owner", "staff", "technician", "customer", "guest",
 ]
 ROLE_LABELS = {
-    "super_admin": "Super Admin", "platform_admin": "Platform Admin",
-    "finance_admin": "Finance Admin", "operations_admin": "Operations Admin",
-    "support_admin": "Support Admin", "compliance_officer": "Compliance Officer",
-    "tenant_owner": "Tenant Owner", "tenant_manager": "Tenant Manager",
-    "technician": "Technician", "customer": "Customer",
-    "staff": "Staff (legacy alias of technician)", "guest": "Guest",
+    "super_admin": "Platform Super Admin",
+    "admin_operations": "Operations Admin",
+    "admin_finance": "Finance Admin",
+    "admin_security": "Security Admin",
+    "admin_readonly": "Admin Read Only",
+    "tenant_owner": "Tenant Owner",
+    "staff": "Staff",
+    "technician": "Technician",
+    "customer": "Customer",
+    "guest": "Guest",
 }
 ROLE_SCOPE = {
-    "super_admin": "platform", "platform_admin": "platform", "finance_admin": "platform",
-    "operations_admin": "platform", "support_admin": "platform", "compliance_officer": "platform",
-    "tenant_owner": "tenant", "tenant_manager": "tenant", "technician": "tenant",
-    "customer": "customer", "staff": "tenant", "guest": "public",
+    "super_admin": "platform",
+    "admin_operations": "platform",
+    "admin_finance": "platform",
+    "admin_security": "platform",
+    "admin_readonly": "platform",
+    "tenant_owner": "tenant",
+    "staff": "tenant",
+    "technician": "tenant",
+    "customer": "customer",
+    "guest": "public",
 }
-SYSTEM_ROLES = {"super_admin", "tenant_owner", "technician", "customer", "staff", "guest"}
+SYSTEM_ROLES = set(ROLE_PERMISSIONS.keys())
 
 
 def _permission_count(role: str) -> int:
@@ -167,7 +176,9 @@ def _app_scope(const_name: str) -> str:
 
 
 def list_permissions(module: str | None = None, app_scope: str | None = None,
-                      risk_level: str | None = None, search: str | None = None) -> dict:
+                      risk_level: str | None = None, search: str | None = None,
+                      page: int = 1, limit: int = 50,
+                      paginate: bool = True) -> dict:
     items = []
     for name in sorted(dir(P)):
         if name.startswith("_"):
@@ -208,18 +219,29 @@ def list_permissions(module: str | None = None, app_scope: str | None = None,
     high_risk_count = sum(1 for i in items if i["risk_level"] == "high")
     unassigned_count = sum(1 for i in items if i["assigned_role_count"] == 0)
 
+    safe_page = max(1, page)
+    safe_limit = min(200, max(1, limit))
+    start = (safe_page - 1) * safe_limit
+    page_items = items[start:start + safe_limit] if paginate else items
+
     return {
-        "items": items,
+        "items": page_items,
         "summary": {
             "total_permissions": total, "admin_permissions": admin_count,
             "tenant_permissions": tenant_count, "customer_permissions": customer_count,
             "high_risk_permissions": high_risk_count, "unassigned_permissions": unassigned_count,
         },
+        "meta": {
+            "total": total,
+            "page": safe_page,
+            "limit": safe_limit,
+            "total_pages": max(1, (total + safe_limit - 1) // safe_limit),
+        },
     }
 
 
 def list_permissions_grouped(**filters) -> dict:
-    result = list_permissions(**filters)
+    result = list_permissions(**filters, paginate=False)
     grouped: dict[str, list[dict]] = {}
     for item in result["items"]:
         grouped.setdefault(item["module"], []).append(item)

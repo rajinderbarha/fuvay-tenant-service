@@ -8,12 +8,9 @@ import { OfflineBanner } from "../../components/OfflineBanner";
 import {
   CustomerHeader, ServiceSearch, VerticalSwitcher, HomeServiceCard,
   AssistantEntryCard, HomeSkeleton, HomeErrorState,
-  NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal, GlobalServicesSection,
+  NoAddressState, UnserviceableState, HomeSectionErrorBoundary, LocationPickerModal,
   SearchResultsList,
 } from "../../components/home";
-// Each banner style is its own component; CampaignSlot picks the one the
-// backend asked for, per placement.
-import { CampaignSlot } from "../../components/home/CampaignSlot";
 import { ProblemGrid } from "../../components/home/ProblemGrid";
 import { ProblemCircles } from "../../components/home/ProblemCircles";
 import { selectProblems } from "../../domain/problemSelection";
@@ -25,8 +22,6 @@ import { useCustomerSearchQuery, MIN_QUERY_LENGTH } from "../../api/home/useCust
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { timeSensitiveGreeting } from "../../domain/greeting";
-import { resolveCampaignDeepLink } from "../../domain/campaignDeepLink";
-import type { HomeCampaign, HomeCampaignPlacement } from "../../domain/customerHome";
 import { HomeCategory } from "../../domain/customerHome";
 import { createServiceCardEntryContext, createAssistantCardEntryContext, createQuickIssueEntryContext } from "../../domain/assistantEntry";
 import type { HomeQuickIssue } from "../../domain/customerHome";
@@ -39,48 +34,26 @@ const PROBLEM_CIRCLE_COUNT = 12;
  * two do not turn the screen into four versions of the same list. */
 const INTENT_COUNT = 8;
 
-/** The order this build ships. Used ONLY when the backend sends no sections --
- * an older backend, or a failed section lookup. Intent first: what is already
- * happening to the customer, then the fastest way to book, then everything that
- * merely helps them decide. */
-const DEFAULT_SECTION_ORDER: { key: string; order: number; title: string | null }[] = [
-  { key: "verticals", order: 5, title: null },
-  { key: "active_booking", order: 10, title: null },
-  { key: "quick_problems", order: 20, title: null },
-  { key: "campaign_top", order: 30, title: null },
-  { key: "service_grid", order: 40, title: null },
-  { key: "campaign_after_services", order: 50, title: null },
-  { key: "assistant_entry", order: 60, title: null },
-  { key: "campaign_mid", order: 70, title: null },
-  { key: "problem_circles", order: 75, title: null },
-  { key: "repair_intent", order: 76, title: null },
-  { key: "consult_intent", order: 77, title: null },
-  { key: "campaign_after_circles", order: 78, title: null },
-  { key: "global_services", order: 80, title: null },
-  // how_it_works and trust_benefits are NOT in the shipped order: both are
-  // switched off in the layout settings, and this fallback should match what a
-  // customer actually sees rather than reintroducing them on any build that
-  // reaches an older backend. Their renderers stay wired, so turning either back
-  // on from Home Layout needs no release.
-  { key: "campaign_bottom", order: 90, title: null },
-];
+/** Home Layout is a product-owned native experience. Runtime admin ordering was
+ * retired because it could make installed app versions render incomplete or
+ * unsupported combinations. */
+const HOME_SECTION_ORDER = [
+  "verticals", "active_booking", "quick_problems", "service_grid",
+  "assistant_entry", "problem_circles", "repair_intent", "consult_intent",
+] as const;
 
 
 /**
  * Real Home screen consuming GET /v1/customer/home. Confirmed contract
  * gaps this screen honestly works around (not fabricated): no
- * per-category price field, no distinct "offer" campaign type (so no
- * separate "Offers for you" section). Per explicit product direction:
- * per-service prices and "Offers for you" stay absent (pricing belongs
- * later in the booking flow; offers need real eligibility/codes first).
- * ZIP/address selection and service→Assistant navigation (with backend
- * context) ARE implemented this pass; campaign CTAs remain
- * non-interactive since no deep-link routing destination exists yet.
+ * per-category price field. Per explicit product direction: per-service
+ * prices stay absent (pricing belongs later in the booking flow).
+ * ZIP/address selection and service-to-Assistant navigation (with backend
+ * context) ARE implemented.
  */
 export function HomeScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<BottomTabNavigationProp<CustomerTabsParamList>>();
-  const { mode } = useTheme();
   const network = useNetworkStatus();
   const [searchValue, setSearchValue] = useState("");
   const [selectedVerticalKey, setSelectedVerticalKey] = useState("home_services");
@@ -125,16 +98,6 @@ export function HomeScreen() {
     homeQuery.data?.address?.zipcode ?? undefined,
   );
   const isSearching = searchValue.trim().length >= MIN_QUERY_LENGTH;
-  /** The slugs a campaign CTA is allowed to route into. Same source as the
-   * service cards: whatever the backend says is bookable at this ZIP. Kept
-   * above the early returns for the same Rules-of-Hooks reason as above. */
-  const bookableSlugs = useMemo(
-    () => (homeQuery.data?.bookableCategories ?? [])
-      .map(c => c.slug)
-      .filter((s): s is string => Boolean(s)),
-    [homeQuery.data?.bookableCategories],
-  );
-
   const customerFirstName = profileQuery.data?.fullName?.split(" ")[0] || "there";
 
   /** Changing location re-runs GET /v1/customer/home?zipcode=<new> --
@@ -161,25 +124,6 @@ export function HomeScreen() {
       categorySlug: category.slug,
       zipcode,
     }));
-  }
-
-  /** A campaign CTA tap. Only reached for links that already resolved to a
-   * real destination (the carousel disables the rest), and re-resolved here
-   * rather than trusted so the two can never drift apart. */
-  function handleCampaignCta(campaign: HomeCampaign) {
-    const home = homeQuery.data;
-    // Same rule as the render path: the ZIP the payload was computed for.
-    const zipcode = home?.serviceability?.zipcode ?? home?.address?.zipcode;
-    if (!home || !zipcode) return;
-
-    const target = resolveCampaignDeepLink(campaign.ctaDeeplink, bookableSlugs);
-    if (!target) return;
-
-    if (target.kind === "home") return; // Already here; nothing to navigate to.
-
-    const category = home.bookableCategories.find(c => c.slug === target.slug);
-    if (!category) return;
-    navigateToService(category, zipcode);
   }
 
   /** Same destination as a service-card tap, with the issue carried along
@@ -238,25 +182,14 @@ export function HomeScreen() {
   if (!home.address && !browsingZipcode) {
     return (
       /**
-       * Scrollable, and stacked rather than vertically centred.
-       *
-       * Real bug this fixes: the prompt sat in a `flex: 1` centred block with Global
-       * Services as its sibling inside a NON-scrolling screen. Global Services is a
-       * six-card grid, so the content was always taller than the phone, and with
-       * nothing able to scroll the two blocks drew on top of each other -- "Set your
-       * location" overlapped "Build with Fuvay", and the caption landed across the
-       * section's own subtitle.
+       * Scrollable, and stacked rather than vertically centred. The retired
+       * global-services fallback is intentionally gone, so the customer gets a
+       * single clear action here: choose where they need service.
        */
       <AppScreen scroll edges={["top"]}>
         <OfflineBanner />
         <View style={{ paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.xl }}>
           <NoAddressState onAddAddress={() => setLocationPickerVisible(true)} />
-        </View>
-        {/* Shown even with no address on file -- Global Services is
-            nationwide/fixed, never gated by serviceability (see
-            GlobalServicesSection). */}
-        <View style={{ paddingBottom: theme.spacing.xxl }}>
-          <GlobalServicesSection defaultName={customerFirstName !== "there" ? customerFirstName : undefined} />
         </View>
         <LocationPickerModal
           visible={locationPickerVisible}
@@ -272,12 +205,6 @@ export function HomeScreen() {
     return (
       <AppScreen>
         <UnserviceableState zipcode={home.serviceability.zipcode} onChangeLocation={() => setLocationPickerVisible(true)} />
-        <View style={{ paddingHorizontal: theme.layout.screenHorizontalPadding, paddingBottom: theme.spacing.lg }}>
-          <GlobalServicesSection
-            defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
-            defaultZipcode={home.serviceability.zipcode}
-          />
-        </View>
         <LocationPickerModal
           visible={locationPickerVisible}
           currentZipcode={home.serviceability.zipcode}
@@ -311,17 +238,13 @@ export function HomeScreen() {
   const repairIssues = home.quickIssues.filter(i => i.intent === "repair").slice(0, INTENT_COUNT);
   const consultIssues = home.quickIssues.filter(i => i.intent === "consult").slice(0, INTENT_COUNT);
 
-  function sectionTitle(key: string): string | null {
-    return home!.sections.find(s => s.key === key)?.title ?? null;
-  }
-
   function renderServiceGrid() {
     return (
       <View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.spacing.sm }}>
           <View style={{ flexDirection: "row", alignItems: "baseline", gap: theme.spacing.xs, flex: 1, minWidth: 0 }}>
             <AppText variant="headingSmall">
-              {isSearching ? "Results" : sectionTitle("service_grid") || "Services Nearby"}
+              {isSearching ? "Results" : "Services Nearby"}
             </AppText>
             {home!.address?.zipcode ? (
               <AppText variant="caption" color="tertiary" numberOfLines={1}>
@@ -369,20 +292,6 @@ export function HomeScreen() {
     );
   }
 
-  function renderCampaignSlot(placement: HomeCampaignPlacement) {
-    return (
-      <HomeSectionErrorBoundary sectionLabel="promotions">
-        <CampaignSlot
-          placement={placement}
-          campaigns={home!.campaigns}
-          mode={mode}
-          isCtaRoutable={c => resolveCampaignDeepLink(c.ctaDeeplink, bookableSlugs) !== null}
-          onPressCta={handleCampaignCta}
-        />
-      </HomeSectionErrorBoundary>
-    );
-  }
-
   /** Every section this build can draw, keyed the way the backend names them.
    * A section with nothing real to show resolves to null and is skipped, so it
    * contributes no heading and no blank space. */
@@ -393,25 +302,12 @@ export function HomeScreen() {
           bookings={home.activeBookings}
           total={home.activeBookingTotal}
           categories={home.bookableCategories}
-          title={sectionTitle("active_booking")}
           onPressBooking={() => navigation.navigate("Bookings")}
           onViewAll={() => navigation.navigate("Bookings")}
         />
       </HomeSectionErrorBoundary>
     ) : null,
 
-    // Five banner slots, each its own section so admin can move, rename or
-    // switch any of them off. Each renders as a carousel once it holds more
-    // than one banner.
-    campaign_top: renderCampaignSlot("campaign_top"),
-    campaign_after_problems: renderCampaignSlot("campaign_after_problems"),
-    campaign_after_services: renderCampaignSlot("campaign_after_services"),
-    campaign_mid: renderCampaignSlot("campaign_mid"),
-    campaign_after_circles: renderCampaignSlot("campaign_after_circles"),
-    campaign_bottom: renderCampaignSlot("campaign_bottom"),
-
-    // Was in the backend's section vocabulary with nothing wired to draw it, so
-    // the payload named a key this screen silently skipped.
     how_it_works: (
       <HomeSectionErrorBoundary sectionLabel="how it works">
         <HowItWorksSection />
@@ -425,7 +321,6 @@ export function HomeScreen() {
       <HomeSectionErrorBoundary sectionLabel="quick issues">
         <ProblemGrid
           issues={problems.tiles}
-          title={sectionTitle("quick_problems")}
           onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
         />
       </HomeSectionErrorBoundary>
@@ -437,7 +332,7 @@ export function HomeScreen() {
       <HomeSectionErrorBoundary sectionLabel="repair intent">
         <ProblemGrid
           issues={repairIssues}
-          title={sectionTitle("repair_intent") || "Something to repair"}
+          title="Something to repair"
           onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
         />
       </HomeSectionErrorBoundary>
@@ -447,7 +342,7 @@ export function HomeScreen() {
       <HomeSectionErrorBoundary sectionLabel="consult intent">
         <ProblemGrid
           issues={consultIssues}
-          title={sectionTitle("consult_intent") || "Get advice or a quote"}
+          title="Get advice or a quote"
           onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
         />
       </HomeSectionErrorBoundary>
@@ -457,7 +352,6 @@ export function HomeScreen() {
       <HomeSectionErrorBoundary sectionLabel="problem circles">
         <ProblemCircles
           issues={problems.circles}
-          title={sectionTitle("problem_circles")}
           onPressIssue={issue => navigateToQuickIssue(issue, zipcode)}
         />
       </HomeSectionErrorBoundary>
@@ -475,19 +369,9 @@ export function HomeScreen() {
       </HomeSectionErrorBoundary>
     ),
 
-    global_services: (
-      <HomeSectionErrorBoundary sectionLabel="global services">
-        <GlobalServicesSection
-          defaultName={customerFirstName !== "there" ? customerFirstName : undefined}
-          defaultZipcode={zipcode}
-          title={sectionTitle("global_services")}
-        />
-      </HomeSectionErrorBoundary>
-    ),
-
     trust_benefits: (
       <HomeSectionErrorBoundary sectionLabel="trust">
-        <AssuranceSection title={sectionTitle("trust_benefits")} />
+        <AssuranceSection />
       </HomeSectionErrorBoundary>
     ),
 
@@ -553,19 +437,11 @@ export function HomeScreen() {
           />
         </View>
 
-        {/* Section ORDER AND VISIBILITY ARE BACKEND-CONTROLLED (migration 236).
-            The layout was fixed here, so re-ordering Home or hiding a section
-            needed an app release. `home.sections` is the admin's order; an empty
-            list means an older backend sent no instruction, in which case the
-            shipped order below is used -- empty is never read as "draw nothing".
-
-            A key this build has no node for is skipped, so a newer backend can
-            add a section without breaking this screen. */}
-        {(home.sections.length > 0 ? home.sections : DEFAULT_SECTION_ORDER).map(section => {
-          const node = sectionNodes[section.key];
+        {HOME_SECTION_ORDER.map(sectionKey => {
+          const node = sectionNodes[sectionKey];
           if (!node) return null;
           return (
-            <View key={section.key} style={{ marginTop: theme.spacing.xl }}>
+            <View key={sectionKey} style={{ marginTop: theme.spacing.xl }}>
               {node}
             </View>
           );

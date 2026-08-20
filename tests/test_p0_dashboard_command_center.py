@@ -39,13 +39,32 @@ def test_finance_snapshot_separates_platform_revenue_from_provider_direct_value(
 
 
 def test_home_services_customer_payment_not_counted_as_platform_revenue():
-    # provider_direct_service_value must be sourced from jobs.total_amount (what
-    # the customer pays the provider directly), not wallet/package/subscription revenue.
-    assert "jobs" in SERVICE
+    # Paid invoices are provider-direct service value. Platform revenue comes
+    # only from credited top-up orders.
+    assert "service_invoices" in SERVICE
+    assert "credit_topup_orders" in SERVICE
     assert "provider_direct_service_value" in SERVICE
     assert "payout" not in SERVICE.lower()
     assert "cash wallet" not in SERVICE.lower()
     assert "withdraw" not in SERVICE.lower()
+
+
+def test_dashboard_uses_canonical_home_services_sources_only():
+    assert "service_jobs" in SERVICE
+    assert "service_bookings" in SERVICE
+    assert "provider_visibility_statuses" in SERVICE
+    assert "usage_credit_ledger" in SERVICE
+    assert "FROM health_scores" not in SERVICE
+    assert "FROM jobs " not in SERVICE
+    assert "FROM bookings " not in SERVICE
+    assert "wallet_transactions" not in SERVICE
+    assert "commission_records" not in SERVICE
+
+
+def test_provider_attention_is_operational_not_retired_health_score():
+    assert "_PROVIDER_ATTENTION_CTE" in SERVICE
+    for signal in ("is_bookable", "open_complaints", "missing_deductions", "credit_balance"):
+        assert signal in SERVICE
 
 
 def test_forbidden_finance_language_absent_from_router_and_service():

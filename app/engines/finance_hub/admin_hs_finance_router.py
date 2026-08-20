@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import UserContext, get_current_user, require_super_admin
+from app.dependencies.auth import UserContext, get_current_user
 from app.dependencies.db import get_db
 from app.dependencies.vertical_guard import require_vertical_enabled
 from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
@@ -45,18 +45,18 @@ _hs_enabled = Depends(require_vertical_enabled("home_services"))
 router = APIRouter(
     prefix="/v1/admin/home-services/finance",
     tags=["Admin — Home Services Finance"],
-    dependencies=[_hs_enabled],
+    dependencies=[_hs_enabled, Depends(require_permission(P.FINANCE_READ))],
 )
 canonical_router = APIRouter(
     prefix="/v1/admin/finance/home-services",
     tags=["Admin — Home Services Finance"],
-    dependencies=[_hs_enabled],
+    dependencies=[_hs_enabled, Depends(require_permission(P.FINANCE_READ))],
 )
 ENGINE_ID = "home_services_finance"
 
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
-         u: UserContext = Depends(require_super_admin)) -> HomeServicesFinanceService:
+         u: UserContext = Depends(get_current_user)) -> HomeServicesFinanceService:
     return HomeServicesFinanceService(
         db=db, request_id=getattr(r.state, "request_id", "—"),
         actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
@@ -96,6 +96,19 @@ async def overview(r: Request, date_from: str | None = Query(None), date_to: str
 @router.get("/ledger-health", response_model=ApiResponse[dict], summary="Credit ledger health status strip")
 async def ledger_health(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_ledger_health(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.post(
+    "/reconcile", response_model=ApiResponse[dict], summary="Run read-only Home Services finance reconciliation",
+    dependencies=[Depends(require_permission(P.FINANCE_HOME_SERVICES_TOPUPS_RECONCILE))],
+)
+async def reconcile(
+    r: Request,
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.run_reconciliation(date_from, date_to), _rid(r), ENGINE_ID)
 
 
 # Canonical Home Services credit-account surface. These routes deliberately
@@ -142,12 +155,19 @@ async def list_credit_ledger(
     tenant_id: uuid.UUID | None = Query(None),
     job_id: uuid.UUID | None = Query(None),
     event_type: str | None = Query(None),
+    q: str | None = Query(None, max_length=200),
+    direction: Literal["credit", "debit"] | None = Query(None),
+    reason_code: str | None = Query(None, max_length=50),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     s: HomeServicesFinanceService = Depends(_credit_svc),
 ):
     data = await s.list_credit_ledger(
-        tenant_id=tenant_id, job_id=job_id, event_type=event_type, page=page, page_size=page_size,
+        tenant_id=tenant_id, job_id=job_id, event_type=event_type,
+        q=q, direction=direction, reason_code=reason_code,
+        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
     )
     return ok(data, _rid(r), ENGINE_ID)
 
@@ -186,7 +206,95 @@ async def create_credit_adjustment(
 
 # ── Direct Customer Payments ─────────────────────────────────────────────────
 
-@router.get("/payments", response_model=ApiResponse[dict], summary="List direct customer-to-provider payments")
+@canonical_router.get("/provider-charges", response_model=ApiResponse[dict])
+async def provider_charges(
+    r: Request, q: str | None = Query(None), charge_model: str | None = Query(None),
+    tenant_id: str | None = Query(None), status: str | None = Query(None),
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_provider_charges(
+        q=q, charge_model=charge_model, tenant_id=tenant_id, status=status,
+        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/provider-charges/{charge_ref}", response_model=ApiResponse[dict])
+async def provider_charge_detail(charge_ref: str, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_provider_charge_detail(charge_ref), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/credits/summary", response_model=ApiResponse[dict])
+async def credits_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_credits_workspace_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/topups", response_model=ApiResponse[dict])
+async def hs_topups(
+    r: Request, q: str | None = Query(None), tenant_id: str | None = Query(None),
+    payment_status: str | None = Query(None), date_from: str | None = Query(None),
+    date_to: str | None = Query(None), page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200), s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_topups(
+        q=q, tenant_id=tenant_id, payment_status=payment_status,
+        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/topups/{topup_id}", response_model=ApiResponse[dict])
+async def hs_topup_detail(topup_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_topup_detail(str(topup_id)), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/deposits", response_model=ApiResponse[dict])
+async def hs_deposits(
+    r: Request, status: str | None = Query(None), q: str | None = Query(None),
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    sort_by: str = Query("created_at"), sort_dir: str = Query("desc"),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_hs_deposits(
+        status=status, q=q, page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/deposits/summary", response_model=ApiResponse[dict])
+async def hs_deposits_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_deposits_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/deposits/{deposit_id}", response_model=ApiResponse[dict])
+async def hs_deposit_detail(deposit_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_deposit_detail(deposit_id), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/warranty-claims", response_model=ApiResponse[dict])
+async def hs_warranty_claims(
+    r: Request, status: str | None = Query(None), category: str | None = Query(None),
+    q: str | None = Query(None), page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_hs_warranty_claims(
+        status=status, category=category, q=q, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/warranty-claims/summary", response_model=ApiResponse[dict])
+async def hs_warranty_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_warranty_claims_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/warranty-claims/{claim_id}", response_model=ApiResponse[dict])
+async def hs_warranty_detail(claim_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_warranty_claim_detail(claim_id), _rid(r), ENGINE_ID)
+
+
+@router.get(
+    "/payments", response_model=ApiResponse[dict], summary="List direct customer-to-provider payments",
+    dependencies=[Depends(require_permission(P.DIRECT_PAYMENTS_READ))],
+)
 async def list_direct_payments(
     r: Request,
     payment_status: str | None = Query(None, alias="status"),
@@ -204,20 +312,28 @@ async def list_direct_payments(
     return ok(data, _rid(r), ENGINE_ID)
 
 
-@router.get("/payments/summary", response_model=ApiResponse[dict], summary="Direct payments summary cards")
+@router.get(
+    "/payments/summary", response_model=ApiResponse[dict], summary="Direct payments summary cards",
+    dependencies=[Depends(require_permission(P.DIRECT_PAYMENTS_READ))],
+)
 async def direct_payments_summary(r: Request, date_from: str | None = Query(None), date_to: str | None = Query(None),
                                    s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_direct_payments_summary(date_from, date_to), _rid(r), ENGINE_ID)
 
 
-@router.get("/payments/{payment_id}", response_model=ApiResponse[dict], summary="Direct payment detail")
+@router.get(
+    "/payments/{payment_id}", response_model=ApiResponse[dict], summary="Direct payment detail",
+    dependencies=[Depends(require_permission(P.DIRECT_PAYMENTS_READ))],
+)
 async def get_direct_payment(payment_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_direct_payment_detail(payment_id), _rid(r), ENGINE_ID)
 
 
 @router.post("/payments/{payment_id}/remind-customer", response_model=ApiResponse[dict],
              summary="Send a confirmation reminder to the customer")
-async def remind_customer(payment_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin),
+async def remind_customer(
+    payment_id: uuid.UUID, r: Request,
+    u: UserContext = Depends(require_permission(P.DIRECT_PAYMENTS_REMIND_CUSTOMER)),
                            db: AsyncSession = Depends(get_db)):
     from app.engines.invoice_payment.direct_payments_service import DirectPaymentsService
     from app.engines.invoice_payment.models import ServicePaymentRecord
@@ -230,26 +346,93 @@ async def remind_customer(payment_id: uuid.UUID, r: Request, u: UserContext = De
     return ok(data, _rid(r), ENGINE_ID)
 
 
-@router.get("/charge-config", response_model=ApiResponse[dict],
-            summary="List per-service/job-type completion-charge credit amounts")
-async def list_charge_config(r: Request, q: str | None = Query(None), is_active: bool | None = Query(None),
-                              page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=500, alias="pageSize"),
-                              s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.list_charge_config(q=q, is_active=is_active, page=page, page_size=page_size), _rid(r), ENGINE_ID)
+@canonical_router.get("/invoices", response_model=ApiResponse[dict])
+async def hs_invoices(
+    r: Request, status: str | None = Query(None), payment_status: str | None = Query(None),
+    tenant_id: str | None = Query(None), q: str | None = Query(None),
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_invoices(
+        status=status, payment_status=payment_status, tenant_id=tenant_id, q=q,
+        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
 
 
-@router.post("/charge-config/{rule_id}", response_model=ApiResponse[dict],
-             summary="Update a completion-charge credit amount")
-async def update_charge_config(rule_id: uuid.UUID, r: Request, payload: dict = Body(...),
-                                s: HomeServicesFinanceService = Depends(_svc)):
-    data = await s.update_charge_config(rule_id, int(payload["completed_job_deduction_credits"]))
-    return ok(data, _rid(r), ENGINE_ID)
+@canonical_router.get("/invoices/summary", response_model=ApiResponse[dict])
+async def hs_invoices_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_invoices_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/invoices/{invoice_id}", response_model=ApiResponse[dict])
+async def hs_invoice_detail(invoice_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_invoice_detail(str(invoice_id)), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/refunds", response_model=ApiResponse[dict])
+async def hs_refunds(
+    r: Request, status: str | None = Query(None), refund_type: str | None = Query(None),
+    q: str | None = Query(None), date_from: str | None = Query(None), date_to: str | None = Query(None),
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_hs_refunds(
+        status=status, refund_type=refund_type, q=q, date_from=date_from,
+        date_to=date_to, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/refunds/summary", response_model=ApiResponse[dict])
+async def hs_refunds_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_refunds_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/refunds/{refund_id}", response_model=ApiResponse[dict])
+async def hs_refund_detail(refund_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_hs_refund_detail(refund_id), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/financial-events", response_model=ApiResponse[dict])
+async def hs_financial_events(
+    r: Request, event_type: str | None = Query(None), record_type: str | None = Query(None),
+    tenant_id: str | None = Query(None), q: str | None = Query(None),
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_financial_events(
+        event_type=event_type, record_type=record_type, tenant_id=tenant_id, q=q,
+        date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+    ), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/financial-events/summary", response_model=ApiResponse[dict])
+async def hs_financial_events_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_financial_events_summary(), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get("/financial-events/{event_id}", response_model=ApiResponse[dict])
+async def hs_financial_event_detail(event_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
+    return ok(await s.get_financial_event_detail(str(event_id)), _rid(r), ENGINE_ID)
+
+
+@canonical_router.get(
+    "/audit", response_model=ApiResponse[dict],
+    dependencies=[Depends(require_permission(P.FINANCE_AUDIT_READ))],
+)
+async def hs_audit(
+    r: Request, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    s: HomeServicesFinanceService = Depends(_svc),
+):
+    return ok(await s.list_audit(page=page, page_size=page_size), _rid(r), ENGINE_ID)
 
 
 @router.post("/payments/{payment_id}/open-dispute", response_model=ApiResponse[dict],
              summary="Open a payment dispute")
 async def open_dispute(payment_id: uuid.UUID, r: Request, payload: dict = Body(default={}),
-                        u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+                        u: UserContext = Depends(require_permission(P.DIRECT_PAYMENTS_OPEN_DISPUTE)),
+                        db: AsyncSession = Depends(get_db)):
     from app.engines.invoice_payment.direct_payments_service import DirectPaymentsService
     from app.engines.invoice_payment.models import ServicePaymentRecord
     pay = await db.get(ServicePaymentRecord, payment_id)
