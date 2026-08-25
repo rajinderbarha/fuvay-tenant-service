@@ -4,6 +4,8 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 from decimal import Decimal
 
+from app.exceptions import ServiceOSException
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def _uuid():
@@ -35,7 +37,7 @@ from app.engines.complaints.constants import (
     STATUS_REJECTED, STATUS_RESOLVED, STATUS_CLOSED, STATUS_CANCELLED,
     RECORD_SERVICE_BOOKING, RECORD_COACHING_APPOINTMENT,
     REWORK_REQUESTED, REWORK_APPROVED, REWORK_COMPLETED,
-    REFUND_REQUESTED, REFUND_APPROVED, REFUND_RECORDED, REFUND_VERIFIED,
+    REFUND_REQUESTED, REFUND_APPROVED, REFUND_RECORDED, REFUND_VERIFIED, REFUND_ADMIN_REVIEW,
     ERR_COMPLAINT_NOT_FOUND, ERR_COMPLAINT_ACCESS_DENIED,
     ERR_REWORK_NOT_FOUND, ERR_REFUND_NOT_FOUND,
     ERR_COMPLAINT_INVALID_RECORD_TYPE, ERR_COMPLAINT_RECORD_NOT_FOUND,
@@ -124,11 +126,14 @@ async def test_create_complaint_success():
     db     = _mock_db()
     cid    = _uuid()
     cat_id = _uuid()
-    with patch.object(svc, '_log_event', AsyncMock()):
+    with patch.object(svc._eligibility, 'check_eligible', AsyncMock(return_value={"eligible": True, "reason_code": None})), \
+         patch.object(svc, '_link_service_job', AsyncMock()), \
+         patch('app.engines.complaints.notifications.notify_provider_complaint', AsyncMock()), \
+         patch.object(svc, '_log_event', AsyncMock()):
         c = await svc.create_complaint(
             db, cid, category_id=cat_id,
             record_type=RECORD_SERVICE_BOOKING, record_id=_uuid(),
-            complaint_type="service_quality", description="Test desc",
+            complaint_type="service_quality", description="Test desc", tenant_id=_uuid(),
         )
     db.add.assert_called_once()
     db.commit.assert_awaited_once()
@@ -363,15 +368,10 @@ async def test_admin_approve_refund():
     db  = _mock_db()
     rf  = MagicMock(id=_uuid(), complaint_id=_uuid(), tenant_id=_uuid(),
                     requested_amount=Decimal("100.00"), status=REFUND_REQUESTED)
-    c   = MagicMock(status=STATUS_REFUND_REQUESTED)
     with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)):
-        with patch.object(svc._complaint_svc, 'get_complaint', AsyncMock(return_value=c)):
-            with patch.object(svc, '_log_event', AsyncMock()):
-                result = await svc.admin_approve_refund(
-                    db, rf.id, _uuid(), approved_amount=Decimal("80.00")
-                )
-    assert result.status == REFUND_APPROVED
-    assert result.approved_amount == Decimal("80.00")
+        with pytest.raises(ServiceOSException) as exc:
+            await svc.admin_approve_refund(db, rf.id, _uuid(), approved_amount=Decimal("80.00"))
+    assert exc.value.error_code == "PROVIDER_OWNS_REFUND"
 
 
 @pytest.mark.asyncio
@@ -380,15 +380,17 @@ async def test_admin_approve_refund_amount_exceeds_requested():
     db  = _mock_db()
     rf  = MagicMock(id=_uuid(), requested_amount=Decimal("100.00"), status=REFUND_REQUESTED)
     with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)):
-        with pytest.raises(ValueError, match="REFUND_AMOUNT_INVALID"):
+        with pytest.raises(ServiceOSException) as exc:
             await svc.admin_approve_refund(db, rf.id, _uuid(), approved_amount=Decimal("200.00"))
+    assert exc.value.error_code == "PROVIDER_OWNS_REFUND"
 
 
 @pytest.mark.asyncio
 async def test_record_refund():
     svc = RefundRequestService()
     db  = _mock_db()
-    rf  = MagicMock(id=_uuid(), complaint_id=_uuid(), tenant_id=_uuid(), status=REFUND_APPROVED)
+    rf  = MagicMock(id=_uuid(), complaint_id=_uuid(), tenant_id=_uuid(), status=REFUND_APPROVED,
+                    approved_amount=Decimal("80.00"), requested_amount=Decimal("100.00"))
     c   = MagicMock(status=STATUS_REFUND_APPROVED)
     with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)):
         with patch.object(svc._complaint_svc, 'get_complaint', AsyncMock(return_value=c)):
@@ -449,7 +451,7 @@ async def test_cancel_refund():
 async def test_admin_reject_refund():
     svc = RefundRequestService()
     db  = _mock_db()
-    rf  = MagicMock(status=REFUND_REQUESTED)
+    rf  = MagicMock(status=REFUND_ADMIN_REVIEW, provider_response_due_at=None)
     with patch.object(svc, '_get_refund', AsyncMock(return_value=rf)):
         result = await svc.admin_reject_refund(db, _uuid(), _uuid(), "Not valid")
     assert result.status == "rejected"

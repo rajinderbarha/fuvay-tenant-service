@@ -7,6 +7,7 @@ POST /v1/provider/reviews/{id}/reply and POST /v1/provider/reviews/{id}/flag.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.schemas.base import ok
 from app.engines.customer_reviews.hs_quality_service import (
     get_reviews_summary, get_reviews_kpis, get_rating_trend,
     get_rating_distribution, get_quality_signals, get_review_detail,
+    get_review_filter_options,
 )
 
 router = APIRouter(prefix="/v1/tenant/home-services/reviews", tags=["Tenant Home Services Reviews"])
@@ -27,10 +29,12 @@ router = APIRouter(prefix="/v1/tenant/home-services/reviews", tags=["Tenant Home
 async def list_reviews_endpoint(
     request: Request,
     rating: int | None = Query(None, ge=1, le=5),
+    rating_max: int | None = Query(None, ge=1, le=5),
     reply_status: str | None = Query(None),
     technician_id: uuid.UUID | None = Query(None),
     complaint_linked: bool | None = Query(None),
     moderation_status: str | None = Query(None),
+    offering_id: uuid.UUID | None = Query(None),
     search: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
@@ -53,19 +57,26 @@ async def list_reviews_endpoint(
             return None
 
     reviews = await _safe(get_reviews_summary(
-        db, tid, rating=rating, reply_status=reply_status, technician_id=technician_id,
+        db, tid, rating=rating, rating_max=rating_max,
+        reply_status=reply_status, technician_id=technician_id,
         complaint_linked=complaint_linked, moderation_status=moderation_status,
+        offering_id=offering_id,
         search=search, date_from=date_from, date_to=date_to, limit=limit, offset=offset,
     ), "reviews") or {"items": [], "total": 0, "limit": limit, "offset": offset}
     kpis = await _safe(get_reviews_kpis(db, tid), "summary") or None
     trend = await _safe(get_rating_trend(db, tid), "rating_trend") or []
     distribution = await _safe(get_rating_distribution(db, tid), "rating_distribution") or []
     quality = await _safe(get_quality_signals(db, tid), "quality_signals") or None
+    options = await _safe(get_review_filter_options(db, tid), "available_filters") or {
+        "technicians": [], "services": [], "moderation_statuses": [],
+    }
 
     return ok({
         "reviews": reviews["items"], "total": reviews["total"], "limit": reviews["limit"], "offset": reviews["offset"],
         "summary": kpis, "rating_trend": trend, "rating_distribution": distribution, "quality_signals": quality,
-        "failed_modules": failed, "generated_at": None,
+        "available_filters": options,
+        "failed_modules": failed,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }, request_id=rid)
 
 

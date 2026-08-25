@@ -1,11 +1,10 @@
 import { lightColors, darkColors } from "../tokens/colors";
 
 /**
- * 2026-08-04 rebrand: the customer app's palette moved from warm orange
- * (#F2994A, aligned to the Staff app) to blue, matching
- * frontend/customer-app, frontend/super-admin and frontend/tenant-portal's
- * globals.css. Dark mode follows the Tesla-app reference (neutral
- * charcoal-black, electric-blue accent).
+ * Customer native design tokens: restrained brand blue for actions, a warm
+ * neutral canvas, multicolour campaign content, and a deep charcoal dark
+ * theme. These guards protect contrast without forcing campaign artwork or
+ * service imagery into the brand colour.
  *
  * This also re-fixed the real, user-visible chat defect this file
  * originally guarded: `surfaceDefault` (chat bubbles) must never be
@@ -31,7 +30,7 @@ function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-describe("brand tokens (blue rebrand, Tesla-app-aligned dark mode)", () => {
+describe("customer native brand and contrast tokens", () => {
   it("uses the approved blue brand fill in both themes (brighter blue in dark mode)", () => {
     expect(lightColors.brandPrimary).toBe("#3868E0");
     expect(darkColors.brandPrimary).toBe("#1A6FE0");
@@ -74,8 +73,8 @@ describe("brand tokens (blue rebrand, Tesla-app-aligned dark mode)", () => {
     expect(lightColors.statusDanger).toBe("#C4342A");
   });
 
-  it("uses a near-black (not pure-black) dark background, per the Tesla-app reference", () => {
-    expect(darkColors.backgroundPrimary).toBe("#1C1C1E");
+  it("uses the approved warm near-black (not pure-black) dark background", () => {
+    expect(darkColors.backgroundPrimary).toBe("#0E0F10");
     expect(darkColors.backgroundPrimary).not.toBe("#000000");
   });
 
@@ -91,7 +90,7 @@ describe("brand tokens (blue rebrand, Tesla-app-aligned dark mode)", () => {
   });
 
   it("keeps dark-mode primary text close to warm white, not washed-out gray", () => {
-    expect(darkColors.textPrimary).toBe("#F5F5F7");
+    expect(darkColors.textPrimary).toBe("#F4F1EA");
   });
 
   it("defines distinct campaign tokens for light and dark treatments", () => {

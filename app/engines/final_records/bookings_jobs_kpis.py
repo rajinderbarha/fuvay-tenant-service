@@ -33,62 +33,43 @@ from app.engines.execution.constants import (
     JS_PENDING_ASSIGNMENT, JS_INSPECTION_DONE, JS_QUOTE_REQUIRED, JS_SERVICE_STARTED,
 )
 from app.engines.final_records.bookings_jobs_stage_mapping import TERMINAL_STATUSES
-from app.engines.final_records.sla_summary import attach_sla
+from app.engines.final_records.sla_summary import sla_filter_condition
 
 
 async def compute_bookings_jobs_kpis(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     from app.engines.final_records.models import ServiceJob
 
-    total_active = await db.scalar(
-        select(func.count()).select_from(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id, ServiceJob.status.notin_(TERMINAL_STATUSES),
-        )
-    ) or 0
-
-    unassigned = await db.scalar(
-        select(func.count()).select_from(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id,
-            ServiceJob.status == JS_PENDING_ASSIGNMENT,
-            ServiceJob.assignment_status != "assigned",
-        )
-    ) or 0
-
-    in_progress = await db.scalar(
-        select(func.count()).select_from(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id, ServiceJob.status == JS_SERVICE_STARTED,
-        )
-    ) or 0
-
-    awaiting_approval = await db.scalar(
-        select(func.count()).select_from(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id,
-            ServiceJob.status.in_((JS_INSPECTION_DONE, JS_QUOTE_REQUIRED)),
-        )
-    ) or 0
-
-    # SLA is bounded to non-terminal jobs (matches sla_summary.compute_summary's
-    # own bound) -- avoids loading the whole historical table to answer "at risk".
-    open_jobs = (await db.execute(
-        select(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id, ServiceJob.status.notin_(TERMINAL_STATUSES),
-        ).limit(2000)
-    )).scalars().all()
-    sla_map = await attach_sla(db, open_jobs)
-    at_risk = sum(1 for v in sla_map.values() if v["sla_status"] in ("AT_RISK", "BREACHED"))
-
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    completed_today = await db.scalar(
-        select(func.count()).select_from(ServiceJob).where(
-            ServiceJob.tenant_id == tenant_id, ServiceJob.status == "completed",
-            ServiceJob.updated_at >= today_start,
-        )
-    ) or 0
+    risk_condition = (
+        sla_filter_condition(ServiceJob, "AT_RISK") |
+        sla_filter_condition(ServiceJob, "BREACHED")
+    )
+    # One indexed tenant scan and one round-trip for the entire KPI strip.
+    # Conditional aggregates remain exact at high volume and avoid the six
+    # sequential COUNT queries the workspace previously issued per refresh.
+    row = (await db.execute(
+        select(
+            func.count().filter(ServiceJob.status.notin_(TERMINAL_STATUSES)).label("total_active"),
+            func.count().filter(
+                ServiceJob.status == JS_PENDING_ASSIGNMENT,
+                ServiceJob.assignment_status != "assigned",
+            ).label("unassigned"),
+            func.count().filter(ServiceJob.status == JS_SERVICE_STARTED).label("in_progress"),
+            func.count().filter(
+                ServiceJob.status.in_((JS_INSPECTION_DONE, JS_QUOTE_REQUIRED)),
+            ).label("awaiting_approval"),
+            func.count().filter(risk_condition).label("at_risk"),
+            func.count().filter(
+                ServiceJob.status == "completed", ServiceJob.updated_at >= today_start,
+            ).label("completed_today"),
+        ).where(ServiceJob.tenant_id == tenant_id)
+    )).one()
 
     return {
-        "total_active":      total_active,
-        "unassigned":        unassigned,
-        "in_progress":       in_progress,
-        "awaiting_approval": awaiting_approval,
-        "at_risk":           at_risk,
-        "completed_today":   completed_today,
+        "total_active":      int(row.total_active or 0),
+        "unassigned":        int(row.unassigned or 0),
+        "in_progress":       int(row.in_progress or 0),
+        "awaiting_approval": int(row.awaiting_approval or 0),
+        "at_risk":           int(row.at_risk or 0),
+        "completed_today":   int(row.completed_today or 0),
     }

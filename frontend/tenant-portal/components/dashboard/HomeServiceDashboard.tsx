@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback } from "react";
-import { StatCard, Card, Skeleton, Badge, JobStatusBadge, HealthMeter } from "../shared/ui";
+import { StatCard, Card, Skeleton, Badge, JobStatusBadge, HealthMeter, KpiGrid } from "../shared/ui";
 import { analyticsApi, serviceJobsApi, financeApi, reviewsApi, bookingsApi, staffApi } from "../../lib/api";
 import type { ServiceJobRecord } from "../../lib/api";
 import { CommissionRatesWidget } from "./CommissionRatesWidget";
@@ -47,7 +47,7 @@ export function HomeServiceDashboard() {
       {/* Marketing launch */}
       <MarketingLaunchWidget/>
       {/* KPI Row */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:14 }}>
+      <KpiGrid minCardWidth={180}>
         {kpis ? [...Array(6)].map((_,i) => <Skeleton key={i} height={100} style={{ borderRadius:14 }}/>) : (<>
           <StatCard icon={<Wrench/>} label="Active Jobs"
             value={(jobs.data?.items ?? []).filter((j) => j.status === "in_progress").length}
@@ -65,7 +65,7 @@ export function HomeServiceDashboard() {
             value={(jobs.data?.items ?? []).filter((j) => j.assignment_status === "unassigned").length}
             accent="var(--danger)"/>
         </>)}
-      </div>
+      </KpiGrid>
 
       {/* Revenue Chart */}
       <Card>

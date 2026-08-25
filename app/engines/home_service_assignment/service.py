@@ -44,6 +44,18 @@ _utcnow = lambda: datetime.now(timezone.utc)
 _TERMINAL_JOB_STATUSES = {JOB_STATUS_CANCELLED, "failed", "completed"}
 
 
+def _normalise_designation(value: str | None) -> str:
+    """Fold a human-entered designation onto the ELIGIBLE_DESIGNATIONS keys.
+
+    Designations are stored as people type them ("Senior Technician", "Field
+    Engineer") while the eligibility set uses snake_case. Lowercasing alone left
+    every MULTI-WORD designation unmatched, so a "Senior Technician" was refused
+    with ROLE_NOT_ALLOWED while a plain "Technician" worked — which is exactly
+    why this went unnoticed. Confirmed live against a real team member.
+    """
+    return "_".join((value or "").strip().lower().replace("-", " ").split())
+
+
 class HomeServiceJobAssignmentService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -96,7 +108,7 @@ class HomeServiceJobAssignmentService:
         offering's master service and job type. If neither can be resolved,
         fail closed so an unconfigured person is never assigned field work.
         """
-        from app.engines.admin_catalog.models import ServiceJobWorkflow, TenantService
+        from app.engines.admin_catalog.models import ServiceJobWorkflow
 
         if getattr(job, "service_job_workflow_id", None):
             result = await self.db.execute(select(ServiceJobWorkflow.technician_required).where(
@@ -108,9 +120,10 @@ class HomeServiceJobAssignmentService:
 
         if getattr(job, "offering_id", None) and getattr(job, "job_type_id", None):
             result = await self.db.execute(select(ServiceJobWorkflow.technician_required).where(
-                ServiceJobWorkflow.master_service_id == select(TenantService.master_service_id).where(
-                    TenantService.id == job.offering_id
-                ).scalar_subquery(),
+                # ServiceJob.offering_id is the canonical MasterService id.
+                # TenantService ids are tenant/job-type scoped and are only
+                # used for provider skill assignments (resolved separately).
+                ServiceJobWorkflow.master_service_id == job.offering_id,
                 ServiceJobWorkflow.job_type_id == job.job_type_id,
                 ServiceJobWorkflow.is_current == True,
             ))
@@ -118,6 +131,29 @@ class HomeServiceJobAssignmentService:
             if value is not None:
                 return bool(value)
         return True
+
+    async def _tenant_service_id_for_job(self, job) -> uuid.UUID | None:
+        """Resolve a job's master-service identity to its tenant offering.
+
+        ProviderTeamMember.supported_offering_ids stores TenantService ids,
+        while ServiceJob.offering_id stores a MasterService id.  Keeping this
+        translation in one place prevents dispatch and assignment from
+        comparing identifiers from different namespaces.
+        """
+        from app.engines.admin_catalog.models import TenantService
+
+        if not getattr(job, "offering_id", None) or not getattr(job, "job_type_id", None):
+            return None
+        result = await self.db.execute(
+            select(TenantService.id).where(
+                TenantService.tenant_id == job.tenant_id,
+                TenantService.master_service_id == job.offering_id,
+                TenantService.job_type_id == job.job_type_id,
+                TenantService.is_active == True,
+                TenantService.deleted_at == None,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def _emit_event(
         self, job_id: uuid.UUID, booking_id: uuid.UUID, tenant_id: uuid.UUID,
@@ -206,21 +242,43 @@ class HomeServiceJobAssignmentService:
         if is_user:
             if not getattr(staff, "is_active", True):
                 blocked.append("staff_inactive")
-            designation = (staff.role or "").lower()
+            designation = _normalise_designation(staff.role)
         else:
             if staff.status != "active":
                 blocked.append("staff_inactive")
+            # The team-member row and the LOGIN are two different records, and
+            # only the login decides whether this person can actually open the
+            # app. Checking `ptm.status` alone let a job be assigned to someone
+            # whose user account had been deactivated — confirmed live: a member
+            # with status='active' and users.is_active=false accepted an
+            # assignment and could never have worked it. Deactivating a
+            # technician must stop new work reaching them.
+            elif getattr(staff, "user_id", None):
+                from app.engines.auth.models import User
+                user_active = (await self.db.execute(
+                    select(User.is_active).where(User.id == staff.user_id)
+                )).scalar()
+                if user_active is False:
+                    blocked.append("staff_inactive")
             if not getattr(staff, "can_receive_assignment", True):
                 blocked.append("cannot_receive_assignment")
-            designation = (staff.designation or "").lower()
+            designation = _normalise_designation(staff.designation)
 
         if designation and designation not in ELIGIBLE_DESIGNATIONS:
             blocked.append("role_not_allowed")
 
+        # Basic account/role failures are definitive. Avoid workflow, skill,
+        # and availability lookups for a person who cannot be assigned under
+        # any circumstance, and preserve the precise rejection reason.
+        if blocked:
+            return staff, blocked
+
         if await self._job_requires_technician(job) and not is_user:
-            job_offering_id = str(job.offering_id)
+            tenant_service_id = await self._tenant_service_id_for_job(job)
             supported = {str(value) for value in (getattr(staff, "supported_offering_ids", None) or [])}
-            if job_offering_id not in supported:
+            if tenant_service_id is None:
+                blocked.append("service_not_configured")
+            elif str(tenant_service_id) not in supported:
                 blocked.append("no_matching_service_skill")
 
             has_availability = (await self.db.execute(text(
@@ -337,6 +395,24 @@ class HomeServiceJobAssignmentService:
             )
             all_staff = list(res2.scalars().all())
 
+        provider_staff_ids = [s.id for s in all_staff if hasattr(s, "designation")]
+        technician_required = bool(provider_staff_ids) and await self._job_requires_technician(job)
+        tenant_service_id = (
+            await self._tenant_service_id_for_job(job)
+            if technician_required else None
+        )
+        configured_staff_ids: set[str] = set()
+        if technician_required and provider_staff_ids:
+            availability_rows = (await self.db.execute(text(
+                "SELECT DISTINCT scope_id FROM provider_availability_rules "
+                "WHERE tenant_id=:tid AND scope_type='staff_member' "
+                "AND scope_id = ANY(CAST(:staff_ids AS uuid[])) AND is_active=true"
+            ), {
+                "tid": tenant_id,
+                "staff_ids": provider_staff_ids,
+            })).all()
+            configured_staff_ids = {str(row[0]) for row in availability_rows}
+
         eligible, blocked = [], []
         for s in all_staff:
             is_user = hasattr(s, "role") and not hasattr(s, "designation")
@@ -357,6 +433,18 @@ class HomeServiceJobAssignmentService:
                 name = s.full_name
             if designation and designation not in ELIGIBLE_DESIGNATIONS:
                 reasons.append("role_not_allowed")
+
+            if technician_required and not is_user:
+                supported = {
+                    str(value)
+                    for value in (getattr(s, "supported_offering_ids", None) or [])
+                }
+                if tenant_service_id is None:
+                    reasons.append("service_not_configured")
+                elif str(tenant_service_id) not in supported:
+                    reasons.append("no_matching_service_skill")
+                if str(s.id) not in configured_staff_ids:
+                    reasons.append("no_availability_configured")
 
             # Same availability question the assign path now asks, asked here too so the
             # dispatcher sees a technician on leave as blocked in the list instead of
@@ -615,12 +703,26 @@ class HomeServiceJobAssignmentService:
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
 
-        eligible = job.status in CUSTOMER_CANCELLABLE_JOB_STATUSES
-        cancel_block_reason = None if eligible else "booking_not_in_cancellable_state"
+        # The published job-type blueprint is the authority exposed to the
+        # customer UI. Return disabled actions instead of throwing from this
+        # read endpoint so the app can explain why an action is unavailable.
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
+        workflow_allows_cancel = workflow is None or workflow.allows_cancellation
+        workflow_allows_reschedule = workflow is None or workflow.allows_reschedule
+
+        state_eligible = job.status in CUSTOMER_CANCELLABLE_JOB_STATUSES
+        eligible = state_eligible and workflow_allows_cancel
+        if not workflow_allows_cancel:
+            cancel_block_reason = "service_policy_disallows_cancellation"
+        else:
+            cancel_block_reason = None if state_eligible else "booking_not_in_cancellable_state"
 
         remaining_reschedules = max(0, MAX_RESCHEDULE_COUNT - (job.reschedule_count or 0))
-        can_reschedule = eligible and remaining_reschedules > 0
-        if not eligible:
+        can_reschedule = state_eligible and workflow_allows_reschedule and remaining_reschedules > 0
+        if not workflow_allows_reschedule:
+            reschedule_block_reason = "service_policy_disallows_reschedule"
+        elif not state_eligible:
             reschedule_block_reason = "booking_not_in_reschedulable_state"
         elif remaining_reschedules <= 0:
             reschedule_block_reason = "reschedule_limit_reached"
@@ -657,6 +759,15 @@ class HomeServiceJobAssignmentService:
         booking, job = await self._load_booking_and_job(booking_id, customer_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
+
+
+        # Rescheduling follows the same published blueprint as every other
+        # job action; the UI must never offer a date change the workflow
+        # explicitly forbids.
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
+        if workflow is not None and not workflow.allows_reschedule:
+            raise ValueError(ERR_RESCHEDULE_NOT_ALLOWED)
         horizon_days = max(1, min(horizon_days, 30))
 
         from app.engines.home_service_assignment.availability_resolver import aggregate_slot_available
@@ -691,6 +802,11 @@ class HomeServiceJobAssignmentService:
         booking, job = await self._load_booking_and_job(booking_id, customer_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
+
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
+        if workflow is not None and not workflow.allows_cancellation:
+            raise ValueError(ERR_CANCEL_NOT_ALLOWED)
 
         # Idempotent retry: ONLY a replay of the same request (matched by
         # request_id against the event that performed the original cancel)
@@ -773,6 +889,11 @@ class HomeServiceJobAssignmentService:
         booking, job = await self._load_booking_and_job(booking_id, customer_id)
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
+
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
+        if workflow is not None and not workflow.allows_reschedule:
+            raise ValueError(ERR_RESCHEDULE_NOT_ALLOWED)
 
         # Idempotent retry: the same request_id replaying the exact same
         # already-applied reschedule returns the current state instead of
@@ -1127,6 +1248,21 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_ACCESS_DENIED)
         if job.status not in {JOB_STATUS_ASSIGNED, JOB_STATUS_ACCEPTED}:
             raise ValueError(ERR_INVALID_STATUS)
+
+        moving_slot = (
+            job.scheduled_date != scheduled_date
+            or job.scheduled_time_window != scheduled_time_window
+        )
+        if moving_slot:
+            from app.engines.home_service_booking.provider_slot_service import slot_has_capacity
+            if not await slot_has_capacity(
+                self.db,
+                tenant_id=tenant_id,
+                day=scheduled_date,
+                time_window=scheduled_time_window,
+                master_service_id=job.offering_id,
+            ):
+                raise ValueError(ERR_SLOT_UNAVAILABLE)
 
         assignment = await self._current_assignment(job_id)
 

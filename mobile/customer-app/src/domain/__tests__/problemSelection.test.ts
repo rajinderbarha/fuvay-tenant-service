@@ -9,7 +9,6 @@ function issue(n: number, slug: string | null = "air-conditioning"): HomeQuickIs
     categoryId: asCategoryId("cat-1"),
     categorySlug: slug,
     categoryName: "Air Conditioning",
-    iconUrl: null,
     intent: "repair" as const,
   };
 }

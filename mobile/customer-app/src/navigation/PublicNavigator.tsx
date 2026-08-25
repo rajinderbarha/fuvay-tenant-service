@@ -9,6 +9,7 @@ import { MfaChallengeScreen } from "../screens/auth/MfaChallengeScreen";
 import { RecoveryCodeChallengeScreen } from "../screens/auth/RecoveryCodeChallengeScreen";
 import { ForgotPasswordRequestScreen } from "../screens/auth/ForgotPasswordRequestScreen";
 import { ResetPasswordConfirmScreen } from "../screens/auth/ResetPasswordConfirmScreen";
+import { WelcomeScreen } from "../screens/auth/WelcomeScreen";
 
 const Stack = createNativeStackNavigator<PublicStackParamList>();
 
@@ -23,6 +24,7 @@ const Stack = createNativeStackNavigator<PublicStackParamList>();
 export function PublicNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="LoginMethod" component={LoginMethodScreen} />
       <Stack.Screen name="VerifyLoginOtp" component={VerifyLoginOtpScreen} />
       <Stack.Screen name="PasswordLogin" component={PasswordLoginScreen} />

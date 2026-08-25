@@ -66,4 +66,15 @@ describe("formatScheduleWindow", () => {
   it("formats the date alone when no window is set", () => {
     expect(formatScheduleWindow("2026-08-05", null)).toMatch(/^5 Aug 2026$/);
   });
+
+  it("distinguishes provider acceptance from technician assignment", () => {
+    const p = resolveActiveJobPresentation("assignment", "accepted");
+    expect(p.title).toBe("Provider accepted");
+    expect(p.showTechnicianCard).toBe(false);
+    expect(p.nextExpected).toContain("technician");
+  });
+
+  it("turns a 24-hour backend window into customer-friendly time", () => {
+    expect(formatScheduleWindow("2026-08-24", "10:00-11:00")).toBe("24 Aug 2026 · 10:00 AM–11:00 AM");
+  });
 });

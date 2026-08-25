@@ -13,10 +13,8 @@ export const serviceabilityCheckResponseSchema = z.object({
   draft_status: z.string(),
 }).passthrough();
 
-/** `price_snapshot` accumulates keys from TWO backend calls that both
- * spread onto the same JSONB column (`resolve_price_estimate` then
- * `match_provider_and_price`) -- passthrough is deliberate; only the
- * fields this phase actually renders are named. */
+/** Customer-safe provider-owned price persisted by match-and-price.
+ * Passthrough is deliberate; only fields rendered by this phase are named. */
 export const priceSnapshotDtoSchema = z.object({
   requires_inspection_estimate: z.boolean().optional(),
   visit_fee: z.number().nullable().optional(),
@@ -95,6 +93,9 @@ export const matchAndPriceResponseSchema = z.object({
   bargain_available: z.boolean(),
   selected_provider_price_options: z.record(z.string(), z.unknown()).nullable(),
   standard_price: z.number().nullable(),
+  // The provider-owned price contract persisted by the same atomic match.
+  // This replaces the legacy pre-match /price-estimate dependency.
+  price_snapshot: priceSnapshotDtoSchema.optional(),
   area_market_comparison: z.unknown().optional(),
   draft_status: z.string().optional(),
 }).passthrough();

@@ -2,7 +2,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Search, Info, ArrowRight, Tag, RefreshCw,
+  Search, Info, ArrowRight, Tag, RefreshCw, Save,
 } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { ServiceRequirementsPanel } from "../../../../../../components/services/ServiceRequirementsPanel";
@@ -114,7 +114,14 @@ function ServicesPricingPageContent() {
   const filteredGroups = useMemo(() => {
     if (!search.trim()) return groups;
     const q = search.trim().toLowerCase();
-    return groups.filter(g => g.name.toLowerCase().includes(q));
+    return groups.map(group => {
+      if (group.name.toLowerCase().includes(q)) return group;
+      return {
+        ...group,
+        services: group.services.filter(service =>
+          `${service.service_name} ${service.job_type_label ?? service.job_type}`.toLowerCase().includes(q)),
+      };
+    }).filter(group => group.services.length > 0);
   }, [groups, search]);
 
   const enabledByMasterService = useMemo(() => {
@@ -229,6 +236,26 @@ function ServicesPricingPageContent() {
       setError("Service warranty must be a whole number of at least 5 days.");
       return;
     }
+    const parsedSurcharge = emergencySurcharge ? Number(emergencySurcharge) : null;
+    if (parsedSurcharge != null && (!Number.isFinite(parsedSurcharge) || parsedSurcharge < 0)) {
+      setError("Emergency surcharge cannot be negative.");
+      return;
+    }
+    if (isInspectionMode) {
+      const parsedVisitFee = Number(visitFee);
+      if (!Number.isFinite(parsedVisitFee) || parsedVisitFee <= 0) {
+        setError("Enter a visit fee greater than zero for this inspection workflow.");
+        return;
+      }
+    } else {
+      const parsedMin = Number(defaultMin);
+      const parsedMax = Number(defaultMax);
+      if (!Number.isFinite(parsedMin) || !Number.isFinite(parsedMax) || parsedMin <= 0 || parsedMax < parsedMin) {
+        setError("Enter a valid price range greater than zero. Maximum must be at least the minimum.");
+        return;
+      }
+    }
+    setError(null);
     setSavingPrice(true);
     try {
       const payload: { tenant_min_price?: number; tenant_max_price?: number; tenant_visit_fee?: number; tenant_emergency_surcharge?: number; warranty_days:number } = {
@@ -319,13 +346,37 @@ function ServicesPricingPageContent() {
 
   async function handleTypePriceChange(serviceTypeId: string, min: string, max: string) {
     if (!enrolled) return;
-    const res = await homeServicesSetupApi.setTypePricing(enrolled.tenant_service_id, serviceTypeId, Number(min || 0), Number(max || 0));
-    setTypePricing(res.types);
+    const minValue = Number(min);
+    const maxValue = Number(max);
+    if (!min || !max || !Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue <= 0 || maxValue < minValue) {
+      setError("Enter a valid type price range greater than zero before saving.");
+      return;
+    }
+    try {
+      setError(null);
+      const res = await homeServicesSetupApi.setTypePricing(enrolled.tenant_service_id, serviceTypeId, minValue, maxValue);
+      setTypePricing(res.types);
+    } catch (err) {
+      setError(err instanceof ServiceOSError ? err.message : "Could not save type pricing.");
+    }
   }
 
   async function handleBrandPriceChange(brandId: string, min: string, max: string, serviceTypeId?: string) {
     if (!enrolled) return;
-    const res = await homeServicesSetupApi.setBrandPricing(enrolled.tenant_service_id, brandId, Number(min || 0), Number(max || 0), serviceTypeId);
+    const minValue = Number(min);
+    const maxValue = Number(max);
+    if (!min || !max || !Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue <= 0 || maxValue < minValue) {
+      setError("Enter a valid brand price range greater than zero before saving.");
+      return;
+    }
+    let res;
+    try {
+      setError(null);
+      res = await homeServicesSetupApi.setBrandPricing(enrolled.tenant_service_id, brandId, minValue, maxValue, serviceTypeId);
+    } catch (err) {
+      setError(err instanceof ServiceOSError ? err.message : "Could not save brand pricing.");
+      return;
+    }
     if (serviceTypeId) {
       const tp = (typePricing ?? []).find(t => t.service_type_id === serviceTypeId);
       setBrandPricingByType(prev => ({
@@ -475,7 +526,8 @@ function ServicesPricingPageContent() {
               <p style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "16px" }}>No service groups match your search.</p>
             )}
             {filteredGroups.map(g => {
-              const configured = g.services.filter(s => enabledByMasterService.has(s.service_id)).length;
+              const configured = g.services.filter(s =>
+                enabledByMasterService.has(`${s.service_id}:${s.job_type_id}`)).length;
               const active = g.id === selectedGroupId;
               return (
                 <button key={g.id} onClick={() => setSelectedGroupId(g.id)} style={{
@@ -829,13 +881,22 @@ function PriceCell({ label, min, max, onSave }: { label: string; min: number | n
   const [localMax, setLocalMax] = useState(max != null ? String(max) : "");
   useEffect(() => { setLocalMin(min != null ? String(min) : ""); }, [min]);
   useEffect(() => { setLocalMax(max != null ? String(max) : ""); }, [max]);
+  const minValue = Number(localMin);
+  const maxValue = Number(localMax);
+  const invalid = !localMin || !localMax || !Number.isFinite(minValue) || !Number.isFinite(maxValue)
+    || minValue <= 0 || maxValue < minValue;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <input aria-label={`${label} minimum price`} inputMode="decimal" value={localMin} onChange={e => setLocalMin(e.target.value)} onBlur={() => onSave(localMin, localMax)}
+      <input aria-label={`${label} minimum price`} inputMode="decimal" type="number" min={1} value={localMin} onChange={e => setLocalMin(e.target.value)}
         placeholder="Min" style={{ width: 70, height: 30, fontSize: 12, padding: "0 8px", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)" }}/>
       <span style={{ color: "var(--text-tertiary)" }}>–</span>
-      <input aria-label={`${label} maximum price`} inputMode="decimal" value={localMax} onChange={e => setLocalMax(e.target.value)} onBlur={() => onSave(localMin, localMax)}
+      <input aria-label={`${label} maximum price`} inputMode="decimal" type="number" min={1} value={localMax} onChange={e => setLocalMax(e.target.value)}
         placeholder="Max" style={{ width: 70, height: 30, fontSize: 12, padding: "0 8px", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)" }}/>
+      <button type="button" aria-label={`Save ${label} price range`} title={invalid ? "Enter a valid range greater than zero" : "Save price range"}
+        disabled={invalid} onClick={() => onSave(localMin, localMax)}
+        style={{ height: 30, width: 30, display: "grid", placeItems: "center", borderRadius: 6, border: "1px solid var(--brand)", background: "transparent", color: "var(--brand)", cursor: invalid ? "not-allowed" : "pointer", opacity: invalid ? 0.45 : 1 }}>
+        <Save size={13}/>
+      </button>
     </div>
   );
 }

@@ -231,7 +231,9 @@ async def remove_service_option_mapping(service_id: uuid.UUID, mapping_id: uuid.
 
 # â”€â”€ Service â†” Issue Mappings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-@map_router.get("/{service_id}/issues", response_model=ApiResponse[list])
+# GET is owned by admin_catalog.admin_router so one canonical handler serves
+# the path. Keep this callable for source-level compatibility; mutation routes
+# below remain on map_router.
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
                                        job_type_id: uuid.UUID | None = Query(None),
                                        u: UserContext = Depends(require_super_admin),

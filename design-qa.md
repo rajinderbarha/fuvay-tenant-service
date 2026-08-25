@@ -1,65 +1,114 @@
-# Platform Settings design QA
+**Comparison target**
 
-- Source visual truth: user-provided Platform Settings screenshot in the current conversation.
-- Source pixels: 1478 × 581.
-- Implementation route: `/admin/settings` in `frontend/super-admin`.
-- Desktop capture viewport: 1478 × 900 CSS pixels at device scale factor 1.
-- Mobile capture viewport: 390 × 844 CSS pixels at device scale factor 1.
-- Evidence directory: `test-results/platform-settings-audit`.
+- Source visual truth: `C:\Users\Aiviq Technologies\.codex\generated_images\019ff122-d815-7d43-89db-6975b88031ff\exec-62b65702-51e5-427e-94b4-465b39da7a63.png`
+- Implementation screenshot: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-home-resume.png`
+- Combined comparison evidence: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-design-comparison-resume.png`
+- App-wide comparison evidence: `C:\Users\AIVIQT~1\AppData\Local\Temp\fuvay-app-wide-qa.png` (selected direction, Home, Bookings, Assistant, Support, Profile, Notifications, and Saved Addresses in one same-density contact sheet)
+- Extended native-screen evidence: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-home-below.png`, `fuvay-home-deep.png`, `fuvay-home-deep2.png`, and `fuvay-home-end.png`
+- Viewport and density: Android native viewport at 426 x 960 dp, captured at 2x as 852 x 1920 pixels. Source and implementation were compared at the same 852 x 1920 pixel density. The combined evidence is 1704 x 1920 pixels.
+- State: authenticated customer, PIN 140412, serviceable Home Services catalog, live marketing campaign, active bookings, light theme.
 
-## Accepted implementation captures
+**Findings**
 
-1. `01-global-settings.png`
-2. `02-category-policies.png`
-3. `03-plans-packages.png`
-4. `04-tenant-overrides.png`
-5. `05-feature-flags.png`
-6. `06-audit-log.png`
-7. `07-version-history.png`
-8. `08-mobile-global.png`
+- No actionable P0, P1, or P2 visual mismatch remains in the selected first viewport.
+- Fonts and typography: hierarchy, weights, line heights, wrapping, and compact labels match the source's marketplace density. The real campaign title wraps at the same visual level as the reference.
+- Spacing and layout rhythm: header, 44 dp search control, 228 dp hero, section gaps, card radii, recommendation rail, and raised Assistant tab are aligned to the selected direction. Persistent navigation remains visible without covering content.
+- Colors and visual tokens: the blue Fuvay palette, pale blue canvas, white surfaces, green live-booking status, and campaign scrim map consistently to the native design tokens.
+- Image quality and asset fidelity: the supplied Fuvay logo is used as a real raster asset; campaign and recommendation imagery comes from live HTTPS/Cloudinary URLs. There are no placeholder images, handcrafted SVGs, or code-drawn visible assets.
+- Copy and content: intentional live-data substitutions are accepted. The implementation shows the customer's real PIN, actual configured service groups, actual booking state, and live campaign offer instead of the mock's invented locality, ETA, technician, service inventory, and discount amount.
+- Below-fold extension: the mock did not define these states. Native captures confirm clean layout for common problems, additional active bookings, repair/consultation partitions, booking capabilities, process guidance, assurances, location, and support. Each section is backed by live aggregate data or by a documented platform capability and hides when its source is empty.
+- App-wide consistency: the primary tabs and sampled inner routes use the same blue semantic tokens, pale canvas, white card surfaces, 16 dp card radius, 48 dp actions, typography hierarchy, Ionicons set, and safe-area behavior. No secondary route falls back to the removed customer web surface or old orange customer branding.
+- Cross-tab workflow: a PIN chosen on Home is now a single persisted native preference shared above the tab navigator. Direct Assistant entry uses that selection immediately; physical Android evidence confirms it opens the real category chooser instead of the incorrect location-empty state.
+- Notification truthfulness: unread lists no longer end with the contradictory “You’re all caught up” label. Quote notifications now carry an allowlisted booking destination and open the real Booking Details estimate-approval section; historical live rows were backfilled through migrations 306–307.
 
-## Full-view comparison
+**Focused comparison evidence**
 
-The supplied design had a horizontal seven-tab strip, eight equal-weight zero-value metrics, disabled import/export actions, and an empty Global Settings canvas. The redesign intentionally keeps the dark ServiceOS visual language while changing the information architecture into an enterprise control plane: four actionable health signals, a persistent configuration-scope navigator, data-dense workspace panels, explicit governance language, and a master/detail setting inspector.
+- A separate crop was not required: at 852 x 1920 the combined full-view comparison keeps the logo, search, campaign typography, service icon, booking card, recommendation imagery, and bottom navigation readable at native density.
 
-This is a redesign rather than a pixel clone. The desktop implementation was visually reviewed at the source width and preserves the source hierarchy and tone while materially improving information density, action clarity, and operational safety.
+**Comparison history**
 
-## Focused region review
+1. Earlier pass: search height and hero proportions were too large, campaign copy crowded the image, and the date/action row could collide with the hero body.
+2. Fixes: search reduced to 44 dp; hero fixed to 228 dp with clipping; typography reduced to 26/29 and 17/21; nonessential hero subtitle removed; date and CTA anchored to the bottom; recommendation copy and card heights compacted.
+3. Post-fix evidence: `fuvay-design-comparison-resume.png` shows the corrected same-viewport source and implementation together. No P0/P1/P2 issue remains.
 
-- Header and health strip: clear hierarchy, system state, and four non-duplicative operational measures.
-- Configuration navigation: all seven workspaces remain visible on desktop and become a horizontally scrollable scope navigator on mobile.
-- Global Settings: search, filters, CSV export, setting creation, effective-value resolution, secret masking, risk metadata, impact preview, and audited edits are present.
-- Category and plan policy tables: compact, comparable enterprise rows with working edit workflows.
-- Tenant overrides: tenant, setting, governance, expiry, status, edit, create, and revoke controls are represented.
-- Feature flags: status, rollout percentage, scope, owner, kill switch, create, and configure workflows are represented.
-- Audit and history: actor/reason/request evidence and non-destructive rollback are visible and usable.
-- Responsive layout: the fixed admin sidebar no longer consumes the mobile viewport; the 390px capture has no document-level horizontal overflow.
-- Accessibility: settings rows have keyboard focus treatment and shared textarea labels now have programmatic input association.
+**Primary interactions tested**
 
-## Findings and disposition
+- Change service location.
+- Search live catalog data.
+- Open Ask Fuvay from search and the Home prompt.
+- Open a service group through its real category.
+- Record campaign delivery and click events.
+- Open an active booking.
+- Open a preselected live issue without duplicating it across Home sections.
+- Navigate to all bookings and Support.
+- Open the center Assistant tab directly after selecting a browsing PIN on Home.
+- Open Notifications, filter unread items, and follow a quote notification into Booking Details.
+- Open Profile, Saved Addresses, and Add Address while preserving the same native shell.
+- Pull to refresh and render loading, API error, offline, missing-address, and unserviceable states.
 
-- [P1, fixed] The original screen did not expose meaningful work when settings existed. Replaced the empty canvas with a real settings table and inspector.
-- [P1, fixed] High-risk changes lacked visible governance. Added risk, approval/restart metadata, reason capture, impact preview, audit evidence, and rollback.
-- [P1, fixed] The mobile shell left approximately 142px for content. Added settings-scoped responsive shell rules and verified 390px without page overflow.
-- [P2, fixed] Seven tabs were easy to lose in a long horizontal header. Reframed them as configuration scopes with active state, descriptions, and counts; retained horizontal access on mobile.
-- [P2, fixed] Export was disabled. Added a functional, secret-redacted CSV download.
-- [P2, fixed] Form labels in shared textareas were visually present but not associated. Added `id`/`htmlFor` and an accessible-name fallback.
-- [P3, accepted] The supplied reference only shows the Global Settings empty state, so the other six workspaces have no pre-change visual baseline. They were judged against the existing ServiceOS design system and verified from browser-rendered evidence.
+**Follow-up polish**
 
-## Verification
+- P3: replace the dark logo lockup with a transparent light-background brand export if the brand team supplies one. The provided SVG uses white lettering and therefore requires a dark backing in the current light header.
 
-- Standalone Playwright: 1 passed; all seven tabs and their primary workflows exercised.
-- Browser API responses: no failed `/v1/` responses during the settings scenario.
-- Browser console: no errors during the settings scenario.
-- Mobile: 390 × 844 capture passed the no-document-overflow assertion.
-- TypeScript and production Next.js build passed earlier in this implementation pass.
-- A later repository-wide TypeScript rerun was blocked by an unrelated in-progress change in `app/admin/media/page.tsx` (`SummaryCards` missing `onOpenTab`); no settings file was implicated.
+final result: passed
 
-## Comparison history
+## Native Home — selected editorial option 2 — 2026-08-23
 
-1. Initial browser capture validated the enterprise desktop composition and all seven rendered states.
-2. First mobile capture exposed the fixed-sidebar width failure.
-3. Responsive shell behavior was corrected, tab navigation remained available, and a 390px no-overflow assertion was added.
-4. Final captures were normalized to the top scroll position and stripped of development-tool overlays.
+**Scope and target**
+
+- Exact selected source: `C:\Users\Aiviq Technologies\.codex\generated_images\019ff122-d815-7d43-89db-6975b88031ff\exec-220fc080-c189-4ce0-8ff1-a163ee83c176.png`.
+- Light emulator capture: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-option2-light-final-pass.jpg`.
+- Dark emulator capture: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-option2-dark-final-pass.jpg`.
+- Combined comparison evidence: `G:\serviceos\mobile\customer-app\design-option2-comparison.jpg`.
+- Runtime: native Android/Expo app at 1080 x 2340 px. The paired source mock uses a compressed concept-board viewport, so the implementation preserves its hierarchy and proportions responsively rather than distorting the real phone viewport.
+
+**Blocking comparison result**
+
+- P0: none. Home loads with real API data; the campaign, local catalog entry, booking, recommendation, nationwide Digital Studio lead path, theme switch and tab navigation remain interactive.
+- P1: none. Light and dark shells both reproduce the source's neutral editorial direction, image-led hierarchy, serif campaign display type, compact location/search header, live-booking rail, media recommendations and neutral elevated assistant action.
+- P2: none. Media text no longer inherits the dark theme's inverse-on-light token; it remains readable over arbitrary campaign artwork in both modes. The shell is warm porcelain in light mode and ink/graphite in dark mode without blue-tinted permanent surfaces.
+- Live-data exception: only one service group is currently bookable for PIN 140412, so the rail truthfully shows AC & HVAC instead of fabricating the four services present in the visual concept.
+- Functional extension: compact capability chips beneath the Digital Studio banner expose every live nationwide service. They intentionally extend the reference because the project has six independently actionable global offerings backed by the API.
+
+**Interaction and regression evidence**
+
+- Native emulator: switched Light -> Profile -> Dark -> Home and confirmed theme persistence, safe-area behavior, scroll restoration and the neutral bottom navigation treatment.
+- Focused native tests: 2 suites / 11 tests passed for Home and CustomerTabs.
+- Backend global-services workflow: 3 tests passed.
+- TypeScript: `tsc --noEmit` passed.
+
+**Remaining P3 polish**
+
+- The source concept includes four service-photo cards. As more service groups become genuinely enabled for the selected PIN, the existing horizontal rail will populate them automatically with the same media-card treatment.
+
+final result: passed
+
+## Native My Bookings and Ask Fuvay redesign — 2026-08-23
+
+**Scope**
+
+- Native customer app only: My Bookings list and the Ask Fuvay booking-assistant chooser/conversation.
+- Existing API routes, server-side booking filters, pagination, support navigation, assistant session, bootstrap, issue selection, question flow, and booking confirmation were retained.
+
+**Visual evidence**
+
+- My Bookings final: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-bookings-final3.png`
+- Ask Fuvay live issue selection: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-current.png`
+- Ask Fuvay first live question: `C:\Users\Aiviq Technologies\AppData\Local\Temp\fuvay-assistant-question.png`
+- Viewport: Android native 426 x 960 dp, captured at 852 x 1920 pixels.
+
+**Outcome**
+
+- My Bookings now uses a scan-first hierarchy: authoritative totals, filter tabs, freshness state, urgency groups, compact operational cards, next-step guidance, progress, human-readable schedules, pricing, and clear detail/support actions.
+- Ask Fuvay now uses the same Fuvay-blue design language: service chooser hero, location context, live category cards, assurance strip, conversation header, and a clean four-stage booking tracker.
+- Physical native testing exposed and fixed a production contract mismatch: the backend may correctly return `null` for pending draft readiness states. The app now accepts those values and advances from category selection into the real issue and question flow.
+- Final physical flow confirmed Home Services -> live issue list -> "AC is not cooling" -> live "What type of AC is it?" question and supported options.
+
+**Verification**
+
+- TypeScript: passed (`tsc --noEmit`).
+- Full native customer-app suite: 147 suites and 1,218 tests passed.
+- Contract regression: pending nullable draft-readiness states covered.
+- Source hygiene: scoped `git diff --check` passed; only existing line-ending notices remain.
 
 final result: passed

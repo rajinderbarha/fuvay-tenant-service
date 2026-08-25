@@ -27,7 +27,15 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     JS_ACCEPTED:           {JS_SCHEDULED, JS_ON_THE_WAY, JS_CANCELLED},
     JS_SCHEDULED:          {JS_ON_THE_WAY, JS_CANCELLED, JS_CUSTOMER_NOT_AVAIL},
     JS_ON_THE_WAY:         {JS_REACHED_SITE, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
-    JS_REACHED_SITE:       {JS_INSPECTION_STARTED, JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED},
+    # Fixed-price installation / maintenance journeys start work immediately
+    # after arrival; diagnostic repair journeys still move through inspection.
+    # The per-job workflow guard narrows this edge, and the work-start guard
+    # independently enforces quote/payment/checklist requirements, so adding
+    # the platform-valid edge cannot let an inspection workflow skip approval.
+    JS_REACHED_SITE:       {
+        JS_INSPECTION_STARTED, JS_SERVICE_STARTED,
+        JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED,
+    },
     # JS_QUOTE_REQUIRED is reachable from here because both
     # `create_parts_request` and `mark_parts_required`/`mark_quote_required` are
     # explicitly available while an inspection is in progress
@@ -167,6 +175,7 @@ ERR_STAFF_NOT_ASSIGNED        = "EXECUTION_STAFF_NOT_ASSIGNED"
 ERR_PROVIDER_SCOPE_INVALID    = "EXECUTION_PROVIDER_SCOPE_INVALID"
 ERR_CUSTOMER_SCOPE_INVALID    = "EXECUTION_CUSTOMER_SCOPE_INVALID"
 ERR_QUOTE_REQUIRED_HANDOFF    = "EXECUTION_QUOTE_REQUIRED_HANDOFF"
+ERR_CANCELLATION_NOT_ALLOWED  = "JOB_CANCELLATION_NOT_ALLOWED"
 
 # ── HOME-SERVICES-RUNTIME-SAFETY Phase 2A — work-start approval gate ─────────
 # Exact codes/messages per spec section 6 (not EXECUTION_-prefixed -- these

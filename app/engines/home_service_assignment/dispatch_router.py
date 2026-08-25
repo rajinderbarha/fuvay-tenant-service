@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,13 +34,27 @@ _RID = lambda r: getattr(r.state, "request_id", "—")
 async def get_dispatch_board(
     r: Request,
     date_: date = Query(date.today(), alias="date"),
-    view: str = Query("day"),
+    view: Literal["day", "week"] = Query("day"),
+    search: str | None = Query(None, max_length=120),
+    offering_id: uuid.UUID | None = Query(None),
+    technician_id: uuid.UUID | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     user: UserContext = Depends(require_tenant_vertical_active("home_services")),
     db: AsyncSession = Depends(get_db),
 ):
     tenant_id = uuid.UUID(user.tenant_id)
     svc = HomeServiceDispatchProjectionService(db)
-    data = await svc.get_dispatch_projection(tenant_id, date_)
+    data = await svc.get_dispatch_projection(
+        tenant_id,
+        date_,
+        view=view,
+        search=search,
+        offering_id=offering_id,
+        technician_id=technician_id,
+        limit=limit,
+        offset=offset,
+    )
     return ok(data, _RID(r), "assignment")
 
 

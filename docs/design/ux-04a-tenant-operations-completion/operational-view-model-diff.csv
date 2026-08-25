@@ -1,8 +1,0 @@
-view_model,change_this_pass
-InspectionView,"no change to type; first fixture (inspectionFixture) + first consuming component (InspectionSummary) added"
-InvoiceView,"no change to type; first consuming component (InvoicePaymentSummary) added and wired into JobDetailView rendering"
-ComplaintDetailView,"no change to type; first fixture (complaintDetailFixture) + first consuming component (ComplaintWorkspace) added"
-DisputeView,"no change to type; first fixture (disputeFixture) + first consuming component (DisputePresentation) added"
-OperationalExceptionView,"no change to type; first fixtures (operationalExceptionsFixture, 3 rows) + first embedding route added (component OperationalRiskBanner existed at baseline, unembedded)"
-SLAStateView,"no change to type; first full 9-state gallery fixture (slaGalleryFixture) added"
-All other 15 baseline view models,unchanged

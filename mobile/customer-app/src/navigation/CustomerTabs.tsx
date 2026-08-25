@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, View, AccessibilityInfo } from "react-native";
+import React from "react";
+import { Platform, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { CommonActions } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CustomerTabsParamList, CustomerTabName } from "./routeTypes";
 import { Icon, IconProps } from "../components/Icon";
 import { useTheme } from "../design-system/theme";
@@ -11,6 +12,7 @@ import { BookingChatScreen } from "../screens/bookingChat/BookingChatScreen";
 import { HelpSupportScreen } from "../screens/support/HelpSupportScreen";
 import { ProfileScreen } from "../screens/profile/ProfileScreen";
 import { saveLastSelectedTab } from "./navigationPersistence";
+import { FuvayIcon } from "../components/FuvayIcon";
 
 const Tab = createBottomTabNavigator<CustomerTabsParamList>();
 
@@ -21,48 +23,25 @@ const TAB_ICON: Record<Exclude<CustomerTabName, "Assistant">, IconProps["name"]>
   Profile: "person-outline",
 };
 
-/** Assistant tab's central elevated circular treatment -- restored per
- * this task's explicit requirement (Level 5 Home spec section 10:
- * "Assistant uses the refined elevated orange sparkle action from the
- * approved design"). A gentle, continuous breathing pulse (scale +
- * shadow-opacity) draws the eye to it as the entry point into the
- * chatbot, without ever affecting layout or other tabs. Reduced-motion
- * users get the plain, static circle. */
+/** The assistant is a first-class Fuvay product, so it uses the real brand
+ * mark rather than a generic sparkle glyph. The compact fixed treatment keeps
+ * the label fully visible on narrow phones and avoids perpetual decorative
+ * motion in primary navigation. */
 function AssistantTabIcon({ focused }: { focused: boolean }) {
   const { theme } = useTheme();
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReducedMotion).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (reducedMotion) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [reducedMotion, pulse]);
-
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-
   return (
-    <Animated.View
+    <View
       style={{
-        width: 44, height: 44, borderRadius: theme.radius.radiusFull,
-        backgroundColor: focused ? theme.colors.brandPrimaryPressed : theme.colors.brandPrimary,
-        alignItems: "center", justifyContent: "center", marginTop: -16,
-        transform: reducedMotion ? undefined : [{ scale }],
+        width: 48, height: 48, borderRadius: 16,
+        backgroundColor: "#FFFFFF",
+        borderWidth: focused ? 2 : 1,
+        borderColor: focused ? theme.colors.brandPrimary : theme.colors.surfaceDefault,
+        alignItems: "center", justifyContent: "center", marginTop: -14,
         ...theme.shadow.md,
       }}
     >
-      <Icon name="sparkles" size="standard" color={theme.colors.brandOnPrimary} decorative />
-    </Animated.View>
+      <FuvayIcon size={34} accessibilityLabel="Ask Fuvay" />
+    </View>
   );
 }
 
@@ -70,19 +49,29 @@ function AssistantTabIcon({ focused }: { focused: boolean }) {
  * Support, Profile. No Chat/Offers/Wallet/Payments/Providers tabs. */
 export function CustomerTabs() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Android edge-to-edge navigation can report zero briefly in Expo Go. Keep
+  // a conservative floor so the centre label never sits under the system bar.
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 16 : 8);
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: theme.colors.brandPrimary,
+        tabBarActiveTintColor: theme.colors.textPrimary,
         tabBarInactiveTintColor: theme.colors.iconDefault,
         tabBarStyle: {
           backgroundColor: theme.colors.bottomNavigation,
           borderTopColor: theme.colors.borderSubtle,
           borderTopWidth: 1,
+          height: 76 + bottomInset,
+          paddingTop: 8,
+          paddingBottom: bottomInset,
+          overflow: "visible",
+          ...theme.shadow.sm,
         },
-        tabBarLabelStyle: { fontSize: 11 },
+        tabBarItemStyle: { minHeight: 60, overflow: "visible" },
+        tabBarLabelStyle: { fontSize: 10.5, lineHeight: 14, fontWeight: "600", marginTop: 1 },
         tabBarAccessibilityLabel: route.name,
         tabBarHideOnKeyboard: true,
       })}
@@ -116,12 +105,15 @@ export function CustomerTabs() {
       <Tab.Screen
         name="Assistant"
         component={BookingChatScreen}
-        options={{ tabBarIcon: ({ focused }) => <AssistantTabIcon focused={focused} /> }}
+        options={{
+          tabBarLabel: "Ask Fuvay",
+          tabBarIcon: ({ focused }) => <AssistantTabIcon focused={focused} />,
+        }}
         listeners={({ navigation }) => ({
           tabPress: () => {
             if (navigation.isFocused()) return;
             navigation.dispatch(
-              CommonActions.navigate({ name: "Assistant", params: undefined, merge: false }),
+              CommonActions.navigate("Assistant", undefined, { merge: false }),
             );
           },
         })}

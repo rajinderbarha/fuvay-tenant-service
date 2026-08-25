@@ -19,6 +19,7 @@ export function MediaTab({ profile, onChanged }: { profile: BusinessProfileOverv
         <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Storefront / cover photo</p>
         <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>Wide banner shown at the top of your public profile.</p>
         <ProfilePhotoUploader ownerType="provider_shop" currentMediaId={profile.shop_photo_media_id}
+          currentPreviewUrl={profile.shop_photo_url}
           displayName={profile.business_name} size="lg" onUploaded={onChanged} onRemoved={onChanged}/>
       </Card>
 

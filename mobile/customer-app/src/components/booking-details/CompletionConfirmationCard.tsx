@@ -40,7 +40,7 @@ export function CompletionConfirmationCard({ handover, payment, busy, failed, on
             {needsHandover
               ? "The technician has submitted the completion proof. Confirm that the completed work was handed over to you."
               : needsPayment && payment
-                ? `${payment.provider_business ?? "The provider"} recorded ${payment.currency} ${payment.service_amount} paid by ${payment.method}. ServiceOS did not collect this money.`
+                ? `${payment.provider_business ?? "The provider"} recorded ${payment.currency} ${payment.service_amount} paid by ${payment.method}. Fuvay did not collect this money.`
                 : issueReported
                   ? "Your payment issue was sent to the provider. The job cannot close until it is resolved."
                 : complete

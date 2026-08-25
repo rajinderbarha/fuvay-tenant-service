@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi } from "../../../../../lib/api";
+import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi, inventoryApi, type InventoryItem, type StockLocation } from "../../../../../lib/api";
 import { PageShell, PageHeader, Card, Button, Modal, Alert, StatusBadge } from "@serviceos/design-system";
 
 const STATUS_ACTIONS: Record<string, { label: string; action: string }[]> = {
@@ -30,6 +30,12 @@ export default function JobExecutionPage() {
   const [notes, setNotes] = useState<ExecutionNoteRecord[]>([]);
   const [partsRequests, setPartsRequests] = useState<PartsRequestRecord[]>([]);
   const [partsActionLoading, setPartsActionLoading] = useState<string | null>(null);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [stockLocations, setStockLocations] = useState<StockLocation[]>([]);
+  const [approveRequest, setApproveRequest] = useState<PartsRequestRecord | null>(null);
+  const [procurementSource, setProcurementSource] = useState<"inventory" | "external">("inventory");
+  const [allocationItemId, setAllocationItemId] = useState("");
+  const [allocationLocationId, setAllocationLocationId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [noteText, setNoteText] = useState("");
@@ -48,16 +54,21 @@ export default function JobExecutionPage() {
       // rendered for any job. Fixed by loading real job data (which also
       // now carries HS8B's `completion_data` for the Completion Proof
       // section below).
-      const [ctxRes, tlRes, notesRes, partsRes] = await Promise.all([
+      const [ctxRes, tlRes, notesRes, partsRes, inventoryRes, locationsRes] = await Promise.all([
         serviceJobAssignmentApi.getContext(jobId),
         homeServiceExecutionApi.getProviderTimeline(jobId),
         homeServiceExecutionApi.getNotes(jobId),
         homeServiceExecutionApi.listPartsRequests(jobId),
+        inventoryApi.listItems({ limit: 200, stockStatus: "all", sort: "name_asc" })
+          .catch(() => ({ items: [], total: 0, offset: 0, limit: 200, has_next: false })),
+        inventoryApi.listLocations().catch(() => ({ locations: [], total: 0 })),
       ]);
       setJob(ctxRes.job as unknown as Record<string, unknown>);
       setTimeline(Array.isArray(tlRes) ? tlRes : []);
       setNotes(Array.isArray(notesRes) ? notesRes : []);
       setPartsRequests(partsRes.parts_requests ?? []);
+      setInventoryItems(inventoryRes.items ?? []);
+      setStockLocations(locationsRes.locations ?? []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -65,10 +76,29 @@ export default function JobExecutionPage() {
     }
   }
 
-  async function handleApproveParts(partsRequestId: string) {
-    setPartsActionLoading(partsRequestId);
+  function openApproveParts(pr: PartsRequestRecord) {
+    const exact = inventoryItems.find(item => item.name.toLowerCase() === pr.part_name.toLowerCase());
+    setApproveRequest(pr);
+    setProcurementSource(inventoryItems.length && stockLocations.length ? "inventory" : "external");
+    setAllocationItemId(exact?.item_id ?? inventoryItems[0]?.item_id ?? "");
+    setAllocationLocationId(stockLocations[0]?.location_id ?? "");
+  }
+
+  async function handleApproveParts() {
+    if (!approveRequest) return;
+    if (procurementSource === "inventory" && (!allocationItemId || !allocationLocationId)) {
+      setError("Select an inventory item and stock location, or choose external procurement.");
+      return;
+    }
+    setPartsActionLoading(approveRequest.parts_request_id);
     try {
-      await homeServiceExecutionApi.approveParts(jobId, partsRequestId);
+      await homeServiceExecutionApi.approveParts(jobId, approveRequest.parts_request_id, {
+        procurement_source: procurementSource,
+        ...(procurementSource === "inventory" ? {
+          inventory_item_id: allocationItemId, stock_location_id: allocationLocationId,
+        } : {}),
+      });
+      setApproveRequest(null);
       await loadJob();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to approve parts request");
@@ -207,13 +237,19 @@ export default function JobExecutionPage() {
               {pr.status === "requested" && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <Button size="sm" variant="primary" disabled={partsActionLoading === pr.parts_request_id}
-                    onClick={() => handleApproveParts(pr.parts_request_id)}>
+                    onClick={() => openApproveParts(pr)}>
                     Approve
                   </Button>
                   <Button size="sm" variant="destructive" disabled={partsActionLoading === pr.parts_request_id}
                     onClick={() => handleRejectParts(pr.parts_request_id)}>
                     Reject
                   </Button>
+                </div>
+              )}
+              {pr.status !== "requested" && (
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6 }}>
+                  Fulfilment: {pr.procurement_source === "inventory" ? "Provider inventory" : "External purchase"}
+                  {pr.stock_reservation_id ? " · stock reserved" : ""}
                 </div>
               )}
             </div>
@@ -301,6 +337,52 @@ export default function JobExecutionPage() {
           </div>
         </Card>
       </div>
+
+      <Modal open={!!approveRequest} onClose={() => setApproveRequest(null)} title="Approve parts request"
+        footer={<>
+          <Button variant="ghost" size="sm" onClick={() => setApproveRequest(null)}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={partsActionLoading === approveRequest?.parts_request_id}
+            disabled={procurementSource === "inventory" && (!allocationItemId || !allocationLocationId)}
+            onClick={handleApproveParts}>Approve request</Button>
+        </>}>
+        {approveRequest && <div style={{ display: "grid", gap: 14, minWidth: "min(420px, 75vw)" }}>
+          <div style={{ padding: 12, borderRadius: 8, background: "var(--surface-sunken)", fontSize: 13 }}>
+            <strong>{approveRequest.part_name} × {approveRequest.quantity}</strong>
+            <div style={{ marginTop: 3, color: "var(--text-secondary)" }}>{approveRequest.reason}</div>
+          </div>
+          <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+            Fulfilment source
+            <select value={procurementSource} onChange={e => setProcurementSource(e.target.value as "inventory" | "external")}
+              style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px" }}>
+              <option value="inventory">Provider inventory (reserve stock)</option>
+              <option value="external">External purchase (no stock movement)</option>
+            </select>
+          </label>
+          {procurementSource === "inventory" && <>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+              Inventory item
+              <select value={allocationItemId} onChange={e => setAllocationItemId(e.target.value)}
+                style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px" }}>
+                <option value="">Select item</option>
+                {inventoryItems.map(item => <option key={item.item_id} value={item.item_id} disabled={item.available_qty < approveRequest.quantity}>
+                  {item.name} · {item.available_qty} available · ₹{item.selling_price.toLocaleString("en-IN")}
+                </option>)}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+              Stock location
+              <select value={allocationLocationId} onChange={e => setAllocationLocationId(e.target.value)}
+                style={{ height: 38, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", padding: "0 10px" }}>
+                <option value="">Select location</option>
+                {stockLocations.map(location => <option key={location.location_id} value={location.location_id}>{location.location_name}</option>)}
+              </select>
+            </label>
+            <div style={{ padding: 10, borderRadius: 8, background: "var(--info-bg)", color: "var(--info-text)", fontSize: 12 }}>
+              Customer pricing comes from the inventory catalogue. Stock is reserved after the final required approval and deducted only when installed.
+            </div>
+          </>}
+        </div>}
+      </Modal>
 
       {/* Quote Required Modal */}
       <Modal open={showQuoteModal} onClose={() => setShowQuoteModal(false)} title="Quote Required"

@@ -8,8 +8,8 @@ export interface BookingDraftSummary {
   city: string | null;
   zipcode: string | null;
   issueSummary: string | null;
-  serviceabilityStatus: string;
-  priceStatus: string;
+  serviceabilityStatus: string | null;
+  priceStatus: string | null;
   categoryName: string | null;
   offeringName: string | null;
   jobTypeLabel: string | null;

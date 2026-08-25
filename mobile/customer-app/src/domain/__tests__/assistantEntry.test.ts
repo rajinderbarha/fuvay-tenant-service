@@ -7,6 +7,8 @@ describe("assistant entry context", () => {
       categoryId: asCategoryId("cat-1"),
       categoryName: "AC & Cooling",
       categorySlug: "ac-cooling",
+      serviceGroupSlug: null,
+      masterServiceId: null,
       zipcode: "141001",
     });
     expect(ctx).toEqual({
@@ -14,6 +16,8 @@ describe("assistant entry context", () => {
       categoryId: "cat-1",
       categoryName: "AC & Cooling",
       categorySlug: "ac-cooling",
+      serviceGroupSlug: null,
+      masterServiceId: null,
       zipcode: "141001",
       existingDraftId: null,
       // A plain category tap names no specific problem -- the Assistant
@@ -27,6 +31,7 @@ describe("assistant entry context", () => {
       categoryId: asCategoryId("cat-1"),
       categoryName: "AC & Cooling",
       categorySlug: "ac-cooling",
+      serviceGroupSlug: null,
       zipcode: "141001",
       issueId: "issue-7",
     });
@@ -35,6 +40,8 @@ describe("assistant entry context", () => {
       categoryId: "cat-1",
       categoryName: "AC & Cooling",
       categorySlug: "ac-cooling",
+      serviceGroupSlug: null,
+      masterServiceId: null,
       zipcode: "141001",
       existingDraftId: null,
       preselectedIssueId: "issue-7",

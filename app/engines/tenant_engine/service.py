@@ -363,7 +363,11 @@ class TenantService:
         # (MODULE-L5-45) and the tenant-settings fallback tier of commission
         # resolution (MODULE-L5-32) both depend on this row existing.
         self.db.add(TenantSettings(tenant_id=tenant.id))
-        for engine_id in req.engines_to_enable:
+        # Admin requests created before engine selection was mandatory can
+        # carry an empty list.  Activating such a tenant used to provision no
+        # engines at all, leaving approved providers with dead navigation.
+        enabled_engines = list(req.engines_to_enable or DEFAULT_ENGINES_BY_VERTICAL.get(req.vertical, []))
+        for engine_id in enabled_engines:
             self.db.add(TenantEngine(tenant_id=tenant.id, engine_id=engine_id, is_enabled=True,
                 config=req.engine_configs.get(engine_id, {}), activated_at=utcnow(),
                 activated_by=self.actor_id))
@@ -382,14 +386,14 @@ class TenantService:
         req.activated_at = utcnow()
         prov = await provision_tenant(db=self.db, tenant_id=tenant.id,
             tenant_name=tenant.tenant_name, vertical=tenant.vertical, plan_type=plan,
-            engines_to_enable=req.engines_to_enable, engine_configs=req.engine_configs,
+            engines_to_enable=enabled_engines, engine_configs=req.engine_configs,
             owner_email=req.owner_email, admin_id=self.actor_id or uuid.uuid4())
         await cache_set(RedisKeys.tenant_config(str(tenant.id)),
             {"tenant_id": str(tenant.id), "tenant_name": tenant.tenant_name,
              "plan_type": plan, "status": "active", "subdomain": None,
-             "vertical": tenant.vertical, "enabled_engines": req.engines_to_enable}, ttl=300)
+             "vertical": tenant.vertical, "enabled_engines": enabled_engines}, ttl=300)
         await self._audit(tenant.id, "tenant.activated",
-                          after={"status": "active", "plan": plan, "engines": len(req.engines_to_enable)})
+                          after={"status": "active", "plan": plan, "engines": len(enabled_engines)})
         await self._publish("tenant.activated", str(tenant.id), str(tenant.id),
                             {"plan": plan, "vertical": tenant.vertical})
         logger.info("tenant.activated", tenant_id=str(tenant.id))

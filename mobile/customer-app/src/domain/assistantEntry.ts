@@ -18,6 +18,13 @@ export type AssistantEntryContext =
       categoryId: CategoryId;
       categoryName: string;
       categorySlug: string;
+      /** Optional catalog subdivision selected on Home (for example AC &
+       * HVAC inside Home Services). The backend revalidates it; carrying it
+       * here prevents the assistant from widening back to every appliance. */
+      serviceGroupSlug: string | null;
+      /** Exact Admin > Master Services item selected on Home. The backend
+       * revalidates it against publication, entitlement and ZIP coverage. */
+      masterServiceId: string | null;
       zipcode: string;
       existingDraftId: string | null;
       /**
@@ -47,6 +54,8 @@ export function createServiceCardEntryContext(input: {
   categoryId: CategoryId;
   categoryName: string;
   categorySlug: string;
+  serviceGroupSlug?: string | null;
+  masterServiceId?: string | null;
   zipcode: string;
   existingDraftId?: string | null;
   preselectedIssueId?: string | null;
@@ -56,6 +65,8 @@ export function createServiceCardEntryContext(input: {
     categoryId: input.categoryId,
     categoryName: input.categoryName,
     categorySlug: input.categorySlug,
+    serviceGroupSlug: input.serviceGroupSlug ?? null,
+    masterServiceId: input.masterServiceId ?? null,
     zipcode: input.zipcode,
     existingDraftId: input.existingDraftId ?? null,
     preselectedIssueId: input.preselectedIssueId ?? null,
@@ -68,6 +79,7 @@ export function createQuickIssueEntryContext(input: {
   categoryId: CategoryId;
   categoryName: string;
   categorySlug: string;
+  serviceGroupSlug?: string | null;
   zipcode: string;
   issueId: string;
 }): AssistantEntryContext {

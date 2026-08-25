@@ -307,7 +307,17 @@ function EnterpriseDataGridInner({
     return str;
   };
 
-  const activeFilterCount = Object.values(data?.filters_applied ?? {}).filter(Boolean).length;
+  // `filters_applied` is the WHOLE params object, so it always contains page,
+  // page_size, sort_by and sort_direction -- every grid therefore reported
+  // "4 filters active" with no filters set at all. Count only the declared
+  // filter keys the user can actually change, plus the search box.
+  const activeFilterCount =
+    filterDefs.reduce((n, f) => {
+      if (f.type === "date_range") {
+        return n + (filterValues[`${f.key}_from`] ? 1 : 0) + (filterValues[`${f.key}_to`] ? 1 : 0);
+      }
+      return n + (filterValues[f.key] ? 1 : 0);
+    }, 0) + (search ? 1 : 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

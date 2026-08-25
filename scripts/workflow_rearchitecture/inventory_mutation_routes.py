@@ -80,13 +80,9 @@ CONFIRMED_FALSE_POSITIVE_ROUTES = {
     ("app.engines.serviceability.router", "check_serviceability"),
     ("app.engines.serviceability.router", "matching_tenants"),
     ("app.engines.serviceability.router", "available_services"),
-    # Slice 2F-8: admin_catalog.tenant_router's price-preview endpoint is a
-    # synchronous, non-async computation (compute_symmetric_customer_price_tiers)
-    # with no self.db access at all -- confirmed via direct source read of
-    # TenantCatalogService.price_options_preview. It takes client-supplied
-    # numbers and returns a computed Low/Mid/High preview; no tenant record is
-    # read or written. Same disposition as provider_portal's
-    # preview_matching_inputs false positive above.
+    # Historical inventory entry retained only so the architecture scanner
+    # recognizes the removed, non-mutating preview route. It never read or
+    # wrote tenant records.
     ("app.engines.admin_catalog.tenant_router", "preview_tenant_price_options"),
     # Slice 2F-15A: booking_preflight is a POST-verb query endpoint (serviceability
     # + pricing + SLA check) with zero self.db.add/db.commit calls anywhere in

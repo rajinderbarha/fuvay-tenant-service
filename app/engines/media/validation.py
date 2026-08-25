@@ -57,10 +57,9 @@ CONTEXT_RULES: dict[str, dict] = {
     "brand_logo":                   {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 5},
     "category_icon":                {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "service_icon":                 {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
-    "issue_icon":                   {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "checklist_icon":               {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
-    "question_icon":                {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "global_service_icon":          {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
+    "home_campaign_artwork":        {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 8},
     "banner_artwork":               {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 5},
     "marketing_asset":              {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 20},
 }

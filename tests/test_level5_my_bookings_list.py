@@ -48,6 +48,7 @@ async def test_list_my_bookings_batch_enriches_names_with_one_query_per_catalog_
         _pairs([(b1.offering_id, "AC Repair"), (b2.offering_id, "Geyser Repair")]),
         _pairs([(b1.category_id, "AC & Cooling"), (b2.category_id, "Water Heating")]),
         _pairs([(b1.job_type_id, "Repair"), (b2.job_type_id, "Repair")]),
+        _pairs([]),  # one batched committed-slot/urgency lookup
     ])
     db.scalar = AsyncMock(return_value=2)
     request = MagicMock()
@@ -59,7 +60,7 @@ async def test_list_my_bookings_batch_enriches_names_with_one_query_per_catalog_
     names = {item["id"]: item.get("offering_name") for item in result.data["items"]}
     assert names[str(b1.id)] == "AC Repair"
     assert names[str(b2.id)] == "Geyser Repair"
-    assert db.execute.call_count == 4  # 1 main query + 3 batched catalog lookups, never N+1
+    assert db.execute.call_count == 5  # main + 3 catalog + 1 urgency batch, never N+1
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,8 @@ import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
 import { AppButton } from "../AppButton";
 import { Icon } from "../Icon";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { resolveMediaImageSource } from "../../domain/mediaUrl";
+import { getInMemoryAccessToken } from "../../api/session/tokenVault";
 import {
   MAX_DRAFT_PHOTOS,
   ALLOWED_PHOTO_MIME_TYPES,
@@ -32,7 +33,7 @@ const THUMB = 72;
  * rest of the app (category artwork, campaign banners, avatars) kept
  * hitting the same bug -- it now lives in domain/mediaUrl.ts and is shared. */
 function absoluteUrl(url: string): string {
-  return resolveMediaUrl(url) ?? url;
+  return resolveMediaImageSource(url, null)?.uri ?? url;
 }
 
 /** expo-image-picker gives a `mimeType` on newer SDKs and only a file
@@ -147,7 +148,7 @@ export function BookingPhotoAttachments({
           {photoUrls.map(url => (
             <View key={url} style={{ width: THUMB, height: THUMB }}>
               <Image
-                source={{ uri: absoluteUrl(url) }}
+                source={resolveMediaImageSource(url, getInMemoryAccessToken()) ?? { uri: absoluteUrl(url) }}
                 style={{ width: THUMB, height: THUMB, borderRadius: theme.radiusUsage.input, backgroundColor: theme.colors.surfaceDisabled }}
                 accessibilityIgnoresInvertColors
               />

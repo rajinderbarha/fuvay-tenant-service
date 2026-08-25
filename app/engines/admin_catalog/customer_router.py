@@ -173,6 +173,28 @@ async def get_flow_config(r: Request,
             "steps": ["select_service", "confirm"],
         }, _rid(r), ENGINE_ID)
 
+    # This is a public booking contract, so catalog lifecycle and visibility
+    # must fail closed.  Returning a usable step list for a retired/hidden
+    # category or service lets a stale deep link start a booking that the
+    # provider/catalog engines will reject later.
+    if cat_data.get("is_active", True) is False or cat_data.get("is_customer_visible", True) is False:
+        return ok({
+            "available": False,
+            "reason": "CATEGORY_UNAVAILABLE",
+            "category_id": cat_data.get("category_id"),
+            "service_id": svc_data.get("service_id") if svc_data else None,
+            "steps": [],
+        }, _rid(r), ENGINE_ID)
+
+    if svc_data and svc_data.get("is_active", True) is False:
+        return ok({
+            "available": False,
+            "reason": "SERVICE_UNAVAILABLE",
+            "category_id": cat_data.get("category_id"),
+            "service_id": svc_data.get("service_id"),
+            "steps": [],
+        }, _rid(r), ENGINE_ID)
+
     canonical = await _resolve_canonical_flow_flags(db, service_id) if service_id else None
 
     if canonical is not None:
@@ -204,6 +226,7 @@ async def get_flow_config(r: Request,
     steps.append("confirm")
 
     return ok({
+        "available": True,
         "category_id": cat_data.get("category_id"),
         "service_id": svc_data.get("service_id") if svc_data else None,
         "flow_type": cat_data.get("customer_flow_type") or "service_booking",

@@ -50,8 +50,6 @@ export interface HomeQuickIssue {
   /** Null blocks the tap: the Assistant is entered by category slug. */
   categorySlug: string | null;
   categoryName: string;
-  /** Admin-set artwork. Null falls back to a wording-derived glyph. */
-  iconUrl: string | null;
   /** What the customer is trying to do: fix a fault, or get something scoped and
    * quoted. Null when the wording says neither -- such an item is shown in the
    * general grids and in no intent section, rather than forced into one. */
@@ -124,13 +122,109 @@ export interface HomeCapabilities {
   chatbotLanguageSelectable: boolean;
 }
 
+export interface HomeServiceGroup {
+  serviceGroupId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  iconUrl: string | null;
+  categoryId: CategoryId;
+  categorySlug: string;
+}
+
+/** Concrete customer work authored in Admin > Master Services and published
+ * by at least one eligible provider at the selected ZIP. */
+export interface HomeMasterService {
+  masterServiceId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  iconUrl: string | null;
+  serviceGroupId: string;
+  serviceGroupName: string;
+  serviceGroupSlug: string;
+  categoryId: CategoryId;
+  categorySlug: string;
+}
+
+export interface HomeCampaign {
+  campaignId: string;
+  placement: string;
+  variant: string;
+  themeKey: string;
+  sectionTitle: string | null;
+  priority: number;
+  sponsored: boolean;
+  badge: string;
+  title: string;
+  subtitle: string;
+  offerText: string | null;
+  imageUrl: string;
+  actionLabel: string;
+  actionUrl: string | null;
+  categorySlug: string | null;
+  serviceGroupSlug: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
+export interface HomeSectionConfig {
+  key: string;
+  enabled: boolean;
+  title: string | null;
+  variant: string;
+  maxItems: number;
+  spacing: "compact" | "standard" | "generous";
+  surface: "canvas" | "subtle" | "raised" | "brand_tint";
+}
+
+export const DEFAULT_HOME_SECTIONS: HomeSectionConfig[] = [
+  ["hero", null, "marketplace", 5, true, "compact", "canvas"],
+  ["service_groups", "Popular services", "compact_grid", 8, true, "compact", "canvas"],
+  ["recent_bookings", "Recent bookings", "compact_rail", 3, true, "compact", "canvas"],
+  ["featured_services", "Featured services", "compact_cards", 6, true, "compact", "canvas"],
+  ["master_services", "Recommended for you", "recommendation_cards", 8, true, "compact", "canvas"],
+  ["banners", null, "contained", 4, true, "standard", "canvas"],
+  ["collection", "Offers for you", "editorial_cards", 8, true, "compact", "canvas"],
+  ["spotlight", "In the spotlight", "cinematic_card", 2, true, "compact", "canvas"],
+  ["global_services", "Web & mobile development", "compact_services", 6, true, "compact", "canvas"],
+  ["trust_strip", null, "icon_row", 4, true, "compact", "subtle"],
+  ["live_booking", "Your live booking", "timeline", 1, false, "compact", "canvas"],
+  ["stories", "Ideas and offers", "landscape", 8],
+  ["mosaic", "Fresh ways to care for home", "asymmetric", 3],
+  ["assistant", null, "command_strip", 1],
+  ["featured_problems", "What needs fixing?", "editorial_list", 8],
+  ["active_bookings", "More active bookings", "stack", 3],
+  ["repair_problems", "Repairs you can book now", "editorial_rail", 12],
+  ["consultation_problems", "Get an expert opinion", "editorial_list", 8],
+  ["more_problems", "More ways we can help", "compact_grid", 12],
+  ["notices", null, "strips", 2],
+  ["support_actions", null, "utility_rows", 2],
+].map(([key, title, variant, maxItems, enabled, spacing, surface]) => ({
+  key: String(key),
+  enabled: enabled == null ? ["hero", "service_groups", "recent_bookings", "featured_services", "master_services", "banners", "collection", "spotlight", "global_services", "trust_strip"].includes(String(key)) : Boolean(enabled),
+  title: title == null ? null : String(title),
+  variant: String(variant),
+  maxItems: Number(maxItems),
+  spacing: (spacing ?? "standard") as HomeSectionConfig["spacing"],
+  surface: (surface ?? "canvas") as HomeSectionConfig["surface"],
+}));
+
 export interface CustomerHome {
   responseVersion: number;
   address: HomeAddressSummary | null;
   serviceability: HomeServiceability | null;
   enabledVerticals: HomeVertical[];
   bookableCategories: HomeCategory[];
+  bookableServiceGroups: HomeServiceGroup[];
+  bookableMasterServices: HomeMasterService[];
   quickIssues: HomeQuickIssue[];
+  /** Content for fixed product-owned placements. Admin controls content and
+   * targeting, never native section order or component types. */
+  campaigns: HomeCampaign[];
+  /** Ordered, admin-published list of native component slots. Only known
+   * app-owned section keys render; unknown future keys are ignored safely. */
+  sections: HomeSectionConfig[];
   /** Up to three live bookings, newest first. */
   activeBookings: HomeActiveBooking[];
   /** How many live bookings there really are -- can exceed `activeBookings`. */

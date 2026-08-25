@@ -3273,7 +3273,7 @@ export const profilePhotoApi = {
 // picker doesn't re-hit Postgres.
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
-  | "issue_icon" | "checklist_icon" | "question_icon" | "global_service_icon"
+  | "checklist_icon" | "global_service_icon" | "home_campaign_artwork"
   | "banner_artwork";
 
 export const iconLibraryApi = {
@@ -5916,6 +5916,110 @@ export const adminMarketingApi = {
       `/v1/admin/marketing/automation-triggers/${trigger_key}/run`,
       { method: "POST", body: JSON.stringify(params || {}) }
     ),
+};
+
+export interface CustomerHomePlacementDefinition {
+  key: string;
+  label: string;
+  description: string;
+  variants: string[];
+  max_active: number;
+}
+
+export interface CustomerHomePlacementItem {
+  campaign_id: string;
+  title: string;
+  subtitle: string;
+  placement: string;
+  variant: string;
+  theme_key: string;
+  section_title: string | null;
+  badge: string;
+  offer_text: string | null;
+  image_url: string;
+  action_label: string;
+  action_url: string | null;
+  category_slug: string | null;
+  service_group_slug: string | null;
+  sponsored: boolean;
+  priority: number;
+  city: string | null;
+  zipcodes: string[];
+  frequency_cap_per_day: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_active: boolean;
+  status: string;
+  updated_at: string | null;
+}
+
+export type CustomerHomePlacementWrite = Omit<
+  CustomerHomePlacementItem,
+  "campaign_id" | "status" | "updated_at"
+>;
+
+export interface CustomerHomePlacementResponse {
+  items: CustomerHomePlacementItem[];
+  count: number;
+  placements: CustomerHomePlacementDefinition[];
+  themes: string[];
+  service_groups: Array<{ slug: string; label: string }>;
+  composition: CustomerHomeCompositionResponse;
+}
+
+export interface CustomerHomeSectionDefinition {
+  key: string;
+  label: string;
+  title: string | null;
+  variants: string[];
+  max_items: number;
+}
+
+export interface CustomerHomeSectionConfig {
+  key: string;
+  enabled: boolean;
+  title: string | null;
+  variant: string;
+  max_items: number;
+  spacing: "compact" | "standard" | "generous";
+  surface: "canvas" | "subtle" | "raised" | "brand_tint";
+}
+
+export interface CustomerHomeCompositionResponse {
+  sections: CustomerHomeSectionConfig[];
+  definitions: CustomerHomeSectionDefinition[];
+  updated_at: string | null;
+  layout_options: {
+    spacing: Array<CustomerHomeSectionConfig["spacing"]>;
+    surfaces: Array<CustomerHomeSectionConfig["surface"]>;
+  };
+}
+
+export const adminCustomerHomeApi = {
+  listPlacements: () =>
+    apiFetch<CustomerHomePlacementResponse>("/v1/admin/customer-home/placements"),
+  createPlacement: (body: CustomerHomePlacementWrite) =>
+    apiFetch<CustomerHomePlacementItem>("/v1/admin/customer-home/placements", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updatePlacement: (campaignId: string, body: CustomerHomePlacementWrite) =>
+    apiFetch<CustomerHomePlacementItem>(`/v1/admin/customer-home/placements/${campaignId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  archivePlacement: (campaignId: string) =>
+    apiFetch<{ campaign_id: string; archived: boolean }>(
+      `/v1/admin/customer-home/placements/${campaignId}/archive`,
+      { method: "POST" },
+    ),
+  getComposition: () =>
+    apiFetch<CustomerHomeCompositionResponse>("/v1/admin/customer-home/composition"),
+  updateComposition: (body: { sections: CustomerHomeSectionConfig[]; reason: string }) =>
+    apiFetch<CustomerHomeCompositionResponse>("/v1/admin/customer-home/composition", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };
 
 // â”€â”€ Sprint 16 â€” Home Service Booking Drafts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -10962,6 +11066,9 @@ export const catalogWorkspaceApi = {
   },
   createIssueType: (data: Record<string, unknown>) =>
     apiFetch<Record<string, unknown>>("/v1/admin/issue-types-v2", { method: "POST", body: JSON.stringify(data) }),
+  updateIssueType: (issueTypeId: string, data: Record<string, unknown>) =>
+    apiFetch<Record<string, unknown>>(`/v1/admin/issue-types-v2/${issueTypeId}`,
+      { method: "PUT", body: JSON.stringify(data) }),
 
   // Service Options & Add-ons -- HOME-SERVICES-CATALOG ownership correction:
   // real job-type-exact mapping (job_type_id required to attach), no

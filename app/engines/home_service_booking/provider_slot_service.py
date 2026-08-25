@@ -390,6 +390,7 @@ async def list_available_slots(
     cutoff = _notice_cutoff(settings, now, emergency)
     day = now.date()
     results: list[dict] = []
+    seen_slots: set[tuple[str, str]] = set()
     days_with_slots = 0
     horizon = min(
         search_days if search_days is not None else int(settings["maximum_advance_booking_days"]),
@@ -427,6 +428,14 @@ async def list_available_slots(
                 label = _window_label(start, end)
                 if booked.get(label, 0) >= cap:
                     continue
+                # Legacy/provider edits can leave overlapping active business-
+                # hour rows. A physical provider slot is still one choice;
+                # returning it once per rule produced duplicate rows in the
+                # customer picker (and ambiguous capacity semantics).
+                slot_key = (target.isoformat(), label)
+                if slot_key in seen_slots:
+                    continue
+                seen_slots.add(slot_key)
                 found_today = True
                 results.append({
                     "date": target.isoformat(),

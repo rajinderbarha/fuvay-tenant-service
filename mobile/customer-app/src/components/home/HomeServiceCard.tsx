@@ -4,9 +4,8 @@ import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
 import { HomeCategory } from "../../domain/customerHome";
-import { ServicePriceState, resolveServicePriceDisplay, classifyRawAmount } from "../../domain/servicePricing";
+import { ServicePriceState } from "../../domain/servicePricing";
 import { resolveCategoryIcon } from "../../domain/categoryIcon";
-import { formatMoney } from "../../domain/money";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
 
 export interface HomeServiceCardProps {
@@ -35,20 +34,13 @@ const ARTWORK_HEIGHT = 112;
  * `HomeCategory` structurally cannot carry them (see domain/
  * customerHome.ts), so there is nothing to accidentally leak here.
  */
-export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCardProps) {
+export function HomeServiceCard({ category, onPress }: HomeServiceCardProps) {
   const { theme } = useTheme();
-  const legacyPrice = priceState ? resolveServicePriceDisplay(priceState) : null;
   // `starting_price` arrives as a major-unit decimal (₹, matching the
   // backend's Numeric(10,2) columns), so it goes through the same
   // classify-then-format path as every other price in the app. That path
   // treats null/0/negative as "no price", which is why a category with
   // nothing configured renders no price row instead of "₹0".
-  const startingState = classifyRawAmount(
-    category.startingPrice != null ? Math.round(category.startingPrice * 100) : null,
-  );
-  const priceLabel = startingState.kind === "valid"
-    ? formatMoney(startingState.amount)
-    : legacyPrice?.label ?? null;
   // `icon_url` is server-relative for the local storage driver; RN cannot
   // load a relative URI, so it must be absolutised (see domain/mediaUrl).
   const artworkUri = resolveMediaUrl(category.iconUrl);
@@ -57,7 +49,7 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${category.name}${priceLabel ? `, starting at ${priceLabel}` : ""}`}
+      accessibilityLabel={category.name}
       style={({ pressed }) => ({
         flex: 1,
         borderRadius: theme.radiusUsage.card,
@@ -99,14 +91,6 @@ export function HomeServiceCard({ category, priceState, onPress }: HomeServiceCa
           <AppText variant="caption" color="tertiary" align="center" numberOfLines={2} style={{ marginTop: 2 }}>
             {category.description}
           </AppText>
-        ) : null}
-        {priceLabel ? (
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4, marginTop: theme.spacing.xs }}>
-            <AppText variant="caption" color="tertiary">Starting at</AppText>
-            <AppText variant="bodySmall" style={{ color: theme.colors.brandPrimaryStrong, fontWeight: "700" }}>
-              {priceLabel}
-            </AppText>
-          </View>
         ) : null}
       </View>
     </Pressable>

@@ -8,7 +8,7 @@ interface State { hasError: boolean }
 /**
  * A failure in one optional section must not blank the whole Home screen
  * (spec requirement) -- wrap each independently-rendered section
- * (campaigns, services, active booking) in one of these so a rendering
+ * (services, quick issues, active booking) in one of these so a rendering
  * bug in a single section degrades to a small inline notice instead of
  * crashing the entire screen.
  */

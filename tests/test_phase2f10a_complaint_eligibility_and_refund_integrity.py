@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -183,16 +183,22 @@ class TestEligibilityCreationConsistency:
 
     async def test_eligible_fixture_allows_both_check_and_create(self):
         cid = _uuid()
+        tenant_id = _uuid()
         eligible_result = {"eligible": True, "reason": None, "reason_code": None, "policy": None}
         complaint_svc = ComplaintService()
         db = _mock_db()
         complaint_svc._eligibility.check_eligible = AsyncMock(return_value=eligible_result)
         complaint_svc._log_event = AsyncMock()
-        c = await complaint_svc.create_complaint(
-            db, cid, category_id=_uuid(),
-            record_type=RECORD_SERVICE_BOOKING, record_id=_uuid(),
-            complaint_type="service_quality", description="x",
-        )
+        complaint_svc._link_service_job = AsyncMock()
+        with patch(
+            "app.engines.complaints.notifications.notify_provider_complaint",
+            new=AsyncMock(),
+        ):
+            c = await complaint_svc.create_complaint(
+                db, cid, category_id=_uuid(), tenant_id=tenant_id,
+                record_type=RECORD_SERVICE_BOOKING, record_id=_uuid(),
+                complaint_type="service_quality", description="x",
+            )
         assert str(c.customer_id) == str(cid)
         db.add.assert_called_once()
 

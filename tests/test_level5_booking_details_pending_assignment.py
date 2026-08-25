@@ -41,6 +41,7 @@ def _draft(**overrides):
         price_snapshot={"standard_price": 499}, selected_provider_snapshot={"provider_name": "CoolFix"},
         issue_summary="Not cooling", issue_details=None,
         catalog_question_answers={"brand": "LG"},
+        photo_urls=[],
         booking_summary={"selected_price_tier": "standard", "customer_offer": 499},
         category_id=uuid.uuid4(), offering_id=uuid.uuid4(),
     )
@@ -112,6 +113,32 @@ class TestFinalizeAnswerSnapshot:
         booking = await _run_finalize(draft, db, monkeypatch)
 
         assert booking.answer_snapshot == _SAMPLE_SNAPSHOT
+
+    @pytest.mark.asyncio
+    async def test_finalize_preserves_customer_photos_and_free_text_note(self, monkeypatch):
+        draft = _draft(photo_urls=["https://res.cloudinary.com/demo/image/upload/problem.jpg"])
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=_scalars(draft))
+        db.add = MagicMock()
+        db.flush = AsyncMock()
+        db.refresh = AsyncMock()
+        db.commit = AsyncMock()
+        snapshot = {
+            "schema_version": 1,
+            "answers": [{
+                "question_id": "q-note", "question_key": "additional_note",
+                "question_label": "Anything else we should know?", "question_type": "text",
+                "answer_code": "Call before arrival", "answer_label": "Call before arrival",
+                "sequence": 99,
+            }],
+        }
+        monkeypatch.setattr(QuestionFlowService, "build_answer_snapshot", AsyncMock(return_value=snapshot))
+
+        booking = await _run_finalize(draft, db, monkeypatch)
+
+        assert booking.customer_photo_urls == draft.photo_urls
+        assert booking.customer_photo_urls is not draft.photo_urls
+        assert booking.customer_note == "Call before arrival"
 
     @pytest.mark.asyncio
     async def test_finalize_never_writes_answers_into_issue_details(self, monkeypatch):

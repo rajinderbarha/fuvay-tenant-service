@@ -67,6 +67,11 @@ async def get_workspace(
 
     ts_ids = [uuid.UUID(s["tenant_service_id"]) for s in enabled]
     master_ids = {uuid.UUID(s["master_service_id"]) for s in enabled}
+    job_type_ids = {
+        uuid.UUID(s["job_type_id"])
+        for s in enabled
+        if s.get("job_type_id")
+    }
     master_rows = {}
     if master_ids:
         rows = (await db.execute(
@@ -80,19 +85,21 @@ async def get_workspace(
         rows = (await db.execute(select(ServiceGroup.id, ServiceGroup.name).where(ServiceGroup.id.in_(group_ids)))).all()
         group_names = {str(gid): name for gid, name in rows}
 
-    type_override_count = await db.scalar(
-        select(func.count()).select_from(TenantServiceType).where(
-            TenantServiceType.tenant_id == tid, TenantServiceType.tenant_min_price.isnot(None),
-        )
-    ) or 0
-    brand_override_count = await db.scalar(
-        select(func.count()).select_from(TenantServiceBrand).where(
-            TenantServiceBrand.tenant_id == tid, TenantServiceBrand.tenant_min_price.isnot(None),
-        )
-    ) or 0
+    # Resolve job type labels in one query. The earlier implementation made
+    # one database round-trip per offering, which became increasingly slow as
+    # a provider enabled more catalog entries.
+    job_type_labels: dict[str, str] = {}
+    if job_type_ids:
+        rows = (await db.execute(
+            select(JobTypeDefinition.id, JobTypeDefinition.label).where(
+                JobTypeDefinition.id.in_(job_type_ids)
+            )
+        )).all()
+        job_type_labels = {str(job_type_id): label for job_type_id, label in rows}
 
     tree: dict[str, dict] = {}
     published = draft = missing_pricing = 0
+    dimension_pricing_service_ids: list[uuid.UUID] = []
     for s in enabled:
         m = master_rows.get(s["master_service_id"])
         group_key = str(m.service_group_id) if m and m.service_group_id else "ungrouped"
@@ -103,16 +110,28 @@ async def get_workspace(
             published += 1
         else:
             draft += 1
-        validation = await svc.validate_for_publish(uuid.UUID(s["tenant_service_id"]))
-        has_missing_price = any(e["code"] == "MISSING_TENANT_PRICE" for e in validation["errors"])
+        tenant_service_id = uuid.UUID(s["tenant_service_id"])
+        validation = await svc.validate_for_publish(tenant_service_id)
+        pricing_error_codes = {
+            "MISSING_TENANT_PRICE", "MISSING_VISIT_FEE", "MISSING_CONSULTATION_FEE",
+            "INCOMPLETE_TYPE_PRICE_OVERRIDE", "INCOMPLETE_BRAND_PRICE_OVERRIDE",
+        }
+        has_missing_price = any(e["code"] in pricing_error_codes for e in validation["errors"])
         if has_missing_price:
             missing_pricing += 1
 
-        job_type_label = None
-        if s.get("job_type_id"):
-            job_type_label = await db.scalar(
-                select(JobTypeDefinition.label).where(JobTypeDefinition.id == uuid.UUID(s["job_type_id"]))
-            )
+        blueprint = await svc._tenant_setup_blueprint(  # noqa: SLF001
+            m, uuid.UUID(s["job_type_id"]) if s.get("job_type_id") else None
+        ) if m else {}
+        pricing_behavior = str(blueprint.get("pricing_behavior") or "").lower()
+        is_inspection_pricing = pricing_behavior in {
+            "inspection_required", "inspection_quote", "visit_fee_plus_quote", "quote", "custom_quote",
+        }
+        is_consultation = str(s.get("job_type") or "").lower() == "consultation"
+        if not is_inspection_pricing and not is_consultation:
+            dimension_pricing_service_ids.append(tenant_service_id)
+
+        job_type_label = job_type_labels.get(str(s.get("job_type_id")))
         if not job_type_label and s.get("job_type"):
             job_type_label = s["job_type"].replace("_", " ").title()
 
@@ -123,7 +142,32 @@ async def get_workspace(
             "job_type_label": job_type_label,
             "setup_status": s["setup_status"],
             "missing_pricing": has_missing_price,
+            "readiness_ready": validation["valid"],
+            "blocker_count": len(validation["errors"]),
+            "customer_visible": s["setup_status"] == "published" and validation["valid"],
+            "pricing_behavior": pricing_behavior or None,
         })
+
+    # Price override KPIs count only offerings for which the active Admin
+    # blueprint actually resolves type/brand prices. Historical repair
+    # overrides are ignored because repair dimensions are routing-only.
+    type_override_count = 0
+    brand_override_count = 0
+    if dimension_pricing_service_ids:
+        type_override_count = await db.scalar(
+            select(func.count()).select_from(TenantServiceType).where(
+                TenantServiceType.tenant_id == tid,
+                TenantServiceType.tenant_service_id.in_(dimension_pricing_service_ids),
+                TenantServiceType.tenant_min_price.isnot(None),
+            )
+        ) or 0
+        brand_override_count = await db.scalar(
+            select(func.count()).select_from(TenantServiceBrand).where(
+                TenantServiceBrand.tenant_id == tid,
+                TenantServiceBrand.tenant_service_id.in_(dimension_pricing_service_ids),
+                TenantServiceBrand.tenant_min_price.isnot(None),
+            )
+        ) or 0
 
     return ok({
         "summary": {
@@ -173,9 +217,22 @@ async def get_offering_detail(
     # resolve_tenant_price precedence used by validate_for_publish and the
     # real customer-facing price resolution -- one authority, not a second
     # calculation for display purposes.
-    default_price = await svc.resolve_tenant_price(tenant_service_id, None, None)
+    pricing_behavior = str(blueprint.get("pricing_behavior") or "").lower()
+    is_inspection_pricing = pricing_behavior in {
+        "inspection_required", "inspection_quote", "visit_fee_plus_quote", "quote", "custom_quote",
+    }
+    is_consultation = str(ts_row.job_type or "").lower() == "consultation"
+    dimension_pricing_applies = not is_inspection_pricing and not is_consultation
+    default_price = (
+        await svc.resolve_tenant_price(tenant_service_id, None, None)
+        if dimension_pricing_applies
+        else {
+            "resolved": False,
+            "reason": "INSPECTION_ESTIMATE_WORKFLOW" if is_inspection_pricing else "PROVIDER_WIDE_CONSULTATION_FEE",
+        }
+    )
     type_pricing = []
-    for t in types:
+    for t in types if dimension_pricing_applies else []:
         resolved = await svc.resolve_tenant_price(tenant_service_id, uuid.UUID(t["service_type_id"]), None)
         brand_rows = (await db.execute(
             select(TenantServiceBrand, ).where(

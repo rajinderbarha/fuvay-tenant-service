@@ -100,12 +100,14 @@ export function adaptCustomerBookingDetails(dto: ServiceBookingDto): CustomerBoo
     },
     address: formatAddress(dto.address_snapshot, dto.city, dto.zipcode),
     pricing: { state, inspection },
-    // No canonical customer-facing attachment/photo field exists on
-    // ServiceBooking.to_dict() (confirmed via source read) -- empty
-    // rather than reusing the draft's (now-discarded) photo_urls, which
-    // would be stale/unverifiable against the finalized booking.
-    attachments: [],
-    note: null,
+    // Finalization freezes customer-owned Cloudinary/media references on the
+    // booking. IDs are stable per booking+position without pretending the URL
+    // itself is an asset identifier.
+    attachments: (dto.customer_photo_urls ?? []).map((url, index) => ({
+      id: `${dto.id}:customer-photo:${index}`,
+      url,
+    })),
+    note: dto.customer_note ?? null,
     activity: createdAt ? deriveBookingActivity(dto.id, dto.booking_number, createdAt) : [],
     notifications: resolveNotificationCapability(),
     job: adaptJob(dto.job),

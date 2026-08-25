@@ -50,11 +50,11 @@ class InventoryExtractionService:
             return requested_tenant_id
         if self.actor_tenant_id is None:
             raise ServiceOSException("PERMISSION_DENIED", "No tenant context.",
-                blocking_rule="inventory_extraction_requires_trusted_tenant_context")
+                blocking_rule="inventory_extraction_requires_trusted_tenant_context", status_code=403)
         if requested_tenant_id != self.actor_tenant_id:
             raise ServiceOSException("PERMISSION_DENIED",
                 "You do not have access to this tenant's inventory.",
-                blocking_rule="inventory_extraction_cross_tenant_denied")
+                blocking_rule="inventory_extraction_cross_tenant_denied", status_code=403)
         return self.actor_tenant_id
 
     async def _assert_engine_enabled(self, tenant_id: uuid.UUID) -> None:
@@ -285,6 +285,7 @@ class InventoryExtractionService:
     def _item_dict(self, item: InventoryItem) -> dict:
         return {"item_id": str(item.id), "name": item.name, "sku": item.sku,
                 "category": item.category, "unit": item.unit,
+                "service_group_id": str(item.service_group_id) if item.service_group_id else None,
                 "unit_cost": float(item.unit_cost), "min_quantity": item.min_quantity,
                 "gst": float(item.gst) if item.gst is not None else None,
                 "warranty": item.warranty,
@@ -320,6 +321,11 @@ class InventoryExtractionService:
             item.unit_cost = self._coerce_decimal(data["unit_cost"]) or item.unit_cost
         if "gst" in data:
             item.gst = self._coerce_decimal(data["gst"]) if data["gst"] not in (None, "") else None
+        if "service_group_id" in data or "category" in data:
+            from app.engines.inventory.service import InventoryService
+            resolver = InventoryService(self.db, actor_id=self.actor_id,
+                actor_role=self.actor_role, actor_tenant_id=self.actor_tenant_id)
+            item.service_group_id, item.category = await resolver._resolve_service_group(item.tenant_id, data)
         await self.db.flush()
         return self._item_dict(item)
 
@@ -337,6 +343,18 @@ class InventoryExtractionService:
         if item.status != ItemStatus.DRAFT:
             raise ServiceOSException(ERR_NOT_DRAFT,
                 f"Item is already '{item.status}'.", resolution="Only draft items can be published.")
+        # AI-detected category text is never sufficient publication authority.
+        # Resolve it against the provider's active setup entitlement so imported
+        # stock cannot escape the admin-owned service catalogue.
+        from app.engines.inventory.service import InventoryService
+        resolver = InventoryService(self.db, actor_id=self.actor_id,
+            actor_role=self.actor_role, actor_tenant_id=self.actor_tenant_id)
+        item.service_group_id, item.category = await resolver._resolve_service_group(
+            item.tenant_id,
+            {"service_group_id": str(item.service_group_id)} if item.service_group_id else {"category": item.category},
+        )
+        if item.selling_price is None:
+            item.selling_price = item.unit_cost
         item.status = ItemStatus.PUBLISHED
         await self.db.flush()
         return self._item_dict(item)

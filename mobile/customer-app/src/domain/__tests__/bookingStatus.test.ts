@@ -10,11 +10,9 @@ const ALL_ASSIGNMENT_STATUSES = ["unassigned", "assigned", "accepted", "rejected
 
 function expectedStage(status: string, assignmentStatus: string): BookingReceiptStage {
   if (status === "pending_assignment" && assignmentStatus === "unassigned") return "provider_assignment";
-  if (status === "assigned") return "provider_assigned";
-  // `on_the_way` is written only by the technician's "Start Travel"
-  // transition, so the status itself proves a visit is underway.
-  if (status === "on_the_way") return "scheduled";
-  return "unknown"; // includes cancelled, accepted, scheduled, in_progress, completed, and any other combo
+  if (status === "assigned" || status === "accepted") return "provider_assigned";
+  if (["scheduled", "on_the_way", "in_progress", "completed"].includes(status)) return "scheduled";
+  return "unknown";
 }
 
 describe("interpretBookingStatus -- complete (booking_status, assignment_status) matrix", () => {
@@ -69,14 +67,14 @@ describe("interpretBookingStatus", () => {
     }
   });
 
-  it("never renders in_progress or completed as 'scheduled' or any other advanced stage -- neither is proven this phase", () => {
-    expect(interpretBookingStatus("in_progress", "assigned").stage).toBe("unknown");
-    expect(interpretBookingStatus("completed", "assigned").stage).toBe("unknown");
+  it("keeps in-progress and completed work at the real visit stage", () => {
+    expect(interpretBookingStatus("in_progress", "assigned").stage).toBe("scheduled");
+    expect(interpretBookingStatus("completed", "assigned").stage).toBe("scheduled");
   });
 
-  it("never renders accepted or scheduled as an advanced stage either -- real statuses this phase does not yet own", () => {
-    expect(interpretBookingStatus("accepted", "accepted").stage).toBe("unknown");
-    expect(interpretBookingStatus("scheduled", "assigned").stage).toBe("unknown");
+  it("maps accepted and scheduled to their backend-proven progress", () => {
+    expect(interpretBookingStatus("accepted", "accepted").stage).toBe("provider_assigned");
+    expect(interpretBookingStatus("scheduled", "assigned").stage).toBe("scheduled");
   });
 
   it("never advances past provider_assignment without assignment_status evidence", () => {

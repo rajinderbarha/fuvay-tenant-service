@@ -985,18 +985,49 @@ async def refresh_bookability(
     # FINAL-L5-05P: was get_current_user -- gated to super_admin.
     user: UserContext = Depends(require_super_admin),
 ):
+    import json as _json
+    # Imported inside the handler: `router` imports admin-side helpers, so a
+    # module-level import here would close an import cycle at startup.
+    from app.engines.provider_portal.router import _evaluate_provider_bookability
+
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     before = await _get_or_create_visibility_row(db, tenant_id)
+
+    # This used to only stamp `last_evaluated_at = now()` and log
+    # "re_evaluated" without recomputing anything, so the admin Refresh
+    # control reported success while `is_bookable` kept whatever value the
+    # row was created with — false, with empty blocker lists, giving an
+    # admin no reason and no route to fix it. That flag is the canonical
+    # bookability gate `_passes_full_eligibility_gate` reads, so a provider
+    # who passed every real check still matched no bookings on any channel.
+    # Now runs the SAME evaluator the provider-side POST /v1/provider/status/
+    # refresh runs, and persists the result, so both paths agree.
+    result = await _evaluate_provider_bookability(db, tenant_id)
     await db.execute(text("""
         UPDATE provider_visibility_statuses
-        SET last_evaluated_at = now()
-        WHERE tenant_id = :tid
-    """), {"tid": str(tenant_id)})
+           SET is_visible = :iv,
+               is_bookable = :ib,
+               visibility_blockers  = CAST(:vb AS jsonb),
+               bookability_blockers = CAST(:bb AS jsonb),
+               last_evaluated_at = now(),
+               last_changed_at = CASE
+                   WHEN is_visible IS DISTINCT FROM :iv
+                     OR is_bookable IS DISTINCT FROM :ib THEN now()
+                   ELSE last_changed_at END,
+               updated_at = now()
+         WHERE tenant_id = :tid
+    """), {"tid": str(tenant_id),
+           "iv": result["is_visible"], "ib": result["is_bookable"],
+           "vb": _json.dumps(result["visibility_blockers"]),
+           "bb": _json.dumps(result["bookability_blockers"])})
+
     row = await db.execute(
         text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
+    after["status"] = result["status"]
+    after["passed_checks"] = result["passed_checks"]
     await _log_bookability_event(db, tenant_id, "re_evaluated", before, after, user.user_id if user else None, None)
     await db.commit()
     return ok(after, request_id=rid)

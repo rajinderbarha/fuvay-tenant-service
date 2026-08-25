@@ -70,26 +70,12 @@ test.describe('ADMIN-TENANT-E2E-04 matching/operations/deduction', () => {
     log('provider-matching.log', `Header+ranking factors present: ${bodyText.includes('Ranking Factors')}`);
   });
 
-  test('matching diagnostics: run seed offering+Split AC+LG, verify selected provider (+ Low/Mid/High if a bargain rule exists)', async ({ page }) => {
+  test('matching diagnostics: run seed offering+Split AC+LG and verify selected provider', async ({ page }) => {
     // The page's BLANK_FORM used to prefill a category_id/master_service_id
     // pair that no longer exists (fixed separately: it now starts genuinely
     // blank rather than pointing at dead rows), so every field this test
     // needs must be filled explicitly now -- nothing can be assumed
     // pre-filled.
-    //
-    // Low/Mid/High is asserted CONDITIONALLY, not unconditionally like
-    // before. It only renders when an active BargainRule exists for the
-    // master service (auto_price_options_router.py), and this database's
-    // `bargain_rules` table has ZERO rows of any status, for any service --
-    // confirmed directly against Postgres. That is not fixture drift the
-    // way "AC Repair" was (a specific row went missing); it's a prerequisite
-    // table nothing has ever seeded here. Asserting Low/Mid/High
-    // unconditionally would mean this test can never pass against a
-    // correctly-running system that simply has no bargain rules configured
-    // yet -- so it now verifies the one thing that IS always true (a real
-    // provider was matched) and treats the price preview as present-if-
-    // configured, logging which branch it took rather than asserting a
-    // precondition this test has no way to guarantee.
     await loginAsSuperAdmin(page);
     await page.goto('/admin/home-services/matching-diagnostics', { waitUntil: 'domcontentloaded' });
     await page.getByLabel('Category ID').fill(SEED.categoryId);
@@ -102,9 +88,7 @@ test.describe('ADMIN-TENANT-E2E-04 matching/operations/deduction', () => {
     await expect(page.getByText(SEED.tenantName, { exact: false }).first()).toBeVisible({ timeout: 15000 });
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'matching-diagnostics-result.png'), fullPage: true });
-    const hasPricePreview = bodyText.includes('Low') && bodyText.includes('Mid') && bodyText.includes('High');
     log('matching-diagnostics.log', `Contains ${SEED.tenantName}: ${bodyText.includes(SEED.tenantName)}`);
-    log('matching-diagnostics.log', `Contains Low/Mid/High: ${hasPricePreview} (only expected if an active BargainRule exists -- none do in this DB)`);
     log('matching-diagnostics.log', `Contains Canonical Sources: ${bodyText.includes('Canonical Sources')}`);
     expect(bodyText).toContain(SEED.tenantName);
     expect(bodyText.toLowerCase()).not.toMatch(/\bnan\b/);

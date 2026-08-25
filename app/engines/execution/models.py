@@ -118,6 +118,14 @@ class PartsRequest(ServiceOSBase):
     rejected_at:                   Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason:              Mapped[str | None]       = mapped_column(Text(), nullable=True)
     request_id:                    Mapped[str | None]       = mapped_column(String(100), nullable=True)
+    # Provider selects the fulfilment source when approving.  Inventory
+    # allocations are held only after the final required approval and consumed
+    # when the part is marked installed.
+    procurement_source:             Mapped[str]              = mapped_column(String(20), nullable=False, default="external")
+    inventory_item_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    stock_location_id:              Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    stock_reservation_id:           Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    unit_price_snapshot:            Mapped[float | None]      = mapped_column(Numeric(10, 2), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -139,6 +147,11 @@ class PartsRequest(ServiceOSBase):
             "rejected_by":                str(self.rejected_by) if self.rejected_by else None,
             "rejected_at":                self.rejected_at.isoformat() if self.rejected_at else None,
             "rejection_reason":           self.rejection_reason,
+            "procurement_source":         self.procurement_source,
+            "inventory_item_id":          str(self.inventory_item_id) if self.inventory_item_id else None,
+            "stock_location_id":          str(self.stock_location_id) if self.stock_location_id else None,
+            "stock_reservation_id":       str(self.stock_reservation_id) if self.stock_reservation_id else None,
+            "unit_price_snapshot":        float(self.unit_price_snapshot) if self.unit_price_snapshot is not None else None,
             "created_at":                 self.created_at.isoformat() if self.created_at else None,
             "updated_at":                 self.updated_at.isoformat() if self.updated_at else None,
         }

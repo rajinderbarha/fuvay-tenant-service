@@ -37,6 +37,28 @@ async def _resolve_category(db: AsyncSession, category_slug: str):
     return cat
 
 
+async def _resolve_service_group(
+    db: AsyncSession, category_id: uuid.UUID, service_group_slug: str,
+):
+    """Resolve an active group inside the already-resolved category.
+
+    A group slug is a navigation hint from the native app, not authority.
+    Resolving it here prevents a crafted request from using a group that
+    belongs to another category (or a retired group) to widen the catalog.
+    """
+    from app.engines.admin_catalog.models import ServiceGroup
+
+    normalized = service_group_slug.lower().strip()
+    return (await db.execute(
+        select(ServiceGroup).where(
+            ServiceGroup.category_id == category_id,
+            ServiceGroup.slug == normalized,
+            ServiceGroup.status == "active",
+            ServiceGroup.deleted_at.is_(None),
+        )
+    )).scalars().first()
+
+
 def _publisher_filter(zipcode: str | None):
     """A MasterService.id filter expression: real, published, enabled
     tenant offering -- and, when `zipcode` is given, actually covered by a
@@ -124,6 +146,8 @@ async def list_serviceable_offerings(
 
 async def list_serviceable_issues(
     db: AsyncSession, category_slug: str, zipcode: str | None,
+    service_group_slug: str | None = None,
+    master_service_id: uuid.UUID | None = None,
 ) -> dict:
     """Issue-first catalog resolution (real customer intent -- "what's
     wrong with your AC", not an internal offering/job-type split). Returns
@@ -147,16 +171,52 @@ async def list_serviceable_issues(
     if not cat:
         return {"issues": [], "note": f"Category '{category_slug}' not found."}
 
-    serviceable_ms_ids = (await db.execute(
-        select(MasterService.id).where(
+    service_group = None
+    if service_group_slug:
+        service_group = await _resolve_service_group(db, cat.id, service_group_slug)
+        if not service_group:
+            return {
+                "category": cat.name,
+                "category_slug": cat.slug,
+                "category_id": str(cat.id),
+                "service_group": None,
+                "issues": [],
+                "total": 0,
+                "note": "The selected service group is not available in this category.",
+            }
+
+    serviceable_services = select(MasterService.id).where(
             MasterService.category_id == cat.id,
             MasterService.is_active == True,  # noqa: E712
             _publisher_filter(zipcode),
         )
-    )).scalars().all()
+    if service_group is not None:
+        serviceable_services = serviceable_services.where(
+            MasterService.service_group_id == service_group.id
+        )
+    if master_service_id is not None:
+        # A Master Service card on Home must open only that service's real
+        # problem set. The id remains a hint: this query revalidates category,
+        # group, publication, entitlement and ZIP coverage before exposing it.
+        serviceable_services = serviceable_services.where(
+            MasterService.id == master_service_id
+        )
+    serviceable_ms_ids = (await db.execute(serviceable_services)).scalars().all()
     if not serviceable_ms_ids:
-        return {"category": cat.name, "category_slug": cat.slug, "category_id": str(cat.id), "issues": [], "total": 0}
+        return {
+            "category": cat.name,
+            "category_slug": cat.slug,
+            "category_id": str(cat.id),
+            "service_group": (
+                {"id": str(service_group.id), "slug": service_group.slug, "name": service_group.name}
+                if service_group else None
+            ),
+            "issues": [],
+            "total": 0,
+        }
 
+    # Problems are language, not artwork. Service/master-service cards own
+    # imagery; problem and question choices remain text-led in every client.
     rows = (await db.execute(
         select(MasterIssueType, ServiceIssueMapping, MasterService)
         .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
@@ -164,6 +224,8 @@ async def list_serviceable_issues(
         .where(
             MasterIssueType.master_service_id.in_(serviceable_ms_ids),
             MasterIssueType.is_active == True,  # noqa: E712
+            MasterService.id.in_(serviceable_ms_ids),
+            MasterService.is_active == True,  # noqa: E712
             ServiceIssueMapping.status == "active",
             ServiceIssueMapping.customer_visible == True,  # noqa: E712
         )
@@ -201,6 +263,10 @@ async def list_serviceable_issues(
         })
     return {
         "category": cat.name, "category_slug": cat.slug, "category_id": str(cat.id),
+        "service_group": (
+            {"id": str(service_group.id), "slug": service_group.slug, "name": service_group.name}
+            if service_group else None
+        ),
         "issues": issues, "total": len(issues),
     }
 

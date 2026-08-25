@@ -6,8 +6,6 @@ import { Icon } from "../Icon";
 import { SearchResult } from "../../domain/customerSearch";
 import { resolveCategoryIcon } from "../../domain/categoryIcon";
 import { resolveMediaUrl } from "../../domain/mediaUrl";
-import { classifyRawAmount } from "../../domain/servicePricing";
-import { formatMoney } from "../../domain/money";
 
 export interface SearchResultsListProps {
   query: string;
@@ -16,11 +14,6 @@ export interface SearchResultsListProps {
   results: SearchResult[];
   /** Only ever called for a result that is bookable at this ZIP. */
   onPressCategory: (categoryId: string) => void;
-}
-
-function priceLabel(amount: number | null): string | null {
-  const state = classifyRawAmount(amount != null ? Math.round(amount * 100) : null);
-  return state.kind === "valid" ? formatMoney(state.amount) : null;
 }
 
 /**
@@ -60,7 +53,6 @@ export function SearchResultsList({ query, isPending, isError, results, onPressC
     <View style={{ gap: theme.spacing.sm }}>
       {results.map(r => {
         const key = r.kind === "category" ? `c:${r.categoryId}` : `o:${r.offeringId}`;
-        const price = r.kind === "offering" ? priceLabel(r.startingPrice) : null;
         const artwork = r.kind === "category" ? resolveMediaUrl(r.iconUrl) : null;
         const targetCategoryId = r.kind === "category" ? String(r.categoryId) : (r.categoryId ? String(r.categoryId) : null);
         const tappable = r.bookableHere && targetCategoryId !== null;
@@ -113,13 +105,6 @@ export function SearchResultsList({ query, isPending, isError, results, onPressC
                 <AppText variant="caption" color="tertiary" style={{ marginTop: 2 }}>
                   Not available at your location
                 </AppText>
-              ) : price ? (
-                <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4, marginTop: 2 }}>
-                  <AppText variant="caption" color="tertiary">Starting at</AppText>
-                  <AppText variant="bodySmall" style={{ color: theme.colors.brandPrimaryStrong, fontWeight: "700" }}>
-                    {price}
-                  </AppText>
-                </View>
               ) : null}
             </View>
 

@@ -373,18 +373,32 @@ async def export_statement(
     date_to: str | None = Query(None, alias="to"),
     ledger: str | None = Query(None),
     status: str | None = Query(None),
+    # The transactions view filters by event type, but export did not accept
+    # `type` at all -- so exporting a type-filtered view silently produced a
+    # WIDER set of rows than the screen was showing.
+    type_: str | None = Query(None, alias="type"),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.TENANT_FINANCE_EXPORT)),
     _guard: UserContext = Depends(_hs_active),
 ):
     return ok(await _svc(r, db, user).export_transactions(
-        date_from=date_from, date_to=date_to, ledger=ledger, status=status), _rid(r), ENGINE_ID)
+        date_from=date_from, date_to=date_to, ledger=ledger, status=status,
+        type_=type_), _rid(r), ENGINE_ID)
 
 
 # ── Admin-only refund decision (mounted here for cohesion, admin-gated) ──────
 
+# This router sits under the `/v1/admin/finance/home-services` prefix, which
+# test_home_services_admin_gating enumerates and requires to carry the static
+# Home Services vertical guard -- so a disabled vertical cannot still be
+# administered through it. The guard was missing when this router was first
+# mounted; every sibling under that prefix (admin_hs_finance_router) applies it
+# the same way, at router level.
+from app.dependencies.vertical_guard import require_vertical_enabled as _require_vertical_enabled
+
 admin_router = APIRouter(prefix="/v1/admin/finance/home-services/deposit-refund-requests",
-                         tags=["Admin Finance — HS Deposit Refunds"])
+                         tags=["Admin Finance — HS Deposit Refunds"],
+                         dependencies=[Depends(_require_vertical_enabled("home_services"))])
 
 
 @admin_router.get("", response_model=ApiResponse, summary="All tenants' HS deposit refund requests")

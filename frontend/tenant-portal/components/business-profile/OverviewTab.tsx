@@ -74,7 +74,7 @@ export function OverviewTab({ profile, verifiedLocked }: { profile: BusinessProf
           <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Operational summary</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
             <SummaryStat icon={<Wrench size={16}/>} value={profile.operational_summary.active_services} label="Active services" href="/home-services/services" linkLabel="View in Services & Pricing"/>
-            <SummaryStat icon={<MapPin size={16}/>} value={profile.operational_summary.service_areas} label="Service areas" href="/home-services/coverage" linkLabel="View in Coverage"/>
+            <SummaryStat icon={<MapPin size={16}/>} value={profile.operational_summary.service_areas} label="Coverage pincodes" href="/business/coverage-hours" linkLabel="View Coverage & Hours"/>
             <SummaryStat icon={<Users2 size={16}/>} value={profile.operational_summary.active_technicians} label="Technicians" href="/home-services/team" linkLabel="View in Team Directory"/>
           </div>
         </Card>

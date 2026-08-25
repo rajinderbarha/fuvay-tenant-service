@@ -1,5 +1,5 @@
 import { CustomerHomeResponseDto, customerHomeResponseSchema } from "../contracts/customerHome";
-import { CustomerHome } from "../../domain/customerHome";
+import { CustomerHome, DEFAULT_HOME_SECTIONS } from "../../domain/customerHome";
 import { asAddressId, asCategoryId, asServiceBookingId, asVerticalId } from "../../domain/ids";
 import { parseServerTimestamp } from "../../domain/dates";
 import { ContractValidationError } from "../../domain/errors";
@@ -88,11 +88,62 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
       categoryId: asCategoryId(i.category_id),
       categorySlug: i.category_slug ?? null,
       categoryName: i.category_name,
-      iconUrl: i.icon_url ?? null,
       // Only the two intents this build renders sections for; anything else from
       // a newer backend is treated as unclassified rather than mis-grouped.
       intent: i.intent === "repair" || i.intent === "consult" ? i.intent : null,
     })),
+    bookableServiceGroups: dto.bookable_service_groups.map(group => ({
+      serviceGroupId: group.service_group_id,
+      name: group.name,
+      slug: group.slug,
+      description: group.description ?? null,
+      iconUrl: group.icon_url ?? null,
+      categoryId: asCategoryId(group.category_id),
+      categorySlug: group.category_slug,
+    })),
+    bookableMasterServices: dto.bookable_master_services.map(service => ({
+      masterServiceId: service.master_service_id,
+      name: service.name,
+      slug: service.slug,
+      description: service.description ?? null,
+      iconUrl: service.icon_url ?? null,
+      serviceGroupId: service.service_group_id,
+      serviceGroupName: service.service_group_name,
+      serviceGroupSlug: service.service_group_slug,
+      categoryId: asCategoryId(service.category_id),
+      categorySlug: service.category_slug,
+    })),
+    campaigns: dto.campaigns.map(c => ({
+      campaignId: c.campaign_id,
+      placement: c.placement,
+      variant: c.variant,
+      themeKey: c.theme_key,
+      sectionTitle: c.section_title ?? null,
+      priority: c.priority,
+      sponsored: c.sponsored,
+      badge: c.badge,
+      title: c.title,
+      subtitle: c.subtitle,
+      offerText: c.offer_text ?? null,
+      imageUrl: c.image_url,
+      actionLabel: c.action_label,
+      actionUrl: c.action_url ?? null,
+      categorySlug: c.category_slug ?? null,
+      serviceGroupSlug: c.service_group_slug ?? null,
+      startsAt: c.starts_at ?? null,
+      endsAt: c.ends_at ?? null,
+    })),
+    sections: dto.sections.length > 0
+      ? dto.sections.map(section => ({
+          key: section.key,
+          enabled: section.enabled,
+          title: section.title ?? null,
+          variant: section.variant,
+          maxItems: section.max_items,
+          spacing: section.spacing,
+          surface: section.surface,
+        }))
+      : DEFAULT_HOME_SECTIONS,
     // Adapted ONCE, then the single `activeBooking` is taken from the list --
     // deriving them separately is how the card and the strip end up disagreeing
     // about which booking is newest.

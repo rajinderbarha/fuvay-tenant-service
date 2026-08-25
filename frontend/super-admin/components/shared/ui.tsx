@@ -26,6 +26,7 @@ export {
   PkToaster as Toaster,
   MetricCard as StatCard,
   SummaryCard,
+  KpiGrid,
   PkSectionHeader as SectionHeader,
   SimpleTable as DataTable,
   PkEmptyState as EmptyState,

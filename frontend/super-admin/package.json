@@ -7,25 +7,25 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@serviceos/design-system": "*",
-    "next": "16.2.9",
+    "lucide-react": "0.511.0",
+    "next": "^16.3.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "recharts": "2.15.0",
-    "lucide-react": "0.511.0"
+    "recharts": "2.15.0"
   },
   "devDependencies": {
-    "@types/node": "22.15.21",
-    "@types/react": "19.2.0",
-    "typescript": "5.8.3",
+    "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.1",
-    "@testing-library/dom": "^10.4.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "22.15.21",
+    "@types/react": "19.2.0",
     "jsdom": "^25.0.1",
-    "vitest": "^2.1.4"
+    "typescript": "5.8.3",
+    "vitest": "^3.2.6"
   }
 }

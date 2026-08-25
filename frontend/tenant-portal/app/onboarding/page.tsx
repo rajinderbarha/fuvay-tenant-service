@@ -395,7 +395,10 @@ export default function OnboardingPage() {
               { label: "Create a Job",         href: "/jobs",      icon: "🔧" },
               { label: "View Bookings & Jobs",  href: "/jobs",       icon: "📅" },
               { label: "Manage Staff",          href: "/staff",     icon: "👥" },
-              { label: "Configure Pricing",     href: "/finance",   icon: "💰" },
+              // Was "/finance", which redirects to /packages -- the page for
+              // BUYING ServiceOS usage credits, not for setting the prices you
+              // charge customers. Service pricing lives on Services & Pricing.
+              { label: "Configure Pricing",     href: "/home-services/services", icon: "💰" },
             ].map(link => (
               <a key={link.href} href={link.href} style={{ display: "flex", alignItems: "center", gap: 10,
                 padding: "12px 16px", borderRadius:"var(--radius-lg)", background: "var(--surface-sunken)",

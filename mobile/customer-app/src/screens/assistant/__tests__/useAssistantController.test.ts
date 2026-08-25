@@ -100,7 +100,7 @@ describe("useAssistantController", () => {
     // offering list drives the first screen instead.
     expect(assistantApi.getAssistantSession).not.toHaveBeenCalled();
     expect(assistantApi.createAssistantSession).toHaveBeenCalledWith({ categoryId: "cat-1", zipcode: "141002" });
-    expect(assistantBootstrapApi.getAssistantBootstrap).toHaveBeenCalledWith("ac-cooling", "141002");
+    expect(assistantBootstrapApi.getAssistantBootstrap).toHaveBeenCalledWith("ac-cooling", "141002", null, null);
     expect(result.current.draftId).toBeNull();
     expect(result.current.session?.id).toBe("sess-1");
     // Language selection has been removed -- the real backend issue list

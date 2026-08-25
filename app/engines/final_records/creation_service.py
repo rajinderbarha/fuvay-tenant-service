@@ -175,6 +175,17 @@ class HomeServiceFinalCreationService:
             "payment_mode":          "customer_pays_provider_directly",
         }
 
+        # Freeze the catalog answers once. The same snapshot supplies the
+        # explicit customer note projection below, so a later catalog relabel
+        # can never rewrite what the customer submitted.
+        answer_snapshot = await self._build_answer_snapshot(draft)
+        customer_note = next((
+            str(answer.get("answer_label") or "").strip()
+            for answer in reversed((answer_snapshot or {}).get("answers") or [])
+            if str(answer.get("question_type") or "").lower() in {"text", "textarea", "long_text"}
+            and str(answer.get("answer_label") or "").strip()
+        ), None)
+
         # 4a. Create ServiceBooking
         booking = ServiceBooking(
             booking_number        = booking_number,
@@ -207,6 +218,8 @@ class HomeServiceFinalCreationService:
             provider_snapshot     = draft.selected_provider_snapshot,
             issue_summary         = draft.issue_summary,
             issue_details         = draft.issue_details,
+            customer_photo_urls   = list(draft.photo_urls or []),
+            customer_note         = customer_note,
             status                = "pending_assignment",
             # Real bug fixed here: `answer_snapshot` is a real column and
             # QuestionFlowService.build_answer_snapshot() exists to fill it,
@@ -215,7 +228,7 @@ class HomeServiceFinalCreationService:
             # section of the customer's booking page was permanently empty.
             # Resolved ONCE here, at finalize, so a later question/option
             # relabel can never change what a historical booking shows.
-            answer_snapshot       = await self._build_answer_snapshot(draft),
+            answer_snapshot       = answer_snapshot,
             # Urgency carried from the draft, where it was set by the customer
             # genuinely picking from the emergency slot list. The surcharge is
             # read from the summary the customer was SHOWN before confirming
@@ -309,6 +322,15 @@ class HomeServiceFinalCreationService:
             and await self._tenant_is_active(draft.selected_tenant_id)
         )
         job_status = JS_ACCEPTED if auto_accept else "pending_assignment"
+        assignment_status = "accepted" if auto_accept else "unassigned"
+
+        # Booking and job are two projections of the same customer request.
+        # Auto-accepting only the job left My Bookings at "Request confirmed"
+        # while Booking Details claimed a provider was assigned. Keep both
+        # records atomic so every app sees the same backend state.
+        if auto_accept:
+            booking.status = JS_ACCEPTED
+            booking.assignment_status = assignment_status
 
         job = ServiceJob(
             job_number            = job_number,
@@ -336,6 +358,7 @@ class HomeServiceFinalCreationService:
             zipcode               = draft.zipcode,
             address_snapshot      = draft.address_snapshot,
             status                = job_status,
+            assignment_status     = assignment_status,
             is_emergency          = booking.is_emergency,
         )
         self.db.add(job)

@@ -122,8 +122,14 @@ class WebhookService:
             WebhookEndpoint.tenant_id == tenant_id,
             WebhookEndpoint.status != WebhookStatus.DELETED))
         items = r.scalars().all()
+        # The catalogue ships with the list so a client can offer a PICKER.
+        # `create_endpoint` rejects any event outside SUBSCRIBED_EVENTS, but
+        # nothing ever told the caller what the valid names were — so the portal
+        # asked people to TYPE event names into a free-text box, pre-filled with
+        # `job.completed`, which is not one of them.
         return {"endpoints": [self._endpoint_dict(e) for e in items],
-                "total": len(items)}
+                "total": len(items),
+                "available_events": list(SUBSCRIBED_EVENTS)}
 
     async def update_endpoint(self, endpoint_id: uuid.UUID, tenant_id: uuid.UUID,
                                data: dict) -> dict:

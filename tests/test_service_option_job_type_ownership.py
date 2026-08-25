@@ -235,15 +235,10 @@ class TestFrontendOwnership:
     # still price-free -- see test_catalog_workspace_maps_by_job_type below,
     # which continues to pass unmodified).
 
-    def test_retired_page_has_no_price_field_anywhere(self):
-        src = _read_utf8(ADMIN_FORM_PATH)
-        assert "default_price" not in src
-        assert "is_customer_selectable" not in src
-
-    def test_retired_page_is_a_redirect_notice(self):
-        src = _read_utf8(ADMIN_FORM_PATH)
-        assert "Retired" in src
-        assert "catalog-workspace" in src
+    def test_retired_standalone_page_is_removed(self):
+        # A redirect-only tombstone is still dead production code. The
+        # canonical editor is Catalog Workspace -> Job Type -> Options.
+        assert not os.path.exists(ADMIN_FORM_PATH)
 
     def test_catalog_workspace_maps_by_job_type(self):
         src = _read_utf8(WORKSPACE_PATH)

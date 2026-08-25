@@ -17,8 +17,8 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, model_validator
+from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +57,7 @@ class TimeOffRequest(BaseModel):
     all_day: bool = True
     start_time: dt.time | None = None
     end_time: dt.time | None = None
-    reason: str | None = None
+    reason: str | None = Field(None, max_length=300)
 
     @model_validator(mode="after")
     def _sane_range(self):
@@ -76,7 +76,7 @@ class OverrideRequest(BaseModel):
     start_time: dt.time | None = None
     end_time: dt.time | None = None
     full_day_closed: bool = False
-    reason: str | None = None
+    reason: str | None = Field(None, max_length=300)
 
     @model_validator(mode="after")
     def _sane_hours(self):
@@ -96,6 +96,8 @@ class OverrideRequest(BaseModel):
 async def list_time_off(
     staff_member_id: uuid.UUID,
     upcoming_only: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     r: Request = ...,
     user: UserContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -108,9 +110,15 @@ async def list_time_off(
     if upcoming_only:
         # "Upcoming" includes leave running TODAY -- someone off right now is not history.
         sql += " AND end_date >= CURRENT_DATE"
-    sql += " ORDER BY start_date"
-    rows = (await db.execute(text(sql), {"tid": str(tenant_id), "sid": str(staff_member_id)})).all()
-    return ok({"time_off": [dict(row._mapping) for row in rows]}, _rid(r), ENGINE_ID)
+    count_sql = f"SELECT count(*) FROM ({sql}) AS filtered_time_off"
+    params = {"tid": str(tenant_id), "sid": str(staff_member_id), "limit": limit, "offset": offset}
+    total = int((await db.execute(text(count_sql), params)).scalar() or 0)
+    sql += " ORDER BY start_date LIMIT :limit OFFSET :offset"
+    rows = (await db.execute(text(sql), params)).all()
+    return ok({
+        "time_off": [dict(row._mapping) for row in rows],
+        "pagination": {"total": total, "limit": limit, "offset": offset, "has_next": offset + limit < total},
+    }, _rid(r), ENGINE_ID)
 
 
 @router.post("/{staff_member_id}/time-off", response_model=ApiResponse, status_code=201,
@@ -174,6 +182,8 @@ async def list_overrides(
     staff_member_id: uuid.UUID,
     from_date: dt.date | None = None,
     to_date: dt.date | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     r: Request = ...,
     user: UserContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -190,9 +200,14 @@ async def list_overrides(
     if to_date:
         sql += " AND override_date <= :to_date"
         params["to_date"] = to_date
-    sql += " ORDER BY override_date"
+    total = int((await db.execute(text(f"SELECT count(*) FROM ({sql}) AS filtered_overrides"), params)).scalar() or 0)
+    params.update({"limit": limit, "offset": offset})
+    sql += " ORDER BY override_date LIMIT :limit OFFSET :offset"
     rows = (await db.execute(text(sql), params)).all()
-    return ok({"overrides": [dict(row._mapping) for row in rows]}, _rid(r), ENGINE_ID)
+    return ok({
+        "overrides": [dict(row._mapping) for row in rows],
+        "pagination": {"total": total, "limit": limit, "offset": offset, "has_next": offset + limit < total},
+    }, _rid(r), ENGINE_ID)
 
 
 @router.put("/{staff_member_id}/overrides", response_model=ApiResponse,

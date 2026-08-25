@@ -60,6 +60,11 @@ class ServiceBooking(ServiceOSBase):
     # migration 222 BOOKING-DETAILS-CONTRACT-FIXES -- found missing during
     # the "make it 100% working" drift audit.
     answer_snapshot:       Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
+    # Customer-owned evidence copied from the draft at finalization. These
+    # Cloudinary/media URLs are immutable booking evidence and are separate
+    # from technician/job checkpoint media.
+    customer_photo_urls:   Mapped[list]             = mapped_column(JSONB, nullable=False, default=list)
+    customer_note:         Mapped[str | None]       = mapped_column(Text(), nullable=True)
     # ── Urgency ────────────────────────────────────────────────────────────
     # `emergency_surcharge` is FROZEN at confirmation, not a live read of
     # tenant_services.tenant_emergency_surcharge -- a tenant changing their
@@ -100,6 +105,8 @@ class ServiceBooking(ServiceOSBase):
             # in the payload -- so even once populated it could not reach the
             # client and the section stayed empty.
             "answer_snapshot":       self.answer_snapshot,
+            "customer_photo_urls":   self.customer_photo_urls or [],
+            "customer_note":         self.customer_note,
             "is_emergency":          bool(self.is_emergency),
             "emergency_surcharge":   str(self.emergency_surcharge) if self.emergency_surcharge is not None else None,
             "status":                self.status,

@@ -126,6 +126,10 @@ export const serviceBookingDtoSchema = z.object({
   // completeness; never read for the Service Overview card.
   issue_details: z.record(z.string(), z.unknown()).nullable(),
   answer_snapshot: answerSnapshotDtoSchema.nullable().optional(),
+  /** Customer-owned evidence frozen from the booking draft. Job/checkpoint
+   * media belongs to a separate execution contract and is never mixed in. */
+  customer_photo_urls: z.array(z.string()).optional(),
+  customer_note: z.string().nullable().optional(),
   status: z.string(),
   assignment_status: z.string(),
   failure_reason: z.string().nullable(),

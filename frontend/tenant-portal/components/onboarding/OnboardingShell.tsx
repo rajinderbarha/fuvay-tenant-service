@@ -5,10 +5,13 @@ import FuvayLogo from "../brand/FuvayLogo";
 import {
   LayoutGrid, Building2, FileText, Tag, MapPin, Users2, Wallet,
   ClipboardCheck, HelpCircle, Bell, ChevronDown, LogOut, User, Shield, Menu, X, Rocket,
+  Sun, Moon,
 } from "lucide-react";
 import { useTenant } from "../../hooks/useTenant";
+import { useTheme } from "../../hooks/useTheme";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
-import { authApi, clearSession, homeServicesSetupOverviewApi } from "../../lib/api";
+import { Breadcrumbs } from "../layout/Breadcrumbs";
+import { authApi, clearSession, homeServicesSetupOverviewApi, providerNotifApi } from "../../lib/api";
 
 type OnboardingNavId =
   | "overview" | "business-profile" | "documents" | "services-pricing"
@@ -69,15 +72,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
   const navItems = restricted ? RESTRICTED_NAV_ITEMS : NAV_ITEMS;
 
   /**
-   * Setup completion, shown as a progress bar above the step nav.
-   *
-   * The approved UX-03 setup-wizard pattern (components/ux03/patterns/
-   * SetupWizard.tsx) shows "Step N of M (P%)" so a tenant can see how far
-   * through onboarding they are. This shell had the step NAVIGATION but no
-   * progress indicator at all, so the one thing the wizard pattern exists to
-   * communicate was missing from every setup page.
-   *
-   * Driven by the server's own `progress` object (percentage +
+   * Setup completion is driven by the server's own `progress` object (percentage +
    * completed_required/total_required from the setup overview), never by
    * counting nav items -- the server decides what "required" means, and an
    * optional section must not inflate the number.
@@ -110,13 +105,16 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
     return () => { cancelled = true; };
   }, [restricted, showProgress]);
   const tenant = useTenant();
+  const { theme, toggle } = useTheme();
   const [myName, setMyName] = useState("");
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const profileRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     authApi.me().then(u => setMyName(u.full_name ?? "")).catch(() => {});
+    providerNotifApi.unreadCount().then(r => setUnreadCount(r.unread_count)).catch(() => setUnreadCount(null));
   }, []);
 
   useEffect(() => {
@@ -134,7 +132,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
+    <div className="provider-app-shell" style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
       <style>{`
         .onboarding-sidebar { width: 248px; transform: translateX(0); transition: transform 0.2s ease; }
         .onboarding-hamburger { display: none; }
@@ -163,7 +161,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
       `}</style>
 
       {/* Sidebar */}
-      <aside aria-label="Onboarding navigation" className={`onboarding-sidebar${drawerOpen ? " open" : ""}`} style={{
+      <aside aria-label="Onboarding navigation" className={`provider-sidebar onboarding-sidebar${drawerOpen ? " open" : ""}`} style={{
         flexShrink: 0, height: "100vh",
         background: "var(--sidebar-bg)", display: "flex", flexDirection: "column",
         borderRight: "1px solid var(--sidebar-border)",
@@ -202,6 +200,12 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
         )}
 
         <nav style={{ flex: 1, minHeight: 0, padding: "12px 8px", overflowY: "auto" }}>
+          <p style={{
+            fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase",
+            color: "var(--sidebar-text)", opacity: 0.55, margin: "0 0 6px", padding: "0 10px",
+          }}>
+            {restricted ? "Application review" : "Tenant onboarding"}
+          </p>
           {navItems.map(item => {
             const active = activeNav === item.id;
             return (
@@ -235,7 +239,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
 
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        <header className="onboarding-header-pad" style={{ height: 62, display: "flex", alignItems: "center", gap: 14, padding: "0 24px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <header className="provider-topbar onboarding-header-pad" style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
           <button aria-label="Open menu" onClick={() => setDrawerOpen(true)} className="onboarding-hamburger"
             style={{
               width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
@@ -244,25 +248,32 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
             }}>
             <Menu size={18}/>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface-sunken)", minWidth: 0 }}>
+          <div aria-label="Current workspace" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface-sunken)", minWidth: 0 }}>
             <Building2 size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
             <span className="onboarding-workspace-selector-text" style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {tenant.tenantName ?? "My Business"}
             </span>
-            <ChevronDown size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
           </div>
           <div style={{ flex: 1 }}/>
-          <button aria-label="Notifications" style={{
+          <button type="button" onClick={toggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title="Change theme" style={{
+            width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
+            background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", color: "var(--text-secondary)",
+          }}>
+            {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
+          </button>
+          <Link href="/provider/notifications" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} title="Notifications" style={{
             width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
             background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
             justifyContent: "center", color: "var(--text-secondary)", position: "relative",
           }}>
             <Bell size={16}/>
-            <span style={{
-              position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: "50%",
-              background: "var(--brand)", border: "1.5px solid var(--surface)",
-            }}/>
-          </button>
+            {!!unreadCount && unreadCount > 0 && <span style={{
+              position: "absolute", top: 2, right: 2, minWidth: 15, height: 15, padding: "0 3px", borderRadius: 999,
+              background: "var(--danger)", color: "#fff", border: "2px solid var(--surface)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700,
+            }}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
+          </Link>
           <Link href="/help" className="onboarding-help-link" style={{
             display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)",
             textDecoration: "none", padding: "6px 10px",
@@ -306,8 +317,11 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           </div>
         </header>
 
-        <main className="onboarding-main-pad" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
-          <div style={{ maxWidth: 1520, margin: "0 auto" }}>{children}</div>
+        <main className="provider-main onboarding-main-pad" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
+          <div className="provider-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
+            <Breadcrumbs/>
+            {children}
+          </div>
         </main>
       </div>
     </div>

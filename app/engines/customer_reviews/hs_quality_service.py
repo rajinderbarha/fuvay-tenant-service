@@ -29,6 +29,28 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+def _parse_boundary(value: str, *, end_of_day: bool = False) -> datetime | None:
+    """Turn a `YYYY-MM-DD` or ISO-8601 filter bound into a tz-aware datetime.
+
+    A bare date is expanded to cover the whole day, so `date_to=2026-08-21`
+    includes reviews submitted at 18:40 that day instead of stopping at
+    midnight. Unparseable input returns None and the bound is dropped rather
+    than erroring the whole queue.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if len(raw) == 10 and end_of_day:  # bare YYYY-MM-DD upper bound
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _customer_alias(customer_id: str | None) -> str:
     """Tenant-scoped display alias -- never a name/phone/email. Stable per
     customer (first 4 hex chars of their UUID), matching the reference
@@ -40,10 +62,12 @@ def _customer_alias(customer_id: str | None) -> str:
 
 async def get_reviews_summary(
     db: AsyncSession, tid: uuid.UUID, *,
-    rating: int | None = None, reply_status: str | None = None,
+    rating: int | None = None, rating_max: int | None = None,
+    reply_status: str | None = None,
     technician_id: uuid.UUID | None = None, complaint_linked: bool | None = None,
     moderation_status: str | None = None, search: str | None = None,
     date_from: str | None = None, date_to: str | None = None,
+    offering_id: uuid.UUID | None = None,
     limit: int = 20, offset: int = 0,
 ) -> dict:
     where = ["cr.tenant_id = :tid", "sj.id IS NOT NULL", "cr.status != 'deleted'"]
@@ -52,6 +76,13 @@ async def get_reviews_summary(
     if rating:
         where.append("cr.overall_rating = :rating")
         params["rating"] = rating
+    if rating_max:
+        # The "Low ratings" KPI counts overall_rating <= 2, but the only
+        # filter available was an EXACT match, so clicking that tile filtered
+        # to exactly 2 stars and quietly dropped every 1-star review -- the
+        # list never matched the number on the tile it came from.
+        where.append("cr.overall_rating <= :rating_max")
+        params["rating_max"] = rating_max
     if reply_status == "answered":
         where.append("rr.id IS NOT NULL")
     elif reply_status == "unanswered":
@@ -59,6 +90,11 @@ async def get_reviews_summary(
     if technician_id:
         where.append("cr.staff_member_id = :sid")
         params["sid"] = str(technician_id)
+    if offering_id:
+        # Maps straight onto the tenant's configured catalog (tenant_services),
+        # i.e. the same offerings the Services & Pricing setup page manages.
+        where.append("sj.offering_id = :oid")
+        params["oid"] = str(offering_id)
     if complaint_linked is True:
         where.append("cc.id IS NOT NULL")
     elif complaint_linked is False:
@@ -69,12 +105,25 @@ async def get_reviews_summary(
     if search:
         where.append("(cr.review_text ILIKE :q OR cr.review_number ILIKE :q OR sj.job_number ILIKE :q)")
         params["q"] = f"%{search}%"
+    # The date range NEVER worked. These were bound as plain strings against a
+    # timestamptz column, and asyncpg rejects that outright
+    # ("expected a datetime.date or datetime.datetime instance, got 'str'").
+    # The router's per-module _safe() wrapper caught the DataError and turned
+    # it into failed_modules=['reviews'], so supplying any date silently
+    # returned an empty list rather than an error -- indistinguishable from
+    # "no reviews in that range". Parsing to real datetimes is the fix; an
+    # in-SQL CAST does not work, because asyncpg then infers the parameter as
+    # timestamptz and still refuses the str.
     if date_from:
-        where.append("cr.created_at >= :dfrom")
-        params["dfrom"] = date_from
+        parsed_from = _parse_boundary(date_from)
+        if parsed_from:
+            where.append("cr.created_at >= :dfrom")
+            params["dfrom"] = parsed_from
     if date_to:
-        where.append("cr.created_at <= :dto")
-        params["dto"] = date_to
+        parsed_to = _parse_boundary(date_to, end_of_day=True)
+        if parsed_to:
+            where.append("cr.created_at <= :dto")
+            params["dto"] = parsed_to
 
     where_sql = " AND ".join(where)
     # Complaint join is pre-deduped to ONE (the most recent) complaint per
@@ -118,6 +167,12 @@ async def get_reviews_summary(
         "job_id": str(r.job_id), "job_number": r.job_number, "service_name": r.service_name,
         "technician_name": r.technician_name,
         "reply_status": "answered" if r.reply_id else "unanswered",
+        # Publication state was selected but never projected, so the queue
+        # could not distinguish a review the customer can see from one still
+        # awaiting approval -- and with no review_policies row present every
+        # review stays 'pending', which made that invisible distinction the
+        # normal case rather than the exception.
+        "review_status": r.review_status,
         "complaint_linked": r.complaint_id is not None,
         "complaint_number": r.complaint_number,
         "moderation_status": r.flag_status if r.flag_id else None,
@@ -125,6 +180,40 @@ async def get_reviews_summary(
     } for r in rows]
 
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+async def get_review_filter_options(db: AsyncSession, tid: uuid.UUID) -> dict:
+    """Facet lists for the queue filters.
+
+    Only values that actually occur in this tenant's job-linked reviews are
+    returned, so a filter can never be set to something that yields an
+    unexplained empty list. Mirrors the `available_filters` shape the team
+    directory endpoint already uses.
+    """
+    techs = (await db.execute(text(
+        "SELECT DISTINCT ptm.id, ptm.full_name FROM customer_reviews cr "
+        "JOIN service_jobs sj ON sj.id = cr.job_id "
+        "JOIN provider_team_members ptm ON ptm.id = cr.staff_member_id "
+        "WHERE cr.tenant_id = :tid AND cr.status != 'deleted' "
+        "ORDER BY ptm.full_name"
+    ), {"tid": str(tid)})).fetchall()
+
+    services = (await db.execute(text(
+        "SELECT DISTINCT sj.offering_id AS id, "
+        "COALESCE(ts.tenant_display_name, ms.service_name, 'Service') AS name "
+        "FROM customer_reviews cr "
+        "JOIN service_jobs sj ON sj.id = cr.job_id "
+        "LEFT JOIN tenant_services ts ON ts.id = sj.offering_id "
+        "LEFT JOIN master_services ms ON ms.id = ts.master_service_id "
+        "WHERE cr.tenant_id = :tid AND cr.status != 'deleted' AND sj.offering_id IS NOT NULL "
+        "ORDER BY name"
+    ), {"tid": str(tid)})).fetchall()
+
+    return {
+        "technicians": [{"id": str(t.id), "name": t.full_name} for t in techs],
+        "services": [{"id": str(s.id), "name": s.name} for s in services],
+        "moderation_statuses": ["open", "reviewed", "dismissed", "actioned"],
+    }
 
 
 async def get_reviews_kpis(db: AsyncSession, tid: uuid.UUID) -> dict:
@@ -236,8 +325,20 @@ async def get_review_detail(db: AsyncSession, tid: uuid.UUID, review_id: uuid.UU
         "LEFT JOIN master_services ms ON ms.id = ts.master_service_id "
         "LEFT JOIN provider_team_members ptm ON ptm.id = cr.staff_member_id "
         "LEFT JOIN review_replies rr ON rr.review_id = cr.id "
-        "LEFT JOIN customer_complaints cc ON cc.job_id = sj.id "
-        "LEFT JOIN service_invoices si ON si.job_id = sj.id "
+        # A job can carry several complaints and several invoices. Joining
+        # them directly fanned this query out to multiple rows and the
+        # trailing LIMIT 1 then picked an ARBITRARY one -- so the detail panel
+        # could show a stale complaint while the list row (which already
+        # de-duped via LATERAL) showed the current one. Both sides now agree
+        # on "the most recent".
+        "LEFT JOIN LATERAL ("
+        "  SELECT id, complaint_number, status, severity, sla_status, assigned_admin_user_id "
+        "  FROM customer_complaints WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1"
+        ") cc ON true "
+        "LEFT JOIN LATERAL ("
+        "  SELECT invoice_number, payment_status FROM service_invoices "
+        "  WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1"
+        ") si ON true "
         "WHERE cr.id = :rid AND cr.tenant_id = :tid AND cr.status != 'deleted' "
         "LIMIT 1"
     ), {"rid": str(review_id), "tid": str(tid)})).fetchone()

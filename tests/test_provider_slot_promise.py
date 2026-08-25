@@ -12,7 +12,7 @@ customer was never told when the service would actually happen. Jobs were
 also created with NO schedule at all for the whole assistant flow, because
 that flow never sets `preferred_date`.
 
-Exercised against real live 140412/Guramrit data (no mocks).
+Exercised against the real live 140412/Barha auto store data (no mocks).
 """
 import datetime as dt
 import uuid
@@ -27,7 +27,10 @@ from app.engines.home_service_booking.provider_slot_service import (
 )
 from sqlalchemy import text as sa_text
 
-GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
+PROVIDER_TENANT_ID = uuid.UUID("54c79f98-6923-4449-9c74-e9ac0ca7d086")
+# Compatibility alias for the historical test cases below; all now exercise
+# the one retained provider configured by configure_market_ready_provider.py.
+GURAMRIT_TENANT_ID = PROVIDER_TENANT_ID
 
 
 async def _get_db():
@@ -102,8 +105,8 @@ def test_unconfigured_capacity_defaults_to_one_never_unlimited():
 async def test_earliest_slot_is_resolved_for_a_real_provider():
     db = await _get_db()
     try:
-        slot = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID)
-        assert slot is not None, "Guramrit has real availability rules configured"
+        slot = await find_earliest_available_slot(db, tenant_id=PROVIDER_TENANT_ID)
+        assert slot is not None, "Barha auto store has real availability rules configured"
         assert slot["capacity"] >= 1
         assert slot["already_booked"] < slot["capacity"]
         # Never offers a window that has already started.
@@ -119,20 +122,20 @@ async def test_a_full_slot_rolls_forward_to_the_next_one():
     db = await _get_db()
     made = []
     try:
-        first = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID)
+        first = await find_earliest_available_slot(db, tenant_id=PROVIDER_TENANT_ID)
         assert first is not None
         day = dt.date.fromisoformat(first["date"])
         window = first["time_window"]
 
         for _ in range(first["capacity"] - first["already_booked"]):
-            made.append(await _insert_live_job(db, GURAMRIT_TENANT_ID, day, window))
+            made.append(await _insert_live_job(db, PROVIDER_TENANT_ID, day, window))
         await db.commit()
 
         assert await slot_has_capacity(
-            db, tenant_id=GURAMRIT_TENANT_ID, day=day, time_window=window,
+            db, tenant_id=PROVIDER_TENANT_ID, day=day, time_window=window,
         ) is False
 
-        nxt = await find_earliest_available_slot(db, tenant_id=GURAMRIT_TENANT_ID)
+        nxt = await find_earliest_available_slot(db, tenant_id=PROVIDER_TENANT_ID)
         assert nxt is not None
         assert (nxt["date"], nxt["time_window"]) != (first["date"], window)
     finally:
@@ -437,17 +440,18 @@ async def test_booking_summary_carries_the_promised_slot_and_sla():
     from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
     from sqlalchemy import text
 
-    CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
+    CUSTOMER_ID = uuid.UUID("eccf4f56-5340-4658-8743-1fcdd6cc3f56")
     db = await _get_db()
     draft_id = None
     try:
         svc = HomeServiceChatbotBookingService(db=db)
         qf = QuestionFlowService(db=db)
-        issues = (await list_serviceable_issues(db, "air-conditioning", "140412"))["issues"]
-        cooling = next(i for i in issues if i["label"] == "AC Not Cooling")
+        issues = (await list_serviceable_issues(db, "home_services", "140412"))["issues"]
+        assert issues, "the configured AC catalog must expose serviceable problems"
+        cooling = issues[0]
         r = await svc.select_issue(
             customer_id=CUSTOMER_ID, ai_session_id=None,
-            category_slug="air-conditioning", zipcode="140412", issue_id=cooling["id"],
+            category_slug="home_services", zipcode="140412", issue_id=cooling["id"],
         )
         draft_id = uuid.UUID(r["draft_id"])
         for _ in range(10):
@@ -462,7 +466,6 @@ async def test_booking_summary_carries_the_promised_slot_and_sla():
                 expected_version=env.get("question_flow_version"), **kw,
             )
         await svc.check_serviceability(draft_id=draft_id, customer_id=CUSTOMER_ID)
-        await svc.resolve_price_estimate(draft_id=draft_id, customer_id=CUSTOMER_ID)
         d = await svc.get_booking_draft(draft_id=draft_id, customer_id=CUSTOMER_ID)
         await svc.match_provider_and_price(
             category_id=uuid.UUID(d["category_id"]), master_service_id=uuid.UUID(d["offering_id"]),
@@ -499,17 +502,18 @@ async def test_customer_can_choose_a_later_slot_than_the_system_pick():
     from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
     from sqlalchemy import text
 
-    CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
+    CUSTOMER_ID = uuid.UUID("eccf4f56-5340-4658-8743-1fcdd6cc3f56")
     db = await _get_db()
     draft_id = None
     try:
         svc = HomeServiceChatbotBookingService(db=db)
         qf = QuestionFlowService(db=db)
-        issues = (await list_serviceable_issues(db, "air-conditioning", "140412"))["issues"]
-        cooling = next(i for i in issues if i["label"] == "AC Not Cooling")
+        issues = (await list_serviceable_issues(db, "home_services", "140412"))["issues"]
+        assert issues, "the configured AC catalog must expose serviceable problems"
+        cooling = issues[0]
         r = await svc.select_issue(
             customer_id=CUSTOMER_ID, ai_session_id=None,
-            category_slug="air-conditioning", zipcode="140412", issue_id=cooling["id"],
+            category_slug="home_services", zipcode="140412", issue_id=cooling["id"],
         )
         draft_id = uuid.UUID(r["draft_id"])
         for _ in range(10):
@@ -524,7 +528,6 @@ async def test_customer_can_choose_a_later_slot_than_the_system_pick():
                 expected_version=env.get("question_flow_version"), **kw,
             )
         await svc.check_serviceability(draft_id=draft_id, customer_id=CUSTOMER_ID)
-        await svc.resolve_price_estimate(draft_id=draft_id, customer_id=CUSTOMER_ID)
         d = await svc.get_booking_draft(draft_id=draft_id, customer_id=CUSTOMER_ID)
         await svc.match_provider_and_price(
             category_id=uuid.UUID(d["category_id"]), master_service_id=uuid.UUID(d["offering_id"]),
@@ -532,10 +535,16 @@ async def test_customer_can_choose_a_later_slot_than_the_system_pick():
             job_type_id=uuid.UUID(d["job_type_id"]) if d.get("job_type_id") else None,
             draft_id=draft_id, customer_id=CUSTOMER_ID, reveal_internal_score=False,
         )
-        await svc.build_booking_summary(draft_id=draft_id, customer_id=CUSTOMER_ID)
+        initial = (await svc.build_booking_summary(
+            draft_id=draft_id, customer_id=CUSTOMER_ID,
+        ))["booking_summary"]
+        assert initial["ready_for_confirmation"] is False
+        assert "preferred_date" in initial["missing"]
+        assert "preferred_time_window" in initial["missing"]
 
         slots = (await svc.list_available_slots(draft_id=draft_id, customer_id=CUSTOMER_ID))["slots"]
         assert len(slots) >= 1
+        assert len({(s["date"], s["time_window"]) for s in slots}) == len(slots)
         chosen = slots[-1]  # pick something other than the system default (index 0)
 
         result = await svc.select_promised_slot(
@@ -546,6 +555,9 @@ async def test_customer_can_choose_a_later_slot_than_the_system_pick():
         assert summary["promised_slot"]["date"] == chosen["date"]
         assert summary["promised_slot"]["time_window"] == chosen["time_window"]
         assert summary["service_due_at"] == summary["promised_slot"]["ends_at"]
+        assert summary["ready_for_confirmation"] is True
+        assert "preferred_date" not in summary["missing"]
+        assert "preferred_time_window" not in summary["missing"]
     finally:
         if draft_id:
             await db.rollback()
@@ -564,18 +576,19 @@ async def test_selecting_a_slot_that_lost_capacity_is_rejected_not_silently_book
     from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
     from sqlalchemy import text
 
-    CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
+    CUSTOMER_ID = uuid.UUID("eccf4f56-5340-4658-8743-1fcdd6cc3f56")
     db = await _get_db()
     draft_id = None
     made = []
     try:
         svc = HomeServiceChatbotBookingService(db=db)
         qf = QuestionFlowService(db=db)
-        issues = (await list_serviceable_issues(db, "air-conditioning", "140412"))["issues"]
-        cooling = next(i for i in issues if i["label"] == "AC Not Cooling")
+        issues = (await list_serviceable_issues(db, "home_services", "140412"))["issues"]
+        assert issues, "the configured AC catalog must expose serviceable problems"
+        cooling = issues[0]
         r = await svc.select_issue(
             customer_id=CUSTOMER_ID, ai_session_id=None,
-            category_slug="air-conditioning", zipcode="140412", issue_id=cooling["id"],
+            category_slug="home_services", zipcode="140412", issue_id=cooling["id"],
         )
         draft_id = uuid.UUID(r["draft_id"])
         for _ in range(10):
@@ -590,7 +603,6 @@ async def test_selecting_a_slot_that_lost_capacity_is_rejected_not_silently_book
                 expected_version=env.get("question_flow_version"), **kw,
             )
         await svc.check_serviceability(draft_id=draft_id, customer_id=CUSTOMER_ID)
-        await svc.resolve_price_estimate(draft_id=draft_id, customer_id=CUSTOMER_ID)
         d = await svc.get_booking_draft(draft_id=draft_id, customer_id=CUSTOMER_ID)
         await svc.match_provider_and_price(
             category_id=uuid.UUID(d["category_id"]), master_service_id=uuid.UUID(d["offering_id"]),

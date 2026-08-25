@@ -1,15 +1,11 @@
+import { globalServiceLeadDtoSchema, globalServicesListResponseSchema } from "../contracts/globalServices";
 import { authenticatedRequest } from "../client/authenticatedClient";
 import { parseApiSuccess } from "../client/responseParser";
-import {
-  globalServicesListResponseSchema, globalServiceLeadDtoSchema,
-} from "../contracts/globalServices";
 
-/** GET /v1/customer/global-services -- the fixed, nationwide promotional
- * list. Never takes a zipcode param; the backend returns the same active
- * list to every customer (app/engines/global_services/customer_router.py). */
+
 export async function getGlobalServices() {
-  const res = await authenticatedRequest({ method: "GET", path: "/v1/customer/global-services" });
-  return parseApiSuccess(res.json, globalServicesListResponseSchema);
+  const response = await authenticatedRequest({ method: "GET", path: "/v1/customer/global-services" });
+  return parseApiSuccess(response.json, globalServicesListResponseSchema);
 }
 
 export interface SubmitGlobalServiceLeadInput {
@@ -21,10 +17,8 @@ export interface SubmitGlobalServiceLeadInput {
   message?: string;
 }
 
-/** POST /v1/customer/global-services/leads -- creates a Lead an admin
- * calls the customer back about. No booking/job/payment is created. */
 export async function submitGlobalServiceLead(input: SubmitGlobalServiceLeadInput) {
-  const res = await authenticatedRequest({
+  const response = await authenticatedRequest({
     method: "POST",
     path: "/v1/customer/global-services/leads",
     body: {
@@ -36,5 +30,5 @@ export async function submitGlobalServiceLead(input: SubmitGlobalServiceLeadInpu
       message: input.message || undefined,
     },
   });
-  return parseApiSuccess(res.json, globalServiceLeadDtoSchema);
+  return parseApiSuccess(response.json, globalServiceLeadDtoSchema);
 }

@@ -403,7 +403,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Sprint 34E — Service Options + Issue Catalog
     from app.engines.admin_catalog.service_option_admin_router import (
         grp_router as svc_opt_grp_router,
-        opt_router as svc_opt_router,
         iss_router as svc_iss_router,
         map_router as svc_map_router,
         chk_router as svc_chk_router,
@@ -437,7 +436,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
                catalog_blueprint_draft_router, catalog_question_router, job_type_blueprint_router,
                brand_admin_router, brand_req_router, brand_tmpl_router,
                brand_provider_router, brand_customer_router,
-               svc_opt_grp_router, svc_opt_router, svc_iss_router, svc_map_router, svc_chk_router,
+               svc_opt_grp_router, svc_iss_router, svc_map_router, svc_chk_router,
                svc_opt_provider_router, svc_opt_customer_router,
                sst_admin_router, sst_provider_router,
                auto_price_admin_router, auto_price_tenant_router,
@@ -839,8 +838,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.customer_home.router import router as customer_home_router
     app.include_router(customer_home_router)
 
-    # Retired 2026-08-20: admin Home Layout control. Customer Home now uses the
-    # app's shipped layout instead of a mutable admin ordering surface.
+    # Fuvay's own web/app/software services are nationwide lead-generation
+    # products, not local provider bookings. Mount them independently from
+    # customer Home serviceability so every ZIP receives the same catalog.
+    from app.engines.global_services.customer_router import router as global_services_customer_router
+    from app.engines.global_services.admin_router import router as global_services_admin_router
+    app.include_router(global_services_customer_router)
+    app.include_router(global_services_admin_router)
 
     # Address autocomplete. Proxied so the Places key never ships in the app bundle.
     from app.engines.places.router import router as places_router
@@ -920,9 +924,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.ai_conversation.sprint29_customer_router import customer_ai_router
     from app.engines.marketing_automation.admin_router import admin_marketing_router
     from app.engines.marketing_automation.provider_router import provider_marketing_router
+    from app.engines.customer_home.admin_router import router as customer_home_admin_router
     for _r in [
         admin_ai_router, customer_ai_router,
-        admin_marketing_router, provider_marketing_router,
+        admin_marketing_router, provider_marketing_router, customer_home_admin_router,
     ]:
         app.include_router(_r)
 
@@ -1021,7 +1026,23 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.platform_notifications.policy_router import router as notification_policy_router
     from app.engines.settings_engine.configuration_router import router as platform_configuration_router
     from app.engines.customer_reviews.hs_review_router import router as hs_review_router
-    from app.engines.finance_hub.tenant_hs_finance_router import router as tenant_hs_finance_router
+    # `admin_router` here is the Home Services deposit-refund-request console
+    # (/v1/admin/finance/home-services/deposit-refund-requests). It was written
+    # and permission-guarded but NEVER MOUNTED -- only `router` was imported --
+    # so every one of its endpoints 404'd. A tenant could file a security-
+    # deposit refund request that no admin could then list, request info on,
+    # approve, reject or mark refunded: the request was stuck forever, and the
+    # `info_requested` note the Finance Hub renders could never be set by
+    # anyone. Mounting it is what makes the documented state machine reachable.
+    # WhatsApp/Instagram inbound channel. A thin adapter in front of the
+    # existing ai_conversation agent -- no second bot, no duplicated booking
+    # logic. Unauthenticated by design: Meta calls it, and authenticity is
+    # proved by the verify token and the HMAC signature over the raw body.
+    from app.engines.messaging_gateway.router import router as messaging_gateway_router
+    from app.engines.finance_hub.tenant_hs_finance_router import (
+        router as tenant_hs_finance_router,
+        admin_router as admin_hs_deposit_refund_router,
+    )
     from app.engines.finance_hub.admin_hs_finance_router import (
         router as admin_hs_finance_router,
         canonical_router as admin_hs_finance_canonical_router,
@@ -1037,7 +1058,9 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         notification_policy_router, platform_configuration_router,
         hs_review_router, admin_hs_finance_router,
         admin_hs_finance_canonical_router,
-        tenant_hs_finance_router, hs_finance_monetization_router, hs_topup_plan_router,
+        tenant_hs_finance_router, admin_hs_deposit_refund_router,
+        messaging_gateway_router,
+        hs_finance_monetization_router, hs_topup_plan_router,
     ]:
         app.include_router(_unmounted)
 

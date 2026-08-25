@@ -110,7 +110,10 @@ export function NotificationCenterScreen() {
   }
 
   const groups = groupNotificationsByDay(query.items);
-  const isCaughtUp = !query.hasNextPage && query.items.length > 0;
+  // "Caught up" means there is nothing unread, not merely that pagination
+  // reached its final page. Showing it below five unread cards is internally
+  // contradictory and makes the notification center look unreliable.
+  const isCaughtUp = !query.hasNextPage && query.items.length > 0 && unreadCount === 0;
 
   const rows: Array<
     | { kind: "group"; label: string }

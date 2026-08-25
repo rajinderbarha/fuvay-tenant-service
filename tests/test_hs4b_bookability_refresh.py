@@ -30,7 +30,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 
 ROUTER_PY = (ROOT / "app/engines/provider_portal/router.py").read_text(encoding="utf-8-sig")
-PAGE = (FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
+PAGE = (FRONTEND / "components/service-setup/ReviewPublishStep.tsx").read_text(encoding="utf-8-sig")
 
 
 def _eval_fn() -> str:
@@ -138,34 +138,39 @@ def test_response_includes_passed_and_failed_checks():
 
 # ── 5. Frontend calls refresh after publish and shows real status ────────────
 def test_frontend_calls_refresh_after_publish():
-    handle_publish = PAGE.split("async function handlePublish")[1].split("const stepIndex")[0]
-    assert "providerStatusApi.refresh()" in handle_publish
+    publish_action = PAGE.split("const publishAction")[1].split("async function handlePublish")[0]
+    assert "serviceSetupApi.publish(tsid)" in publish_action
+    assert "providerStatusApi.refresh()" in publish_action
 
 
 def test_frontend_shows_bookable_copy():
-    assert "Your Home Services business is now bookable." in PAGE
-    assert "Customers can be matched to your services in active service areas." in PAGE
+    widget = (FRONTEND / "components/dashboard/BookabilityStatusWidget.tsx").read_text(encoding="utf-8-sig")
+    assert "Live & Accepting Bookings" in widget
+    assert "s.is_visible && s.is_bookable" in widget
 
 
 def test_frontend_shows_not_bookable_copy_with_reasons():
-    assert "Services published, but your business is not bookable yet." in PAGE
-    assert "Complete the remaining setup items below." in PAGE
-    assert "bookabilityStatus.bookability_blockers.map" in PAGE
+    widget = (FRONTEND / "components/dashboard/BookabilityStatusWidget.tsx").read_text(encoding="utf-8-sig")
+    assert "Action Required" in widget
+    assert "s.bookability_blockers?.length" in widget
+    assert "View and resolve" in widget
 
 
 def test_frontend_never_shows_false_ready_state():
-    # The bookable-success copy must be gated behind bookabilityStatus.is_bookable,
-    # not shown unconditionally after every publish click.
-    handle_publish = PAGE.split("async function handlePublish")[1].split("const stepIndex")[0]
+    # Publishing only emits success after both the publish mutation and the
+    # canonical provider-status recomputation complete.
+    publish_action = PAGE.split("const publishAction")[1].split("async function handlePublish")[0]
+    handle_publish = PAGE.split("async function handlePublish")[1].split("const errors")[0]
+    assert publish_action.index("serviceSetupApi.publish(tsid)") < publish_action.index("providerStatusApi.refresh()")
     assert "publishAction.execute()" in handle_publish
-    assert "bookabilityStatus.is_bookable ?" in PAGE
 
 
 # ── 6. Regression: existing safety fixes still intact ────────────────────────
-def test_price_boundary_validation_still_present():
+def test_provider_price_validation_still_present():
     tenant_service_py = (ROOT / "app/engines/admin_catalog/tenant_service.py").read_text(encoding="utf-8-sig")
-    assert "TENANT_PRICE_BELOW_ADMIN_MIN" in tenant_service_py
-    assert "TENANT_PRICE_ABOVE_ADMIN_MAX" in tenant_service_py
+    assert "TENANT_PRICE_NEGATIVE" in tenant_service_py
+    assert "INVALID_PRICE_RANGE" in tenant_service_py
+    assert "Minimum price cannot exceed maximum price." in tenant_service_py
 
 
 def test_type_dependent_brand_pricing_still_present():

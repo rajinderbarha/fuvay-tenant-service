@@ -40,7 +40,8 @@ function useToasts() {
 
 type TabKey =
   | "overview" | "monetization" | "provider-charges" | "credits" | "security-deposits"
-  | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events";
+  | "deposit-refunds"
+  | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events" | "direct-payments";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -48,6 +49,10 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "provider-charges", label: "Provider Charges" },
   { key: "credits", label: "Credits & Top-ups" },
   { key: "security-deposits", label: "Security Deposits" },
+  // Tenant-initiated deposit refund requests. Distinct from an admin
+  // refunding a deposit directly on the Security Deposits tab.
+  { key: "deposit-refunds", label: "Deposit Refund Requests" },
+  { key: "direct-payments", label: "Direct Payments" },
   { key: "invoices", label: "Invoices" },
   { key: "customer-refunds", label: "Customer Refunds" },
   { key: "warranty-claims", label: "Warranty Claims" },
@@ -135,6 +140,8 @@ function HomeServicesFinanceWorkspace() {
       {tab === "provider-charges" && <ProviderChargesTab />}
       {tab === "credits" && <CreditsTab params={params} />}
       {tab === "security-deposits" && <SecurityDepositsTab />}
+      {tab === "deposit-refunds" && <DepositRefundRequestsTab />}
+      {tab === "direct-payments" && <DirectPaymentsTab />}
       {tab === "invoices" && <InvoicesTab />}
       {tab === "customer-refunds" && <CustomerRefundsTab />}
       {tab === "warranty-claims" && <WarrantyClaimsTab />}
@@ -1800,6 +1807,190 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
 
 // ── Security Deposits ────────────────────────────────────────────────────────
 
+
+/* ── Deposit refund requests ───────────────────────────────────────────────
+ *
+ * The console for the tenant-initiated security-deposit refund flow
+ * (finance_hub/deposit_refund_models.py). Its router was written and
+ * permission-guarded but NEVER MOUNTED in main.py, so every endpoint returned
+ * 404 and no admin screen was ever built for it -- a tenant could file a
+ * request that nobody could then act on. With the router mounted this is the
+ * missing surface.
+ *
+ * Actions are exactly the seven the server accepts, offered only from the
+ * states the server allows, so no button can produce a 409.
+ */
+const DRR_STATUS_TONE: Record<string, "success" | "warning" | "danger" | "muted" | "info"> = {
+  draft: "muted",
+  submitted: "info",
+  eligibility_review: "info",
+  liability_review: "info",
+  admin_decision: "warning",
+  info_requested: "warning",
+  processing: "info",
+  refunded: "success",
+  rejected: "danger",
+  withdrawn: "muted",
+};
+
+/** Which decision actions are legal from a given status, mirroring
+ *  TenantHomeServicesFinanceService.admin_decide_refund_request. */
+function drrActions(status: string): { action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean }[] {
+  if (["refunded", "rejected", "withdrawn"].includes(status)) return [];
+  const out: { action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean }[] = [];
+  if (status === "submitted") out.push({ action: "advance_eligibility", label: "Start eligibility review" });
+  if (status === "eligibility_review") out.push({ action: "advance_liability", label: "Start liability review" });
+  if (["eligibility_review", "liability_review", "info_requested"].includes(status)) {
+    out.push({ action: "advance_decision", label: "Move to decision" });
+  }
+  if (status !== "processing") {
+    out.push({ action: "request_info", label: "Request information", needsNote: true });
+    out.push({ action: "approve", label: "Approve refund", needsAmount: true, needsNote: true });
+    out.push({ action: "reject", label: "Reject", danger: true, needsNote: true });
+  }
+  if (status === "processing") out.push({ action: "mark_refunded", label: "Mark refunded", needsNote: true });
+  return out;
+}
+
+function DepositRefundRequestsTab() {
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [pending, setPending] = useState<{ row: Record<string, unknown>; action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean } | null>(null);
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const { toasts, push, remove } = useToasts();
+
+  const list = useApi(useCallback(
+    () => homeServicesFinanceApi.listDepositRefundRequests({ status: status || undefined, page, page_size: 20 }),
+    [status, page]), [status, page]);
+
+  const decide = useAction(useCallback(
+    (id: string, body: { action: string; approved_amount?: string; note?: string }) =>
+      homeServicesFinanceApi.decideDepositRefundRequest(id, body), []));
+
+  async function submit() {
+    if (!pending) return;
+    const body: { action: string; approved_amount?: string; note?: string } = { action: pending.action };
+    if (pending.needsAmount && amount.trim()) body.approved_amount = amount.trim();
+    if (note.trim()) body.note = note.trim();
+    const res = await decide.execute(String(pending.row.refund_request_id), body);
+    if (res) {
+      push(`${pending.label} applied.`);
+      setPending(null); setAmount(""); setNote("");
+      list.refetch();
+    }
+  }
+
+  const rows = (list.data?.items ?? []) as unknown as Record<string, unknown>[];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+          Refund requests providers have raised against their own held security deposit. The
+          eligible amount is recomputed server-side from the published policy, live qualifying
+          technician count and open liabilities — a provider can never approve its own request.
+        </p>
+      </Card>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
+          { value: "submitted", label: "Submitted" },
+          { value: "eligibility_review", label: "Eligibility review" },
+          { value: "liability_review", label: "Liability review" },
+          { value: "admin_decision", label: "Admin decision" },
+          { value: "info_requested", label: "Information requested" },
+          { value: "processing", label: "Processing" },
+          { value: "refunded", label: "Refunded" },
+          { value: "rejected", label: "Rejected" },
+          { value: "withdrawn", label: "Withdrawn" },
+        ]} />
+      </div>
+
+      <QueryError message={list.error} onRetry={list.refetch} />
+      <DataTable
+        loading={list.loading}
+        rows={rows}
+        emptyText="No provider deposit refund requests."
+        columns={[
+          { key: "request_ref", label: "Request" },
+          { key: "status_label", label: "Status", render: (v, row) => (
+            <Badge variant={DRR_STATUS_TONE[String((row as Record<string, unknown>).status)] ?? "muted"}>
+              {String(v ?? "")}
+            </Badge>
+          ) },
+          { key: "requested_amount", label: "Requested", render: v => money(v as number) },
+          { key: "approved_amount", label: "Approved", render: v => (v ? money(v as number) : "—") },
+          { key: "eligible_amount_snapshot", label: "Eligible at submission", render: v => money(v as number) },
+          { key: "qualifying_technicians_snapshot", label: "Technicians" },
+          { key: "submitted_at", label: "Submitted", render: v => (v ? new Date(String(v)).toLocaleDateString() : "—") },
+          { key: "refund_request_id", label: "", render: (_v, row) => {
+            const r = row as Record<string, unknown>;
+            const acts = drrActions(String(r.status));
+            if (acts.length === 0) return <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Closed</span>;
+            return (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {acts.map(a => (
+                  <Btn key={a.action} size="xs" variant={a.danger ? "danger" : "secondary"}
+                    onClick={() => { setPending({ row: r, ...a }); setAmount(String(r.requested_amount ?? "")); setNote(""); }}>
+                    {a.label}
+                  </Btn>
+                ))}
+              </div>
+            );
+          } },
+        ]}
+      />
+      {list.data?.total != null && (
+        <Pagination page={page} pageSize={20} total={Number(list.data.total)} onPage={setPage} />
+      )}
+
+      <Modal open={!!pending} onClose={() => setPending(null)} title={pending?.label ?? ""} size="md">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {pending?.row.reason ? (
+            <div>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 3px" }}>Provider&apos;s reason</p>
+              <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{String(pending.row.reason)}</p>
+            </div>
+          ) : null}
+          {pending?.row.tenant_response ? (
+            <div>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 3px" }}>Provider&apos;s response to your question</p>
+              <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{String(pending.row.tenant_response)}</p>
+            </div>
+          ) : null}
+          {pending?.needsAmount && (
+            <Input label={`Approved amount (max ${money(Number(pending.row.requested_amount ?? 0))})`}
+              value={amount} onChange={setAmount} />
+          )}
+          {pending?.needsNote && (
+            <Input
+              label={
+                pending.action === "request_info" ? "What do you need from the provider?"
+                  : pending.action === "mark_refunded" ? "Payout reference"
+                    : "Note (optional)"
+              }
+              value={note} onChange={setNote}
+            />
+          )}
+          {decide.error && (
+            <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{decide.error}</p>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Btn variant="ghost" size="sm" onClick={() => setPending(null)}>Cancel</Btn>
+            <Btn variant={pending?.danger ? "danger" : "primary"} size="sm" loading={decide.loading}
+              disabled={Boolean(pending?.action === "request_info" && !note.trim())}
+              onClick={submit}>
+              Confirm
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+      <Toaster toasts={toasts} onRemove={remove} />
+    </div>
+  );
+}
+
 function SecurityDepositsTab() {
   const [q, setQ] = useState("");
   const query = useDebouncedValue(q);
@@ -2415,6 +2606,162 @@ function KeyValueGrid({ data }: { data: unknown }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Platform view of money that never touches the platform.
+ *
+ * Home-services customers pay the PROVIDER directly, so ServiceOS only records
+ * the declaration and the customer's confirmation of it. The tenant has had a
+ * full console for this at /home-services/direct-payments; these five admin
+ * endpoints were live the whole time with no caller, so an admin investigating
+ * a payment dispute had no screen at all.
+ *
+ * The admin list params are the admin router's own -- `q`, `pageSize`,
+ * `confirmed` -- and deliberately NOT the tenant queue's `search`/`limit`/
+ * `method`. Sending the tenant's names here silently returns unfiltered rows,
+ * because FastAPI ignores query params it does not declare.
+ */
+function DirectPaymentsTab() {
+  const [status, setStatus] = useState("");
+  const [q, setQ] = useState("");
+  const [qDraft, setQDraft] = useState("");
+  const [page, setPage] = useState(1);
+  const [dispute, setDispute] = useState<Record<string, unknown> | null>(null);
+  const [reason, setReason] = useState("");
+  const { toasts, push, remove } = useToasts();
+
+  const summary = useApi(useCallback(
+    () => homeServicesFinanceApi.getDirectPaymentsSummary(), []), []);
+  const list = useApi(useCallback(
+    () => homeServicesFinanceApi.listDirectPayments({
+      status: status || undefined, q: q || undefined, page, pageSize: 20,
+    }), [status, q, page]), [status, q, page]);
+
+  const remind = useAction(useCallback(
+    (id: string) => homeServicesFinanceApi.remindDirectPaymentCustomer(id), []));
+  const openDispute = useAction(useCallback(
+    (id: string, why: string) => homeServicesFinanceApi.openDirectPaymentDispute(id, why), []));
+
+  const rows = (list.data?.items ?? []) as unknown as Record<string, unknown>[];
+  const sum = (summary.data ?? {}) as Record<string, unknown>;
+
+  async function sendReminder(row: Record<string, unknown>) {
+    const res = await remind.execute(String(row.payment_id ?? row.id));
+    if (res) { push("Reminder sent to the customer."); list.refetch(); }
+  }
+
+  async function submitDispute() {
+    if (!dispute || !reason.trim()) return;
+    const res = await openDispute.execute(String(dispute.payment_id ?? dispute.id), reason.trim());
+    if (res) {
+      push("Dispute opened.");
+      setDispute(null); setReason("");
+      list.refetch(); summary.refetch();
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+          ServiceOS does not collect, hold or settle this money -- the customer pays the provider
+          directly and both sides confirm the amount here. Use this view to investigate a
+          disputed or unconfirmed declaration; the provider works the same records in their own
+          portal.
+        </p>
+      </Card>
+
+      {summary.data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          <SummaryCard label="Declarations" value={String(sum.total_attempts ?? 0)} />
+          <SummaryCard label="Confirmed" value={String(sum.confirmed ?? 0)} />
+          <SummaryCard label="Awaiting confirmation" value={String(sum.pending_confirmation ?? 0)} />
+          <SummaryCard label="Disputed" value={String(sum.disputed ?? 0)} />
+          <SummaryCard label="Provider collected" value={"₹" + String(sum.provider_collected_total ?? "0")} />
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
+          { value: "awaiting_customer", label: "Awaiting customer" },
+          { value: "confirmed", label: "Confirmed" },
+          { value: "mismatched", label: "Mismatched" },
+          { value: "disputed", label: "Disputed" },
+          { value: "cancelled", label: "Cancelled" },
+          { value: "reversed", label: "Reversed" },
+        ]} />
+        <Input
+          value={qDraft}
+          placeholder="Search job, provider or reference"
+          onChange={v => setQDraft(v)}
+        />
+        <Btn variant="secondary" onClick={() => { setQ(qDraft); setPage(1); }}>Search</Btn>
+        {(status || q) && (
+          <Btn variant="ghost" onClick={() => { setStatus(""); setQ(""); setQDraft(""); setPage(1); }}>
+            Clear
+          </Btn>
+        )}
+      </div>
+
+      {list.loading && <Skeleton height={220} />}
+      {list.error && (
+        <Card><p style={{ color: "var(--danger-text)", margin: 0 }}>{list.error}</p></Card>
+      )}
+
+      {list.data && (
+        <>
+          <DataTable
+            rows={rows}
+            emptyText="No direct payments match these filters."
+            columns={[
+              { key: "job_reference", label: "Job" },
+              { key: "tenant_name", label: "Provider" },
+              { key: "declared_amount", label: "Declared", render: v => v == null ? "—" : "₹" + String(v) },
+              { key: "expected_amount", label: "Expected", render: v => v == null ? "—" : "₹" + String(v) },
+              { key: "method", label: "Method" },
+              {
+                key: "status", label: "Status",
+                render: v => {
+                  const val = String(v ?? "");
+                  const tone = val === "confirmed" ? "success"
+                    : val === "disputed" || val === "mismatched" ? "danger"
+                    : "warning";
+                  return <Badge variant={tone}>{val.replace(/_/g, " ") || "—"}</Badge>;
+                },
+              },
+              { key: "declared_at", label: "Declared at", render: v => v ? String(v).slice(0, 10) : "—" },
+              {
+                key: "actions", label: "", render: (_v, row) => (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn size="sm" variant="secondary" onClick={() => sendReminder(row)}>Remind</Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setDispute(row)}>Dispute</Btn>
+                  </div>
+                ),
+              },
+            ]}
+          />
+          <Pagination page={page} pageSize={20} total={Number(list.data.total ?? 0)} onPage={setPage} />
+        </>
+      )}
+
+      <Modal open={!!dispute} onClose={() => setDispute(null)} title="Open a dispute" size="md">
+        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+          Opening a dispute freezes the declaration and notifies both the customer and the
+          provider. Explain what does not match.
+        </p>
+        <Input value={reason} placeholder="Reason" onChange={v => setReason(v)} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <Btn variant="secondary" onClick={() => setDispute(null)}>Cancel</Btn>
+          <Btn onClick={submitDispute} disabled={!reason.trim() || openDispute.loading}>
+            {openDispute.loading ? "Opening…" : "Open dispute"}
+          </Btn>
+        </div>
+      </Modal>
+
+      <Toaster toasts={toasts} onRemove={remove} />
     </div>
   );
 }

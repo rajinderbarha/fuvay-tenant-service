@@ -634,6 +634,31 @@ export function SummaryCard({
 }
 
 // ── PkSectionHeader ────────────────────────────────────────────────────────
+/** Canonical responsive container for operational KPI cards. */
+export function KpiGrid({
+  children, minCardWidth = 170, className, style,
+}: {
+  children: React.ReactNode;
+  minCardWidth?: number;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      className={["ds-kpi-grid", className].filter(Boolean).join(" ")}
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${minCardWidth}px), 1fr))`,
+        gap: 14,
+        alignItems: "stretch",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function PkSectionHeader({ title, subtitle, actions, icon }: {
   title: string; subtitle?: string; actions?: React.ReactNode; icon?: React.ReactNode;
 }) {

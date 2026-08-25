@@ -58,9 +58,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   (questionFlowApi.getQuestionFlow as jest.Mock).mockResolvedValue(completeEnvelope());
   (reviewApi.checkServiceability as jest.Mock).mockResolvedValue({ data: { serviceable: true, message: "ok", draft_status: "serviceability_checked" } });
-  (reviewApi.resolvePriceEstimate as jest.Mock).mockResolvedValue({ data: { requires_inspection_estimate: true, visit_fee: 299 } });
   (reviewApi.matchAndPrice as jest.Mock).mockResolvedValue({
-    data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [{ name: "Verified", icon: "shield-check", color: "#3b82f6" }] }, bargain_available: false, selected_provider_price_options: null, standard_price: 499 },
+    data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [{ name: "Verified", icon: "shield-check", color: "#3b82f6" }] }, bargain_available: false, selected_provider_price_options: null, standard_price: 499, price_snapshot: { requires_inspection_estimate: false, standard_price: 499 } },
   });
   (reviewApi.confirmPriceChoice as jest.Mock).mockResolvedValue({ data: { booking_summary: {}, draft_status: "provider_matched" } });
   (reviewApi.getDraft as jest.Mock).mockResolvedValue(draftDto());
@@ -76,12 +75,34 @@ describe("useBookingReviewController", () => {
 
     expect(questionFlowApi.getQuestionFlow).toHaveBeenCalledWith(draftId);
     expect(reviewApi.checkServiceability).toHaveBeenCalledWith(draftId);
-    expect(reviewApi.resolvePriceEstimate).toHaveBeenCalledWith(draftId);
     expect(reviewApi.matchAndPrice).toHaveBeenCalledWith(draftId);
     expect(reviewApi.confirmPriceChoice).toHaveBeenCalledWith(draftId, "standard");
     expect(result.current.summary?.priceState).toEqual({ kind: "inspection_based" });
     expect(result.current.summary?.inspection?.visitFee).toEqual({ minorUnits: 29900, currency: "INR" });
     expect(result.current.eligibility).toEqual({ allowed: true });
+  });
+
+  it("reloads and binds every action to a replacement draft id", async () => {
+    const { result, rerender } = renderHook(
+      ({ id }) => useBookingReviewController(id),
+      { initialProps: { id: draftId } },
+    );
+    await waitFor(() => expect(result.current.uiState).toBe("ready"));
+
+    rerender({ id: "draft-2" });
+    await waitFor(() => expect(questionFlowApi.getQuestionFlow).toHaveBeenCalledWith("draft-2"));
+    await waitFor(() => expect(result.current.uiState).toBe("ready"));
+
+    (reviewApi.selectSlot as jest.Mock).mockResolvedValue(summaryDto({
+      preferred_date: "2026-08-25",
+      preferred_time_window: "10:00-11:00",
+    }));
+    await act(async () => {
+      await result.current.selectSlot("2026-08-25", "10:00-11:00", false);
+    });
+    expect(reviewApi.selectSlot).toHaveBeenCalledWith(
+      "draft-2", "2026-08-25", "10:00-11:00", false,
+    );
   });
 
   it("blocks with draft_incomplete when the question flow is not yet complete, never calling match-and-price", async () => {
@@ -94,12 +115,12 @@ describe("useBookingReviewController", () => {
     expect(reviewApi.matchAndPrice).not.toHaveBeenCalled();
   });
 
-  it("blocks with unserviceable when serviceability fails, never proceeding to pricing/matching", async () => {
+  it("blocks with unserviceable when serviceability fails, never proceeding to matching", async () => {
     (reviewApi.checkServiceability as jest.Mock).mockResolvedValue({ data: { serviceable: false, message: "no", draft_status: "serviceability_checked" } });
     const { result } = renderHook(() => useBookingReviewController(draftId));
     await waitFor(() => expect(result.current.uiState).toBe("blocked"));
     expect(result.current.blockedReason).toBe("unserviceable");
-    expect(reviewApi.resolvePriceEstimate).not.toHaveBeenCalled();
+    expect(reviewApi.matchAndPrice).not.toHaveBeenCalled();
   });
 
   it("does NOT auto-confirm a price tier when bargaining is available, and surfaces pricing_unavailable", async () => {

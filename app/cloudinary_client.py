@@ -38,5 +38,22 @@ def build_upload_params(public_id: str, folder: str | None = None) -> dict:
 
 
 def build_delivery_url(public_id: str, resource_type: str = "image") -> str:
+    """Delivery URL for an already-uploaded asset.
+
+    For `image` and `video`, Cloudinary treats the format as SEPARATE from the
+    public id and serves the asset at `<public_id>.<format>`. Our public ids
+    keep the original filename, so an id ending ".png" is served at ".png.png"
+    — odd-looking, but it is what the API returns as `secure_url` and the only
+    form that resolves. Returning the bare public id (what this used to do) gave
+    a 404 for every image in the vault; confirmed live against a real upload.
+
+    `raw` is different: the extension is part of the public id there and must
+    not be repeated.
+    """
     settings = get_settings()
-    return f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/{resource_type}/upload/{public_id}"
+    base = f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/{resource_type}/upload/{public_id}"
+    if resource_type in ("image", "video"):
+        _, _, ext = public_id.rpartition(".")
+        if ext and "/" not in ext:
+            return f"{base}.{ext}"
+    return base

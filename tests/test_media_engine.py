@@ -331,6 +331,37 @@ def test_media_asset_to_dict_has_preview_url():
     assert f"/v1/media/{a.id}/view" in d["preview_url"]
 
 
+@pytest.mark.asyncio
+async def test_remote_cloudinary_delivery_is_access_checked(monkeypatch):
+    """Private Cloudinary previews resolve only after canonical read access."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.engines.media.asset_service import MediaAssetService
+
+    media_id = uuid.uuid4()
+    asset = SimpleNamespace(
+        storage_driver="cloudinary",
+        storage_key="booking_photo/customer/photo.jpg",
+        mime_type="image/jpeg",
+        public_url=None,
+    )
+    svc = object.__new__(MediaAssetService)
+    svc.get_asset = AsyncMock(return_value={"id": str(media_id)})
+    svc._load = AsyncMock(return_value=asset)
+
+    monkeypatch.setattr(
+        "app.cloudinary_client.build_delivery_url",
+        lambda key, resource_type: f"https://cdn.test/{resource_type}/{key}",
+    )
+
+    url, mime_type = await svc.get_remote_url_for_serve(media_id)
+
+    svc.get_asset.assert_awaited_once_with(media_id)
+    assert url == "https://cdn.test/image/booking_photo/customer/photo.jpg"
+    assert mime_type == "image/jpeg"
+
+
 # ── 5. Router / API ───────────────────────────────────────────────────────────
 
 def test_media_new_router_registered_in_main():

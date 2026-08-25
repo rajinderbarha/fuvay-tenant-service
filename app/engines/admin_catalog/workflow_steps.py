@@ -213,6 +213,24 @@ def check_definition(steps: list[dict], transitions: list[dict]) -> dict:
     return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
+def check_capability_alignment(workflow: dict) -> list[str]:
+    """Return hard coherence errors between workflow flags and its journey.
+
+    Capability booleans are runtime gates, while ``steps_json`` is what every
+    app renders. A required approval that has no visible status step produces
+    a workflow that is enforced by the backend but invisible to customers,
+    providers and technicians.
+    """
+    steps = list(workflow.get("steps_json") or workflow.get("steps") or [])
+    mapped_statuses = {str(step.get("maps_to_status")) for step in steps if step.get("maps_to_status")}
+    errors: list[str] = []
+    if workflow.get("quote_approval_required") and "quote_required" not in mapped_statuses:
+        errors.append(
+            "Estimate approval is required, but the journey has no step mapped to 'quote_required'."
+        )
+    return errors
+
+
 def steps_for_audience(steps: list[dict], audience: str) -> list[dict]:
     """The steps one app should show. `audience` is customer|tenant|staff|admin."""
     flag = {
@@ -316,7 +334,28 @@ def annotate_progress(steps: list[dict], current_status: str | None,
     seen_current = False
     for step in steps:
         status = step.get("maps_to_status")
-        if status and status == current_status:
+        step_key = step.get("step_key")
+
+        # These are real milestones but intentionally have no direct job
+        # status in the admin workflow schema. Treating every status-less step
+        # as pending made a newly accepted booking show "Booking Created" as
+        # incomplete and "Technician Assigned" as skipped. A persisted job is
+        # conclusive proof of booking creation; `accepted` is the provider
+        # acceptance state owned by the assignment engine.
+        if step_key == "booking_created":
+            state = "done"
+        elif step_key == "provider_accepted" and current_status == "accepted":
+            state = "current"
+            seen_current = True
+        elif step_key == "provider_accepted" and (
+            "accepted" in reached or current_status in {
+                "assigned", "scheduled", "on_the_way", "reached_site",
+                "inspection_started", "inspection_done", "quote_required",
+                "service_started", "work_done", "completed",
+            }
+        ):
+            state = "done"
+        elif status and status == current_status:
             state = "current"
             seen_current = True
         elif status and status in reached:

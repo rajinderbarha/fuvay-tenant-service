@@ -6,14 +6,18 @@ import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCata
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   catalogApi,
   type MasterServiceEnriched, type ServiceCategory, type ServiceGroup,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import { RefreshCw, AlertCircle, CheckSquare, Square, X } from "lucide-react";
+import {
+  Activity, AlertCircle, Archive, CheckCircle2, CheckSquare, Layers3,
+  Plus, RefreshCw, Search, SlidersHorizontal, Square, Store, X,
+} from "lucide-react";
+import styles from "./masterServices.module.css";
 
 // ── Constant maps ───────────────────────────────────────────────────────────────
 const JOB_TYPES = [
@@ -288,7 +292,7 @@ export default function MasterServicesPage() {
   const [lifecycleFilter, setLifecycleFilter] = useState<"current" | "retired">(() => searchParams.get("lifecycle") === "retired" ? "retired" : "current");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   // Modal / detail
   const [modal, setModal] = useState<"none" | "create-service" | "edit">("none");
@@ -331,8 +335,8 @@ export default function MasterServicesPage() {
       limit: pageSize,
       offset: (page - 1) * pageSize,
     }),
-    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page],
-  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page]);
+    [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page, pageSize],
+  ), [q, categoryFilter, groupFilter, jobTypeFilter, pricingModelFilter, isActiveFilter, lifecycleFilter, readinessFilter, hasProvidersFilter, sortBy, sortDir, page, pageSize]);
 
   // Debounce the search box into the fetch dependency.
   React.useEffect(() => {
@@ -380,14 +384,20 @@ export default function MasterServicesPage() {
       service_group_id: data.service_group_id || undefined,
       // base_price/min_price/max_price are no longer admin-writable
       // (MODULE-L5-56) -- pricing is tenant-owned only.
-      description: data.description || undefined,
-      icon_url: data.icon_url || undefined,
+      description: data.description || null,
+      icon_url: data.icon_url || null,
       // Brand/Type/Issue/Checklist/Schedule/Address requirements are no
       // longer edited from this form -- they are configured per exact Job
       // Type in the Job-Type Blueprint (Dimensions/Problems & Questions/
       // Checklist/Workflow tabs). Existing values are left untouched here.
     });
     services.refetch(); summary.refetch(); setModal("none"); notify("Service updated.");
+  });
+
+  const iconAction = useAction(async ({ id, iconUrl }: { id: string; iconUrl: string | null }) => {
+    await catalogApi.updateMasterService(id, { icon_url: iconUrl });
+    await services.refetch();
+    notify(iconUrl ? "Service icon updated." : "Service icon removed.");
   });
 
   const activateAction = useAction(async (id: string) => {
@@ -475,12 +485,22 @@ export default function MasterServicesPage() {
       render: (_: unknown, row: MasterServiceEnriched) => row.deleted_at ? (
         <Btn variant="ghost" size="xs" onClick={() => router.push(`/admin/master-services/${row.id}`)}>View / restore</Btn>
       ) : (
-        <div>
-          <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</span>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>
-            {catMap[row.category_id] ?? "—"}
-            {row.service_group_id ? ` › ${groupMap[row.service_group_id] ?? "—"}` : ""}
-          </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }} onClick={event => event.stopPropagation()}>
+          <IconPicker
+            context="service_icon"
+            value={row.icon_url}
+            compact
+            size={42}
+            disabled={iconAction.loading}
+            onChange={iconUrl => { void iconAction.execute({ id: row.id, iconUrl }); }}
+          />
+          <div>
+            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</span>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-secondary)" }}>
+              {catMap[row.category_id] ?? "—"}
+              {row.service_group_id ? ` › ${groupMap[row.service_group_id] ?? "—"}` : ""}
+            </p>
+          </div>
         </div>
       ),
     },
@@ -539,33 +559,43 @@ export default function MasterServicesPage() {
 
   return (
     <AdminLayout activeNav="master-services">
-      <div className="catalog-admin-page">
-      <SectionHeader
-        title="Master Services"
-        subtitle="Canonical service identity and hierarchy. Configure job-type behavior in Catalog Workspace; providers own price amounts."
-        actions={
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" size="sm" onClick={() => { services.refetch(); summary.refetch(); }}>
-              <RefreshCw size={14} style={{ marginRight: 4 }} /> Refresh
-            </Btn>
-            <Btn variant="primary" size="sm" onClick={openCreate}>+ New Service</Btn>
-          </div>
-        }
-      />
+      <div className={`${styles.page} catalog-admin-page`}>
+      <header className={styles.pageHeader}>
+        <div className={styles.headerCopy}>
+          <div className={styles.eyebrow}><Layers3 size={14} /> Catalog governance</div>
+          <h1>Master Services</h1>
+          <p>Own the canonical service hierarchy, runtime readiness and provider adoption from one governed directory. Job-type behavior stays in Catalog Workspace; providers own their price amounts.</p>
+        </div>
+        <div className={styles.headerActions}>
+          <Btn variant="secondary" size="sm" onClick={() => { services.refetch(); summary.refetch(); }}>
+            <RefreshCw size={14} /> Refresh
+          </Btn>
+          <Btn variant="primary" size="sm" onClick={openCreate}>
+            <Plus size={14} /> New service
+          </Btn>
+        </div>
+      </header>
       <HomeServicesCatalogNav active="services" />
 
+      <div className={styles.directoryControlShell}>
+        <div className={styles.directoryControlIntro}>
+          <div className={styles.controlIcon}><SlidersHorizontal size={16} /></div>
+          <div><strong>Directory view</strong><span>Save reusable filters, sorting and columns for high-volume catalog work.</span></div>
+        </div>
       <OperationsDirectoryControls resourceKey="admin_master_services"
         filters={{ q, category_id:categoryFilter, service_group_id:groupFilter, job_type:jobTypeFilter, pricing_model:pricingModelFilter, is_active:isActiveFilter, lifecycle:lifecycleFilter, readiness:readinessFilter, has_providers:hasProvidersFilter }}
         sort={{ sort_by:sortBy, sort_direction:sortDir }} columns={columnsConfig}
         onColumnsChange={setColumnsConfig}
         onApplyView={(filters, sort) => {
-          setQ(String(filters.q ?? filters.search ?? "")); setCategoryFilter(String(filters.category_id ?? ""));
+          const nextQuery = String(filters.q ?? filters.search ?? "");
+          setQInput(nextQuery); setQ(nextQuery); setCategoryFilter(String(filters.category_id ?? ""));
           setGroupFilter(String(filters.service_group_id ?? "")); setJobTypeFilter(String(filters.job_type ?? ""));
           setPricingModelFilter(String(filters.pricing_model ?? "")); setIsActiveFilter(String(filters.is_active ?? ""));
           setLifecycleFilter(filters.lifecycle === "retired" ? "retired" : "current");
           setReadinessFilter(String(filters.readiness ?? "")); setHasProvidersFilter(String(filters.has_providers ?? ""));
           setSortBy(String(sort.sort_by ?? "display_order")); setSortDir(String(sort.sort_direction ?? "asc") as "asc"|"desc"); setPage(1);
         }}/>
+      </div>
 
       {/* Toast */}
       {toast && (
@@ -579,19 +609,26 @@ export default function MasterServicesPage() {
 
       {/* Summary cards */}
       {s && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-          <SummaryCard label="Total Services" value={s.total} />
-          <SummaryCard label="Active" value={s.active} accent="var(--success-text, #22543d)" />
-          <SummaryCard label="Inactive" value={s.inactive} accent="var(--warning-text, #744210)" />
-          <SummaryCard label="Blueprint Ready" value={s.blueprint_ready} accent="var(--brand, #1a56db)" />
-          <SummaryCard label="Needs Blueprint Work" value={s.blueprint_attention} accent="var(--danger-text, #c53030)" />
-          <SummaryCard label="Provider Enabled" value={s.provider_enabled} />
+        <div className={styles.metricGrid}>
+          {[
+            { label: "Catalog services", value: s.total, note: `${s.active} active · ${s.inactive} inactive`, tone: "neutral", icon: <Layers3 size={18} /> },
+            { label: "Runtime ready", value: s.blueprint_ready, note: "publishable blueprints", tone: "success", icon: <CheckCircle2 size={18} /> },
+            { label: "Needs attention", value: s.blueprint_attention, note: "blueprint gaps to resolve", tone: "danger", icon: <AlertCircle size={18} /> },
+            { label: "Provider adoption", value: s.provider_enabled, note: "enabled by providers", tone: "info", icon: <Store size={18} /> },
+          ].map(metric => (
+            <div className={`${styles.metricCard} ${styles[`metric_${metric.tone}`]}`} key={metric.label}>
+              <div className={styles.metricIcon}>{metric.icon}</div>
+              <div className={styles.metricContent}>
+                <span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.note}</small>
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {summary.loading && (
-        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-          {[...Array(6)].map((_, i) => (
-            <div key={i} style={{ flex: "1 1 140px", height: 80, borderRadius:"var(--radius-lg)", background: "var(--border)" }} className="skeleton" />
+        <div className={styles.metricGrid}>
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className={`${styles.metricSkeleton} skeleton`} />
           ))}
         </div>
       )}
@@ -629,15 +666,17 @@ export default function MasterServicesPage() {
       )}
 
       {/* Filters */}
-      <Card padding={16} style={{ marginBottom: 16 }}>
+      <div className={styles.filterShell}>
+      <Card padding={16}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 200 }}>
+            <Search size={15} className={styles.searchIcon} aria-hidden="true" />
             <input
               placeholder="Search by service name…"
               aria-label="Search master services"
               value={qInput} onChange={e => setQInput(e.target.value)}
               style={{
-                width: "100%", padding: "8px 12px", borderRadius:"var(--radius-md)", fontSize: 13,
+                width: "100%", padding: "8px 12px 8px 36px", borderRadius:"var(--radius-md)", fontSize: 13,
                 border: "1px solid var(--border)", background: "var(--surface)",
                 color: "var(--text-primary)", outline: "none", boxSizing: "border-box",
               }}
@@ -702,6 +741,7 @@ export default function MasterServicesPage() {
           </div>
         )}
       </Card>
+      </div>
 
       {/* Active filter chips — every filter including Advanced, each removable
           on its own. They were previously read-only badges that also omitted
@@ -738,6 +778,11 @@ export default function MasterServicesPage() {
 
       {/* Table */}
       {lifecycleFilter === "current" && rows.length > 0 && <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:8 }}><Btn size="xs" variant="ghost" onClick={()=>setSelectedIds(allSelected ? [] : rows.map(row=>row.id))}>{allSelected ? <CheckSquare size={14}/> : <Square size={14}/>} {allSelected ? "Clear page selection" : "Select this page"}</Btn></div>}
+      <div className={styles.tableShell}>
+      <div className={styles.tableHeader}>
+        <div><Activity size={16} /><strong>Service directory</strong><span>{services.data?.total ?? 0} records in this view</span></div>
+        {lifecycleFilter === "retired" ? <Badge variant="warning"><Archive size={12} /> Retired records</Badge> : <Badge variant="success" dot>Live catalog</Badge>}
+      </div>
       <DataTable
         columns={columns as unknown as Parameters<typeof DataTable>[0]["columns"]}
         rows={rows as unknown as Record<string, unknown>[]}
@@ -755,7 +800,8 @@ export default function MasterServicesPage() {
               : "No master services found. Create your first service to populate the catalog."
         }
       />
-      <MasterServicesPagination page={page} pageSize={pageSize} total={services.data?.total ?? 0} onPage={setPage} />
+      </div>
+      <MasterServicesPagination page={page} pageSize={pageSize} total={services.data?.total ?? 0} onPage={setPage} onPageSize={(value) => { setPageSize(value); setPage(1); }} />
 
       {/* Edit Modal (existing services only -- job_type/pricing_model/prices/
           Brand/Type/workflow requirements kept here ONLY for backward
@@ -840,7 +886,7 @@ export default function MasterServicesPage() {
   );
 }
 
-function MasterServicesPagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (page: number) => void }) {
+function MasterServicesPagination({ page, pageSize, total, onPage, onPageSize }: { page: number; pageSize: number; total: number; onPage: (page: number) => void; onPageSize: (pageSize: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
@@ -848,6 +894,12 @@ function MasterServicesPagination({ page, pageSize, total, onPage }: { page: num
         {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 records"}
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Select
+          label=""
+          value={String(pageSize)}
+          onChange={value => onPageSize(Number(value))}
+          options={[25, 50, 100].map(value => ({ value: String(value), label: `${value} / page` }))}
+        />
         <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
         <Badge variant="muted">Page {page} of {pages}</Badge>
         <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>

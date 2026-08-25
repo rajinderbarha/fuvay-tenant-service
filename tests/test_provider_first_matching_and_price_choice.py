@@ -1,7 +1,7 @@
-"""Provider-First Matching + Customer Price Choice — certification.
+"""Provider-first matching and provider-owned pricing certification.
 
 Tests the pure matching_engine functions directly (no DB) for scoring,
-ranking, Low/Mid/High price-tier correctness, and customer-safe redaction.
+ranking, customer-safe redaction, and the current no-price-tier contract.
 DB-aware eligibility-gate SQL (select_best_provider, get_area_market_comparison)
 is verified via static inspection (structure/columns present) plus a live
 end-to-end smoke test documented in PROVIDER_MATCHING_TEST_RESULTS.md, since
@@ -12,10 +12,8 @@ import pathlib
 import pytest
 from app.engines.home_service_booking.matching_engine import (
     CandidateSignals, compute_provider_score, rank_candidates, select_best_candidate,
-    build_customer_safe_provider, build_admin_provider, compute_price_tiers,
-    round_to_nearest_10, resolve_customer_offer_for_tier, CUSTOMER_VISIBLE_REASON,
+    build_customer_safe_provider, build_admin_provider, CUSTOMER_VISIBLE_REASON,
 )
-from app.engines.admin_catalog.bargain_engine import BargainValidationError
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MATCHING_ENGINE_SRC = (ROOT / "app/engines/home_service_booking/matching_engine.py").read_text(encoding="utf-8-sig")
@@ -95,82 +93,40 @@ def test_admin_view_shows_internal_score_breakdown():
     assert admin_view["internal_score_breakdown"]["health_score"] == 95.0
 
 
-# ── Test 7 & 8: price options generated correctly, low == allowed_offer_min ─
-# HS6 fix: compute_price_tiers previously delegated entirely to
-# evaluate_customer_bargain(), whose allowed_offer_max is the RAW
-# customer_max_price with no platform fee applied — high_price equaled
-# the pre-fee provider max, violating the hard gate "High must include
-# platform fee" (same asymmetric-formula bug already fixed on the admin
-# preview endpoint in an earlier sprint, but never fixed in this
-# separate matching-engine copy of the function until now). Now
-# delegates to compute_symmetric_customer_price_tiers, so high_price
-# correctly includes the platform fee (900 * 1.10 = 990, not 900).
-def test_price_tiers_match_ticket_example():
-    tiers = compute_price_tiers(
-        admin_min_price=600, admin_max_price=1200, admin_base_price=800,
-        customer_min_price=650, customer_max_price=900, platform_fee_percent=10,
-    )
-    assert tiers["allowed_offer_min"] == 715
-    assert tiers["allowed_offer_max"] == 990
-    assert tiers["low_price"] == 715
-    assert tiers["high_price"] == 990
-    assert tiers["low_price"] == tiers["allowed_offer_min"]
-    assert tiers["high_price"] != 900  # must not equal the pre-fee provider max
+# ── Retired tier pricing stays removed ─────────────────────────────────────
+def test_retired_price_tier_helpers_are_absent():
+    assert "def compute_price_tiers" not in MATCHING_ENGINE_SRC
+    assert "def resolve_customer_offer_for_tier" not in MATCHING_ENGINE_SRC
+    assert "PRICE_TIER_TO_FIELD" not in MATCHING_ENGINE_SRC
 
 
-def test_round_to_nearest_10():
-    assert round_to_nearest_10(807.5) == 810
-    assert round_to_nearest_10(804) == 800
-    assert round_to_nearest_10(805) == 810
+def test_retired_tier_rounding_helper_is_absent():
+    assert "def round_to_nearest_10" not in MATCHING_ENGINE_SRC
 
 
-def test_price_tiers_invalid_config_raises():
-    with pytest.raises(BargainValidationError):
-        compute_price_tiers(
-            admin_min_price=300, admin_max_price=500,
-            customer_min_price=450, customer_max_price=460, platform_fee_percent=10,
-        )
+def test_admin_price_bounds_are_absent_from_matching():
+    assert "admin_min_price" not in MATCHING_ENGINE_SRC
+    assert "admin_max_price" not in MATCHING_ENGINE_SRC
 
 
-# ── Test 9 & 10: customer selecting Low submits allowed_offer_min; cannot go below ─
-def test_resolve_customer_offer_for_low_equals_allowed_offer_min():
-    tiers = compute_price_tiers(
-        admin_min_price=600, admin_max_price=1200,
-        customer_min_price=650, customer_max_price=900, platform_fee_percent=10,
-    )
-    offer = resolve_customer_offer_for_tier(tiers, "low")
-    assert float(offer) == tiers["allowed_offer_min"] == 715
+# ── Selected-provider price + finance policy is authoritative ──────────────
+def test_selected_provider_price_uses_finance_policy():
+    assert "get_current_policy_by_vertical_key" in SERVICE_SRC
+    assert "calculate_customer_platform_fee" in SERVICE_SRC
 
 
-def test_customer_cannot_submit_below_low_no_raw_amount_input():
-    # The tier resolver only accepts 'low'/'mid'/'high' — there is no code path
-    # that accepts a raw customer-submitted numeric offer for tier selection,
-    # so "below Low" is structurally impossible via this function.
-    tiers = compute_price_tiers(
-        admin_min_price=600, admin_max_price=1200,
-        customer_min_price=650, customer_max_price=900, platform_fee_percent=10,
-    )
-    with pytest.raises(ValueError):
-        resolve_customer_offer_for_tier(tiers, "700")  # not a valid tier name
-    with pytest.raises(KeyError):
-        resolve_customer_offer_for_tier({}, "low")  # no fabricated fallback amount
+def test_customer_cannot_submit_retired_price_tiers():
+    assert 'price_tier != "standard"' in SERVICE_SRC
+    assert "Only price_tier='standard' is supported" in SERVICE_SRC
 
 
-def test_mid_price_never_outside_range():
-    tiers = compute_price_tiers(
-        admin_min_price=100, admin_max_price=200,
-        customer_min_price=195, customer_max_price=200, platform_fee_percent=0,
-    )
-    assert tiers["allowed_offer_min"] <= tiers["mid_price"] <= tiers["allowed_offer_max"]
+def test_match_and_price_is_the_single_resolution_path():
+    assert "home_services_match_and_price" in SERVICE_SRC
 
 
-# ── Payment mode / no client-side price computation markers ────────────────
-def test_price_tiers_payment_mode_is_direct():
-    tiers = compute_price_tiers(
-        admin_min_price=600, admin_max_price=1200,
-        customer_min_price=650, customer_max_price=900, platform_fee_percent=10,
-    )
-    assert tiers["payment_mode"] == "customer_pays_provider_directly"
+# ── Payment mode remains direct ────────────────────────────────────────────
+def test_payment_mode_is_direct():
+    assert "customer_pays_provider_directly" in SERVICE_SRC
 
 
 # ── Static inspection: eligibility gate covers every required check ────────

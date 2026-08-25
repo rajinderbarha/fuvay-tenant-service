@@ -6,6 +6,7 @@ from sqlalchemy import select, func, case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from pydantic import BaseModel, ConfigDict, Field
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.schemas.base import ok
@@ -390,6 +391,49 @@ async def list_policies(
 ):
     policies = await _svc.list_policies(db)
     return ok([p.to_dict() for p in policies], _rid(r), "admin.policies.list")
+
+
+class CreateReviewPolicyIn(BaseModel):
+    """Strict body for policy creation.
+
+    `policy_key`/`policy_name` are the only NOT NULL columns without a default;
+    everything else falls back to the model defaults, which are the safe
+    (moderated) settings.
+    """
+    model_config = ConfigDict(extra="forbid")
+    policy_key: str = Field(..., min_length=1, max_length=80)
+    policy_name: str = Field(..., min_length=1, max_length=200)
+    tenant_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
+    auto_approve_enabled: bool | None = None
+    require_admin_moderation: bool | None = None
+    allow_provider_reply: bool | None = None
+    require_reply_moderation: bool | None = None
+    allow_review_edit: bool | None = None
+    edit_window_hours: int | None = Field(None, ge=0, le=8760)
+    min_rating: int | None = Field(None, ge=1, le=5)
+    max_rating: int | None = Field(None, ge=1, le=5)
+    allow_media: bool | None = None
+    max_media_count: int | None = Field(None, ge=0, le=50)
+    is_active: bool | None = None
+
+
+@admin_policy_router.post("", status_code=201)
+async def create_policy(
+    body: CreateReviewPolicyIn,
+    r: Request,
+    u: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a review policy.
+
+    Real gap closed: this resource had list/get/patch but no create, and the
+    table ships empty -- so there was nothing to patch, `_get_policy` always
+    resolved to None, and every submitted review stayed `pending`/private
+    forever because auto-approval could not be turned on.
+    """
+    p = await _svc.create_policy(db, body.model_dump(exclude_none=True))
+    return ok(p.to_dict(), _rid(r), "admin.policy.created")
 
 
 @admin_policy_router.get("/{policy_id}")

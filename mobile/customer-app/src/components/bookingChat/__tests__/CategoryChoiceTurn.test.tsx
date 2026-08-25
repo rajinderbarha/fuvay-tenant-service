@@ -2,7 +2,7 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { CategoryChoiceTurn } from "../CategoryChoiceTurn";
-import { HomeCategory } from "../../../domain/customerHome";
+import { HomeCategory, HomeServiceGroup } from "../../../domain/customerHome";
 import { asCategoryId } from "../../../domain/ids";
 
 function category(name: string, slug: string): HomeCategory {
@@ -19,6 +19,27 @@ function category(name: string, slug: string): HomeCategory {
 const CATEGORIES = [
   category("Air Conditioning", "air-conditioning"),
   category("Plumbing", "plumbing"),
+];
+
+const GROUPS: HomeServiceGroup[] = [
+  {
+    serviceGroupId: "group-ac",
+    name: "AC & HVAC",
+    slug: "ac_services",
+    iconUrl: "https://res.cloudinary.com/example/ac.png",
+    description: null,
+    categoryId: CATEGORIES[0].categoryId,
+    categorySlug: "home_services",
+  },
+  {
+    serviceGroupId: "group-ro",
+    name: "RO & Water Purifier",
+    slug: "ro_services",
+    iconUrl: null,
+    description: null,
+    categoryId: CATEGORIES[0].categoryId,
+    categorySlug: "home_services",
+  },
 ];
 
 describe("CategoryChoiceTurn", () => {
@@ -40,6 +61,27 @@ describe("CategoryChoiceTurn", () => {
     );
     fireEvent.press(screen.getByText("Plumbing"));
     expect(onSelect).toHaveBeenCalledWith(CATEGORIES[1]);
+  });
+
+  it("prefers backend service groups so a broad category never mixes appliance problems", () => {
+    const onSelect = jest.fn();
+    const onSelectGroup = jest.fn();
+    renderWithProviders(
+      <CategoryChoiceTurn
+        categories={[category("Home Services", "home_services")]}
+        serviceGroups={GROUPS}
+        loading={false}
+        city="Ludhiana"
+        onSelect={onSelect}
+        onSelectGroup={onSelectGroup}
+      />,
+    );
+    expect(screen.getByText("AC & HVAC")).toBeTruthy();
+    expect(screen.getByText("RO & Water Purifier")).toBeTruthy();
+    expect(screen.queryByText("Home Services")).toBeNull();
+    fireEvent.press(screen.getByText("AC & HVAC"));
+    expect(onSelectGroup).toHaveBeenCalledWith(GROUPS[0]);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("offers only what the backend says is bookable here", () => {

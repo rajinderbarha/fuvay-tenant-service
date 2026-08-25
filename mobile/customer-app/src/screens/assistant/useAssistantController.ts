@@ -23,7 +23,11 @@ import { logger } from "../../utils/logger";
 const GUIDED_FALLBACK_DELAY_MS = 8000;
 
 function scopeKeyFor(entry: AssistantEntryContext): string {
-  return entry.source === "service_card" ? entry.categorySlug : "generic";
+  return entry.source === "service_card"
+    ? (entry.masterServiceId
+        ? `${entry.categorySlug}:${entry.serviceGroupSlug ?? "all"}:${entry.masterServiceId}`
+        : entry.serviceGroupSlug ? `${entry.categorySlug}:${entry.serviceGroupSlug}` : entry.categorySlug)
+    : "generic";
 }
 
 export interface AssistantOfferingOption {
@@ -320,7 +324,12 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
         // whole failure mode structurally impossible -- there is no
         // resumable-draft state left in this controller to leak.
         setActivityStage("checking_serviceability");
-        const bootstrapRaw = await assistantBootstrapApi.getAssistantBootstrap(entryContext.categorySlug, entryContext.zipcode);
+        const bootstrapRaw = await assistantBootstrapApi.getAssistantBootstrap(
+          entryContext.categorySlug,
+          entryContext.zipcode,
+          entryContext.serviceGroupSlug,
+          entryContext.masterServiceId,
+        );
         if (isStale(generation)) return;
         const bootstrap = bootstrapRaw.data;
 
@@ -340,7 +349,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
         // before (Chat, Review, a previous free-text question) must not
         // linger open over it, covering the lower issue options.
         Keyboard.dismiss();
-        const categoryName = bootstrap.category.name ?? entryContext.categoryName;
+        const categoryName = bootstrap.service_group?.name ?? bootstrap.category.name ?? entryContext.categoryName;
         // Language selection removed by request -- the real, backend-owned
         // issue list is shown immediately rather than gated behind a
         // language prompt. `languageRef` stays at its default; every
@@ -581,6 +590,12 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
         categorySlugOverride || offeringChoice.categorySlug,
         entryContext.source === "service_card" ? entryContext.zipcode : null,
         primary.id, session?.id ?? null, rest.map(o => o.id), languageRef.current,
+        categorySlugOverride ? null : (
+          entryContext.source === "service_card" ? entryContext.serviceGroupSlug : null
+        ),
+        categorySlugOverride ? null : (
+          entryContext.source === "service_card" ? entryContext.masterServiceId : null
+        ),
       );
       if (isStale(generation)) return;
       setOfferingChoice(null);
@@ -623,17 +638,22 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setActivityStage("understanding_request");
     armFallbackTimer();
     try {
-      // NO category slug: the interpreter searches every category bookable at this
-      // ZIP. Scoping it to the conversation's own category is what made every
-      // answer come back shaped like that category -- a customer describing a
-      // leaking tap in an AC-entered chat had nothing real to be matched against.
+      // An explicit Home service-group tap stays inside that group. A bare Ask
+      // Fuvay entry remains cross-catalog, which is the only context where the
+      // customer has not already told us which appliance/category they mean.
       const raw = await assistantBootstrapApi.interpretOfferingSelectionText(
-        null, entryContext.source === "service_card" ? entryContext.zipcode : null,
+        entryContext.source === "service_card" ? offeringChoice.categorySlug : null,
+        entryContext.source === "service_card" ? entryContext.zipcode : null,
         text, session?.id ?? null,
+        entryContext.source === "service_card" ? entryContext.serviceGroupSlug : null,
+        entryContext.source === "service_card" ? entryContext.masterServiceId : null,
       );
       if (isStale(generation)) return;
       const { action, reply, matched_offering: matchedOffering, offerings } = raw.data;
-      setOfferingChoice(prev => (prev ? { ...prev, offerings: offerings.map(o => ({ id: o.id, slug: o.id, name: o.name })) } : prev));
+      setOfferingChoice(prev => (prev ? {
+        ...prev,
+        offerings: offerings.map(o => ({ id: o.id, slug: o.id, name: o.name })),
+      } : prev));
       setMessages(prev => [
         ...prev,
         { id: `local-${Date.now()}`, role: "user", content: text, createdAt: null },
@@ -655,7 +675,11 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
           } : prev));
         }
         await selectOffering(
-          [{ id: matchedOffering.id, slug: matchedOffering.id, name: matchedOffering.name }],
+          [{
+            id: matchedOffering.id,
+            slug: matchedOffering.id,
+            name: matchedOffering.name,
+          }],
           matchedCategory,
         );
       }
@@ -850,8 +874,8 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
     setUiState("ready");
   }, []);
 
-  // Resolve the REAL price as soon as the backend says every question is
-  // answered.
+  // Match the provider and resolve the REAL provider-owned price as one
+  // atomic backend operation once every question is answered.
   //
   // Real bug fixed here: the Booking Assistant showed "Price pending"
   // forever, because price was only ever resolved on the Booking Review
@@ -862,7 +886,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
   // Runs exactly once per draft (guarded by `pricedDraftRef`), never
   // fabricates a value, and stays silent on failure: an unresolved price
   // simply keeps the honest "Price pending" copy rather than showing an
-  // error, since Booking Review re-resolves it authoritatively anyway.
+  // invented catalog amount. Booking Review revalidates matching.
   const pricedDraftRef = useRef<string | null>(null);
   const questionsComplete = !!envelope && envelope.currentQuestion === null && !!envelope.progress?.complete;
   useEffect(() => {
@@ -876,7 +900,7 @@ export function useAssistantController(entryContext: AssistantEntryContext, cust
         // same order Booking Review itself uses.
         await reviewApi.checkServiceability(draftId);
         if (cancelled) return;
-        const raw = await reviewApi.resolvePriceEstimate(draftId);
+        const raw = await reviewApi.matchAndPrice(draftId);
         if (cancelled) return;
         const snap = raw.data.price_snapshot;
         if (!snap) return;

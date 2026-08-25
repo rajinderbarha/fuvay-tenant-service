@@ -21,6 +21,6 @@ export default defineConfig({
     // Playwright specs must never be collected by Vitest. The historical
     // root-level reproduction spec otherwise starts browser-test machinery
     // under jsdom and makes `npm test` appear to hang indefinitely.
-    exclude: ["**/node_modules/**", "**/.next/**", "**/browser-tests/**", "**/tests-repro-upload.spec.ts"],
+    exclude: ["**/node_modules/**", "**/.next/**", "**/tests-repro-upload.spec.ts"],
   },
 });

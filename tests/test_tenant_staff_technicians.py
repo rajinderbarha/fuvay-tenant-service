@@ -149,4 +149,6 @@ class TestEligibilityGateHardening:
 
     def test_offering_match_uses_real_job_offering_id(self):
         c = _read(ASSIGN_SVC)
-        assert "job_offering_id = str(job.offering_id)" in c
+        assert "_tenant_service_id_for_job" in c
+        assert "TenantService.master_service_id == job.offering_id" in c
+        assert "TenantService.job_type_id == job.job_type_id" in c

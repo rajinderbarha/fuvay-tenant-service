@@ -45,6 +45,8 @@ def _job(booking_id, tenant_id, **overrides):
         customer_id=None, assigned_staff_id=None,
         status="pending_assignment", assignment_status="unassigned",
         scheduled_date=None, scheduled_time_window=None, updated_at=None,
+        service_job_workflow_id=None, completion_data=None,
+        warranty_days_snapshot=None, warranty_expires_at=None,
     )
     defaults.update(overrides)
     job = MagicMock()

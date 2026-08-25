@@ -27,7 +27,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, CheckCircle2, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
 import { Btn } from "../shared/ui";
-import { MediaUploader } from "../media/MediaUploader";
+import { ProfilePhotoUploader } from "../shared/ProfilePhotoUploader";
 import {
   providerTeamMembersApi, providerTeamSkillsApi, homeServicesSetupApi, getTenantId,
   ServiceOSError, type ProviderTeamMember, type MediaAsset, type TenantEnabledService,
@@ -79,6 +79,9 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   const [email, setEmail] = useState(existing?.email ?? "");
   const [designation, setDesignation] = useState(existing?.designation ?? "");
   const [photoAsset, setPhotoAsset] = useState<MediaAsset | null>(null);
+  // Distinguishes "left the existing photo alone" from "explicitly cleared it",
+  // so an edit that removes the photo actually persists the removal.
+  const [photoCleared, setPhotoCleared] = useState(false);
 
   // ── Role & capacity ──
   const [memberType, setMemberType] = useState<string>(existing?.member_type ?? "technician");
@@ -217,7 +220,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
       can_receive_assignment: canReceive,
       skill_ids: isTechnician ? selectedSkillIds : [],
       supported_offering_ids: isTechnician ? selectedOfferingIds : [],
-      profile_photo_url: photoAsset?.preview_url ?? (isEdit ? undefined : null),
+      profile_photo_url: photoAsset?.preview_url ?? (photoCleared || !isEdit ? null : undefined),
       ...(!isEdit ? { inherit_business_hours: isTechnician } : {}),
       reports_to_display_name: reportsToName.trim() || null,
       reports_to_designation: reportsToDesignation.trim() || null,
@@ -293,9 +296,17 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
 
           {/* ── Identity ── */}
           <SectionTitle>Identity</SectionTitle>
-          <Field label="Profile photo">
-            <MediaUploader mediaContext="staff_profile_photo" ownerType="tenant" ownerId={tenantId}
-              multiple={false} canDelete={false} label="Upload photo" onUploaded={setPhotoAsset}/>
+          <Field label="Profile photo" hint="JPG, PNG or WebP up to 5 MB. Crop the face to the centre of the circle.">
+            <ProfilePhotoUploader
+              ownerType="staff_managed"
+              ownerId={tenantId}
+              currentPreviewUrl={photoAsset?.preview_url ?? existing?.profile_photo_url ?? null}
+              currentMediaId={photoAsset?.id ?? null}
+              displayName={fullName || existing?.full_name}
+              size="lg"
+              onUploaded={asset => { setPhotoAsset(asset); setPhotoCleared(false); }}
+              onRemoved={() => { setPhotoAsset(null); setPhotoCleared(true); }}
+            />
           </Field>
           <Row>
             <Field label="Full name" required><Input value={fullName} onChange={setFullName} placeholder="Enter full name"/></Field>

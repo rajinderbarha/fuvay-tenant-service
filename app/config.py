@@ -124,6 +124,25 @@ class Settings(BaseSettings):
     # ── AI (backend-only — never sent to any frontend/mobile client) ─
     DEEPSEEK_API_KEY: str = ""
 
+    # ── Meta Cloud API (WhatsApp / Instagram inbound + outbound) ────
+    # All four are required for the messaging gateway to do anything. Empty
+    # values fail CLOSED, on purpose: an unconfigured deployment rejects
+    # webhook traffic rather than accepting unsigned requests, and outbound
+    # sends no-op rather than erroring.
+    #   APP_SECRET      — verifies X-Hub-Signature-256 over the raw body
+    #   VERIFY_TOKEN    — the string echoed during the one-time GET handshake
+    #   ACCESS_TOKEN    — Graph API bearer for sending replies
+    #   PHONE_NUMBER_ID — the WhatsApp business number messages are sent from
+    META_APP_SECRET: str = ""
+    META_VERIFY_TOKEN: str = ""
+    META_ACCESS_TOKEN: str = ""
+    META_PHONE_NUMBER_ID: str = ""
+
+    # Origin of the customer web surface, used to build chat -> web handoff
+    # links. Empty means no handoff link is ever sent: the bot keeps the
+    # conversation in chat rather than handing a customer a URL to nowhere.
+    CUSTOMER_WEB_BASE_URL: str = ""
+
     # ── Weather ────────────────────────────────────────────────────
     # weatherapi.com. Empty means no weather source, and every dependent feature
     # degrades honestly rather than guessing: the Home widget hides itself, slot

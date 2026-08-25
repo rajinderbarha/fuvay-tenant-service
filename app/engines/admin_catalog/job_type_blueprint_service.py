@@ -159,9 +159,18 @@ class JobTypeBlueprintService:
     async def review_workflow_steps(self, master_service_id: uuid.UUID,
                                     job_type_id: uuid.UUID) -> dict:
         """Coherence review of the published step definition (non-fatal)."""
-        from app.engines.admin_catalog.workflow_steps import check_definition
+        from app.engines.admin_catalog.workflow_steps import check_capability_alignment, check_definition
         steps, transitions = await self._current_step_definition(master_service_id, job_type_id)
         result = check_definition(steps, transitions)
+        row = (await self.db.execute(select(ServiceJobWorkflow).where(
+            ServiceJobWorkflow.master_service_id == master_service_id,
+            ServiceJobWorkflow.job_type_id == job_type_id,
+            ServiceJobWorkflow.is_current.is_(True),
+        ))).scalar_one_or_none()
+        if row:
+            alignment_errors = check_capability_alignment(row.to_dict())
+            result["errors"].extend(alignment_errors)
+            result["valid"] = not result["errors"]
         result["step_count"] = len(steps)
         result["transition_count"] = len(transitions)
         return result
@@ -207,6 +216,12 @@ class JobTypeBlueprintService:
         ))).scalar_one_or_none()
 
         if current is None:
+            from app.engines.admin_catalog.workflow_steps import check_capability_alignment
+            alignment_errors = check_capability_alignment(data)
+            if alignment_errors:
+                raise ServiceOSException(
+                    "INVALID_WORKFLOW_STEPS", " ".join(alignment_errors), status_code=422,
+                )
             row = ServiceJobWorkflow(
                 master_service_id=master_service_id, job_type_id=job_type_id,
                 version_number=1, is_current=True, **data,
@@ -232,6 +247,12 @@ class JobTypeBlueprintService:
             "transitions_json": current.transitions_json or [],
             **data,
         }
+        from app.engines.admin_catalog.workflow_steps import check_capability_alignment
+        alignment_errors = check_capability_alignment(merged)
+        if alignment_errors:
+            raise ServiceOSException(
+                "INVALID_WORKFLOW_STEPS", " ".join(alignment_errors), status_code=422,
+            )
         if all(getattr(current, field) == value for field, value in merged.items()):
             return current.to_dict()
         from datetime import datetime, timezone

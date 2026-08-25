@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, or_, case, cast, String
+from sqlalchemy import select, func, or_, and_, case, cast, String, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -271,20 +271,35 @@ class HomeServicesCustomerDirectoryService:
 
     async def _list_customers_sql(
         self, *, q: str | None, activity: str | None, repeat_status: str | None,
-        page: int, page_size: int,
+        payment_reliability: str | None, complaint_state: str | None,
+        sort: str, page: int, page_size: int,
+        tenant_id: uuid.UUID | None = None,
     ) -> dict:
-        """Platform-admin list with filtering and pagination inside PostgreSQL."""
+        """High-cardinality directory query executed entirely in PostgreSQL.
+
+        Tenant callers use the same rollup as platform admins, but the query
+        projects only a deterministic tenant-scoped alias. Raw identity is
+        never joined into or searchable from the provider surface.
+        """
         active_cutoff = _utcnow() - timedelta(days=ACTIVE_WINDOW_DAYS)
-        rollup = self._customer_rollup_subquery()
+        rollup = self._customer_rollup_subquery(tenant_id=tenant_id)
+        complaint_clauses = [
+            CustomerComplaint.customer_id.isnot(None),
+            CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+        ]
+        payment_clauses = [
+            ServicePaymentRecord.customer_id.isnot(None),
+            ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_DECIDED_STATUSES),
+        ]
+        if tenant_id:
+            complaint_clauses.append(CustomerComplaint.tenant_id == tenant_id)
+            payment_clauses.append(ServicePaymentRecord.tenant_id == tenant_id)
         open_complaints = (
             select(
                 CustomerComplaint.customer_id.label("customer_id"),
                 func.count(CustomerComplaint.id).label("open_complaints"),
             )
-            .where(
-                CustomerComplaint.customer_id.isnot(None),
-                CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
-            )
+            .where(*complaint_clauses)
             .group_by(CustomerComplaint.customer_id)
             .subquery("hs_customer_open_complaints")
         )
@@ -297,25 +312,44 @@ class HomeServicesCustomerDirectoryService:
                     else_=0,
                 )).label("review_records"),
             )
-            .where(
-                ServicePaymentRecord.customer_id.isnot(None),
-                ServicePaymentRecord.reconciliation_status.in_(PAYMENT_RELIABILITY_DECIDED_STATUSES),
-            )
+            .where(*payment_clauses)
             .group_by(ServicePaymentRecord.customer_id)
             .subquery("hs_customer_payment_reliability")
         )
-        joined = (
-            rollup.outerjoin(User, User.id == rollup.c.customer_id)
-            .outerjoin(open_complaints, open_complaints.c.customer_id == rollup.c.customer_id)
-            .outerjoin(payment, payment.c.customer_id == rollup.c.customer_id)
-        )
+        joined = rollup.outerjoin(
+            open_complaints, open_complaints.c.customer_id == rollup.c.customer_id,
+        ).outerjoin(payment, payment.c.customer_id == rollup.c.customer_id)
+        if tenant_id is None:
+            joined = joined.outerjoin(User, User.id == rollup.c.customer_id)
+
+        complaint_count = func.coalesce(open_complaints.c.open_complaints, 0)
+        decided_count = func.coalesce(payment.c.decided_records, 0)
+        review_count = func.coalesce(payment.c.review_records, 0)
+        alias_expr = None
+        if tenant_id:
+            # Must stay byte-for-byte compatible with customer_alias().
+            # pgcrypto is installed by migration 001. Computing the alias in
+            # SQL keeps alias search and pagination correct at any cardinality.
+            digest_input = literal(
+                "serviceos-customer-alias-v1" + str(tenant_id)
+            ) + cast(rollup.c.customer_id, String)
+            alias_expr = func.concat(
+                literal("Customer HS-"),
+                func.upper(func.substr(
+                    func.encode(func.digest(digest_input, literal("sha256")), literal("hex")),
+                    1, 4,
+                )),
+            )
         filters = []
         if q:
             needle = f"%{q.strip()}%"
-            filters.append(or_(
-                User.full_name.ilike(needle), User.email.ilike(needle),
-                User.phone.ilike(needle), cast(rollup.c.customer_id, String).ilike(needle),
-            ))
+            if tenant_id:
+                filters.append(alias_expr.ilike(needle))
+            else:
+                filters.append(or_(
+                    User.full_name.ilike(needle), User.email.ilike(needle),
+                    User.phone.ilike(needle), cast(rollup.c.customer_id, String).ilike(needle),
+                ))
         if activity == "active":
             filters.append(rollup.c.last_job_at >= active_cutoff)
         elif activity == "inactive":
@@ -326,21 +360,48 @@ class HomeServicesCustomerDirectoryService:
             filters.append(rollup.c.completed_jobs == 1)
         elif repeat_status == "none":
             filters.append(rollup.c.completed_jobs == 0)
+        if payment_reliability == "reliable":
+            filters.append(and_(
+                decided_count >= PAYMENT_RELIABILITY_MIN_DECISIONS,
+                review_count == 0,
+            ))
+        elif payment_reliability == "needs_review":
+            filters.append(and_(
+                decided_count >= PAYMENT_RELIABILITY_MIN_DECISIONS,
+                review_count > 0,
+            ))
+        elif payment_reliability == "insufficient_data":
+            filters.append(decided_count < PAYMENT_RELIABILITY_MIN_DECISIONS)
+        if complaint_state == "open":
+            filters.append(complaint_count > 0)
+        elif complaint_state == "clear":
+            filters.append(complaint_count == 0)
+
+        order_by = {
+            "last_activity_asc": (rollup.c.last_activity_at.asc().nulls_last(), rollup.c.customer_id),
+            "completed_desc": (rollup.c.completed_jobs.desc(), rollup.c.last_activity_at.desc().nulls_last()),
+            "complaints_desc": (complaint_count.desc(), rollup.c.last_activity_at.desc().nulls_last()),
+            "first_booking_desc": (rollup.c.first_booking_at.desc().nulls_last(), rollup.c.customer_id),
+        }.get(sort, (rollup.c.last_activity_at.desc().nulls_last(), rollup.c.customer_id))
 
         total = int((await self.db.execute(
             select(func.count()).select_from(joined).where(*filters)
         )).scalar() or 0)
+        columns = [
+            rollup,
+            complaint_count.label("open_complaints"),
+            decided_count.label("decided_records"),
+            review_count.label("review_records"),
+        ]
+        if tenant_id:
+            columns.append(alias_expr.label("alias"))
+        else:
+            columns.extend((User.full_name.label("name"), User.email, User.phone))
         rows = (await self.db.execute(
-            select(
-                rollup,
-                User.full_name.label("name"), User.email, User.phone,
-                func.coalesce(open_complaints.c.open_complaints, 0).label("open_complaints"),
-                func.coalesce(payment.c.decided_records, 0).label("decided_records"),
-                func.coalesce(payment.c.review_records, 0).label("review_records"),
-            )
+            select(*columns)
             .select_from(joined)
             .where(*filters)
-            .order_by(rollup.c.last_activity_at.desc(), rollup.c.customer_id)
+            .order_by(*order_by)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )).mappings().all()
@@ -351,7 +412,7 @@ class HomeServicesCustomerDirectoryService:
             last_job_at = row["last_job_at"]
             decided = int(row["decided_records"] or 0)
             review = int(row["review_records"] or 0)
-            items.append({
+            item = {
                 "customer_id": str(row["customer_id"]),
                 "is_active": bool(last_job_at and last_job_at >= active_cutoff),
                 "repeat_status": "repeat" if completed >= 2 else ("one_time" if completed == 1 else "none"),
@@ -363,8 +424,15 @@ class HomeServicesCustomerDirectoryService:
                 "first_booking_at": row["first_booking_at"].isoformat() if row["first_booking_at"] else None,
                 "last_activity_at": row["last_activity_at"].isoformat() if row["last_activity_at"] else None,
                 "payment_reliability": _payment_reliability_status(decided, review),
-                "name": row["name"], "email": row["email"], "phone": row["phone"],
-            })
+            }
+            if tenant_id:
+                item["alias"] = row["alias"]
+            else:
+                item.update({
+                    "name": row["name"], "email": row["email"], "phone": row["phone"],
+                    "providers_used_count": int(row["providers_used_count"] or 0),
+                })
+            items.append(item)
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     async def get_summary(self, *, tenant_id: uuid.UUID | None = None) -> dict:
@@ -464,87 +532,17 @@ class HomeServicesCustomerDirectoryService:
 
     async def list_customers(self, *, q: str | None = None, activity: str | None = None,
                               repeat_status: str | None = None,
+                              payment_reliability: str | None = None,
+                              complaint_state: str | None = None,
+                              sort: str = "last_activity_desc",
                               page: int = 1, page_size: int = 20,
                               tenant_id: uuid.UUID | None = None) -> dict:
-        if tenant_id is None:
-            return await self._list_customers_sql(
-                q=q, activity=activity, repeat_status=repeat_status,
-                page=page, page_size=page_size,
-            )
-        agg = await self._customer_aggregates(tenant_id=tenant_id)
-        customer_ids = list(agg.keys())
-        payment_reliability = await self._payment_reliability_by_customer(
-            customer_ids, tenant_id=tenant_id,
+        return await self._list_customers_sql(
+            q=q, activity=activity, repeat_status=repeat_status,
+            payment_reliability=payment_reliability,
+            complaint_state=complaint_state, sort=sort,
+            page=page, page_size=page_size, tenant_id=tenant_id,
         )
-
-        users_by_id: dict[uuid.UUID, User] = {}
-        if customer_ids:
-            user_rows = (await self.db.execute(select(User).where(User.id.in_(customer_ids)))).scalars().all()
-            users_by_id = {u.id: u for u in user_rows}
-
-        # Real per-customer open-complaint count (one grouped query, not
-        # N+1) -- used for the list row's complaint indicator.
-        open_complaints_by_customer: dict[uuid.UUID, int] = {}
-        if customer_ids:
-            oc_clauses = [
-                CustomerComplaint.customer_id.in_(customer_ids),
-                CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
-            ]
-            if tenant_id:
-                oc_clauses.append(CustomerComplaint.tenant_id == tenant_id)
-            oc_rows = (await self.db.execute(
-                select(CustomerComplaint.customer_id, func.count()).where(*oc_clauses).group_by(CustomerComplaint.customer_id)
-            )).all()
-            open_complaints_by_customer = {cid: c for cid, c in oc_rows}
-
-        items = []
-        for cid, a in agg.items():
-            u = users_by_id.get(cid)
-            if q:
-                # Tenant-scoped callers search by alias only -- raw name/
-                # phone/email must never be searchable/reachable from a
-                # tenant-facing surface (customer-privacy policy). The
-                # cross-tenant admin console (tenant_id=None) keeps the old
-                # richer search since it's platform-staff-only.
-                if tenant_id:
-                    haystack = customer_alias(tenant_id, cid).lower()
-                else:
-                    haystack = f"{u.full_name if u else ''} {u.email if u else ''} {u.phone if u else ''} {cid}".lower()
-                if q.lower() not in haystack:
-                    continue
-            if activity == "active" and not a["is_active"]:
-                continue
-            if activity == "inactive" and a["is_active"]:
-                continue
-            if repeat_status and a["repeat_status"] != repeat_status:
-                continue
-            item = {
-                "customer_id": str(cid),
-                "is_active": a["is_active"],
-                "repeat_status": a["repeat_status"],
-                "completed_jobs": a["completed_jobs"],
-                "cancelled_jobs": a["cancelled_jobs"],
-                "services_used_count": a["services_used_count"],
-                "open_complaints": open_complaints_by_customer.get(cid, 0),
-                "first_booking_at": a["first_booking_at"].isoformat() if a["first_booking_at"] else None,
-                "last_activity_at": a["last_activity_at"].isoformat() if a["last_activity_at"] else None,
-                "payment_reliability": payment_reliability.get(cid, {}).get("status", "insufficient_data"),
-            }
-            if tenant_id:
-                item["alias"] = customer_alias(tenant_id, cid)
-            else:
-                # Platform-admin console only -- never reached from a
-                # tenant-scoped call.
-                item["name"] = u.full_name if u else None
-                item["email"] = u.email if u else None
-                item["phone"] = u.phone if u else None
-                item["providers_used_count"] = a["providers_used_count"]
-            items.append(item)
-
-        items.sort(key=lambda x: x["last_activity_at"] or "", reverse=True)
-        total = len(items)
-        start = (page - 1) * page_size
-        return {"items": items[start:start + page_size], "total": total, "page": page, "page_size": page_size}
 
     async def get_customer_detail(self, customer_id: uuid.UUID, *, tenant_id: uuid.UUID | None = None) -> dict:
         agg = await self._customer_aggregates(customer_ids=[customer_id], tenant_id=tenant_id)

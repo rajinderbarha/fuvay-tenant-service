@@ -10,10 +10,6 @@ function rawHome(overrides: Partial<Record<string, unknown>> = {}) {
     bookable_categories: [{ category_id: "cat-1", name: "AC & Cooling", code: "ac", icon_url: null }],
     active_booking: null,
     unread_notification_count: 2,
-    campaigns: [
-      { campaign_id: "c-2", title: "Second", priority: 20 },
-      { campaign_id: "c-1", title: "First", priority: 10 },
-    ],
     capabilities: { bargain_available: true, photo_attach_available: true, chatbot_language_selectable: true },
     ...overrides,
   };
@@ -33,12 +29,26 @@ describe("quick issues", () => {
     expect(home.quickIssues).toEqual([{
       issueId: "i-1", label: "AC Not Cooling",
       categoryId: "cat-1", categorySlug: "ac-cooling", categoryName: "AC & Cooling",
-      // No admin artwork on this problem; the tile falls back to a
-      // wording-derived glyph rather than showing a blank square.
-      iconUrl: null,
       // The backend sent no intent, so the problem belongs to neither intent
       // section -- the app must not guess one from the wording.
       intent: null,
+    }]);
+  });
+
+  it("adapts eligible master services as a distinct home collection", () => {
+    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome({
+      bookable_master_services: [{
+        master_service_id: "svc-1", name: "AC Repair", slug: "ac-repair",
+        description: "Diagnosis and repair", icon_url: "https://cdn.example/ac.svg",
+        service_group_id: "group-ac", service_group_name: "AC & HVAC",
+        service_group_slug: "ac-hvac", category_id: "cat-1", category_slug: "home_services",
+      }],
+    })));
+    expect(home.bookableMasterServices).toEqual([{
+      masterServiceId: "svc-1", name: "AC Repair", slug: "ac-repair",
+      description: "Diagnosis and repair", iconUrl: "https://cdn.example/ac.svg",
+      serviceGroupId: "group-ac", serviceGroupName: "AC & HVAC",
+      serviceGroupSlug: "ac-hvac", categoryId: "cat-1", categorySlug: "home_services",
     }]);
   });
 
@@ -55,11 +65,6 @@ describe("customer home adapter", () => {
 
   it("rejects a malformed payload rather than guessing missing fields", () => {
     expect(() => parseCustomerHomeDto({ address: {} })).toThrow(ContractValidationError);
-  });
-
-  it("sorts campaigns by backend priority ascending", () => {
-    const home = adaptCustomerHome(parseCustomerHomeDto(rawHome()));
-    expect(home.campaigns.map(c => c.campaignId)).toEqual(["c-1", "c-2"]);
   });
 
   it("adapts a null address and null active_booking without throwing", () => {

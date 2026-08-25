@@ -1155,9 +1155,15 @@ async def list_service_brand_mappings(service_id: uuid.UUID, r: Request,
 @router.get("/master-services/{service_id}/issues", response_model=ApiResponse[dict],
             summary="List issue-type mappings for service", tags=["Issue Type Mapping"])
 async def list_service_issue_mappings(service_id: uuid.UUID, r: Request,
+                                       job_type_id: uuid.UUID | None = Query(None),
                                        u: UserContext = Depends(require_super_admin),
-                                       s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_service_issue_mappings(service_id), _rid(r), ENGINE_ID)
+                                       s: ServiceOptionService = Depends(_opt_svc)):
+    # The workspace contract is an object so it can evolve with pagination and
+    # summary metadata. Returning the service's raw list here contradicted the
+    # declared ApiResponse[dict] and caused FastAPI response validation to turn
+    # otherwise valid problem rows into an HTTP 500.
+    return ok({"issues": await s.list_service_issue_mappings(service_id, job_type_id)},
+              _rid(r), ENGINE_ID)
 
 
 @router.post("/master-services/{service_id}/brands", response_model=ApiResponse[dict],
@@ -1524,6 +1530,35 @@ async def delete_service_option(option_id: uuid.UUID, r: Request,
                                  u: UserContext = Depends(require_super_admin),
                                  s: AdminCatalogService = Depends(_svc)):
     return ok(await s.delete_service_option(option_id), _rid(r), ENGINE_ID)
+
+
+# Canonical lifecycle routes live on this router too.  The separate Sprint 34E
+# option router used to be mounted beside these CRUD routes with the exact same
+# paths, leaving two handlers for every list/get/write and duplicate OpenAPI
+# operation IDs.  Keep one public route owner while preserving the explicit
+# lifecycle actions used by the enterprise setup UI.
+@router.post("/service-options/{option_id}/activate", response_model=ApiResponse[dict],
+             summary="Activate master service option", tags=["Master Service Options"])
+async def activate_service_option(option_id: uuid.UUID, r: Request,
+                                  u: UserContext = Depends(require_super_admin),
+                                  s: ServiceOptionService = Depends(_opt_svc)):
+    return ok(await s.activate_service_option(option_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/service-options/{option_id}/deactivate", response_model=ApiResponse[dict],
+             summary="Deactivate master service option", tags=["Master Service Options"])
+async def deactivate_service_option(option_id: uuid.UUID, r: Request,
+                                    u: UserContext = Depends(require_super_admin),
+                                    s: ServiceOptionService = Depends(_opt_svc)):
+    return ok(await s.deactivate_service_option(option_id), _rid(r), ENGINE_ID)
+
+
+@router.post("/service-options/{option_id}/archive", response_model=ApiResponse[dict],
+             summary="Archive master service option", tags=["Master Service Options"])
+async def archive_service_option(option_id: uuid.UUID, r: Request,
+                                 u: UserContext = Depends(require_super_admin),
+                                 s: ServiceOptionService = Depends(_opt_svc)):
+    return ok(await s.archive_service_option(option_id), _rid(r), ENGINE_ID)
 
 
 # ═══════════════════════════════════════════════════════════════

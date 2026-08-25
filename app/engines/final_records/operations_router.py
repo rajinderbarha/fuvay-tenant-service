@@ -15,6 +15,7 @@ import csv
 import io
 import uuid
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -76,6 +77,13 @@ async def get_operations(
     technician_id: uuid.UUID | None = Query(None),
     customer_id: uuid.UUID | None = Query(None),
     city: str | None = Query(None, max_length=100),
+    state: str | None = Query(None, max_length=100),
+    district: str | None = Query(None, max_length=100),
+    zipcode: str | None = Query(None, max_length=20),
+    amount_min: Decimal | None = Query(None, ge=0),
+    amount_max: Decimal | None = Query(None, ge=0),
+    sort_by: Literal["created_at", "updated_at", "scheduled_date", "amount"] = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -84,10 +92,15 @@ async def get_operations(
     user: UserContext = Depends(require_super_admin),
 ):
     parsed_from, parsed_to = _parse_date_range(date_from, date_to)
+    if amount_min is not None and amount_max is not None and amount_min > amount_max:
+        raise HTTPException(status_code=422, detail="amount_min must be less than or equal to amount_max")
     result = await list_operations(
         db, view=view, search=search, stage=stage, assignment=assignment,
         tenant_id=tenant_id, technician_id=technician_id, customer_id=customer_id,
-        city=city, date_from=parsed_from, date_to=parsed_to,
+        city=city, state=state, district=district, zipcode=zipcode,
+        amount_min=amount_min, amount_max=amount_max,
+        sort_by=sort_by, sort_dir=sort_dir,
+        date_from=parsed_from, date_to=parsed_to,
         page=page, page_size=page_size,
     )
     return ok(result, _RID(r), "home_services_operations")
@@ -122,6 +135,13 @@ async def export_operations(
     technician_id: uuid.UUID | None = Query(None),
     customer_id: uuid.UUID | None = Query(None),
     city: str | None = Query(None, max_length=100),
+    state: str | None = Query(None, max_length=100),
+    district: str | None = Query(None, max_length=100),
+    zipcode: str | None = Query(None, max_length=20),
+    amount_min: Decimal | None = Query(None, ge=0),
+    amount_max: Decimal | None = Query(None, ge=0),
+    sort_by: Literal["created_at", "updated_at", "scheduled_date", "amount"] = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -131,10 +151,15 @@ async def export_operations(
     # frontend's currently-loaded rows) -- caps at 5000 rows per export to
     # keep this bounded rather than unbounded-streaming the whole table.
     parsed_from, parsed_to = _parse_date_range(date_from, date_to)
+    if amount_min is not None and amount_max is not None and amount_min > amount_max:
+        raise HTTPException(status_code=422, detail="amount_min must be less than or equal to amount_max")
     result = await list_operations(
         db, view=view, search=search, stage=stage, assignment=assignment,
         tenant_id=tenant_id, technician_id=technician_id, customer_id=customer_id,
-        city=city, date_from=parsed_from, date_to=parsed_to,
+        city=city, state=state, district=district, zipcode=zipcode,
+        amount_min=amount_min, amount_max=amount_max,
+        sort_by=sort_by, sort_dir=sort_dir,
+        date_from=parsed_from, date_to=parsed_to,
         page=1, page_size=5000,
     )
     buf = io.StringIO()

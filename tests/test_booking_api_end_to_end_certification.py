@@ -21,11 +21,14 @@ from app.dependencies.db import get_db
 from app.main import app
 
 
-CUSTOMER_ID = uuid.UUID("4ec45157-8b63-4a8d-b09d-8a4a0c54ab34")
-TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
-TENANT_OWNER_ID = uuid.UUID("2436be02-99e0-4926-a4a4-44fd6fdaf08b")
-TECHNICIAN_ID = uuid.UUID("be602b65-7faf-451d-9b08-3b6afba58b5d")
-AC_NOT_COOLING_ISSUE_ID = "88326e0c-6da5-4c71-9689-fedef0c7813e"
+CUSTOMER_ID = uuid.UUID("eccf4f56-5340-4658-8743-1fcdd6cc3f56")
+TENANT_ID = uuid.UUID("54c79f98-6923-4449-9c74-e9ac0ca7d086")
+TENANT_OWNER_ID = uuid.UUID("d03ca6bb-1050-4c88-902a-14f1bfd061f1")
+# Authentication uses the linked staff-app User id. Assignment uses the
+# provider-team-member id; these are separate production identities and a
+# certification test must never assume they happen to be equal.
+TECHNICIAN_USER_ID = uuid.UUID("d95bff0e-582d-4fd1-9df4-ccb9bfbed4d1")
+TECHNICIAN_MEMBER_ID = uuid.UUID("65b43894-5006-4d71-9911-51ea40f14a88")
 
 
 def _context(role: str, user_id: uuid.UUID, tenant_id: uuid.UUID | None = None) -> UserContext:
@@ -80,7 +83,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 "(id, customer_id, name, address_line_1, city, state, country, zipcode, "
                 "is_default, is_active, created_at, updated_at) VALUES "
                 "(:id, :customer, 'API Cert Customer', '1 Certification Road', "
-                "'BASSIPATHANA', 'Punjab', 'India', '140412', true, true, now(), now())"
+                    "'BASSIPATHANA', 'Punjab', 'India', '140412', false, true, now(), now())"
             ), {"id": address_id, "customer": CUSTOMER_ID})
 
             async with AsyncClient(
@@ -88,7 +91,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
             ) as client:
                 headers = {"Authorization": "Bearer api-cert"}
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 access_context = _assert_ok(await client.get(
                     "/v1/auth/access-context", headers=headers
                 ))
@@ -99,15 +102,27 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
 
                 active["user"] = _context("customer", CUSTOMER_ID)
 
+                # Customer: resolve the current published issue from the live
+                # serviceable catalog instead of pinning a deleted seed UUID.
+                bootstrap = _assert_ok(await client.get(
+                    "/v1/customer/home-services/assistant-bootstrap",
+                    headers=headers,
+                    params={"category_slug": "home_services", "zipcode": "140412"},
+                ))
+                ac_issue = next(
+                    issue for issue in bootstrap["issues"]
+                    if issue["label"] == "AC is not cooling"
+                )
+
                 # Customer: canonical issue-first draft and deterministic
                 # backend-authored question flow.
                 selected = _assert_ok(await client.post(
                     "/v1/customer/home-services/assistant-bootstrap/select-issue",
                     headers=headers,
                     json={
-                        "category_slug": "air-conditioning",
+                        "category_slug": "home_services",
                         "zipcode": "140412",
-                        "issue_id": AC_NOT_COOLING_ISSUE_ID,
+                        "issue_id": ac_issue["id"],
                     },
                 ))
                 draft_id = selected["draft_id"]
@@ -216,11 +231,11 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 assigned = _assert_ok(await client.post(
                     f"/v1/provider/service-jobs/{job_id}/assign",
                     headers=headers,
-                    json={"staff_member_id": str(TECHNICIAN_ID)},
+                    json={"staff_member_id": str(TECHNICIAN_MEMBER_ID)},
                 ))
                 assert assigned["success"] is True
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 missing_rejection_reason = await client.post(
                     f"/v1/staff/service-jobs/{job_id}/reject",
                     headers=headers, json={},
@@ -236,11 +251,11 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 reassigned = _assert_ok(await client.post(
                     f"/v1/provider/service-jobs/{job_id}/assign",
                     headers=headers,
-                    json={"staff_member_id": str(TECHNICIAN_ID)},
+                    json={"staff_member_id": str(TECHNICIAN_MEMBER_ID)},
                 ))
                 assert reassigned["success"] is True
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 invalid_transition = await client.post(
                     f"/v1/staff/service-jobs/{job_id}/on-the-way", headers=headers
                 )
@@ -327,7 +342,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 )
                 assert stale_approval.status_code in (409, 422)
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 revised = _assert_ok(await client.post(
                     f"/v1/staff/service-jobs/{job_id}/mobile-estimate/{quote_id}/revise",
                     headers=headers,
@@ -386,7 +401,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 ))
                 assert approved_again["status"] == "customer_approved"
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 _assert_ok(await client.post(
                     f"/v1/staff/service-jobs/{job_id}/mobile-work-execution/start",
                     headers=headers,
@@ -485,7 +500,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 ))
                 assert clarification["status"] == "awaiting_customer"
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 blocked_while_unconfirmed = await client.post(
                     f"/v1/staff/service-jobs/{job_id}/mobile-direct-payment/finalize",
                     headers=headers,
@@ -499,7 +514,7 @@ async def test_booking_to_job_completion_and_single_credit_deduction_api_only():
                 ))
                 assert confirmed_payment["status"] == "confirmed"
 
-                active["user"] = _context("technician", TECHNICIAN_ID, TENANT_ID)
+                active["user"] = _context("technician", TECHNICIAN_USER_ID, TENANT_ID)
                 before = (await connection.execute(text(
                     "SELECT credit_balance FROM tenant_billing WHERE tenant_id=:tenant"
                 ), {"tenant": TENANT_ID})).scalar_one()
@@ -566,7 +581,7 @@ async def test_customer_cancel_reschedule_policy_api_only():
         async def seed_job(status: str = "pending_assignment") -> tuple[uuid.UUID, uuid.UUID]:
             catalog = (await connection.execute(text(
                 "SELECT id, category_id, job_type_id FROM master_services "
-                "WHERE service_name='AC Service' AND is_active=true LIMIT 1"
+                "WHERE slug='ac_maintenance' AND is_active=true LIMIT 1"
             ))).mappings().one()
             booking_id, job_id = uuid.uuid4(), uuid.uuid4()
             await connection.execute(text(

@@ -39,6 +39,7 @@ export type CustomerTabsParamList = {
  * lives in sessionManager's module state, never in navigation params.
  */
 export type PublicStackParamList = {
+  Welcome: undefined;
   LoginMethod: undefined;
   Signup: undefined;
   // `devOtpHint` is populated only from the backend's own dev/staging-only

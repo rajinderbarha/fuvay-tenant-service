@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import require_tenant_owner_mutation
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
+from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
 from app.engines.home_service_assignment.constants import (
@@ -18,7 +19,7 @@ from app.engines.home_service_assignment.constants import (
     ERR_STAFF_WRONG_TENANT, ERR_STAFF_INACTIVE, ERR_ROLE_NOT_ALLOWED,
     ERR_STAFF_NOT_ELIGIBLE, ERR_REASSIGN_NOT_ALLOWED, ERR_CANCEL_NOT_ALLOWED,
     ERR_INVALID_STATUS, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED,
-    ERR_ASSIGNMENT_NOT_FOUND,
+    ERR_ASSIGNMENT_NOT_FOUND, ERR_SLOT_UNAVAILABLE,
 )
 
 router = APIRouter(
@@ -43,11 +44,49 @@ _MESSAGES = {
     ERR_JOB_CANCELLED:         "Job is cancelled.",
     ERR_JOB_COMPLETED:         "Job is already completed.",
     ERR_ASSIGNMENT_NOT_FOUND:  "No active assignment found.",
+    ERR_SLOT_UNAVAILABLE:      "That slot is no longer available. Choose another open slot.",
 }
 
 
-def _err(code: str) -> dict:
-    return {"success": False, "error": {"code": code, "message": _MESSAGES.get(code, "Action failed.")}}
+#: HTTP status per failure kind. Everything else is a 422 (the request was
+#: understood but the action is not legal in this state).
+_ERR_STATUS = {
+    ERR_JOB_NOT_FOUND:        404,
+    ERR_STAFF_NOT_FOUND:      404,
+    ERR_ASSIGNMENT_NOT_FOUND: 404,
+    # 404, not 403: this fires when the job belongs to ANOTHER tenant. A 403
+    # would confirm that a job with this id exists to someone who may not see
+    # it; 404 keeps cross-tenant existence private, which is the same choice the
+    # staff router makes.
+    ERR_ACCESS_DENIED:        404,
+    ERR_STAFF_WRONG_TENANT:   403,
+    ERR_REASSIGN_NOT_ALLOWED: 409,
+    ERR_CANCEL_NOT_ALLOWED:   409,
+    ERR_JOB_CANCELLED:        409,
+    ERR_JOB_COMPLETED:        409,
+    ERR_SLOT_UNAVAILABLE:     409,
+}
+
+
+def _fail(code: str) -> ServiceOSException:
+    """Raise a real error instead of a 200 that merely claims to be one.
+
+    These handlers used to `return ok(_err(code))`, which sent HTTP 200 with a
+    top-level `"success": true` envelope wrapping `{"success": false, ...}`.
+    Only the Dispatch board unwrapped that second layer; the job detail page's
+    `handleAssign` just checked `if (res)` — and a failure object is truthy, so
+    a REFUSED assignment closed the modal and refetched as though it had worked,
+    with no error shown. Confirmed live: assigning a deactivated technician
+    returned 200 `success: true` carrying JOB_ASSIGNMENT_STAFF_INACTIVE.
+
+    Raising lets the shared handler emit a proper 4xx problem document, which
+    `apiFetch` turns into a thrown ServiceOSError for every caller at once.
+    """
+    return ServiceOSException(
+        error_code=code,
+        detail=_MESSAGES.get(code, "Action failed."),
+        status_code=_ERR_STATUS.get(code, 422),
+    )
 
 
 class AssignRequest(BaseModel):
@@ -122,7 +161,7 @@ async def get_assignment_context(
         ctx = await svc.get_job_assignment_context(job_id, tenant_id)
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok(ctx, _RID(r), "assignment")
 
 
@@ -140,7 +179,7 @@ async def list_eligible_staff(
         result = await svc.list_eligible_staff_for_job(job_id, tenant_id)
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok(result, _RID(r), "assignment")
 
 
@@ -166,7 +205,7 @@ async def assign_job(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
@@ -190,7 +229,7 @@ async def reassign_job(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
@@ -213,7 +252,7 @@ async def cancel_assignment(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
@@ -287,7 +326,7 @@ async def get_job_available_slots(
     svc = HomeServiceJobAssignmentService(db)
     job = await svc._load_job(job_id)
     if not job or str(job.tenant_id) != str(tenant_id):
-        return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+        raise _fail(ERR_JOB_NOT_FOUND)
 
     slots = await provider_slot_service.list_available_slots(
         db, tenant_id=tenant_id, emergency=bool(emergency),
@@ -335,7 +374,7 @@ async def get_weather_reschedule_eligibility(
     svc = HomeServiceJobAssignmentService(db)
     job = await svc._load_job(job_id)
     if not job or str(job.tenant_id) != str(tenant_id):
-        return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+        raise _fail(ERR_JOB_NOT_FOUND)
     verdict = await weather_reschedule_permitted(
         db, place=_job_place(job),
         slot_at=slot_start(
@@ -365,7 +404,7 @@ async def schedule_job(
         from app.engines.weather.slots import slot_start
         current = await svc._load_job(job_id)
         if not current or str(current.tenant_id) != str(tenant_id):
-            return ok(_err("JOB_NOT_FOUND"), _RID(r), "assignment")
+            raise _fail(ERR_JOB_NOT_FOUND)
         # Checked against the slot the job is being moved TO, not the one it is
         # leaving: the safety question is about the visit that will actually happen.
         verdict = await weather_reschedule_permitted(
@@ -389,7 +428,7 @@ async def schedule_job(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 

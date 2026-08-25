@@ -1,14 +1,16 @@
 import React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { AppCard } from "../AppCard";
 import { AppButton } from "../AppButton";
 import { Icon } from "../Icon";
 import { CustomerBookingListItem } from "../../domain/bookingList";
-import { BookingJourney } from "../booking-details/BookingJourney";
+import { RECEIPT_TIMELINE_STEPS, resolveTimelineStepState } from "../../domain/bookingStatus";
 import { formatMoney } from "../../domain/money";
 import { formatCreatedAt } from "../../domain/dates";
+import { formatScheduleWindow } from "../../domain/activeJobPresentation";
+import { FuvayIcon } from "../FuvayIcon";
 
 export interface ActiveBookingCardProps {
   item: CustomerBookingListItem;
@@ -16,234 +18,196 @@ export interface ActiveBookingCardProps {
   onContactSupport: () => void;
 }
 
-/** Three answer cells per row, matching the design's grid. */
-const COLUMNS = 3;
-
-/** Adapts to whatever real fields the booking actually carries -- never
- * hardcodes AC/LG/Split AC (spec section 6). Same status/pricing adapters
- * as Booking Details, never re-derived here. */
+/** Scan-first summary; the full receipt remains on Booking Details. */
 export function ActiveBookingCard({ item, onViewDetails, onContactSupport }: ActiveBookingCardProps) {
   const { theme } = useTheme();
-
-  // "text" is the free-text input_type (admin_catalog INPUT_TYPES) -- it
-  // reads as a note, so the design gives it its own box rather than a
-  // cell in the answer grid. Everything else is a chosen value.
-  const noteField = item.summaryFields.find(f => f.questionType === "text") ?? null;
-  const gridFields = item.summaryFields.filter(f => f.questionType !== "text");
-
-  const rows: typeof gridFields[] = [];
-  for (let i = 0; i < gridFields.length; i += COLUMNS) {
-    rows.push(gridFields.slice(i, i + COLUMNS));
-  }
-
-  const divider = (
-    <View style={{ height: 1, backgroundColor: theme.colors.borderSubtle, marginHorizontal: -theme.spacing.base }} />
-  );
+  const cancelled = item.rawStatus === "cancelled";
+  const needsAttention = item.urgency === "late";
+  const statusColor = cancelled || needsAttention
+    ? theme.colors.statusDanger
+    : item.stage === "unknown"
+      ? theme.colors.statusNeutral
+      : theme.colors.statusSuccess;
+  const statusSurface = cancelled || needsAttention
+    ? theme.colors.statusDangerSurface
+    : item.stage === "unknown"
+      ? theme.colors.statusNeutralSurface
+      : theme.colors.statusSuccessSurface;
+  const scheduleLabel = formatScheduleWindow(item.scheduledDate, item.scheduledTimeWindow);
+  const priceLabel = item.pricing.inspection
+    ? formatMoney(item.pricing.inspection.visitFee)
+    : item.pricing.state.kind === "valid"
+      ? formatMoney(item.pricing.state.amount)
+      : null;
 
   return (
-    <AppCard style={{ gap: theme.spacing.sm }}>
-      {/* Header: service, reference, status pill and when it was raised. */}
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: theme.spacing.sm }}>
-        <View style={{ flexDirection: "row", gap: theme.spacing.sm, flex: 1, minWidth: 0 }}>
+    <AppCard style={{ padding: 0, overflow: "hidden" }}>
+      <View style={{ padding: theme.spacing.base, gap: theme.spacing.md }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.md }}>
           <View
             style={{
-              width: 44, height: 44, borderRadius: theme.radiusUsage.card,
-              backgroundColor: theme.colors.surfaceInteractive,
-              alignItems: "center", justifyContent: "center",
+              width: 48,
+              height: 48,
+              borderRadius: theme.radiusUsage.card,
+              backgroundColor: theme.colors.brandPrimaryMuted,
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             <Icon name="snow-outline" size="standard" color={theme.colors.brandPrimaryStrong} decorative />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            {item.serviceName ? <AppText variant="bodyStrong" numberOfLines={1}>{item.serviceName}</AppText> : null}
+            <AppText variant="bodyStrong" numberOfLines={1}>{item.serviceName ?? "Service request"}</AppText>
             {item.bookingNumber ? <AppText variant="caption" color="tertiary">{item.bookingNumber}</AppText> : null}
+            {item.createdAt ? <AppText variant="caption" color="secondary">{formatCreatedAt(item.createdAt)}</AppText> : null}
           </View>
-        </View>
-        <View style={{ alignItems: "flex-end", gap: theme.spacing.xxs }}>
-          {/* Outline pill per the design, not a filled badge. */}
           <View
             style={{
-              paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
+              paddingVertical: theme.spacing.xxs,
+              paddingHorizontal: theme.spacing.sm,
               borderRadius: theme.radiusUsage.statusPill,
+              backgroundColor: statusSurface,
               borderWidth: 1,
-              borderColor: item.stage === "unknown" ? theme.colors.borderDefault : theme.colors.statusSuccess,
-              backgroundColor: item.stage === "unknown" ? theme.colors.surfaceSecondary : theme.colors.statusSuccessSurface,
+              borderColor: statusColor,
+              maxWidth: 132,
             }}
           >
-            <AppText
-              variant="caption"
-              style={{ color: item.stage === "unknown" ? theme.colors.textSecondary : theme.colors.statusSuccess }}
-            >
-              {item.statusLabel}
+            <AppText variant="caption" numberOfLines={1} style={{ color: statusColor }}>
+              {needsAttention ? item.latenessLabel ?? "Needs attention" : item.statusLabel}
             </AppText>
           </View>
-          {item.createdAt ? (
-            <AppText variant="caption" color="tertiary">{formatCreatedAt(item.createdAt)}</AppText>
-          ) : null}
         </View>
-      </View>
 
-      {item.activityText ? (
-        <>
-          {divider}
-          <View style={{ flexDirection: "row", gap: theme.spacing.sm, alignItems: "flex-start" }}>
+        {item.activityText ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-start",
+              gap: theme.spacing.sm,
+              padding: theme.spacing.md,
+              borderRadius: theme.radiusUsage.input,
+              backgroundColor: theme.colors.surfaceInteractive,
+            }}
+          >
             <View
               style={{
-                width: 40, height: 40, borderRadius: theme.radiusUsage.card,
-                backgroundColor: theme.colors.surfaceInteractive,
-                alignItems: "center", justifyContent: "center",
+                width: 32,
+                height: 32,
+                borderRadius: theme.radius.radiusFull,
+                backgroundColor: theme.colors.surfaceDefault,
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <Icon name="sparkles" size="standard" color={theme.colors.brandPrimaryStrong} decorative />
+              <FuvayIcon size={22} accessibilityLabel="Fuvay assistant" />
             </View>
             <View style={{ flex: 1 }}>
+              <AppText variant="caption" style={{ color: theme.colors.brandPrimaryStrong }}>NEXT STEP</AppText>
               <AppText variant="bodyStrong">{item.activityText}</AppText>
-              {item.supportingText ? <AppText variant="bodySmall" color="secondary">{item.supportingText}</AppText> : null}
+              {item.supportingText ? <AppText variant="caption" color="secondary">{item.supportingText}</AppText> : null}
             </View>
           </View>
-        </>
-      ) : null}
+        ) : null}
 
-      <BookingJourney stage={item.stage} bare />
-
-      {/* Answer grid: cells divided by hairlines, edge-to-edge like the
-          design. Rows are whatever the booking really answered -- a
-          category with two answers gets one short row, not padding. */}
-      {rows.length > 0 ? (
-        <>
-          {divider}
-          <View style={{ marginHorizontal: -theme.spacing.base }}>
-            {rows.map((row, rowIndex) => (
-              <View
-                key={rowIndex}
-                style={{
-                  flexDirection: "row",
-                  borderTopWidth: rowIndex === 0 ? 0 : 1,
-                  borderTopColor: theme.colors.borderSubtle,
-                }}
-              >
-                {row.map((f, colIndex) => (
-                  <View
-                    key={f.key}
-                    style={{
-                      flex: 1, minWidth: 0,
-                      flexDirection: "row", alignItems: "center", gap: theme.spacing.xs,
-                      paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.sm,
-                      borderLeftWidth: colIndex === 0 ? 0 : 1,
-                      borderLeftColor: theme.colors.borderSubtle,
-                    }}
-                  >
-                    <AppText variant="caption" numberOfLines={1} style={{ flex: 1 }}>{f.value}</AppText>
-                  </View>
-                ))}
-                {/* Keep the last row's cells the same width as a full row. */}
-                {row.length < COLUMNS
-                  ? Array.from({ length: COLUMNS - row.length }, (_, i) => <View key={`pad-${i}`} style={{ flex: 1 }} />)
-                  : null}
-              </View>
-            ))}
+        <View accessibilityLabel={`Booking progress: ${item.statusLabel}`}>
+          <View style={{ flexDirection: "row", gap: theme.spacing.xs }}>
+            {RECEIPT_TIMELINE_STEPS.map(step => {
+              const state = resolveTimelineStepState(step.key, item.stage);
+              return (
+                <View
+                  key={step.key}
+                  style={{
+                    flex: 1,
+                    height: 5,
+                    borderRadius: theme.radius.radiusFull,
+                    backgroundColor: state === "complete"
+                      ? theme.colors.statusSuccess
+                      : state === "active"
+                        ? theme.colors.brandPrimary
+                        : theme.colors.backgroundSunken,
+                  }}
+                />
+              );
+            })}
           </View>
-        </>
-      ) : null}
-
-      {/* The free-text answer the booking assistant collected -- a
-          paragraph the customer typed once, captured into the immutable
-          answer_snapshot at finalize() time. It is display-only by
-          nature: nothing updates it after the booking exists, so the
-          design's "Type here…" input is rendered as the text itself.
-          Omitted entirely when the flow never asked for one, rather than
-          leaving an empty box on the card. */}
-      {noteField ? (
-        <>
-          {divider}
-          <View>
-            {/* The design's fixed heading, not the raw question label --
-                the real catalog question is a full sentence ("Please share
-                any additional details about the issue."), which reads as
-                a prompt rather than a section title on a summary card. */}
-            <AppText variant="bodySmall" color="secondary">Additional Detail</AppText>
-            <View
-              style={{
-                marginTop: theme.spacing.xxs, padding: theme.spacing.sm,
-                borderRadius: theme.radiusUsage.input,
-                borderWidth: 1, borderColor: theme.colors.borderSubtle,
-                backgroundColor: theme.colors.surfaceSecondary,
-              }}
-            >
-              <AppText variant="bodySmall">{noteField.value}</AppText>
-            </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: theme.spacing.xs }}>
+            <AppText variant="caption" color="tertiary">Request</AppText>
+            <AppText variant="caption" color="tertiary">Professional</AppText>
+            <AppText variant="caption" color="tertiary">Visit</AppText>
           </View>
-        </>
-      ) : null}
+        </View>
 
-      {item.address.formatted ? (
-        <>
-          {divider}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
-            <Icon name="location-outline" size="compact" color={theme.colors.textSecondary} decorative />
-            <AppText variant="bodySmall" numberOfLines={2} style={{ flex: 1 }}>{item.address.formatted}</AppText>
+        {scheduleLabel || item.address.formatted || priceLabel ? (
+          <View
+            style={{
+              gap: theme.spacing.sm,
+              paddingTop: theme.spacing.sm,
+              borderTopWidth: 1,
+              borderTopColor: theme.colors.borderSubtle,
+            }}
+          >
+            {scheduleLabel ? <FactRow icon="calendar-outline" label={scheduleLabel} /> : null}
+            {item.address.formatted ? <FactRow icon="location-outline" label={item.address.formatted} /> : null}
+            {priceLabel ? (
+              <FactRow
+                icon="wallet-outline"
+                label={item.pricing.inspection ? `Inspection visit · ${priceLabel}` : `Service price · ${priceLabel}`}
+              />
+            ) : null}
           </View>
-        </>
-      ) : null}
+        ) : null}
+      </View>
 
-      {item.pricing.inspection ? (
-        <>
-          {divider}
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm }}>
-            <View>
-              <AppText variant="caption" color="tertiary">Inspection visit</AppText>
-              <AppText variant="bodyStrong">{formatMoney(item.pricing.inspection.visitFee)}</AppText>
-            </View>
-            <View style={{ flexDirection: "row", gap: theme.spacing.xs, flexShrink: 1 }}>
-              <View
-                style={{
-                  paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
-                  borderRadius: theme.radiusUsage.statusPill,
-                  borderWidth: 1, borderColor: theme.colors.statusSuccess,
-                  backgroundColor: theme.colors.statusSuccessSurface,
-                }}
-              >
-                <AppText variant="caption" style={{ color: theme.colors.statusSuccess }}>Backend confirmed</AppText>
-              </View>
-              <View
-                style={{
-                  paddingVertical: theme.spacing.xxs, paddingHorizontal: theme.spacing.sm,
-                  borderRadius: theme.radiusUsage.statusPill,
-                  borderWidth: 1, borderColor: theme.colors.borderDefault,
-                }}
-              >
-                <AppText variant="caption" color="secondary">Pay provider directly</AppText>
-              </View>
-            </View>
-          </View>
-        </>
-      ) : item.pricing.state.kind === "valid" ? (
-        <>
-          {divider}
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <AppText variant="bodySmall" color="secondary">Price</AppText>
-            <AppText variant="bodyStrong">{formatMoney(item.pricing.state.amount)}</AppText>
-          </View>
-        </>
-      ) : null}
-
-      <View style={{ gap: theme.spacing.sm }}>
-        <AppButton
-          label="View details"
-          onPress={onViewDetails}
-          fullWidth
-          style={{ borderRadius: theme.radius.radiusFull }}
-          trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
-        />
-        <AppButton
-          label="Contact support"
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: theme.spacing.sm,
+          padding: theme.spacing.md,
+          backgroundColor: theme.colors.backgroundSecondary,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.borderSubtle,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <AppButton
+            label="View booking"
+            onPress={onViewDetails}
+            fullWidth
+            style={{ borderRadius: theme.radius.radiusFull }}
+            trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
+          />
+        </View>
+        <Pressable
           onPress={onContactSupport}
-          tone="secondary"
-          fullWidth
-          style={{ borderRadius: theme.radius.radiusFull, borderColor: theme.colors.brandPrimary, backgroundColor: "transparent" }}
-          trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.textPrimary} decorative />}
-        />
+          accessibilityRole="button"
+          accessibilityLabel="Contact support"
+          hitSlop={8}
+          style={({ pressed }) => ({
+            width: theme.touchTargets.minimum,
+            height: theme.touchTargets.minimum,
+            borderRadius: theme.radius.radiusFull,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: theme.colors.borderDefault,
+            backgroundColor: theme.colors.surfaceDefault,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <Icon name="headset-outline" size="standard" color={theme.colors.iconDefault} decorative />
+        </Pressable>
       </View>
     </AppCard>
+  );
+}
+
+function FactRow({ icon, label }: { icon: React.ComponentProps<typeof Icon>["name"]; label: string }) {
+  const { theme } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
+      <Icon name={icon} size="compact" color={theme.colors.textSecondary} decorative />
+      <AppText variant="bodySmall" color="secondary" numberOfLines={2} style={{ flex: 1 }}>{label}</AppText>
+    </View>
   );
 }

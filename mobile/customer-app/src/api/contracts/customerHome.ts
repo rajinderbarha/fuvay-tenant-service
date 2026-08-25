@@ -13,9 +13,8 @@
  *    technician, ETA, schedule, or rating) -- there is no "recent
  *    bookings" (plural, including completed/cancelled) list in this
  *    payload.
- *  - `campaigns` is ONE generic type -- there is no distinct "offer"
- *    shape (no offer code, no eligibility, no "Apply" state). The
- *    requested "Offers for you" section has no backend contract.
+ *  - Promotional campaigns are intentionally absent. The retired campaign
+ *    engine has no supported customer-home contract.
  */
 import { z } from "zod";
 
@@ -61,9 +60,6 @@ export const homeQuickIssueDtoSchema = z.object({
   category_id: z.string(),
   category_slug: z.string().nullable().optional(),
   category_name: z.string(),
-  /** Admin-set artwork for this problem. Null is normal -- the app falls back
-   * to a wording-derived glyph rather than showing a blank tile. */
-  icon_url: z.string().nullable().optional(),
   /** Dispatch's own urgency grading. Carried but NOT rendered: the customer
    * already knows how bad their problem is, and a red "critical" chip on their
    * own fault would read as alarm rather than information. */
@@ -147,6 +143,60 @@ export const homeCapabilitiesDtoSchema = z.object({
   chatbot_language_selectable: z.boolean(),
 });
 
+export const homeServiceGroupDtoSchema = z.object({
+  service_group_id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().nullable().optional(),
+  icon_url: z.string().nullable().optional(),
+  category_id: z.string(),
+  category_slug: z.string(),
+});
+
+export const homeMasterServiceDtoSchema = z.object({
+  master_service_id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().nullable().optional(),
+  icon_url: z.string().nullable().optional(),
+  service_group_id: z.string(),
+  service_group_name: z.string(),
+  service_group_slug: z.string(),
+  category_id: z.string(),
+  category_slug: z.string(),
+});
+
+export const homeCampaignDtoSchema = z.object({
+  campaign_id: z.string(),
+  placement: z.string(),
+  variant: z.string().optional().default("cinematic"),
+  theme_key: z.string().optional().default("ink"),
+  section_title: z.string().nullable().optional(),
+  priority: z.number(),
+  sponsored: z.boolean(),
+  badge: z.string(),
+  title: z.string(),
+  subtitle: z.string(),
+  offer_text: z.string().nullable().optional(),
+  image_url: z.string().url(),
+  action_label: z.string(),
+  action_url: z.string().nullable().optional(),
+  category_slug: z.string().nullable().optional(),
+  service_group_slug: z.string().nullable().optional(),
+  starts_at: z.string().nullable().optional(),
+  ends_at: z.string().nullable().optional(),
+});
+
+export const homeSectionDtoSchema = z.object({
+  key: z.string(),
+  enabled: z.boolean(),
+  title: z.string().nullable().optional(),
+  variant: z.string(),
+  max_items: z.number().int().positive(),
+  spacing: z.enum(["compact", "standard", "generous"]).default("standard"),
+  surface: z.enum(["canvas", "subtle", "raised", "brand_tint"]).default("canvas"),
+});
+
 export const customerHomeResponseSchema = z.object({
   response_version: z.number(),
   /** Up to three live bookings, newest first. Empty on an older backend, which
@@ -164,7 +214,11 @@ export const customerHomeResponseSchema = z.object({
   serviceability: homeServiceabilityDtoSchema,
   enabled_verticals: z.array(homeVerticalDtoSchema),
   bookable_categories: z.array(homeCategoryDtoSchema),
+  bookable_service_groups: z.array(homeServiceGroupDtoSchema).optional().default([]),
+  bookable_master_services: z.array(homeMasterServiceDtoSchema).optional().default([]),
   quick_issues: z.array(homeQuickIssueDtoSchema).optional().default([]),
+  campaigns: z.array(homeCampaignDtoSchema).optional().default([]),
+  sections: z.array(homeSectionDtoSchema).optional().default([]),
   active_booking: homeActiveBookingDtoNullableSchema,
   unread_notification_count: z.number(),
   capabilities: homeCapabilitiesDtoSchema,

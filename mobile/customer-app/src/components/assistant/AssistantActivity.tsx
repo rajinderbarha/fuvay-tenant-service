@@ -3,7 +3,7 @@ import { View, Animated, Easing, AccessibilityInfo } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { AppButton } from "../AppButton";
-import { Icon } from "../Icon";
+import { FuvayIcon } from "../FuvayIcon";
 import { AssistantActivityStage, resolveActivityLabel } from "../../domain/assistantActivity";
 
 export interface AssistantActivityProps {
@@ -79,7 +79,7 @@ export function AssistantActivity({ stage, zipcode, fallbackOffered, onContinueW
           opacity: reducedMotion ? 1 : opacity,
         }}
       >
-        <Icon name="sparkles" size="compact" color={theme.colors.brandOnPrimary} decorative />
+        <FuvayIcon size={22} accessibilityLabel="Fuvay assistant" />
       </Animated.View>
       <View style={{ flex: 1 }}>
         <AppText variant="bodyStrong">{resolveActivityLabel(stage, zipcode).replace(/…$/, "")}{dots}</AppText>

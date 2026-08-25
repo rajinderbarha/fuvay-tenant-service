@@ -55,11 +55,19 @@ async def get_assistant_bootstrap(
     r: Request,
     category_slug: str = Query(...),
     zipcode: Optional[str] = Query(None),
+    service_group_slug: Optional[str] = Query(None),
+    master_service_id: Optional[uuid.UUID] = Query(None),
     svc: HomeServiceChatbotBookingService = Depends(_svc),
     user: UserContext = Depends(require_customer),
 ):
     customer_id = uuid.UUID(user.user_id)
-    result = await svc.get_assistant_bootstrap(customer_id=customer_id, category_slug=category_slug, zipcode=zipcode)
+    result = await svc.get_assistant_bootstrap(
+        customer_id=customer_id,
+        category_slug=category_slug,
+        zipcode=zipcode,
+        service_group_slug=service_group_slug,
+        master_service_id=master_service_id,
+    )
     return ok(result, _rid(r), "home_service_booking")
 
 
@@ -99,6 +107,8 @@ async def interpret_assistant_bootstrap_text(
         result = await oi.interpret(
             category_slug=category_slug, zipcode=body.get("zipcode"),
             text=text, session_id=body.get("session_id"),
+            service_group_slug=body.get("service_group_slug"),
+            master_service_id=(uuid.UUID(body["master_service_id"]) if body.get("master_service_id") else None),
         )
     else:
         result = await oi.interpret_across_categories(
@@ -127,6 +137,8 @@ async def select_assistant_bootstrap_issue(
         category_slug=body["category_slug"], zipcode=body.get("zipcode"),
         issue_id=body["issue_id"],
         additional_issue_ids=body.get("additional_issue_ids"),
+        service_group_slug=body.get("service_group_slug"),
+        master_service_id=(uuid.UUID(body["master_service_id"]) if body.get("master_service_id") else None),
     )
     # Real bug fixed here: this endpoint returns the FIRST question of the
     # flow, but presentation was only wired into get_question_flow and
@@ -323,9 +335,8 @@ async def match_and_price(
     response_model=ApiResponse[dict],
     summary="Customer confirms the already-selected provider's fixed price",
     description=(
-        "Customer confirms price_tier='standard' only. Low/Mid/High tier "
-        "pricing has been retired; the backend stores the server-resolved "
-        "customer payable amount from the selected-provider snapshot."
+        "Customer confirms the standard server-resolved customer payable "
+        "amount from the selected-provider snapshot."
     ),
 )
 async def confirm_price_choice(

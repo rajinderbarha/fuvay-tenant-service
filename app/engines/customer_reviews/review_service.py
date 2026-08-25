@@ -108,6 +108,8 @@ class ReviewService:
         elif record_type == RECORD_TYPE_REAL_ESTATE_LEAD:
             review.lead_id = record_id
 
+        await self._link_service_job(db, review, record_type, record_id)
+
         db.add(review)
         await db.flush()
         await self._log_event(db, review.id, tenant_id, ACTOR_CUSTOMER, customer_id,
@@ -527,6 +529,33 @@ class ReviewService:
         r = await db.execute(select(ReviewPolicy).order_by(ReviewPolicy.created_at))
         return r.scalars().all()
 
+    async def create_policy(self, db: AsyncSession, data: dict) -> ReviewPolicy:
+        """Create a review policy.
+
+        The admin API exposed list/get/patch but NO create, and
+        `review_policies` ships empty -- so there was never a row to patch.
+        `_get_policy` therefore always resolved to None, which makes
+        `submit_review` fall back to STATUS_PENDING, so EVERY review a customer
+        ever wrote stayed pending and private until an admin approved it
+        one by one. Auto-approval could not be switched on at all, because the
+        row that carries the flag could not be brought into existence.
+        """
+        editable = [
+            "category_id", "tenant_id", "auto_approve_enabled", "require_admin_moderation",
+            "allow_provider_reply", "require_reply_moderation", "allow_review_edit",
+            "edit_window_hours", "min_rating", "max_rating", "allow_media",
+            "max_media_count", "is_active",
+        ]
+        policy = ReviewPolicy(
+            policy_key=data["policy_key"],
+            policy_name=data["policy_name"],
+            **{k: data[k] for k in editable if k in data and data[k] is not None},
+        )
+        db.add(policy)
+        await db.commit()
+        await db.refresh(policy)
+        return policy
+
     async def get_policy(self, db: AsyncSession, policy_id: uuid.UUID) -> ReviewPolicy:
         r = await db.execute(select(ReviewPolicy).where(ReviewPolicy.id == policy_id))
         p = r.scalars().first()
@@ -669,6 +698,55 @@ class ReviewService:
         )
         db.add(ev)
         await db.flush()
+
+    @staticmethod
+    async def _link_service_job(
+        db: AsyncSession, review: CustomerReview, record_type: str, record_id: uuid.UUID,
+    ) -> None:
+        """Resolve and stamp `job_id` + `staff_member_id` for Home Services reviews.
+
+        Two real disconnects this closes, both of which made a submitted review
+        invisible or anonymous to the people who need it:
+
+        1. The customer app's ONLY rating path is
+           POST /v1/customer/bookings/{id}/rating, which submits with
+           record_type="service_booking". That stamped `booking_id` and left
+           `job_id` NULL -- but every tenant-facing Home Services reviews query
+           INNER JOINs `service_jobs sj ON sj.id = cr.job_id` (that join is what
+           proves Home Services scope). So no customer review a real customer
+           ever wrote could appear on the provider's Reviews & Service Quality
+           page. Resolving the job from `service_jobs.booking_id` links them.
+
+        2. `staff_member_id` was read in four places (the technician column and
+           filter on the reviews page, and RatingAggregationService's
+           per-staff summary) but written in NONE. Technician always showed
+           "Unassigned", the technician filter could never match, and
+           `staff_rating_summaries` stayed permanently empty, so staff
+           performance ratings never existed. It is taken from the job's
+           `assigned_staff_id` -- the technician who actually did the work.
+
+        Best-effort by design: a review must never fail to save because its job
+        link could not be resolved (e.g. a booking with no job yet).
+        """
+        from sqlalchemy import text as _text
+        try:
+            if record_type == RECORD_TYPE_SERVICE_BOOKING:
+                row = (await db.execute(_text(
+                    "SELECT id, assigned_staff_id FROM service_jobs "
+                    "WHERE booking_id = :rid ORDER BY created_at DESC LIMIT 1"
+                ), {"rid": str(record_id)})).fetchone()
+                if row:
+                    review.job_id = row.id
+                    review.staff_member_id = row.assigned_staff_id
+            elif record_type == RECORD_TYPE_SERVICE_JOB:
+                row = (await db.execute(_text(
+                    "SELECT booking_id, assigned_staff_id FROM service_jobs WHERE id = :rid"
+                ), {"rid": str(record_id)})).fetchone()
+                if row:
+                    review.booking_id = row.booking_id
+                    review.staff_member_id = row.assigned_staff_id
+        except Exception:
+            pass
 
     async def _trigger_aggregation(self, db: AsyncSession, review: CustomerReview) -> None:
         try:

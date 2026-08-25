@@ -1,7 +1,7 @@
 """Sprint 25 — Customer Complaint API."""
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 import uuid
 from decimal import Decimal
@@ -153,6 +153,61 @@ async def add_message(
 
 
 # ── List messages ─────────────────────────────────────────────────────────────
+class AddComplaintMediaIn(BaseModel):
+    """Evidence already stored by the media engine, referenced by URL.
+
+    The bytes go through POST /v1/media/upload with
+    media_context="complaint_evidence" (its CONTEXT_RULES entry already exists:
+    documents/images, 10 MB) which validates type, size and signature; this
+    endpoint records the resulting URL against the case.
+    """
+    model_config = ConfigDict(extra="forbid")
+    file_url: str = Field(..., min_length=1, max_length=500)
+    media_type: str = Field("photo", max_length=20)
+    file_name: str | None = Field(None, max_length=300)
+    caption: str | None = Field(None, max_length=1000)
+
+
+@customer_complaint_router.post("/{complaint_id}/media", status_code=201)
+async def add_complaint_media(
+    complaint_id: uuid.UUID,
+    body: AddComplaintMediaIn,
+    r: Request = None,
+    u: UserContext = Depends(require_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a photo or document to your own complaint.
+
+    Real gap closed: `ComplaintService.upload_complaint_media` existed and the
+    `complaint_media` table existed, but NO router anywhere called it -- so a
+    customer could never attach evidence to a complaint, the table could only
+    ever be empty in production, and the provider's Evidence tab had nothing
+    to show no matter what the customer wanted to prove.
+    """
+    from app.engines.complaints.constants import ACTOR_CUSTOMER
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    media = await _complaint.upload_complaint_media(
+        db, uuid.UUID(str(u.user_id)), ACTOR_CUSTOMER, complaint_id,
+        file_url=body.file_url, media_type=body.media_type,
+        file_name=body.file_name, caption=body.caption, request_id=rid,
+    )
+    return ok(media.to_dict(), rid, "complaint.media.added")
+
+
+@customer_complaint_router.get("/{complaint_id}/media")
+async def list_complaint_media(
+    complaint_id: uuid.UUID,
+    r: Request = None,
+    u: UserContext = Depends(require_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    """The customer's own view of what is attached to their case."""
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    await _complaint.get_customer_complaint(db, uuid.UUID(str(u.user_id)), complaint_id)
+    items = await _complaint.list_media(db, complaint_id, viewer="customer")
+    return ok({"items": [m.to_dict() for m in items]}, rid, "complaint.media.list")
+
+
 @customer_complaint_router.get("/{complaint_id}/messages")
 async def list_messages(
     complaint_id: uuid.UUID,

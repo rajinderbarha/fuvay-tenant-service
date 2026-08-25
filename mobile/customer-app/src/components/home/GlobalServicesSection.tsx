@@ -1,148 +1,160 @@
-import React, { useState } from "react";
-import { View, Pressable, Image } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { ImageBackground, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+
+import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
 import { useTheme } from "../../design-system/theme";
+import { GlobalService } from "../../domain/globalServices";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
-import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
-import { GlobalService } from "../../domain/globalServices";
-import { resolveGlobalServiceIcon } from "../../domain/globalServiceIcon";
-import { resolveGlobalServiceAccent } from "../../domain/globalServiceAccent";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { GlobalServiceInquiryModal } from "./GlobalServiceInquiryModal";
 
+const DIGITAL_STUDIO_IMAGE = require("../../../assets/fuvay-digital-studio.png");
+
 export interface GlobalServicesSectionProps {
-  /** Pre-fills the inquiry form; both optional since this section renders even
-   * before an address/profile is known (it is fixed and shown on every zipcode
-   * -- see HomeScreen, which mounts it in all three render branches). */
-  defaultName?: string;
   defaultZipcode?: string | null;
-  /** Admin heading override from the Home section settings. */
   title?: string | null;
+  /** Increment to open the primary nationwide-service brief from another Home placement. */
+  openRequestToken?: number;
+  variant?: "compact_services" | "studio_rail" | string;
 }
 
-/**
- * Project work you can ask Fuvay to quote: web, app, software.
- *
- * Fixed and always shown -- deliberately NOT driven by the Home aggregation or
- * serviceability query, because GET /v1/customer/global-services returns the
- * same active list to every customer regardless of ZIP. Tapping one opens an
- * inquiry form; submitting creates a Lead an admin calls back about. There is no
- * booking, no provider match and no price anywhere in this flow.
- *
- * REBUILT (this pass). It was a full-width paged carousel of saturated colour
- * cards, and it read as an advertisement someone had dropped into the middle of
- * a service app: each page filled the screen, only one was visible at a time, so
- * a customer had to swipe blind to learn a second offering even existed, and the
- * dots implied content they had no reason to expect.
- *
- * Now: one compact 2-up grid, everything visible at once, with each offering's
- * accent used as a TINT rather than a full bleed -- the identity colour survives
- * without the section shouting over the services above it. The subtitle states
- * plainly that this is a callback rather than a booking, which is the one thing a
- * customer most needs to know before tapping and the old design never said.
- */
-export function GlobalServicesSection({ defaultName, defaultZipcode, title }: GlobalServicesSectionProps) {
+/** Nationwide work is independent from local provider serviceability. */
+export function GlobalServicesSection({ defaultZipcode, title = "Web & mobile development", openRequestToken = 0, variant = "compact_services" }: GlobalServicesSectionProps) {
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
   const query = useGlobalServicesQuery();
   const [selected, setSelected] = useState<GlobalService | null>(null);
+  const services = useMemo(() => query.data ?? [], [query.data]);
+  const primary = useMemo(
+    () => services.find(service => /web|mobile|software|ai/i.test(service.name)) ?? services[0] ?? null,
+    [services],
+  );
 
-  const services = query.data ?? [];
-  if (query.isPending || query.isError || services.length === 0) return null;
+  useEffect(() => {
+    if (openRequestToken > 0 && primary) setSelected(primary);
+  }, [openRequestToken, primary]);
 
-  const rows: GlobalService[][] = [];
-  for (let i = 0; i < services.length; i += 2) rows.push(services.slice(i, i + 2));
+  function openPrimary() {
+    if (primary) setSelected(primary);
+    else void query.refetch();
+  }
+
+  if (variant === "compact_services") {
+    const cardWidth = (Math.min(width, 560) - theme.spacing.base * 2 - theme.spacing.sm) / 2;
+    return (
+      <View accessibilityLabel="Fuvay digital services">
+        {title ? <AppText variant="headingMedium" style={{ marginBottom: theme.spacing.xs }}>{title}</AppText> : null}
+        <AppText variant="bodySmall" color="secondary" style={{ marginBottom: theme.spacing.sm }}>
+          Product teams for every postcode. Share a brief and Fuvay will contact you.
+        </AppText>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
+          {services.slice(0, 4).map(service => (
+            <Pressable
+              key={service.id}
+              onPress={() => setSelected(service)}
+              accessibilityRole="button"
+              accessibilityLabel={`Discuss ${service.name}`}
+              style={({ pressed }) => ({
+                width: cardWidth,
+                minHeight: 94,
+                padding: theme.spacing.sm,
+                borderWidth: 1,
+                borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
+                borderRadius: theme.radius.radiusMedium,
+                backgroundColor: theme.colors.surfaceDefault,
+                opacity: pressed ? 0.74 : 1,
+              })}
+            >
+              <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.accentVioletSurface }}>
+                <Icon name={serviceIcon(service.name)} size="standard" color={theme.colors.accentViolet} decorative />
+              </View>
+              <AppText variant="bodySmall" numberOfLines={2} style={{ marginTop: theme.spacing.xs, fontWeight: "800" }}>{service.name}</AppText>
+            </Pressable>
+          ))}
+          {services.length === 0 ? (
+            <Pressable onPress={openPrimary} accessibilityRole="button" style={{ minHeight: 86, width: "100%", padding: theme.spacing.base, justifyContent: "center", borderWidth: 1, borderColor: theme.colors.borderSubtle, borderRadius: theme.radius.radiusMedium }}>
+              <AppText variant="bodyStrong">Load digital services</AppText>
+              <AppText variant="caption" color="secondary">Web, mobile, software and AI delivery nationwide.</AppText>
+            </Pressable>
+          ) : null}
+        </View>
+        <GlobalServiceInquiryModal service={selected} defaultZipcode={defaultZipcode} onClose={() => setSelected(null)} />
+      </View>
+    );
+  }
 
   return (
-    <View>
-      <View style={{ gap: 2, marginBottom: theme.spacing.sm }}>
-        <AppText variant="headingSmall">{title || "Build with Fuvay"}</AppText>
-        {/* Says what actually happens next. "Global services available" was
-            internal wording that told the customer nothing. */}
-        <AppText variant="caption" color="tertiary">
-          Tell us what you need and our team calls you back
-        </AppText>
-      </View>
-
-      <View style={{ gap: theme.spacing.sm }}>
-        {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-            {row.map(service => (
-              <ProjectTile key={service.id} service={service} onPress={() => setSelected(service)} />
-            ))}
-            {/* An equal-flex spacer keeps a lone trailing card the same width as
-                the ones above rather than stretching it across the row. */}
-            {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
+    <View accessibilityLabel="Fuvay digital services">
+      {title ? (
+        <AppText variant="headingMedium" style={{ marginBottom: theme.spacing.sm }}>{title}</AppText>
+      ) : null}
+      <Pressable
+        onPress={openPrimary}
+        accessibilityRole="button"
+        accessibilityLabel={primary ? `Start a ${primary.name} project with Fuvay` : "Load Fuvay digital services"}
+        style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+      >
+        <ImageBackground
+          source={DIGITAL_STUDIO_IMAGE}
+          resizeMode="cover"
+          style={{ height: 152, overflow: "hidden", borderRadius: 18 }}
+          accessibilityIgnoresInvertColors
+        >
+          <View style={{ flex: 1, padding: theme.spacing.base, justifyContent: "space-between", backgroundColor: theme.colors.mediaScrimStrong }}>
+            <View>
+              <View style={{ alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, backgroundColor: theme.colors.campaignAccent }}>
+                <AppText variant="caption" style={{ color: theme.colors.campaignBadgeForeground, fontWeight: "800" }}>AVAILABLE NATIONWIDE</AppText>
+              </View>
+              <AppText variant="headingMedium" numberOfLines={1} style={{ color: theme.colors.mediaForeground, marginTop: theme.spacing.xs, fontSize: 22 }}>
+                Fuvay Digital Studio
+              </AppText>
+              <AppText variant="bodySmall" style={{ color: theme.colors.mediaForegroundMuted, marginTop: 2 }}>
+                Web · Mobile · Software · AI
+              </AppText>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ maxWidth: "65%" }}>
+                <AppText variant="bodyStrong" style={{ color: theme.colors.mediaForeground }}>Build your next digital product</AppText>
+                <AppText variant="caption" numberOfLines={1} style={{ color: theme.colors.mediaForegroundMuted }}>A specialist will reply to your brief.</AppText>
+              </View>
+              <View style={{ minHeight: 36, paddingHorizontal: theme.spacing.md, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: theme.colors.surfaceDefault }}>
+                <AppText variant="caption" style={{ color: theme.colors.textPrimary, fontWeight: "800" }}>Start brief</AppText>
+                <Icon name="arrow-forward" size="compact" color={theme.colors.textPrimary} decorative />
+              </View>
+            </View>
           </View>
-        ))}
-      </View>
+        </ImageBackground>
+      </Pressable>
 
-      <GlobalServiceInquiryModal
-        service={selected}
-        defaultName={defaultName}
-        defaultZipcode={defaultZipcode}
-        onClose={() => setSelected(null)}
-      />
+      {services.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingTop: theme.spacing.sm, gap: theme.spacing.sm }}>
+          {services.map(service => (
+            <Pressable
+              key={service.id}
+              onPress={() => setSelected(service)}
+              accessibilityRole="button"
+              accessibilityLabel={`Discuss ${service.name}`}
+            style={({ pressed }) => ({ width: 176, minHeight: 76, paddingHorizontal: theme.spacing.sm, flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderSubtle, borderRadius: 16, backgroundColor: theme.colors.surfaceDefault, opacity: pressed ? 0.72 : 1 })}
+            >
+              <View style={{ width: 38, height: 38, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: theme.colors.accentVioletSurface }}>
+                <Icon name={serviceIcon(service.name)} size="standard" color={theme.colors.accentViolet} decorative />
+              </View>
+              <AppText variant="caption" numberOfLines={2} style={{ flex: 1, fontWeight: "700" }}>{service.name}</AppText>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+
+      <GlobalServiceInquiryModal service={selected} defaultZipcode={defaultZipcode} onClose={() => setSelected(null)} />
     </View>
   );
 }
 
-function ProjectTile({ service, onPress }: { service: GlobalService; onPress: () => void }) {
-  const { theme } = useTheme();
-  const accent = resolveGlobalServiceAccent(service.name);
-  const artwork = service.iconUrl ? resolveMediaUrl(service.iconUrl) : null;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${service.name}, request a callback`}
-      style={({ pressed }) => ({
-        flex: 1,
-        gap: theme.spacing.xs,
-        padding: theme.spacing.base,
-        borderRadius: theme.radiusUsage.card,
-        // The offering's own colour as a wash, so the tile keeps its identity
-        // without the full-bleed card competing with the rest of the screen.
-        backgroundColor: `${accent.background}14`,
-        borderWidth: 1, borderColor: `${accent.background}33`,
-        opacity: pressed ? 0.88 : 1,
-      })}
-    >
-      <View
-        style={{
-          width: 40, height: 40, borderRadius: theme.radiusUsage.input,
-          alignItems: "center", justifyContent: "center", overflow: "hidden",
-          backgroundColor: `${accent.background}26`,
-        }}
-      >
-        {artwork ? (
-          <Image
-            source={{ uri: artwork }}
-            style={{ width: "100%", height: "100%" }}
-            resizeMode="contain"
-            accessibilityElementsHidden
-          />
-        ) : (
-          // Admin artwork wins; this only varies the fallback so the section is
-          // not a column of identical glyphs.
-          <Icon
-            name={resolveGlobalServiceIcon(service.name)}
-            size="standard"
-            color={accent.background}
-            decorative
-          />
-        )}
-      </View>
-
-      <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
-      {service.tagline ? (
-        <AppText variant="caption" color="secondary" numberOfLines={2}>{service.tagline}</AppText>
-      ) : null}
-
-      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xxs, marginTop: theme.spacing.xxs }}>
-        <AppText variant="labelStrong" style={{ color: accent.background }}>Get a callback</AppText>
-        <Icon name="arrow-forward" size="compact" color={accent.background} decorative />
-      </View>
-    </Pressable>
-  );
+function serviceIcon(name: string): React.ComponentProps<typeof Icon>["name"] {
+  if (/mobile|app/i.test(name)) return "phone-portrait";
+  if (/web/i.test(name)) return "globe";
+  if (/ai|machine/i.test(name)) return "sparkles";
+  if (/data|analyt/i.test(name)) return "analytics";
+  if (/blockchain/i.test(name)) return "cube";
+  return "code-slash";
 }

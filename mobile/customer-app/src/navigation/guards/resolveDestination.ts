@@ -55,7 +55,7 @@ export function resolveDestination(snapshot: AppNavigationSnapshot): RootDestina
   }
 
   if (snapshot.auth === "unauthenticated" || snapshot.auth === "unknown") {
-    return { tree: "PublicStack", screen: "LoginMethod" };
+    return { tree: "PublicStack", screen: "Welcome" };
   }
 
   if (snapshot.bootstrap !== "ready") {

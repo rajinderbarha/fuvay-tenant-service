@@ -23,7 +23,7 @@ const TENANT_ROUTES = [
   // Was /provider/status, which doesn't exist; real route is
   // /provider/subscription-status (app/(tenant)/provider/subscription-status).
   '/provider/subscription-status',
-  '/tenant/setup/services',
+  '/tenant/home-services/setup/services-pricing',
   '/provider/service-coverage',
   '/provider/service-areas',
   '/provider/availability',

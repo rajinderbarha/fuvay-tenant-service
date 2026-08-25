@@ -83,7 +83,7 @@ export function interpretBookingStatus(rawStatus: string, assignmentStatus: stri
     };
   }
 
-  if (rawStatus === "assigned") {
+  if (rawStatus === "assigned" || rawStatus === "accepted") {
     return {
       stage: "provider_assigned",
       statusLabel: "Provider assigned",
@@ -97,16 +97,23 @@ export function interpretBookingStatus(rawStatus: string, assignmentStatus: stri
   // the "Start Travel" transition, so a visit is genuinely underway. No
   // ETA, technician identity, or arrival time is claimed here -- none of
   // that is in this payload, and the live tracking screen owns it.
-  if (rawStatus === "on_the_way") {
+  if (["scheduled", "on_the_way", "in_progress", "completed"].includes(rawStatus)) {
     return {
       stage: "scheduled",
-      statusLabel: "On the way",
-      activityText: "Your technician is on the way",
-      supportingText: "Track the visit for live updates.",
+      statusLabel: rawStatus === "scheduled" ? "Visit scheduled"
+        : rawStatus === "on_the_way" ? "On the way"
+          : rawStatus === "in_progress" ? "Service in progress"
+            : "Service completed",
+      activityText: rawStatus === "scheduled" ? "Your visit is scheduled"
+        : rawStatus === "on_the_way" ? "Your technician is on the way"
+          : rawStatus === "in_progress" ? "Your service is underway"
+            : null,
+      supportingText: rawStatus === "completed"
+        ? null
+        : "Open the booking for the latest job progress.",
     };
   }
 
-  // accepted / scheduled / in_progress / completed -- and
   // pending_assignment with any assignment_status other than unassigned
   // -- are real, recognized statuses this phase does not yet own a
   // truthful advanced presentation for. Neutral, never fabricated.

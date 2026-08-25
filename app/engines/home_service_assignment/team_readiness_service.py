@@ -83,43 +83,43 @@ async def _validate_offering_ids(db: AsyncSession, tenant_id: uuid.UUID, offerin
     return [r[0] for r in rows]
 
 
-async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
-    """Batch readiness projection for the complete onboarding roster.
+async def compute_members_readiness(
+    db: AsyncSession, tenant_id: uuid.UUID, members: list[dict]
+) -> dict[str, dict]:
+    """Resolve readiness for an already bounded roster page in three queries.
 
-    The former implementation called ``compute_member_readiness`` once per
-    member, issuing up to three queries per person. That made a simple setup
-    status request grow linearly with roster size. The same facts are loaded in
-    three bounded queries here and evaluated in memory.
+    The operational directory can contain a very large roster, so it must not
+    load the entire tenant merely to render one page.  Onboarding still asks
+    for a complete summary, while the directory passes only its current page
+    through this helper.  Both surfaces therefore use identical rules without
+    reintroducing the former per-person query pattern.
     """
-    members_rows = (await db.execute(text(
-        "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL"
-    ), {"tid": str(tenant_id)})).fetchall()
-    members = [dict(r._mapping) for r in members_rows]
-
+    if not members:
+        return {}
     enabled_offering_ids = {
         str(r[0]) for r in (await db.execute(text(
             "SELECT id::text FROM tenant_services WHERE tenant_id=:tid "
             "AND is_enabled=true AND deleted_at IS NULL"
         ), {"tid": str(tenant_id)})).fetchall()
     }
+    member_ids = [str(m["id"]) for m in members]
     scheduled_member_ids = {
         str(r[0]) for r in (await db.execute(text(
             "SELECT DISTINCT scope_id::text FROM provider_availability_rules "
             "WHERE tenant_id=:tid AND scope_type='staff_member' "
-            "AND scope_id IS NOT NULL AND is_active=true"
-        ), {"tid": str(tenant_id)})).fetchall()
+            "AND scope_id = ANY(CAST(:member_ids AS uuid[])) AND is_active=true"
+        ), {"tid": str(tenant_id), "member_ids": member_ids})).fetchall()
     }
     user_ids = [str(m["user_id"]) for m in members if m.get("user_id")]
     user_active: dict[str, bool] = {}
     if user_ids:
         user_active = {
             str(r.id): bool(r.is_active) for r in (await db.execute(text(
-                "SELECT id, is_active FROM users WHERE id::text = ANY(:ids)"
+                "SELECT id, is_active FROM users WHERE id = ANY(CAST(:ids AS uuid[]))"
             ), {"ids": user_ids})).fetchall()
         }
 
-    counts = {"total": len(members), "ready": 0, "needs_setup": 0, "invitation_pending": 0, "disabled": 0}
-    per_member = {}
+    per_member: dict[str, dict] = {}
     for m in members:
         missing: list[str] = []
         if m["status"] == "inactive":
@@ -145,14 +145,27 @@ async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
             else:
                 readiness = {"status": "ready", "missing": []}
         per_member[str(m["id"])] = readiness
-        if readiness["status"] == "ready":
-            counts["ready"] += 1
-        elif readiness["status"] == "access_disabled":
-            counts["disabled"] += 1
-        elif readiness["status"] == "invitation_pending":
-            counts["invitation_pending"] += 1
-        else:
-            counts["needs_setup"] += 1
+    return per_member
+
+
+async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Canonical complete onboarding roster readiness.
+
+    Setup explicitly needs a complete per-member result.  High-volume
+    operational pages use :func:`compute_members_readiness` with a bounded
+    page instead.
+    """
+    members_rows = (await db.execute(text(
+        "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL"
+    ), {"tid": str(tenant_id)})).fetchall()
+    members = [dict(r._mapping) for r in members_rows]
+    per_member = await compute_members_readiness(db, tenant_id, members)
+    counts = {"total": len(members), "ready": 0, "needs_setup": 0, "invitation_pending": 0, "disabled": 0}
+    for readiness in per_member.values():
+        if readiness["status"] == "ready": counts["ready"] += 1
+        elif readiness["status"] == "access_disabled": counts["disabled"] += 1
+        elif readiness["status"] == "invitation_pending": counts["invitation_pending"] += 1
+        else: counts["needs_setup"] += 1
 
     return {"counts": counts, "per_member": per_member}
 

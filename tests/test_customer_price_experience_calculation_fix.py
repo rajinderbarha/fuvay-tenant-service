@@ -39,6 +39,7 @@ def test_matching_engine_no_longer_exposes_price_tier_helpers():
     ).read_text(encoding="utf-8-sig")
     assert "def compute_price_tiers" not in matching_engine
     assert "def resolve_customer_offer_for_tier" not in matching_engine
+    assert "def round_to_nearest_10" not in matching_engine
     assert "PRICE_TIER_TO_FIELD" not in matching_engine
 
 

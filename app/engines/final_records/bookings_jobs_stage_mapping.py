@@ -97,6 +97,13 @@ STAGE_LABELS: dict[str, str] = {
     "exception":         "At risk",
 }
 
+# Reverse map for SQL filtering. Keeping it beside ``_STAGE_MAP`` prevents
+# the displayed stage and paginated query semantics from drifting apart.
+STAGE_STATUSES: dict[str, tuple[str, ...]] = {
+    stage: tuple(status for status, mapped in _STAGE_MAP.items() if mapped[0] == stage)
+    for stage in STAGE_LABELS
+}
+
 
 def map_job_status(job_status: str, assignment_status: str | None) -> dict:
     """Returns {stage, stage_label, is_active, is_terminal, next_action}."""

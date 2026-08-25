@@ -109,7 +109,7 @@ async def test_create_complaint_sets_sla_deadlines():
     # Mock eligibility check pass
     with patch(
         "app.engines.complaints.eligibility_service.ComplaintEligibilityService.check_eligible",
-        new_callable=AsyncMock, return_value=None,
+        new_callable=AsyncMock, return_value={"eligible": True, "reason": None},
     ):
         svc = ComplaintService()
         complaint = await svc.create_complaint(

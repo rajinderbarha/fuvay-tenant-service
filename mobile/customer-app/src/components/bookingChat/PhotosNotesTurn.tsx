@@ -4,8 +4,9 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { resolveMediaImageSource } from "../../domain/mediaUrl";
 import { MAX_DRAFT_PHOTOS, ALLOWED_PHOTO_MIME_TYPES, type PickedPhoto } from "../../api/bookingPhotos/bookingPhotoApi";
+import { getInMemoryAccessToken } from "../../api/session/tokenVault";
 
 export interface PhotosNotesTurnProps {
   photoUrls: string[];
@@ -34,6 +35,7 @@ function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string | null {
 export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContinue }: PhotosNotesTurnProps) {
   const BOT = useBotColors();
   const [busy, setBusy] = useState(false);
+  const [pendingPreviewUri, setPendingPreviewUri] = useState<string | null>(null);
   const atLimit = photoUrls.length >= MAX_DRAFT_PHOTOS;
 
   const handleAdd = useCallback(async () => {
@@ -52,9 +54,13 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
       return;
     }
     const photo: PickedPhoto = { uri: asset.uri, mimeType, fileName: asset.fileName ?? `booking-photo.${mimeType.split("/")[1]}` };
+    // Show the device image immediately. The server remains authoritative for
+    // whether it is attached, but a Cloudinary round-trip must not leave the
+    // customer wondering whether their tap worked.
+    setPendingPreviewUri(asset.uri);
     setBusy(true);
     try { await onAddPhoto(photo); } catch { Alert.alert("Couldn't attach photo", "Please check your connection and try again."); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPendingPreviewUri(null); }
   }, [busy, atLimit, onAddPhoto]);
 
   const handleRemove = useCallback(async (url: string) => {
@@ -71,11 +77,29 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
         A photo helps your provider bring the right parts.
       </Text>
 
-      {photoUrls.length > 0 ? (
+      {photoUrls.length > 0 || pendingPreviewUri ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+          {pendingPreviewUri ? (
+            <View style={{ width: THUMB, height: THUMB }}>
+              <Image
+                source={{ uri: pendingPreviewUri }}
+                accessibilityLabel="Photo uploading"
+                style={{ width: THUMB, height: THUMB, borderRadius: 10, backgroundColor: BOT.surfaceRaised, opacity: 0.82 }}
+              />
+              <ActivityIndicator
+                size="small"
+                color={BOT.brand}
+                style={{ position: "absolute", top: 22, left: 22 }}
+              />
+            </View>
+          ) : null}
           {photoUrls.map(url => (
             <View key={url} style={{ width: THUMB, height: THUMB }}>
-              <Image source={{ uri: resolveMediaUrl(url) ?? url }} style={{ width: THUMB, height: THUMB, borderRadius: 10, backgroundColor: BOT.surfaceRaised }} />
+              <Image
+                source={resolveMediaImageSource(url, getInMemoryAccessToken()) ?? { uri: url }}
+                accessibilityLabel="Photo attached"
+                style={{ width: THUMB, height: THUMB, borderRadius: 10, backgroundColor: BOT.surfaceRaised }}
+              />
               <Pressable
                 onPress={() => handleRemove(url)}
                 disabled={busy}

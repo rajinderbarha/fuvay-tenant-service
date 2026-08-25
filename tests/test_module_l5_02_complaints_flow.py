@@ -150,7 +150,7 @@ def test_refund_events_log_the_status_actually_applied():
     import inspect
     from app.engines.complaints.refund_service import RefundRequestService
     for fn in (RefundRequestService.create_refund_request_from_complaint,
-               RefundRequestService.admin_approve_refund,
+               RefundRequestService.provider_decide_refund,
                RefundRequestService.record_refund):
         src = inspect.getsource(fn)
         assert "applied = None" in src, fn.__name__

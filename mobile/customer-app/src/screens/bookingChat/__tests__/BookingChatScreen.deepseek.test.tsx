@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react-native";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { AppProviders } from "../../../providers/AppProviders";
@@ -8,6 +8,7 @@ import * as controllerModule from "../../assistant/useAssistantController";
 import * as profileModule from "../../../api/customer/useCustomerProfileQuery";
 import * as homeModule from "../../../api/home/useCustomerHomeQuery";
 import { asCustomerId } from "../../../domain/ids";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 jest.mock("../../assistant/useAssistantController");
 jest.mock("../../../api/customer/useCustomerProfileQuery");
@@ -81,6 +82,51 @@ function renderChat(overrides: Record<string, unknown> = {}) {
     </AppProviders>,
   );
 }
+
+function renderBareAssistant(overrides: Record<string, unknown> = {}) {
+  (controllerModule.useAssistantController as jest.Mock).mockReturnValue(controller(overrides));
+  return render(
+    <AppProviders>
+      <NavigationContainer>
+        <Tab.Navigator screenOptions={{ headerShown: false }}>
+          <Tab.Screen name="Assistant" component={BookingChatScreen} />
+          <Tab.Screen name="Home" component={() => null} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </AppProviders>,
+  );
+}
+
+describe("BookingChatScreen -- shared service location", () => {
+  beforeEach(() => {
+    (profileModule.useCustomerProfileQuery as jest.Mock).mockReturnValue({
+      data: { id: asCustomerId("c-1"), displayName: "Rajinder" },
+    });
+    (homeModule.useCustomerHomeQuery as jest.Mock).mockReturnValue({
+      data: {
+        address: null,
+        bookableCategories: [{ categoryId: "cat-1", name: "Air Conditioning", slug: "air-conditioning" }],
+      },
+      isPending: false,
+    });
+  });
+
+  afterEach(async () => {
+    await AsyncStorage.removeItem("customer_app_service_location_v1");
+    jest.clearAllMocks();
+  });
+
+  it("uses the PIN selected on Home when the center Assistant tab opens directly", async () => {
+    await AsyncStorage.setItem("customer_app_service_location_v1", "140412");
+    renderBareAssistant();
+
+    expect(await screen.findByText("Air Conditioning")).toBeTruthy();
+    expect(screen.queryByText("Choose your location first")).toBeNull();
+    await waitFor(() => {
+      expect(homeModule.useCustomerHomeQuery).toHaveBeenLastCalledWith("140412");
+    });
+  });
+});
 
 /**
  * DeepSeek's two constrained interpreters were built, reachable and working --

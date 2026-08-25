@@ -16,7 +16,8 @@ export function AvailabilityFilters({
   search: string; onSearch: (v: string) => void;
   roleFilter: string; onRole: (v: string) => void; roles: string[];
   availFilter: "" | "available" | "unavailable"; onAvail: (v: "" | "available" | "unavailable") => void;
-  capabilityFilter: string; onCapability: (v: string) => void; capabilities: string[];
+  capabilityFilter: string; onCapability: (v: string) => void;
+  capabilities: { id: string; name: string }[];
   timezone: string | null; onReset: () => void;
 }) {
   return (
@@ -50,7 +51,7 @@ export function AvailabilityFilters({
           <label htmlFor="availability-capability" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Capability</label>
           <select id="availability-capability" value={capabilityFilter} onChange={e => onCapability(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
             <option value="">All</option>
-            {capabilities.map(c => <option key={c} value={c}>{c}</option>)}
+            {capabilities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>

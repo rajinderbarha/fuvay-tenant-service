@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import record_platform_audit
 from app.dependencies.auth import UserContext
 from app.engines.auth.models import User
+from app.engines.media.models import MediaAsset
 from app.engines.profile.schemas import UpdateUserProfileRequest, UpdateBusinessProfileRequest, CRITICAL_BUSINESS_FIELDS
 from app.exceptions import NotFoundException, ServiceOSException
 
@@ -154,6 +155,21 @@ class ProfileService:
         tenant = await self._load_tenant()
         data = self._serialize_tenant(tenant)
         tid = str(tenant.id)
+
+        data["shop_photo_url"] = None
+        if tenant.shop_photo_media_id:
+            shop_photo = (await self.db.execute(
+                select(MediaAsset).where(
+                    MediaAsset.id == tenant.shop_photo_media_id,
+                    MediaAsset.status != "deleted",
+                )
+            )).scalar_one_or_none()
+            if shop_photo:
+                data["shop_photo_url"] = (
+                    shop_photo.public_url
+                    if shop_photo.is_public and shop_photo.public_url
+                    else f"/v1/media/{shop_photo.id}/view"
+                )
 
         completed = [key for key, _ in self._COMPLETENESS_FIELDS if data.get(key)]
         missing = [{"key": key, "label": label}

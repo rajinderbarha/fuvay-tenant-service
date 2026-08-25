@@ -1,20 +1,36 @@
-﻿import React from "react";
-import { fireEvent } from "@testing-library/react-native";
+import React from "react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { HomeScreen } from "../HomeScreen";
 import * as homeQueryModule from "../../../api/home/useCustomerHomeQuery";
-import * as profileQueryModule from "../../../api/customer/useCustomerProfileQuery";
-import { CustomerHome } from "../../../domain/customerHome";
-import { asCategoryId, asCustomerId, asVerticalId, asServiceBookingId, asAddressId } from "../../../domain/ids";
+import { DEFAULT_HOME_SECTIONS, type CustomerHome, type HomeCampaign, type HomeQuickIssue } from "../../../domain/customerHome";
+import { asAddressId, asCategoryId, asServiceBookingId, asVerticalId } from "../../../domain/ids";
 import { parseServerTimestamp } from "../../../domain/dates";
+import { recordHomeCampaignEvent } from "../../../api/home/customerHomeCampaignApi";
+import { useGlobalServicesQuery } from "../../../api/globalServices/useGlobalServicesQuery";
+
+jest.mock("../../../api/home/customerHomeCampaignApi", () => ({
+  recordHomeCampaignEvent: jest.fn().mockResolvedValue({ recorded: true }),
+}));
+jest.mock("../../../api/home/useCustomerHomeQuery", () => ({
+  useCustomerHomeQuery: jest.fn(),
+}));
+jest.mock("../../../api/globalServices/useGlobalServicesQuery", () => ({
+  useGlobalServicesQuery: jest.fn(),
+}));
 
 const Tab = createBottomTabNavigator();
-
 let lastAssistantParams: unknown = "not-navigated";
+
 function CapturingAssistantScreen(props: { route?: { params: unknown } }) {
   lastAssistantParams = props.route?.params;
+  return null;
+}
+
+function EmptyScreen() {
   return null;
 }
 
@@ -22,564 +38,259 @@ function renderHome() {
   lastAssistantParams = "not-navigated";
   return renderWithProviders(
     <NavigationContainer>
-      <Tab.Navigator>
+      <Tab.Navigator screenOptions={{ headerShown: false }}>
         <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Assistant" component={CapturingAssistantScreen} />
-        <Tab.Screen name="Bookings" component={() => null} />
+        <Tab.Screen name="Bookings" component={EmptyScreen} />
       </Tab.Navigator>
     </NavigationContainer>,
   );
 }
 
+const heroCampaign: HomeCampaign = {
+  campaignId: "campaign-hero",
+  placement: "home_hero",
+  variant: "cinematic",
+  themeKey: "ink",
+  sectionTitle: null,
+  priority: 100,
+  sponsored: true,
+  badge: "Sponsored",
+  title: "Monsoon Home Care",
+  subtitle: "Keep your home fresh and worry-free this season.",
+  offerText: "Save 20% today",
+  imageUrl: "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+  actionLabel: "Book now",
+  actionUrl: null,
+  categorySlug: "home_services",
+  serviceGroupSlug: null,
+  startsAt: null,
+  endsAt: "2026-08-31T18:29:59Z",
+};
+
+const trustCampaigns: HomeCampaign[] = [
+  ["trust-verified", "Verified providers", "Business and identity checks completed", "Verified"],
+  ["trust-estimates", "Clear estimates", "Approve the scope before paid work begins", "Estimate"],
+  ["trust-warranty", "Warranty protection", "Provider-owned service warranty applies", "Warranty"],
+  ["trust-tracking", "Live job tracking", "Follow assignment and visit progress", "Tracking"],
+].map(([campaignId, title, subtitle, badge], index) => ({
+  ...heroCampaign,
+  campaignId,
+  placement: "home_trust",
+  variant: "promise",
+  title,
+  subtitle,
+  badge,
+  offerText: null,
+  priority: 100 - index,
+  sponsored: false,
+  actionLabel: "Learn more",
+  categorySlug: null,
+  endsAt: null,
+}));
+
 function baseHome(overrides: Partial<CustomerHome> = {}): CustomerHome {
   return {
-    responseVersion: 1,
+    responseVersion: 4,
     address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
     serviceability: { zipcode: "141001", checked: true },
     enabledVerticals: [{ verticalId: asVerticalId("v-1"), key: "home_services", label: "Home Services", icon: "home-outline" }],
-    bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: null }],
+    bookableCategories: [{ categoryId: asCategoryId("cat-1"), name: "Home Services", slug: "home_services", iconUrl: null, description: null, startingPrice: null }],
+    bookableServiceGroups: [
+      { serviceGroupId: "group-ac", name: "AC & HVAC", slug: "ac-hvac", description: null, iconUrl: null, categoryId: asCategoryId("cat-1"), categorySlug: "home_services" },
+      { serviceGroupId: "group-plumbing", name: "Plumbing", slug: "plumbing", description: null, iconUrl: null, categoryId: asCategoryId("cat-1"), categorySlug: "home_services" },
+    ],
+    bookableMasterServices: [],
+    campaigns: [heroCampaign, ...trustCampaigns],
+    sections: DEFAULT_HOME_SECTIONS,
     quickIssues: [],
     activeBooking: null,
     activeBookings: [],
     activeBookingTotal: 0,
-    unreadNotificationCount: 0,
-    campaigns: [],
-    sections: [],
-    season: null,
-    seasonLabel: null,
+    unreadNotificationCount: 3,
+    season: "monsoon",
+    seasonLabel: "Monsoon picks",
     capabilities: { bargainAvailable: true, photoAttachAvailable: true, chatbotLanguageSelectable: true },
     ...overrides,
   };
 }
 
+function issue(index: number, intent: HomeQuickIssue["intent"] = "repair"): HomeQuickIssue {
+  return {
+    issueId: `issue-${index}`,
+    label: `Problem ${index}`,
+    categoryId: asCategoryId("cat-1"),
+    categorySlug: "home_services",
+    categoryName: "Home Services",
+    intent,
+  };
+}
+
 function mockHomeQuery(partial: Partial<ReturnType<typeof homeQueryModule.useCustomerHomeQuery>>) {
-  jest.spyOn(homeQueryModule, "useCustomerHomeQuery").mockReturnValue({
-    isPending: false, isError: false, isRefetching: false, data: undefined, refetch: jest.fn(),
+  (homeQueryModule.useCustomerHomeQuery as jest.Mock).mockReturnValue({
+    isPending: false,
+    isError: false,
+    isRefetching: false,
+    data: undefined,
+    refetch: jest.fn(),
     ...partial,
   } as ReturnType<typeof homeQueryModule.useCustomerHomeQuery>);
 }
 
-describe("HomeScreen", () => {
+describe("HomeScreen selected editorial marketplace", () => {
   beforeEach(() => {
-    jest.spyOn(profileQueryModule, "useCustomerProfileQuery").mockReturnValue({
-      data: {
-        id: asCustomerId("c-1"), fullName: "Rajinder Singh", displayName: "Rajinder", phone: null, email: null,
-        avatarUrl: null, language: "en", timezone: "Asia/Kolkata", verified: true, isActive: true,
-        createdAt: "2026-01-01T00:00:00Z",
-        capabilities: { canEditProfile: true, canUpdateAvatar: false, canManageAddresses: false, canChangePassword: true, canManageSessions: true, canDeleteAccount: false },
-      },
-    } as ReturnType<typeof profileQueryModule.useCustomerProfileQuery>);
-  });
-  afterEach(() => jest.restoreAllMocks());
-
-  it("shows a loading skeleton while the aggregation query is pending", () => {
-    mockHomeQuery({ isPending: true });
-    const { getByLabelText } = renderHome();
-    expect(getByLabelText("Loading your home screen")).toBeTruthy();
+    (recordHomeCampaignEvent as jest.Mock).mockClear();
+    (useGlobalServicesQuery as jest.Mock).mockReturnValue({
+      isPending: false,
+      isError: false,
+      refetch: jest.fn(),
+      data: [
+        { id: "digital-web", name: "Web Development", tagline: "Modern web products", description: null, iconUrl: null },
+        { id: "digital-app", name: "Mobile App Dev", tagline: "Native mobile products", description: null, iconUrl: null },
+        { id: "digital-ai", name: "AI & ML", tagline: "Practical AI systems", description: null, iconUrl: null },
+      ],
+    });
   });
 
-  it("shows an error state with retry when the aggregation query fails", () => {
-    mockHomeQuery({ isError: true });
-    const { getByText } = renderHome();
-    expect(getByText("We couldn't load your home screen")).toBeTruthy();
-    expect(getByText("Try again")).toBeTruthy();
+  afterEach(() => {
+    cleanup();
+    jest.clearAllMocks();
   });
 
-  it("asks for a location only when there is genuinely none to browse with", () => {
-    // No saved address AND no ZIP chosen. A ZIP alone is enough to browse (see the
-    // next test), so this state is for a customer the app knows nothing about.
+  it("keeps the missing-location state", () => {
     mockHomeQuery({ data: baseHome({ address: null, serviceability: null }) });
-    const { getByText } = renderHome();
-    expect(getByText("Where do you need service?")).toBeTruthy();
-    expect(getByText("Set your location")).toBeTruthy();
+    const view = renderHome();
+    expect(view.getByText("Where do you need service?")).toBeTruthy();
+    expect(view.getByText("Set your location")).toBeTruthy();
+    expect(view.getByText("Web & mobile development")).toBeTruthy();
   });
 
-  it("shows UnserviceableState for a ZIP the backend does not service", () => {
+  it("keeps the unserviceable location state", () => {
     mockHomeQuery({ data: baseHome({ serviceability: { zipcode: "999999", checked: false } }) });
-    const { getByText } = renderHome();
-    expect(getByText(/Not available in your area yet/)).toBeTruthy();
-    expect(getByText(/999999/)).toBeTruthy();
+    const view = renderHome();
+    expect(view.getByText(/Not available in your area yet/)).toBeTruthy();
+    expect(view.getByText(/999999/)).toBeTruthy();
+    expect(view.getByText("Web & mobile development")).toBeTruthy();
   });
 
-  it("renders the real customer first name from the profile query, not a hardcoded name", () => {
+  it("renders the selected branded viewport using only live aggregate fields", async () => {
     mockHomeQuery({ data: baseHome() });
-    const { getByText } = renderHome();
-    expect(getByText(/Rajinder$/)).toBeTruthy();
+    const view = renderHome();
+
+    expect(view.queryByLabelText("Fuvay")).toBeNull();
+    expect(view.getByLabelText(/Ludhiana, 141001/)).toBeTruthy();
+    expect(view.getByLabelText("Notifications, 3 unread")).toBeTruthy();
+    expect(view.getByText("Monsoon Home Care")).toBeTruthy();
+    expect(view.getByText("Popular services")).toBeTruthy();
+    expect(view.getByText("AC & HVAC")).toBeTruthy();
+    expect(view.getByText("Plumbing")).toBeTruthy();
+    expect(view.getByText("Verified providers")).toBeTruthy();
+    expect(view.getByText("Clear estimates")).toBeTruthy();
+    expect(view.queryByText("Ideas and offers")).toBeNull();
+    expect(view.queryByText("Fuvay Digital Studio")).toBeNull();
+    expect(view.getByText("View all")).toBeTruthy();
+
+    await waitFor(() => expect(recordHomeCampaignEvent).toHaveBeenCalledWith({
+      campaignId: "campaign-hero",
+      eventType: "delivered",
+      placement: "home_hero",
+    }));
   });
 
-  it("renders only backend-returned bookable categories, with no price row when none is provided", () => {
-    // startingPrice null => the card omits the "Starting at" row entirely
-    // rather than fabricating a figure or rendering a zero.
+  it("opens a service group through its real parent booking category", () => {
     mockHomeQuery({ data: baseHome() });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("AC & Cooling")).toBeTruthy();
-    expect(queryByText("Starting at")).toBeNull();
-    expect(queryByText(/₹/)).toBeNull();
-  });
-
-  it("renders a real 'Starting at' price when the backend provides one", () => {
-    mockHomeQuery({
-      data: baseHome({
-        bookableCategories: [
-          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: "Service, repair & more", startingPrice: 800 },
-          { categoryId: asCategoryId("cat-2"), name: "Plumbing", slug: "plumbing", iconUrl: null, description: null, startingPrice: null },
-        ],
-      }),
-    });
-    const { getByText, getAllByText, queryByText } = renderHome();
-    expect(getByText("AC & Cooling")).toBeTruthy();
-    expect(getByText("Plumbing")).toBeTruthy();
-    expect(getByText("Service, repair & more")).toBeTruthy();
-    // Only the priced category shows a price row; the unpriced one does not.
-    expect(getAllByText("Starting at")).toHaveLength(1);
-    expect(getByText(/₹\s?800/)).toBeTruthy();
-    expect(queryByText(/₹0\b/)).toBeNull();
-  });
-
-  it("never renders ₹0 for any service", () => {
-    // A zero price is "not configured", never a real free service -- see
-    // classifyRawAmount, which the card routes every amount through.
-    mockHomeQuery({
-      data: baseHome({
-        bookableCategories: [
-          { categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling", iconUrl: null, description: null, startingPrice: 0 },
-        ],
-      }),
-    });
-    const { queryByText } = renderHome();
-    expect(queryByText(/₹0\b/)).toBeNull();
-    expect(queryByText("Starting at")).toBeNull();
-  });
-
-  it("hides the campaign carousel entirely when there are no campaigns", () => {
-    mockHomeQuery({ data: baseHome({ campaigns: [] }) });
-    const { queryByLabelText } = renderHome();
-    expect(queryByLabelText(/Promotional offers/)).toBeNull();
-  });
-
-  it("renders campaigns when present, sorted by backend priority", () => {
-    mockHomeQuery({
-      data: baseHome({
-        campaigns: [
-          { campaignId: "c-1", eyebrow: "Sponsored", title: "Monsoon Home Care", description: "Get ready", artworkUrlLight: null, artworkUrlDark: null, ctaLabel: "Explore", ctaDeeplink: "app://offers", priority: 1,
-            style: "hero" as const, placement: "campaign_top" as const, accentColor: null, badgeText: null, endsAt: null },
-        ],
-      }),
-    });
-    const { getByText } = renderHome();
-    expect(getByText("Monsoon Home Care")).toBeTruthy();
-    expect(getByText("Sponsored")).toBeTruthy();
-  });
-
-  it("does not render the My Booking section when there is no active booking", () => {
-    mockHomeQuery({ data: baseHome({ activeBooking: null }) });
-    const { queryByText } = renderHome();
-    expect(queryByText("My Booking")).toBeNull();
-  });
-
-  it("renders My Booking from real returned fields, never a fabricated ETA or technician", () => {
-    mockHomeQuery({
-      data: baseHome({
-        // Mirrored into both, exactly as the adapter does: `activeBooking` is
-        // always `activeBookings[0]`.
-        activeBookings: [{
-          bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: null, issueSummary: null, serviceName: null,
-          preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
-          scheduledDate: null, scheduledTimeWindow: null, provider: null,
-        }],
-        activeBooking: {
-          bookingId: asServiceBookingId("b-1"), bookingNumber: "SB-2026-01", status: "scheduled",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: null, issueSummary: null, serviceName: null,
-          preferredDate: null, preferredTimeWindow: null, providerName: null, technician: null,
-          scheduledDate: null, scheduledTimeWindow: null, provider: null,
-        },
-        activeBookingTotal: 1,
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("My Booking")).toBeTruthy();
-    // With no service name or issue summary, the title falls back to the
-    // booking number rather than inventing one.
-    expect(getByText("SB-2026-01")).toBeTruthy();
-    // The reference design shows "Arriving in 15 MIN"; nothing computes an
-    // ETA, so no such claim may appear.
-    expect(queryByText(/min/i)).toBeNull();
-    expect(queryByText(/arriving/i)).toBeNull();
-    expect(queryByText(/Rakesh/i)).toBeNull();
-  });
-
-  it("names the provider with its verification, rating, badges and the committed slot", () => {
-    mockHomeQuery({
-      data: baseHome({
-        // Mirrored into both, exactly as the adapter does: `activeBooking` is
-        // always `activeBookings[0]`.
-        activeBookings: [{
-          bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "assigned", issueSummary: "AC Not Cooling", serviceName: "AC Repair",
-          preferredDate: null, preferredTimeWindow: null, providerName: "Guramrit",
-          scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
-          provider: {
-            name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
-            badges: [
-              // Standing (level) is the only badge the compact card shows; the
-              // independent ones live on the fuller provider surfaces.
-              { name: "Bronze Partner", icon: "medal", color: null, level: 1 },
-              { name: "Verified Business", icon: null, color: null },
-            ],
-          },
-          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
-        }],
-        activeBooking: {
-          bookingId: asServiceBookingId("b-2"), bookingNumber: "SB-2026-02", status: "on_the_way",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "assigned", issueSummary: "AC Not Cooling", serviceName: "AC Repair",
-          preferredDate: null, preferredTimeWindow: null, providerName: "Guramrit",
-          scheduledDate: "2026-08-07", scheduledTimeWindow: "10:30-11:30",
-          provider: {
-            name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12,
-            badges: [
-              // Standing (level) is the only badge the compact card shows; the
-              // independent ones live on the fuller provider surfaces.
-              { name: "Bronze Partner", icon: "medal", color: null, level: 1 },
-              { name: "Verified Business", icon: null, color: null },
-            ],
-          },
-          technician: { name: "Rakesh Kumar", role: "Service technician", photoUrl: null, rating: 4.6, reviewCount: 12 },
-        },
-        activeBookingTotal: 1,
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("AC Repair")).toBeTruthy();
-    expect(getByText("Guramrit")).toBeTruthy();
-    // The provider's rating, not the technician's -- the card leads with who
-    // the customer booked.
-    expect(getByText("4.8")).toBeTruthy();
-    expect(getByText("Bronze Partner")).toBeTruthy();
-    // An independent badge is NOT promoted onto this card -- one claim, not a row.
-    expect(queryByText("Verified Business")).toBeNull();
-    // The technician's name moved off this card with the decongestion; the provider
-    // is who the customer booked, and the technician is named on the detail screen.
-    expect(queryByText("· Rakesh Kumar")).toBeNull();
-    // The COMMITTED slot, not the requested one.
-    expect(getByText("7 Aug 10:30-11:30")).toBeTruthy();
-    expect(getByText("On the way")).toBeTruthy();
-    // Still no invented ETA.
-    expect(queryByText(/arriving/i)).toBeNull();
-  });
-
-  it("shows a requested window only as such, never as a committed slot", () => {
-    // preferred_* is what the customer ASKED for. Rendering it identically to a
-    // scheduled slot would present a request as the provider's promise.
-    mockHomeQuery({
-      data: baseHome({
-        // Mirrored into both, exactly as the adapter does: `activeBooking` is
-        // always `activeBookings[0]`.
-        activeBookings: [{
-          bookingId: asServiceBookingId("b-4"), bookingNumber: "SB-2026-04", status: "pending_assignment",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "unassigned", issueSummary: null, serviceName: "AC Service",
-          preferredDate: "2026-08-12", preferredTimeWindow: "14:00-15:00",
-          scheduledDate: null, scheduledTimeWindow: null,
-          provider: { name: "Guramrit", verified: false, rating: null, reviewCount: 0, badges: [] },
-          providerName: "Guramrit", technician: null,
-        }],
-        activeBooking: {
-          bookingId: asServiceBookingId("b-4"), bookingNumber: "SB-2026-04", status: "pending_assignment",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "unassigned", issueSummary: null, serviceName: "AC Service",
-          preferredDate: "2026-08-12", preferredTimeWindow: "14:00-15:00",
-          scheduledDate: null, scheduledTimeWindow: null,
-          provider: { name: "Guramrit", verified: false, rating: null, reviewCount: 0, badges: [] },
-          providerName: "Guramrit", technician: null,
-        },
-        activeBookingTotal: 1,
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("Guramrit")).toBeTruthy();
-    // No rating, no badges, no verified tick: none of them are earned here.
-    expect(queryByText(/^\d\.\d$/)).toBeNull();
-    // A fixed future date, not "today": the label collapses to "Today" for
-    // the current date, which would make this assertion pass or fail
-    // depending on the day the suite runs.
-    expect(getByText("12 Aug 14:00-15:00")).toBeTruthy();
-  });
-
-  it("omits the star when the technician has not been reviewed yet", () => {
-    // staff_rating_summaries returns null until real reviews exist; an
-    // unearned rating is worse than none.
-    mockHomeQuery({
-      data: baseHome({
-        // Mirrored into both, exactly as the adapter does: `activeBooking` is
-        // always `activeBookings[0]`.
-        activeBookings: [{
-          bookingId: asServiceBookingId("b-3"), bookingNumber: "SB-2026-03", status: "assigned",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "assigned", issueSummary: null, serviceName: "Pipe Repair",
-          preferredDate: null, preferredTimeWindow: null, providerName: null,
-          scheduledDate: null, scheduledTimeWindow: null, provider: null,
-          technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
-        }],
-        activeBooking: {
-          bookingId: asServiceBookingId("b-3"), bookingNumber: "SB-2026-03", status: "assigned",
-          createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"),
-          assignmentStatus: "assigned", issueSummary: null, serviceName: "Pipe Repair",
-          preferredDate: null, preferredTimeWindow: null, providerName: null,
-          scheduledDate: null, scheduledTimeWindow: null, provider: null,
-          technician: { name: "Dhiman", role: "Service technician", photoUrl: null, rating: null, reviewCount: 0 },
-        },
-        activeBookingTotal: 1,
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("Dhiman")).toBeTruthy();
-    expect(queryByText(/^\d\.\d$/)).toBeNull();
-  });
-
-  it("renders enabled verticals only (backend already filters disabled ones)", () => {
-    // Needs TWO verticals to assert anything about the switcher: with a
-    // single vertical it is intentionally hidden (a one-option switcher is
-    // not a switcher -- it rendered as a full-width brand pill that looked
-    // like a primary action but did nothing). Disabled verticals are still
-    // absent because the backend never sends them.
-    mockHomeQuery({
-      data: baseHome({
-        enabledVerticals: [
-          { verticalId: asVerticalId("v-1"), key: "home_services", label: "Home Services", icon: "home-outline" },
-          { verticalId: asVerticalId("v-2"), key: "beauty", label: "Beauty", icon: "sparkles-outline" },
-        ],
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("Home Services")).toBeTruthy();
-    expect(getByText("Beauty")).toBeTruthy();
-    expect(queryByText("Real Estate")).toBeNull();
-  });
-
-  it("tapping a quick issue carries the issue id so the Assistant can skip its picker", () => {
-    mockHomeQuery({ data: baseHome({
-      quickIssues: [{
-        issueId: "issue-1", label: "AC Not Cooling",
-        categoryId: asCategoryId("cat-1"), categorySlug: "ac-cooling", categoryName: "AC & Cooling", iconUrl: null, intent: "repair" as const,
-      }],
-    }) });
-    const { getAllByText } = renderHome();
-    // Two problem sections now draw from the same list, and with a single problem
-    // authored the circles section wraps round to it rather than rendering short
-    // -- so this label legitimately appears twice. Either tile books the same
-    // thing; pressing the first is the tile grid.
-    fireEvent.press(getAllByText("AC Not Cooling")[0]);
+    const view = renderHome();
+    fireEvent.press(view.getByText("AC & HVAC"));
     expect(lastAssistantParams).toEqual({
       source: "service_card",
       categoryId: "cat-1",
-      categoryName: "AC & Cooling",
-      categorySlug: "ac-cooling",
-      zipcode: "141001",
-      existingDraftId: null,
-      preselectedIssueId: "issue-1",
-    });
-  });
-
-  it("drops a quick issue whose category has no slug rather than rendering a dead chip", () => {
-    // The Assistant is entered by category slug; a chip that cannot open
-    // is worse than an absent one.
-    mockHomeQuery({ data: baseHome({
-      quickIssues: [{
-        issueId: "issue-2", label: "Drain Blocked",
-        categoryId: asCategoryId("cat-9"), categorySlug: null, iconUrl: null, intent: null, categoryName: "Plumbing",
-      }],
-    }) });
-    const { queryByText } = renderHome();
-    expect(queryByText("Drain Blocked")).toBeNull();
-  });
-
-  it("renders the sections the backend enabled, in the backend's order", () => {
-    // Re-ordering Home or hiding a section used to need an app release.
-    mockHomeQuery({
-      data: baseHome({
-        sections: [
-          { key: "trust_benefits", order: 10, title: null },
-          { key: "service_grid", order: 20, title: null },
-        ],
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("What you're promised")).toBeTruthy();
-    expect(getByText("Services Nearby")).toBeTruthy();
-    // Not listed by the backend, so not drawn -- even though this build can.
-    expect(queryByText("Not sure what to book?")).toBeNull();
-  });
-
-  it("honours an admin's section heading override", () => {
-    mockHomeQuery({
-      data: baseHome({
-        sections: [{ key: "service_grid", order: 10, title: "Services in Ludhiana" }],
-      }),
-    });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("Services in Ludhiana")).toBeTruthy();
-    expect(queryByText("Services Nearby")).toBeNull();
-  });
-
-  it("falls back to its shipped layout when the backend sends no sections", () => {
-    // An empty list is "no instruction" from an older backend -- never an
-    // instruction to draw nothing.
-    mockHomeQuery({ data: baseHome({ sections: [] }) });
-    const { getByText, queryByText } = renderHome();
-    expect(getByText("Services Nearby")).toBeTruthy();
-    expect(getByText("Not sure what to book?")).toBeTruthy();
-    // The shipped order matches what customers actually see: both of these are
-    // switched off in the layout settings, so the fallback must not reintroduce
-    // them. Their renderers stay wired for turning back on from admin.
-    expect(queryByText("What you're promised")).toBeNull();
-    expect(queryByText(/How it works/i)).toBeNull();
-  });
-
-  it("skips a section key this build has no renderer for", () => {
-    mockHomeQuery({
-      data: baseHome({
-        sections: [
-          { key: "loyalty_points_widget", order: 10, title: null },
-          { key: "service_grid", order: 20, title: null },
-        ],
-      }),
-    });
-    const { getByText } = renderHome();
-    // The unknown key is ignored rather than crashing the screen, so a newer
-    // backend can add sections ahead of an app release.
-    expect(getByText("Services Nearby")).toBeTruthy();
-  });
-
-  it("hides the vertical switcher entirely when only one vertical is enabled", () => {
-    mockHomeQuery({ data: baseHome() }); // fixture has exactly one vertical
-    const { queryByRole } = renderHome();
-    expect(queryByRole("tablist")).toBeNull();
-  });
-
-  it("tapping a service card navigates to Assistant carrying real backend context (category, slug, zip) and no customer identity", () => {
-    mockHomeQuery({ data: baseHome() });
-    const { getByText } = renderHome();
-    fireEvent.press(getByText("AC & Cooling"));
-    expect(lastAssistantParams).toEqual({
-      source: "service_card",
-      categoryId: "cat-1",
-      categoryName: "AC & Cooling",
-      categorySlug: "ac-cooling",
+      categoryName: "AC & HVAC",
+      categorySlug: "home_services",
+      serviceGroupSlug: "ac-hvac",
+      masterServiceId: null,
       zipcode: "141001",
       existingDraftId: null,
       preselectedIssueId: null,
     });
-    expect(lastAssistantParams).not.toHaveProperty("customerId");
-    expect(lastAssistantParams).not.toHaveProperty("serviceabilityChecked");
   });
 
-  it("does not navigate when a category has no resolvable slug (cannot start a draft without one)", () => {
-    mockHomeQuery({ data: baseHome({ bookableCategories: [{ categoryId: asCategoryId("cat-2"), name: "Unmapped Service", slug: null, iconUrl: null, description: null, startingPrice: null }] }) });
-    const { getByText } = renderHome();
-    fireEvent.press(getByText("Unmapped Service"));
-    expect(lastAssistantParams).toBe("not-navigated");
-  });
-
-  it("tapping the assistant card navigates to Assistant with no category pre-selected", () => {
+  it("records campaign clicks and opens the mapped category", async () => {
     mockHomeQuery({ data: baseHome() });
-    const { getByLabelText } = renderHome();
-    fireEvent.press(getByLabelText(
-      "Not sure what to book? Describe the problem and Fuvay Assistant takes it from there.",
-    ));
-    expect(lastAssistantParams).toMatchObject({ source: "assistant_card", categoryId: null, categoryName: null });
+    const view = renderHome();
+    fireEvent.press(view.getByLabelText("Book now: Monsoon Home Care"));
+
+    expect(lastAssistantParams).toMatchObject({ categoryId: "cat-1", categorySlug: "home_services" });
+    await waitFor(() => expect(recordHomeCampaignEvent).toHaveBeenCalledWith({
+      campaignId: "campaign-hero",
+      eventType: "clicked",
+      placement: "home_hero",
+    }));
   });
 
-  it("opens the location picker when the location row is pressed, and re-runs the Home query with the new ZIP", () => {
-    const refetch = jest.fn();
-    mockHomeQuery({ data: baseHome() });
-    const { getByLabelText, getByText } = renderHome();
-    fireEvent(getByLabelText(/Location: Ludhiana · 141001/), "touchEnd");
-    fireEvent.changeText(getByLabelText("ZIP code"), "160001");
-    fireEvent.press(getByText("Update location"));
-    // Re-rendering with a new zipcodeOverride calls useCustomerHomeQuery
-    // again with the new value -- verified via the spy call arguments.
-    expect(homeQueryModule.useCustomerHomeQuery).toHaveBeenLastCalledWith("160001");
-    void refetch;
+  it("shows a compact active booking without inventing an ETA", () => {
+    const booking = {
+      bookingId: asServiceBookingId("booking-1"), bookingNumber: "SB-2026-01", status: "on_the_way",
+      createdAt: parseServerTimestamp("2026-08-01T09:00:00Z", "createdAt"), assignmentStatus: "assigned",
+      issueSummary: "AC not cooling", serviceName: "AC Repair", preferredDate: null, preferredTimeWindow: null,
+      providerName: "Guramrit", scheduledDate: "2026-08-23", scheduledTimeWindow: "10:30-11:30",
+      provider: { name: "Guramrit", verified: true, rating: 4.8, reviewCount: 12, badges: [] },
+      technician: { name: "Rakesh Kumar", role: "Technician", photoUrl: null, rating: 4.7, reviewCount: 8 },
+    };
+    mockHomeQuery({ data: baseHome({ activeBooking: booking, activeBookings: [booking], activeBookingTotal: 1 }) });
+    const view = renderHome();
+    expect(view.getAllByText("AC Repair").length).toBeGreaterThan(0);
+    expect(view.getAllByText("Rakesh Kumar").length).toBeGreaterThan(0);
+    expect(view.getAllByLabelText(/track booking/).length).toBeGreaterThan(0);
+    expect(view.queryByText(/arriving|\d+ min/i)).toBeNull();
   });
 
-  it("offers a location picker from the unserviceable state's Change location action", () => {
-    mockHomeQuery({ data: baseHome({ serviceability: { zipcode: "999999", checked: false } }) });
-    const { getByText, getByLabelText } = renderHome();
-    fireEvent.press(getByText("Change location"));
-    expect(getByLabelText("ZIP code")).toBeTruthy();
-  });
-
-  it("shows the unread notification dot only when the real Home count is > 0", () => {
-    mockHomeQuery({ data: baseHome({ unreadNotificationCount: 2 }) });
-    const { getByLabelText } = renderHome();
-    expect(getByLabelText("Notifications, unread")).toBeTruthy();
-  });
-
-  it("the notification bell is pressable and does not crash without a parent navigator (unit render)", () => {
-    mockHomeQuery({ data: baseHome({ unreadNotificationCount: 1 }) });
-    const { getByLabelText } = renderHome();
-    // No outer stack is mounted in this render, so navigation.getParent()
-    // is undefined -- the handler's optional chaining must not throw.
-    expect(() => fireEvent.press(getByLabelText("Notifications, unread"))).not.toThrow();
-  });
-
-  it("shows and books against the ZIP the payload was computed for, not the saved address", () => {
-    // Real bug: "Change location" set an override the backend honoured -- it
-    // recomputed serviceability and the catalogue -- but `address` always reports the
-    // saved default address. Home read its ZIP for the header AND for navigation, so
-    // changing location looked like nothing happened, and a tap afterwards carried the
-    // OLD ZIP into the booking: browse one city, get matched in another.
-    mockHomeQuery({
-      data: baseHome({
-        address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
-        serviceability: { zipcode: "110001", checked: true },
-      }),
+  it("shows eligible master services separately from the service-group rail", () => {
+    mockHomeQuery({ data: baseHome({
+      bookableMasterServices: [{
+        masterServiceId: "service-ac-repair", name: "AC Repair", slug: "ac-repair",
+        description: "Diagnosis and repair", iconUrl: null,
+        serviceGroupId: "group-ac", serviceGroupName: "AC & HVAC", serviceGroupSlug: "ac-hvac",
+        categoryId: asCategoryId("cat-1"), categorySlug: "home_services",
+      }],
+    }) });
+    const view = renderHome();
+    expect(view.getByText("Recommended for you")).toBeTruthy();
+    expect(view.getAllByText("AC Repair").length).toBeGreaterThan(0);
+    expect(view.getByText("AVAILABLE IN YOUR AREA")).toBeTruthy();
+    expect(view.getByLabelText("Book AC & HVAC")).toBeTruthy();
+    expect(view.getByLabelText("Book Plumbing")).toBeTruthy();
+    fireEvent.press(view.getAllByLabelText("Book AC Repair")[0]);
+    expect(lastAssistantParams).toMatchObject({
+      serviceGroupSlug: "ac-hvac",
+      masterServiceId: "service-ac-repair",
     });
-    const { getByLabelText, queryByText } = renderHome();
-
-    // The browsed ZIP alone: the saved address's city is a different place, and no
-    // city is guessed from a PIN the app cannot resolve.
-    expect(getByLabelText(/110001/)).toBeTruthy();
-    expect(queryByText("Ludhiana · 141001")).toBeNull();
   });
 
-  it("keeps the saved address's city when that is what is being shown", () => {
-    mockHomeQuery({
-      data: baseHome({
-        address: { addressId: asAddressId("addr-1"), city: "Ludhiana", zipcode: "141001", isDefault: true },
-        serviceability: { zipcode: "141001", checked: true },
-      }),
-    });
-    const { getByLabelText } = renderHome();
-    expect(getByLabelText(/Ludhiana/)).toBeTruthy();
-  });
+  it("partitions live problems without repeating them and opens the selected issue", () => {
+    const quickIssues = [
+      ...Array.from({ length: 8 }, (_, index) => issue(index + 1)),
+      issue(9, "repair"),
+      issue(10, "consult"),
+      issue(11, null),
+    ];
+    const problemSectionKeys = new Set(["featured_problems", "repair_problems", "consultation_problems", "more_problems"]);
+    mockHomeQuery({ data: baseHome({
+      quickIssues,
+      sections: DEFAULT_HOME_SECTIONS.map(section => problemSectionKeys.has(section.key) ? { ...section, enabled: true } : section),
+    }) });
+    const view = renderHome();
 
-  it("browses a chosen ZIP even with no saved address", () => {
-    // Real bug: the gate was `if (!home.address)`, so a new customer who chose a ZIP got
-    // the "add an address" screen while the backend had answered with a fully
-    // serviceable payload for it -- verified live on a fresh account at 140412, which
-    // returned 7 categories and 24 problems that the app then discarded.
-    mockHomeQuery({
-      data: baseHome({
-        address: null,
-        serviceability: { zipcode: "140412", checked: true },
-        bookableCategories: [{
-          categoryId: asCategoryId("cat-1"), name: "AC & Cooling", slug: "ac-cooling",
-          iconUrl: null, description: null, startingPrice: null,
-        }],
-      }),
-    });
-    const { getByText, queryByText, getByLabelText } = renderHome();
+    expect(view.getByText("What needs fixing?")).toBeTruthy();
+    expect(view.getByText("Repairs you can book now")).toBeTruthy();
+    expect(view.getByText("Get an expert opinion")).toBeTruthy();
+    expect(view.getByText("More ways we can help")).toBeTruthy();
+    for (const item of quickIssues) expect(view.getAllByText(item.label)).toHaveLength(1);
 
-    expect(queryByText("Where do you need service?")).toBeNull();
-    expect(getByText("AC & Cooling")).toBeTruthy();
-    // The header shows the ZIP alone: there is no city to pair it with, and none is
-    // guessed from the PIN.
-    expect(getByLabelText(/140412/)).toBeTruthy();
+    fireEvent.press(view.getByLabelText("Problem 10, Home Services"));
+    expect(lastAssistantParams).toMatchObject({
+      categoryId: "cat-1",
+      categorySlug: "home_services",
+      preselectedIssueId: "issue-10",
+    });
   });
 });

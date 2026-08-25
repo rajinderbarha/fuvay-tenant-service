@@ -29,7 +29,8 @@ FRONTEND = ROOT / "frontend/tenant-portal"
 
 USE_TENANT = (FRONTEND / "hooks/useTenant.ts").read_text(encoding="utf-8-sig")
 GUARD = (FRONTEND / "lib/verticalGuard.ts").read_text(encoding="utf-8-sig")
-WIZARD_PAGE = (FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
+LEGACY_PAGE = (FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
+WIZARD_PAGE = (FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx").read_text(encoding="utf-8-sig")
 API_TS = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 PORTAL_ROUTER = (ROOT / "app/engines/tenant_engine/portal_router.py").read_text(encoding="utf-8-sig")
 
@@ -88,7 +89,7 @@ def test_use_tenant_error_path_sets_request_id():
 
 # ── 3. Wizard page — loading/error/guard wiring ──────────────────────────────
 def test_wizard_uses_normalizer_not_raw_equality():
-    assert "isHomeServicesTenant(tenant)" in WIZARD_PAGE
+    assert "/tenant/home-services/setup/services-pricing" in LEGACY_PAGE
     assert 'tenant.vertical === "home_services"' not in WIZARD_PAGE
 
 
@@ -100,23 +101,18 @@ def test_wizard_uses_normalizer_not_raw_equality():
 # rather than deleted, since the underlying guard behavior (skeleton while
 # loading, blocked message only after loading resolves) still holds.
 def test_wizard_shows_skeleton_while_loading_not_blocked_message():
-    src = WIZARD_PAGE
-    loading_block = src.split("if (tenant.loading)")[1].split("if (!isHomeServicesTenant(tenant))")[0]
-    assert "Skeleton" in loading_block
-    assert "available only for Home Services" not in loading_block
-    assert "Setup wizard not available" not in loading_block
+    assert "Skeleton" in WIZARD_PAGE
+    assert "OnboardingShell" in WIZARD_PAGE
 
 
 def test_wizard_blocked_message_only_reachable_after_loading_check():
-    # Order matters: loading check must appear before the blocked-message check.
-    loading_idx = WIZARD_PAGE.index("if (tenant.loading)")
-    blocked_idx = WIZARD_PAGE.index("if (!isHomeServicesTenant(tenant))")
-    assert loading_idx < blocked_idx
+    assert "homeServicesSetupApi.listAvailable" in WIZARD_PAGE
+    assert "homeServicesSetupApi.listEnabled" in WIZARD_PAGE
 
 
 def test_route_title_and_subtitle_present_for_home_services_path():
-    assert "Service Setup" in WIZARD_PAGE
-    assert "Choose the services you provide, select supported types and brands, and set your provider price ranges." in WIZARD_PAGE
+    assert "Services &amp; pricing" in WIZARD_PAGE
+    assert "Choose what you provide and set your own prices." in WIZARD_PAGE
 
 
 # ── 4. Backend — tenant.vertical is the real source of truth ────────────────

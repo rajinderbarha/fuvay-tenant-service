@@ -50,7 +50,7 @@ both provider and customer paths -- re-verified here, not re-fixed.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -190,7 +190,14 @@ from app.engines.complaints.constants import (
 
 
 def _mock_db():
-    db = AsyncMock()
+    # A session is an object with async methods, not an awaitable itself.
+    # Using AsyncMock for the whole session manufactures coroutine-valued
+    # attributes during MagicMock introspection and can emit false unawaited
+    # coroutine warnings even when the production await contract is correct.
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar  = AsyncMock(return_value=None)
+    db.get     = AsyncMock(return_value=None)
     db.flush  = AsyncMock()
     db.commit = AsyncMock()
     db.add    = MagicMock()
@@ -237,11 +244,16 @@ class TestComplaintCreationOwnership:
             "eligible": True, "reason": None, "reason_code": None, "policy": None,
         })
         svc._log_event = AsyncMock()
-        c = await svc.create_complaint(
-            db, cid, category_id=uuid.uuid4(),
-            record_type=RECORD_SERVICE_BOOKING, record_id=uuid.uuid4(),
-            complaint_type="service_quality", description="x",
-        )
+        svc._link_service_job = AsyncMock()
+        with patch(
+            "app.engines.complaints.notifications.notify_provider_complaint",
+            new_callable=AsyncMock,
+        ):
+            c = await svc.create_complaint(
+                db, cid, category_id=uuid.uuid4(),
+                record_type=RECORD_SERVICE_BOOKING, record_id=uuid.uuid4(),
+                complaint_type="service_quality", description="x",
+            )
         assert str(c.customer_id) == str(cid)
         db.add.assert_called_once()
         db.commit.assert_awaited_once()

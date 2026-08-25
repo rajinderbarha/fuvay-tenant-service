@@ -287,6 +287,13 @@ class TestResolutionLedgers:
 
     async def test_tenant_credit_adjustment_uses_usage_credit_ledger(self, admin, complaint_fixture, pg):
         cid = str(complaint_fixture["hs_complaint"])
+        # Manual debits intentionally fail closed rather than create a
+        # negative provider wallet. Fund this synthetic tenant so the test
+        # exercises the immutable debit-ledger path, not overdraft rejection.
+        await pg.execute(
+            "INSERT INTO tenant_billing (id, tenant_id, credit_balance, created_at, updated_at) "
+            "VALUES ($1,$2,20,now(),now()) ON CONFLICT (tenant_id) DO UPDATE SET credit_balance=20, updated_at=now()",
+            uuid.uuid4(), complaint_fixture["hs_tenant"])
         r = await admin.post(f"/v1/admin/verticals/home-services/complaints/{cid}/apply-tenant-credit-adjustment",
                              json={"direction": "debit", "credit_units": "10", "reason_code": "APPROVED_GOODWILL_ADJUSTMENT",
                                   "detailed_reason": "Complaint-driven adjustment"})

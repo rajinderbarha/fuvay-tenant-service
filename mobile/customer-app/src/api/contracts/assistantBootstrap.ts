@@ -25,6 +25,11 @@ export const assistantBootstrapResponseSchema = z.object({
     slug: z.string().nullable(),
     name: z.string().nullable(),
   }),
+  service_group: z.object({
+    id: z.string(),
+    slug: z.string(),
+    name: z.string(),
+  }).nullable().optional(),
   zipcode: z.string().nullable(),
   serviceable: z.boolean(),
   issues: z.array(assistantIssueDtoSchema),

@@ -15,7 +15,7 @@ import {
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { Card, Btn, Badge, Skeleton, Modal } from "../../../../../../components/shared/ui";
 import {
-  homeServicesSetupOverviewApi, homeServicesSetupApi, onboardingDeclarationsApi, ServiceOSError,
+  homeServicesSetupOverviewApi, homeServicesSetupApi, onboardingDeclarationsApi, providerStatusApi, ServiceOSError,
   type HomeServicesSetupOverview, type HomeServicesSetupSection,
 } from "../../../../../../lib/api";
 
@@ -128,6 +128,7 @@ export default function ReviewSubmitPage() {
           }
         }
       }
+      await providerStatusApi.refresh();
       load();
       // load() clears an earlier error synchronously, so apply the actionable
       // publication result after starting the overview refresh.

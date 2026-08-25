@@ -69,6 +69,47 @@ class ComplaintService:
         )
         return row.scalar_one_or_none()
 
+    @staticmethod
+    async def _link_service_job(db: AsyncSession, complaint, record_type: str, record_id) -> None:
+        """Resolve and stamp `job_id` for a complaint filed against a booking.
+
+        The customer app files complaints with record_type="service_booking"
+        (see CreateSupportRequestScreen, which hardcodes it), which stamped
+        `booking_id` and left `job_id` NULL. Everything the provider needs to
+        actually work the case hangs off the job:
+
+          * the queue row's job number and service name (`_job_snapshot`),
+          * the Job Context tab,
+          * the `service_id` queue filter, which matches on the job's offering,
+          * and the Reviews page's complaint join, which links reviews to
+            complaints through `job_id` -- so a review could never be shown as
+            having a complaint against it.
+
+        The booking -> job link already exists as `service_jobs.booking_id`;
+        this just follows it. Best-effort: a complaint must still be filed if
+        the booking has no job yet.
+        """
+        from sqlalchemy import text
+        from app.engines.complaints.constants import RECORD_SERVICE_BOOKING
+        if record_type != RECORD_SERVICE_BOOKING or complaint.job_id:
+            return
+        try:
+            row = (await db.execute(
+                text("SELECT id, offering_id FROM service_jobs WHERE booking_id = :bid "
+                     "ORDER BY created_at DESC LIMIT 1"),
+                {"bid": str(record_id)},
+            )).fetchone()
+            if row:
+                complaint.job_id = row.id
+                # The `service_id` queue filter matches on the complaint's own
+                # offering_id, but the customer app never supplies one -- so the
+                # filter could not match anything. The complaint's service IS
+                # the job's service, so inherit it.
+                if not complaint.offering_id:
+                    complaint.offering_id = row.offering_id
+        except Exception:
+            pass
+
     async def create_complaint(
         self,
         db: AsyncSession,
@@ -149,6 +190,8 @@ class ComplaintService:
             complaint.lead_id = record_id
         elif record_type == RECORD_CUSTOMER_REVIEW:
             complaint.review_id = record_id
+
+        await self._link_service_job(db, complaint, record_type, record_id)
 
         # SLA deadlines
         now = datetime.now(timezone.utc)
@@ -244,7 +287,17 @@ class ComplaintService:
         visibility: str = VIS_PUBLIC,
         request_id: str = "—",
     ) -> ComplaintMedia:
-        complaint = await self._get_complaint(db, complaint_id)
+        # `_get_complaint` loads by primary key with no ownership check, so a
+        # caller could attach evidence to any tenant's complaint. Customer
+        # callers pass their own id and are scoped the same way
+        # `add_customer_message` scopes itself; provider/admin callers keep the
+        # unscoped load, matching the rest of this service.
+        if actor_type == ACTOR_CUSTOMER:
+            complaint = await self.get_customer_complaint(db, actor_user_id, complaint_id)
+        else:
+            complaint = await self._get_complaint(db, complaint_id)
+        if complaint.status in FINAL_STATUSES:
+            raise ValueError(ERR_COMPLAINT_ALREADY_CLOSED)
         media = ComplaintMedia(
             complaint_id        = complaint_id,
             uploaded_by_user_id = actor_user_id,
@@ -383,6 +436,21 @@ class ComplaintService:
         base = select(CustomerComplaint).where(CustomerComplaint.tenant_id == tenant_id)
         rows = (await db.execute(base)).scalars().all()
         open_rows = [c for c in rows if c.status not in FINAL_STATUSES]
+        # `awaiting_response` and `resolved_this_month` are new. The tenant
+        # KPI strip already rendered tiles for both (plus an "SLA breached"
+        # tile reading `sla_breached`), but this method returned none of those
+        # keys -- so three of the six tiles had always displayed `undefined`.
+        # These two are real, cheap counts over rows already loaded; the third
+        # was just the frontend using the wrong name for `breached`.
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        def _in_this_month(value) -> bool:
+            if not value:
+                return False
+            stamped = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return stamped >= month_start
+
         return {
             "total": len(rows),
             "open": len(open_rows),
@@ -390,12 +458,21 @@ class ComplaintService:
             "breached": len([c for c in open_rows if c.sla_status == "breached"]),
             "escalated": len([c for c in open_rows if c.sla_status == "escalated"]),
             "critical": len([c for c in open_rows if c.severity == "critical"]),
+            "awaiting_response": len([
+                c for c in open_rows
+                if c.status == STATUS_AWAITING_PROVIDER or c.provider_response_required
+            ]),
+            "resolved_this_month": len([
+                c for c in rows
+                if _in_this_month(c.resolved_at) or _in_this_month(c.closed_at)
+            ]),
         }
 
     async def tenant_list_complaints(
         self, db: AsyncSession, tenant_id: uuid.UUID, *,
         search: str | None = None, status: str | None = None, severity: str | None = None,
         sla_status: str | None = None, service_offering_id: uuid.UUID | None = None,
+        complaint_type: str | None = None,
         cursor: int = 0, limit: int = 20,
     ) -> tuple[list[CustomerComplaint], int]:
         clauses = [CustomerComplaint.tenant_id == tenant_id]
@@ -408,9 +485,18 @@ class ComplaintService:
             clauses.append(CustomerComplaint.sla_status == sla_status)
         if service_offering_id:
             clauses.append(CustomerComplaint.offering_id == service_offering_id)
+        if complaint_type:
+            clauses.append(CustomerComplaint.complaint_type == complaint_type)
         if search:
             like = f"%{search}%"
-            clauses.append(or_(CustomerComplaint.complaint_number.ilike(like), CustomerComplaint.title.ilike(like)))
+            # Description was not searchable, so searching for a phrase the
+            # customer actually wrote returned nothing unless it happened to be
+            # in the (often absent) title.
+            clauses.append(or_(
+                CustomerComplaint.complaint_number.ilike(like),
+                CustomerComplaint.title.ilike(like),
+                CustomerComplaint.description.ilike(like),
+            ))
 
         total = (await db.execute(
             select(func.count()).select_from(select(CustomerComplaint).where(*clauses).subquery())
@@ -638,6 +724,12 @@ class ComplaintService:
         request_id: str = "—",
     ) -> ComplaintResolution:
         complaint = await self._get_complaint(db, complaint_id)
+        # Keep admin proposals on the same canonical state path as provider
+        # proposals. The previous direct jump to awaiting_customer_response
+        # was not legal from under_admin_review and made every admin proposal
+        # fail after its resolution row had already been staged.
+        await self._transition(db, complaint, STATUS_RESOLUTION_PROPOSED, ACTOR_ADMIN, admin_user_id,
+                               request_id=request_id)
         resolution = ComplaintResolution(
             complaint_id           = complaint_id,
             tenant_id              = complaint.tenant_id,
@@ -651,8 +743,6 @@ class ComplaintService:
         )
         db.add(resolution)
         await db.flush()
-        await self._transition(db, complaint, STATUS_AWAITING_CUSTOMER, ACTOR_ADMIN, admin_user_id,
-                               request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
                               EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
                               request_id=request_id)

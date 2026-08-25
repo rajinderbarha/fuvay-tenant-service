@@ -173,11 +173,6 @@ def build_admin_provider(signals: CandidateSignals, score: Decimal) -> dict:
     return d
 
 
-def round_to_nearest_10(value) -> Decimal:
-    v = _d(value)
-    return (v / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10")
-
-
 # ── DB-aware: eligibility + ranking + area comparison ───────────────────────
 
 # HS6B — aligned to the single canonical bookability source
@@ -202,6 +197,7 @@ ELIGIBILITY_GATE_CODES = (
     "BRAND_NOT_COVERED_IN_AREA",
     "no_pricing_rule",
     "EXACT_JOB_TYPE_NOT_SUPPORTED",
+    "OFFERING_NOT_PUBLISHED",
 )
 
 MATCHING_POLICY_KEY = "home_services_provider_matching_v1"
@@ -464,8 +460,8 @@ async def _passes_full_eligibility_gate(
     # job types (e.g. AC Repair vs AC Installation must resolve
     # independently). Skipped (not guessed) when the caller has no exact
     # job_type_id yet -- never invents or assumes one.
+    from app.engines.admin_catalog.models import MasterServiceJobType, TenantService
     if job_type_id is not None:
-        from app.engines.admin_catalog.models import MasterServiceJobType, TenantService
         link = (await db.execute(
             select(MasterServiceJobType.id).where(
                 MasterServiceJobType.master_service_id == offering_id,
@@ -487,6 +483,26 @@ async def _passes_full_eligibility_gate(
         )).scalar_one_or_none()
         if tenant_offering is None:
             return False, "EXACT_JOB_TYPE_NOT_PUBLISHED"
+
+    # A tenant-wide bookability flag cannot prove that this specific service
+    # is published. Coverage rows are deliberately retained across draft/
+    # retirement transitions, so they are not publication evidence either.
+    # Matching therefore requires one active, enabled, published tenant
+    # service for the exact master service (and exact job type when known).
+    tenant_service_filters = [
+        TenantService.tenant_id == tenant_id,
+        TenantService.master_service_id == offering_id,
+        TenantService.is_active.is_(True),
+        TenantService.is_enabled.is_(True),
+        TenantService.setup_status == "published",
+    ]
+    if job_type_id is not None:
+        tenant_service_filters.append(TenantService.job_type_id == job_type_id)
+    published_offering_id = (await db.execute(
+        select(TenantService.id).where(*tenant_service_filters).limit(1)
+    )).scalar_one_or_none()
+    if published_offering_id is None:
+        return False, "OFFERING_NOT_PUBLISHED"
 
     # 1. Canonical bookability (HS4B) — single source of truth.
     bookable_row = (await db.execute(text(
@@ -601,7 +617,32 @@ async def _passes_full_eligibility_gate(
     effective_behavior = offering_row[2] if offering_row and offering_row[2] else (offering_row[0] if offering_row else None)
     is_inspection_offering = effective_behavior in {"visit_fee_plus_quote", "inspection_required", "custom_quote"}
     if is_inspection_offering:
-        if not offering_row[1] or float(offering_row[1]) <= 0:
+        # An inspection-mode offering is priced by its VISIT FEE. That fee is
+        # tenant-owned exactly like the fixed-price branch below: the admin API
+        # refuses to write master_services.visit_fee at all
+        # (ADMIN_PRICING_NOT_ALLOWED — "Price is tenant-owned (Tenant Setup >
+        # Pricing)"). This branch used to read only the admin column, so a
+        # tenant who had correctly set tenant_visit_fee still failed the gate,
+        # and no one was permitted to set the field that would have passed it —
+        # making every inspection_required / visit_fee_plus_quote / custom_quote
+        # service permanently unbookable on every channel. Confirmed live: the
+        # customer got "No eligible providers available in <city>. Try a nearby
+        # city." for a pricing-configuration problem that no city change fixes.
+        # Now prefers the tenant's own fee and falls back to the master column.
+        tenant_fee_sql = (
+            "SELECT tenant_visit_fee FROM tenant_services "
+            "WHERE tenant_id=:tid AND master_service_id=:oid "
+            + ("AND job_type_id=:jtid " if job_type_id else "")
+            + "AND is_active=true AND is_enabled=true AND setup_status='published' LIMIT 1"
+        )
+        tenant_fee_params = {"tid": str(tenant_id), "oid": str(offering_id)}
+        if job_type_id:
+            tenant_fee_params["jtid"] = str(job_type_id)
+        tenant_fee_row = (await db.execute(
+            text(tenant_fee_sql), tenant_fee_params,
+        )).fetchone()
+        has_visit_fee = bool(tenant_fee_row and tenant_fee_row[0] and float(tenant_fee_row[0]) > 0)             or bool(offering_row and offering_row[1] and float(offering_row[1]) > 0)
+        if not has_visit_fee:
             return False, "NO_VALID_PRICE_RULE"
     else:
         tenant_price_sql = (

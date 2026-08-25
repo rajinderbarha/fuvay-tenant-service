@@ -22,7 +22,10 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.engines.complaints.complaint_service import ComplaintService
-from app.engines.complaints.constants import ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES
+from app.engines.complaints.constants import (
+    ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES, STATUS_RESOLUTION_PROPOSED,
+    STATUS_AWAITING_CUSTOMER, STATUS_UNDER_ADMIN_REVIEW, STATUS_ADMIN_REVIEW_PENDING,
+)
 from app.engines.tenant_engine.customer_operational_access_policy import customer_alias
 
 router = APIRouter(prefix="/v1/tenant/home-services/complaints", tags=["tenant-complaints"])
@@ -44,11 +47,90 @@ def _tid(user: UserContext) -> uuid.UUID:
 
 
 def _available_actions(status: str) -> list[str]:
-    """Real next-transition keys for this status -- the frontend must never
-    write an arbitrary status string, only pick from what the backend allows."""
+    """Actions THIS tenant can actually perform on a case in `status`.
+
+    This previously returned raw next-status edges out of
+    ALLOWED_TRANSITIONS_EXT (e.g. "under_admin_review", "cancelled"). None of
+    those are things a tenant can do: there is no tenant- or provider-side
+    status-transition endpoint anywhere in this engine -- only admin has one
+    (`/v1/admin/complaints/{id}/request-provider-response` and friends). So the
+    field described transitions the caller had no way to execute, and any UI
+    built on it would render dead buttons.
+
+    Complaint status is deliberately admin-mediated here ("no invented
+    dispute-resolution authority"), so this reports only the two real
+    provider-side capabilities, gated on the state machine that actually
+    enforces them:
+
+      SEND_MESSAGE      -- POST /v1/provider/complaints/{id}/respond
+      OFFER_RESOLUTION  -- POST /v1/provider/complaints/{id}/offer-resolution,
+                           which transitions to resolution_proposed and is
+                           therefore only legal from a status that permits it.
+    """
     if status in FINAL_STATUSES:
         return []
-    return sorted(ALLOWED_TRANSITIONS_EXT.get(status, set()))
+    actions = ["SEND_MESSAGE"]
+    if STATUS_RESOLUTION_PROPOSED in ALLOWED_TRANSITIONS_EXT.get(status, set()):
+        actions.append("OFFER_RESOLUTION")
+    return actions
+
+
+def _blocked_reason(status: str, actions: list[str]) -> str | None:
+    """Why a case cannot be resolved yet, in the tenant's own terms.
+
+    Without this the workspace can only show a missing button, which reads as
+    a broken page rather than as "this case is waiting on someone else".
+    """
+    if status in FINAL_STATUSES:
+        return None
+    if "OFFER_RESOLUTION" in actions:
+        return None
+    # A case that already carries a proposal is not "waiting for admin
+    # routing" -- saying so would contradict the Resolution tab sitting right
+    # next to it, which is showing the proposal.
+    if status == STATUS_RESOLUTION_PROPOSED:
+        return (
+            "A resolution has been proposed and is with the customer. "
+            "You can keep replying while they decide."
+        )
+    if status in (STATUS_AWAITING_CUSTOMER,):
+        return "This case is waiting on the customer. You can keep replying."
+    if status in (STATUS_UNDER_ADMIN_REVIEW, STATUS_ADMIN_REVIEW_PENDING):
+        return "A ServiceOS admin is reviewing this case. You can keep replying."
+    return (
+        "You can reply to the customer now. Proposing a formal resolution "
+        "unlocks once a ServiceOS admin routes this case for your response."
+    )
+
+
+async def _service_options(db: AsyncSession, tenant_id: str) -> list[dict]:
+    """Services that actually appear in this tenant's complaints.
+
+    Resolved through `tenant_services`, so the values line up exactly with the
+    catalogue the Services & Pricing setup page manages, and a filter can never
+    be set to something that returns nothing.
+    """
+    from sqlalchemy import text as _text
+    # Facets come from the SAME column the filter matches on (cc.offering_id),
+    # so every option offered is one that returns rows.
+    rows = (await db.execute(_text(
+        "SELECT DISTINCT cc.offering_id AS id, "
+        "COALESCE(ts.tenant_display_name, ms.service_name, 'Service') AS name "
+        "FROM customer_complaints cc "
+        "LEFT JOIN tenant_services ts ON ts.id = cc.offering_id "
+        "LEFT JOIN master_services ms ON ms.id = ts.master_service_id "
+        "WHERE cc.tenant_id = :tid AND cc.offering_id IS NOT NULL ORDER BY name"
+    ), {"tid": str(tenant_id)})).fetchall()
+    return [{"id": str(r.id), "name": r.name} for r in rows]
+
+
+async def _complaint_type_options(db: AsyncSession, tenant_id: str) -> list[str]:
+    from sqlalchemy import text as _text
+    rows = (await db.execute(_text(
+        "SELECT DISTINCT complaint_type FROM customer_complaints "
+        "WHERE tenant_id = :tid AND complaint_type IS NOT NULL ORDER BY complaint_type"
+    ), {"tid": str(tenant_id)})).fetchall()
+    return [r.complaint_type for r in rows]
 
 
 async def _job_snapshot(db: AsyncSession, job_id: uuid.UUID | None) -> dict | None:
@@ -61,10 +143,26 @@ async def _job_snapshot(db: AsyncSession, job_id: uuid.UUID | None) -> dict | No
     job = (await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))).scalars().first()
     if not job:
         return None
+    # `service_jobs.offering_id` is a TENANT_SERVICES id, not a master_services
+    # id -- looking MasterService up by it directly never matched a row, so the
+    # service name was silently None on every complaint in the queue and in the
+    # case header. Resolve it the same way the reviews workspace does: through
+    # tenant_services, preferring the tenant's own display name (what the
+    # Services & Pricing setup page configures) and falling back to the master
+    # catalogue name.
     ms_name = None
     if job.offering_id:
-        ms = (await db.execute(select(MasterService).where(MasterService.id == job.offering_id))).scalars().first()
-        ms_name = ms.service_name if ms else None
+        from app.engines.admin_catalog.models import TenantService
+        ts = (await db.execute(
+            select(TenantService).where(TenantService.id == job.offering_id)
+        )).scalars().first()
+        if ts:
+            ms_name = ts.tenant_display_name
+            if not ms_name and ts.master_service_id:
+                ms = (await db.execute(
+                    select(MasterService).where(MasterService.id == ts.master_service_id)
+                )).scalars().first()
+                ms_name = ms.service_name if ms else None
     staff_name = None
     if job.assigned_staff_id:
         staff = (await db.execute(
@@ -90,6 +188,7 @@ async def list_complaints(
     severity: Optional[str] = None,
     sla_state: Optional[str] = None,
     service_id: Optional[uuid.UUID] = None,
+    complaint_type: Optional[str] = None,
     cursor: int = 0,
     limit: int = 20,
     r: Request = None,
@@ -101,6 +200,7 @@ async def list_complaints(
     complaints, total = await _svc.tenant_list_complaints(
         db, tenant_id, search=search, status=status, severity=severity,
         sla_status=sla_state, service_offering_id=service_id,
+        complaint_type=complaint_type,
         cursor=cursor, limit=limit,
     )
 
@@ -122,6 +222,10 @@ async def list_complaints(
             "status": sorted({s for grp in ALLOWED_TRANSITIONS_EXT.values() for s in grp} | {"open"}),
             "severity": ["low", "medium", "high", "critical"],
             "sla_state": ["on_time", "at_risk", "breached", "escalated"],
+            "complaint_type": await _complaint_type_options(db, tenant_id),
+            # The `service_id` query parameter was already supported but had no
+            # facet to drive a picker, so the filter was unreachable from the UI.
+            "services": await _service_options(db, tenant_id),
         },
         "pagination": {"cursor": cursor, "limit": limit, "total": total, "has_next": cursor + limit < total},
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -146,6 +250,7 @@ async def get_complaint(
         "customer_alias": customer_alias(tenant_id, c.customer_id),
         "job": job,
         "available_actions": _available_actions(c.status),
+        "action_blocked_reason": _blocked_reason(c.status, _available_actions(c.status)),
     }, _rid(r), "tenant.complaints.get")
 
 
@@ -207,3 +312,27 @@ async def get_activity(
     return ok({
         "items": [e.to_dict() for e in events],
     }, _rid(r), "tenant.complaints.activity")
+
+
+@router.get("/{complaint_id}/evidence")
+async def get_evidence(
+    complaint_id: uuid.UUID,
+    r: Request = None,
+    u: UserContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Photos and documents attached to the case.
+
+    `ComplaintService.list_media` already existed and was already used by the
+    AI settlement service, but NO router exposed it -- so evidence a customer
+    attached to their complaint was stored and then unreachable by the
+    provider who needs it to judge the case. The Evidence tab on the case
+    workspace was a placeholder purely because this endpoint was missing.
+
+    Scoped as `viewer="provider"`, which filters to case-visible media rather
+    than returning admin-only internal attachments.
+    """
+    tenant_id = _tid(u)
+    await _svc.provider_get_complaint(db, tenant_id, complaint_id)
+    media = await _svc.list_media(db, complaint_id, viewer="provider")
+    return ok({"items": [m.to_dict() for m in media]}, _rid(r), "tenant.complaints.evidence")

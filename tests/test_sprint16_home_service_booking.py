@@ -272,6 +272,12 @@ class TestModels:
 # ──────────────────────────────────────────────────────────────────────────────
 
 class TestStartBookingDraft:
+    @pytest.fixture(autouse=True)
+    def _enabled_home_services_vertical(self):
+        vertical = MagicMock(is_enabled=True)
+        with patch("app.dependencies.vertical_guard._load_vertical", AsyncMock(return_value=vertical)):
+            yield
+
     async def test_start_draft_invalid_category(self):
         """Category slug not found → ERR_CATEGORY_INVALID."""
         db = db_seq(_scalars([]))   # category not found
@@ -851,7 +857,7 @@ class TestBookingSummary:
         draft.price_snapshot = {"display_price": "₹399", "note": "Visit fee"}
         draft.selected_provider_snapshot = {"business_name": "Rahul AC"}
         draft.selected_tenant_id = _id()
-        draft.booking_summary = {"selected_price_tier": "mid"}
+        draft.booking_summary = {"selected_price_tier": "standard"}
         # Phase 2A.2: ready_for_confirmation now also requires a resolved,
         # still-valid Job Type context -- short-circuit that check here
         # since this test is about the pre-existing price/provider summary
@@ -882,7 +888,8 @@ class TestBookingSummary:
         db.refresh.side_effect = fake_refresh
 
         svc    = HomeServiceChatbotBookingService(db=db)
-        with patch.object(svc, "_validate_job_type_context", AsyncMock(return_value=None)):
+        with patch.object(svc, "_validate_job_type_context", AsyncMock(return_value=None)), \
+             patch.object(svc, "_emergency_surcharge_for", AsyncMock(return_value=None)):
             result = await svc.build_booking_summary(draft_id=draft.id, customer_id=customer_id)
         assert "booking_summary" in result
         assert result["booking_summary"]["ready_for_confirmation"] is True

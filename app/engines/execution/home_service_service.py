@@ -25,6 +25,7 @@ from app.engines.execution.constants import (
     ERR_RECORD_NOT_FOUND, ERR_ACCESS_DENIED,
     ERR_INVALID_TRANSITION, ERR_REASON_REQUIRED,
     ERR_STAFF_NOT_ASSIGNED, ERR_PROVIDER_SCOPE_INVALID,
+    ERR_CANCELLATION_NOT_ALLOWED,
     # HS8B
     PARTS_STATUS_REQUESTED, PARTS_STATUS_BUSINESS_APPROVED,
     PARTS_STATUS_BUSINESS_REJECTED, PARTS_STATUS_CUSTOMER_APPROVAL_PENDING,
@@ -488,6 +489,13 @@ class HomeServiceJobExecutionService:
     async def start_inspection(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is not None and not workflow.inspection_required:
+            raise ServiceOSException(
+                "INSPECTION_NOT_REQUIRED",
+                "This fixed-price service does not require an inspection. Start the work instead.",
+                status_code=409,
+            )
         await self._set_status(db, job, JS_INSPECTION_STARTED, EV_INSPECTION_STARTED, user_id, "staff", request_id=request_id)
         await db.flush()
         return job.to_dict()
@@ -575,6 +583,22 @@ class HomeServiceJobExecutionService:
         if workflow is None or not workflow.checklist_required:
             return
 
+        # Canonical mappings supersede the legacy workflow boolean. Their
+        # explicit completion_gate is the sole authority for *when* a
+        # checklist blocks (pre-work, inspection, completion, or handover).
+        # Treating checklist_required as an unconditional pre-work gate
+        # deadlocked modern EXECUTION/COMPLETION checklists: technicians had
+        # to certify work outcomes before they were allowed to start work.
+        # Only query the canonical engine for persisted ServiceJob-shaped
+        # records. Legacy/imported records that only carry an id must continue
+        # through the compatibility gate below.
+        offering_id = getattr(job, "offering_id", None)
+        job_type_id = getattr(job, "job_type_id", None)
+        if isinstance(offering_id, uuid.UUID) and isinstance(job_type_id, uuid.UUID):
+            from app.engines.checklist_catalog.service import get_applicable_mappings
+            if await get_applicable_mappings(db, job):
+                return
+
         from app.engines.checklist_catalog import constants as cc
         from app.engines.checklist_catalog.models import JobChecklistInstance
         canonical = (await db.execute(
@@ -621,7 +645,7 @@ class HomeServiceJobExecutionService:
         workflow = await self._resolve_job_type_workflow(db, job)
         if workflow is not None and not workflow.allows_cancellation:
             raise ServiceOSException(
-                "JOB_CANCELLATION_NOT_ALLOWED",
+                ERR_CANCELLATION_NOT_ALLOWED,
                 "This job type cannot be cancelled once it has been created.",
                 status_code=422,
             )
@@ -768,9 +792,55 @@ class HomeServiceJobExecutionService:
             raise ServiceOSException(ERR_PARTS_REQUEST_NOT_FOUND, "Parts request not found.", status_code=404)
         return pr
 
+    @staticmethod
+    def _parts_inventory_job_ref(pr) -> str:
+        # One job can legitimately request the same item more than once.  The
+        # request id makes the inventory reservation key unique and auditable.
+        return f"{pr.job_id}:{pr.id}"
+
+    async def _reserve_parts_inventory(self, db: AsyncSession, pr, actor_id: uuid.UUID) -> None:
+        if pr.procurement_source != "inventory":
+            return
+        if not pr.inventory_item_id or not pr.stock_location_id:
+            raise ServiceOSException(
+                "PARTS_INVENTORY_ALLOCATION_REQUIRED",
+                "Select an inventory item and stock location before approval.",
+                status_code=422,
+            )
+        from app.engines.inventory.service import InventoryService
+        inv = InventoryService(db, actor_id=actor_id, actor_role="system",
+                               actor_tenant_id=pr.tenant_id)
+        item = await inv.get_item(pr.inventory_item_id)
+        pr.estimated_cost = Decimal(str(item["selling_price"]))
+        pr.unit_price_snapshot = Decimal(str(item["selling_price"]))
+        result = await inv.create_reservation(
+            self._parts_inventory_job_ref(pr), pr.inventory_item_id,
+            pr.stock_location_id, pr.tenant_id, pr.quantity,
+        )
+        pr.stock_reservation_id = uuid.UUID(result["reservation_id"])
+
+    async def _consume_parts_inventory(self, db: AsyncSession, pr) -> None:
+        if pr.procurement_source != "inventory":
+            return
+        if not pr.inventory_item_id or not pr.stock_location_id or not pr.stock_reservation_id:
+            raise ServiceOSException(
+                "PARTS_INVENTORY_RESERVATION_MISSING",
+                "This part has no active stock reservation. Reallocate stock before installation.",
+                status_code=409,
+            )
+        from app.engines.inventory.service import InventoryService
+        inv = InventoryService(db, actor_role="system", actor_tenant_id=pr.tenant_id)
+        await inv.confirm_reservation(
+            self._parts_inventory_job_ref(pr), pr.inventory_item_id,
+            pr.stock_location_id, pr.tenant_id,
+        )
+
     async def approve_parts_request(
         self, db: AsyncSession, parts_request_id: uuid.UUID, tenant_id: uuid.UUID,
-        approver_user_id: uuid.UUID, request_id: str | None = None,
+        approver_user_id: uuid.UUID, procurement_source: str = "external",
+        inventory_item_id: uuid.UUID | None = None,
+        stock_location_id: uuid.UUID | None = None,
+        request_id: str | None = None,
     ) -> dict:
         pr = await self._get_parts_request(db, parts_request_id, tenant_id)
         if pr.status != PARTS_STATUS_REQUESTED:
@@ -779,12 +849,25 @@ class HomeServiceJobExecutionService:
                 f"This parts request has already been {pr.status}.",
                 status_code=422,
             )
+        if procurement_source not in {"inventory", "external"}:
+            raise ServiceOSException("PARTS_PROCUREMENT_SOURCE_INVALID",
+                                     "Procurement source must be inventory or external.", status_code=422)
+        if procurement_source == "inventory" and (not inventory_item_id or not stock_location_id):
+            raise ServiceOSException("PARTS_INVENTORY_ALLOCATION_REQUIRED",
+                                     "Select an inventory item and stock location.", status_code=422)
+        pr.procurement_source = procurement_source
+        pr.inventory_item_id = inventory_item_id if procurement_source == "inventory" else None
+        pr.stock_location_id = stock_location_id if procurement_source == "inventory" else None
         pr.status = (
             PARTS_STATUS_CUSTOMER_APPROVAL_PENDING if pr.customer_approval_required
             else PARTS_STATUS_BUSINESS_APPROVED
         )
         pr.approved_by = approver_user_id
         pr.approved_at = _now()
+        # Hold stock only when all required approvals are complete.  A request
+        # awaiting the customer cannot consume provider availability yet.
+        if not pr.customer_approval_required:
+            await self._reserve_parts_inventory(db, pr, approver_user_id)
         db.add(pr)
         await db.flush()
         return pr.to_dict()
@@ -825,6 +908,7 @@ class HomeServiceJobExecutionService:
                 "Only an approved parts request can be marked installed.",
                 status_code=422,
             )
+        await self._consume_parts_inventory(db, pr)
         pr.status = PARTS_STATUS_INSTALLED
         db.add(pr)
         await db.flush()
@@ -937,6 +1021,7 @@ class HomeServiceJobExecutionService:
             pr.status = PARTS_STATUS_CUSTOMER_APPROVED
             pr.approved_by = customer_id
             pr.approved_at = now
+            await self._reserve_parts_inventory(db, pr, customer_id)
             event_type = "customer_part_approved"
         elif decision == "decline":
             if not reason or not reason.strip():

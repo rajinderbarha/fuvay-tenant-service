@@ -70,4 +70,5 @@ class ProviderTeamMember(ServiceOSBase):
             "status":                self.status,
             "can_receive_assignment":self.can_receive_assignment,
             "skills":                self.skills,
+            "max_concurrent_jobs":   self.max_concurrent_jobs,
         }

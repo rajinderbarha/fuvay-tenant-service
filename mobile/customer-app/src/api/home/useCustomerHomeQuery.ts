@@ -20,5 +20,12 @@ export function useCustomerHomeQuery(zipcode?: string) {
       const dto = parseCustomerHomeDto(res.data);
       return adaptCustomerHome(dto);
     },
+    // Keep the already-rendered marketplace mounted while a customer changes
+    // location. The ZIP remains part of the cache key, so this is only a
+    // transition placeholder; it can never be stored as the new location's
+    // result. HomeScreen displays an explicit updating state until the new
+    // payload arrives. This avoids the old full-screen unmount/remount that
+    // could leave Android looking frozen when switching A -> B -> A quickly.
+    placeholderData: previous => previous,
   });
 }

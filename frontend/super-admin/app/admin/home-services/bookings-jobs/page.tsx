@@ -48,6 +48,12 @@ const STAGE_KEYS = Object.keys(STAGE_LABEL);
 const SLA_BADGE: Record<string, "success" | "warning" | "danger" | "muted"> = {
   ON_TRACK: "success", AT_RISK: "warning", BREACHED: "danger", NOT_APPLICABLE: "muted",
 };
+const SORT_OPTS = [
+  { value: "created_at", label: "Created" },
+  { value: "updated_at", label: "Last updated" },
+  { value: "scheduled_date", label: "Scheduled date" },
+  { value: "amount", label: "Captured amount" },
+] as const;
 
 function fmtDate(d?: string | null) {
   if (!d) return "—";
@@ -127,6 +133,13 @@ export default function HomeServicesOperationsPage() {
   const stage = !rawStage || STAGE_KEYS.includes(rawStage) ? rawStage : "";
   const assignment = ["assigned", "unassigned"].includes(params.get("assignment") || "") ? params.get("assignment") || "" : "";
   const city = params.get("city") || "";
+  const state = params.get("state") || "";
+  const district = params.get("district") || "";
+  const zipcode = params.get("zipcode") || "";
+  const amountMin = params.get("amount_min") || "";
+  const amountMax = params.get("amount_max") || "";
+  const sortBy = SORT_OPTS.some(option => option.value === params.get("sort_by")) ? params.get("sort_by")! : "created_at";
+  const sortDir = params.get("sort_dir") === "asc" ? "asc" : "desc";
   const dateFrom = params.get("date_from") || "";
   const dateTo = params.get("date_to") || "";
   const tenantId = params.get("tenant_id") || "";
@@ -137,7 +150,7 @@ export default function HomeServicesOperationsPage() {
   const pageSize = [10, 25, 50, 100].includes(rawPageSize) ? rawPageSize : 25;
   const [searchInput, setSearchInput] = useState(search);
   const [selected, setSelected] = useState<UnifiedOperationRow | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(Boolean(assignment || city || dateFrom || dateTo || tenantId || stage));
+  const [filtersOpen, setFiltersOpen] = useState(Boolean(assignment || city || state || district || zipcode || amountMin || amountMax || dateFrom || dateTo || tenantId || stage));
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -164,10 +177,13 @@ export default function HomeServicesOperationsPage() {
   const listApi = useApi(useCallback(() => homeServicesOperationsApi.list({
     view, search: search || undefined, stage: stage || undefined,
     assignment: assignment || undefined, city: city || undefined,
+    state: state || undefined, district: district || undefined, zipcode: zipcode || undefined,
+    amount_min: amountMin || undefined, amount_max: amountMax || undefined,
+    sort_by: sortBy, sort_dir: sortDir,
     tenant_id: tenantId || undefined, date_from: dateFrom || undefined,
     date_to: dateTo || undefined, page, page_size: pageSize,
-  }), [view, search, stage, assignment, city, tenantId, dateFrom, dateTo, page, pageSize]),
-  [view, search, stage, assignment, city, tenantId, dateFrom, dateTo, page, pageSize]);
+  }), [view, search, stage, assignment, city, state, district, zipcode, amountMin, amountMax, sortBy, sortDir, tenantId, dateFrom, dateTo, page, pageSize]),
+  [view, search, stage, assignment, city, state, district, zipcode, amountMin, amountMax, sortBy, sortDir, tenantId, dateFrom, dateTo, page, pageSize]);
 
   // The KPI tiles are served from a short-lived cache (counting every job is a
   // full table pass). `forceMetrics` bumps on Refresh so the admin's explicit
@@ -182,7 +198,9 @@ export default function HomeServicesOperationsPage() {
   const pagination = listApi.data?.pagination;
   const metrics = metricsApi.data as UnifiedOperationsMetrics | null;
 
-  const activeFilterCount = [search, stage, assignment, city, tenantId, dateFrom, dateTo].filter(Boolean).length;
+  const activeFilterCount = [search, stage, assignment, city, state, district, zipcode, amountMin, amountMax, tenantId, dateFrom, dateTo].filter(Boolean).length;
+
+  const goToPage = (nextPage: number) => updateParams({ page: String(nextPage) }, false);
 
   async function exportCsv() {
     setExporting(true); setExportError(null);
@@ -190,6 +208,9 @@ export default function HomeServicesOperationsPage() {
     const token = (typeof window !== "undefined" ? localStorage.getItem("serviceos_admin_token") : null) ?? "";
     const path = homeServicesOperationsApi.exportUrl({ view, search: search || undefined, stage: stage || undefined,
       assignment: assignment || undefined, city: city || undefined, tenant_id: tenantId || undefined,
+      state: state || undefined, district: district || undefined, zipcode: zipcode || undefined,
+      amount_min: amountMin || undefined, amount_max: amountMax || undefined,
+      sort_by: sortBy, sort_dir: sortDir,
       date_from: dateFrom || undefined, date_to: dateTo || undefined });
     try {
       const response = await fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -305,7 +326,9 @@ export default function HomeServicesOperationsPage() {
               <Btn variant="ghost" size="sm" onClick={() => {
                 setSearchInput("");
                 updateParams({ search: null, stage: null, assignment: null, city: null, tenant_id: null,
-                  tenant_name: null, date_from: null, date_to: null });
+                  tenant_name: null, state: null, district: null, zipcode: null,
+                  amount_min: null, amount_max: null, sort_by: null, sort_dir: null,
+                  date_from: null, date_to: null });
               }}>Clear all</Btn>
             )}
           </div>
@@ -326,16 +349,41 @@ export default function HomeServicesOperationsPage() {
               <label style={filterLabelStyle}>City
                 <DebouncedFilterInput value={city} onCommit={value => updateParams({ city: value || null })} placeholder="Any city"/>
               </label>
+              <label style={filterLabelStyle}>State
+                <DebouncedFilterInput value={state} onCommit={value => updateParams({ state: value || null })} placeholder="Any state"/>
+              </label>
+              <label style={filterLabelStyle}>District
+                <DebouncedFilterInput value={district} onCommit={value => updateParams({ district: value || null })} placeholder="Any district"/>
+              </label>
+              <label style={filterLabelStyle}>Postcode
+                <DebouncedFilterInput value={zipcode} onCommit={value => updateParams({ zipcode: value || null })} placeholder="Any postcode"/>
+              </label>
+              <label style={filterLabelStyle}>Amount from
+                <DebouncedFilterInput value={amountMin} onCommit={value => updateParams({ amount_min: value || null })} placeholder="₹0"/>
+              </label>
+              <label style={filterLabelStyle}>Amount to
+                <DebouncedFilterInput value={amountMax} onCommit={value => updateParams({ amount_max: value || null })} placeholder="No maximum"/>
+              </label>
               <label style={filterLabelStyle}>Created from
                 <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setParam("date_from", e.target.value || null)} style={filterControlStyle}/>
               </label>
               <label style={filterLabelStyle}>Created to
                 <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setParam("date_to", e.target.value || null)} style={filterControlStyle}/>
               </label>
+              <label style={filterLabelStyle}>Sort by
+                <select value={sortBy} onChange={event => updateParams({ sort_by: event.target.value === "created_at" ? null : event.target.value })} style={filterControlStyle}>
+                  {SORT_OPTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label style={filterLabelStyle}>Direction
+                <select value={sortDir} onChange={event => updateParams({ sort_dir: event.target.value === "desc" ? null : event.target.value })} style={filterControlStyle}>
+                  <option value="desc">Newest / highest first</option><option value="asc">Oldest / lowest first</option>
+                </select>
+              </label>
             </div>
           )}
           </Card>
-          {(search || stage || assignment || city || tenantId || dateFrom || dateTo) && (
+          {(search || stage || assignment || city || state || district || zipcode || amountMin || amountMax || tenantId || dateFrom || dateTo || sortBy !== "created_at" || sortDir !== "desc") && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
               {search && (
                 <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px",
@@ -351,8 +399,14 @@ export default function HomeServicesOperationsPage() {
               )}
               {assignment && <FilterChip label={`Assignment: ${assignment}`} onClear={() => setParam("assignment", null)}/>}
               {city && <FilterChip label={`City: ${city}`} onClear={() => setParam("city", null)}/>}
+              {state && <FilterChip label={`State: ${state}`} onClear={() => setParam("state", null)}/>}
+              {district && <FilterChip label={`District: ${district}`} onClear={() => setParam("district", null)}/>}
+              {zipcode && <FilterChip label={`Postcode: ${zipcode}`} onClear={() => setParam("zipcode", null)}/>}
+              {amountMin && <FilterChip label={`Amount ≥ ₹${amountMin}`} onClear={() => setParam("amount_min", null)}/>}
+              {amountMax && <FilterChip label={`Amount ≤ ₹${amountMax}`} onClear={() => setParam("amount_max", null)}/>}
               {tenantId && <FilterChip label={`Provider: ${tenantName || tenantId.slice(0, 8)}`} onClear={() => updateParams({ tenant_id: null, tenant_name: null })}/>}
               {(dateFrom || dateTo) && <FilterChip label={`Created: ${dateFrom || "Any"} – ${dateTo || "Today"}`} onClear={() => updateParams({ date_from: null, date_to: null })}/>}
+              {(sortBy !== "created_at" || sortDir !== "desc") && <FilterChip label={`Sort: ${SORT_OPTS.find(option => option.value === sortBy)?.label} ${sortDir}`} onClear={() => updateParams({ sort_by: null, sort_dir: null })}/>}
             </div>
           )}
 
@@ -373,7 +427,7 @@ export default function HomeServicesOperationsPage() {
               <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading operations…</div>
             ) : records.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center" }}>
-                <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 4px" }}>No records match this view.</p>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 4px" }}>No bookings or jobs match this view.</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Try clearing filters or switching tabs.</p>
               </div>
             ) : (
@@ -443,10 +497,10 @@ export default function HomeServicesOperationsPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 4 }}>Page {pagination.page} of {pagination.total_pages}</span>
-                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setParam("page", "1")} aria-label="First page"><ChevronLeft size={13}/><ChevronLeft size={13} style={{ marginLeft: -8 }}/></Btn>
-                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setParam("page", String(page - 1))}><ChevronLeft size={13}/>Previous</Btn>
-                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => setParam("page", String(page + 1))}>Next<ChevronRight size={13}/></Btn>
-                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => setParam("page", String(pagination.total_pages))} aria-label="Last page"><ChevronRight size={13}/><ChevronRight size={13} style={{ marginLeft: -8 }}/></Btn>
+                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => goToPage(1)} aria-label="First page"><ChevronLeft size={13}/><ChevronLeft size={13} style={{ marginLeft: -8 }}/></Btn>
+                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ChevronLeft size={13}/>Previous</Btn>
+                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => goToPage(page + 1)}>Next<ChevronRight size={13}/></Btn>
+                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => goToPage(pagination.total_pages)} aria-label="Last page"><ChevronRight size={13}/><ChevronRight size={13} style={{ marginLeft: -8 }}/></Btn>
                 </div>
               </div>
             )}

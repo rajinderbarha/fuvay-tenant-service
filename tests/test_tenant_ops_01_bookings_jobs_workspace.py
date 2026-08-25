@@ -113,24 +113,30 @@ def _job(tenant_id: uuid.UUID, offering_id: uuid.UUID, job_type_id=None) -> Magi
     j.tenant_id = tenant_id
     j.offering_id = offering_id
     j.job_type_id = job_type_id
+    j.service_job_workflow_id = None
+    j.scheduled_date = None
     return j
 
 
 @pytest.mark.asyncio
-async def test_job_requires_technician_no_longer_touches_dead_column():
+async def test_job_requires_technician_reads_the_canonical_workflow_column():
     """Regression for the live 500: _job_requires_technician used to SELECT
     JobTypeDefinition.technician_required, a column that has never existed
-    on that model. It must now return True without any DB lookup at all."""
+    on that model. It now reads ServiceJobWorkflow.technician_required,
+    which is the canonical published blueprint field."""
     from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
 
-    db = AsyncMock()
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = True
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=row)
     svc = HomeServiceJobAssignmentService(db)
     job = _job(uuid.uuid4(), uuid.uuid4(), job_type_id=uuid.uuid4())
 
     result = await svc._job_requires_technician(job)
 
     assert result is True
-    db.execute.assert_not_called()  # no query issued — the dead lookup is gone
+    db.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -158,7 +164,8 @@ async def test_eligible_staff_matches_on_tenant_service_id_not_master_service_id
     staff.supported_offering_ids = [str(tenant_service_id)]
     staff.deleted_at = None
 
-    db = AsyncMock()
+    db = MagicMock()
+    db.info = {}
     load_job_result = MagicMock()
     load_job_result.scalar_one_or_none = MagicMock(return_value=job)
 

@@ -30,12 +30,15 @@ async def _assigned_staff_id(db: AsyncSession, job_id) -> uuid.UUID | None:
     return getattr(job, "assigned_staff_id", None) if job else None
 
 
-def _add(db, *, user_id, tenant_id, ntype, title, body, url, source_id=None):
+def _add(
+    db, *, user_id, tenant_id, ntype, title, body, url,
+    source_id=None, source_type="service_job_quote",
+):
     db.add(InAppNotification(
         user_id=user_id, tenant_id=tenant_id,
         notification_type=ntype, title=title, body=body,
         action_url=url, action_label="View quote",
-        source_record_type="service_job_quote", source_record_id=source_id,
+        source_record_type=source_type, source_record_id=source_id,
         severity="info",
     ))
 
@@ -50,7 +53,11 @@ async def notify_customer_quote_sent(db: AsyncSession, quote: ServiceJobQuote) -
          title="A quote is waiting for your approval",
          body=f"Your provider sent a quote for {quote.currency}{total}. Review and approve to continue.",
          url=f"/customer/bookings/{quote.booking_id}/quotes?job_id={quote.job_id}",
-         source_id=quote.id)
+         # Customer native navigation has a real Booking Details destination,
+         # not a standalone quote screen. Point at the booking so tapping this
+         # notification opens the quote approval card safely instead of
+         # rendering an action-looking dead row.
+         source_type="service_bookings", source_id=quote.booking_id)
 
 
 async def notify_provider_quote_decision(

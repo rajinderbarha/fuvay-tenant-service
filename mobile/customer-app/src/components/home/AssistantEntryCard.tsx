@@ -3,6 +3,7 @@ import { Pressable, View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
+import { FuvayIcon } from "../FuvayIcon";
 
 export interface AssistantEntryCardProps {
   onPress: () => void;
@@ -56,7 +57,7 @@ export function AssistantEntryCard({ onPress }: AssistantEntryCardProps) {
               alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}
           >
-            <Icon name="sparkles" size="standard" color={theme.colors.brandOnPrimary} decorative />
+            <FuvayIcon size={24} accessibilityLabel="Fuvay assistant" />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <AppText variant="bodyStrong">Not sure what to book?</AppText>

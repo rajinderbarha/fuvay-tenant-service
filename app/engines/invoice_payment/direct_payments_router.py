@@ -89,12 +89,19 @@ async def export_direct_payments(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     search: str | None = Query(None),
+    # The queue filters on these; the export did not accept them at all, so a
+    # CSV taken from a filtered view silently contained every OTHER service and
+    # technician too. An export must return exactly what is on screen.
+    service_id: str | None = Query(None),
+    job_type_id: str | None = Query(None),
+    technician_id: str | None = Query(None),
     user: UserContext = Depends(_HS_ACTIVE),
     db: AsyncSession = Depends(get_db),
 ):
     _assert_perm(user, P.DIRECT_PAYMENTS_EXPORT)
     data = await _svc(user, db, r).export_rows(
         status=status, method=method, date_from=date_from, date_to=date_to, search=search,
+        service_id=service_id, job_type_id=job_type_id, technician_id=technician_id,
     )
     return ok(data, _RID(r), "direct_payments")
 

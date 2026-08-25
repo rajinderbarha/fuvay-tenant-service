@@ -102,9 +102,7 @@ class MediaService:
         # package's quota (tenant_limits.max_storage_gb, applied on approval).
         quota_bytes = await self._effective_storage_quota_bytes(tenant_id)
         if quota_bytes is not None:
-            quota_r = await self.db.execute(select(func.sum(MediaFile.size_bytes)).where(
-                MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
-            used = quota_r.scalar_one_or_none() or 0
+            used, _ = await self._tenant_storage_usage(tenant_id)
             if used + size_bytes > quota_bytes:
                 raise ServiceOSException("PLAN_LIMIT_EXCEEDED",
                     "Storage quota exceeded. Upgrade your package for more storage.",
@@ -122,7 +120,14 @@ class MediaService:
         expires_at = utcnow() + timedelta(hours=1)
 
         if cloudinary_configured():
-            upload_params = build_upload_params(public_id=storage_key, folder=f"tenants/{tenant_id}")
+            # No `folder` here: `storage_key` ALREADY begins with
+            # "tenants/{tenant_id}/". Cloudinary prepends `folder` to
+            # `public_id`, so passing both stored every asset at
+            # "tenants/{id}/tenants/{id}/..." while this row kept the single
+            # prefix — every delivery URL built from `storage_key` then 404'd.
+            # Confirmed live: a successful signed upload produced a file that
+            # could never be viewed. `storage.py` already does it this way.
+            upload_params = build_upload_params(public_id=storage_key)
             upload_url = upload_params["upload_url"]
         else:
             upload_params = None
@@ -211,7 +216,14 @@ class MediaService:
         files = r.scalars().all()
         has_next = len(files) > limit; files = files[:limit]
         nc = encode_cursor({"created_at": files[-1].created_at.isoformat()}) if has_next and files else None
-        return {"files": [self._file_dict(f) for f in files],
+        # Every listed file carries its delivery URL. This used to call
+        # `_file_dict(f)` with no URL, so `signed_url` was null for every row in
+        # the list while `get_file` returned one — the media gallery could
+        # therefore never render a thumbnail or a working "View" link for any
+        # file, only for a file opened one at a time. `_signed_url` is pure
+        # string building (see above), so there is no per-row cost to pay here.
+        return {"files": [self._file_dict(f, self._signed_url(f.storage_key, f.mime_type))
+                          for f in files],
                 "has_next": has_next, "next_cursor": nc}
 
     async def delete_file(self, file_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
@@ -230,12 +242,39 @@ class MediaService:
         f.is_deleted = True; f.deleted_at = utcnow()
         return {"file_id": str(file_id), "deleted": True}
 
+
+    async def _tenant_storage_usage(self, tenant_id: uuid.UUID) -> tuple[int, int]:
+        """(bytes_used, file_count) for a tenant, across BOTH media stores.
+
+        This platform has two: `media_files` (this vault's own sessions) and
+        `media_assets` (the Phase 0A engine that every other surface writes —
+        profile photos, business logos, job before/after photos, documents —
+        and the ONLY one the admin media console governs).
+
+        Usage used to count `media_files` alone. Platform-wide that table is
+        effectively empty while `media_assets` holds the real data, so the meter
+        read 0 bytes no matter how much a tenant actually stored, and the
+        package storage cap could never be reached — a paid lever that could not
+        bind. Confirmed live: media_files 0 bytes / 0 files vs media_assets
+        1,551,250 bytes / 14 files for the same tenant.
+
+        Counting both is deliberate: it is correct today and stays correct if
+        the vault is ever migrated onto the canonical store.
+        """
+        from app.engines.media.models import MediaAsset
+
+        legacy = (await self.db.execute(
+            select(func.coalesce(func.sum(MediaFile.size_bytes), 0), func.count(MediaFile.id))
+            .where(MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False)
+        )).one()
+        assets = (await self.db.execute(
+            select(func.coalesce(func.sum(MediaAsset.file_size_bytes), 0), func.count(MediaAsset.id))
+            .where(MediaAsset.tenant_id == tenant_id, MediaAsset.deleted_at.is_(None))
+        )).one()
+        return int(legacy[0] or 0) + int(assets[0] or 0), int(legacy[1] or 0) + int(assets[1] or 0)
+
     async def get_storage_quota(self, tenant_id: uuid.UUID) -> dict:
-        r = await self.db.execute(select(func.sum(MediaFile.size_bytes),
-                                          func.count(MediaFile.id)).where(
-            MediaFile.tenant_id == tenant_id, MediaFile.is_deleted == False))
-        row = r.one()
-        used = row[0] or 0; file_count = row[1]
+        used, file_count = await self._tenant_storage_usage(tenant_id)
         # Same package-based / home-services-exempt rule as enforcement.
         quota = await self._effective_storage_quota_bytes(tenant_id)
         if quota is None:

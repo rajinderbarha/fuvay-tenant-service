@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import String, and_, case, cast, false as sa_false, func, literal, or_, select, union_all
+from sqlalchemy import DateTime, Numeric, String, and_, case, cast, false as sa_false, func, literal, or_, select, union_all
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -242,6 +242,13 @@ async def list_operations(
     stage: str | None = None,
     assignment: str | None = None,
     city: str | None = None,
+    state: str | None = None,
+    district: str | None = None,
+    zipcode: str | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     page: int = 1,
@@ -258,6 +265,9 @@ async def list_operations(
     if technician_id: job_filters.append(ServiceJob.assigned_staff_id == technician_id)
     if customer_id: job_filters.append(ServiceJob.customer_id == customer_id)
     if city: job_filters.append(func.lower(ServiceJob.city) == city.strip().lower())
+    if state: job_filters.append(func.lower(ServiceJob.address_snapshot["state"].astext) == state.strip().lower())
+    if district: job_filters.append(func.lower(ServiceJob.address_snapshot["district"].astext) == district.strip().lower())
+    if zipcode: job_filters.append(ServiceJob.zipcode == zipcode.strip())
     if date_from: job_filters.append(ServiceJob.created_at >= date_from)
     if date_to: job_filters.append(ServiceJob.created_at <= date_to)
     if assignment == "unassigned": job_filters.append(ServiceJob.assignment_status == "unassigned")
@@ -266,6 +276,9 @@ async def list_operations(
     draft_filters = [HomeServiceBookingDraft.status.in_(DRAFT_ACTIVE_STATUSES | DRAFT_EXCEPTION_STATUSES)]
     if customer_id: draft_filters.append(HomeServiceBookingDraft.customer_id == customer_id)
     if city: draft_filters.append(func.lower(HomeServiceBookingDraft.city) == city.strip().lower())
+    if state: draft_filters.append(func.lower(HomeServiceBookingDraft.address_snapshot["state"].astext) == state.strip().lower())
+    if district: draft_filters.append(func.lower(HomeServiceBookingDraft.address_snapshot["district"].astext) == district.strip().lower())
+    if zipcode: draft_filters.append(HomeServiceBookingDraft.zipcode == zipcode.strip())
     if date_from: draft_filters.append(HomeServiceBookingDraft.created_at >= date_from)
     if date_to: draft_filters.append(HomeServiceBookingDraft.created_at <= date_to)
     if tenant_id: draft_filters.append(HomeServiceBookingDraft.selected_tenant_id == tenant_id)
@@ -289,6 +302,31 @@ async def list_operations(
         .order_by(ServiceJobQuote.version_number.desc()).limit(1)
         .correlate(ServiceJob).scalar_subquery()
     )
+    current_quote_total = (
+        select(ServiceJobQuote.total_amount)
+        .where(ServiceJobQuote.job_id == ServiceJob.id, ServiceJobQuote.is_current.is_(True))
+        .order_by(ServiceJobQuote.version_number.desc()).limit(1)
+        .correlate(ServiceJob).scalar_subquery()
+    )
+    booking_amount = func.coalesce(
+        current_quote_total,
+        cast(ServiceBooking.price_snapshot["customer_total"].astext, Numeric),
+        cast(ServiceBooking.price_snapshot["estimated_total"].astext, Numeric),
+        cast(ServiceBooking.price_snapshot["standard_price"].astext, Numeric),
+        cast(ServiceBooking.price_snapshot["visit_fee"].astext, Numeric),
+    )
+    draft_amount = func.coalesce(
+        cast(HomeServiceBookingDraft.price_snapshot["customer_total"].astext, Numeric),
+        cast(HomeServiceBookingDraft.price_snapshot["estimated_total"].astext, Numeric),
+        cast(HomeServiceBookingDraft.price_snapshot["standard_price"].astext, Numeric),
+        cast(HomeServiceBookingDraft.price_snapshot["visit_fee"].astext, Numeric),
+    )
+    if amount_min is not None:
+        job_filters.append(booking_amount >= amount_min)
+        draft_filters.append(draft_amount >= amount_min)
+    if amount_max is not None:
+        job_filters.append(booking_amount <= amount_max)
+        draft_filters.append(draft_amount <= amount_max)
     job_stage = case(
         (and_(ServiceJob.status.in_(["inspection_done", "quote_required"]),
               current_quote_status.in_(QUOTE_AWAITING_APPROVAL_STATUSES)),
@@ -340,12 +378,19 @@ async def list_operations(
 
     job_candidates = (
         select(literal("JOB").label("work_type"), ServiceJob.id.label("record_id"),
-               ServiceJob.created_at.label("created_at"))
+               ServiceJob.created_at.label("created_at"),
+               ServiceJob.updated_at.label("updated_at"),
+               cast(ServiceJob.scheduled_date, DateTime).label("scheduled_date"),
+               booking_amount.label("amount"))
+        .outerjoin(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
         .where(*job_filters)
     )
     draft_candidates = (
         select(literal("REQUEST").label("work_type"), HomeServiceBookingDraft.id.label("record_id"),
-               HomeServiceBookingDraft.created_at.label("created_at"))
+               HomeServiceBookingDraft.created_at.label("created_at"),
+               HomeServiceBookingDraft.updated_at.label("updated_at"),
+               cast(HomeServiceBookingDraft.preferred_date, DateTime).label("scheduled_date"),
+               draft_amount.label("amount"))
         .where(*draft_filters)
     )
     if search:
@@ -356,7 +401,6 @@ async def list_operations(
         pattern = f"%{search.strip().lower()}%"
         job_candidates = (
             job_candidates
-            .outerjoin(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
             .outerjoin(job_customer, job_customer.id == ServiceJob.customer_id)
             .outerjoin(job_tenant, job_tenant.id == ServiceJob.tenant_id)
             .where(or_(
@@ -392,14 +436,24 @@ async def list_operations(
     total, _freshness, _at = await get_or_compute(
         count_key({"view": view, "search": search, "stage": stage, "assignment": assignment,
                    "tenant_id": tenant_id, "technician_id": technician_id,
-                   "customer_id": customer_id, "city": city,
+                   "customer_id": customer_id, "city": city, "state": state,
+                   "district": district, "zipcode": zipcode,
+                   "amount_min": amount_min, "amount_max": amount_max,
                    "date_from": date_from, "date_to": date_to}),
         _count, fresh_seconds=_COUNT_FRESH_SECONDS, ttl_seconds=_COUNT_TTL_SECONDS,
     )
     total = int(total or 0)
+    sort_columns = {
+        "created_at": candidates.c.created_at,
+        "updated_at": candidates.c.updated_at,
+        "scheduled_date": candidates.c.scheduled_date,
+        "amount": candidates.c.amount,
+    }
+    sort_column = sort_columns.get(sort_by, candidates.c.created_at)
+    sort_expression = sort_column.asc().nulls_last() if sort_dir == "asc" else sort_column.desc().nulls_last()
     selected = (await db.execute(
         select(candidates.c.work_type, candidates.c.record_id, candidates.c.created_at)
-        .order_by(candidates.c.created_at.desc(), candidates.c.record_id.desc())
+        .order_by(sort_expression, candidates.c.record_id.desc())
         .offset((page - 1) * page_size).limit(page_size)
     )).all()
     selected_job_ids = [row.record_id for row in selected if row.work_type == "JOB"]

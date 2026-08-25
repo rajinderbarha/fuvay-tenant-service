@@ -106,7 +106,11 @@ function OperationalDashboard() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const jobsApi = useApi<any>(useCallback(() => bookingsJobsApi.list({ page_size: 100 }), []), []);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reviewsApi = useApi<any>(useCallback(() => hsReviewsApi.list({ page_size: 100 }), []), []);
+  // `page_size` is not a parameter this endpoint accepts -- it takes `limit`.
+  // FastAPI ignores unknown query params, so this silently fell back to the
+  // default of 10 and the dashboard's review panel was computed from the ten
+  // most recent reviews while claiming to summarise a hundred.
+  const reviewsApi = useApi<any>(useCallback(() => hsReviewsApi.list({ limit: 100 }), []), []);
   // Real data sources for the operational dashboard panels below -- every
   // one of these is a proven, mounted endpoint (see the dashboard redesign
   // research pass 2026-08-04): job pipeline/SLA/today's-jobs come from
@@ -385,7 +389,7 @@ function OperationalDashboard() {
                         {slaStatus ? <Badge variant={slaTone} size="sm">{slaStatus === "BREACHED" ? "Breached" : slaStatus === "AT_RISK" ? "At risk" : "On track"}</Badge> : "—"}
                       </td>
                       <td style={{ padding: "10px 20px" }}>
-                        <Link href={`/home-services/bookings-jobs?job=${j.service_job_id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none" }}>View</Link>
+                        <Link href={`/home-services/bookings-jobs?job_id=${j.service_job_id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none" }}>View</Link>
                       </td>
                     </tr>
                   );

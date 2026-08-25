@@ -23,7 +23,7 @@ def _rid() -> str:
 
 # ── Fixed-path endpoints FIRST (before /{template_id}) ───────────────────────
 
-@router.get("/summary", response_model=ApiResponse)
+@router.get("/summary", response_model=ApiResponse, operation_id="enterprise_setup_templates_summary")
 async def get_summary(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission(P.SETUP_TEMPLATES_READ)),
@@ -32,7 +32,7 @@ async def get_summary(
     return ok(data, _rid())
 
 
-@router.post("/seed-defaults/preview", response_model=ApiResponse)
+@router.post("/seed-defaults/preview", response_model=ApiResponse, operation_id="enterprise_setup_templates_seed_preview")
 async def seed_defaults_preview(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission(P.SETUP_TEMPLATES_WRITE)),
@@ -41,7 +41,7 @@ async def seed_defaults_preview(
     return ok(data, _rid())
 
 
-@router.post("/seed-defaults", response_model=ApiResponse)
+@router.post("/seed-defaults", response_model=ApiResponse, operation_id="enterprise_setup_templates_seed")
 async def seed_defaults(
     db: AsyncSession = Depends(get_db),
     _user=Depends(require_permission(P.SETUP_TEMPLATES_WRITE)),
@@ -52,7 +52,7 @@ async def seed_defaults(
 
 # ── List + Create ─────────────────────────────────────────────────────────────
 
-@router.get("", response_model=ApiResponse)
+@router.get("", response_model=ApiResponse, operation_id="enterprise_setup_templates_list")
 async def list_templates(
     q: Optional[str] = Query(None),
     vertical: Optional[str] = Query(None),
@@ -74,7 +74,7 @@ async def list_templates(
     return ok(data, _rid())
 
 
-@router.post("", response_model=ApiResponse)
+@router.post("", response_model=ApiResponse, operation_id="enterprise_setup_templates_create")
 async def create_template(
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_db),
@@ -89,7 +89,7 @@ async def create_template(
 
 # ── Per-template endpoints ────────────────────────────────────────────────────
 
-@router.get("/{template_id}", response_model=ApiResponse)
+@router.get("/{template_id}", response_model=ApiResponse, operation_id="enterprise_setup_templates_get")
 async def get_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -102,7 +102,7 @@ async def get_template(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.put("/{template_id}", response_model=ApiResponse)
+@router.put("/{template_id}", response_model=ApiResponse, operation_id="enterprise_setup_templates_update")
 async def update_template(
     template_id: str,
     payload: dict = Body(...),
@@ -116,7 +116,7 @@ async def update_template(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{template_id}/publish", response_model=ApiResponse)
+@router.post("/{template_id}/publish", response_model=ApiResponse, operation_id="enterprise_setup_templates_publish")
 async def publish_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -129,7 +129,7 @@ async def publish_template(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{template_id}/archive", response_model=ApiResponse)
+@router.post("/{template_id}/archive", response_model=ApiResponse, operation_id="enterprise_setup_templates_archive")
 async def archive_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -142,7 +142,7 @@ async def archive_template(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{template_id}/clone", response_model=ApiResponse)
+@router.post("/{template_id}/clone", response_model=ApiResponse, operation_id="enterprise_setup_templates_clone")
 async def clone_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -155,7 +155,7 @@ async def clone_template(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{template_id}", response_model=ApiResponse)
+@router.delete("/{template_id}", response_model=ApiResponse, operation_id="enterprise_setup_templates_delete")
 async def delete_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -168,7 +168,7 @@ async def delete_template(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{template_id}/validate", response_model=ApiResponse)
+@router.post("/{template_id}/validate", response_model=ApiResponse, operation_id="enterprise_setup_templates_validate")
 async def validate_template(
     template_id: str,
     db: AsyncSession = Depends(get_db),
@@ -181,7 +181,7 @@ async def validate_template(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.get("/{template_id}/versions", response_model=ApiResponse)
+@router.get("/{template_id}/versions", response_model=ApiResponse, operation_id="enterprise_setup_templates_versions")
 async def get_versions(
     template_id: str,
     db: AsyncSession = Depends(get_db),

@@ -13,6 +13,7 @@ venv/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Environment / secrets
 .env
@@ -28,6 +29,9 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+artifacts/
+frontend/e2e-admin-tenant/evidence/
+var/audits/
 
 # OS / IDE
 .DS_Store
@@ -35,6 +39,9 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+.codex-logs/
+.runlogs/
+.expo/
 
 # Uploads (runtime data, not source)
 uploads/
@@ -61,3 +68,6 @@ frontend/super-admin/tsconfig.tsbuildinfo
 *.stackdump
 *.tmp.*
 frontend/customer-app/tsconfig.tsbuildinfo
+
+# Browser-only customer portal was retired; customer and staff experiences are native apps.
+frontend/customer-web/

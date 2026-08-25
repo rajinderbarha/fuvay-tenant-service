@@ -3,7 +3,8 @@ import { View, Text, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { BookingReviewSummary } from "../../domain/bookingReview";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { resolveMediaImageSource } from "../../domain/mediaUrl";
+import { getInMemoryAccessToken } from "../../api/session/tokenVault";
 
 export interface RequestSummaryCardProps {
   summary: BookingReviewSummary;
@@ -118,7 +119,7 @@ export function RequestSummaryCard({ summary, slotLabel, embedded }: RequestSumm
             {summary.photoUrls.map(url => (
               <Image
                 key={url}
-                source={{ uri: resolveMediaUrl(url) ?? url }}
+                source={resolveMediaImageSource(url, getInMemoryAccessToken()) ?? { uri: url }}
                 accessibilityLabel="Photo you attached"
                 style={{
                   width: THUMB, height: THUMB, borderRadius: 10,

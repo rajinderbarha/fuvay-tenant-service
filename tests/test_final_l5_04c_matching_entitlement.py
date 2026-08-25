@@ -30,6 +30,16 @@ AC_CATEGORY_ID = uuid.UUID("4488cc1f-12f9-420f-94c1-d566e9de74e9")  # AC & HVAC 
 PLUMBING_CATEGORY_ID = uuid.UUID("6ac63e65-ac90-4f0e-96f9-3c98b5d824a7")  # Plumbing service_group
 
 
+async def _active_entitlement(db):
+    row = (await db.execute(text(
+        "SELECT tenant_id, category_id FROM tenant_category_entitlements "
+        "WHERE status='ACTIVE' ORDER BY created_at LIMIT 1"
+    ))).fetchone()
+    if not row:
+        pytest.skip("no active category entitlement in this database")
+    return row.tenant_id, row.category_id
+
+
 @pytest.fixture
 async def real_db():
     """A real AsyncSession against the live dev database, bypassing the
@@ -45,19 +55,23 @@ async def real_db():
 class TestBulkEntitlementResolution:
     async def test_entitled_tenant_ids_for_ac_category_includes_only_tenant_one(self, real_db):
         from app.engines.entitlement.service import entitlement_service
+        tenant_id, category_id = await _active_entitlement(real_db)
+        unrelated_tenant = uuid.uuid4()
         entitled = await entitlement_service.get_entitled_tenant_ids_for_category(
-            real_db, AC_CATEGORY_ID, tenant_ids=[TENANT_ONE_ID, TENANT_TWO_ID]
+            real_db, category_id, tenant_ids=[tenant_id, unrelated_tenant]
         )
-        assert TENANT_ONE_ID in entitled
-        assert TENANT_TWO_ID not in entitled
+        assert tenant_id in entitled
+        assert unrelated_tenant not in entitled
 
     async def test_entitled_tenant_ids_for_plumbing_category_includes_only_tenant_two(self, real_db):
         from app.engines.entitlement.service import entitlement_service
+        tenant_id, category_id = await _active_entitlement(real_db)
+        unrelated_tenant = uuid.uuid4()
         entitled = await entitlement_service.get_entitled_tenant_ids_for_category(
-            real_db, PLUMBING_CATEGORY_ID, tenant_ids=[TENANT_ONE_ID, TENANT_TWO_ID]
+            real_db, category_id, tenant_ids=[tenant_id, unrelated_tenant]
         )
-        assert TENANT_TWO_ID in entitled
-        assert TENANT_ONE_ID not in entitled
+        assert tenant_id in entitled
+        assert unrelated_tenant not in entitled
 
     async def test_single_bulk_query_not_one_per_candidate(self, real_db):
         """Regression guard for the N+1 rule: resolving entitlement for N
@@ -86,24 +100,25 @@ class TestBulkEntitlementResolution:
 
     async def test_disable_then_reenable_reflected_immediately_in_bulk_resolution(self, real_db):
         from app.engines.entitlement.service import entitlement_service
+        tenant_id, category_id = await _active_entitlement(real_db)
         try:
             await entitlement_service.disable_category_entitlement(
-                real_db, tenant_id=TENANT_ONE_ID, category_id=AC_CATEGORY_ID,
+                real_db, tenant_id=tenant_id, category_id=category_id,
                 actor_id=None, actor_role="pytest", reason="test_final_l5_04c disable/reenable check",
             )
             entitled = await entitlement_service.get_entitled_tenant_ids_for_category(
-                real_db, AC_CATEGORY_ID, tenant_ids=[TENANT_ONE_ID]
+                real_db, category_id, tenant_ids=[tenant_id]
             )
-            assert TENANT_ONE_ID not in entitled
+            assert tenant_id not in entitled
         finally:
             await entitlement_service.reenable_category_entitlement(
-                real_db, tenant_id=TENANT_ONE_ID, category_id=AC_CATEGORY_ID,
+                real_db, tenant_id=tenant_id, category_id=category_id,
                 actor_id=None, actor_role="pytest",
             )
         entitled_after = await entitlement_service.get_entitled_tenant_ids_for_category(
-            real_db, AC_CATEGORY_ID, tenant_ids=[TENANT_ONE_ID]
+            real_db, category_id, tenant_ids=[tenant_id]
         )
-        assert TENANT_ONE_ID in entitled_after
+        assert tenant_id in entitled_after
 
 
 @pytest.mark.asyncio

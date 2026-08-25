@@ -99,7 +99,7 @@ test.describe('ADMIN-TENANT-E2E-09B RBAC hardening + live bookability', () => {
 
   test('Browser: read-only login sees setup wizard read-only banner + disabled Save/Publish', async ({ page }) => {
     await loginAsTenantReadOnly(page);
-    await page.goto('/tenant/setup/services', { waitUntil: 'domcontentloaded' });
+    await page.goto('/tenant/home-services/setup/services-pricing', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
     const bodyText = await page.locator('body').innerText();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'readonly-setup-services.png'), fullPage: true });
@@ -111,7 +111,7 @@ test.describe('ADMIN-TENANT-E2E-09B RBAC hardening + live bookability', () => {
 
   test('Browser: owner login sees setup wizard without read-only banner', async ({ page }) => {
     await loginAsTenantOwner(page);
-    await page.goto('/tenant/setup/services', { waitUntil: 'domcontentloaded' });
+    await page.goto('/tenant/home-services/setup/services-pricing', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, 'owner-setup-services.png'), fullPage: true });
     const bodyText = await page.locator('body').innerText();
@@ -127,16 +127,7 @@ test.describe('ADMIN-TENANT-E2E-09B RBAC hardening + live bookability', () => {
     expect(status.body.data.is_visible).toBe(true);
   });
 
-  test('API: live match-and-price returns Guramrit with real Low/Mid/High options (if a bargain rule exists)', async () => {
-    // "Demo AC Services" was the removed demo tenant; SEED.tenantId points at
-    // the live equivalent, Guramrit. selected_provider_price_options is only
-    // populated when an active BargainRule exists for the master service
-    // (auto_price_options_router.py) -- this database's bargain_rules table
-    // has ZERO rows for any service (confirmed directly against Postgres,
-    // same disclosed gap as admin-matching-ops-e2e04.spec.ts). That's a
-    // genuinely unconfigured prerequisite, not fixture drift, so the
-    // Low/Mid/High assertion runs conditionally and this test still verifies
-    // the one thing that's always true: a real provider was matched.
+  test('API: live match-and-price returns the eligible provider without retired price tiers', async () => {
     const custToken = await login(CUSTOMER_ONE.email, CUSTOMER_ONE.password);
     const draft = await apiPost('/v1/customer/home-services/booking-drafts', custToken, {
       category_slug: SEED.categorySlug, offering_slug: SEED.offeringSlug,
@@ -154,12 +145,7 @@ test.describe('ADMIN-TENANT-E2E-09B RBAC hardening + live bookability', () => {
     log('bookability.log', `match -> ${JSON.stringify(match.body)}`);
     expect(match.status).toBe(200);
     expect(match.body.data.selected_provider.tenant_id).toBe(SEED.tenantId);
-    const priceOptions = match.body.data.selected_provider_price_options;
-    log('bookability.log', `priceOptions present: ${!!priceOptions} (only expected if an active BargainRule exists -- none do in this DB)`);
-    if (priceOptions) {
-      expect(priceOptions.low_price).toBeGreaterThan(0);
-      expect(priceOptions.high_price).toBeGreaterThan(priceOptions.low_price);
-    }
+    expect(match.body.data.selected_provider_price_options).toBeFalsy();
     expect(JSON.stringify(match.body)).not.toContain('tenant_wallets');
 
     await apiPost(`/v1/customer/home-services/booking-drafts/${draftId}/cancel`, custToken);

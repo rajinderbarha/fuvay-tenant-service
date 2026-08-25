@@ -40,7 +40,7 @@ MAX_PAGE_SIZE = 100
 # Postgres on every open.
 ICON_LIBRARY_CONTEXTS = {
     "category_icon", "service_icon", "brand_logo",
-    "issue_icon", "checklist_icon", "question_icon", "global_service_icon",
+    "checklist_icon", "global_service_icon", "home_campaign_artwork",
     "banner_artwork",
 }
 ICON_LIBRARY_CACHE_TTL = 300
@@ -246,6 +246,32 @@ class MediaAssetService:
         if not path:
             raise ServiceOSException("MEDIA_NOT_FOUND", "File not found in local storage.")
         return path, asset.mime_type
+
+    async def get_remote_url_for_serve(self, media_id: uuid.UUID) -> tuple[str, str]:
+        """Return an access-checked delivery URL for a remotely stored asset.
+
+        Media metadata exposes the API preview endpoint rather than a durable
+        private-storage URL. This server-side resolver lets remote assets be
+        delivered after authorization without making the object key part of
+        the client-side preview contract.
+        """
+        # Reuse the canonical read-authority and chat-thread lifecycle checks.
+        await self.get_asset(media_id)
+        asset = await self._load(media_id)
+
+        if asset.storage_driver == "cloudinary":
+            from app.cloudinary_client import build_delivery_url
+
+            resource_type = "image" if asset.mime_type.startswith("image/") else "raw"
+            return build_delivery_url(asset.storage_key, resource_type), asset.mime_type
+
+        if asset.public_url and asset.public_url.startswith(("https://", "http://")):
+            return asset.public_url, asset.mime_type
+
+        raise ServiceOSException(
+            "MEDIA_NOT_FOUND",
+            "No remote delivery URL is available for this asset.",
+        )
 
     # ── List ──────────────────────────────────────────────────────────────────
 
@@ -732,7 +758,7 @@ class MediaAssetService:
         if media_context in CUSTOMER_CONTEXTS:
             return "customer"
         if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon",
-                             "issue_icon", "checklist_icon", "question_icon", "global_service_icon",
+                             "checklist_icon", "global_service_icon", "home_campaign_artwork",
                              "banner_artwork"):
             return "public"
         return "tenant"

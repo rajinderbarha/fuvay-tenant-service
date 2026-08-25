@@ -218,3 +218,52 @@ a { color: inherit; text-decoration: none; }
 }
 
 .pulse-dot { animation: pulse 2s ease-in-out infinite; }
+
+/* Provider shell structure
+ *
+ * Admin and provider keep independent palettes, but use one structural
+ * contract: fixed application frame, 58px command bar, 1440px content rail,
+ * and the same responsive content gutters. These classes are shared by the
+ * operational TenantLayout and the onboarding shell so providers do not feel
+ * as though they have entered a separate product during setup.
+ */
+.provider-app-shell {
+  min-width: 0;
+  isolation: isolate;
+}
+
+.provider-sidebar {
+  position: relative;
+  z-index: 20;
+}
+
+.provider-topbar {
+  position: relative;
+  z-index: 30;
+}
+
+.provider-main {
+  scroll-behavior: smooth;
+}
+
+.provider-content {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .provider-main {
+    padding: 24px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .provider-topbar {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .provider-main {
+    padding: 20px 16px !important;
+  }
+}

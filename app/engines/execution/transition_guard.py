@@ -38,6 +38,27 @@ def is_status_move_allowed(current: str | None, target: str) -> bool:
     return target in JOB_TRANSITIONS.get(current, set())
 
 
+#: The execution engine calls every field-worker transition `actor_role="staff"`
+#: (11 call sites in home_service_service.py), while workflow authors write the
+#: same actor as `technician` in `allowed_role`. Those two words never compared
+#: equal, so EVERY technician-authored step was unreachable: a real job sat in
+#: `accepted` and "On The Way" answered `"On The Way" can only be performed by
+#: technician.` to the technician it was assigned to. These are synonyms for one
+#: actor; tenant_owner / tenant_manager stay distinct from them and from each
+#: other.
+_ACTOR_SYNONYMS: dict[str, set[str]] = {
+    "staff":       {"staff", "technician", "field_staff"},
+    "technician":  {"staff", "technician", "field_staff"},
+    "field_staff": {"staff", "technician", "field_staff"},
+}
+
+
+def _actor_satisfies(actor_role: str, permitted: set[str | None]) -> bool:
+    """True when `actor_role` meets any of the roles a transition permits."""
+    accepted = _ACTOR_SYNONYMS.get(actor_role, {actor_role})
+    return any(p in accepted for p in permitted if p)
+
+
 async def workflow_verdict(db, job, target: str, actor_role: str | None = None) -> tuple[bool, str | None]:
     """Layer 2. Returns (allowed, reason_if_not).
 
@@ -90,7 +111,7 @@ async def workflow_verdict(db, job, target: str, actor_role: str | None = None) 
         permitted = {t.get("allowed_role") for t in matching}
         # "system" is the platform acting on its own behalf and is never blocked
         # by a role rule authored for humans.
-        if actor_role != "system" and permitted and actor_role not in permitted:
+        if actor_role != "system" and permitted and not _actor_satisfies(actor_role, permitted):
             return False, (f"\"{to_step.get('step_name')}\" can only be performed by "
                            f"{', '.join(sorted(r for r in permitted if r))}.")
     return True, None

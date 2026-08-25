@@ -19,6 +19,7 @@ from app.engines.analytics.report_definitions import ReportDefinitionRegistry
 from app.engines.analytics.constants import (
     ERR_REPORT_NOT_FOUND, ERR_REPORT_ACCESS_DENIED, ERR_REPORT_FILTER_NOT_ALLOWED,
     ERR_REPORT_RUN_FAILED, ERR_REPORT_ASYNC_REQUIRED, ERR_REPORT_TOO_LARGE,
+    ERR_REPORT_FORMAT_UNSUPPORTED,
     REPORT_STATUS_PENDING, REPORT_STATUS_RUNNING, REPORT_STATUS_COMPLETED,
     REPORT_STATUS_FAILED, SCOPE_ADMIN, SCOPE_PROVIDER,
     EXPORT_SYNC_ROW_LIMIT, EXPORT_MAX_ROW_LIMIT,
@@ -113,8 +114,17 @@ class ReportService:
             if scope == SCOPE_PROVIDER:
                 result_rows = _strip_sensitive(result_rows, defn.sensitive_cols)
 
-            # Generate CSV if requested
+            # Generate CSV if requested. An unsupported format is rejected up
+            # front rather than silently completing with no file: a run that
+            # says "completed" and hands back nothing is worse than an error,
+            # because the caller cannot tell it failed.
             file_content = None
+            if export_format and export_format not in defn.export_formats:
+                run.status = REPORT_STATUS_FAILED
+                run.failure_reason = ERR_REPORT_FORMAT_UNSUPPORTED
+                run.completed_at = _utcnow()
+                await db.commit()
+                raise ValueError(ERR_REPORT_FORMAT_UNSUPPORTED)
             if export_format == "csv" and result_rows:
                 file_content = _to_csv(result_rows)
 
@@ -226,6 +236,53 @@ class ReportService:
             p["tenant_id"] = tenant_id
         tc = "AND tenant_id = :tenant_id" if tenant_id else ""
 
+        # Every report advertised category_id / offering_id / staff_member_id /
+        # status (and payment_status, commission_status, review_rating,
+        # complaint_status) in `allowed_filters`, and `run_report` validated
+        # them as allowed — but ONLY the dates were ever bound into the SQL, so
+        # the rest were accepted and silently ignored. Confirmed live: the jobs
+        # report returned the same 16 rows for status=accepted,
+        # status=pending_assignment and a specific staff_member_id.
+        #
+        # A filter that quietly does nothing is worse than one that is absent:
+        # the operator believes the number in front of them is filtered. Each
+        # entry below binds to a column that genuinely exists on that report's
+        # own table (verified against information_schema), and each report's
+        # `allowed_filters` has been trimmed to exactly this set.
+        def _opt(column: str, key: str, kind: str = "") -> str:
+            """`AND <column> = :<key>` when the caller supplied that filter.
+
+            The value is coerced in PYTHON rather than written as a `::uuid`
+            cast in the SQL: a cast placed directly after a named bind reads as
+            part of the parameter token and the statement fails to prepare.
+            A malformed id is treated as "no such row" rather than a 500.
+            """
+            value = (filters or {}).get(key)
+            if value in (None, ""):
+                return ""
+            try:
+                if kind == "uuid":
+                    value = uuid.UUID(str(value))
+                elif kind == "int":
+                    value = int(value)
+            except (ValueError, AttributeError, TypeError):
+                # An unparseable filter must narrow to nothing, never widen to
+                # everything — silently dropping it would return the FULL
+                # report while the caller believes it is filtered.
+                return " AND 1 = 0"
+            p[key] = value
+            return f" AND {column} = :{key}"
+
+        jobs_f = (
+            _opt("status", "status")
+            + _opt("offering_id", "offering_id", "uuid")
+            + _opt("category_id", "category_id", "uuid")
+            + _opt("assigned_staff_id", "staff_member_id", "uuid")
+        )
+        invoice_f = _opt("payment_status", "payment_status") + _opt("commission_status", "commission_status")
+        review_f = _opt("overall_rating", "review_rating", "int") + _opt("status", "status")
+        complaint_f = _opt("status", "complaint_status")
+
         # Map report_key → SQL
         sql_map = {
             "admin_platform_summary_report": f"""
@@ -280,14 +337,14 @@ class ReportService:
                        commission_status, created_at::text
                 FROM service_invoices
                 WHERE tenant_id = :tenant_id
-                AND created_at BETWEEN :from_dt AND :to_dt
+                AND created_at BETWEEN :from_dt AND :to_dt {invoice_f}
                 ORDER BY created_at DESC LIMIT :row_limit
             """ if tenant_id else "SELECT 'no_data' AS info",
             "provider_jobs_report": f"""
                 SELECT job_number, status, assignment_status, city, created_at::text
                 FROM service_jobs
                 WHERE tenant_id = :tenant_id
-                AND created_at BETWEEN :from_dt AND :to_dt
+                AND created_at BETWEEN :from_dt AND :to_dt {jobs_f}
                 ORDER BY created_at DESC LIMIT :row_limit
             """ if tenant_id else "SELECT 'no_data' AS info",
             "provider_appointments_report": f"""

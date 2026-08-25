@@ -1,354 +1,219 @@
 "use client";
-/**
- * Home Services Customer 360 — real directory (see ../page.tsx header for
- * the wrong-backend bug this replaces). Tabs match the real backend
- * surface one-for-one: Overview, Services Used, Jobs, Payments,
- * Complaints, Reviews, Activity & Audit.
- *
- * Deliberately NO "Providers Used" or "Addresses" tab: the tenant-facing
- * router (app/engines/tenant_engine/hs_tenant_customer_router.py) excludes
- * both by documented customer-privacy policy -- those are permanent-
- * directory / cross-tenant surfaces, not something a single tenant should
- * see about a customer. Building them here would mean either fabricating
- * data or bypassing a real privacy boundary; neither is acceptable.
- */
-import React, { useCallback, useState } from "react";
+
+import React, { Suspense, useCallback } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Alert, Button, Card, EmptyState, PageHeader, PageShell, Pagination,
+  Skeleton, StatCard,
+} from "@serviceos/design-system";
+import {
+  ArrowLeft, BadgeIndianRupee, BriefcaseBusiness, CalendarDays,
+  CheckCircle2, Clock3, LockKeyhole, MessageSquareWarning, RotateCcw,
+  ShieldCheck, Star, Wrench, XCircle,
+} from "lucide-react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { Card, Skeleton } from "@serviceos/design-system";
 import { Badge } from "../../../../components/shared/ui";
-import { hsCustomersApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 import {
-  ClipboardList, XCircle, Wrench, IndianRupee, Calendar, Clock,
-  MessageSquare, Star, ShieldCheck, TrendingUp,
-} from "lucide-react";
+  hsCustomersApi, type HsCustomerDetail, type HsCustomerFeed,
+} from "../../../../lib/api";
 
-const TABS = ["Overview", "Services Used", "Jobs", "Payments", "Complaints", "Reviews", "Activity & Audit"] as const;
-type Tab = typeof TABS[number];
+const TABS = [
+  { key: "overview", label: "Overview" },
+  { key: "services", label: "Services used" },
+  { key: "jobs", label: "Jobs" },
+  { key: "payments", label: "Payments" },
+  { key: "complaints", label: "Complaints" },
+  { key: "reviews", label: "Reviews" },
+  { key: "activity", label: "Activity & audit" },
+] as const;
+type TabKey = typeof TABS[number]["key"];
+type Row = Record<string, unknown>;
 
-function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+function fmtDate(value: unknown, withTime = false): string {
+  if (!value) return "—";
+  return new Date(String(value)).toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
 }
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+function fmtMoney(value: unknown): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency", currency: "INR", maximumFractionDigits: 0,
+  }).format(Number(value ?? 0));
 }
-function typeLabel(status: string | undefined): { label: string; variant: "success" | "info" | "muted" } {
-  if (status === "repeat") return { label: "Repeat customer", variant: "success" };
-  if (status === "one_time") return { label: "One-time customer", variant: "info" };
-  return { label: "New customer", variant: "muted" };
+
+function typeBadge(status: HsCustomerDetail["repeat_status"]) {
+  if (status === "repeat") return <Badge variant="success">Repeat customer</Badge>;
+  if (status === "one_time") return <Badge variant="info">One-time customer</Badge>;
+  return <Badge variant="muted">New relationship</Badge>;
+}
+
+function paymentBadge(status: HsCustomerDetail["payment_reliability"]) {
+  if (status === "reliable") return <Badge variant="success">Reliable payment history</Badge>;
+  if (status === "needs_review") return <Badge variant="danger">Payment review needed</Badge>;
+  return <Badge variant="muted">Payment history building</Badge>;
 }
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
-  const [tab, setTab] = useState<Tab>("Overview");
+  return (
+    <Suspense fallback={<DetailSkeleton />}>
+      <CustomerDetailWorkspace customerId={id} />
+    </Suspense>
+  );
+}
 
-  const detail = useApi(useCallback(() => hsCustomersApi.detail(id), [id]), [id]);
-  const jobs = useApi(useCallback(() => hsCustomersApi.jobs(id), [id]), [id]);
-  const complaints = useApi(useCallback(() => hsCustomersApi.complaints(id), [id]), [id]);
-  const payments = useApi(useCallback(() => hsCustomersApi.payments(id), [id]), [id]);
-  const reviews = useApi(useCallback(() => hsCustomersApi.reviews(id), [id]), [id]);
-  const activity = useApi(useCallback(() => hsCustomersApi.activity(id), [id]), [id]);
+function DetailSkeleton() {
+  return <TenantLayout activeNav="customers"><PageShell><Skeleton height={82} /><Skeleton height={132} /><Skeleton height={360} /></PageShell></TenantLayout>;
+}
 
-  const c = detail.data;
-  const jobRows: Array<Record<string, unknown>> = Array.isArray(jobs.data?.items) ? jobs.data.items : [];
-  const complaintRows: Array<Record<string, unknown>> = Array.isArray(complaints.data?.items) ? complaints.data.items : [];
-  const paymentRows: Array<Record<string, unknown>> = Array.isArray(payments.data?.items) ? payments.data.items : [];
-  const reviewRows: Array<Record<string, unknown>> = Array.isArray(reviews.data?.items) ? reviews.data.items : [];
-  const activityRows: Array<Record<string, unknown>> = Array.isArray(activity.data?.items) ? activity.data.items : [];
-  const servicesUsed: Array<Record<string, unknown>> = Array.isArray(c?.services_used_by_master_service) ? c.services_used_by_master_service : [];
+function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const requestedTab = params.get("tab") as TabKey | null;
+  const tab: TabKey = TABS.some(item => item.key === requestedTab) ? requestedTab! : "overview";
+  const page = Math.max(1, Number(params.get("page") ?? 1) || 1);
+  const detail = useApi(useCallback(() => hsCustomersApi.detail(customerId), [customerId]), [customerId]);
+  const customer = detail.data;
 
-  const nextBooking = jobRows
-    .filter(j => j?.scheduled_date && new Date(String(j.scheduled_date)) >= new Date(new Date().toDateString())
-      && j?.status !== "completed" && j?.status !== "cancelled")
-    .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))[0];
+  function setTab(nextTab: TabKey) {
+    router.replace(`/customers/${customerId}?tab=${nextTab}`);
+  }
 
-  const confirmedPayments = paymentRows.filter(p => p.customer_confirmed).length;
-  const pendingPayments = paymentRows.length - confirmedPayments;
-  const avgRating = reviewRows.length
-    ? reviewRows.reduce((sum, r) => sum + Number(r.overall_rating ?? 0), 0) / reviewRows.length
-    : null;
-
-  const type = typeLabel(c?.repeat_status as string | undefined);
+  function setPage(nextPage: number) {
+    const next = new URLSearchParams(params.toString());
+    next.set("tab", tab);
+    next.set("page", String(nextPage));
+    router.replace(`/customers/${customerId}?${next.toString()}`);
+  }
 
   return (
     <TenantLayout activeNav="customers">
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
-        <Link href="/customers" style={{ color: "var(--brand)", textDecoration: "none" }}>Customers</Link>
-        <span>›</span>
-        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{c?.alias ?? "Loading…"}</span>
-      </div>
+      <PageShell>
+        <div className="customer-breadcrumbs"><Link href="/customers">Customers</Link><span>/</span><span>{customer?.alias ?? "Customer relationship"}</span></div>
+        <PageHeader
+          title={customer?.alias ?? "Customer relationship"}
+          description="Tenant-scoped service history with privacy controls applied at the API boundary."
+          actions={<Button variant="secondary" leftIcon={<ArrowLeft size={15} />} onClick={() => router.push("/customers")}>Back to customers</Button>}
+        />
 
-      {detail.loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Skeleton height={100} radius="14px" />
-          <Skeleton height={300} radius="14px" />
-        </div>
-      ) : !c ? (
-        <Card><p style={{ textAlign: "center", color: "var(--text-tertiary)", padding: 24 }}>Customer not found.</p></Card>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Header */}
-          <Card padding="lg">
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--accent-muted)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>
-                {String(c.alias ?? "C").replace("Customer ", "").slice(0, 1).toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{String(c.alias)}</h1>
-                  <Badge variant={c.is_active ? "success" : "muted"}>{c.is_active ? "Active" : "Inactive"}</Badge>
-                  <Badge variant={type.variant}>{type.label}</Badge>
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-                  Customer since {fmtDate(c.first_booking_at as string)} · Last activity {fmtDate(c.last_activity_at as string)}
-                </p>
-              </div>
+        {detail.error ? (
+          <Card><Alert tone="danger" title="Customer relationship could not be loaded">{detail.error}{detail.requestId ? ` · Request ${detail.requestId}` : ""}</Alert><Button variant="secondary" onClick={detail.refetch} style={{ marginTop: 12 }}>Try again</Button></Card>
+        ) : detail.loading || !customer ? (
+          <><Skeleton height={120} /><Skeleton height={340} /></>
+        ) : (
+          <>
+            <RelationshipHeader customer={customer} />
+            <div className="customer-detail-tabs" role="tablist" aria-label="Customer relationship sections">
+              {TABS.map(item => <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} onClick={() => setTab(item.key)}>{item.label}</button>)}
             </div>
-          </Card>
+            {tab === "overview" && <OverviewTab customer={customer} customerId={customerId} />}
+            {tab === "services" && <ServicesTab customer={customer} />}
+            {tab !== "overview" && tab !== "services" && <FeedTab key={`${tab}-${page}`} customerId={customerId} tab={tab} page={page} onPage={setPage} />}
+          </>
+        )}
+      </PageShell>
 
-          {/* Tabs */}
-          <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-            {TABS.map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                style={{
-                  padding: "9px 14px", border: "none", borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
-                  background: "transparent", cursor: "pointer", fontFamily: "inherit",
-                  fontSize: 13, fontWeight: tab === t ? 700 : 500,
-                  color: tab === t ? "var(--brand)" : "var(--text-secondary)",
-                }}>{t}</button>
-            ))}
-          </div>
-
-          {tab === "Overview" && (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14 }}>
-                {[
-                  { icon: <ClipboardList size={18} />, label: "Completed jobs", value: Number(c.completed_jobs ?? 0) },
-                  { icon: <XCircle size={18} />, label: "Cancelled jobs", value: Number(c.cancelled_jobs ?? 0) },
-                  { icon: <Wrench size={18} />, label: "Services used", value: servicesUsed.length },
-                  { icon: <IndianRupee size={18} />, label: "Confirmed job value", value: `₹${Number(c.confirmed_job_value ?? 0).toLocaleString("en-IN")}` },
-                ].map(s => (
-                  <Card key={s.label} style={{ padding: "14px 16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: "var(--radius-md)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--accent-muted)", color: "var(--brand)" }}>{s.icon}</div>
-                      <div>
-                        <p style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>{s.value}</p>
-                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{s.label}</p>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }} className="cust-grid">
-                <style>{`@media (max-width: 900px) { .cust-grid { grid-template-columns: 1fr !important; } }`}</style>
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  <Card>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <Clock size={15} color="var(--brand)" /> Recent activity
-                    </h3>
-                    {activity.loading ? <Skeleton height={80} /> : activityRows.length === 0 ? (
-                      <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No activity yet.</p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                        {activityRows.slice(0, 6).map((a, i) => (
-                          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{String(a.description ?? a.event_type)}</span>
-                            <span style={{ fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{fmtDate(a.timestamp as string)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-
-                  <Card>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <Wrench size={15} color="var(--brand)" /> Services used ({servicesUsed.length})
-                    </h3>
-                    {servicesUsed.length === 0 ? (
-                      <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No completed services yet.</p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {servicesUsed.map((sv, i) => (
-                          <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: i < servicesUsed.length - 1 ? "1px solid var(--border)" : "none" }}>
-                            <span style={{ color: "var(--text-primary)" }}>{String(sv.master_service_name ?? sv.name ?? "Service")}</span>
-                            <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{String(sv.count ?? sv.jobs_count ?? "")}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {nextBooking && (
-                    <Card>
-                      <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
-                        <Calendar size={15} color="var(--brand)" /> Next booking
-                      </h3>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>{String(nextBooking.job_number)}</p>
-                      <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>{String(nextBooking.master_service_name)} · {fmtDate(nextBooking.scheduled_date as string)}</p>
-                      <Link href={`/home-services/bookings-jobs?job=${nextBooking.job_id}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", textDecoration: "none" }}>View job</Link>
-                    </Card>
-                  )}
-
-                  <Card>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <TrendingUp size={15} color="var(--brand)" /> Payment behaviour
-                    </h3>
-                    {payments.loading ? <Skeleton height={40} /> : (
-                      <>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 8 }}>
-                          <div><p style={{ fontSize: 18, fontWeight: 800, color: "var(--success-text)", margin: 0 }}>{confirmedPayments}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Confirmed</p></div>
-                          <div><p style={{ fontSize: 18, fontWeight: 800, color: "var(--warning-text)", margin: 0 }}>{pendingPayments}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Pending confirmation</p></div>
-                        </div>
-                        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{String(payments.data?.note ?? "")}</p>
-                      </>
-                    )}
-                  </Card>
-
-                  <Card>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <MessageSquare size={15} color="var(--brand)" /> Complaint summary
-                    </h3>
-                    <div style={{ display: "flex", gap: 18 }}>
-                      <div><p style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>{complaints.data?.total ?? 0}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Lifetime</p></div>
-                      <div><p style={{ fontSize: 18, fontWeight: 800, color: Number(c.open_complaints ?? 0) > 0 ? "var(--danger-text)" : "var(--text-primary)", margin: 0 }}>{Number(c.open_complaints ?? 0)}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Open</p></div>
-                    </div>
-                  </Card>
-
-                  <Card>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <Star size={15} color="var(--brand)" /> Review summary
-                    </h3>
-                    <div style={{ display: "flex", gap: 18 }}>
-                      <div><p style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>{avgRating === null ? "—" : avgRating.toFixed(1)}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Average rating</p></div>
-                      <div><p style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>{reviews.data?.total ?? 0}</p><p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: 0 }}>Reviews</p></div>
-                    </div>
-                  </Card>
-
-                  <Card>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <ShieldCheck size={15} color="var(--brand)" /> Privacy & consent
-                    </h3>
-                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, lineHeight: 1.5 }}>
-                      This is a tenant-scoped view only. Customer identity, addresses and cross-tenant history are never shown here by policy.
-                    </p>
-                  </Card>
-                </div>
-              </div>
-            </>
-          )}
-
-          {tab === "Services Used" && (
-            <Card padding="none">
-              {servicesUsed.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No completed services yet.</p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-                      <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase" }}>Service</th>
-                      <th style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase" }}>Jobs</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {servicesUsed.map((sv, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "10px 16px", fontSize: 13, color: "var(--text-primary)" }}>{String(sv.master_service_name ?? sv.name ?? "Service")}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 13, color: "var(--text-secondary)" }}>{String(sv.count ?? sv.jobs_count ?? "—")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </Card>
-          )}
-
-          {tab === "Jobs" && (
-            <Card padding="none">
-              {jobs.loading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : jobRows.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No jobs found for this customer.</p>
-              ) : jobRows.map((j, i) => (
-                <div key={String(j.job_id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderBottom: i < jobRows.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 2px" }}>{String(j.job_number)} · {String(j.master_service_name)}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{fmtDate(j.scheduled_date as string)}</p>
-                  </div>
-                  <Badge variant={j.status === "completed" ? "success" : j.status === "cancelled" ? "danger" : "muted"} size="sm">{String(j.status).replace(/_/g, " ")}</Badge>
-                </div>
-              ))}
-            </Card>
-          )}
-
-          {tab === "Payments" && (
-            <Card padding="none">
-              {paymentRows.length > 0 && (
-                <div style={{ padding: "10px 20px", fontSize: 12, color: "var(--text-tertiary)", borderBottom: "1px solid var(--border)" }}>{String(payments.data?.note ?? "")}</div>
-              )}
-              {payments.loading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : paymentRows.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No payment records yet.</p>
-              ) : paymentRows.map((p, i) => (
-                <div key={String(p.payment_id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderBottom: i < paymentRows.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 2px" }}>₹{Number(p.collected_amount ?? 0).toLocaleString("en-IN")} · {String(p.payment_mode ?? "—")}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{fmtDate(p.created_at as string)}</p>
-                  </div>
-                  <Badge variant={p.customer_confirmed ? "success" : "warning"} size="sm">{p.customer_confirmed ? "Confirmed" : "Pending confirmation"}</Badge>
-                </div>
-              ))}
-            </Card>
-          )}
-
-          {tab === "Complaints" && (
-            <Card padding="none">
-              {complaints.loading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : complaintRows.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No complaints from this customer.</p>
-              ) : complaintRows.map((cm, i) => (
-                <div key={String(cm.complaint_id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderBottom: i < complaintRows.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 2px" }}>{String(cm.complaint_number)} · {String(cm.title)}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{fmtDate(cm.created_at as string)}</p>
-                  </div>
-                  <Badge variant={cm.status === "resolved" || cm.status === "closed" ? "success" : "warning"} size="sm">{String(cm.status).replace(/_/g, " ")}</Badge>
-                </div>
-              ))}
-            </Card>
-          )}
-
-          {tab === "Reviews" && (
-            <Card padding="none">
-              {reviews.loading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : reviewRows.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No reviews from this customer yet.</p>
-              ) : reviewRows.map((r, i) => (
-                <div key={String(r.review_id)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderBottom: i < reviewRows.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Star size={14} color="var(--warning-text)" />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{String(r.overall_rating)} / 5</span>
-                  </div>
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{fmtDate(r.created_at as string)}</span>
-                </div>
-              ))}
-            </Card>
-          )}
-
-          {tab === "Activity & Audit" && (
-            <Card padding="none">
-              {activity.loading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : activityRows.length === 0 ? (
-                <p style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13, margin: 0 }}>No activity yet.</p>
-              ) : activityRows.map((a, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 20px", borderBottom: i < activityRows.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{String(a.description ?? a.event_type)}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{fmtDateTime(a.timestamp as string)}</span>
-                </div>
-              ))}
-            </Card>
-          )}
-        </div>
-      )}
+      <style jsx global>{`
+        .customer-breadcrumbs { display: flex; gap: 8px; align-items: center; color: var(--text-tertiary); font-size: 12px; }
+        .customer-breadcrumbs a { color: var(--brand); text-decoration: none; font-weight: 650; }
+        .relationship-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px; }
+        .relationship-person { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .relationship-avatar { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; color: var(--brand); background: var(--accent-muted); font-size: 15px; font-weight: 850; }
+        .relationship-person h2 { margin: 0; color: var(--text-primary); font-size: 19px; }
+        .relationship-meta { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 7px; }
+        .relationship-dates { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 8px; }
+        .relationship-date { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-sunken); }
+        .relationship-date span { display: block; color: var(--text-tertiary); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+        .relationship-date strong { display: block; color: var(--text-primary); font-size: 12px; margin-top: 2px; }
+        .customer-detail-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+        .customer-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 10px 13px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+        .customer-detail-tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); }
+        .customer-overview-grid { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; }
+        .customer-overview-panels { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .75fr); gap: 14px; }
+        .customer-panel-title { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; color: var(--text-primary); font-size: 14px; }
+        .customer-policy-list { display: grid; gap: 10px; }
+        .customer-policy-row { display: flex; gap: 9px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+        .customer-policy-row svg { color: var(--success-text); flex: 0 0 auto; margin-top: 2px; }
+        .customer-timeline { display: grid; gap: 2px; }
+        .customer-event { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 9px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+        .customer-event-icon { width: 25px; height: 25px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-muted); color: var(--brand); }
+        .customer-event strong { color: var(--text-primary); display: block; font-size: 12.5px; }
+        .customer-event small { color: var(--text-tertiary); font-size: 10.5px; }
+        .customer-services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+        .customer-service-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 16px; }
+        .customer-service-card h3 { color: var(--text-primary); margin: 0; font-size: 14px; }
+        .customer-service-card p { color: var(--text-tertiary); margin: 4px 0 0; font-size: 11px; }
+        .customer-feed { overflow: hidden; }
+        .customer-feed-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(140px, .7fr) minmax(130px, .6fr) auto; gap: 14px; align-items: center; padding: 13px 18px; border-bottom: 1px solid var(--border); }
+        .customer-feed-row strong { color: var(--text-primary); font-size: 12.5px; }
+        .customer-feed-row p { color: var(--text-tertiary); font-size: 10.5px; margin: 3px 0 0; }
+        .customer-feed-secondary { color: var(--text-secondary); font-size: 12px; }
+        .customer-feed-link { color: var(--brand); font-size: 12px; font-weight: 700; text-decoration: none; }
+        @media (max-width: 1080px) { .customer-overview-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); } .customer-overview-panels { grid-template-columns: 1fr; } }
+        @media (max-width: 720px) { .relationship-hero { align-items: flex-start; flex-direction: column; } .relationship-dates { width: 100%; } .customer-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .customer-feed-row { grid-template-columns: 1fr auto; } .customer-feed-secondary { display: none; } }
+      `}</style>
     </TenantLayout>
   );
+}
+
+function RelationshipHeader({ customer }: { customer: HsCustomerDetail }) {
+  return <Card padding="none"><div className="relationship-hero">
+    <div className="relationship-person"><div className="relationship-avatar">{customer.alias.slice(-4, -2)}</div><div><h2>{customer.alias}</h2><div className="relationship-meta"><Badge variant={customer.is_active ? "success" : "muted"}>{customer.is_active ? "Active" : "Inactive"}</Badge>{typeBadge(customer.repeat_status)}{paymentBadge(customer.payment_reliability)}</div></div></div>
+    <div className="relationship-dates"><div className="relationship-date"><span>Relationship since</span><strong>{fmtDate(customer.first_booking_at)}</strong></div><div className="relationship-date"><span>Last activity</span><strong>{fmtDate(customer.last_activity_at)}</strong></div></div>
+  </div></Card>;
+}
+
+function OverviewTab({ customer, customerId }: { customer: HsCustomerDetail; customerId: string }) {
+  const activity = useApi(useCallback(() => hsCustomersApi.activity(customerId, { page: 1, page_size: 6 }), [customerId]), [customerId]);
+  const items = activity.data?.items ?? [];
+  return <>
+    <div className="customer-overview-grid">
+      <StatCard icon={CheckCircle2} label="Completed jobs" value={customer.completed_jobs} tone="success" />
+      <StatCard icon={XCircle} label="Cancelled jobs" value={customer.cancelled_jobs} tone="danger" />
+      <StatCard icon={Wrench} label="Services used" value={customer.services_used_by_master_service.length} tone="info" />
+      <StatCard icon={BadgeIndianRupee} label="Confirmed job value" value={fmtMoney(customer.confirmed_job_value)} tone="brand" />
+      <StatCard icon={MessageSquareWarning} label="Open complaints" value={customer.open_complaints} tone={customer.open_complaints > 0 ? "danger" : "success"} />
+    </div>
+    <div className="customer-overview-panels">
+      <Card><h3 className="customer-panel-title"><Clock3 size={16} /> Recent relationship activity</h3>{activity.error ? <Alert tone="warning">{activity.error}</Alert> : activity.loading ? <Skeleton height={130} /> : items.length === 0 ? <EmptyState title="No activity recorded" description="Booking and job events will appear here automatically." /> : <div className="customer-timeline">{items.map((item, index) => <div className="customer-event" key={`${String(item.source_system)}-${String(item.source_record_id)}-${index}`}><div className="customer-event-icon"><CalendarDays size={13} /></div><div><strong>{String(item.description ?? item.event_type ?? "Relationship event")}</strong><small>{String(item.source_system ?? "system").replace(/_/g, " ")} · {String(item.actor ?? "system")}</small></div><small>{fmtDate(item.timestamp, true)}</small></div>)}</div>}</Card>
+      <Card><h3 className="customer-panel-title"><ShieldCheck size={16} /> Privacy and operating policy</h3><div className="customer-policy-list"><div className="customer-policy-row"><LockKeyhole size={15} /><span>Customer name, phone, email and reusable addresses are not exposed in this directory.</span></div><div className="customer-policy-row"><BriefcaseBusiness size={15} /><span>Exact service address and relay contact are available only during an authorized active job.</span></div><div className="customer-policy-row"><RotateCcw size={15} /><span>All service, pricing and payment values come from finalized booking, invoice and direct-payment records.</span></div></div></Card>
+    </div>
+  </>;
+}
+
+function ServicesTab({ customer }: { customer: HsCustomerDetail }) {
+  const services = customer.services_used_by_master_service;
+  if (services.length === 0) return <Card><EmptyState title="No completed services yet" description="A service appears here after its first completed job." /></Card>;
+  return <div className="customer-services-grid">{services.map(service => <Card key={service.offering_id} padding="none"><div className="customer-service-card"><div><h3>{service.master_service_name ?? "Catalog service"}</h3><p>Mapped from the admin master service used by the completed job.</p></div><Badge variant="success">{service.completed_jobs} completed</Badge></div></Card>)}</div>;
+}
+
+function FeedTab({ customerId, tab, page, onPage }: { customerId: string; tab: Exclude<TabKey, "overview" | "services">; page: number; onPage: (page: number) => void }) {
+  const pageSize = 20;
+  const fetcher = useCallback((): Promise<HsCustomerFeed> => {
+    const query = { page, page_size: pageSize };
+    if (tab === "jobs") return hsCustomersApi.jobs(customerId, query);
+    if (tab === "payments") return hsCustomersApi.payments(customerId, query);
+    if (tab === "complaints") return hsCustomersApi.complaints(customerId, query);
+    if (tab === "reviews") return hsCustomersApi.reviews(customerId, query);
+    return hsCustomersApi.activity(customerId, query);
+  }, [customerId, page, tab]);
+  const feed = useApi(fetcher, [customerId, page, tab]);
+  const items = feed.data?.items ?? [];
+  return <Card padding="none" className="customer-feed">
+    {feed.data?.note && <Alert tone="info">{feed.data.note}</Alert>}
+    {feed.error ? <div style={{ padding: 18 }}><Alert tone="danger" title={`Could not load ${tab}`}>{feed.error}{feed.requestId ? ` · Request ${feed.requestId}` : ""}</Alert><Button variant="secondary" onClick={feed.refetch} style={{ marginTop: 10 }}>Try again</Button></div> : feed.loading ? <div style={{ padding: 16, display: "grid", gap: 8 }}>{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} height={52} />)}</div> : items.length === 0 ? <div style={{ padding: 30 }}><EmptyState title={`No ${tab} recorded`} description="This view is sourced from finalized operational records and does not create placeholder data." /></div> : items.map((item, index) => <FeedRow key={String(item.job_id ?? item.payment_id ?? item.complaint_id ?? item.review_id ?? item.source_record_id ?? index)} tab={tab} item={item} />)}
+    <Pagination page={page} total={feed.data?.total ?? 0} pageSize={pageSize} onPage={onPage} />
+  </Card>;
+}
+
+function FeedRow({ tab, item }: { tab: Exclude<TabKey, "overview" | "services">; item: Row }) {
+  if (tab === "jobs") return <div className="customer-feed-row"><div><strong>{String(item.job_number ?? "Job")} · {String(item.master_service_name ?? "Catalog service")}</strong><p>{fmtDate(item.scheduled_date)} · {String(item.assignment_status ?? "assignment pending").replace(/_/g, " ")}</p></div><div className="customer-feed-secondary">{String(item.status ?? "unknown").replace(/_/g, " ")}</div><Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "danger" : "info"}>{String(item.status ?? "unknown").replace(/_/g, " ")}</Badge><Link className="customer-feed-link" href={`/home-services/bookings-jobs?job_id=${item.job_id}`}>Open job</Link></div>;
+  if (tab === "payments") return <div className="customer-feed-row"><div><strong>{fmtMoney(item.collected_amount)}</strong><p>{String(item.payment_mode ?? "Payment method unavailable").replace(/_/g, " ")} · {fmtDate(item.created_at, true)}</p></div><div className="customer-feed-secondary">{String(item.payment_status ?? "pending").replace(/_/g, " ")}</div><Badge variant={item.customer_confirmed ? "success" : "warning"}>{item.customer_confirmed ? "Customer confirmed" : "Awaiting confirmation"}</Badge><span /></div>;
+  if (tab === "complaints") return <div className="customer-feed-row"><div><strong>{String(item.complaint_number ?? "Complaint")} · {String(item.title ?? "Support case")}</strong><p>Created {fmtDate(item.created_at, true)} · SLA {String(item.sla_status ?? "not set").replace(/_/g, " ")}</p></div><div className="customer-feed-secondary">{String(item.severity ?? "normal")} severity</div><Badge variant={item.status === "resolved" || item.status === "closed" ? "success" : "warning"}>{String(item.status ?? "open").replace(/_/g, " ")}</Badge><Link className="customer-feed-link" href={`/home-services/complaints/${item.complaint_id}`}>Open case</Link></div>;
+  if (tab === "reviews") return <div className="customer-feed-row"><div><strong><Star size={13} style={{ verticalAlign: -2, marginRight: 5 }} />{String(item.overall_rating ?? "—")} / 5</strong><p>{String(item.review_number ?? "Review")} · {fmtDate(item.created_at)}</p></div><div className="customer-feed-secondary">Provider rating {String(item.provider_rating ?? "—")}</div><Badge variant="info">{String(item.status ?? "submitted").replace(/_/g, " ")}</Badge><span /></div>;
+  return <div className="customer-feed-row"><div><strong>{String(item.description ?? item.event_type ?? "Activity")}</strong><p>{String(item.source_system ?? "system").replace(/_/g, " ")} · {String(item.actor ?? "system")}</p></div><div className="customer-feed-secondary">{fmtDate(item.timestamp, true)}</div><Badge variant="muted">Audit event</Badge><span /></div>;
 }

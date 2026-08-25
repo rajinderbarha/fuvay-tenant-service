@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { View, Text, Pressable } from "react-native";
 
 interface Props { children: React.ReactNode }
 interface State { hasError: boolean }
@@ -8,7 +8,9 @@ interface State { hasError: boolean }
  * Outermost boundary -- a crash below QueryClient/Theme still renders
  * something rather than a blank/white screen. Deliberately has no
  * dependency on theme/query context, since either could be the thing that
- * crashed. Colors are intentionally literal here for that reason.
+ * crashed. This fallback therefore carries the small, self-contained Fuvay
+ * light palette it needs instead of trying to read a potentially-failed
+ * provider.
  */
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false };
@@ -27,9 +29,29 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7F6F3", padding: 24 }}>
-          <Text style={{ color: "#D9642B", fontSize: 18, fontWeight: "600", marginBottom: 8 }}>Something went wrong</Text>
-          <Text style={{ color: "#5C5348", textAlign: "center" }}>Please restart the app.</Text>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F8FD", padding: 28 }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", backgroundColor: "#EEF3FF", marginBottom: 20 }}>
+            <Text style={{ color: "#3868E0", fontSize: 28, fontWeight: "800" }}>!</Text>
+          </View>
+          <Text style={{ color: "#0F172A", fontSize: 22, fontWeight: "700", marginBottom: 8 }}>Something went wrong</Text>
+          <Text style={{ color: "#475569", fontSize: 15, lineHeight: 22, textAlign: "center", marginBottom: 24 }}>
+            Fuvay could not open this screen. You can try it again safely.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Try again"
+            onPress={() => this.setState({ hasError: false })}
+            style={({ pressed }) => ({
+              minWidth: 180,
+              minHeight: 48,
+              borderRadius: 12,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: pressed ? "#2F5BD1" : "#3868E0",
+            })}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>Try again</Text>
+          </Pressable>
         </View>
       );
     }

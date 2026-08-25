@@ -13,6 +13,10 @@ import {
 export const queryKeys = {
   customerProfile: () => ["customer", "profile"] as const,
 
+  /** Fuvay-owned digital services are nationwide and deliberately have no
+   * ZIP in their cache identity. */
+  globalServices: () => ["globalServices", "list"] as const,
+
   /** ZIP is part of the key's identity (Level 5 Home spec: "Address/ZIP
    * included in query identity") -- `undefined` (no override) is its own
    * distinct cache entry from any specific ZIP string. */
@@ -26,11 +30,6 @@ export const queryKeys = {
   },
 
   verticals: () => ["verticals", "enabled"] as const,
-
-  /** Fixed, nationwide list -- deliberately no zipcode/vertical in the key,
-   * unlike home.aggregate, since the backend returns the same list to
-   * every customer regardless of location. */
-  globalServices: () => ["globalServices", "list"] as const,
 
   catalog: {
     categories: () => ["catalog", "categories"] as const,

@@ -32,19 +32,17 @@ reach `standard_price: 0.0` for a real tenant offering. Fixed in:
     without ever needing a `selected_price_tier` (which inspection mode
     correctly never sets).
 
-Uses live 140412/Guramrit data -- these bugs only reproduce against real
-tenant-configured pricing rows, not mocks.
+Uses the live published provider for 140412 -- these bugs only reproduce
+against real tenant-configured pricing rows, not mocks.  The provider and
+catalog UUIDs are resolved by canonical slugs/status at runtime because the
+provider-reset workflow deliberately replaces those rows.
 """
 import uuid
+from datetime import date, timedelta
 
 import pytest
 
 
-AC_GAS_REFILLING_ID = uuid.UUID("b54e5517-ec51-4694-899b-04307e7f95bf")
-AC_INSTALLATION_ID = uuid.UUID("b598ad10-938e-4754-83bd-63b2fe626f20")
-AC_CATEGORY_ID = uuid.UUID("59d8f3aa-932d-429e-93bd-8d4f2ed615c3")
-GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
-CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")
 ZIPCODE_140412 = "140412"
 
 
@@ -52,6 +50,60 @@ async def _get_db():
     from app.database import get_session_factory, init_db
     await init_db()
     return get_session_factory()()
+
+
+async def _live_context(db):
+    """Resolve the one current, customer-bookable 140412 AC catalog.
+
+    UUID constants made this regression suite silently test a deleted provider
+    after provider-reset exercises.  Resolve by stable slugs and the exact
+    published tenant-offering contract instead.
+    """
+    from sqlalchemy import select
+    from app.engines.admin_catalog.models import MasterService, TenantService
+    from app.engines.serviceability.models import CustomerAddress
+
+    gas = (await db.execute(select(MasterService).where(
+        MasterService.slug == "ac_gas_refill",
+        MasterService.is_active.is_(True),
+        MasterService.deleted_at.is_(None),
+    ))).scalars().one()
+    installation = (await db.execute(select(MasterService).where(
+        MasterService.slug == "ac_installation",
+        MasterService.is_active.is_(True),
+        MasterService.deleted_at.is_(None),
+    ))).scalars().one()
+    gas_offerings = (await db.execute(select(TenantService).where(
+        TenantService.master_service_id == gas.id,
+        TenantService.setup_status == "published",
+        TenantService.is_active.is_(True),
+        TenantService.is_enabled.is_(True),
+        TenantService.deleted_at.is_(None),
+    ))).scalars().all()
+    assert len(gas_offerings) == 1, "140412 certification requires exactly one published AC Gas Refill provider"
+    gas_offering = gas_offerings[0]
+    installation_offering = (await db.execute(select(TenantService).where(
+        TenantService.tenant_id == gas_offering.tenant_id,
+        TenantService.master_service_id == installation.id,
+        TenantService.setup_status == "published",
+        TenantService.is_active.is_(True),
+        TenantService.is_enabled.is_(True),
+        TenantService.deleted_at.is_(None),
+    ))).scalars().one()
+    customer = (await db.execute(select(CustomerAddress).where(
+        CustomerAddress.zipcode == ZIPCODE_140412,
+        CustomerAddress.is_active.is_(True),
+    ).order_by(CustomerAddress.is_default.desc(), CustomerAddress.created_at.desc()))).scalars().first()
+    assert customer is not None
+    return {
+        "gas_id": gas.id,
+        "installation_id": installation.id,
+        "category_id": gas.category_id,
+        "tenant_id": gas_offering.tenant_id,
+        "customer_id": customer.customer_id,
+        "visit_fee": float(gas_offering.tenant_visit_fee or 0),
+        "installation_offering": installation_offering,
+    }
 
 
 async def _resolve_job_type_context(db, master_service_id):
@@ -67,7 +119,7 @@ async def _resolve_job_type_context(db, master_service_id):
     return workflow.job_type_id, workflow.id
 
 
-async def _make_priced_draft(db, master_service_id, *, offering_type_id=None, brand_id=None):
+async def _make_priced_draft(db, context, master_service_id, *, offering_type_id=None, brand_id=None):
     from app.engines.home_service_booking.models import HomeServiceBookingDraft
     from app.engines.admin_catalog.models import MasterIssueType
     from sqlalchemy import select
@@ -78,7 +130,7 @@ async def _make_priced_draft(db, master_service_id, *, offering_type_id=None, br
     )).scalars().first()
 
     draft = HomeServiceBookingDraft(
-        id=uuid.uuid4(), customer_id=CUSTOMER_ID, category_id=AC_CATEGORY_ID,
+        id=uuid.uuid4(), customer_id=context["customer_id"], category_id=context["category_id"],
         offering_id=master_service_id, job_type_id=job_type_id,
         service_job_workflow_id=workflow_id, selected_problem_id=issue.id if issue else None,
         offering_type_id=offering_type_id, brand_id=brand_id,
@@ -108,14 +160,17 @@ async def test_ac_gas_refilling_resolves_as_inspection_mode_with_real_visit_fee(
     db = await _get_db()
     draft = None
     try:
-        draft = await _make_priced_draft(db, AC_GAS_REFILLING_ID)
+        context = await _live_context(db)
+        draft = await _make_priced_draft(db, context, context["gas_id"])
+        draft.selected_tenant_id = context["tenant_id"]
+        await db.commit()
         svc = HomeServiceChatbotBookingService(db=db)
-        offering = await svc._get_offering(AC_GAS_REFILLING_ID)
+        offering = await svc._get_offering(context["gas_id"])
         snapshot = await svc._compute_price_snapshot(draft, offering)
 
         assert snapshot["pricing_mode"] == "inspection"
         assert snapshot["requires_inspection_estimate"] is True
-        assert snapshot["visit_fee"] == 299.0
+        assert snapshot["visit_fee"] == context["visit_fee"]
         assert snapshot["visit_fee"] > 0
     finally:
         if draft is not None:
@@ -133,20 +188,17 @@ async def test_ac_gas_refilling_match_and_price_never_computes_zero_standard_pri
     db = await _get_db()
     draft = None
     try:
-        draft = await _make_priced_draft(db, AC_GAS_REFILLING_ID)
+        context = await _live_context(db)
+        draft = await _make_priced_draft(db, context, context["gas_id"])
         svc = HomeServiceChatbotBookingService(db=db)
-        offering = await svc._get_offering(AC_GAS_REFILLING_ID)
-        # resolve_price_estimate must run first (real controller order) so
-        # draft.price_snapshot carries requires_inspection_estimate/visit_fee
-        # before match_provider_and_price merges its own keys on top.
-        draft.price_snapshot = await svc._compute_price_snapshot(draft, offering)
-        await db.commit()
-
+        # Provider matching and provider-owned pricing are one atomic
+        # operation; no provider-neutral pre-price call is permitted.
         result = await svc.match_provider_and_price(
-            category_id=AC_CATEGORY_ID, master_service_id=AC_GAS_REFILLING_ID,
-            city=draft.city, zipcode=draft.zipcode, draft_id=draft.id, customer_id=CUSTOMER_ID,
+            category_id=context["category_id"], master_service_id=context["gas_id"],
+            city=draft.city, zipcode=draft.zipcode, draft_id=draft.id, customer_id=context["customer_id"],
+            job_type_id=draft.job_type_id,
         )
-        assert result["selected_provider"]["tenant_id"] == str(GURAMRIT_TENANT_ID)
+        assert result["selected_provider"]["tenant_id"] == str(context["tenant_id"])
         assert result["pricing_mode"] == "inspection"
         assert result["standard_price"] is None, (
             f"Expected standard_price=None for an inspection-mode offering, got {result['standard_price']!r} "
@@ -156,7 +208,7 @@ async def test_ac_gas_refilling_match_and_price_never_computes_zero_standard_pri
 
         await db.refresh(draft)
         assert draft.price_snapshot["requires_inspection_estimate"] is True
-        assert draft.price_snapshot["visit_fee"] == 299.0
+        assert draft.price_snapshot["visit_fee"] == context["visit_fee"]
     finally:
         if draft is not None:
             await _cleanup(db, draft.id)
@@ -175,19 +227,21 @@ async def test_ac_gas_refilling_booking_summary_ready_without_price_tier():
     db = await _get_db()
     draft = None
     try:
-        draft = await _make_priced_draft(db, AC_GAS_REFILLING_ID)
+        context = await _live_context(db)
+        draft = await _make_priced_draft(db, context, context["gas_id"])
         svc = HomeServiceChatbotBookingService(db=db)
-        offering = await svc._get_offering(AC_GAS_REFILLING_ID)
-        draft.price_snapshot = await svc._compute_price_snapshot(draft, offering)
         draft.serviceability_status = SVCABILITY_SERVICEABLE
+        draft.preferred_date = date.today() + timedelta(days=3)
+        draft.preferred_time_window = "09:00-10:00"
         await db.commit()
 
         await svc.match_provider_and_price(
-            category_id=AC_CATEGORY_ID, master_service_id=AC_GAS_REFILLING_ID,
-            city=draft.city, zipcode=draft.zipcode, draft_id=draft.id, customer_id=CUSTOMER_ID,
+            category_id=context["category_id"], master_service_id=context["gas_id"],
+            city=draft.city, zipcode=draft.zipcode, draft_id=draft.id, customer_id=context["customer_id"],
+            job_type_id=draft.job_type_id,
         )
 
-        result = await svc.build_booking_summary(draft_id=draft.id, customer_id=CUSTOMER_ID)
+        result = await svc.build_booking_summary(draft_id=draft.id, customer_id=context["customer_id"])
         summary = result["booking_summary"]
         assert summary.get("selected_price_tier") is None
         assert summary["ready_for_confirmation"] is True, (
@@ -198,7 +252,7 @@ async def test_ac_gas_refilling_booking_summary_ready_without_price_tier():
         assert "predicted_total" not in summary["price_estimate"]
         assert "repair_total" not in summary["price_estimate"]
         assert summary["price_estimate"]["requires_inspection_estimate"] is True
-        assert summary["price_estimate"]["visit_fee"] == 299.0
+        assert summary["price_estimate"]["visit_fee"] == context["visit_fee"]
     finally:
         if draft is not None:
             await _cleanup(db, draft.id)
@@ -212,34 +266,37 @@ async def test_ac_installation_remains_fixed_price_with_real_tenant_amount():
     ₹0, and inspection logic must never accidentally apply to it."""
     from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
     from sqlalchemy import select
-    from app.engines.admin_catalog.models import ServiceType, BrandMapping
+    from app.engines.admin_catalog.models import TenantServiceType
 
     db = await _get_db()
     draft = None
     try:
-        stype = (await db.execute(select(ServiceType).where(ServiceType.slug == "split_ac"))).scalars().first()
-        brand = (await db.execute(select(BrandMapping).where(BrandMapping.service_id == AC_INSTALLATION_ID))).scalars().first()
+        context = await _live_context(db)
+        # Use a real enabled/priced dimension on this exact tenant offering;
+        # global ServiceType or mapping-row UUIDs are not tenant selections.
+        priced_type = (await db.execute(select(TenantServiceType).where(
+            TenantServiceType.tenant_service_id == context["installation_offering"].id,
+            TenantServiceType.is_enabled.is_(True),
+            TenantServiceType.tenant_min_price.is_not(None),
+            TenantServiceType.tenant_max_price.is_not(None),
+        ))).scalars().first()
+        assert priced_type is not None
         draft = await _make_priced_draft(
-            db, AC_INSTALLATION_ID,
-            offering_type_id=stype.id if stype else None, brand_id=brand.id if brand else None,
+            db, context, context["installation_id"],
+            offering_type_id=priced_type.service_type_id,
         )
         svc = HomeServiceChatbotBookingService(db=db)
-        offering = await svc._get_offering(AC_INSTALLATION_ID)
-        snapshot = await svc._compute_price_snapshot(draft, offering)
-        assert snapshot["pricing_mode"] == "fixed"
-        assert snapshot["requires_inspection_estimate"] is False
-        draft.price_snapshot = snapshot
-        await db.commit()
-
         result = await svc.match_provider_and_price(
-            category_id=AC_CATEGORY_ID, master_service_id=AC_INSTALLATION_ID,
+            category_id=context["category_id"], master_service_id=context["installation_id"],
             city=draft.city, zipcode=draft.zipcode,
             offering_type_id=draft.offering_type_id, brand_id=draft.brand_id,
-            draft_id=draft.id, customer_id=CUSTOMER_ID,
+            draft_id=draft.id, customer_id=context["customer_id"],
+            job_type_id=draft.job_type_id,
         )
-        assert result["selected_provider"]["tenant_id"] == str(GURAMRIT_TENANT_ID)
+        assert result["selected_provider"]["tenant_id"] == str(context["tenant_id"])
         assert result["pricing_mode"] == "fixed"
         assert result["standard_price"] is not None and result["standard_price"] > 0
+        assert result["price_snapshot"]["requires_inspection_estimate"] is False
     finally:
         if draft is not None:
             await _cleanup(db, draft.id)
@@ -255,6 +312,7 @@ async def test_zero_fixed_price_blocks_matching_never_reaches_review():
 
     db = await _get_db()
     try:
+        context = await _live_context(db)
         # AC Gas Refilling's own global ServicePricingRule row has
         # base_price=0.00, confirmed live -- but Gas Refilling is inspection
         # mode so this path is exempt. Use a real, deliberately-broken probe
@@ -265,8 +323,9 @@ async def test_zero_fixed_price_blocks_matching_never_reaches_review():
         # proving the fix distinguishes "no fixed price" from "priced via
         # inspection" rather than blocking both alike.)
         eligible, reason = await _passes_full_eligibility_gate(
-            db, tenant_id=GURAMRIT_TENANT_ID, offering_id=AC_GAS_REFILLING_ID,
+            db, tenant_id=context["tenant_id"], offering_id=context["gas_id"],
             offering_type_id=None, brand_id=None, zipcode=ZIPCODE_140412,
+            job_type_id=(await _resolve_job_type_context(db, context["gas_id"]))[0],
         )
         assert eligible is True, f"Inspection-mode offering with a real visit fee must pass the price gate, got reason={reason}"
     finally:

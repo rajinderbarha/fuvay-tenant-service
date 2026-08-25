@@ -1122,7 +1122,6 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
-  const [newIconUrl, setNewIconUrl] = useState<string | null>(null);
   const searchApi = useApi(
     useCallback(() => catalogWorkspaceApi.listIssueTypesV2({ search: search.trim() || undefined }), [search]),
     [search],
@@ -1142,13 +1141,12 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
     const code = (newCode.trim() || newName.trim()).toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 60);
     const created = await createAction.execute({
       name: newName.trim(), code, master_service_id: masterServiceId,
-      icon_url: newIconUrl || undefined,
     });
     if (!created) { onError(); return; }
     const issueId = String((created as { id?: string }).id ?? "");
     if (!issueId) { onError(); return; }
     const attached = await addAction.execute(masterServiceId, { issue_type_id: issueId, job_type_id: jobTypeId });
-    if (attached) { setNewName(""); setNewCode(""); setNewIconUrl(null); setShowCreate(false); onAdded(); } else onError();
+    if (attached) { setNewName(""); setNewCode(""); setShowCreate(false); onAdded(); } else onError();
   }
 
   return (
@@ -1185,9 +1183,6 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
             style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", marginBottom: 6, boxSizing: "border-box" }}/>
           <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="Code (optional, auto-generated from name)"
             style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", marginBottom: 8, boxSizing: "border-box" }}/>
-          <div style={{ marginBottom: 8 }}>
-            <IconPicker context="issue_icon" value={newIconUrl} onChange={setNewIconUrl}/>
-          </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={createAndAttach} disabled={!newName.trim() || createAction.loading || addAction.loading}
               style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", cursor: "pointer" }}>
@@ -1732,7 +1727,6 @@ function AddQuestionForm({ masterServiceId, jobTypeId, onAdded, onError }: {
   const [inputType, setInputType] = useState<typeof QUESTION_INPUT_TYPES[number]>("text");
   const [answerSource, setAnswerSource] = useState<typeof QUESTION_ANSWER_SOURCES[number]>("free");
   const [required, setRequired] = useState(false);
-  const [iconUrl, setIconUrl] = useState<string | null>(null);
   const createAction = useAction(catalogWorkspaceApi.createQuestion);
 
   async function submit() {
@@ -1741,9 +1735,9 @@ function AddQuestionForm({ masterServiceId, jobTypeId, onAdded, onError }: {
     const result = await createAction.execute({
       master_service_id: masterServiceId, job_type_id: jobTypeId,
       question_key: key, label: label.trim(), input_type: inputType,
-      answer_source: answerSource, required, icon_url: iconUrl || undefined,
+      answer_source: answerSource, required,
     });
-    if (result) { setLabel(""); setRequired(false); setIconUrl(null); onAdded(); } else onError();
+    if (result) { setLabel(""); setRequired(false); onAdded(); } else onError();
   }
 
   return (
@@ -1772,7 +1766,6 @@ function AddQuestionForm({ masterServiceId, jobTypeId, onAdded, onError }: {
           <input type="checkbox" checked={required} onChange={e => setRequired(e.target.checked)}/> Required
         </label>
       </div>
-      <IconPicker context="question_icon" value={iconUrl} onChange={setIconUrl}/>
       <button onClick={submit} disabled={!label.trim() || createAction.loading}
         style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none",
           background: "var(--brand)", color: "white", cursor: !label.trim() || createAction.loading ? "default" : "pointer",
@@ -1954,13 +1947,15 @@ function QuestionsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChang
           {questions.map(q => (
             <div key={q.id} style={{ padding: "10px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <div>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+                  <div>
                   <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 3px" }}>{q.label}</p>
                   <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
                     {q.input_type} · {q.answer_source}
                     {q.rules.length > 0 && ` · ${q.rules.length} show-when rule${q.rules.length === 1 ? "" : "s"}`}
                     {q.deepseek_enabled && " · DeepSeek"}
                   </p>
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                   <button onClick={() => setExpandedRulesFor(expandedRulesFor === q.id ? null : q.id)}

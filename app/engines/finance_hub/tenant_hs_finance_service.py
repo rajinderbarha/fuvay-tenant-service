@@ -830,6 +830,18 @@ class TenantHomeServicesFinanceService:
             "items": filtered[start:start + page_size],
             "total": total, "page": page, "page_size": page_size,
             "ledgers": [{"value": k, "label": v} for k, v in LEDGER_LABELS.items()],
+            # The endpoint has always accepted `type` and `status` filters, but
+            # returned a facet list only for `ledger` -- so the UI could offer a
+            # real picker for one filter and had to fall back to a free-text box
+            # for the other two, where the caller has to guess the exact stored
+            # value. These are derived from the composed (pre-filter) rows, so
+            # every option offered is one that actually returns something.
+            "types": sorted({
+                r["event_type"] for r in rows if r.get("event_type")
+            }),
+            "statuses": sorted({
+                r["status"] for r in rows if r.get("status")
+            }),
             "ledger_totals": {
                 k: {
                     "rows": sum(1 for r in filtered if r["ledger"] == k),
@@ -1541,9 +1553,11 @@ class TenantHomeServicesFinanceService:
     # ── Export (section 22) ────────────────────────────────────────────────
 
     async def export_transactions(self, *, date_from: str | None = None, date_to: str | None = None,
-                                  ledger: str | None = None, status: str | None = None) -> dict:
+                                  ledger: str | None = None, status: str | None = None,
+                                  type_: str | None = None) -> dict:
         data = await self.get_transactions(date_from=date_from, date_to=date_to,
-                                          ledger=ledger, status=status, page=1, page_size=200)
+                                          ledger=ledger, status=status, type_=type_,
+                                          page=1, page_size=200)
         tenant = await self.db.get(Tenant, self.tenant_id)
         header = ["occurred_at", "reference", "ledger_label", "event_label", "description",
                   "debit", "credit", "usage_credit_balance_after", "status",
@@ -1555,7 +1569,7 @@ class TenantHomeServicesFinanceService:
                 for k in header
             ))
         await self._audit("hs_finance.statement_exported", "tenant_finance_statement", str(self.tenant_id),
-                          after={"rows": len(data["items"]), "ledger": ledger,
+                          after={"rows": len(data["items"]), "ledger": ledger, "type": type_,
                                  "date_from": date_from, "date_to": date_to})
         await self.db.commit()
         return {
@@ -1566,6 +1580,7 @@ class TenantHomeServicesFinanceService:
                       "tenant_name": tenant.business_name if tenant else None,
                       "vertical": HOME_SERVICES_VERTICAL_KEY,
                       "ledger": ledger or "all", "status": status or "all",
+                      "type": type_ or "all",
                       "date_from": date_from, "date_to": date_to},
             "csv": "\n".join(lines),
         }

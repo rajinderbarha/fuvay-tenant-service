@@ -6,7 +6,7 @@ import { OnboardingShell } from "../../../../../../components/onboarding/Onboard
 import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
 import { ProgressRing } from "../../../../../../components/onboarding/ProgressRing";
 import { StepProgressBar } from "../../../../../../components/onboarding/StepProgressBar";
-import { Card, Btn, Badge, Skeleton, Input } from "../../../../../../components/shared/ui";
+import { Card, Btn, Badge, Skeleton, Input, KpiGrid, SummaryCard } from "../../../../../../components/shared/ui";
 import {
   providerServiceAreasApi, providerAvailabilityApi, bookingWindowApi, availabilityExceptionsApi,
   ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
@@ -42,18 +42,11 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [coverageMode, setCoverageMode] = useState<"pincode" | "radius">("pincode");
   const [newPincode, setNewPincode] = useState("");
   const [addingPincode, setAddingPincode] = useState(false);
   const [pincodeNeedsManualLocation, setPincodeNeedsManualLocation] = useState(false);
   const [manualPincodeCity, setManualPincodeCity] = useState("");
   const [manualPincodeState, setManualPincodeState] = useState("");
-  const [radiusLat, setRadiusLat] = useState("");
-  const [radiusLng, setRadiusLng] = useState("");
-  const [radiusKm, setRadiusKm] = useState("");
-  const [radiusCity, setRadiusCity] = useState("");
-  const [radiusState, setRadiusState] = useState("");
-  const [addingRadius, setAddingRadius] = useState(false);
   const [savingWindow, setSavingWindow] = useState(false);
   const [newExceptionDate, setNewExceptionDate] = useState("");
   const [newExceptionReason, setNewExceptionReason] = useState("");
@@ -81,8 +74,7 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
   useEffect(() => { load(); }, [load]);
 
   const activePincodes = useMemo(() => (areas ?? []).filter(a => a.coverage_type === "zipcode" && a.is_active), [areas]);
-  const activeRadiusAreas = useMemo(() => (areas ?? []).filter(a => a.coverage_type === "radius" && a.is_active), [areas]);
-  const activeCoverageCount = activePincodes.length + activeRadiusAreas.length;
+  const activeCoverageCount = activePincodes.length;
   const rulesByDay = useMemo(() => {
     const map = new Map<number, ProviderAvailabilityRule>();
     for (const r of rules ?? []) if (r.is_active) map.set(r.day_of_week, r);
@@ -152,42 +144,6 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
       setAreas(list => (list ?? []).filter(a => a.id !== id));
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not remove this pincode.");
-    }
-  }
-
-  async function handleAddRadius() {
-    const lat = Number(radiusLat), lng = Number(radiusLng), km = Number(radiusKm);
-    if (!radiusLat || !radiusLng || !radiusKm || Number.isNaN(lat) || Number.isNaN(lng) || Number.isNaN(km)) {
-      setError("Enter a valid latitude, longitude and radius.");
-      return;
-    }
-    if (km <= 0 || km > 200) {
-      setError("Radius must be greater than 0 and no more than 200 km.");
-      return;
-    }
-    if (!radiusCity.trim() || !radiusState.trim()) {
-      setError("Enter the city and state for this operating location.");
-      return;
-    }
-    setAddingRadius(true);
-    setError(null);
-    try {
-      const validation = await providerServiceAreasApi.validate({ coverage_type: "radius", latitude: lat, longitude: lng, radius_km: km });
-      if (!validation.coverage_valid) {
-        setError(validation.coverage_error || "This radius zone could not be validated.");
-        return;
-      }
-      const created = await providerServiceAreasApi.create({
-        coverage_type: "radius", latitude: lat, longitude: lng, radius_km: km,
-        city: validation.resolved_city ?? radiusCity.trim(), state: validation.resolved_state ?? radiusState.trim(),
-        country: "India",
-      });
-      setAreas(list => [...(list ?? []), created]);
-      setRadiusLat(""); setRadiusLng(""); setRadiusKm(""); setRadiusCity(""); setRadiusState("");
-    } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not add this radius zone.");
-    } finally {
-      setAddingRadius(false);
     }
   }
 
@@ -322,7 +278,7 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
   }
 
   const readinessChecks = [
-    { label: "Coverage added", done: activeCoverageCount > 0 },
+    { label: "Pincodes added", done: activeCoverageCount > 0 },
     { label: "Hours configured", done: openDaysCount > 0 },
     { label: "Booking controls configured", done: !!bookingWindow },
   ];
@@ -360,16 +316,32 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
 
   return (
     <CoverageShell mode={mode}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: workspace ? 18 : 4 }}>
         <div>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>{workspace ? "BUSINESS" : "TENANT ONBOARDING"}</p>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{workspace ? "Coverage & Hours" : "Coverage & availability"}</h1>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0" }}>Define where and when your business accepts Home Services bookings.</p>
+          <h1 style={{ fontSize: workspace ? 24 : 32, fontWeight: 800, margin: 0, color: "var(--text-primary)", letterSpacing: 0 }}>
+            {workspace ? "Coverage & Hours" : "Coverage & availability"}
+          </h1>
+          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0", maxWidth: 720 }}>
+            Manage the pincodes, weekly hours, booking rules, and closures used by customer booking and provider matching.
+          </p>
         </div>
-        <Badge variant={isReady ? "success" : "warning"} size="lg">{isReady ? "Ready for bookings" : "Setup incomplete"}</Badge>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Badge variant={isReady ? "success" : "warning"} size="lg">{isReady ? "Ready for bookings" : "Setup incomplete"}</Badge>
+          {workspace && <Btn variant="secondary" size="sm" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>}
+        </div>
       </div>
 
       {!workspace && <StepProgressBar step={STEP_NUMBER} total={TOTAL_STEPS} />}
+
+      {workspace && (
+        <KpiGrid minCardWidth={190}>
+          <SummaryCard label="Active pincodes" value={activePincodes.length} sub="Customer bookable areas" icon={<MapPin/>} tone={activePincodes.length ? "success" : "warning"}/>
+          <SummaryCard label="Open days" value={`${openDaysCount}/7`} sub="Weekly business schedule" icon={<Info/>} tone={openDaysCount ? "success" : "warning"}/>
+          <SummaryCard label="Notice window" value={`${bookingWindow.minimum_notice_minutes} min`} sub={`${bookingWindow.maximum_advance_booking_days} days advance`} icon={<Scale/>} tone="info"/>
+          <SummaryCard label="Exceptions" value={(exceptions ?? []).length} sub="Upcoming closures" icon={<Plus/>} tone={(exceptions ?? []).length ? "warning" : "success"}/>
+        </KpiGrid>
+      )}
 
       {error && (
         <div role="alert" style={{
@@ -383,7 +355,7 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
       )}
 
       <style>{`
-        .cov-grid { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 28px; align-items: start; margin-top: 20px; }
+        .cov-grid { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 20px; align-items: start; margin-top: 20px; }
         @media (max-width: 1000px) { .cov-grid { grid-template-columns: 1fr; } }
         .cov-day-row { display: grid; grid-template-columns: 120px auto 1fr 1fr; align-items: center; gap: 12px; padding: 8px 0; }
         @media (max-width: 640px) { .cov-day-row { grid-template-columns: 1fr; } }
@@ -392,105 +364,52 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
       <div className="cov-grid">
         <div style={{ minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Service coverage</h2>
-            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Choose the areas where your team can provide Home Services.</p>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Coverage pincodes</h2>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>
+              Add the exact pincodes where your team accepts Home Services bookings.
+            </p>
 
-            <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "var(--surface-sunken)", borderRadius: "var(--radius-lg)", padding: 4, width: "fit-content" }}>
-              {(["pincode", "radius"] as const).map(mode => (
-                <button key={mode} onClick={() => setCoverageMode(mode)} style={{
-                  padding: "7px 16px", borderRadius: "var(--radius-md)", border: "none", fontSize: 13, fontWeight: 600,
-                  cursor: "pointer", fontFamily: "inherit",
-                  background: coverageMode === mode ? "var(--brand)" : "transparent",
-                  color: coverageMode === mode ? "var(--text-on-brand)" : "var(--text-secondary)",
-                }}>
-                  {mode === "pincode" ? "Pincodes" : "Radius"}
-                </button>
-              ))}
+            <div style={{ display: "flex", gap: 10, marginBottom: pincodeNeedsManualLocation ? 10 : 16 }}>
+              <div style={{ flex: 1 }}>
+                <Input placeholder="Enter 6-digit pincode" value={newPincode} onChange={v => {
+                  setNewPincode(v);
+                  setPincodeNeedsManualLocation(false);
+                  setManualPincodeCity("");
+                  setManualPincodeState("");
+                }} icon={<MapPin size={14}/>}/>
+              </div>
+              <Btn variant="primary" icon={<Plus size={14}/>} loading={addingPincode} onClick={handleAddPincode}>Add pincode</Btn>
             </div>
-
-            {coverageMode === "pincode" ? (
-              <>
-                <div style={{ display: "flex", gap: 10, marginBottom: pincodeNeedsManualLocation ? 10 : 16 }}>
-                  <div style={{ flex: 1 }}>
-                    <Input placeholder="Enter pincode" value={newPincode} onChange={v => {
-                      setNewPincode(v);
-                      setPincodeNeedsManualLocation(false);
-                      setManualPincodeCity("");
-                      setManualPincodeState("");
-                    }} icon={<MapPin size={14}/>}/>
-                  </div>
-                  <Btn variant="primary" icon={<Plus size={14}/>} loading={addingPincode} onClick={handleAddPincode}>Add</Btn>
+            {pincodeNeedsManualLocation && (
+              <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <Input placeholder="City" value={manualPincodeCity} onChange={setManualPincodeCity}/>
                 </div>
-                {pincodeNeedsManualLocation && (
-                  <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-                    <div style={{ flex: 1 }}>
-                      <Input placeholder="City" value={manualPincodeCity} onChange={setManualPincodeCity}/>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <Input placeholder="State" value={manualPincodeState} onChange={setManualPincodeState}/>
-                    </div>
-                  </div>
-                )}
-                {activePincodes.length === 0 ? (
-                  <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No pincodes added yet. Add at least one to accept bookings.</p>
-                ) : (
-                  <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-                    {activePincodes.map((a, i) => (
-                      <div key={a.id} style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px",
-                        borderBottom: i < activePincodes.length - 1 ? "1px solid var(--border)" : "none",
-                      }}>
-                        <span>
-                          <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>{a.zipcode}</span>
-                          {a.city && <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: 8 }}>{a.city}{a.state ? `, ${a.state}` : ""}</span>}
-                        </span>
-                        <Badge variant="success">Active</Badge>
-                        <button aria-label={`Remove coverage for ${a.zipcode}`} onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
-                          <Trash2 size={15}/>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+                <div style={{ flex: 1 }}>
+                  <Input placeholder="State" value={manualPincodeState} onChange={setManualPincodeState}/>
+                </div>
+              </div>
+            )}
+            {activePincodes.length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No pincodes added yet. Add at least one to accept bookings.</p>
             ) : (
-              <>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-                  Set an operating location and a maximum service radius. Distance is calculated in kilometers.
-                </p>
-                <div className="cov-row3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-                  <Input placeholder="Latitude" type="number" value={radiusLat} onChange={setRadiusLat}/>
-                  <Input placeholder="Longitude" type="number" value={radiusLng} onChange={setRadiusLng}/>
-                  <Input placeholder="Radius (km)" type="number" value={radiusKm} onChange={setRadiusKm}/>
-                </div>
-                <div className="cov-row3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-                  <Input placeholder="City" value={radiusCity} onChange={setRadiusCity}/>
-                  <Input placeholder="State" value={radiusState} onChange={setRadiusState}/>
-                </div>
-                <Btn variant="primary" icon={<Plus size={14}/>} loading={addingRadius} onClick={handleAddRadius} style={{ marginBottom: 16 }}>
-                  Add radius zone
-                </Btn>
-                {activeRadiusAreas.length === 0 ? (
-                  <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No radius zones added yet.</p>
-                ) : (
-                  <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-                    {activeRadiusAreas.map((a, i) => (
-                      <div key={a.id} style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px",
-                        borderBottom: i < activeRadiusAreas.length - 1 ? "1px solid var(--border)" : "none",
-                      }}>
-                        <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>
-                          {a.radius_km} km from ({a.latitude}, {a.longitude})
-                        </span>
-                        <Badge variant="success">Active</Badge>
-                        <button aria-label={`Remove coverage for ${a.city ?? a.zipcode ?? "area"}`} onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
-                          <Trash2 size={15}/>
-                        </button>
-                      </div>
-                    ))}
+              <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+                {activePincodes.map((a, i) => (
+                  <div key={a.id} style={{
+                    display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 12, alignItems: "center", padding: "10px 14px",
+                    borderBottom: i < activePincodes.length - 1 ? "1px solid var(--border)" : "none",
+                  }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 700 }}>{a.zipcode}</span>
+                      {a.city && <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: 8 }}>{a.city}{a.state ? `, ${a.state}` : ""}</span>}
+                    </span>
+                    <Badge variant="success">Active</Badge>
+                    <button aria-label={`Remove coverage for ${a.zipcode}`} onClick={() => handleRemovePincode(a.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
+                      <Trash2 size={15}/>
+                    </button>
                   </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
 
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
@@ -607,7 +526,7 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
               <div>
                 <p style={{ fontSize: 22, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{activeCoverageCount}</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-                  Active {activePincodes.length > 0 && activeRadiusAreas.length > 0 ? "areas" : activeRadiusAreas.length > 0 ? "radius zones" : "pincodes"}
+                  Active pincodes
                 </p>
               </div>
             </div>
@@ -635,18 +554,15 @@ export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: 
         </div>
       </div>
 
-      <div style={{
+      {!workspace && <div style={{
         position: "sticky", bottom: 0, marginTop: 24, padding: "16px 20px",
         background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
         display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap",
       }}>
-        <span style={{ marginRight: "auto", alignSelf: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
-          {workspace ? "Changes save automatically." : ""}
-        </span>
-        <Btn variant="secondary" onClick={handleBack}>{workspace ? "Back to dashboard" : "Back"}</Btn>
-        {!workspace && <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>}
-        {!workspace && <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>}
-      </div>
+        <Btn variant="secondary" onClick={handleBack}>Back</Btn>
+        <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>
+        <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>
+      </div>}
     </CoverageShell>
   );
 }

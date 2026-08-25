@@ -42,14 +42,24 @@ async def hs_customers_summary(r: Request, s: HomeServicesCustomerDirectoryServi
 
 @router.get("", response_model=ApiResponse[dict], summary="List Home Services customers")
 async def hs_customers_list(r: Request,
-                             q: str | None = Query(None),
+                             q: str | None = Query(None, max_length=100),
                              activity: str | None = Query(None, pattern="^(active|inactive)$"),
                              repeat_status: str | None = Query(None, pattern="^(repeat|one_time|none)$"),
+                             payment_reliability: str | None = Query(
+                                 None, pattern="^(reliable|needs_review|insufficient_data)$",
+                             ),
+                             complaint_state: str | None = Query(None, pattern="^(open|clear)$"),
+                             sort: str = Query(
+                                 "last_activity_desc",
+                                 pattern="^(last_activity_desc|last_activity_asc|completed_desc|complaints_desc|first_booking_desc)$",
+                             ),
                              page: int = Query(1, ge=1),
                              page_size: int = Query(20, ge=1, le=200),
                              s: HomeServicesCustomerDirectoryService = Depends(_svc)):
     return ok(await s.list_customers(
-        q=q, activity=activity, repeat_status=repeat_status, page=page, page_size=page_size,
+        q=q, activity=activity, repeat_status=repeat_status,
+        payment_reliability=payment_reliability, complaint_state=complaint_state,
+        sort=sort, page=page, page_size=page_size,
     ), _rid(r), ENGINE_ID)
 
 

@@ -29,12 +29,13 @@
  * table, which is what capability_flags.schedule_conflict_table_supported
  * continues to say.
  */
-import React, { useCallback, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Skeleton, Btn, Card } from "../../../../components/shared/ui";
 import { apiFetch } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { PageShell } from "@serviceos/design-system";
 import { AvailabilityKpis } from "../../../../components/availability/AvailabilityKpis";
 import { AvailabilityFilters } from "../../../../components/availability/AvailabilityFilters";
 import { TeamRoster, type RosterRow } from "../../../../components/availability/TeamRoster";
@@ -50,6 +51,8 @@ import {
 interface Technician {
   id: string; full_name: string; designation: string | null;
   status: string; max_concurrent_jobs: number | null; profile_photo_url: string | null;
+  member_type: string; supported_service_ids: string[];
+  supported_services: { id: string; name: string }[];
 }
 interface EffectiveSchedule {
   staff_id: string; date: string; available: boolean; reasons: string[];
@@ -63,7 +66,7 @@ interface EffectiveSchedule {
     untimed_assignments?: number;
   } | null;
   assignments_today: {
-    job_number: string; status: string; time_window: string | null; service_name: string | null;
+    job_id: string; job_number: string; status: string; time_window: string | null; service_name: string | null;
   }[];
   capability_flags: { time_off_supported: boolean; date_override_supported_per_staff: boolean };
   date_override: { start: string | null; end: string | null; full_day_closed: boolean; reason: string | null } | null;
@@ -88,15 +91,13 @@ interface PlannerResponse {
     schedule_conflict_table_supported: boolean;
     schedule_conflict_derived: boolean;
   };
+  pagination: { total: number; limit: number; offset: number; has_next: boolean };
+  available_filters: {
+    designations: string[];
+    capabilities: { id: string; name: string }[];
+  };
 }
 interface StaffDetail extends EffectiveSchedule {}
-interface TeamOverview {
-  // Objects, not strings. This was typed `string[]`, so the capability filter used each
-  // entry as a React key and rendered every option as "[object Object]" -- masked until
-  // now only because the fetch that populates it never actually ran.
-  supported_services: { id: string; name: string }[];
-  schedule_conflicts: number;
-}
 
 // The impact-preview shape lived here for the weekly-pattern editor this page used to
 // carry. That editor is gone -- weekly patterns are not what customers book against --
@@ -380,7 +381,12 @@ function DateOverrideDrawer({
 }
 
 export default function AvailabilityCapacityPlannerPage() {
+  return <Suspense fallback={<PageShell><Skeleton height={520} /></PageShell>}><AvailabilityCapacityPlannerContent /></Suspense>;
+}
+
+function AvailabilityCapacityPlannerContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(toISODate(new Date())));
   const weekEnd = addDays(weekStart, 6);
   const [view, setView] = useState<"week" | "day">("week");
@@ -389,7 +395,12 @@ export default function AvailabilityCapacityPlannerPage() {
   const [roleFilter, setRoleFilter] = useState("");
   const [availFilter, setAvailFilter] = useState<"" | "available" | "unavailable">("");
   const [capabilityFilter, setCapabilityFilter] = useState("");
-  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  // Team member detail links here with staff_id. Honour it on first render so
+  // "Manage availability" opens the intended technician rather than a
+  // generic board that makes the provider search for the same person again.
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(() => searchParams.get("staff_id"));
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [addingTimeOffFor, setAddingTimeOffFor] = useState<string | null>(null);
   // Bumped after any write. Every read that a write can invalidate depends on it, so the
@@ -400,6 +411,23 @@ export default function AvailabilityCapacityPlannerPage() {
 
   const rangeFrom = view === "day" ? selectedDate : weekStart;
   const rangeTo = view === "day" ? selectedDate : weekEnd;
+  const moveRange = (direction: -1 | 1) => {
+    if (view === "day") {
+      const next = addDays(selectedDate, direction);
+      setSelectedDate(next);
+      setWeekStart(startOfWeek(next));
+    } else {
+      setWeekStart(current => addDays(current, direction * 7));
+      setSelectedDate(current => addDays(current, direction * 7));
+    }
+    setPage(1);
+  };
+  const goToday = () => {
+    const today = toISODate(new Date());
+    setSelectedDate(today);
+    setWeekStart(startOfWeek(today));
+    setPage(1);
+  };
 
   // Every useApi here passes its deps TWICE on purpose: once to useCallback and once to
   // useApi. useApi memoizes its effect on the second argument and ignores the fetcher's
@@ -408,20 +436,23 @@ export default function AvailabilityCapacityPlannerPage() {
   // technician drawer in particular then rendered "no upcoming time off" for a
   // technician the grid was simultaneously showing on leave.
   const planner = useApi(useCallback(async () => {
-    const qs = new URLSearchParams({ from: rangeFrom, to: rangeTo });
+    const qs = new URLSearchParams({
+      from: rangeFrom, to: rangeTo, focus_date: selectedDate,
+      limit: String(pageSize), offset: String((page - 1) * pageSize),
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    if (roleFilter) qs.set("designation", roleFilter);
+    if (availFilter) qs.set("availability", availFilter);
+    if (capabilityFilter) qs.set("capability", capabilityFilter);
     return await apiFetch<PlannerResponse>(`/v1/tenant/home-services/availability?${qs}`);
-  }, [rangeFrom, rangeTo, mutationSeq]), [rangeFrom, rangeTo, mutationSeq]);
+  }, [rangeFrom, rangeTo, selectedDate, page, search, roleFilter, availFilter, capabilityFilter, mutationSeq]),
+  [rangeFrom, rangeTo, selectedDate, page, search, roleFilter, availFilter, capabilityFilter, mutationSeq]);
 
   const detail = useApi(useCallback(async () => {
     if (!selectedStaffId) return null;
     const qs = new URLSearchParams({ date: selectedDate });
     return await apiFetch<StaffDetail>(`/v1/tenant/home-services/availability/staff/${selectedStaffId}?${qs}`);
   }, [selectedStaffId, selectedDate, mutationSeq]), [selectedStaffId, selectedDate, mutationSeq]);
-
-  const overview = useApi(useCallback(async () => {
-    if (!selectedStaffId) return null;
-    return await apiFetch<TeamOverview>(`/v1/tenant/home-services/team/${selectedStaffId}/overview`);
-  }, [selectedStaffId]), [selectedStaffId]);
 
   // Fetched per selected technician rather than for the whole roster: the list endpoints
   // are per-staff, and pulling them for everyone to fill one drawer would be N+1 requests
@@ -458,28 +489,9 @@ export default function AvailabilityCapacityPlannerPage() {
     return out;
   }, [view, weekStart, selectedDate]);
 
-  // Capability filter is client-side (the list endpoint doesn't accept a
-  // capability query param) -- resolved lazily per technician isn't fetched
-  // in bulk to avoid N+1, so this filter only applies once a technician's
-  // overview has been loaded via selection; otherwise it's a no-op, which
-  // is disclosed via the filter's own "client-side" hint text rather than
-  // silently pretending to filter the whole roster.
-  const filteredTechnicians = useMemo(() => {
-    return technicians.filter(t => {
-      if (search && !t.full_name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (roleFilter && (t.designation ?? "").toLowerCase() !== roleFilter.toLowerCase()) return false;
-      if (availFilter) {
-        const s = schedules.find(x => x.staff_id === t.id && x.date === selectedDate);
-        const isAvailable = s?.available ?? false;
-        if (availFilter === "available" && !isAvailable) return false;
-        if (availFilter === "unavailable" && isAvailable) return false;
-      }
-      return true;
-    });
-  }, [technicians, schedules, search, roleFilter, availFilter, selectedDate]);
-
-  const roles = useMemo(() => Array.from(new Set(technicians.map(t => t.designation).filter(Boolean))) as string[], [technicians]);
-  const capabilities = (overview.data?.supported_services ?? []).map(s => s.name);
+  const filteredTechnicians = technicians;
+  const roles = planner.data?.available_filters.designations ?? [];
+  const capabilities = planner.data?.available_filters.capabilities ?? [];
 
   const scheduleFor = useCallback((staffId: string, date: string) => schedules.find(s => s.staff_id === staffId && s.date === date), [schedules]);
 
@@ -532,7 +544,7 @@ export default function AvailabilityCapacityPlannerPage() {
       jobNumbers: c.overlapping_jobs ?? [],
       peak: c.peak_concurrent ?? null,
       limit: c.concurrent_limit ?? null,
-      dispatchHref: `/home-services/dispatch?date=${c.date}&staff_id=${selectedStaffId}`,
+      dispatchHref: `/home-services/dispatch?date=${c.date}&technician=${selectedStaffId}&focus=conflicts`,
     };
   }, [selectedStaffId, selectedDate, planner.data]);
 
@@ -558,7 +570,12 @@ export default function AvailabilityCapacityPlannerPage() {
   }, [selectedSchedule]);
 
   return (
-    <div>
+    <PageShell>
+      <style>{`
+        .availability-workspace{display:flex;gap:16px;align-items:flex-start}
+        @media(max-width:1280px){.availability-workspace{display:grid;grid-template-columns:260px minmax(0,1fr)}.availability-workspace>aside:last-child{grid-column:1/-1}}
+        @media(max-width:820px){.availability-workspace{grid-template-columns:1fr}.availability-workspace>aside{position:static!important;width:auto!important}}
+      `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         <div>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px", textTransform: "uppercase" }}>Team</p>
@@ -567,13 +584,13 @@ export default function AvailabilityCapacityPlannerPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 4 }}>
-            <button onClick={() => setWeekStart(w => addDays(w, -7))} disabled={view === "day"} aria-label="Previous week"
-              style={{ background: "none", border: "none", cursor: view === "day" ? "not-allowed" : "pointer", color: "var(--text-secondary)", padding: 6, display: "flex", opacity: view === "day" ? 0.4 : 1 }}>
+            <button onClick={() => moveRange(-1)} aria-label={view === "day" ? "Previous day" : "Previous week"}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
               <ChevronLeft size={16}/>
             </button>
             <span style={{ fontSize: 13, color: "var(--text-primary)", padding: "0 6px", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtRange(rangeFrom, rangeTo)}</span>
-            <button onClick={() => setWeekStart(w => addDays(w, 7))} disabled={view === "day"} aria-label="Next week"
-              style={{ background: "none", border: "none", cursor: view === "day" ? "not-allowed" : "pointer", color: "var(--text-secondary)", padding: 6, display: "flex", opacity: view === "day" ? 0.4 : 1 }}>
+            <button onClick={() => moveRange(1)} aria-label={view === "day" ? "Next day" : "Next week"}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
               <ChevronRight size={16}/>
             </button>
           </div>
@@ -581,9 +598,7 @@ export default function AvailabilityCapacityPlannerPage() {
             <button onClick={() => setView("week")} style={{ background: view === "week" ? "var(--brand)" : "none", color: view === "week" ? "var(--text-on-brand)" : "var(--text-secondary)", border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Week</button>
             <button onClick={() => setView("day")} style={{ background: view === "day" ? "var(--brand)" : "none", color: view === "day" ? "var(--text-on-brand)" : "var(--text-secondary)", border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Day</button>
           </div>
-          <span title="Not available yet â€” no weekly-pattern copy endpoint exists.">
-            <Btn variant="secondary" disabled>Copy previous week</Btn>
-          </span>
+          <Btn variant="secondary" onClick={goToday}>Today</Btn>
           {/* Jumps to the first overlapping-assignment conflict in the visible range and
               opens that technician's panel, where the day and the jobs are named. */}
           <Btn
@@ -617,7 +632,7 @@ export default function AvailabilityCapacityPlannerPage() {
         const today = schedules.filter(s => s.date === selectedDate);
         const assigned = today.reduce((n, s) => n + s.assignments_today.length, 0);
         return (
-          <AvailabilityKpis values={{
+          <AvailabilityKpis dateLabel={selectedDate === toISODate(new Date()) ? "today" : new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} values={{
             availableToday: summary.available_today,
             onLeave: summary.on_leave_today,
             totalCapacity: summary.total_capacity,
@@ -639,12 +654,12 @@ export default function AvailabilityCapacityPlannerPage() {
       )}
 
       <AvailabilityFilters
-        search={search} onSearch={setSearch}
-        roleFilter={roleFilter} onRole={setRoleFilter} roles={roles}
-        availFilter={availFilter} onAvail={setAvailFilter}
-        capabilityFilter={capabilityFilter} onCapability={setCapabilityFilter} capabilities={capabilities}
+        search={search} onSearch={value => { setSearch(value); setPage(1); }}
+        roleFilter={roleFilter} onRole={value => { setRoleFilter(value); setPage(1); }} roles={roles}
+        availFilter={availFilter} onAvail={value => { setAvailFilter(value); setPage(1); }}
+        capabilityFilter={capabilityFilter} onCapability={value => { setCapabilityFilter(value); setPage(1); }} capabilities={capabilities}
         timezone={planner.data?.timezone ?? null}
-        onReset={() => { setSearch(""); setRoleFilter(""); setAvailFilter(""); setCapabilityFilter(""); }}
+        onReset={() => { setSearch(""); setRoleFilter(""); setAvailFilter(""); setCapabilityFilter(""); setPage(1); }}
       />
 
       {planner.loading ? (
@@ -657,7 +672,7 @@ export default function AvailabilityCapacityPlannerPage() {
           <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>No technicians match this view.</p>
         </Card>
       ) : (
-        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        <div className="availability-workspace">
           <TeamRoster
             rows={rosterRows}
             selectedId={selectedStaffId}
@@ -680,7 +695,9 @@ export default function AvailabilityCapacityPlannerPage() {
               };
             })}
             days={days} scheduleFor={scheduleFor}
-            selectedStaffId={selectedStaffId} onSelectStaff={setSelectedStaffId}
+            selectedStaffId={selectedStaffId}
+            onSelectCell={(staffId, date) => { setSelectedStaffId(staffId); setSelectedDate(date); }}
+            onSelectJob={jobId => router.push(`/service-jobs/${jobId}`)}
             todayISO={toISODate(new Date())}
           />
           <AvailabilityLegend
@@ -703,8 +720,8 @@ export default function AvailabilityCapacityPlannerPage() {
                 : null}
               maxJobsPerDay={selectedSchedule?.daily_capacity?.limit ?? null}
               maxConcurrentJobs={selectedTech.max_concurrent_jobs}
-              serviceCapability={overview.data ? overview.data.supported_services.map(s => s.name) : null}
-              capabilityLoading={overview.loading}
+              serviceCapability={selectedTech.supported_services.map(s => s.name)}
+              capabilityLoading={false}
               conflict={staffConflict}
               generatedAt={planner.data?.generated_at ?? null}
               onClose={() => setSelectedStaffId(null)}
@@ -721,6 +738,20 @@ export default function AvailabilityCapacityPlannerPage() {
               mutating={cancelTimeOff.loading || removeOverride.loading}
             />
           )}
+        </div>
+      )}
+
+      {planner.data && planner.data.pagination.total > pageSize && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          marginTop: 16, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 12,
+          background: "var(--surface)" }}>
+          <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+            Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, planner.data.pagination.total)} of {planner.data.pagination.total} technicians
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</Btn>
+            <Btn variant="secondary" size="sm" disabled={!planner.data.pagination.has_next} onClick={() => setPage(value => value + 1)}>Next</Btn>
+          </div>
         </div>
       )}
 
@@ -747,6 +778,6 @@ export default function AvailabilityCapacityPlannerPage() {
           onSaved={() => { bumpMutation(); detail.refetch(); }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

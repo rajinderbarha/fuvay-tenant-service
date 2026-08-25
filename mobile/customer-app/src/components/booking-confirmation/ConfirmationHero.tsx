@@ -3,6 +3,7 @@ import { View, Animated, Easing, AccessibilityInfo } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
+import { FuvayIcon } from "../FuvayIcon";
 
 export interface ConfirmationHeroProps {
   bookingNumber: string | null;
@@ -58,7 +59,7 @@ export function ConfirmationHero({ bookingNumber }: ConfirmationHeroProps) {
             backgroundColor: theme.colors.brandPrimaryMuted, alignItems: "center", justifyContent: "center",
           }}
         >
-          <Icon name="sparkles" size="feature" color={theme.colors.brandPrimaryStrong} decorative />
+          <FuvayIcon size={40} accessibilityLabel="Fuvay assistant" />
         </View>
         <View
           style={{

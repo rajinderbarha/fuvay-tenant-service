@@ -1,5 +1,0 @@
-test_file,test_name,error_message
-components/ux03/__tests__/PermissionEditor.test.tsx,renders a distinct label for denied_override vs not_granted,"TypeError: Cannot read properties of null (reading 'useState')"
-components/ux03/__tests__/PermissionEditor.test.tsx,filters by search query across label/key/group,"TypeError: Cannot read properties of null (reading 'useState')"
-components/ux03/__tests__/SetupWizard.test.tsx,"shows progress and advances on goNext, calling onSaveDraft","TypeError: Cannot read properties of null (reading 'useState')"
-components/ux03/__tests__/SetupWizard.test.tsx,blocked steps are disabled in the step nav,"TypeError: Cannot read properties of null (reading 'useState')"

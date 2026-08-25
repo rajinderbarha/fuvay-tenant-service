@@ -62,9 +62,10 @@ describe("adaptCustomerBookingDetails", () => {
     expect(details.activityText).toBe("Assigning an eligible professional");
   });
 
-  it("never renders in_progress/completed as an advanced stage (status-mapping correction)", () => {
+  it("renders the real in-progress booking stage instead of regressing the timeline", () => {
     const details = adaptCustomerBookingDetails(baseDto({ status: "in_progress" }));
-    expect(details.stage).toBe("unknown");
+    expect(details.stage).toBe("scheduled");
+    expect(details.statusLabel).toBe("Service in progress");
   });
 
   it("never renders a zero/missing finalized price as valid or free", () => {
@@ -72,8 +73,12 @@ describe("adaptCustomerBookingDetails", () => {
     expect(details.pricing.state).toEqual({ kind: "unavailable" });
   });
 
-  it("produces no attachments when no canonical attachment field exists on the booking", () => {
-    const details = adaptCustomerBookingDetails(baseDto());
-    expect(details.attachments).toEqual([]);
+  it("adapts finalized customer photos and note without mixing provider evidence", () => {
+    const details = adaptCustomerBookingDetails(baseDto({
+      customer_photo_urls: ["https://res.cloudinary.com/demo/image/upload/photo.jpg"],
+      customer_note: "Water is dripping near the wall.",
+    }));
+    expect(details.attachments).toEqual([{ id: "b-1:customer-photo:0", url: "https://res.cloudinary.com/demo/image/upload/photo.jpg" }]);
+    expect(details.note).toBe("Water is dripping near the wall.");
   });
 });

@@ -1,4 +1,4 @@
-import { resolveMediaUrl } from "../mediaUrl";
+import { resolveMediaImageSource, resolveMediaUrl } from "../mediaUrl";
 import { ENV } from "../../config/environment";
 
 describe("resolveMediaUrl", () => {
@@ -27,5 +27,20 @@ describe("resolveMediaUrl", () => {
     expect(resolveMediaUrl(null)).toBeNull();
     expect(resolveMediaUrl(undefined)).toBeNull();
     expect(resolveMediaUrl("   ")).toBeNull();
+  });
+});
+
+describe("resolveMediaImageSource", () => {
+  it("authenticates a private same-API media preview", () => {
+    expect(resolveMediaImageSource("/v1/media/asset-1/view", "token-1")).toEqual({
+      uri: `${ENV.apiBaseUrl}/v1/media/asset-1/view`,
+      headers: { Authorization: "Bearer token-1" },
+    });
+  });
+
+  it("never sends the customer token to external media hosts", () => {
+    expect(resolveMediaImageSource("https://res.cloudinary.com/demo/a.jpg", "secret-token")).toEqual({
+      uri: "https://res.cloudinary.com/demo/a.jpg",
+    });
   });
 });

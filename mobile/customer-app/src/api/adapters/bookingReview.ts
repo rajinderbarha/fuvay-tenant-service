@@ -10,6 +10,7 @@ import { classifyReviewPricing } from "../../domain/servicePricing";
 import { asBookingDraftId } from "../../domain/ids";
 import { ContractValidationError } from "../../domain/errors";
 import { Money } from "../../domain/money";
+import { parseServerDate } from "../../domain/dates";
 
 /** The backend sends the surcharge as a decimal STRING (Numeric column), so
  * it is parsed here rather than trusted as a number. A non-positive or
@@ -131,7 +132,9 @@ export function adaptBookingReviewSummary(
       : null,
     photoCount: draft.photo_urls?.length ?? 0,
     photoUrls: draft.photo_urls ?? [],
-    preferredDate: null,
+    preferredDate: summaryDto.preferred_date
+      ? parseServerDate(summaryDto.preferred_date, "preferred_date")
+      : null,
     readyForConfirmation: summaryDto.ready_for_confirmation,
     missing: summaryDto.missing,
   };
@@ -148,7 +151,19 @@ export function parseAvailableSlotsResponse(raw: unknown) {
 }
 
 export function adaptAvailableSlots(dto: z.infer<typeof availableSlotsResponseSchema>): AvailableSlot[] {
-  return dto.slots.map(s => ({ date: s.date, timeWindow: s.time_window, daysAhead: s.days_ahead }));
+  // Availability is an external/read-model boundary. Even though the current
+  // server deduplicates overlapping provider-hour rules, older API instances
+  // and cached responses can still contain the same physical slot twice.
+  // Enforce the React/domain identity here as a second line of defence.
+  const seen = new Set<string>();
+  const slots: AvailableSlot[] = [];
+  for (const s of dto.slots) {
+    const key = `${s.date}|${s.time_window}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    slots.push({ date: s.date, timeWindow: s.time_window, daysAhead: s.days_ahead });
+  }
+  return slots;
 }
 
 export function parseSelectSlotResponse(raw: unknown) {
@@ -181,5 +196,10 @@ export function applySelectedSlotToSummary(
     isEmergency: summaryDto.is_emergency ?? false,
     emergencySurcharge: parseSurcharge(summaryDto.emergency_surcharge),
     emergencySurchargePreview: parseSurcharge(summaryDto.emergency_surcharge_preview),
+    preferredDate: summaryDto.preferred_date
+      ? parseServerDate(summaryDto.preferred_date, "preferred_date")
+      : null,
+    readyForConfirmation: summaryDto.ready_for_confirmation,
+    missing: summaryDto.missing,
   };
 }

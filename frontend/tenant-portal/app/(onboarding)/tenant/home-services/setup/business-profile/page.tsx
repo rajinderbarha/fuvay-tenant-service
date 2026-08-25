@@ -434,6 +434,7 @@ export function BusinessProfileWorkspace({ mode = "onboarding" }: { mode?: "onbo
             <ProfilePhotoUploader
               ownerType="provider_shop"
               currentMediaId={profile.shop_photo_media_id}
+              currentPreviewUrl={profile.shop_photo_url}
               displayName={profile.business_name}
               size="lg"
               disabled={readOnly}

@@ -381,11 +381,19 @@ export interface ServiceRequirementChecklist {
   purpose?: string | null; icon_url?: string | null;
   version_number: number; phase?: string | null; status?: string | null;
 }
+export interface ServiceRequirementOption {
+  mapping_id: string; service_option_id: string; name?: string | null; description?: string | null;
+  usage?: "OPTIONAL" | "REQUIRED" | null; customer_selectable?: boolean | null;
+  technician_selectable?: boolean | null; quantity_supported?: boolean | null;
+  minimum_quantity?: number | null; maximum_quantity?: number | null; measurement_unit?: string | null;
+}
 export interface ServiceRequirements {
   master_service_id: string;
+  job_type_id?: string;
   service_name: string;
   problems: ServiceRequirementProblem[];
   questions: ServiceRequirementQuestion[];
+  service_options: ServiceRequirementOption[];
   checklists: ServiceRequirementChecklist[];
   tenant_editable: boolean;
   note: string;
@@ -1205,9 +1213,17 @@ export const mediaApi = {
   confirmUpload: (sessionId: string, etag?: string) =>
     apiFetch<MediaFile>(`/v1/media/upload/${sessionId}/confirm`,
       { method:"POST", body:JSON.stringify({ etag }) }),
-  listFiles: (params?: { limit?: number; cursor?: string; purpose?: string }) => {
+  /** `entity_type`/`entity_id` are the filters the endpoint actually declares.
+   *  A `purpose` param used to be passed here and was silently dropped, because
+   *  FastAPI ignores query params a route does not declare — and no `purpose`
+   *  field exists on a media file at all. */
+  listFiles: (params?: { limit?: number; cursor?: string; entity_type?: string; entity_id?: string }) => {
     const tid = getTenantId();
-    const qs  = new URLSearchParams(params as Record<string,string> ?? {}).toString();
+    const qs  = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)]),
+    ).toString();
     return apiFetch<MediaFileList>(`/v1/media/tenants/${tid}/files?${qs}`);
   },
   getFile:   (fileId: string) => {
@@ -1282,10 +1298,17 @@ export const settingsApi = {
     const tid = getTenantId();
     return apiFetch<SettingsResponse>(`/v1/settings/tenants/${tid}${key ? `/${key}` : ""}`);
   },
-  update: (key: string, value: unknown) => {
+  /**
+   * `reason` is MANDATORY: `set_tenant_setting` raises
+   * "A reason is required to create a tenant override." when it is absent.
+   * This used to send `{ value }` alone, so saving a setting from the Settings
+   * page failed every single time. The override is an audited change — the
+   * reason is stored on the row — so it is collected, not invented here.
+   */
+  update: (key: string, value: unknown, reason: string, type = "string") => {
     const tid = getTenantId();
     return apiFetch<SettingEntry>(`/v1/settings/tenants/${tid}/${key}`,
-      { method:"PUT", body:JSON.stringify({ value }) });
+      { method:"PUT", body:JSON.stringify({ value, reason, type }) });
   },
   delete: (key: string) => {
     const tid = getTenantId();
@@ -1301,12 +1324,28 @@ export const settingsApi = {
     return apiFetch<WebhookListResponse>(`/v1/webhooks/tenants/${tid}/endpoints`);
   },
   getWebhook:   (id: string) => apiFetch<Webhook>(`/v1/webhooks/endpoints/${id}`),
-  createWebhook:(url: string, events: string[]) => {
+  /**
+   * The body field is `subscribed_events`, NOT `events`.
+   *
+   * This sent `events`, which the handler never reads — it does
+   * `body.get("subscribed_events", [])`. So every webhook created from the
+   * Settings page was stored with `subscribed_events: []` and could never
+   * fire, while the UI reported success. Confirmed live before the fix.
+   *
+   * The wrong key also skipped validation entirely (an empty list is valid),
+   * which hid a second bug: the page's pre-filled `job.completed` is not a real
+   * event — the catalogue has job.created / job.status_changed / job.closed.
+   */
+  createWebhook:(url: string, subscribedEvents: string[], description?: string) => {
     const tid = getTenantId();
     return apiFetch<Webhook>("/v1/webhooks/endpoints",
-      { method:"POST", body:JSON.stringify({ tenant_id: tid, url, events }) });
+      { method:"POST", body:JSON.stringify({
+        tenant_id: tid, url, subscribed_events: subscribedEvents,
+        ...(description ? { description } : {}),
+      }) });
   },
-  updateWebhook:(id: string, data: Partial<{ url: string; events: string[]; is_active: boolean }>) =>
+  /** Same field name as create — `subscribed_events`, not `events`. */
+  updateWebhook:(id: string, data: Partial<{ url: string; subscribed_events: string[]; is_active: boolean }>) =>
     apiFetch<Webhook>(`/v1/webhooks/endpoints/${id}`,
       { method:"PUT", body:JSON.stringify(data) }),
   deleteWebhook:(id: string) =>
@@ -1598,16 +1637,19 @@ export const appointmentApi = {
 // job_id+item_id+location_id in the BODY, not a reservation_id in the path.
 export const inventoryApi = {
   createItem: (name:string, sku:string, unit:string, unitCost:number, category?:string, minQuantity=0,
-               gst?:number|null, warranty?:string|null) => {
+               gst?:number|null, warranty?:string|null, sellingPrice?:number,
+               serviceGroupId?:string|null) => {
     const tid = getTenantId();
     return apiFetch<InventoryItem>(`/v1/inventory/tenants/${tid}/items`, { method:"POST", body:JSON.stringify({
-      name, sku, unit, unit_cost:unitCost, category, min_quantity:minQuantity, gst, warranty }) });
+      name, sku, unit, unit_cost:unitCost, selling_price:sellingPrice ?? unitCost,
+      category, service_group_id:serviceGroupId, min_quantity:minQuantity, gst, warranty }) });
   },
   getItem: (itemId:string) =>
     apiFetch<InventoryItem>(`/v1/inventory/items/${itemId}`),
   updateItem: (itemId:string, patch: Partial<{ name:string; sku:string; unit:string;
                unit_cost:number; category:string|null; min_quantity:number;
-               gst:number|null; warranty:string|null }>) => {
+               selling_price:number; service_group_id:string|null;
+               gst:number|null; warranty:string|null; is_active:boolean }>) => {
     const tid = getTenantId();
     return apiFetch<InventoryItem>(`/v1/inventory/tenants/${tid}/items/${itemId}`,
       { method:"PUT", body:JSON.stringify(patch) });
@@ -1617,17 +1659,56 @@ export const inventoryApi = {
     return apiFetch<{ item_id:string; deleted:boolean }>(`/v1/inventory/tenants/${tid}/items/${itemId}`,
       { method:"DELETE" });
   },
-  listItems: (cursor?:string) => {
+  listItems: (params?: { cursor?:string; search?:string; categoryId?:string;
+               stockStatus?:"all"|"healthy"|"low"|"out"; sort?:string;
+               offset?:number; limit?:number; includeArchived?:boolean }) => {
     const tid = getTenantId();
     const q = new URLSearchParams();
-    if (cursor) q.set("cursor", cursor);
+    if (params?.cursor) q.set("cursor", params.cursor);
+    if (params?.search) q.set("search", params.search);
+    if (params?.categoryId) q.set("category_id", params.categoryId);
+    if (params?.stockStatus && params.stockStatus !== "all") q.set("stock_status", params.stockStatus);
+    if (params?.sort) q.set("sort", params.sort);
+    if (params?.offset) q.set("offset", String(params.offset));
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.includeArchived) q.set("include_archived", "true");
     const qs = q.toString();
     return apiFetch<InventoryItemList>(`/v1/inventory/tenants/${tid}/items${qs ? `?${qs}` : ""}`);
+  },
+  getWorkspaceSummary: () => {
+    const tid = getTenantId();
+    return apiFetch<InventoryWorkspaceSummary>(`/v1/inventory/tenants/${tid}/workspace-summary`);
+  },
+  listLocations: (includeArchived=false) => {
+    const tid = getTenantId();
+    return apiFetch<StockLocationList>(`/v1/inventory/tenants/${tid}/locations?include_archived=${includeArchived}`);
+  },
+  createLocation: (locationName:string, locationType:string) => {
+    const tid = getTenantId();
+    return apiFetch<StockLocation>(`/v1/inventory/tenants/${tid}/locations`, {
+      method:"POST", body:JSON.stringify({ location_name:locationName, location_type:locationType }) });
+  },
+  updateLocation: (locationId:string, patch:Partial<{ location_name:string; is_active:boolean }>) => {
+    const tid = getTenantId();
+    return apiFetch<StockLocation>(`/v1/inventory/tenants/${tid}/locations/${locationId}`, {
+      method:"PATCH", body:JSON.stringify(patch) });
   },
   receiveStock: (itemId:string, locationId:string, quantity:number, notes?:string) => {
     const tid = getTenantId();
     return apiFetch<StockTransaction>(`/v1/inventory/items/${itemId}/locations/${locationId}/receive`, {
       method:"POST", body:JSON.stringify({ tenant_id:tid, quantity, notes }) });
+  },
+  countStock: (itemId:string, locationId:string, countedQuantity:number, reason:string) => {
+    const tid = getTenantId();
+    return apiFetch<StockCountResult>(`/v1/inventory/items/${itemId}/locations/${locationId}/count`, {
+      method:"POST", body:JSON.stringify({ tenant_id:tid, counted_quantity:countedQuantity,
+        reason, idempotency_key:crypto.randomUUID() }) });
+  },
+  transferStock: (itemId:string, fromLocationId:string, toLocationId:string, quantity:number, reason:string) => {
+    const tid = getTenantId();
+    return apiFetch<StockTransferResult>(`/v1/inventory/items/${itemId}/transfer`, {
+      method:"POST", body:JSON.stringify({ tenant_id:tid, from_location_id:fromLocationId,
+        to_location_id:toLocationId, quantity, reason, idempotency_key:crypto.randomUUID() }) });
   },
   getBalance: (itemId:string, locationId:string) =>
     apiFetch<StockBalance>(`/v1/inventory/items/${itemId}/locations/${locationId}/balance`),
@@ -1695,6 +1776,7 @@ export const inventoryApi = {
 
 export interface InventoryDraftItem {
   item_id: string; name: string; sku: string; category?: string | null;
+  service_group_id?: string | null; selling_price?: number | null;
   unit: string; unit_cost: number; min_quantity: number; status: "draft" | "published";
   source_upload_id?: string | null;
   gst?: number | null; warranty?: string | null;
@@ -1933,8 +2015,39 @@ export interface DocumentListResponse  { documents:TenantDocument[]; has_next:bo
 export type Document = TenantDocument;
 export interface SettingEntry   { key:string; value:unknown; source:"tenant"|"plan"|"platform"|"code_default"; is_override:boolean; }
 export interface SettingsResponse   { settings:SettingEntry[]; }
-export interface Webhook        { id:string; url:string; events:string[]; status:string; consecutive_failures:number; created_at:string; }
-export interface WebhookListResponse { webhooks:Webhook[]; }
+/**
+ * Webhook shapes, corrected against the live API (2026-08-23).
+ *
+ * The previous declarations were wrong in the two places that matter: the id is
+ * `endpoint_id` (not `id`) and the event list is `subscribed_events` (not
+ * `events`), and the list envelope is `{ endpoints, total }` (not
+ * `{ webhooks }`). Because these were only ever read through `any`-ish access,
+ * the Webhooks tab rendered an empty list no matter how many endpoints existed.
+ */
+export interface Webhook {
+  endpoint_id: string;
+  tenant_id: string;
+  url: string;
+  description: string | null;
+  subscribed_events: string[];
+  status: string;
+  consecutive_failures: number;
+  total_deliveries: number;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  auto_paused_at: string | null;
+  created_at: string;
+  /** Returned ONCE on create and never again. */
+  secret?: string;
+  note?: string;
+}
+
+export interface WebhookListResponse {
+  endpoints: Webhook[];
+  total: number;
+  /** The catalogue of event names `create` will accept. */
+  available_events?: string[];
+}
 export interface TenantKpis     { jobs_today:number; bookings_pending:number; revenue_today:number; commission_today:number; wallet_balance:number; staff_active:number; avg_rating:number; pending_reviews:number; }
 export interface ChartData      { date:string; value:number; }
 export interface ForecastItem   { date:string; predicted_jobs:number; confidence:number; }
@@ -2254,10 +2367,66 @@ export interface IpBlockCheck { ip:string; blocked:boolean; reason?:string; thre
 export interface ActivityReportResult { log_id?:string; threat_level?:string; count?:number; recorded?:boolean; threshold_not_reached?:boolean; }
 
 // ── Media types ───────────────────────────────────────────────────────────────
-export interface UploadSession { session_id:string; upload_url:string; expires_at:string; }
-export interface MediaFile  { file_id:string; tenant_id:string; filename:string; content_type:string; size_bytes:number; purpose:string; url?:string; created_at:string; }
-export interface MediaFileList { files:MediaFile[]; total:number; has_next:boolean; next_cursor?:string; }
-export interface MediaQuota { tenant_id:string; used_bytes:number; limit_bytes:number; file_count:number; file_limit:number; }
+/**
+ * Media Vault types, corrected against the live API (2026-08-22).
+ *
+ * Every field below was read off a real response. The previous declarations
+ * were fiction and the compiler had no way to know: `MediaFile` claimed
+ * `filename`/`content_type`/`purpose`/`url` when the server sends
+ * `original_name`/`mime_type`/`signed_url` and no `purpose` at all, so the
+ * gallery threw on `content_type.startsWith(...)` as soon as one file existed.
+ * `MediaQuota` claimed `limit_bytes`/`file_limit`, which do not exist either,
+ * so the storage tiles divided by undefined and rendered NaN.
+ */
+
+/** The signed upload ticket. `upload_params` MUST be posted as multipart form
+ *  fields alongside the file — the storage provider rejects an unsigned PUT. */
+export interface UploadSession {
+  session_id: string;
+  upload_url: string;
+  storage_key: string;
+  expires_at: string;
+  max_size_bytes: number;
+  upload_params: Record<string, string | number>;
+}
+
+export interface MediaFile {
+  file_id: string;
+  tenant_id: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  /** What this file is attached to; null for a standalone vault upload. */
+  entity_type: string | null;
+  entity_id: string | null;
+  is_public: boolean;
+  scan_status: string;
+  /** Delivery URL. Null only when the storage provider is unconfigured. */
+  signed_url: string | null;
+  created_at: string;
+}
+
+/** Cursor-paged. There is deliberately no `total` — the server does not count
+ *  the full set, so anything showing "x of N" would be inventing N. */
+export interface MediaFileList {
+  files: MediaFile[];
+  has_next: boolean;
+  next_cursor?: string | null;
+}
+
+/** Quota is package-based per vertical. Home services is exempt, which is what
+ *  `unlimited: true` with a null `quota_bytes` means — not "zero allowed". */
+export interface MediaQuota {
+  tenant_id: string;
+  used_bytes: number;
+  used_gb: number;
+  quota_bytes: number | null;
+  quota_gb: number | null;
+  unlimited: boolean;
+  usage_pct: number;
+  file_count: number;
+  alert: boolean;
+}
 
 // ── Phase 0A Media Engine types ───────────────────────────────────────────────
 export interface MediaAsset {
@@ -2438,8 +2607,13 @@ export interface StaffWorkingHoursResponse { staff_id:string; tenant_id:string; 
 // current_quantity/shortfall. Corrected to the real service dict outputs.
 // list_items returns only a subset of item fields (no category/unit_cost),
 // so those are optional here.
-export interface InventoryItem { item_id:string; name:string; sku:string; unit:string; min_quantity:number; category?:string|null; unit_cost?:number; gst?:number|null; warranty?:string|null; }
-export interface InventoryItemList { items:InventoryItem[]; has_next:boolean; next_cursor?:string|null; }
+export interface InventoryItem { item_id:string; name:string; sku:string; unit:string; min_quantity:number; category?:string|null; service_group_id?:string|null; unit_cost:number; selling_price:number; gst?:number|null; warranty?:string|null; is_active:boolean; status:string; quantity:number; reserved_qty:number; available_qty:number; below_minimum:boolean; inventory_value:number; retail_value:number; margin:number; }
+export interface InventoryItemList { items:InventoryItem[]; total:number; offset:number; limit:number; has_next:boolean; next_cursor?:string|null; }
+export interface InventoryWorkspaceSummary { total_items:number; on_hand_units:number; reserved_units:number; available_units:number; low_stock_items:number; inventory_value:number; retail_value:number; active_locations:number; }
+export interface StockLocation { location_id:string; location_name:string; location_type:string; staff_id?:string|null; is_active:boolean; }
+export interface StockLocationList { locations:StockLocation[]; total:number; }
+export interface StockCountResult { item_id:string; location_id:string; previous_quantity:number; counted_quantity:number; adjustment:number; txn_id:string; }
+export interface StockTransferResult { item_id:string; quantity:number; from_location_id:string; to_location_id:string; source_balance:number; destination_balance:number; transaction_ids:string[]; idempotent?:boolean; }
 export interface StockBalance { item_id:string; location_id:string; quantity:number; reserved_qty:number; available_qty:number; min_quantity:number; below_minimum:boolean; reconciliation_ok:boolean; }
 export interface StockTransaction { txn_id:string; txn_type:string; quantity:number; balance_before:number; balance_after:number; job_id?:string|null; notes?:string|null; created_at:string; }
 export interface StockTransactionList { transactions:StockTransaction[]; has_next:boolean; next_cursor?:string|null; }
@@ -3004,6 +3178,9 @@ export interface AreaServiceMappingPayload {
 
 // ── Sprint 11 — Provider Team Members ────────────────────────────────────────
 
+/** Canonical provider roster roles. Vertical-specific labels belong in the
+ * designation field; the backend intentionally authorizes only these three
+ * role classes. */
 export type MemberType = "technician" | "trainer" | "counsellor" | "agent" | "manager" | "staff";
 
 export interface ProviderTeamMember {
@@ -3570,8 +3747,11 @@ export const homeServiceExecutionApi = {
   // HS8B — tenant/business parts request approval + completion proof
   listPartsRequests: (jobId: string) =>
     apiFetch<{ job_id: string; parts_requests: PartsRequestRecord[] }>(`/v1/provider/service-jobs/${jobId}/parts-requests`),
-  approveParts: (jobId: string, partsRequestId: string) =>
-    apiFetch<PartsRequestRecord>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/approve`, { method: "POST" }),
+  approveParts: (jobId: string, partsRequestId: string, allocation: {
+    procurement_source: "inventory" | "external"; inventory_item_id?: string; stock_location_id?: string;
+  } = { procurement_source: "external" }) =>
+    apiFetch<PartsRequestRecord>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/approve`, {
+      method: "POST", body: JSON.stringify(allocation) }),
   rejectParts: (jobId: string, partsRequestId: string, reason?: string) =>
     apiFetch<PartsRequestRecord>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   installParts: (jobId: string, partsRequestId: string) =>
@@ -3585,6 +3765,9 @@ export interface PartsRequestRecord {
   customer_approval_required: boolean; business_approval_required: boolean;
   status: string; approved_by: string | null; approved_at: string | null;
   rejected_by: string | null; rejected_at: string | null; rejection_reason: string | null;
+  procurement_source: "inventory" | "external"; inventory_item_id: string | null;
+  stock_location_id: string | null; stock_reservation_id: string | null;
+  unit_price_snapshot: number | null;
   created_at: string; updated_at: string;
 }
 
@@ -4052,12 +4235,35 @@ export const providerAnalyticsApi = {
     apiFetch<AnalyticsData>(`/v1/provider/analytics/complaint-summary${qs(p as Record<string, string>)}`),
   getOperationalAlerts: () =>
     apiFetch<AnalyticsData>("/v1/provider/analytics/operational-alerts"),
+  /** `filter_options` carries the selectable values for the id-based filters
+   *  each definition declares in `allowed_filters`; without it a client cannot
+   *  build a usable filter UI. */
   listReports: (p?: { limit?: number; offset?: number }) =>
-    apiFetch<{ definitions: ReportDefinition[]; recent_runs: { items: ReportRun[]; total: number } }>(
-      `/v1/provider/reports?${new URLSearchParams(p as Record<string, string>)}`
+    apiFetch<{
+      definitions: ReportDefinition[];
+      recent_runs: { items: ReportRun[]; total: number };
+      filter_options?: {
+        offerings: { value: string; label: string }[];
+        categories: { value: string; label: string }[];
+        staff: { value: string; label: string }[];
+        statuses: { value: string; label: string }[];
+      };
+    }>(
+      `/v1/provider/reports?${new URLSearchParams(
+        Object.entries(p ?? {})
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => [k, String(v)]),
+      )}`
     ),
   runReport: (body: { report_key: string; filters?: Record<string, string>; export_format?: string }) =>
-    apiFetch<{ id: string; status: string; row_count: number; preview: Record<string, unknown>[]; generated_at: string }>(
+    // `csv_content` is present (null unless a csv export was requested) and was
+    // missing from this declaration even though the page's whole export path
+    // reads it. `row_count` comes back as a STRING.
+    apiFetch<{
+      id: string; report_key: string; status: string;
+      row_count: number | string; preview: Record<string, unknown>[];
+      csv_content?: string | null; generated_at: string;
+    }>(
       "/v1/provider/reports/run", { method: "POST", body: JSON.stringify(body) }
     ),
   getReportRun: (run_id: string) =>
@@ -4148,6 +4354,7 @@ export interface BusinessProfile {
   logo_url: string | null;
   business_logo_media_id: string | null;
   shop_photo_media_id: string | null;
+  shop_photo_url?: string | null;
   verification_status: string;
   status: string;
   plan_type: string;
@@ -4155,7 +4362,43 @@ export interface BusinessProfile {
   description: string | null;
   slug: string | null;
   created_at: string;
+  address_line?: string | null;
+  pending_changes?: {
+    fields?: Record<string, unknown>;
+    submitted_at?: string;
+    submitted_by_user_id?: string;
+    documents_to_revalidate?: string[];
+  } | null;
+  completeness?: {
+    percentage: number;
+    completed_count: number;
+    total_count: number;
+    completed_requirements: string[];
+    missing_requirements: Array<{ key: string; label: string }>;
+  };
+  operational_summary?: {
+    active_services: number;
+    service_areas: number;
+    active_technicians: number;
+  };
+  rating?: {
+    average_rating: number;
+    total_reviews: number;
+  };
+  documents?: Array<{
+    id: string;
+    doc_type: string;
+    label: string;
+    status: string;
+    expiry_date: string | null;
+    file_url: string | null;
+  }>;
 }
+
+export type BusinessProfileOverview = BusinessProfile & Required<Pick<
+  BusinessProfile,
+  "completeness" | "operational_summary" | "rating" | "documents"
+>>;
 
 export interface UpdateBusinessProfilePayload {
   business_name?: string;
@@ -4629,6 +4872,9 @@ export interface PartsRequestItem {
   customer_approval_required: boolean; business_approval_required: boolean;
   status: string; approved_by: string | null; approved_at: string | null;
   rejected_by: string | null; rejected_at: string | null; rejection_reason: string | null;
+  procurement_source?: "inventory" | "external"; inventory_item_id?: string | null;
+  stock_location_id?: string | null; stock_reservation_id?: string | null;
+  unit_price_snapshot?: number | null;
   created_at: string; updated_at: string;
 }
 
@@ -4734,8 +4980,11 @@ export const homeServiceProviderJobsApi = {
   assign: (jobId: string, staffMemberId: string) =>
     apiFetch<Record<string, unknown>>(`/v1/provider/service-jobs/${jobId}/assign`, { method: "POST", body: JSON.stringify({ staff_member_id: staffMemberId }) }),
   listPartsRequests: (jobId: string) => apiFetch<{ job_id: string; parts_requests: PartsRequestItem[] }>(`/v1/provider/service-jobs/${jobId}/parts-requests`),
-  approveParts: (jobId: string, partsRequestId: string) =>
-    apiFetch<PartsRequestItem>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/approve`, { method: "POST" }),
+  approveParts: (jobId: string, partsRequestId: string, allocation: {
+    procurement_source: "inventory" | "external"; inventory_item_id?: string; stock_location_id?: string;
+  } = { procurement_source: "external" }) =>
+    apiFetch<PartsRequestItem>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/approve`, {
+      method: "POST", body: JSON.stringify(allocation) }),
   rejectParts: (jobId: string, partsRequestId: string, reason?: string) =>
     apiFetch<PartsRequestItem>(`/v1/provider/service-jobs/${jobId}/parts-requests/${partsRequestId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   installParts: (jobId: string, partsRequestId: string) =>

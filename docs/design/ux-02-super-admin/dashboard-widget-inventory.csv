@@ -1,9 +1,0 @@
-widget,section,roles_visible,readiness,backend_capability
-Active Tenants count,Platform Snapshot,all,MOCK_DESIGN_ONLY,admin_catalog/tenant_service
-Open Compliance Cases count,Platform Snapshot,all,MOCK_DESIGN_ONLY,compliance engine (no dedicated cases table confirmed yet)
-Security Observations count,Platform Snapshot,super_admin+admin_security,MOCK_DESIGN_ONLY,security telemetry (no unified endpoint confirmed)
-Package Credit (all tenants),Platform Snapshot,super_admin+admin_finance,MOCK_DESIGN_ONLY,finance_hub/package_commerce
-Pending Verification action cards,Action Center,all,MOCK_DESIGN_ONLY,onboarding engine
-Activity bar chart (7d),Activity,all except admin_readonly-hidden(false: readonly still sees it),MOCK_DESIGN_ONLY,analytics/intelligence_models
-Risk Overview list,Risk Overview,super_admin+admin_security,MOCK_DESIGN_ONLY,security telemetry (no unified endpoint confirmed)
-System Notices,System Notices,all,MOCK_DESIGN_ONLY,platform_notifications

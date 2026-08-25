@@ -190,7 +190,13 @@ async def get_rework(
     u: UserContext   = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rw = await _rework.get_rework(db, rework_id)
+    # Slice 2F-9 scoped schedule/start/complete by passing the caller's own
+    # tenant_id, and its comment in rework_service records that "the
+    # provider-facing callers now always supply" it -- but this read was
+    # missed and still loaded by primary key alone, so any authenticated user
+    # of any tenant could read another tenant's rework request (its reason,
+    # customer-visible notes and schedule) just by supplying the id.
+    rw = await _rework.get_rework(db, rework_id, tenant_id=_provider_tenant_id(u))
     return ok({"id": str(rw.id), "status": rw.status, "rework_reason": rw.rework_reason,
                "complaint_id": str(rw.complaint_id), "customer_visible_notes": rw.customer_visible_notes,
                "scheduled_date": str(rw.scheduled_date) if rw.scheduled_date else None,
@@ -241,6 +247,13 @@ async def complete_rework(
 async def list_refund_requests(
     status: Optional[str] = None,
     q: Optional[str] = None,
+    # The enterprise grid emits its search box value as `search`, not `q`, so
+    # the page's search never reached this endpoint. Accepting both keeps the
+    # existing `q` callers working while making the grid's box functional.
+    search: Optional[str] = None,
+    refund_type: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     r: Request       = None,
@@ -248,7 +261,9 @@ async def list_refund_requests(
     db: AsyncSession = Depends(get_db),
 ):
     data = await _refund.list_refund_requests_page(
-        db, tenant_id=_provider_tenant_id(u), status=status, q=q, page=page, page_size=page_size,
+        db, tenant_id=_provider_tenant_id(u), status=status, q=q or search,
+        refund_type=refund_type, date_from=date_from, date_to=date_to,
+        page=page, page_size=page_size,
     )
     return ok(data, _rid(r), "provider.refund.list")
 

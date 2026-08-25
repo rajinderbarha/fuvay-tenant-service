@@ -21,7 +21,7 @@ export interface SlotPickerCardProps {
   slotSelectionError: string | null;
   onLoadSlots: (emergency: boolean) => void;
   onSelectSlot: (dateIso: string, timeWindow: string, emergency: boolean) => Promise<void>;
-  onContinue: () => void;
+  onContinue: () => Promise<void>;
 }
 
 function dayLabel(dateIso: string, daysAhead: number): string {
@@ -64,6 +64,7 @@ export function SlotPickerCard({
   const [open, setOpen] = useState(false);
   const [emergency, setEmergency] = useState(false);
   const [pickingKey, setPickingKey] = useState<string | null>(null);
+  const [acceptingSuggested, setAcceptingSuggested] = useState(false);
 
   function openPicker(nextEmergency: boolean) {
     setEmergency(nextEmergency);
@@ -81,6 +82,19 @@ export function SlotPickerCard({
       // slotSelectionError below already shows the real reason.
     } finally {
       setPickingKey(null);
+    }
+  }
+
+  async function handleContinue() {
+    if (acceptingSuggested) return;
+    setAcceptingSuggested(true);
+    try {
+      await onContinue();
+    } catch {
+      // The controller exposes the authoritative slot-selection error in
+      // this card. Keep the customer here so they can choose another time.
+    } finally {
+      setAcceptingSuggested(false);
     }
   }
 
@@ -133,7 +147,11 @@ export function SlotPickerCard({
 
       {promisedSlot ? (
         <View style={{ marginTop: 14 }}>
-          <BotPrimaryButton label="Continue" onPress={onContinue} />
+          <BotPrimaryButton
+            label={acceptingSuggested ? "Checking time…" : "Continue"}
+            onPress={() => { void handleContinue(); }}
+            disabled={acceptingSuggested}
+          />
         </View>
       ) : null}
 

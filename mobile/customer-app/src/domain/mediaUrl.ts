@@ -23,3 +23,30 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
   const base = ENV.apiBaseUrl.replace(/\/+$/, "");
   return `${base}${trimmed.startsWith("/") ? "" : "/"}${trimmed}`;
 }
+
+export interface MediaImageSource {
+  uri: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Builds a React Native image source without leaking credentials to a CDN.
+ * Private Media Engine previews live behind `/v1/media/{id}/view`, so a plain
+ * `<Image uri>` receives 401 even though the upload/attach request succeeded.
+ * Only same-API Media Engine URLs receive the bearer token; Cloudinary, S3,
+ * public uploads and data URIs remain credential-free.
+ */
+export function resolveMediaImageSource(
+  url: string | null | undefined,
+  accessToken: string | null,
+): MediaImageSource | null {
+  const uri = resolveMediaUrl(url);
+  if (!uri) return null;
+
+  const base = ENV.apiBaseUrl.replace(/\/+$/, "");
+  const isProtectedMediaUrl = uri.startsWith(`${base}/v1/media/`);
+  if (isProtectedMediaUrl && accessToken) {
+    return { uri, headers: { Authorization: `Bearer ${accessToken}` } };
+  }
+  return { uri };
+}

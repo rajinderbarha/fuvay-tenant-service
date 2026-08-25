@@ -32,6 +32,33 @@ describe("live assistant payloads still satisfy the app's contracts", () => {
     expect(result.success ? null : result.error.issues).toBeNull();
   });
 
+  it("accepts pending readiness states on a resumable draft", () => {
+    const result = assistantBootstrapResponseSchema.safeParse({
+      ...live.bootstrap,
+      resumable_draft: {
+        id: "draft-pending",
+        customer_id: "customer-1",
+        ai_session_id: null,
+        category_id: "category-1",
+        offering_id: "service-1",
+        job_type_id: null,
+        status: "draft",
+        city: null,
+        zipcode: null,
+        issue_summary: null,
+        serviceability_status: null,
+        price_status: null,
+        provider_match_status: null,
+        price_snapshot: {},
+        expires_at: null,
+        created_at: null,
+        updated_at: null,
+      },
+    });
+
+    expect(result.success ? null : result.error.issues).toBeNull();
+  });
+
   it("parses the select-issue response, envelope included", () => {
     const result = selectIssueResponseSchema.safeParse(live.select_issue);
     expect(result.success ? null : result.error.issues).toBeNull();

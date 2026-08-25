@@ -1,11 +1,9 @@
 import React from "react";
-import { View, Pressable, Image } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+
 import { useTheme } from "../../design-system/theme";
-import { AppText } from "../AppText";
-import { Icon } from "../Icon";
 import { HomeQuickIssue } from "../../domain/customerHome";
-import { resolveQuickIssueIcon } from "../../domain/quickIssueIcon";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { AppText } from "../AppText";
 
 export interface ProblemGridProps {
   issues: readonly HomeQuickIssue[];
@@ -13,113 +11,98 @@ export interface ProblemGridProps {
   onPressIssue: (issue: HomeQuickIssue) => void;
 }
 
-/** Four across reads as a grid on every phone width; three is sparse and five
- * squeezes two-word labels onto three lines. */
-const COLUMNS = 4;
-
-/**
- * The problems a customer can book in one tap, as a tile grid.
- *
- * Why a grid rather than the horizontal chip rail this replaces: a rail hides
- * most of its contents off-screen, so whether "AC Not Cooling" was on offer
- * depended on whether the customer thought to swipe. A fixed grid shows the whole
- * shortlist at a glance.
- *
- * It shows exactly what it is given -- no overflow tile, no "See all". The caller
- * decides how many (see selectProblems), and the larger circles section further
- * down the screen carries a different selection, so browsing beyond the shortlist
- * happens in the page rather than behind a sheet.
- *
- * What is deliberately NOT shown here:
- *
- *  - Severity. It is in the payload (dispatch grades it) but the customer
- *    already knows how bad their own fault is; a red "critical" chip on it
- *    would read as alarm, not information.
- *  - Prices. Each problem resolves to a priced service, but the amount depends
- *    on answers not yet given, so a figure here would be a quote the booking
- *    flow might not honour.
- *
- * Ordering is the backend's (display_order, then name), not a client guess at
- * what is popular.
- */
+/** Asymmetric problem picker: one editorial lead and a compact swipe rail. */
 export function ProblemGrid({ issues, title, onPressIssue }: ProblemGridProps) {
   const { theme } = useTheme();
-
-  // A problem with no category slug cannot open the assistant, so it is dropped
-  // rather than rendered as a tile that does nothing when pressed.
-  const tappable = issues.filter(i => !!i.categorySlug);
-  if (tappable.length === 0) return null;
-
-  const rows: HomeQuickIssue[][] = [];
-  for (let i = 0; i < tappable.length; i += COLUMNS) rows.push(tappable.slice(i, i + COLUMNS));
+  const tappable = issues.filter(issue => !!issue.categorySlug);
+  const [lead, ...rest] = tappable;
+  if (!lead) return null;
 
   return (
-    <View style={{ gap: theme.spacing.sm }}>
-      <AppText variant="headingSmall">{title || "What's the problem?"}</AppText>
-
-      <View style={{ gap: theme.spacing.sm }}>
-        {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-            {row.map(issue => (
-              <ProblemTile
-                key={issue.issueId}
-                issue={issue}
-                onPress={() => onPressIssue(issue)}
-              />
-            ))}
-            {/* Equal-flex spacers keep a short final row's tiles the same width
-                as the rows above rather than stretching them. */}
-            {Array.from({ length: COLUMNS - row.length }).map((_, i) => (
-              <View key={`spacer-${i}`} style={{ flex: 1 }} />
-            ))}
-          </View>
-        ))}
+    <View>
+      <View style={{ marginBottom: theme.spacing.md }}>
+        <AppText variant="headingSmall">{title || "What's the problem?"}</AppText>
+        <AppText variant="caption" color="tertiary" style={{ marginTop: 2 }}>
+          Pick the closest match. We will ask only what is needed.
+        </AppText>
       </View>
+
+      <LeadProblem issue={lead} onPress={() => onPressIssue(lead)} />
+
+      {rest.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingTop: theme.spacing.sm, gap: theme.spacing.sm }}>
+          {rest.map((issue, index) => (
+            <ProblemCard key={issue.issueId} issue={issue} index={index} onPress={() => onPressIssue(issue)} />
+          ))}
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
 
-function ProblemTile({ issue, onPress }: { issue: HomeQuickIssue; onPress: () => void }) {
+function LeadProblem({ issue, onPress }: { issue: HomeQuickIssue; onPress: () => void }) {
   const { theme } = useTheme();
-  const glyph = resolveQuickIssueIcon(issue.label, issue.categoryName);
-  const artwork = issue.iconUrl ? resolveMediaUrl(issue.iconUrl) : null;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      // The category is spoken as well as shown: "Bad Smell" alone does not say
-      // what is being booked.
       accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
       accessibilityHint="Opens the booking assistant with this problem selected"
       style={({ pressed }) => ({
-        flex: 1,
-        alignItems: "center", gap: theme.spacing.xs,
-        paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.xxs,
-        borderRadius: theme.radiusUsage.card,
-        backgroundColor: theme.colors.surfaceDefault,
-        borderWidth: 1, borderColor: theme.colors.borderSubtle,
-        opacity: pressed ? 0.85 : 1,
+        minHeight: 126,
+        borderRadius: theme.radius.radiusSmall,
+        backgroundColor: theme.colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: theme.colors.borderSubtle,
+        opacity: pressed ? 0.84 : 1,
       })}
     >
-      <View
-        style={{
-          width: 40, height: 40, borderRadius: theme.radiusUsage.input,
-          alignItems: "center", justifyContent: "center", overflow: "hidden",
-          // The wording-derived tint, so the row is legible at a glance rather
-          // than eight identical grey squares.
-          backgroundColor: artwork ? theme.colors.surfaceSecondary : `${glyph.tint}1A`,
-        }}
-      >
-        {artwork ? (
-          <Image source={{ uri: artwork }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
-        ) : (
-          <Icon name={glyph.name} size="standard" color={glyph.tint} decorative />
-        )}
+      <View style={{ padding: theme.spacing.base }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <AppText variant="caption" color="secondary" style={{ fontWeight: "800", letterSpacing: 0.8 }}>MOST RELEVANT</AppText>
+          <View style={{ width: 34, height: 3, borderRadius: 2, backgroundColor: theme.colors.brandPrimary }} />
+        </View>
+        <AppText variant="title" numberOfLines={2} style={{ marginTop: theme.spacing.sm }}>{issue.label}</AppText>
+        <View style={{ marginTop: theme.spacing.sm, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <AppText variant="caption" color="secondary">{issue.categoryName}</AppText>
+          <AppText variant="bodySmall" style={{ fontWeight: "800" }}>Start booking →</AppText>
+        </View>
       </View>
-      <AppText variant="caption" numberOfLines={2} style={{ textAlign: "center" }}>
-        {issue.label}
-      </AppText>
+    </Pressable>
+  );
+}
+
+function ProblemCard({ issue, index, onPress }: { issue: HomeQuickIssue; index: number; onPress: () => void }) {
+  const { theme } = useTheme();
+  const accentSurfaces = [theme.colors.statusInfoSurface, theme.colors.statusSuccessSurface, theme.colors.statusWarningSurface, theme.colors.accentVioletSurface];
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
+      accessibilityHint="Opens the booking assistant with this problem selected"
+      style={({ pressed }) => ({
+        width: 172,
+        minHeight: 126,
+        overflow: "hidden",
+        borderRadius: theme.radius.radiusSmall,
+        backgroundColor: theme.colors.surfaceDefault,
+        borderWidth: 1,
+        borderColor: theme.colors.borderSubtle,
+        opacity: pressed ? 0.82 : 1,
+      })}
+    >
+      <View style={{ flex: 1, padding: theme.spacing.md, backgroundColor: accentSurfaces[index % accentSurfaces.length], justifyContent: "space-between" }}>
+        <View style={{ alignSelf: "flex-start", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 3, backgroundColor: theme.colors.surfaceDefault }}>
+          <AppText variant="caption" color="secondary" numberOfLines={1} style={{ fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{issue.categoryName}</AppText>
+        </View>
+        <View>
+          <AppText variant="bodyStrong" numberOfLines={3} style={{ lineHeight: 19 }}>{issue.label}</AppText>
+          <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginTop: 5, fontWeight: "700" }}>Book this service â†’</AppText>
+        </View>
+      </View>
     </Pressable>
   );
 }

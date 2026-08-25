@@ -10,8 +10,16 @@ const BASE = "/v1/customer/home-services/assistant-bootstrap";
  * zipcode-serviceable ISSUES for a category and the customer's own
  * resumable draft, if any. Never calls DeepSeek (see
  * HomeServiceChatbotBookingService.get_assistant_bootstrap). */
-export async function getAssistantBootstrap(categorySlug: string, zipcode: string | null) {
-  const query = new URLSearchParams({ category_slug: categorySlug, ...(zipcode ? { zipcode } : {}) });
+export async function getAssistantBootstrap(
+  categorySlug: string, zipcode: string | null, serviceGroupSlug?: string | null,
+  masterServiceId?: string | null,
+) {
+  const query = new URLSearchParams({
+    category_slug: categorySlug,
+    ...(zipcode ? { zipcode } : {}),
+    ...(serviceGroupSlug ? { service_group_slug: serviceGroupSlug } : {}),
+    ...(masterServiceId ? { master_service_id: masterServiceId } : {}),
+  });
   const res = await authenticatedRequest({ method: "GET", path: `${BASE}?${query.toString()}` });
   return parseApiSuccess(res.json, assistantBootstrapResponseSchema);
 }
@@ -32,12 +40,16 @@ export async function getAssistantBootstrap(categorySlug: string, zipcode: strin
  */
 export async function interpretOfferingSelectionText(
   categorySlug: string | null, zipcode: string | null, text: string, sessionId?: string | null,
+  serviceGroupSlug?: string | null,
+  masterServiceId?: string | null,
 ) {
   const res = await authenticatedRequest({
     method: "POST",
     path: `${BASE}/interpret`,
     body: {
       category_slug: categorySlug ?? undefined,
+      service_group_slug: serviceGroupSlug ?? undefined,
+      master_service_id: masterServiceId ?? undefined,
       zipcode: zipcode ?? undefined,
       text,
       session_id: sessionId ?? undefined,
@@ -59,12 +71,16 @@ export async function interpretOfferingSelectionText(
 export async function selectAssistantBootstrapIssue(
   categorySlug: string, zipcode: string | null, issueId: string,
   aiSessionId?: string | null, additionalIssueIds?: string[], language?: string | null,
+  serviceGroupSlug?: string | null,
+  masterServiceId?: string | null,
 ) {
   const res = await authenticatedRequest({
     method: "POST",
     path: `${BASE}/select-issue`,
     body: {
       category_slug: categorySlug, zipcode: zipcode ?? undefined, issue_id: issueId,
+      service_group_slug: serviceGroupSlug ?? undefined,
+      master_service_id: masterServiceId ?? undefined,
       ai_session_id: aiSessionId ?? undefined,
       additional_issue_ids: additionalIssueIds && additionalIssueIds.length > 0 ? additionalIssueIds : undefined,
       language: language ?? undefined,

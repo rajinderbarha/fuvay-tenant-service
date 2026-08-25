@@ -93,6 +93,11 @@ function DirectPaymentsPageInner() {
   // URL is the source of truth for queue + selection state (section 4).
   const tab       = params.get("status") ?? "needs_action";
   const method    = params.get("method") ?? "";
+  // Both were accepted and applied by the API all along, but no facet listed
+  // the values so nothing could offer them. Same URL-as-source-of-truth rule
+  // as every other filter here.
+  const serviceId    = params.get("service_id") ?? "";
+  const technicianId = params.get("technician_id") ?? "";
   const search    = params.get("q") ?? "";
   const range     = params.get("range") ?? "30d";
   const page      = Number(params.get("page") ?? "1");
@@ -107,6 +112,14 @@ function DirectPaymentsPageInner() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
+  /** Correction form for an existing declaration. The server versions every
+   *  declaration and rejects a write against a stale version, so the read
+   *  version is sent back as `expected_version`. */
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    amount: string; method: string; reference_id: string; note: string;
+    correction_reason: string; difference_reason: string;
+  }>({ amount: "", method: "", reference_id: "", note: "", correction_reason: "", difference_reason: "" });
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [searchDraft, setSearchDraft] = useState(search);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -129,6 +142,7 @@ function DirectPaymentsPageInner() {
     setError(null);
     homeServicesDirectPaymentsApi.list({
       status: tab, method: method || undefined, search: search || undefined,
+      service_id: serviceId || undefined, technician_id: technicianId || undefined,
       date_from: dateFrom, page, limit,
     })
       .then(d => { setQueue(d); setLastUpdated(new Date()); })
@@ -140,7 +154,7 @@ function DirectPaymentsPageInner() {
           : { message: "We couldn't load direct payments." });
       })
       .finally(() => setLoading(false));
-  }, [tab, method, search, dateFrom, page, limit]);
+  }, [tab, method, search, serviceId, technicianId, dateFrom, page, limit]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSearchDraft(search); }, [search]);
@@ -193,11 +207,34 @@ function DirectPaymentsPageInner() {
     }
   }
 
+  async function submitCorrection() {
+    if (!detail) return;
+    const pd = (detail.provider_declaration ?? {}) as { version?: number };
+    await run("edit", () => homeServicesDirectPaymentsApi.correctDeclaration(detail.record.id, {
+      // Optimistic-concurrency guard: if the customer confirmed (or anyone
+      // else corrected) since this panel was loaded, the server rejects the
+      // write rather than silently overwriting the newer state.
+      expected_version: typeof pd.version === "number" ? pd.version : undefined,
+      amount: editForm.amount.trim() || undefined,
+      method: editForm.method.trim() || undefined,
+      reference_id: editForm.reference_id.trim() || undefined,
+      note: editForm.note.trim() || undefined,
+      correction_reason: editForm.correction_reason.trim() || undefined,
+      // The server REQUIRES this whenever the declared amount differs from the
+      // server-resolved expected amount (DIRECT_PAYMENT_DIFFERENCE_REASON_
+      // REQUIRED). It is a separate field from `correction_reason`: one
+      // explains why the record changed, the other why the money differs.
+      difference_reason: editForm.difference_reason.trim() || undefined,
+    }), "Declaration corrected. The customer sees the updated amount.");
+    setEditOpen(false);
+  }
+
   function doExport() {
     run("export", async () => {
       const data = await homeServicesDirectPaymentsApi.export({
         status: tab, method: method || undefined,
         date_from: dateFrom, search: search || undefined,
+        service_id: serviceId || undefined, technician_id: technicianId || undefined,
       });
       const head = data.fields.join(",");
       const body = data.rows.map(r =>
@@ -346,6 +383,12 @@ function DirectPaymentsPageInner() {
             <Select value={method} onChange={v => setParam({ method: v, page: "1" })} width={130}
                     options={[{ value: "", label: "All methods" },
                               ...(queue?.filters.methods ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
+            <Select value={serviceId} onChange={v => setParam({ service_id: v, page: "1" })} width={150}
+                    options={[{ value: "", label: "All services" },
+                              ...(queue?.filters.services ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
+            <Select value={technicianId} onChange={v => setParam({ technician_id: v, page: "1" })} width={150}
+                    options={[{ value: "", label: "All technicians" },
+                              ...(queue?.filters.technicians ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
           </div>
 
           {/* status tabs */}
@@ -449,6 +492,18 @@ function DirectPaymentsPageInner() {
                 () => homeServicesDirectPaymentsApi.openDispute(detail.record.id,
                   "The customer reports a different amount for this direct payment."),
                 "Payment dispute opened in the Complaints & Resolution Center.")}
+              onEdit={() => {
+                const pd = detail.provider_declaration ?? {};
+                setEditForm({
+                  amount: String(pd.amount ?? ""),
+                  method: String(pd.method ?? ""),
+                  reference_id: String(pd.reference_id ?? ""),
+                  note: String(pd.note ?? ""),
+                  correction_reason: "",
+                  difference_reason: String(pd.difference_reason ?? ""),
+                });
+                setEditOpen(true);
+              }}
             />
           ) : (
             <Card>
@@ -479,15 +534,109 @@ function DirectPaymentsPageInner() {
           Last updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
         </p>
       )}
+
+      {/* Correct a declaration before the customer confirms it. The endpoint
+          (PATCH .../declaration) existed all along; the button that should
+          have opened this had no handler. The expected amount is deliberately
+          NOT editable — it is resolved server-side from the approved estimate
+          / invoice / booking snapshot and the API ignores any client value. */}
+      {editOpen && detail && (() => {
+        const expected = Number(detail.record.expected_amount ?? NaN);
+        const entered = Number(editForm.amount);
+        const amountDiffers = Number.isFinite(expected) && Number.isFinite(entered)
+          && expected.toFixed(2) !== entered.toFixed(2);
+        return (
+        <div role="dialog" aria-modal="true"
+          onClick={e => { if (e.target === e.currentTarget) setEditOpen(false); }}
+          style={{ position: "fixed", inset: 0, zIndex: 900, display: "grid", placeItems: "center",
+            background: "rgba(0,0,0,.5)", padding: 20 }}>
+          <Card style={{ width: "min(520px,100%)", maxHeight: "88vh", overflowY: "auto" }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
+              Correct declaration
+            </h2>
+            <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
+              {typeof detail.available_actions.edit_declaration_hint === "string"
+                ? detail.available_actions.edit_declaration_hint
+                : "Available before customer confirmation"}
+              . Every correction is versioned and visible to the customer.
+            </p>
+
+            <label style={dpLbl()}>Amount received (₹)</label>
+            <input value={editForm.amount} type="number" min="0" step="0.01"
+              onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} style={dpField()} />
+
+            <label style={dpLbl()}>Payment method</label>
+            <select value={editForm.method}
+              onChange={e => setEditForm(f => ({ ...f, method: e.target.value }))} style={dpField()}>
+              <option value="">Unchanged</option>
+              {/* Methods come from the record itself rather than a hardcoded
+                  list, so this can never offer one the backend rejects. */}
+              {["onsite_cash", "onsite_upi", "onsite_card", "onsite_bank_transfer", "onsite_other"].map(m => (
+                <option key={m} value={m}>{m.replace("onsite_", "").replace(/_/g, " ")}</option>
+              ))}
+            </select>
+
+            <label style={dpLbl()}>Reference id</label>
+            <input value={editForm.reference_id}
+              onChange={e => setEditForm(f => ({ ...f, reference_id: e.target.value }))} style={dpField()} />
+
+            <label style={dpLbl()}>Note</label>
+            <textarea rows={2} value={editForm.note}
+              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+              style={{ ...dpField(), height: "auto", resize: "vertical" }} />
+
+            <label style={dpLbl()}>Why is this being corrected?</label>
+            <textarea rows={2} value={editForm.correction_reason}
+              onChange={e => setEditForm(f => ({ ...f, correction_reason: e.target.value }))}
+              placeholder="Recorded against the correction for audit."
+              style={{ ...dpField(), height: "auto", resize: "vertical" }} />
+
+            {/* The server rejects a corrected amount that differs from the
+                expected amount unless a difference reason is supplied. Asking
+                for it only when it actually applies keeps the common case to
+                one reason field instead of two. */}
+            {amountDiffers && (
+              <>
+                <label style={dpLbl()}>
+                  Why does this differ from the expected {money(String(detail.record.expected_amount ?? ""))}?
+                </label>
+                <textarea rows={2} value={editForm.difference_reason}
+                  onChange={e => setEditForm(f => ({ ...f, difference_reason: e.target.value }))}
+                  placeholder="Required when the amount received is not the expected amount."
+                  style={{ ...dpField(), height: "auto", resize: "vertical" }} />
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+              <Btn variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Btn>
+              <Btn variant="primary" loading={action === "edit"}
+                disabled={!editForm.correction_reason.trim()
+                  || (amountDiffers && !editForm.difference_reason.trim())}
+                onClick={submitCorrection}>Save correction</Btn>
+            </div>
+          </Card>
+        </div>
+        );
+      })()}
     </div>
   );
 }
 
+function dpLbl(): React.CSSProperties {
+  return { display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)",
+    margin: "10px 0 5px" };
+}
+function dpField(): React.CSSProperties {
+  return { width: "100%", height: 36, padding: "0 10px", fontSize: 13,
+    background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8,
+    color: "var(--text-primary)", fontFamily: "inherit", boxSizing: "border-box" };
+}
+
 /* ── Detail pane ─────────────────────────────────────────────────────── */
 
-function DetailPane({ d, busy, onRemind, onDispute }: {
+function DetailPane({ d, busy, onRemind, onDispute, onEdit }: {
   d: HsDpDetail; busy: string | null;
-  onRemind: () => void; onDispute: () => void;
+  onRemind: () => void; onDispute: () => void; onEdit: () => void;
 }) {
   const rec = d.record;
   const pd = d.provider_declaration;
@@ -688,7 +837,10 @@ function DetailPane({ d, busy, onRemind, onDispute }: {
             Send confirmation reminder
           </Btn>
           <div>
-            <Btn variant="secondary" icon={<Pencil size={14}/>} disabled={!canEdit}>Edit declaration</Btn>
+            {/* This button had no onClick at all: when the server allowed
+                editing it enabled itself and did nothing. */}
+            <Btn variant="secondary" icon={<Pencil size={14}/>} disabled={!canEdit}
+                 onClick={onEdit}>Edit declaration</Btn>
             <p style={{ fontSize: 10.5, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
               {typeof d.available_actions.edit_declaration_hint === "string"
                 ? d.available_actions.edit_declaration_hint

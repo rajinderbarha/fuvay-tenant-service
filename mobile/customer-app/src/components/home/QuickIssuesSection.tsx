@@ -2,7 +2,7 @@ import React from "react";
 import { View, Pressable, ScrollView } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
-import { Icon } from "../Icon";
+import { HomeGlyph } from "./HomeGlyph";
 import { HomeQuickIssue } from "../../domain/customerHome";
 import { resolveQuickIssueIcon } from "../../domain/quickIssueIcon";
 
@@ -73,7 +73,7 @@ export function QuickIssuesSection({ issues, onPressIssue }: QuickIssuesSectionP
                   ...theme.shadow.sm,
                 }}
               >
-                <Icon name={icon.name} size="navigation" color={icon.onTint} decorative />
+                <HomeGlyph name={icon.name} size="navigation" color={icon.onTint} decorative />
               </View>
               <AppText variant="caption" align="center" numberOfLines={2}>
                 {issue.label}

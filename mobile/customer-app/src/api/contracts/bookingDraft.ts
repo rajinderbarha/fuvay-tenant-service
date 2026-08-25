@@ -20,9 +20,13 @@ export const bookingDraftResponseSchema = z.object({
   city: z.string().nullable(),
   zipcode: z.string().nullable(),
   issue_summary: z.string().nullable(),
-  serviceability_status: z.string(),
-  price_status: z.string(),
-  provider_match_status: z.string(),
+  // Drafts created before these checks run carry real SQL NULL values.
+  // Requiring strings here made a healthy assistant-bootstrap response fail
+  // parsing whenever the backend included such a resumable draft, even though
+  // the current product decision deliberately starts a new request.
+  serviceability_status: z.string().nullable(),
+  price_status: z.string().nullable(),
+  provider_match_status: z.string().nullable(),
   price_snapshot: z.record(z.string(), z.unknown()).nullable(),
   expires_at: z.string().nullable(),
   created_at: z.string().nullable(),

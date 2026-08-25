@@ -94,6 +94,7 @@ export type ExceptionalRouteName =
   | "InvalidAccess";
 
 export type PublicRouteName =
+  | "Welcome"
   | "LoginMethod"
   | "VerifyLoginOtp"
   | "PasswordLogin"

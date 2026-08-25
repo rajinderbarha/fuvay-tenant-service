@@ -22,9 +22,9 @@ describe("resolveDestination — route resolution", () => {
     expect(resolveDestination(baseSnapshot({ bootstrap: "initializing" }))).toEqual({ tree: "Bootstrap" });
   });
 
-  it("ready + unauthenticated → public placeholder", () => {
+  it("ready + unauthenticated → welcome screen", () => {
     expect(resolveDestination(baseSnapshot({ auth: "unauthenticated" }))).toEqual({
-      tree: "PublicStack", screen: "LoginMethod",
+      tree: "PublicStack", screen: "Welcome",
     });
   });
 

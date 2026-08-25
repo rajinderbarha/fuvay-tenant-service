@@ -56,7 +56,7 @@ describe("MyBookingsScreen chrome", () => {
     expect(screen.queryByLabelText("Search bookings")).toBeNull();
     expect(screen.queryByLabelText("Filter bookings")).toBeNull();
     expect(screen.getByLabelText("Search and filter bookings")).toBeTruthy();
-    expect(screen.getByText("My Bookings")).toBeTruthy();
+    expect(screen.getByText("My bookings")).toBeTruthy();
   });
 
   it("opens the search box and the filter control together on demand", () => {

@@ -1,6 +1,0 @@
-test_file,tests,category
-lib/ux04/__tests__/provenance.test.ts,5,"domain preservation, ServiceBooking provenance"
-components/ux04/__tests__/FieldOpsJobDetail.test.tsx,2,"domain preservation, model-specific sections"
-components/ux04/__tests__/PartsRequestList.test.tsx,7,"workflow behavior, UI states, authorization presentation, security"
-browser-tests/smoke.spec.ts,20,"browser: console/page/hydration errors, pipeline labels, model sections (x3 projects = 60 executions)"
-browser-tests/keyboard-a11y.spec.ts,9,"browser: keyboard/focus, axe-core accessibility (x3 projects = 27 executions)"

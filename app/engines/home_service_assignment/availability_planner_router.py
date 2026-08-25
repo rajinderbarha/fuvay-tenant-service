@@ -41,6 +41,13 @@ async def get_availability_planner(
     date_from: str | None = Query(None, alias="from"),
     date_to: str | None = Query(None, alias="to"),
     staff_id: uuid.UUID | None = Query(None),
+    search: str | None = Query(None, max_length=120),
+    designation: str | None = Query(None, max_length=100),
+    capability: uuid.UUID | None = Query(None),
+    availability: str | None = Query(None, pattern="^(available|unavailable)$"),
+    focus_date: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     user: UserContext = Depends(require_staff_or_above),
     db: AsyncSession = Depends(get_db),
 ):
@@ -49,14 +56,21 @@ async def get_availability_planner(
     try:
         d_from = dt.date.fromisoformat(date_from) if date_from else today
         d_to = dt.date.fromisoformat(date_to) if date_to else (d_from + dt.timedelta(days=6))
+        d_focus = dt.date.fromisoformat(focus_date) if focus_date else d_from
     except ValueError:
         raise ServiceOSException("INVALID_DATE_RANGE", "from/to must be ISO dates (YYYY-MM-DD).", status_code=422)
     if d_to < d_from:
         raise ServiceOSException("INVALID_DATE_RANGE", "'to' must not be before 'from'.", status_code=422)
     if (d_to - d_from).days > 31:
         raise ServiceOSException("DATE_RANGE_TOO_WIDE", "Range must be 31 days or fewer.", status_code=422)
+    if d_focus < d_from or d_focus > d_to:
+        raise ServiceOSException("INVALID_FOCUS_DATE", "focus_date must be inside the requested range.", status_code=422)
 
-    data = await resolve_tenant_week(db, tid, d_from, d_to, staff_id=staff_id)
+    data = await resolve_tenant_week(
+        db, tid, d_from, d_to, staff_id=staff_id,
+        search=search, designation=designation, capability=capability,
+        availability=availability, focus_date=d_focus, limit=limit, offset=offset,
+    )
     return ok(data, request_id=_RID(r))
 
 

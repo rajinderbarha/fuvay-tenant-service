@@ -63,8 +63,8 @@ def test_all_onboarding_designations_are_controlled_dropdowns():
     assert '<select value={designation}' in TEAM_MODAL
     assert 'return "Select a designation."' in TEAM_MODAL
     assert 'placeholder="Senior Technician"' not in TEAM_MODAL
-    assert 'LocalSelect label="Role / Designation"' in TEAM_DIRECTORY
-    assert '<Select label="Designation" required' in TEAM_DETAIL
+    assert 'redirect("/home-services/team")' in TEAM_DIRECTORY
+    assert "AddTeamMemberWizard" in TEAM_DETAIL
 
 
 def test_designation_contract_is_enforced_server_side():

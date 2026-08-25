@@ -39,7 +39,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.invoice_payment.direct_payments_constants import (
@@ -357,6 +357,33 @@ class DirectPaymentsService:
             "updated_at":       _iso(pay.updated_at),
         }
 
+    async def _service_facet(self) -> list[dict]:
+        """Services this tenant has published, as filter options.
+
+        Built from the SAME column the filter matches on
+        (`ServiceJob.offering_id` -> `tenant_services.master_service_id`), so a
+        value offered here can never come back empty.
+        """
+        rows = (await self.db.execute(text("""
+            SELECT DISTINCT ms.id::text AS id, ms.service_name AS name
+              FROM tenant_services ts
+              JOIN master_services ms ON ms.id = ts.master_service_id
+             WHERE ts.tenant_id = :tid AND ts.is_active = true AND ts.deleted_at IS NULL
+             ORDER BY ms.service_name
+        """), {"tid": str(self.tenant_id)})).fetchall()
+        return [{"value": r.id, "label": r.name} for r in rows]
+
+    async def _technician_facet(self) -> list[dict]:
+        """Team members who can hold a job, as filter options."""
+        rows = (await self.db.execute(text("""
+            SELECT id::text AS id,
+                   COALESCE(NULLIF(TRIM(full_name), ''), designation, 'Technician') AS name
+              FROM provider_team_members
+             WHERE tenant_id = :tid AND status = 'active'
+             ORDER BY 2
+        """), {"tid": str(self.tenant_id)})).fetchall()
+        return [{"value": r.id, "label": r.name} for r in rows]
+
     async def _awaiting_provider_row(self, job, service_name=None) -> dict:
         """A job whose work is done and which requires a declaration that does
         not exist yet. Represented with a synthetic `job:{id}` reference -- no
@@ -420,7 +447,18 @@ class DirectPaymentsService:
         pay_rows = (await self.db.execute(pq)).all()
 
         # ── Jobs awaiting a provider declaration ────────────────────────────
-        declared_job_ids = {r[0].job_id for r in pay_rows}
+        # "Has this job been declared?" is a fact about the JOB, not about the
+        # caller's current filter. This set was built from the FILTERED
+        # `pay_rows`, so any filter that excluded a payment record made its job
+        # fall through to the awaiting-declaration branch below — e.g. filtering
+        # by a method the payment did not use, or a date range it falls outside,
+        # made an already-paid job reappear as "awaiting provider declaration"
+        # and invited a duplicate declaration for money already recorded.
+        # Resolve it from every payment record this tenant has, unfiltered.
+        declared_job_ids = set((await self.db.execute(
+            select(ServicePaymentRecord.job_id)
+            .where(ServicePaymentRecord.tenant_id == self.tenant_id)
+        )).scalars().all())
         jq = (select(ServiceJob)
               .where(ServiceJob.tenant_id == self.tenant_id,
                      ServiceJob.status.in_(WORK_DONE_JOB_STATUSES)))
@@ -480,6 +518,13 @@ class DirectPaymentsService:
             "filters": {
                 "statuses": [{"value": k, "label": v} for k, v in STATUS_LABELS.items()],
                 "methods":  [{"value": k, "label": v} for k, v in sorted(METHOD_LABELS.items())],
+                # `service_id` and `technician_id` were accepted and correctly
+                # applied by this query (see the where-clauses above) but no
+                # facet listed the available values, so no UI could offer them
+                # and the two most useful cuts of a finance queue — "which
+                # service" and "which technician" — were unreachable.
+                "services":    await self._service_facet(),
+                "technicians": await self._technician_facet(),
             },
             "pagination": {"page": page, "limit": limit, "total": total,
                            "pages": max(1, -(-total // limit))},

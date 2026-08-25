@@ -6,7 +6,8 @@ import { AppCard } from "../AppCard";
 import { AppIconButton } from "../AppIconButton";
 import { Icon } from "../Icon";
 import { CustomerAttachment } from "../../domain/customerBookingDetails";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { resolveMediaImageSource } from "../../domain/mediaUrl";
+import { getInMemoryAccessToken } from "../../api/session/tokenVault";
 
 /**
  * "View details" opens a real sheet with the full photos and note --
@@ -86,11 +87,11 @@ export function AttachmentsSummary({ attachments, note }: { attachments: Custome
                   </AppText>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs }}>
                     {attachments.map(a => {
-                      const uri = resolveMediaUrl(a.url);
-                      return uri ? (
+                      const source = resolveMediaImageSource(a.url, getInMemoryAccessToken());
+                      return source ? (
                         <Image
                           key={a.id}
-                          source={{ uri }}
+                          source={source}
                           style={{ width: 96, height: 96, borderRadius: theme.radiusUsage.input, backgroundColor: theme.colors.surfaceSecondary }}
                           resizeMode="cover"
                           accessibilityLabel="Booking photo"

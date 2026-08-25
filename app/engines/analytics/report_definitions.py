@@ -31,18 +31,38 @@ class ReportDefinition:
     report_name:     str
     scope:           str
     allowed_filters: List[str]
-    export_formats:  List[str] = field(default_factory=lambda: ["csv", "xlsx"])
+    # CSV only. `report_service.run_report` generates a file solely under
+    # `if export_format == "csv"`, and nothing in the codebase can write an
+    # xlsx (no openpyxl/xlsxwriter anywhere). Advertising "xlsx" meant a client
+    # could request it, get a run marked `completed` with `csv_content: null`,
+    # and never receive a file — confirmed live. Declare what we can actually
+    # deliver; re-add "xlsx" in the same commit that implements the writer.
+    export_formats:  List[str] = field(default_factory=lambda: ["csv"])
     sensitive_cols:  List[str] = field(default_factory=list)
     default_sort:    str = "created_at"
 
 
-_ADMIN_FILTERS = [
-    "date_from", "date_to", "category_id", "tenant_id",
-    "offering_id", "city", "zone_id", "status",
-]
-_PROVIDER_FILTERS = [
-    "date_from", "date_to", "category_id", "offering_id",
-    "staff_member_id", "status",
+# Same correction as the provider list below: the admin report SQL binds only
+# the date range (verified — zero references to city / zone_id / offering_id /
+# category_id / status anywhere in the admin queries), so advertising those
+# eight filters told a client it could narrow a report in ways the query never
+# honoured. Widen this only alongside the predicate that binds the column.
+_ADMIN_FILTERS = ["date_from", "date_to"]
+# `allowed_filters` is a PROMISE: `run_report` validates against it, and a
+# client builds its filter UI from it. Every provider report used to advertise
+# the full list below while `_generate_rows` bound only the dates into the SQL,
+# so category/offering/staff/status were accepted and silently ignored —
+# confirmed live, the jobs report returned the same 16 rows for
+# status=accepted, status=pending_assignment and a specific technician.
+#
+# Each report now advertises exactly what its own query applies. Widen a list
+# only in the same change that binds the column.
+_PROVIDER_FILTERS = ["date_from", "date_to"]
+
+#: service_jobs really has status / offering_id / category_id /
+#: assigned_staff_id, and the jobs query now binds all four.
+_PROVIDER_JOB_FILTERS = _PROVIDER_FILTERS + [
+    "status", "offering_id", "category_id", "staff_member_id",
 ]
 _SENSITIVE = ["customer_phone", "customer_email", "customer_name", "student_name",
               "student_phone", "student_email", "address_snapshot"]
@@ -79,13 +99,13 @@ _reg(ReportDefinition(
     report_key=RPT_ADMIN_FINANCIAL,
     report_name="Financial Report",
     scope=SCOPE_ADMIN,
-    allowed_filters=_ADMIN_FILTERS + ["payment_status", "commission_status"],
+    allowed_filters=_ADMIN_FILTERS,
 ))
 _reg(ReportDefinition(
     report_key=RPT_ADMIN_COMMISSION,
     report_name="Commission Report",
     scope=SCOPE_ADMIN,
-    allowed_filters=_ADMIN_FILTERS + ["commission_status"],
+    allowed_filters=_ADMIN_FILTERS,
 ))
 _reg(ReportDefinition(
     report_key=RPT_ADMIN_WALLET,
@@ -97,14 +117,14 @@ _reg(ReportDefinition(
     report_key=RPT_ADMIN_QUALITY,
     report_name="Quality & Reviews Report",
     scope=SCOPE_ADMIN,
-    allowed_filters=_ADMIN_FILTERS + ["review_rating"],
+    allowed_filters=_ADMIN_FILTERS,
     sensitive_cols=_SENSITIVE,
 ))
 _reg(ReportDefinition(
     report_key=RPT_ADMIN_COMPLAINT,
     report_name="Complaints & Disputes Report",
     scope=SCOPE_ADMIN,
-    allowed_filters=_ADMIN_FILTERS + ["complaint_status"],
+    allowed_filters=_ADMIN_FILTERS,
     sensitive_cols=_SENSITIVE,
 ))
 _reg(ReportDefinition(
@@ -143,14 +163,14 @@ _reg(ReportDefinition(
     report_key=RPT_PROVIDER_REVIEWS,
     report_name="Reviews & Ratings Report",
     scope=SCOPE_PROVIDER,
-    allowed_filters=_PROVIDER_FILTERS + ["review_rating"],
+    allowed_filters=_PROVIDER_FILTERS,
     sensitive_cols=_SENSITIVE,
 ))
 _reg(ReportDefinition(
     report_key=RPT_PROVIDER_COMPLAINTS,
     report_name="Complaints & Disputes Report",
     scope=SCOPE_PROVIDER,
-    allowed_filters=_PROVIDER_FILTERS + ["complaint_status"],
+    allowed_filters=_PROVIDER_FILTERS,
     sensitive_cols=_SENSITIVE,
 ))
 _reg(ReportDefinition(
@@ -163,7 +183,7 @@ _reg(ReportDefinition(
     report_key=RPT_PROVIDER_JOBS,
     report_name="Jobs Report",
     scope=SCOPE_PROVIDER,
-    allowed_filters=_PROVIDER_FILTERS,
+    allowed_filters=_PROVIDER_JOB_FILTERS,
     sensitive_cols=_SENSITIVE,
 ))
 _reg(ReportDefinition(

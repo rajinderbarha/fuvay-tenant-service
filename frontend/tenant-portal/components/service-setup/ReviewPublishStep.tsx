@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback } from "react";
 import { useApi, useAction } from "../../hooks/useApi";
-import { serviceSetupApi, type TenantEnabledService } from "../../lib/api";
+import { providerStatusApi, serviceSetupApi, type TenantEnabledService } from "../../lib/api";
 import { Btn, Badge, Skeleton } from "../shared/ui";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { PricingResolutionTest } from "./PricingResolutionTest";
@@ -19,7 +19,9 @@ export function ReviewPublishStep({ service, onPublished }: {
   const publishAction = useAction(useCallback(async () => {
     const result = await serviceSetupApi.validateForPublish(tsid);
     if (!result.valid) throw new Error("Cannot publish -- resolve the issues below first.");
-    return serviceSetupApi.publish(tsid);
+    const published = await serviceSetupApi.publish(tsid);
+    await providerStatusApi.refresh();
+    return published;
   }, [tsid]));
 
   async function handlePublish() {

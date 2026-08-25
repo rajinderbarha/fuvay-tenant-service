@@ -56,6 +56,16 @@ describe("available-slots contract", () => {
     expect(slots).toEqual([]);
   });
 
+  it("collapses duplicate physical slots before React renders them", () => {
+    const duplicate = REAL_ENVELOPE.slots[0];
+    const slots = adaptAvailableSlots(parseAvailableSlotsResponse({
+      slots: [duplicate, { ...duplicate, capacity: 9, already_booked: 2 }],
+    }));
+    expect(slots).toEqual([
+      { date: "2026-08-08", timeWindow: "13:00-14:00", daysAhead: 0 },
+    ]);
+  });
+
   it("rejects a payload missing the fields the picker actually needs", () => {
     // A silent pass here would render blank rows instead of surfacing drift.
     expect(() => parseAvailableSlotsResponse({ slots: [{ date: "2026-08-08" }] })).toThrow();

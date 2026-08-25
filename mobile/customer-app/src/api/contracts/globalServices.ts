@@ -1,13 +1,5 @@
-/**
- * DTO for GET /v1/customer/global-services and POST /v1/customer/
- * global-services/leads (app/engines/global_services). Fields copied
- * directly from PlatformGlobalService.to_dict() / GlobalServiceLead
- * .to_dict() -- nothing guessed. This list is intentionally NOT
- * serviceability-checked: it is shown to every customer regardless of
- * ZIP/address/vertical, unlike bookable_categories on the Home
- * aggregation.
- */
 import { z } from "zod";
+
 
 export const globalServiceDtoSchema = z.object({
   id: z.string(),

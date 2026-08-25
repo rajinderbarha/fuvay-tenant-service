@@ -7,9 +7,9 @@
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/fuvay-logo-native.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#071633"
+      "image": "./assets/splash-screen.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#0A5BFF"
     },
     "ios": {
       "supportsTablet": false,

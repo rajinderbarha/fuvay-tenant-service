@@ -11,16 +11,19 @@ available_actions (see bookings_jobs_stage_mapping.py) reusing the actual
 JOB_TRANSITIONS status machine already live in the execution engine — this
 does not invent a parallel action or status system.
 
-Scope of this pass (time-boxed per coordinator instruction): list + quick
-detail only. NOT built in this pass: Board view, export, SLA policy engine,
-column persistence, full Repair/quote-workflow wiring, direct-payment
-mutation. Those are reported as open gaps, not silently faked.
+This projection is the provider command-center contract: accurate SQL-backed
+stage/SLA/assignment/catalog/complaint filters, stable server pagination and
+sorting, tenant-wide KPI aggregates, quick detail, audited address reveal,
+workflow stages and direct-payment confirmation. Field execution remains in
+the native staff app and assignment remains in the canonical Dispatch Board.
 """
 from __future__ import annotations
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select, func, or_
+from pydantic import BaseModel, Field
+from sqlalchemy import select, func, or_, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_user, require_staff_or_above, UserContext
@@ -30,15 +33,16 @@ from app.schemas.base import ApiResponse, ok
 from app.exceptions import ServiceOSException
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 from app.engines.final_records.bookings_jobs_stage_mapping import (
-    map_job_status, compute_available_actions,
+    map_job_status, compute_available_actions, STAGE_STATUSES,
 )
-from app.engines.final_records.sla_summary import attach_sla
+from app.engines.final_records.sla_summary import attach_sla, sla_filter_condition
 from app.engines.final_records.bookings_jobs_kpis import compute_bookings_jobs_kpis
 from app.engines.invoice_payment.models import ServiceInvoice
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.complaints.models import CustomerComplaint
 from app.engines.quote_checklist.models import ServiceJobQuote
 from app.engines.admin_catalog.models import TenantService, MasterService, JobTypeDefinition
+from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 from app.engines.tenant_engine.customer_operational_access_policy import (
     evaluate as _access_evaluate, customer_alias as _customer_alias,
     masked_locality as _masked_locality, sanitize_projection as _sanitize_projection,
@@ -46,6 +50,12 @@ from app.engines.tenant_engine.customer_operational_access_policy import (
 from app.engines.tenant_engine.access_audit import record_address_access
 
 _pay_svc = ServicePaymentService()
+
+
+class ConfirmDirectPaymentRequest(BaseModel):
+    payment_mode: Literal["onsite_cash", "onsite_upi", "onsite_card", "bank_transfer"] = "onsite_cash"
+    collected_amount: float = Field(gt=0, le=100000000)
+    proof_media_url: str | None = Field(default=None, max_length=1000)
 
 router = APIRouter(
     prefix="/v1/tenant/home-services",
@@ -81,10 +91,15 @@ async def list_bookings_jobs(
     stage:    str | None = Query(None, description="display stage — see bookings_jobs_stage_mapping.STAGE_LABELS"),
     status:   str | None = Query(None, description="raw ServiceJob.status"),
     assignment_status: str | None = Query(None),
+    assigned_staff_id: uuid.UUID | None = Query(None),
+    job_type_id: uuid.UUID | None = Query(None),
     offering_id: uuid.UUID | None = Query(None, description="Master Service filter"),
-    sla:      str | None = Query(None, description="on_track | at_risk | breached (post-filtered, SLA is derived not a column)"),
+    sla:      str | None = Query(None, description="on_track | at_risk | breached (database-filtered before pagination)"),
     date_from: str | None = Query(None, description="scheduled_date >= (YYYY-MM-DD)"),
     date_to:   str | None = Query(None, description="scheduled_date <= (YYYY-MM-DD)"),
+    has_complaint: bool | None = Query(None),
+    sort_by: Literal["created_at", "scheduled_date", "updated_at", "job_number"] = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     limit:    int = Query(20, ge=1, le=100),
     offset:   int = Query(0, ge=0),
     user:     UserContext  = Depends(require_staff_or_above),
@@ -109,12 +124,25 @@ async def list_bookings_jobs(
         .where(ServiceJob.tenant_id == tenant_id, ServiceBooking.tenant_id == tenant_id)
     )
 
+    if stage:
+        stage_statuses = STAGE_STATUSES.get(stage)
+        if not stage_statuses:
+            raise ServiceOSException(error_code="INVALID_STAGE", detail="Unknown booking/job stage.", status_code=422)
+        q = q.where(ServiceJob.status.in_(stage_statuses))
+        count_q = count_q.where(ServiceJob.status.in_(stage_statuses))
+
     if status:
         q = q.where(ServiceJob.status == status)
         count_q = count_q.where(ServiceJob.status == status)
     if assignment_status:
         q = q.where(ServiceJob.assignment_status == assignment_status)
         count_q = count_q.where(ServiceJob.assignment_status == assignment_status)
+    if assigned_staff_id:
+        q = q.where(ServiceJob.assigned_staff_id == assigned_staff_id)
+        count_q = count_q.where(ServiceJob.assigned_staff_id == assigned_staff_id)
+    if job_type_id:
+        q = q.where(ServiceJob.job_type_id == job_type_id)
+        count_q = count_q.where(ServiceJob.job_type_id == job_type_id)
     if offering_id:
         q = q.where(ServiceJob.offering_id == offering_id)
         count_q = count_q.where(ServiceJob.offering_id == offering_id)
@@ -127,19 +155,47 @@ async def list_bookings_jobs(
         q = q.where(ServiceJob.scheduled_date <= parsed_to)
         count_q = count_q.where(ServiceJob.scheduled_date <= parsed_to)
     if search:
-        s = f"%{search.strip()}%"
+        escaped = search.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        s = f"%{escaped}%"
+        q = q.outerjoin(ProviderTeamMember, ProviderTeamMember.id == ServiceJob.assigned_staff_id)
+        count_q = count_q.outerjoin(ProviderTeamMember, ProviderTeamMember.id == ServiceJob.assigned_staff_id)
         cond = or_(
-            ServiceJob.job_number.ilike(s),
-            ServiceBooking.booking_number.ilike(s),
-            ServiceBooking.customer_name.ilike(s),
-            ServiceBooking.customer_phone.ilike(s),
+            func.lower(ServiceJob.job_number).like(s, escape="\\"),
+            func.lower(ServiceBooking.booking_number).like(s, escape="\\"),
+            func.lower(ServiceBooking.customer_name).like(s, escape="\\"),
+            func.lower(ServiceBooking.customer_phone).like(s, escape="\\"),
+            func.lower(ProviderTeamMember.full_name).like(s, escape="\\"),
         )
         q = q.where(cond)
         count_q = count_q.where(cond)
 
+    if sla:
+        try:
+            sla_condition = sla_filter_condition(ServiceJob, sla)
+        except ValueError:
+            raise ServiceOSException(error_code="INVALID_SLA_STATUS", detail="Unknown SLA status.", status_code=422)
+        q = q.where(sla_condition)
+        count_q = count_q.where(sla_condition)
+
+    if has_complaint is not None:
+        open_complaint = select(CustomerComplaint.id).where(
+            CustomerComplaint.tenant_id == tenant_id,
+            CustomerComplaint.job_id == ServiceJob.id,
+            CustomerComplaint.status.notin_(("resolved", "closed", "withdrawn")),
+        ).exists()
+        q = q.where(open_complaint if has_complaint else ~open_complaint)
+        count_q = count_q.where(open_complaint if has_complaint else ~open_complaint)
+
     total = await db.scalar(count_q) or 0
 
-    q = q.order_by(ServiceJob.created_at.desc()).limit(limit).offset(offset)
+    sort_column = {
+        "created_at": ServiceJob.created_at,
+        "scheduled_date": ServiceJob.scheduled_date,
+        "updated_at": ServiceJob.updated_at,
+        "job_number": ServiceJob.job_number,
+    }[sort_by]
+    order = asc(sort_column) if sort_dir == "asc" else desc(sort_column)
+    q = q.order_by(order.nulls_last(), ServiceJob.id.desc()).limit(limit).offset(offset)
     rows = (await db.execute(q)).all()
 
     staff_uuid = uuid.UUID(user.user_id) if user.user_id else None
@@ -180,14 +236,20 @@ async def list_bookings_jobs(
         )).all()
         job_type_labels = {str(jid): label for jid, label in jt_rows}
 
+    staff_ids = {job.assigned_staff_id for job in page_jobs if job.assigned_staff_id}
+    staff_names: dict[str, str] = {}
+    if staff_ids:
+        staff_rows = (await db.execute(
+            select(ProviderTeamMember.id, ProviderTeamMember.full_name).where(
+                ProviderTeamMember.tenant_id == tenant_id,
+                ProviderTeamMember.id.in_(staff_ids),
+            )
+        )).all()
+        staff_names = {str(sid): name for sid, name in staff_rows}
+
     items = []
     for job, booking in rows:
         stage_info = map_job_status(job.status, job.assignment_status)
-        if stage and stage_info["stage"] != stage:
-            continue
-        job_sla = sla_map.get(str(job.id)) or {}
-        if sla and job_sla.get("sla_status", "").lower() != sla.lower():
-            continue
         available_actions = compute_available_actions(job.status, job.assignment_status)
 
         # ── Field-level authorization: CustomerOperationalAccessPolicy is the
@@ -226,6 +288,7 @@ async def list_bookings_jobs(
             "scheduled_date":        job.scheduled_date.isoformat() if job.scheduled_date else None,
             "scheduled_time_window": job.scheduled_time_window,
             "assigned_staff_id": str(job.assigned_staff_id) if job.assigned_staff_id else None,
+            "assigned_staff_name": staff_names.get(str(job.assigned_staff_id)) if job.assigned_staff_id else None,
             "assignment_status": job.assignment_status,
             "status":            job.status,
             "stage":             stage_info["stage"],
@@ -251,19 +314,33 @@ async def list_bookings_jobs(
         .distinct()
     )).all()
 
-    # NOTE: when `stage` filter is applied, `total` currently reflects the
-    # pre-stage-filter count (stage is derived, not a DB column, so it can't
-    # be pushed into count_q without duplicating the mapping logic in SQL).
-    # Honest limitation for this pass — see final report.
+    available_staff_rows = (await db.execute(
+        select(ProviderTeamMember.id, ProviderTeamMember.full_name)
+        .where(
+            ProviderTeamMember.tenant_id == tenant_id,
+            ProviderTeamMember.deleted_at.is_(None),
+            ProviderTeamMember.status == "active",
+        )
+        .order_by(ProviderTeamMember.full_name.asc())
+    )).all()
+    available_job_type_rows = (await db.execute(
+        select(ServiceJob.job_type_id, JobTypeDefinition.label)
+        .join(JobTypeDefinition, JobTypeDefinition.id == ServiceJob.job_type_id)
+        .where(ServiceJob.tenant_id == tenant_id, ServiceJob.job_type_id.is_not(None))
+        .distinct()
+        .order_by(JobTypeDefinition.label.asc())
+    )).all()
+
     return ok({
         "items":  items,
         "total":  total,
         "limit":  limit,
         "offset": offset,
-        "stage_filtered": stage is not None,
         "summary": summary,
         "available_filters": {
             "services": [{"offering_id": str(mid), "name": name} for mid, name in available_service_rows],
+            "technicians": [{"staff_member_id": str(sid), "name": name} for sid, name in available_staff_rows],
+            "job_types": [{"job_type_id": str(jid), "label": label} for jid, label in available_job_type_rows],
         },
         "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
     }, _RID(r), "final_records")
@@ -435,7 +512,7 @@ async def get_job_exact_address(
              summary="Provider confirms a direct customer payment for this job's invoice")
 async def confirm_job_payment(
     job_id: uuid.UUID,
-    body: dict,
+    body: ConfirmDirectPaymentRequest,
     r:    Request,
     user: UserContext  = Depends(require_owner_or_office_staff_mutation),
     db:   AsyncSession = Depends(get_db),
@@ -470,9 +547,9 @@ async def confirm_job_payment(
     try:
         data = await _pay_svc.record_onsite_payment(
             db, str(invoice.id), str(tenant_id),
-            payment_mode=body.get("payment_mode", "onsite_cash"),
-            collected_amount=float(body.get("collected_amount", invoice.customer_payable_amount or 0)),
-            proof_media_url=body.get("proof_media_url"),
+            payment_mode=body.payment_mode,
+            collected_amount=body.collected_amount,
+            proof_media_url=body.proof_media_url,
             user_id=str(user.user_id),
             staff_member_id=str(getattr(user, "staff_member_id", None) or user.user_id),
             request_id=_RID(r),

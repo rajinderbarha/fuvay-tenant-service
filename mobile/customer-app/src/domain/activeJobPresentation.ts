@@ -49,6 +49,15 @@ const PRESENTATION: Record<ActiveJobStage, ActiveJobPresentation> = {
   },
 };
 
+const PROVIDER_ACCEPTED_PRESENTATION: ActiveJobPresentation = {
+  title: "Provider accepted",
+  explanation: "A verified provider has accepted your booking.",
+  tone: "info",
+  nextExpected: "A technician will be assigned for your visit next.",
+  showTechnicianCard: false,
+  showSchedule: false,
+};
+
 const KNOWN_ACTIVE_STAGES: ReadonlySet<string> = new Set(["assignment", "scheduled", "on_the_way"]);
 
 /** Fails safe to `null` for every stage this phase does not own -- the
@@ -60,7 +69,10 @@ export function resolveActiveJobStage(jobStage: string | null | undefined): Acti
   return null;
 }
 
-export function resolveActiveJobPresentation(stage: ActiveJobStage): ActiveJobPresentation {
+export function resolveActiveJobPresentation(stage: ActiveJobStage, rawStatus?: string | null): ActiveJobPresentation {
+  if (stage === "assignment" && rawStatus === "accepted") {
+    return PROVIDER_ACCEPTED_PRESENTATION;
+  }
   return PRESENTATION[stage];
 }
 
@@ -97,6 +109,19 @@ export function resolveJobProgressStepState(stepKey: string, activeStage: Active
 export function formatScheduleWindow(scheduledDate: string | null, scheduledTimeWindow: string | null): string | null {
   if (!scheduledDate) return null;
   const display = toDisplayDate(parseServerDate(scheduledDate, "scheduled_date"))
-    .toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-  return scheduledTimeWindow ? `${display} · ${scheduledTimeWindow}` : display;
+    .toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return scheduledTimeWindow ? `${display} · ${formatTimeWindow(scheduledTimeWindow)}` : display;
+}
+
+function formatTimeWindow(value: string): string {
+  const match = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  const [, startHour, startMinute, endHour, endMinute] = match;
+  const label = (hour: string, minute: string) => {
+    const numericHour = Number(hour);
+    const period = numericHour >= 12 ? "PM" : "AM";
+    const clockHour = numericHour % 12 || 12;
+    return `${clockHour}:${minute} ${period}`;
+  };
+  return `${label(startHour, startMinute)}–${label(endHour, endMinute)}`;
 }

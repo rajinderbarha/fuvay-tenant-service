@@ -22,6 +22,25 @@ async def _tenant_owner_id(db: AsyncSession, tenant_id) -> uuid.UUID | None:
     return getattr(t, "owner_user_id", None) if t else None
 
 
+async def _staff_user_id(db: AsyncSession, staff_member_id) -> uuid.UUID | None:
+    """Map a provider_team_members.id to the login user it belongs to.
+
+    Team members exist without a login (a technician who was never invited),
+    in which case there is no one to notify and None is returned.
+    """
+    if not staff_member_id:
+        return None
+    from sqlalchemy import text as _text
+    try:
+        row = (await db.execute(
+            _text("SELECT user_id FROM provider_team_members WHERE id = :sid"),
+            {"sid": str(staff_member_id)},
+        )).fetchone()
+    except Exception:
+        return None
+    return row.user_id if row and row.user_id else None
+
+
 def _add(db, *, user_id, tenant_id, ntype, title, body, url, source_id):
     db.add(InAppNotification(
         user_id=user_id, tenant_id=tenant_id,
@@ -44,8 +63,15 @@ async def notify_provider_new_review(db: AsyncSession, review: CustomerReview) -
     owner = await _tenant_owner_id(db, review.tenant_id)
     if owner:
         recipients.add(str(owner))
-    if review.staff_member_id:
-        recipients.add(str(review.staff_member_id))
+    # `staff_member_id` is a provider_team_members.id, NOT a users.id, but it
+    # was being used directly as the notification's `user_id` -- which would
+    # address the notification to a user that does not exist, so the reviewed
+    # technician would never see it. This never fired in practice because
+    # nothing ever populated staff_member_id; now that submit_review resolves
+    # it from the job, the team member has to be mapped to its login user.
+    staff_user_id = await _staff_user_id(db, review.staff_member_id)
+    if staff_user_id:
+        recipients.add(str(staff_user_id))
     for rid in recipients:
         _add(db, user_id=uuid.UUID(rid), tenant_id=review.tenant_id,
              ntype="review.new", title=title, body=body,

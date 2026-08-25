@@ -1,692 +1,1766 @@
 "use client";
-/**
- * Home Services Dispatch Board — read projection + assignment panel over the
- * canonical HomeServiceJobAssignmentService (app/engines/home_service_assignment).
- *
- * This page does NOT select or change the provider business (ServiceOS
- * matching already resolved that when the booking was confirmed), does not
- * compute customer prices, does not create bookings, and does not implement
- * a second assignment engine -- it renders GET /v1/tenant/home-services/dispatch
- * and /jobs/{id}/assignment-options, and calls the EXISTING assign/reassign/
- * cancel-assignment routes at /v1/provider/service-jobs/* for mutations.
- *
- * Scope proven this pass: day view, unassigned-jobs list, technician-schedule
- * timeline (row-per-technician, jobs rendered as blocks), assignment panel
- * with eligible + excluded technicians (real exclusion reason codes from the
- * backend), assign/reassign/unassign actions, manual refresh. NOT built this
- * pass: drag-and-drop, week view, auto-assignment (none exists canonically to
- * reuse), true real-time push (bounded manual refresh only) -- see the
- * session's final report for the complete disclosure.
- */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, CheckCircle2,
-  User as UserIcon, X, Info, CalendarDays, Truck, Users as UsersIcon,
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  ExternalLink,
+  Filter,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  Truck,
+  UserCheck,
+  UserPlus,
+  UserX,
+  Users,
+  X,
 } from "lucide-react";
-import { Card, Badge, Btn, Skeleton } from "../../../../components/shared/ui";
+import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import {
-  homeServicesDispatchApi, ServiceOSError,
-  type HsDispatchProjection, type HsDispatchJobSummary, type HsAssignmentOptions,
+  Alert,
+  Button,
+  Card,
+  Input,
+  KpiGrid,
+  Modal,
+  PageHeader,
+  PageShell,
+  Pagination,
+  Select,
+  Skeleton,
+  StatusBadge,
+  SummaryCard,
+  Textarea,
+} from "@serviceos/design-system";
+import {
+  homeServicesDispatchApi,
+  serviceJobAssignmentApi,
+  ServiceOSError,
+  type HsAssignmentOptions,
   type HsAssignmentOptionTechnician,
+  type HsDispatchJobSummary,
+  type HsDispatchProjection,
+  type ProviderSlot,
 } from "../../../../lib/api";
+import { useApi } from "../../../../hooks/useApi";
 
-const BOARD_START_HOUR = 9;
-const BOARD_END_HOUR = 18;
-const HOUR_LABELS = Array.from({ length: BOARD_END_HOUR - BOARD_START_HOUR + 1 }, (_, i) => {
-  const h = BOARD_START_HOUR + i;
-  return h === 12 ? "12 PM" : h > 12 ? `${h - 12} PM` : `${h} AM`;
-});
-
-/** Best-effort parse of a free-form scheduled_time_window into an hour range
- * within the board's 9AM-6PM window. Returns null (not fabricated) when the
- * label can't be honestly resolved to a time -- those jobs render in a
- * separate "Unscheduled time" strip instead of a fake position. */
-function parseTimeWindow(label: string | null): { startHour: number; endHour: number } | null {
-  if (!label) return null;
-  const rangeMatch = label.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
-  if (rangeMatch) {
-    const to24 = (h: string, m: string | undefined, ap: string) => {
-      let hour = parseInt(h, 10) % 12;
-      if (/pm/i.test(ap)) hour += 12;
-      return hour + (m ? parseInt(m, 10) / 60 : 0);
-    };
-    const start = to24(rangeMatch[1], rangeMatch[2], rangeMatch[3]);
-    const end = to24(rangeMatch[4], rangeMatch[5], rangeMatch[6]);
-    if (end > start) return { startHour: start, endHour: end };
-  }
-  const lower = label.toLowerCase();
-  if (lower === "morning") return { startHour: 9, endHour: 12 };
-  if (lower === "afternoon") return { startHour: 12, endHour: 15 };
-  if (lower === "evening") return { startHour: 15, endHour: 18 };
-  return null;
-}
-
-/** Renders a parsed hour range (e.g. {startHour:9, endHour:12}) as "9:00 AM – 12:00 PM".
- * Only ever called on ranges parseTimeWindow already resolved -- never invents a time. */
-function fmtHourRange(startHour: number, endHour: number): string {
-  const fmt = (h: number) => {
-    const totalMin = Math.round(h * 60);
-    const hh24 = Math.floor(totalMin / 60);
-    const mm = totalMin % 60;
-    const ap = hh24 >= 12 ? "PM" : "AM";
-    const hh12 = hh24 % 12 === 0 ? 12 : hh24 % 12;
-    return `${hh12}:${String(mm).padStart(2, "0")} ${ap}`;
-  };
-  return `${fmt(startHour)} – ${fmt(endHour)}`;
-}
-
-function todayISO(): string {
-  // Local calendar date, never round-tripped through UTC -- toISOString()
-  // converts to UTC first, which silently shifts the date near local
-  // midnight for any timezone ahead of UTC (e.g. IST, UTC+5:30).
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
-}
-
-const MATCH_REASON_LABELS: Record<string, string> = {
-  same_tenant: "Same business",
-  active: "Active",
-  technician: "Technician",
-};
-
+const PAGE_PATH = "/home-services/dispatch";
+const PAGE_SIZES = [25, 50, 100];
+const DAY_START = 8;
+const DAY_END = 20;
 const EXCLUSION_LABELS: Record<string, string> = {
-  STAFF_INACTIVE: "Inactive",
-  STAFF_NOT_VERIFIED: "Not verified",
-  JOB_TYPE_UNSUPPORTED: "Job type unsupported",
+  STAFF_INACTIVE: "Inactive or assignment disabled",
+  STAFF_NOT_VERIFIED: "Verification incomplete",
+  JOB_TYPE_UNSUPPORTED: "Required service skill is missing",
+  SERVICE_NOT_CONFIGURED: "Provider service is not configured",
   TYPE_UNSUPPORTED: "Equipment type unsupported",
   BRAND_UNSUPPORTED: "Brand unsupported",
-  OUTSIDE_AVAILABILITY: "No availability configured",
-  SCHEDULE_CONFLICT: "Schedule conflict",
-  CAPACITY_EXCEEDED: "Capacity exceeded",
-  OUTSIDE_COVERAGE: "Outside coverage area",
-  TENANT_MISMATCH: "Different tenant",
+  OUTSIDE_AVAILABILITY: "Working hours are not configured",
+  SCHEDULE_CONFLICT: "Overlapping assignment",
+  CAPACITY_EXCEEDED: "Capacity reached",
+  OUTSIDE_COVERAGE: "Outside coverage",
+  TENANT_MISMATCH: "Different business",
 };
 
-export default function DispatchBoardPage() {
-  // Dark-by-default on first visit is already the app's real behavior --
-  // app/layout.tsx's ThemeProvider has defaultPreference="dark" and its
-  // inline bootstrap script defaults data-theme to "dark" whenever
-  // localStorage["serviceos-theme"] is unset. No page-level override is
-  // needed (and hooks/useTheme.ts must NOT be used here -- it reads/writes
-  // a different, disconnected "serviceos-tenant-theme" key that has no
-  // effect on the real rendered theme; wiring it in this page briefly
-  // caused it to fight with and clobber the real ThemeProvider's value).
-  const [date, setDate] = useState(todayISO());
-  const [view, setView] = useState<"day" | "week">("day");
-  const [board, setBoard] = useState<HsDispatchProjection | null>(null);
+function localToday() {
+  const value = new Date();
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+function shiftDate(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+function formatDate(value: string, weekday = true) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
+    ...(weekday ? { weekday: "short" } : {}),
+    day: "2-digit",
+    month: "short",
+  });
+}
+function parsePage(value: string | null) {
+  const parsed = Number(value ?? 1);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+function parsePageSize(value: string | null) {
+  const parsed = Number(value ?? 25);
+  return PAGE_SIZES.includes(parsed) ? parsed : 25;
+}
+function parseTimePart(value: string, meridiem?: string) {
+  const [hourText, minuteText] = value.split(":");
+  let hour = Number(hourText);
+  const minute = Number(minuteText || 0);
+  if (meridiem) {
+    hour %= 12;
+    if (meridiem.toUpperCase() === "PM") hour += 12;
+  }
+  return Number.isFinite(hour) && Number.isFinite(minute)
+    ? hour + minute / 60
+    : null;
+}
+function parseWindow(
+  value?: string | null,
+): { start: number; end: number } | null {
+  if (!value) return null;
+  const match = value
+    .trim()
+    .match(
+      /^(\d{1,2}(?::\d{2})?)\s*(AM|PM)?\s*-\s*(\d{1,2}(?::\d{2})?)\s*(AM|PM)?$/i,
+    );
+  if (!match) return null;
+  const start = parseTimePart(match[1], match[2]);
+  const end = parseTimePart(match[3], match[4] || match[2]);
+  return start == null || end == null || end <= start ? null : { start, end };
+}
+function dueLabel(job: HsDispatchJobSummary) {
+  const minutes = job.minutes_until_due;
+  if (minutes == null) return null;
+  const absolute = Math.abs(minutes);
+  const readable =
+    absolute >= 60
+      ? `${Math.floor(absolute / 60)}h ${absolute % 60}m`
+      : `${absolute}m`;
+  return minutes < 0 ? `${readable} overdue` : `${readable} left`;
+}
 
-  /**
-   * Order the queue by how soon each job is DUE, most urgent first.
-   *
-   * The customer is given a promised slot at booking time, so "which job is
-   * closest to breaking its promise" is the only ordering that matters here;
-   * arrival order is not it. Jobs with no recorded commitment
-   * (`minutes_until_due === null`) sort last rather than being treated as
-   * urgent -- the backend is explicit that null means "no commitment
-   * recorded", never "due now".
-   */
-  const unassignedByUrgency = useMemo(() => {
-    const jobs = board?.unassigned_jobs ?? [];
-    return [...jobs].sort((a, b) => {
-      const am = a.minutes_until_due ?? null;
-      const bm = b.minutes_until_due ?? null;
-      if (am === null && bm === null) return 0;
-      if (am === null) return 1;
-      if (bm === null) return -1;
-      return am - bm;
-    });
-  }, [board]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ code?: string; message: string } | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+export default function DispatchPage() {
+  return (
+    <Suspense fallback={<DispatchSkeleton />}>
+      <DispatchWorkspace />
+    </Suspense>
+  );
+}
+function DispatchSkeleton() {
+  return (
+    <TenantLayout activeNav="dispatch">
+      <PageShell>
+        <Skeleton height={700} />
+      </PageShell>
+    </TenantLayout>
+  );
+}
 
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+function DispatchWorkspace() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const date = params.get("date") || localToday();
+  const view = params.get("view") === "week" ? "week" : "day";
+  const search = params.get("search") || "";
+  const serviceId = params.get("service") || "";
+  const technicianId = params.get("technician") || "";
+  const focus = params.get("focus") || "all";
+  const selectedJobId = params.get("job_id");
+  const page = parsePage(params.get("page"));
+  const pageSize = parsePageSize(params.get("page_size"));
+  const [searchDraft, setSearchDraft] = useState(search);
+  const [showFilters, setShowFilters] = useState(false);
   const [options, setOptions] = useState<HsAssignmentOptions | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
-  const [assigning, setAssigning] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    type: "assign" | "reassign" | "unassign";
+    technician?: HsAssignmentOptionTechnician;
+  } | null>(null);
+  const [reason, setReason] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<ProviderSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState("");
+  const [scheduleReason, setScheduleReason] = useState("");
+  useEffect(() => setSearchDraft(search), [search]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    homeServicesDispatchApi.getDispatchBoard(date)
-      .then(d => { setBoard(d); setLastUpdated(new Date()); })
-      .catch((e: unknown) => {
-        if (e instanceof ServiceOSError) {
-          setError({ code: e.code, message: e.message });
-        } else {
-          setError({ message: "We couldn't load the dispatch board." });
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [date]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadOptions = useCallback((jobId: string) => {
-    setSelectedJobId(jobId);
-    setOptions(null);
-    setOptionsError(null);
-    setShowExcluded(false);
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(params.toString());
+      Object.entries(updates).forEach(([key, value]) =>
+        value ? next.set(key, value) : next.delete(key),
+      );
+      router.push(next.size ? `${PAGE_PATH}?${next}` : PAGE_PATH);
+    },
+    [params, router],
+  );
+  const dependencies = [
+    date,
+    view,
+    search,
+    serviceId,
+    technicianId,
+    page,
+    pageSize,
+  ];
+  const board = useApi<HsDispatchProjection>(
+    useCallback(
+      () =>
+        homeServicesDispatchApi.getDispatchBoard({
+          date,
+          view,
+          search: search || undefined,
+          offering_id: serviceId || undefined,
+          technician_id: technicianId || undefined,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        }),
+      dependencies,
+    ),
+    dependencies,
+  );
+  const loadOptions = useCallback(async (jobId: string) => {
     setOptionsLoading(true);
-    homeServicesDispatchApi.getAssignmentOptions(jobId)
-      .then(setOptions)
-      .catch((e: unknown) => setOptionsError(e instanceof ServiceOSError ? e.message : "Could not load assignment options."))
-      .finally(() => setOptionsLoading(false));
+    setOptionsError(null);
+    setOptions(null);
+    setShowExcluded(false);
+    try {
+      setOptions(await homeServicesDispatchApi.getAssignmentOptions(jobId));
+    } catch (error) {
+      setOptionsError(
+        error instanceof ServiceOSError
+          ? error.message
+          : "Could not load assignment options.",
+      );
+    } finally {
+      setOptionsLoading(false);
+    }
   }, []);
+  useEffect(() => {
+    if (selectedJobId) loadOptions(selectedJobId);
+    else {
+      setOptions(null);
+      setOptionsError(null);
+    }
+  }, [loadOptions, selectedJobId]);
+  useEffect(() => {
+    const total = board.data?.pagination.total;
+    if (total == null || page === 1) return;
+    const last = Math.max(1, Math.ceil(total / pageSize));
+    if (page > last) updateParams({ page: String(last), job_id: null });
+  }, [board.data?.pagination.total, page, pageSize, updateParams]);
 
-  async function handleAssign(staffMemberId: string) {
-    if (!selectedJobId || !options) return;
-    setAssigning(staffMemberId);
+  const scheduledJobs = useMemo(() => {
+    const jobs = board.data?.scheduled_jobs ?? [];
+    return focus === "conflicts"
+      ? jobs.filter((job) => job.has_conflict)
+      : jobs;
+  }, [board.data?.scheduled_jobs, focus]);
+  const selectJob = (jobId: string) => updateParams({ job_id: jobId });
+  const clearFilters = () =>
+    updateParams({
+      search: null,
+      service: null,
+      technician: null,
+      focus: null,
+      page: null,
+      job_id: null,
+    });
+  const stepDate = view === "week" ? 7 : 1;
+  const hasFilters = Boolean(
+    search || serviceId || technicianId || focus !== "all",
+  );
+  function submitSearch(event: React.FormEvent) {
+    event.preventDefault();
+    updateParams({
+      search: searchDraft.trim() || null,
+      page: null,
+      job_id: null,
+    });
+  }
+
+  async function executeAssignment() {
+    if (!selectedJobId || !pendingAction) return;
+    if (
+      (pendingAction.type === "reassign" ||
+        pendingAction.type === "unassign") &&
+      !reason.trim()
+    )
+      return;
+    setActionLoading(true);
+    setOptionsError(null);
     try {
-      const hasCurrent = !!options.current_assignment;
-      if (hasCurrent) {
-        await homeServicesDispatchApi.reassign(selectedJobId, staffMemberId, "Reassigned from Dispatch Board");
-      } else {
-        await homeServicesDispatchApi.assign(
-          selectedJobId, staffMemberId,
-          options.job_context.scheduled_date ?? undefined,
-          options.job_context.scheduled_time_window ?? undefined,
+      if (pendingAction.type === "unassign")
+        await homeServicesDispatchApi.unassign(selectedJobId, reason.trim());
+      else if (pendingAction.type === "reassign" && pendingAction.technician)
+        await homeServicesDispatchApi.reassign(
+          selectedJobId,
+          pendingAction.technician.staff_member_id,
+          reason.trim(),
         );
-      }
-      load();
-      loadOptions(selectedJobId);
-    } catch (e) {
-      setOptionsError(e instanceof ServiceOSError ? e.message : "Assignment failed.");
+      else if (pendingAction.technician)
+        await homeServicesDispatchApi.assign(
+          selectedJobId,
+          pendingAction.technician.staff_member_id,
+        );
+      setPendingAction(null);
+      setReason("");
+      await Promise.all([board.refetch(), loadOptions(selectedJobId)]);
+    } catch (error) {
+      setOptionsError(
+        error instanceof ServiceOSError
+          ? error.message
+          : "The assignment could not be saved.",
+      );
+      setPendingAction(null);
     } finally {
-      setAssigning(null);
+      setActionLoading(false);
     }
   }
-
-  async function handleUnassign() {
+  async function openSchedule() {
     if (!selectedJobId) return;
-    setAssigning("unassign");
+    setScheduleOpen(true);
+    setSelectedSlot("");
+    setScheduleReason("");
+    setSlotsLoading(true);
+    setOptionsError(null);
     try {
-      await homeServicesDispatchApi.unassign(selectedJobId, "Unassigned from Dispatch Board");
-      load();
-      loadOptions(selectedJobId);
-    } catch (e) {
-      setOptionsError(e instanceof ServiceOSError ? e.message : "Could not unassign this job.");
+      const result = await serviceJobAssignmentApi.availableSlots(
+        selectedJobId,
+        Boolean(options?.job_context.is_emergency),
+      );
+      setAvailableSlots(result.slots ?? []);
+    } catch (error) {
+      setOptionsError(
+        error instanceof ServiceOSError
+          ? error.message
+          : "Available slots could not be loaded.",
+      );
     } finally {
-      setAssigning(null);
+      setSlotsLoading(false);
+    }
+  }
+  async function saveSchedule() {
+    if (!selectedJobId || !selectedSlot) return;
+    const slot = availableSlots.find(
+      (item) => `${item.date}|${item.time_window}` === selectedSlot,
+    );
+    if (!slot) return;
+    const changingExisting = Boolean(options?.job_context.scheduled_date);
+    if (changingExisting && !scheduleReason.trim()) return;
+    setActionLoading(true);
+    try {
+      const result = await serviceJobAssignmentApi.schedule(selectedJobId, {
+        scheduled_date: slot.date,
+        scheduled_time_window: slot.time_window,
+        reason: scheduleReason.trim() || undefined,
+      });
+      if (!result.success)
+        throw new ServiceOSError(
+          result.error_code || "SCHEDULE_FAILED",
+          result.message || "The schedule could not be saved.",
+        );
+      setScheduleOpen(false);
+      await Promise.all([board.refetch(), loadOptions(selectedJobId)]);
+    } catch (error) {
+      setOptionsError(
+        error instanceof ServiceOSError
+          ? error.message
+          : "The schedule could not be saved.",
+      );
+      setScheduleOpen(false);
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  const summary = board?.summary;
-
+  const summary = board.data?.summary;
+  const unassignedVisible = focus === "all" || focus === "unassigned";
+  const scheduleVisible =
+    focus === "all" || focus === "scheduled" || focus === "conflicts";
   return (
-    <div style={{ padding: 24, maxWidth: 1800, margin: "0 auto" }}>
-      <style>{`
-        .db-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 20px 0; }
-        @media (max-width: 1100px) { .db-kpis { grid-template-columns: repeat(2, 1fr); } }
-        .db-workspace { display: grid; grid-template-columns: 320px minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
-        @media (max-width: 1500px) { .db-workspace { grid-template-columns: 280px minmax(0, 1fr); } .db-panel-col { grid-column: 1 / -1; } }
-        @media (max-width: 900px) { .db-workspace { grid-template-columns: 1fr; } .db-panel-col { grid-column: auto; } }
-      `}</style>
-
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Dispatch board</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Assign eligible technicians and manage today&apos;s schedule.
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 4 }}>
-            <button onClick={() => setDate(d => shiftDate(d, -1))} aria-label="Previous day"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
-              <ChevronLeft size={16}/>
-            </button>
-            <button onClick={() => setDate(todayISO())}
-              style={{ background: date === todayISO() ? "var(--brand)" : "none", color: date === todayISO() ? "var(--text-on-brand)" : "var(--text-primary)",
-                border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-              Today
-            </button>
-            <span style={{ fontSize: 13, color: "var(--text-primary)", padding: "0 6px", fontWeight: 600 }}>{fmtDate(date)}</span>
-            <button onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
-              <ChevronRight size={16}/>
-            </button>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 3 }}>
-            <button onClick={() => setView("day")}
-              style={{ background: view === "day" ? "var(--brand)" : "none", color: view === "day" ? "var(--text-on-brand)" : "var(--text-secondary)",
-                border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-              Day
-            </button>
-            <button onClick={() => setView("week")}
-              style={{ background: view === "week" ? "var(--brand)" : "none", color: view === "week" ? "var(--text-on-brand)" : "var(--text-secondary)",
-                border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-              Week
-            </button>
-          </div>
-          <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>
-          <Btn variant="primary">Review unassigned</Btn>
-        </div>
-      </div>
-
-      {lastUpdated && (
-        <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0" }}>
-          Last updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-        </p>
-      )}
-
-      {error && (
-        <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)",
-          border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginTop: 16 }}>
-          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/>
-          <span>
-            {error.code === "VERTICAL_DISABLED" || error.code === "TENANT_VERTICAL_NOT_ACTIVE"
-              ? "Home Services is not active for your account yet -- the Dispatch Board unlocks once your enrollment is approved."
-              : error.message}
-          </span>
-        </div>
-      )}
-
-      {/* KPI cards */}
-      {loading ? (
-        <div className="db-kpis">{[0,1,2,3,4].map(i => <Skeleton key={i} height={90}/>)}</div>
-      ) : summary && (
-        <div className="db-kpis">
-          <KpiCard label="Unassigned" value={summary.unassigned_count} icon={<UserIcon size={18}/>} variant="default" />
-          <KpiCard label="Scheduled" value={summary.scheduled_count} icon={<CalendarDays size={18}/>} variant="success" />
-          <KpiCard label="On the way" value={summary.on_the_way_count} icon={<Truck size={18}/>} variant="info" />
-          <KpiCard label="Capacity" value={`${summary.capacity_used}/${summary.capacity_total}`} icon={<UsersIcon size={18}/>} variant="warning" />
-          <KpiCard label="Conflicts" value={summary.conflict_count} icon={<AlertTriangle size={18}/>} variant={summary.conflict_count > 0 ? "danger" : "default"} />
-        </div>
-      )}
-
-      {view === "week" && !loading && (
-        <Card style={{ marginTop: 4 }}>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", textAlign: "center", padding: "40px 0" }}>
-            Week view isn&apos;t built yet -- no canonical week-level projection exists to reuse.
-            Switch back to Day to work the schedule.
-          </p>
-        </Card>
-      )}
-
-      {/* Workspace */}
-      {view === "day" && loading ? (
-        <div className="db-workspace" style={{ marginTop: 4 }}>
-          <Skeleton height={520}/><Skeleton height={520}/>
-        </div>
-      ) : (view === "day" && board) && (
-        <div className="db-workspace">
-          {/* Unassigned jobs */}
-          <Card padding={0}>
-            <div style={{ padding: "16px 16px 10px" }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Unassigned jobs</h3>
+    <TenantLayout activeNav="dispatch">
+      <PageShell>
+        <style>{`.dispatch-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dispatch-kpis{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}.dispatch-filters{display:grid;grid-template-columns:minmax(240px,1.6fr) repeat(2,minmax(180px,.7fr)) auto;gap:10px;align-items:end}.dispatch-grid{display:grid;grid-template-columns:minmax(280px,340px) minmax(560px,1fr) minmax(320px,380px);gap:14px;align-items:start}.dispatch-grid.schedule-only{grid-template-columns:minmax(680px,1fr) minmax(320px,380px)}.dispatch-grid.queue-only{grid-template-columns:minmax(320px,420px) minmax(320px,380px)}.dispatch-sticky{position:sticky;top:20px}.week-grid{display:grid;grid-template-columns:150px repeat(7,minmax(130px,1fr));min-width:1080px}.week-cell{min-height:88px;padding:8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}@media(max-width:1500px){.dispatch-grid,.dispatch-grid.schedule-only,.dispatch-grid.queue-only{grid-template-columns:320px minmax(0,1fr)}.dispatch-panel{grid-column:1/-1}.dispatch-sticky{position:static}}@media(max-width:1050px){.dispatch-kpis{grid-template-columns:repeat(2,1fr)}.dispatch-filters{grid-template-columns:1fr 1fr}.dispatch-grid,.dispatch-grid.schedule-only,.dispatch-grid.queue-only{grid-template-columns:1fr}}@media(max-width:640px){.dispatch-kpis,.dispatch-filters{grid-template-columns:1fr}}`}</style>
+        <PageHeader
+          title="Dispatch command center"
+          description="Assign qualified technicians, protect committed slots, and resolve schedule conflicts from one operational workspace."
+          actions={
+            <div className="dispatch-actions">
+              <Button
+                variant="secondary"
+                onClick={() => router.push("/home-services/bookings-jobs")}
+              >
+                All jobs <ExternalLink size={14} />
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={board.refetch}
+                loading={board.loading}
+              >
+                <RefreshCw size={14} /> Refresh
+              </Button>
             </div>
-            <div style={{ maxHeight: 640, overflowY: "auto" }}>
-              {board.unassigned_jobs.length === 0 && (
-                <p style={{ fontSize: 13, color: "var(--text-tertiary)", padding: 16 }}>No unassigned jobs today.</p>
+          }
+        />
+        <div
+          className="dispatch-actions"
+          style={{ justifyContent: "space-between" }}
+        >
+          <div className="dispatch-actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label="Previous period"
+              onClick={() =>
+                updateParams({
+                  date: shiftDate(date, -stepDate),
+                  page: null,
+                  job_id: null,
+                })
+              }
+            >
+              <ChevronLeft size={15} />
+            </Button>
+            <Button
+              variant={date === localToday() ? "primary" : "secondary"}
+              size="sm"
+              onClick={() =>
+                updateParams({ date: localToday(), page: null, job_id: null })
+              }
+            >
+              Today
+            </Button>
+            <strong style={{ color: "var(--text-primary)", fontSize: 14 }}>
+              {view === "week"
+                ? `${formatDate(date)} – ${formatDate(shiftDate(date, 6))}`
+                : formatDate(date)}
+            </strong>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label="Next period"
+              onClick={() =>
+                updateParams({
+                  date: shiftDate(date, stepDate),
+                  page: null,
+                  job_id: null,
+                })
+              }
+            >
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+          <div className="dispatch-actions">
+            <Button
+              variant={view === "day" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() =>
+                updateParams({ view: "day", page: null, job_id: null })
+              }
+            >
+              Day
+            </Button>
+            <Button
+              variant={view === "week" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() =>
+                updateParams({ view: "week", page: null, job_id: null })
+              }
+            >
+              Week
+            </Button>
+            {board.data && (
+              <span style={{ color: "var(--text-tertiary)", fontSize: 11.5 }}>
+                Updated{" "}
+                {new Date(board.data.generated_at).toLocaleTimeString("en-IN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+        {board.error && <Alert tone="danger">{board.error}</Alert>}
+        {board.data?.schedule_truncated && (
+          <Alert tone="warning">
+            This period contains more than 5,000 scheduled visits. Narrow the
+            service or technician filter to work safely.
+          </Alert>
+        )}
+        {board.loading && !board.data ? (
+          <KpiGrid minCardWidth={160}>
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={index} height={108} />
+            ))}
+          </KpiGrid>
+        ) : (
+          summary && (
+            <div className="dispatch-kpis">
+              <SummaryCard
+                label="Unassigned"
+                value={summary.unassigned_count}
+                sub="Needs an owner"
+                icon={<UserX />}
+                tone={summary.unassigned_count ? "warning" : undefined}
+                active={focus === "unassigned"}
+                onClick={() =>
+                  updateParams({
+                    focus: focus === "unassigned" ? null : "unassigned",
+                    page: null,
+                    job_id: null,
+                  })
+                }
+              />
+              <SummaryCard
+                label="Scheduled"
+                value={summary.scheduled_count}
+                sub={view === "week" ? "This week" : "Selected day"}
+                icon={<CalendarDays />}
+                tone="info"
+                active={focus === "scheduled"}
+                onClick={() =>
+                  updateParams({
+                    focus: focus === "scheduled" ? null : "scheduled",
+                    page: null,
+                    job_id: null,
+                  })
+                }
+              />
+              <SummaryCard
+                label="On the way"
+                value={summary.on_the_way_count}
+                sub="Travel in progress"
+                icon={<Truck />}
+                tone="success"
+              />
+              <SummaryCard
+                label="Technicians scheduled"
+                value={`${summary.capacity_used}/${summary.capacity_total}`}
+                sub="Roster utilization"
+                icon={<Users />}
+              />
+              <SummaryCard
+                label="Conflicting jobs"
+                value={summary.conflict_count}
+                sub="Overlapping visits"
+                icon={<ShieldAlert />}
+                tone={summary.conflict_count ? "danger" : undefined}
+                active={focus === "conflicts"}
+                onClick={() =>
+                  updateParams({
+                    focus: focus === "conflicts" ? null : "conflicts",
+                    page: null,
+                    job_id: null,
+                  })
+                }
+              />
+            </div>
+          )
+        )}
+        <Card padding="none">
+          <div style={{ padding: 14 }} className="dispatch-filters">
+            <form onSubmit={submitSearch} style={{ display: "flex", gap: 8 }}>
+              <Input
+                aria-label="Search dispatch"
+                placeholder="Search job, booking, service, issue or city"
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+              />
+              <Button type="submit" variant="secondary">
+                <Search size={15} />
+              </Button>
+            </form>
+            <Select
+              label="Service"
+              value={serviceId}
+              onChange={(event) =>
+                updateParams({
+                  service: event.target.value || null,
+                  page: null,
+                  job_id: null,
+                })
+              }
+              options={[
+                { value: "", label: "All services" },
+                ...(board.data?.filters.services ?? []).map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                })),
+              ]}
+            />
+            <Select
+              label="Technician"
+              value={technicianId}
+              onChange={(event) =>
+                updateParams({
+                  technician: event.target.value || null,
+                  page: null,
+                  job_id: null,
+                })
+              }
+              options={[
+                { value: "", label: "All technicians" },
+                ...(board.data?.filters.technicians ?? []).map((item) => ({
+                  value: item.staff_member_id,
+                  label: item.name,
+                })),
+              ]}
+            />
+            <div className="dispatch-actions">
+              <Button
+                variant={showFilters ? "primary" : "secondary"}
+                onClick={() => setShowFilters((value) => !value)}
+              >
+                <Filter size={14} /> Focus
+              </Button>
+              {hasFilters && (
+                <Button variant="ghost" onClick={clearFilters}>
+                  <X size={14} /> Clear
+                </Button>
               )}
-              {unassignedByUrgency.map(job => (
-                <UnassignedJobCard key={job.job_id} job={job} selected={job.job_id === selectedJobId}
-                  onClick={() => loadOptions(job.job_id)} />
+            </div>
+          </div>
+          {showFilters && (
+            <div
+              style={{
+                padding: "0 14px 14px",
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {[
+                ["all", "All work"],
+                ["unassigned", "Unassigned"],
+                ["scheduled", "Scheduled"],
+                ["conflicts", "Conflicts"],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  size="sm"
+                  variant={focus === value ? "primary" : "secondary"}
+                  onClick={() =>
+                    updateParams({
+                      focus: value === "all" ? null : value,
+                      page: null,
+                      job_id: null,
+                    })
+                  }
+                >
+                  {label}
+                </Button>
               ))}
             </div>
-            <div style={{ padding: 12, borderTop: "1px solid var(--border)", fontSize: 11.5, color: "var(--text-tertiary)" }}>
-              Showing {board.unassigned_jobs.length} of {board.unassigned_jobs.length} jobs
-            </div>
-          </Card>
-
-          {/* Technician schedule — hourly timeline (9 AM - 6 PM) */}
-          <Card padding={0}>
-            <div style={{ padding: "16px 16px 10px" }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Technicians</h3>
-            </div>
-            <div style={{ maxHeight: 640, overflowY: "auto", overflowX: "auto" }}>
-              {board.technician_schedule.length === 0 && (
-                <p style={{ fontSize: 13, color: "var(--text-tertiary)", padding: 16 }}>No technicians configured for this tenant.</p>
+          )}
+        </Card>
+        {board.loading && !board.data ? (
+          <div className="dispatch-grid">
+            <Skeleton height={560} />
+            <Skeleton height={560} />
+            <Skeleton height={560} />
+          </div>
+        ) : (
+          board.data && (
+            <div
+              className={`dispatch-grid ${
+                unassignedVisible && scheduleVisible
+                  ? ""
+                  : scheduleVisible
+                    ? "schedule-only"
+                    : "queue-only"
+              }`}
+            >
+              {unassignedVisible && (
+                <UnassignedQueue
+                  jobs={board.data.unassigned_jobs}
+                  selectedJobId={selectedJobId}
+                  total={board.data.pagination.total}
+                  page={page}
+                  pageSize={pageSize}
+                  onSelect={selectJob}
+                  onPage={(next) =>
+                    updateParams({ page: String(next), job_id: null })
+                  }
+                  onPageSize={(size) =>
+                    updateParams({
+                      page_size: String(size),
+                      page: null,
+                      job_id: null,
+                    })
+                  }
+                />
               )}
-              {board.technician_schedule.length > 0 && (
-                <div style={{ minWidth: 760 }}>
-                  {/* Hour header */}
-                  <div style={{ display: "grid", gridTemplateColumns: `140px repeat(${HOUR_LABELS.length - 1}, 1fr)`, borderBottom: "1px solid var(--border)" }}>
-                    <div/>
-                    {HOUR_LABELS.slice(0, -1).map(h => (
-                      <div key={h} style={{ fontSize: 10.5, color: "var(--text-tertiary)", padding: "8px 4px", textAlign: "center" }}>{h}</div>
-                    ))}
+              {scheduleVisible && (
+                <Card padding="none" style={{ overflow: "hidden" }}>
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      borderBottom: "1px solid var(--border)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <h2 style={sectionTitle}>Technician schedule</h2>
+                      <p style={sectionSub}>
+                        {view === "week"
+                          ? "Seven-day workload and conflicts"
+                          : "Committed visits by technician and time"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => router.push("/home-services/team")}
+                    >
+                      Manage team <ExternalLink size={13} />
+                    </Button>
                   </div>
-                  {board.technician_schedule.map(t => {
-                    const positioned = t.jobs_today.map(j => ({ job: j, slot: parseTimeWindow(j.scheduled_time_window) }));
-                    const unscheduled = positioned.filter(p => !p.slot).map(p => p.job);
-                    const onGrid = positioned.filter(p => !!p.slot) as { job: HsDispatchJobSummary; slot: { startHour: number; endHour: number } }[];
-                    // Real conflict: two on-grid jobs whose hour ranges overlap.
-                    const hasConflict = onGrid.some((a, i) => onGrid.some((b, j) =>
-                      i !== j && a.slot.startHour < b.slot.endHour && b.slot.startHour < a.slot.endHour));
-                    return (
-                      <div key={t.staff_member_id} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", alignItems: "center", minHeight: 56 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px" }}>
-                            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--accent-muted)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--accent)", fontWeight: 700, fontSize: 11.5 }}>
-                              {t.name.slice(0, 2).toUpperCase()}
-                            </div>
-                            <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
-                          </div>
-                          <div style={{ position: "relative", height: "100%", minHeight: 56 }}>
-                            {hasConflict ? (
-                              <div style={{ position: "absolute", inset: "6px 8px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-                                borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                                <AlertTriangle size={13} style={{ color: "var(--danger-text)" }}/>
-                                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--danger-text)" }}>Schedule conflict</span>
-                              </div>
-                            ) : onGrid.length === 0 && t.status === "active" ? (
-                              <div style={{ position: "absolute", inset: "6px 8px", background: "var(--success-bg)", border: "1px solid var(--success-border)",
-                                borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 12 }}>
-                                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--success-text)" }}>Available</span>
-                              </div>
-                            ) : onGrid.length === 0 ? (
-                              <div style={{ position: "absolute", inset: "6px 8px", background: "var(--surface-sunken)", border: "1px solid var(--border)",
-                                borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 12 }}>
-                                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-tertiary)" }}>{t.status}</span>
-                              </div>
-                            ) : (
-                              onGrid.map(({ job, slot }) => {
-                                const left = Math.max(0, (slot.startHour - BOARD_START_HOUR) / (BOARD_END_HOUR - BOARD_START_HOUR) * 100);
-                                const width = Math.min(100 - left, (slot.endHour - slot.startHour) / (BOARD_END_HOUR - BOARD_START_HOUR) * 100);
-                                return (
-                                  <button key={job.job_id} onClick={() => loadOptions(job.job_id)}
-                                    style={{ position: "absolute", top: 6, bottom: 6, left: `${left}%`, width: `${Math.max(width, 8)}%`,
-                                      background: job.job_id === selectedJobId ? "var(--accent-muted)" : "var(--success-bg)",
-                                      border: `1px solid ${job.job_id === selectedJobId ? "var(--brand)" : "var(--success-border)"}`,
-                                      borderRadius: 8, padding: "4px 8px", cursor: "pointer", textAlign: "left", overflow: "hidden" }}>
-                                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.job_number}</p>
-                                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                      {job.master_service_name ?? "Service"}
-                                    </p>
-                                    <p style={{ fontSize: 9.5, color: "var(--success-text)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", opacity: 0.85 }}>
-                                      {fmtHourRange(slot.startHour, slot.endHour)}
-                                    </p>
-                                  </button>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                        {unscheduled.length > 0 && (
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 12px 10px 152px" }}>
-                            {unscheduled.map(j => (
-                              <button key={j.job_id} onClick={() => loadOptions(j.job_id)}
-                                style={{ fontSize: 10.5, color: "var(--success-text)", background: "var(--success-bg)",
-                                  border: "1px solid var(--success-border)", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
-                                {j.job_number} · {j.scheduled_time_window ?? "time TBD"}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {view === "day" ? (
+                    <DaySchedule
+                      technicians={board.data.technician_schedule}
+                      jobs={scheduledJobs}
+                      selectedJobId={selectedJobId}
+                      onSelect={selectJob}
+                    />
+                  ) : (
+                    <WeekSchedule
+                      start={date}
+                      technicians={board.data.technician_schedule}
+                      jobs={scheduledJobs}
+                      selectedJobId={selectedJobId}
+                      onSelect={selectJob}
+                    />
+                  )}
+                </Card>
+              )}
+              <div className="dispatch-panel">
+                <div className="dispatch-sticky">
+                  <AssignmentPanel
+                    jobId={selectedJobId}
+                    options={options}
+                    loading={optionsLoading}
+                    error={optionsError}
+                    actionLoading={actionLoading}
+                    showExcluded={showExcluded}
+                    onShowExcluded={() => setShowExcluded((value) => !value)}
+                    onClose={() => updateParams({ job_id: null })}
+                    onOpenJob={() =>
+                      selectedJobId &&
+                      router.push(`/service-jobs/${selectedJobId}`)
+                    }
+                    onSchedule={openSchedule}
+                    onAssign={(technician) =>
+                      setPendingAction({
+                        type: options?.current_assignment
+                          ? "reassign"
+                          : "assign",
+                        technician,
+                      })
+                    }
+                    onUnassign={() => setPendingAction({ type: "unassign" })}
+                  />
                 </div>
-              )}
-            </div>
-          </Card>
-
-          {/* Assignment panel — persistent third column, matching the
-              reference layout (not a modal overlay) */}
-          <Card padding={0} style={{ position: "sticky", top: 24 }}>
-            <div className="db-panel-col" style={{ padding: 20, maxHeight: 700, overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Assign technician</h3>
-              {selectedJobId && (
-                <button onClick={() => setSelectedJobId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}>
-                  <X size={18}/>
-                </button>
-              )}
-            </div>
-
-            {!selectedJobId && (
-              <p style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 16 }}>
-                Select an unassigned job, or a scheduled job on a technician&apos;s row, to view or change its assignment.
-              </p>
-            )}
-
-            {selectedJobId && optionsLoading && <Skeleton height={300}/>}
-
-            {optionsError && (
-              <div role="alert" style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--danger-bg)",
-                border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 12.5, marginBottom: 12 }}>
-                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }}/><span>{optionsError}</span>
               </div>
-            )}
-
-            {options && (
-              <>
-                <div style={{ marginBottom: 4 }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", margin: "0 0 2px" }}>{options.job_context.job_number}</p>
-                  <h4 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>
-                    {options.job_context.master_service_name ?? "Service job"}
-                  </h4>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12.5, marginBottom: 16 }}>
-                  <DetailRow label="Requested" value={options.job_context.scheduled_time_window ?
-                    `${options.job_context.scheduled_date ?? ""} · ${options.job_context.scheduled_time_window}` : "—"} />
-                  <DetailRow label="Location" value={options.job_context.city ?? "—"} />
-                  <DetailRow label="Customer" value={options.job_context.customer_name ?? "—"} />
-                  <DetailRow label="Issue" value={options.job_context.issue_summary ?? "—"} />
-                </div>
-
-                {options.current_assignment && (
-                  <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--info-bg)", border: "1px solid var(--info-border)",
-                    fontSize: 12.5, color: "var(--info-text)", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>Currently assigned</span>
-                    <button onClick={handleUnassign} disabled={assigning === "unassign"}
-                      style={{ background: "none", border: "none", color: "var(--danger-text)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-                      {assigning === "unassign" ? "Unassigning…" : "Unassign"}
-                    </button>
-                  </div>
-                )}
-
-                <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 10px" }}>
-                  Eligible technicians
-                </p>
-                {options.eligible_technicians.length === 0 && (
-                  <p style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 16 }}>No eligible technicians for this job right now.</p>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                  {options.eligible_technicians.map(t => (
-                    <TechnicianRow key={t.staff_member_id} t={t}
-                      actionLabel={assigning === t.staff_member_id ? "Assigning…" : "Assign"}
-                      disabled={!!assigning}
-                      onAssign={() => handleAssign(t.staff_member_id)} />
-                  ))}
-                </div>
-
-                <button onClick={() => setShowExcluded(s => !s)}
-                  style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer",
-                    color: "var(--text-tertiary)", fontSize: 12, fontWeight: 600, padding: 0, marginBottom: 10 }}>
-                  <Info size={13}/> {showExcluded ? "Hide" : "Show"} excluded technicians ({options.excluded_technicians.length})
-                </button>
-                {showExcluded && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {options.excluded_technicians.map(t => (
-                      <div key={t.staff_member_id} style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", opacity: 0.75 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.name}</p>
-                          <Badge variant="danger" size="sm">Excluded</Badge>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {(t.exclusion_reason_codes ?? []).map(code => (
-                            <span key={code} style={{ fontSize: 10.5, color: "var(--danger-text)", background: "var(--danger-bg)",
-                              border: "1px solid var(--danger-border)", borderRadius: 6, padding: "2px 6px" }}>
-                              {EXCLUSION_LABELS[code] ?? code}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </>
-            )}
-
-            <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 20, display: "flex", alignItems: "center", gap: 6 }}>
-              <Info size={12}/> Provider business already matched by ServiceOS.
-            </p>
             </div>
-          </Card>
-        </div>
-      )}
-    </div>
+          )
+        )}
+        <Modal
+          open={Boolean(pendingAction)}
+          onClose={() => !actionLoading && setPendingAction(null)}
+          title={
+            pendingAction?.type === "unassign"
+              ? "Remove assignment"
+              : pendingAction?.type === "reassign"
+                ? "Confirm reassignment"
+                : "Confirm assignment"
+          }
+        >
+          <div style={{ display: "grid", gap: 14 }}>
+            <p style={bodyText}>
+              {pendingAction?.type === "unassign"
+                ? "The job returns to the unassigned queue. The technician will no longer own this visit."
+                : `${pendingAction?.technician?.name ?? "This technician"} will become responsible for this visit.`}
+            </p>
+            {pendingAction?.type !== "assign" && (
+              <Textarea
+                label="Reason"
+                required
+                rows={3}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Record the operational reason for the audit trail"
+              />
+            )}
+            <div
+              className="dispatch-actions"
+              style={{ justifyContent: "flex-end" }}
+            >
+              <Button
+                variant="secondary"
+                onClick={() => setPendingAction(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant={
+                  pendingAction?.type === "unassign" ? "destructive" : "primary"
+                }
+                loading={actionLoading}
+                disabled={pendingAction?.type !== "assign" && !reason.trim()}
+                onClick={executeAssignment}
+              >
+                Confirm
+              </Button>
+            </div>
+          </div>
+        </Modal>
+        <Modal
+          open={scheduleOpen}
+          onClose={() => !actionLoading && setScheduleOpen(false)}
+          title={
+            options?.job_context.scheduled_date
+              ? "Reschedule visit"
+              : "Schedule visit"
+          }
+        >
+          <div style={{ display: "grid", gap: 14 }}>
+            {slotsLoading ? (
+              <Skeleton height={90} />
+            ) : availableSlots.length ? (
+              <Select
+                label="Available slot"
+                required
+                value={selectedSlot}
+                onChange={(event) => setSelectedSlot(event.target.value)}
+                placeholder="Choose a capacity-checked slot"
+                options={availableSlots.map((slot) => ({
+                  value: `${slot.date}|${slot.time_window}`,
+                  label: `${formatDate(slot.date)} · ${slot.time_window}${slot.capacity != null ? ` · ${Math.max(0, slot.capacity - (slot.already_booked ?? 0))} open` : ""}`,
+                }))}
+              />
+            ) : (
+              <Alert tone="warning">
+                No bookable slots are available. Check team working hours and
+                capacity before scheduling.
+              </Alert>
+            )}
+            {options?.job_context.scheduled_date && (
+              <Textarea
+                label="Reason for change"
+                required
+                rows={3}
+                value={scheduleReason}
+                onChange={(event) => setScheduleReason(event.target.value)}
+                placeholder="Why is this committed visit moving?"
+              />
+            )}
+            <div
+              className="dispatch-actions"
+              style={{ justifyContent: "space-between" }}
+            >
+              <Button
+                variant="ghost"
+                onClick={() => router.push("/business/coverage-hours")}
+              >
+                Manage availability <ExternalLink size={13} />
+              </Button>
+              <div className="dispatch-actions">
+                <Button
+                  variant="secondary"
+                  onClick={() => setScheduleOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={actionLoading}
+                  disabled={
+                    !selectedSlot ||
+                    Boolean(
+                      options?.job_context.scheduled_date &&
+                      !scheduleReason.trim(),
+                    )
+                  }
+                  onClick={saveSchedule}
+                >
+                  Save schedule
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      </PageShell>
+    </TenantLayout>
   );
 }
 
-function shiftDate(iso: string, days: number): string {
-  // Pure UTC calendar arithmetic on the Y/M/D components -- never
-  // reconstruct via local midnight + toISOString(), which round-trips
-  // through UTC and silently cancels out the shift in timezones ahead of
-  // UTC (see todayISO() for the same fix).
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
+const sectionTitle: React.CSSProperties = {
+  margin: 0,
+  color: "var(--text-primary)",
+  fontSize: 15,
+  fontWeight: 750,
+};
+const sectionSub: React.CSSProperties = {
+  margin: "3px 0 0",
+  color: "var(--text-tertiary)",
+  fontSize: 11.5,
+};
+const bodyText: React.CSSProperties = {
+  margin: 0,
+  color: "var(--text-secondary)",
+  fontSize: 13,
+  lineHeight: 1.55,
+};
 
-function KpiCard({ label, value, icon, variant = "default" }: {
-  label: string; value: string | number; icon?: React.ReactNode;
-  variant?: "default" | "success" | "info" | "warning" | "danger";
+function UnassignedQueue({
+  jobs,
+  selectedJobId,
+  total,
+  page,
+  pageSize,
+  onSelect,
+  onPage,
+  onPageSize,
+}: {
+  jobs: HsDispatchJobSummary[];
+  selectedJobId: string | null;
+  total: number;
+  page: number;
+  pageSize: number;
+  onSelect: (id: string) => void;
+  onPage: (page: number) => void;
+  onPageSize: (size: number) => void;
 }) {
-  const colors: Record<string, { fg: string; bg: string }> = {
-    default: { fg: "var(--text-secondary)", bg: "var(--surface-sunken)" },
-    success: { fg: "var(--success-text)", bg: "var(--success-bg)" },
-    info:    { fg: "var(--info-text)",    bg: "var(--info-bg)" },
-    warning: { fg: "var(--warning-text)", bg: "var(--warning-bg)" },
-    danger:  { fg: "var(--danger-text)",  bg: "var(--danger-bg)" },
-  };
-  const c = colors[variant];
+  const sorted = [...jobs].sort(
+    (first, second) =>
+      (first.minutes_until_due ?? Number.MAX_SAFE_INTEGER) -
+      (second.minutes_until_due ?? Number.MAX_SAFE_INTEGER),
+  );
   return (
-    <Card>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        {icon && (
-          <span style={{ width: 32, height: 32, borderRadius: "50%", background: c.bg, color: c.fg,
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {icon}
-          </span>
-        )}
-        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: 0, fontWeight: 600 }}>{label}</p>
+    <Card padding="none" style={{ overflow: "hidden" }}>
+      <div
+        style={{
+          padding: "14px 16px",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <h2 style={sectionTitle}>Assignment queue</h2>
+        <p style={sectionSub}>{total} jobs need an owner</p>
       </div>
-      <p style={{ fontSize: 28, fontWeight: 800, color: c.fg, margin: 0 }}>{value}</p>
+      <div style={{ maxHeight: 590, overflowY: "auto" }}>
+        {sorted.length ? (
+          sorted.map((job) => (
+            <JobQueueCard
+              key={job.job_id}
+              job={job}
+              selected={job.job_id === selectedJobId}
+              onClick={() => onSelect(job.job_id)}
+            />
+          ))
+        ) : (
+          <EmptyPanel
+            icon={<CheckCircle2 size={22} />}
+            title="Queue is clear"
+            message="No unassigned jobs match this period and filter."
+          />
+        )}
+      </div>
+      {total > 0 && (
+        <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
+          <label
+            style={{
+              display: "flex",
+              gap: 7,
+              alignItems: "center",
+              color: "var(--text-tertiary)",
+              fontSize: 11.5,
+              marginBottom: 8,
+            }}
+          >
+            Rows
+            <select
+              value={pageSize}
+              onChange={(event) => onPageSize(Number(event.target.value))}
+              style={{
+                background: "var(--surface)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: 4,
+              }}
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size}>{size}</option>
+              ))}
+            </select>
+          </label>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            alwaysShow
+            onPage={onPage}
+          />
+        </div>
+      )}
     </Card>
   );
 }
-
-/**
- * The SLA badge for a job awaiting a technician.
- *
- * The booking flow PROMISES the customer a slot up front -- there is no wait
- * window, and the clock starts when the request is created. The backend has
- * always returned `service_due_at` / `minutes_until_due` / `is_overdue` on
- * the assignable-jobs queue, but nothing in this portal displayed them, so a
- * provider had no way to see which promise was about to be broken. This is
- * that missing surface.
- *
- * `minutes_until_due` is null on legacy jobs that carry no slot; per the
- * backend's own contract that means "no commitment recorded" and must never
- * be rendered as "due now", so nothing is shown at all in that case.
- */
-function SlaBadge({ job }: { job: HsDispatchJobSummary }) {
-  const mins: number | null = job.minutes_until_due ?? null;
-  if (mins === null) return null;
-
-  const overdue = Boolean(job.is_overdue);
-  const abs = Math.abs(mins);
-  const label = abs >= 60
-    ? `${Math.floor(abs / 60)}h ${abs % 60}m`
-    : `${abs}m`;
-
-  // Under an hour left is the point where a provider still has time to act.
-  const urgent = !overdue && mins <= 60;
-  const tone = overdue
-    ? { bg: "var(--danger-bg)", fg: "var(--danger-text)", border: "var(--danger-border)" }
-    : urgent
-      ? { bg: "var(--warning-bg)", fg: "var(--warning-text)", border: "var(--warning-border)" }
-      : { bg: "var(--surface-sunken)", fg: "var(--text-tertiary)", border: "var(--border)" };
-
+function JobQueueCard({
+  job,
+  selected,
+  onClick,
+}: {
+  job: HsDispatchJobSummary;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const due = dueLabel(job);
   return (
-    <span
-      title={job.service_due_at ? `Due ${new Date(job.service_due_at).toLocaleString("en-IN")}` : undefined}
+    <button
+      onClick={onClick}
       style={{
-        fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
-        background: tone.bg, color: tone.fg, border: `1px solid ${tone.border}`,
-        whiteSpace: "nowrap",
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        border: 0,
+        borderBottom: "1px solid var(--border)",
+        borderLeft: selected
+          ? "3px solid var(--brand)"
+          : "3px solid transparent",
+        padding: 13,
+        background: selected ? "var(--accent-muted)" : "transparent",
+        cursor: "pointer",
       }}
     >
-      {overdue ? `${label} overdue` : `${label} left`}
-    </span>
-  );
-}
-
-function UnassignedJobCard({ job, selected, onClick }: {
-  job: HsDispatchJobSummary; selected: boolean; onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick} style={{
-      display: "block", width: "100%", textAlign: "left", padding: "14px 16px",
-      background: selected ? "var(--accent-muted)" : "transparent",
-      border: "none", borderLeft: selected ? "3px solid var(--brand)" : "3px solid transparent",
-      borderBottom: "1px solid var(--border)", cursor: "pointer",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", margin: 0 }}>{job.job_number}</p>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <SlaBadge job={job} />
-          {job.scheduled_time_window && <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>{job.scheduled_time_window}</p>}
-        </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <strong style={{ color: "var(--text-link)", fontSize: 12 }}>
+          {job.job_number}
+        </strong>
+        {due && (
+          <span
+            style={{
+              fontSize: 10.5,
+              fontWeight: 700,
+              color: job.is_overdue
+                ? "var(--danger-text)"
+                : "var(--warning-text)",
+            }}
+          >
+            {due}
+          </span>
+        )}
       </div>
-      <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>
-        {job.master_service_name ?? "Service"}
+      <p
+        style={{
+          margin: "5px 0 2px",
+          color: "var(--text-primary)",
+          fontSize: 13.5,
+          fontWeight: 650,
+        }}
+      >
+        {job.master_service_name || "Service visit"}
       </p>
-      <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 4px" }}>{job.customer_name ?? "—"}</p>
-      <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>{job.city ?? "—"}</p>
+      <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 11.5 }}>
+        {job.customer_alias || "Customer"} ·{" "}
+        {job.locality || "Locality unavailable"}
+      </p>
+      <div style={{ marginTop: 7, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {job.is_emergency && (
+          <span
+            className="ds-text-caption"
+            style={{ color: "var(--danger-text)" }}
+          >
+            Emergency
+          </span>
+        )}
+        <span
+          className="ds-text-caption"
+          style={{ color: "var(--text-tertiary)" }}
+        >
+          {job.scheduled_date
+            ? `${formatDate(job.scheduled_date)} · ${job.scheduled_time_window || "Time pending"}`
+            : "Schedule pending"}
+        </span>
+      </div>
     </button>
   );
 }
 
-function TechnicianRow({ t, onAssign, actionLabel, disabled }: {
-  t: HsAssignmentOptionTechnician; onAssign: () => void; actionLabel: string; disabled: boolean;
+function DaySchedule({
+  technicians,
+  jobs,
+  selectedJobId,
+  onSelect,
+}: {
+  technicians: HsDispatchProjection["technician_schedule"];
+  jobs: HsDispatchJobSummary[];
+  selectedJobId: string | null;
+  onSelect: (id: string) => void;
 }) {
-  const reasons = (t.match_reasons ?? []).map(r => MATCH_REASON_LABELS[r] ?? r);
+  const allowed = new Set(jobs.map((job) => job.job_id));
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px",
-      borderRadius: 8, border: "1px solid var(--success-border)", background: "var(--success-bg)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--accent-muted)", color: "var(--accent)",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, fontSize: 12,
-          position: "relative" }}>
-          {t.name.slice(0, 2).toUpperCase()}
-          <span style={{ position: "absolute", bottom: -1, right: -1, width: 9, height: 9, borderRadius: "50%",
-            background: "var(--success-text)", border: "2px solid var(--success-bg)" }}/>
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
-            <CheckCircle2 size={13} style={{ color: "var(--success-text)", flexShrink: 0 }}/>
+    <div style={{ maxHeight: 650, overflow: "auto" }}>
+      {technicians.length ? (
+        <div style={{ minWidth: 880 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `150px repeat(${DAY_END - DAY_START},1fr)`,
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <span />
+            {Array.from({ length: DAY_END - DAY_START }, (_, index) => (
+              <span
+                key={index}
+                style={{
+                  padding: 7,
+                  textAlign: "center",
+                  color: "var(--text-tertiary)",
+                  fontSize: 10,
+                }}
+              >
+                {String(((DAY_START + index - 1) % 12) + 1)}{" "}
+                {DAY_START + index >= 12 ? "PM" : "AM"}
+              </span>
+            ))}
           </div>
-          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {reasons.length > 0 ? `Eligible · ${reasons.join(" · ")}` : "Eligible"}
-          </p>
+          {technicians.map((technician) => {
+            const techJobs = (
+              technician.jobs_in_range ||
+              technician.jobs_today ||
+              []
+            ).filter((job) => allowed.has(job.job_id));
+            return (
+              <div
+                key={technician.staff_member_id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "150px 1fr",
+                  minHeight: 72,
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <TechnicianLabel technician={technician} />
+                <div style={{ position: "relative", margin: "7px 8px" }}>
+                  {techJobs.length ? (
+                    techJobs.map((job) => {
+                      const window = parseWindow(job.scheduled_time_window);
+                      if (!window)
+                        return (
+                          <JobChip
+                            key={job.job_id}
+                            job={job}
+                            selected={job.job_id === selectedJobId}
+                            onClick={() => onSelect(job.job_id)}
+                          />
+                        );
+                      const left = Math.max(
+                        0,
+                        ((window.start - DAY_START) / (DAY_END - DAY_START)) *
+                          100,
+                      );
+                      const width = Math.min(
+                        100 - left,
+                        ((window.end - window.start) / (DAY_END - DAY_START)) *
+                          100,
+                      );
+                      return (
+                        <button
+                          key={job.job_id}
+                          onClick={() => onSelect(job.job_id)}
+                          title={`${job.job_number} · ${job.scheduled_time_window}`}
+                          style={{
+                            position: "absolute",
+                            left: `${left}%`,
+                            width: `${Math.max(width, 8)}%`,
+                            top: 3,
+                            minHeight: 48,
+                            overflow: "hidden",
+                            padding: 7,
+                            textAlign: "left",
+                            cursor: "pointer",
+                            borderRadius: 8,
+                            border: `1px solid ${job.has_conflict ? "var(--danger-border)" : job.job_id === selectedJobId ? "var(--brand)" : "var(--info-border)"}`,
+                            background: job.has_conflict
+                              ? "var(--danger-bg)"
+                              : job.job_id === selectedJobId
+                                ? "var(--accent-muted)"
+                                : "var(--info-bg)",
+                          }}
+                        >
+                          <strong
+                            style={{
+                              display: "block",
+                              color: job.has_conflict
+                                ? "var(--danger-text)"
+                                : "var(--text-primary)",
+                              fontSize: 10.5,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {job.job_number}
+                          </strong>
+                          <span
+                            style={{
+                              color: "var(--text-tertiary)",
+                              fontSize: 9.5,
+                            }}
+                          >
+                            {job.scheduled_time_window}
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        marginTop: 16,
+                        color:
+                          technician.status === "active"
+                            ? "var(--success-text)"
+                            : "var(--text-tertiary)",
+                        fontSize: 11.5,
+                      }}
+                    >
+                      {technician.status === "active"
+                        ? "Available"
+                        : technician.status}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
-      <Btn variant="primary" size="sm" disabled={disabled} onClick={onAssign}>{actionLabel}</Btn>
+      ) : (
+        <EmptyPanel
+          icon={<UserPlus size={22} />}
+          title="No technicians configured"
+          message="Add active technicians and working hours before dispatching jobs."
+        />
+      )}
     </div>
   );
 }
+function WeekSchedule({
+  start,
+  technicians,
+  jobs,
+  selectedJobId,
+  onSelect,
+}: {
+  start: string;
+  technicians: HsDispatchProjection["technician_schedule"];
+  jobs: HsDispatchJobSummary[];
+  selectedJobId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const days = Array.from({ length: 7 }, (_, index) => shiftDate(start, index));
+  const allowed = new Set(jobs.map((job) => job.job_id));
+  return (
+    <div style={{ overflow: "auto", maxHeight: 660 }}>
+      <div className="week-grid">
+        <div className="week-cell" />
+        {days.map((day) => (
+          <div
+            key={day}
+            className="week-cell"
+            style={{
+              minHeight: 48,
+              textAlign: "center",
+              color:
+                day === localToday()
+                  ? "var(--text-link)"
+                  : "var(--text-secondary)",
+              fontWeight: 700,
+              fontSize: 11.5,
+            }}
+          >
+            {formatDate(day)}
+          </div>
+        ))}
+        {technicians.map((technician) => (
+          <React.Fragment key={technician.staff_member_id}>
+            <div className="week-cell">
+              <TechnicianLabel technician={technician} />
+            </div>
+            {days.map((day) => {
+              const dayJobs = (technician.jobs_in_range || []).filter(
+                (job) => allowed.has(job.job_id) && job.scheduled_date === day,
+              );
+              return (
+                <div key={day} className="week-cell">
+                  {dayJobs.map((job) => (
+                    <JobChip
+                      key={job.job_id}
+                      job={job}
+                      selected={job.job_id === selectedJobId}
+                      onClick={() => onSelect(job.job_id)}
+                    />
+                  ))}
+                  {!dayJobs.length && technician.status === "active" && (
+                    <span
+                      style={{ color: "var(--success-text)", fontSize: 10.5 }}
+                    >
+                      Available
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+function TechnicianLabel({
+  technician,
+}: {
+  technician: HsDispatchProjection["technician_schedule"][number];
+}) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+      <span
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          display: "grid",
+          placeItems: "center",
+          background: "var(--accent-muted)",
+          color: "var(--text-link)",
+          fontSize: 10.5,
+          fontWeight: 800,
+          flexShrink: 0,
+        }}
+      >
+        {technician.name.slice(0, 2).toUpperCase()}
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <strong
+          style={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "var(--text-primary)",
+            fontSize: 11.5,
+          }}
+        >
+          {technician.name}
+        </strong>
+        <span style={{ color: "var(--text-tertiary)", fontSize: 10 }}>
+          {technician.status}
+        </span>
+      </div>
+    </div>
+  );
+}
+function JobChip({
+  job,
+  selected,
+  onClick,
+}: {
+  job: HsDispatchJobSummary;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        marginBottom: 5,
+        padding: "6px 7px",
+        textAlign: "left",
+        cursor: "pointer",
+        borderRadius: 7,
+        border: `1px solid ${job.has_conflict ? "var(--danger-border)" : selected ? "var(--brand)" : "var(--border)"}`,
+        background: job.has_conflict
+          ? "var(--danger-bg)"
+          : selected
+            ? "var(--accent-muted)"
+            : "var(--surface-sunken)",
+      }}
+    >
+      <strong
+        style={{
+          display: "block",
+          color: job.has_conflict
+            ? "var(--danger-text)"
+            : "var(--text-primary)",
+          fontSize: 9.5,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {job.job_number}
+      </strong>
+      <span style={{ color: "var(--text-tertiary)", fontSize: 9 }}>
+        {job.scheduled_time_window || "Time pending"}
+      </span>
+    </button>
+  );
+}
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function AssignmentPanel({
+  jobId,
+  options,
+  loading,
+  error,
+  actionLoading,
+  showExcluded,
+  onShowExcluded,
+  onClose,
+  onOpenJob,
+  onSchedule,
+  onAssign,
+  onUnassign,
+}: {
+  jobId: string | null;
+  options: HsAssignmentOptions | null;
+  loading: boolean;
+  error: string | null;
+  actionLoading: boolean;
+  showExcluded: boolean;
+  onShowExcluded: () => void;
+  onClose: () => void;
+  onOpenJob: () => void;
+  onSchedule: () => void;
+  onAssign: (technician: HsAssignmentOptionTechnician) => void;
+  onUnassign: () => void;
+}) {
+  if (!jobId)
+    return (
+      <Card>
+        <EmptyPanel
+          icon={<UserCheck size={24} />}
+          title="Select a job"
+          message="Choose a queue item or scheduled visit to inspect eligibility and assignment ownership."
+        />
+      </Card>
+    );
+  return (
+    <Card padding="none">
+      <div
+        style={{
+          padding: "14px 16px",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <div>
+          <h2 style={sectionTitle}>Assignment decision</h2>
+          <p style={sectionSub}>
+            Only backend-qualified technicians are actionable
+          </p>
+        </div>
+        <button
+          aria-label="Close assignment panel"
+          onClick={onClose}
+          style={{
+            border: 0,
+            background: "transparent",
+            color: "var(--text-tertiary)",
+            cursor: "pointer",
+          }}
+        >
+          <X size={17} />
+        </button>
+      </div>
+      <div style={{ padding: 15, display: "grid", gap: 14 }}>
+        {loading && <Skeleton height={360} />}
+        {error && <Alert tone="danger">{error}</Alert>}
+        {options && (
+          <>
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <strong style={{ color: "var(--text-link)", fontSize: 12 }}>
+                  {options.job_context.job_number}
+                </strong>
+                <StatusBadge status={options.job_context.status} />
+              </div>
+              <h3
+                style={{
+                  margin: "6px 0 2px",
+                  color: "var(--text-primary)",
+                  fontSize: 17,
+                }}
+              >
+                {options.job_context.master_service_name || "Service visit"}
+              </h3>
+              <p style={bodyText}>
+                {options.job_context.customer_alias || "Customer"} ·{" "}
+                {options.job_context.locality || "Locality unavailable"}
+              </p>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+              }}
+            >
+              <Detail
+                label="Schedule"
+                value={
+                  options.job_context.scheduled_date
+                    ? `${formatDate(options.job_context.scheduled_date)} · ${options.job_context.scheduled_time_window || "Time pending"}`
+                    : "Not scheduled"
+                }
+              />
+              <Detail
+                label="Issue"
+                value={options.job_context.issue_summary || "Not supplied"}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button size="sm" variant="secondary" onClick={onOpenJob}>
+                Open job <ExternalLink size={12} />
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onSchedule}
+                disabled={!options.current_assignment}
+              >
+                <Clock3 size={12} />{" "}
+                {options.job_context.scheduled_date ? "Reschedule" : "Schedule"}
+              </Button>
+            </div>
+            {options.current_assignment && (
+              <div
+                style={{
+                  padding: 11,
+                  borderRadius: 9,
+                  border: "1px solid var(--info-border)",
+                  background: "var(--info-bg)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <span
+                    style={{ color: "var(--text-tertiary)", fontSize: 10.5 }}
+                  >
+                    Current owner
+                  </span>
+                  <strong
+                    style={{
+                      display: "block",
+                      color: "var(--text-primary)",
+                      fontSize: 13,
+                    }}
+                  >
+                    {options.current_assignment.staff_name ||
+                      "Assigned technician"}
+                  </strong>
+                </div>
+                {options.available_actions.includes("unassign") && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={onUnassign}
+                    disabled={actionLoading}
+                  >
+                    Unassign
+                  </Button>
+                )}
+              </div>
+            )}
+            <div>
+              <h4 style={{ ...sectionTitle, fontSize: 12.5, marginBottom: 8 }}>
+                Eligible technicians ({options.eligible_technicians.length})
+              </h4>
+              <div style={{ display: "grid", gap: 8 }}>
+                {options.eligible_technicians.map((technician) => {
+                  const current =
+                    options.current_assignment?.assigned_staff_member_id ===
+                    technician.staff_member_id;
+                  return (
+                    <div
+                      key={technician.staff_member_id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: 10,
+                        borderRadius: 9,
+                        border: "1px solid var(--success-border)",
+                        background: "var(--success-bg)",
+                      }}
+                    >
+                      <div>
+                        <strong
+                          style={{
+                            display: "block",
+                            color: "var(--text-primary)",
+                            fontSize: 12.5,
+                          }}
+                        >
+                          {technician.name}
+                        </strong>
+                        <span
+                          style={{
+                            color: "var(--success-text)",
+                            fontSize: 10.5,
+                          }}
+                        >
+                          {current
+                            ? "Current assignment"
+                            : "Skill and availability verified"}
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={current ? "secondary" : "primary"}
+                        disabled={current || actionLoading}
+                        onClick={() => onAssign(technician)}
+                      >
+                        {current
+                          ? "Current"
+                          : options.current_assignment
+                            ? "Reassign"
+                            : "Assign"}
+                      </Button>
+                    </div>
+                  );
+                })}
+                {!options.eligible_technicians.length && (
+                  <Alert tone="warning">
+                    No technician currently passes skill, availability and
+                    conflict checks.
+                  </Alert>
+                )}
+              </div>
+            </div>
+            <div>
+              <Button variant="ghost" size="sm" onClick={onShowExcluded}>
+                <AlertTriangle size={13} /> {showExcluded ? "Hide" : "Show"}{" "}
+                excluded ({options.excluded_technicians.length})
+              </Button>
+              {showExcluded && (
+                <div style={{ display: "grid", gap: 7, marginTop: 8 }}>
+                  {options.excluded_technicians.map((technician) => (
+                    <div
+                      key={technician.staff_member_id}
+                      style={{
+                        padding: 9,
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                      }}
+                    >
+                      <strong
+                        style={{ color: "var(--text-primary)", fontSize: 11.5 }}
+                      >
+                        {technician.name}
+                      </strong>
+                      <p
+                        style={{
+                          margin: "3px 0 0",
+                          color: "var(--danger-text)",
+                          fontSize: 10.5,
+                        }}
+                      >
+                        {(technician.exclusion_reason_codes || [])
+                          .map(
+                            (code) =>
+                              EXCLUSION_LABELS[code] || code.replace(/_/g, " "),
+                          )
+                          .join(" · ") || "Not eligible"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>{label}</p>
-      <p style={{ fontSize: 12.5, color: "var(--text-primary)", margin: 0, fontWeight: 500 }}>{value}</p>
+      <span style={{ color: "var(--text-tertiary)", fontSize: 10.5 }}>
+        {label}
+      </span>
+      <p
+        style={{
+          margin: "3px 0 0",
+          color: "var(--text-primary)",
+          fontSize: 11.5,
+          lineHeight: 1.4,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+function EmptyPanel({
+  icon,
+  title,
+  message,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: 150,
+        padding: 24,
+        display: "grid",
+        placeItems: "center",
+        textAlign: "center",
+      }}
+    >
+      <div>
+        <span style={{ color: "var(--text-tertiary)" }}>{icon}</span>
+        <h3
+          style={{
+            margin: "8px 0 4px",
+            color: "var(--text-primary)",
+            fontSize: 13.5,
+          }}
+        >
+          {title}
+        </h3>
+        <p style={{ ...bodyText, maxWidth: 260 }}>{message}</p>
+      </div>
     </div>
   );
 }

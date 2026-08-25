@@ -66,12 +66,13 @@ const NAV_GROUPS: NavGroup[] = [
     // they group with -- and enable/disable alongside -- Home Services as a
     // whole, instead of sitting in this generic top-level group with no
     // visual tie to the vertical they actually belong to. Customers/Staff/
-    // Complaints stay here: genuinely cross-vertical, no job/booking tie.
+    // Complaints stay discoverable here, but resolve to the one vertically
+    // scoped Home Services queue rather than the retired global duplicate.
     label: "Operations",
     items: [
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <IdCard size={16}/>,       requiredPermission: "staff:read"                    },
-      { id: "complaints", href: "/admin/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY               },
+      { id: "complaints", href: "/admin/home-services/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: "home_services:complaints:view" },
       // "Complaint Policies" folded into the Complaints page as a "Policies"
       // tab 2026-08-05 at explicit user request -- removed as a separate
       // nav item. /admin/complaint-policies route stays live, unlinked.
@@ -91,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Marketing & Growth",
     items: [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "customer-home", href: "/admin/marketing/home", label: "Customer Home",   icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate

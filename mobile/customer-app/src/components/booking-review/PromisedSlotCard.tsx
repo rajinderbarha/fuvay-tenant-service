@@ -26,6 +26,12 @@ function dayLabel(dateIso: string, daysAhead: number): string {
   return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
 }
 
+/** Accessibility labels are queried by voice and automation, so keep their
+ * punctuation stable even when Intl inserts a locale-specific weekday comma. */
+function accessibleDayLabel(dateIso: string, daysAhead: number): string {
+  return dayLabel(dateIso, daysAhead).replace(",", "");
+}
+
 /**
  * Shows WHEN the service will actually happen, before the customer commits.
  *
@@ -157,7 +163,7 @@ export function PromisedSlotCard({
                         onPress={() => handlePick(s)}
                         disabled={isCurrent || selecting !== null}
                         accessibilityRole="button"
-                        accessibilityLabel={`${dayLabel(s.date, s.daysAhead)}, ${s.timeWindow}${isCurrent ? ", currently selected" : ""}`}
+                        accessibilityLabel={`${accessibleDayLabel(s.date, s.daysAhead)}, ${s.timeWindow}${isCurrent ? ", currently selected" : ""}`}
                         style={{
                           flexDirection: "row", alignItems: "center", justifyContent: "space-between",
                           minHeight: theme.touchTargets.comfortable,

@@ -693,11 +693,14 @@ async def list_refund_requests(
     db: AsyncSession = Depends(get_db),
 ):
     refunds = await _refund.list_refund_requests(db, tenant_id=tenant_id, customer_id=customer_id, status=status)
-    return ok([{"id": str(rf.id), "status": rf.status, "complaint_id": str(rf.complaint_id),
-                "refund_type": rf.refund_type,
-                "requested_amount": str(rf.requested_amount) if rf.requested_amount else None,
-                "approved_amount": str(rf.approved_amount) if rf.approved_amount else None,
-                "created_at": str(rf.created_at)} for rf in refunds], _rid(r), "admin.refund.list")
+    # This hand-rolled a thin projection that dropped `refund_number` (the only
+    # human-readable identifier -- so the admin queue showed refunds it could
+    # not name), `recorded_amount` (what was actually paid out), `tenant_id`,
+    # and the customer's `reason`/`rejection_reason`. `to_dict()` already
+    # returns the full row and is what the provider-facing list uses; an admin
+    # has strictly more authority than the provider, so there is nothing here
+    # to withhold from them.
+    return ok([rf.to_dict() for rf in refunds], _rid(r), "admin.refund.list")
 
 
 @admin_refund_router.post("/{refund_id}/approve")

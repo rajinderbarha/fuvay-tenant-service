@@ -17,6 +17,7 @@ from app.engines.admin_catalog.models import (
     MasterIssueType,
     MasterServiceOption,
     MasterService,
+    ServiceGroup,
     ServiceCategory,
     ServiceOptionGroup,
     ServiceOptionMapping,
@@ -53,6 +54,13 @@ def _reject_admin_monetary_fields(body: dict) -> None:
 def _slug(name: str) -> str:
     import re
     return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+
+
+def _issue_payload(issue: MasterIssueType) -> dict:
+    """Serialize a booking problem without the retired artwork field."""
+    payload = issue.to_dict()
+    payload.pop("icon_url", None)
+    return payload
 
 
 class ServiceOptionService:
@@ -383,7 +391,7 @@ class ServiceOptionService:
 
         items = []
         for r in rows:
-            d = r.to_dict()
+            d = _issue_payload(r)
             d["mapped_services_count"] = counts.get(str(r.id), 0)
             items.append(d)
 
@@ -393,7 +401,7 @@ class ServiceOptionService:
         it = await self.db.get(MasterIssueType, issue_id)
         if not it:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue type not found")
-        return it.to_dict()
+        return _issue_payload(it)
 
     async def create_issue_type(self, body: dict) -> dict:
         name = body.get("name", "").strip()
@@ -411,7 +419,6 @@ class ServiceOptionService:
             name=name,
             slug=slug,
             description=body.get("description"),
-            icon_url=body.get("icon_url"),
             severity=body.get("severity_default", body.get("severity", "medium")),
             is_active=True,
             display_order=body.get("display_order", 0),
@@ -425,16 +432,16 @@ class ServiceOptionService:
         )
         self.db.add(it)
         await self.db.flush()
-        await self._audit("issue_type", it.id, "issue_type.created", new=it.to_dict())
+        await self._audit("issue_type", it.id, "issue_type.created", new=_issue_payload(it))
         await self.db.commit()
-        return it.to_dict()
+        return _issue_payload(it)
 
     async def update_issue_type(self, issue_id: uuid.UUID, body: dict) -> dict:
         it = await self.db.get(MasterIssueType, issue_id)
         if not it:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue type not found")
-        old = it.to_dict()
-        for field in ("name", "description", "icon_url", "vertical_type", "metadata_json",
+        old = _issue_payload(it)
+        for field in ("name", "description", "vertical_type", "metadata_json",
                       "requires_photo", "requires_description", "customer_visible", "display_order"):
             if field in body:
                 setattr(it, field, body[field])
@@ -443,9 +450,9 @@ class ServiceOptionService:
         elif "severity" in body:
             it.severity = body["severity"]
         it.updated_by_user_id = self.actor_id
-        await self._audit("issue_type", it.id, "issue_type.updated", old=old, new=it.to_dict())
+        await self._audit("issue_type", it.id, "issue_type.updated", old=old, new=_issue_payload(it))
         await self.db.commit()
-        return it.to_dict()
+        return _issue_payload(it)
 
     async def _set_issue_status(self, issue_id: uuid.UUID, new_status: str) -> dict:
         it = await self.db.get(MasterIssueType, issue_id)
@@ -458,7 +465,7 @@ class ServiceOptionService:
         await self._audit("issue_type", it.id, f"issue_type.{new_status}",
                           old={"status": old_status}, new={"status": new_status})
         await self.db.commit()
-        return it.to_dict()
+        return _issue_payload(it)
 
     async def activate_issue_type(self, issue_id: uuid.UUID) -> dict:
         return await self._set_issue_status(issue_id, "active")
@@ -775,7 +782,10 @@ class ServiceOptionService:
         result = []
         for mapping, it in rows:
             d = mapping.to_dict()
-            d["issue_type"] = it.to_dict()
+            d["issue_type"] = _issue_payload(it)
+            d["mapping_id"] = d["id"]
+            d["name"] = it.name
+            d["code"] = it.code
             result.append(d)
         return result
 

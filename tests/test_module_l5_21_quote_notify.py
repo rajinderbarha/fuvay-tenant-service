@@ -30,6 +30,9 @@ def test_quote_transitions_notify_in_source():
     assert "notify_provider_quote_decision" in revision
     # The helpers create the shared InAppNotification.
     assert "InAppNotification" in inspect.getsource(notifications)
+    customer_notify = inspect.getsource(notifications.notify_customer_quote_sent)
+    assert 'source_type="service_bookings"' in customer_notify
+    assert "source_id=quote.booking_id" in customer_notify
 
 
 class TestQuoteNotifyLive:

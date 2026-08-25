@@ -22,7 +22,7 @@ def _read(path):
 class TestKpiModule:
     def test_reuses_existing_sla_projection_not_a_second_one(self):
         c = _read(KPIS)
-        assert "from app.engines.final_records.sla_summary import attach_sla" in c
+        assert "from app.engines.final_records.sla_summary import sla_filter_condition" in c
 
     def test_defines_all_six_spec_kpis(self):
         c = _read(KPIS)
@@ -37,9 +37,10 @@ class TestKpiModule:
 
     def test_at_risk_counts_both_at_risk_and_breached(self):
         c = _read(KPIS)
-        start = c.index("at_risk = sum")
-        line = c[start:start + 120]
-        assert '"AT_RISK"' in line and '"BREACHED"' in line
+        start = c.index("risk_condition = (")
+        block = c[start:start + 220]
+        assert '"AT_RISK"' in block and '"BREACHED"' in block
+        assert "func.count().filter(risk_condition)" in c
 
 
 class TestRouterEnrichment:
@@ -73,9 +74,11 @@ class TestRouterEnrichment:
         assert "def _parse_date" in c
         assert "INVALID_DATE" in c
 
-    def test_sla_filter_is_post_filtered_not_a_sql_column(self):
+    def test_sla_filter_is_database_filtered_before_pagination(self):
         c = _read(ROUTER)
-        assert 'job_sla.get("sla_status"' in c
+        assert "sla_filter_condition(ServiceJob, sla)" in c
+        assert "q = q.where(sla_condition)" in c
+        assert "count_q = count_q.where(sla_condition)" in c
 
     def test_detail_endpoint_includes_quote_visit_fee_and_direct_payment_notice(self):
         c = _read(ROUTER)

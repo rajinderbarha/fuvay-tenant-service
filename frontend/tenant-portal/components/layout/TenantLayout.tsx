@@ -14,7 +14,7 @@ import {
   Activity, CheckSquare, X, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, ArrowRight,
   CreditCard, Shield,
-  MapPin, Clock, Star, Truck, Wallet, ListChecks,
+  Clock, Star, Truck, Wallet, ListChecks,
   Image, UserCog, Lock, Building2,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
@@ -52,9 +52,8 @@ type NavGroup = { label: string; items: NavItem[]; special?: string };
 /**
  * Sidebar information architecture.
  *
- * This adopts the GROUPING and LABELS from the approved UX-03 IA
- * (lib/ux03/nav-ia.ts) but deliberately does NOT import it wholesale, for
- * three evidence-based reasons:
+ * This keeps the production grouping and labels local because older navigation
+ * prototypes contained superseded and non-navigable destinations:
  *
  *   1. UX03_NAV_GROUPS predates the Home Services consolidation. Its hrefs
  *      still point at the legacy routes (/bookings, /service-jobs,
@@ -65,8 +64,8 @@ type NavGroup = { label: string; items: NavItem[]; special?: string };
  *   3. Several items are marked `readiness: "MOCK_DESIGN_ONLY"` -- design
  *      approved, never built.
  *
- * So the structure is UX-03's; the destinations are the canonical routes
- * that actually exist and are backed by mounted endpoints. Where a Home
+ * Destinations below are canonical routes that actually exist and are backed
+ * by mounted endpoints. Where a Home
  * Services workspace supersedes a legacy page, the workspace wins -- the
  * legacy route stays live and reachable by URL, it simply leaves the nav.
  */
@@ -90,15 +89,9 @@ const NAV_GROUPS: NavGroup[] = [
     // Profile and Documents exactly this way.
     label: "Business",
     items: [
-      // These point at the SETUP flow's own screens, not the older standalone
-      // /profile and /business/coverage-hours pages. These active workspaces are the ones
-      // that match how this product actually works -- coverage, weekly business hours
-      // and booking controls together on one page -- and pointing the menu somewhere
-      // else would give a provider two different editors for the same settings, only
-      // one of which reflects the real workflow.
-      // /profile, not the setup step. The setup step is a wizard page for onboarding;
-      // this is the live profile a running business manages, and it is now the page
-      // built from components/business-profile/ rather than the older inline duplicate.
+      // These are live business settings, not onboarding-only screens. Coverage,
+      // weekly hours and booking controls stay together so providers do not see
+      // two different editors for the same customer booking rules.
       { id: "business-profile",    href: "/profile",                                          label: "Business Profile", icon: <Building2 size={16}/> },
       { id: "business-hours",      href: "/business/coverage-hours",              label: "Coverage & Hours", icon: <Clock size={16}/> },
       { id: "verification-documents", href: "/business/verification-documents",   label: "Documents", icon: <FileText size={16}/> },
@@ -118,11 +111,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // UX-03 groups: "Services and Pricing" + "Service Areas".
+    // Coverage areas now live in Business -> Coverage & Hours. Keeping a
+    // second Service Areas item here created two entry points for the same
+    // provider rule, so Services & Coverage is focused on the catalog itself.
     label: "Services & Coverage",
     items: [
       { id: "hs-services",  href: "/home-services/services",  label: "Services & Pricing", icon: <ListChecks size={16}/> },
-      { id: "hs-coverage",  href: "/home-services/coverage",  label: "Service Areas", icon: <MapPin size={16}/> },
       { id: "inventory",    href: "/inventory",               label: "Parts & Inventory", icon: <Package size={16}/> },
     ],
   },
@@ -554,7 +548,7 @@ function TenantShellInner({ children, activeNav }: {
   // Once every real setup step is done (10/10, from the shared hook), the
   // The "Setup" nav group was removed entirely -- Business Profile (in
   // "Overview" above) is now the one-stop place to reach every individual
-  // setup page (Service Areas, Service Setup, Service Coverage, Business
+  // setup page (Coverage & Hours, Service Setup, Service Coverage, Business
   // Hours) or reopen the wizard drawer, via its "Business Setup" section.
   const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
     .map(g => ({ ...g, items: g.items.filter(it => itemVisible(it.id)).map(it => ({ ...it, label: itemLabel(it) })) }))
@@ -568,7 +562,7 @@ function TenantShellInner({ children, activeNav }: {
       loaded: entitlementsLoaded,
       refresh: loadEntitlements,
     }}>
-    <div style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
+    <div className="provider-app-shell" style={{ display: "flex", height: "100vh", background: "var(--bg-soft, var(--bg))", overflow: "hidden" }}>
       <style>{`
         .sidebar-rail-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
         @media (prefers-reduced-motion: reduce) {
@@ -577,7 +571,7 @@ function TenantShellInner({ children, activeNav }: {
       `}</style>
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside style={{
+      <aside className="provider-sidebar" style={{
         width: w, flexShrink: 0, height: "100vh",
         background: "var(--sidebar-bg)", display: "flex", flexDirection: "column",
         borderRight: "1px solid var(--sidebar-border)",
@@ -709,7 +703,7 @@ function TenantShellInner({ children, activeNav }: {
       {/* ── Main ─────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top nav */}
-        <header style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
+        <header className="provider-topbar" style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
           <div style={{ flex: 1, maxWidth: 360 }}>
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
@@ -904,8 +898,8 @@ function TenantShellInner({ children, activeNav }: {
           </div>
         </header>
 
-        <main style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto" }}>
+        <main className="provider-main" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
+          <div className="provider-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>
             {children}
           </div>

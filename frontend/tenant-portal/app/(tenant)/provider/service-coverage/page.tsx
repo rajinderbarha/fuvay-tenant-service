@@ -535,7 +535,7 @@ function ConfigPanel({ service, label, areas, tab, onTab, onSaved }:
 // never actually persisted. Fixed: this tab now only collects/saves
 // service-level brand coverage (matching what the backend actually
 // stores). Type-specific brand *pricing* (which is real and type-scoped)
-// belongs in the Service Setup wizard at /tenant/setup/services.
+// belongs in the canonical onboarding Services & Pricing setup workspace.
 function TypesBrandsTab({ service, types, brands, availBrands, loading, onSaved }:
   { service: TenantEnabledService; types: HsSetupType[]; brands: HsSetupBrand[];
     availBrands: ProviderAvailableBrand[]; loading: boolean; onSaved: () => void }) {

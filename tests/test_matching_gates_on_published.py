@@ -29,18 +29,18 @@ class TestMatchingGatesOnPublished:
         start = c.index("async def _passes_full_eligibility_gate")
         end = c.index("\n\n\n", start)
         block = c[start:end]
-        assert "FROM tenant_services WHERE tenant_id=:tid AND master_service_id=:oid" in block
-        assert 'published_row.setup_status != "published"' in block
+        assert "TenantService.master_service_id == offering_id" in block
+        assert 'TenantService.setup_status == "published"' in block
         assert '"OFFERING_NOT_PUBLISHED"' in block
 
-    def test_absence_of_tenant_service_row_is_not_itself_a_block(self):
-        """Legacy/simple offerings covered without an explicit TenantService
-        row must not be newly excluded -- only an explicit non-published
-        status blocks."""
+    def test_absence_of_tenant_service_row_blocks_matching(self):
+        """Coverage is retained for audit/history, so it cannot publish a
+        service by itself; a current tenant service row is mandatory."""
         c = _read(MATCHING_ENGINE)
-        start = c.index("published_row = (await db.execute")
-        block = c[start:start + 400]
-        assert "published_row is not None and" in block
+        start = c.index("published_offering_id = (await db.execute")
+        block = c[start:start + 500]
+        assert "if published_offering_id is None" in block
+        assert 'return False, "OFFERING_NOT_PUBLISHED"' in block
 
     def test_reason_code_registered_in_eligibility_gate_codes(self):
         c = _read(MATCHING_ENGINE)

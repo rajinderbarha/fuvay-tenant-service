@@ -15,6 +15,7 @@ ERR_REPORT_EXPORT_NOT_ALLOWED      = "REPORT_EXPORT_NOT_ALLOWED"
 ERR_REPORT_RUN_FAILED              = "REPORT_RUN_FAILED"
 ERR_REPORT_ASYNC_REQUIRED          = "REPORT_ASYNC_REQUIRED"
 ERR_REPORT_TOO_LARGE               = "REPORT_TOO_LARGE"
+ERR_REPORT_FORMAT_UNSUPPORTED      = "REPORT_FORMAT_UNSUPPORTED"
 
 # ── Report keys — Admin ───────────────────────────────────────────────────────
 RPT_ADMIN_PLATFORM_SUMMARY         = "admin_platform_summary_report"

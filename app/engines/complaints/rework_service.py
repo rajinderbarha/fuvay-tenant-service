@@ -13,6 +13,7 @@ from app.engines.complaints.constants import (
     ACTOR_ADMIN, ACTOR_PROVIDER, ACTOR_SYSTEM,
     ERR_REWORK_NOT_FOUND, ERR_REWORK_ACCESS_DENIED, ERR_REWORK_NOT_ALLOWED,
 )
+from app.exceptions import ServiceOSException
 from app.engines.complaints.models import ServiceReworkRequest, CustomerComplaint, ComplaintEvent
 from app.engines.complaints.complaint_service import ComplaintService
 
@@ -51,6 +52,37 @@ class ServiceReworkService:
         await db.commit()
         return rework
 
+    # Rework had NO transition validation at all: every method below simply
+    # assigned its target status. That let a rework skip approval entirely
+    # (provider "start" straight from `requested`), let admin approval move a
+    # rework that was already in progress BACKWARDS to `approved`, and let a
+    # rework be completed without ever being approved or scheduled -- so the
+    # completion could resolve the underlying complaint on the strength of
+    # work no one authorised. RefundRequestService already guards its own
+    # transitions this way (REFUND_INVALID_STATE); this mirrors it.
+    _ALLOWED_REWORK_TRANSITIONS: dict[str, set[str]] = {
+        REWORK_REQUESTED:   {REWORK_APPROVED, REWORK_REJECTED, REWORK_CANCELLED},
+        REWORK_APPROVED:    {REWORK_ASSIGNED, REWORK_SCHEDULED, REWORK_IN_PROGRESS, REWORK_CANCELLED},
+        REWORK_ASSIGNED:    {REWORK_SCHEDULED, REWORK_IN_PROGRESS, REWORK_CANCELLED},
+        REWORK_SCHEDULED:   {REWORK_ASSIGNED, REWORK_IN_PROGRESS, REWORK_CANCELLED},
+        REWORK_IN_PROGRESS: {REWORK_COMPLETED, REWORK_CANCELLED},
+        REWORK_COMPLETED:   set(),
+        REWORK_REJECTED:    set(),
+        REWORK_CANCELLED:   set(),
+    }
+
+    @classmethod
+    def _assert_rework_transition(cls, rework, target: str) -> None:
+        current = rework.status
+        if current == target:
+            return
+        if target not in cls._ALLOWED_REWORK_TRANSITIONS.get(current, set()):
+            raise ServiceOSException(
+                "REWORK_INVALID_STATE",
+                "A rework in state '%s' cannot move to '%s'." % (current, target),
+                status_code=409,
+            )
+
     async def approve_rework(
         self,
         db: AsyncSession,
@@ -60,6 +92,7 @@ class ServiceReworkService:
         request_id: str = "—",
     ) -> ServiceReworkRequest:
         rework = await self._get_rework(db, rework_id)
+        self._assert_rework_transition(rework, REWORK_APPROVED)
         rework.status      = REWORK_APPROVED
         rework.admin_notes = admin_notes
         await db.flush()
@@ -83,6 +116,7 @@ class ServiceReworkService:
         request_id: str = "—",
     ) -> ServiceReworkRequest:
         rework = await self._get_rework(db, rework_id)
+        self._assert_rework_transition(rework, REWORK_ASSIGNED)
         rework.assigned_staff_member_id = staff_member_id
         rework.status = REWORK_ASSIGNED
         await db.commit()
@@ -99,6 +133,7 @@ class ServiceReworkService:
         tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
         rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
+        self._assert_rework_transition(rework, REWORK_SCHEDULED)
         from datetime import date
         if scheduled_date:
             rework.scheduled_date = date.fromisoformat(scheduled_date)
@@ -112,6 +147,7 @@ class ServiceReworkService:
         tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
         rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
+        self._assert_rework_transition(rework, REWORK_IN_PROGRESS)
         rework.status = REWORK_IN_PROGRESS
         await db.commit()
         return rework
@@ -126,6 +162,7 @@ class ServiceReworkService:
         tenant_id: uuid.UUID | None = None,
     ) -> ServiceReworkRequest:
         rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
+        self._assert_rework_transition(rework, REWORK_COMPLETED)
         rework.status       = REWORK_COMPLETED
         rework.completed_at = datetime.now(timezone.utc)
         if notes:

@@ -14,6 +14,8 @@ import { useApi } from "../../hooks/useApi";
 
 export function IconPicker({
   value, onChange, context, label, shape = "square", size: sizeProp, maxMb = 2,
+  compact = false, removable, disabled = false,
+  noun = "icon",
 }: {
   value: string | null | undefined;
   onChange: (url: string | null) => void;
@@ -24,6 +26,16 @@ export function IconPicker({
   size?: number;
   /** Must match the backend's per-context cap (app/engines/media/validation.py). Defaults to 2MB. */
   maxMb?: number;
+  /** Thumbnail-only treatment for dense enterprise grids. Editing and removal
+   * remain available inside the picker modal. */
+  compact?: boolean;
+  /** Override whether the current preview represents a removable explicit
+   * value. Useful when `value` is inherited artwork. */
+  removable?: boolean;
+  disabled?: boolean;
+  /** Customer-facing name for the asset type; keeps the shared Cloudinary
+   * picker suitable for logos and campaign artwork as well as icons. */
+  noun?: string;
 }) {
   const [open, setOpen] = useState(false);
   const size = sizeProp ?? 56;
@@ -37,12 +49,14 @@ export function IconPicker({
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          title="Click to choose or upload an icon"
+          onClick={() => { if (!disabled) setOpen(true); }}
+          disabled={disabled}
+          title={disabled ? `${noun} is read-only` : `Click to choose or upload ${noun}`}
           style={{
-            width: size, height: size, borderRadius: radius, padding: 0, cursor: "pointer",
+            width: size, height: size, borderRadius: radius, padding: 0, cursor: disabled ? "default" : "pointer",
             border: "1px dashed var(--border-strong)", background: "var(--surface-sunken)",
             display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0,
+            opacity: disabled ? 0.75 : 1,
           }}
         >
           {value ? (
@@ -52,21 +66,26 @@ export function IconPicker({
             <ImageIcon size={20} color="var(--text-tertiary)" />
           )}
         </button>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Btn variant="ghost" size="sm" onClick={() => setOpen(true)}>{value ? "Change" : "Add icon"}</Btn>
-          {value && (
-            <Btn variant="ghost" size="sm" onClick={() => onChange(null)} style={{ color: "var(--danger-text)" }}>
-              Remove
-            </Btn>
-          )}
-        </div>
+        {!compact && !disabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <Btn variant="ghost" size="sm" onClick={() => setOpen(true)}>{value ? `Change ${noun}` : `Add ${noun}`}</Btn>
+            {value && (
+              <Btn variant="ghost" size="sm" onClick={() => onChange(null)} style={{ color: "var(--danger-text)" }}>
+                Remove
+              </Btn>
+            )}
+          </div>
+        )}
       </div>
       {open && (
         <IconPickerModal
           context={context}
+          noun={noun}
           maxMb={maxMb}
+          hasCurrentValue={(removable ?? !!value) && !!value}
           onClose={() => setOpen(false)}
           onSelect={url => { onChange(url); setOpen(false); }}
+          onRemove={() => { onChange(null); setOpen(false); }}
         />
       )}
     </div>
@@ -74,16 +93,19 @@ export function IconPicker({
 }
 
 function IconPickerModal({
-  context, maxMb, onClose, onSelect,
+  context, noun, maxMb, hasCurrentValue, onClose, onSelect, onRemove,
 }: {
   context: IconLibraryContext;
+  noun: string;
   maxMb: number;
+  hasCurrentValue: boolean;
   onClose: () => void;
   onSelect: (url: string) => void;
+  onRemove: () => void;
 }) {
   const [tab, setTab] = useState<"upload" | "existing">("upload");
   return (
-    <Modal open onClose={onClose} title="Choose an icon" size="md">
+    <Modal open onClose={onClose} title={`Choose ${noun}`} size="md">
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 14 }}>
         {(["upload", "existing"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -99,6 +121,13 @@ function IconPickerModal({
       {tab === "upload"
         ? <UploadTab context={context} maxMb={maxMb} onSelect={onSelect} />
         : <ExistingTab context={context} onSelect={onSelect} />}
+      {hasCurrentValue && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
+          <Btn variant="ghost" size="sm" onClick={onRemove} style={{ color: "var(--danger-text)" }}>
+            Remove current {noun}
+          </Btn>
+        </div>
+      )}
     </Modal>
   );
 }

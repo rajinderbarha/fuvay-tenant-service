@@ -7,11 +7,19 @@
  *   "provider_business"                 → POST /v1/provider/profile/logo
  *   "provider_shop"                     → POST /v1/provider/profile/shop-photo
  *   "staff_own"                         → POST /v1/staff/profile/photo
+ *   "staff_managed"                     → POST /v1/media/upload (staff_profile_photo)
  *   "customer"                          → POST /v1/customer/profile/photo
+ *
+ * Every owner type goes through the same picker → validate → crop → upload
+ * flow (see ImageCropModal): the file the server receives is always a cropped,
+ * correctly sized image, never the raw camera original.
  */
 import React, { useRef, useState } from "react";
 import { Camera, Trash2, Upload, X, Loader } from "lucide-react";
 import { mediaAssetApi, type MediaAsset } from "../../lib/api";
+import {
+  ImageCropModal, CROP_PRESETS, CROP_ACCEPT, validateImageFile, type CropSpec,
+} from "../media/ImageCropModal";
 
 const _MEDIA_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 export function resolveMediaUrl(url: string | null | undefined): string | null {
@@ -52,7 +60,18 @@ function friendlyError(code?: string, fallback = "Upload failed. Please try agai
 
 export type OwnerType =
   | "admin" | "provider_user" | "provider_business" | "provider_shop"
-  | "staff" | "staff_own" | "customer";
+  | "staff" | "staff_own" | "staff_managed" | "customer";
+
+/**
+ * Crop rules per destination. The size ceilings match the server-side
+ * CONTEXT_RULES entries these uploads land in, so a file the picker accepts is
+ * never rejected later by the media engine.
+ */
+function cropSpecFor(ownerType: OwnerType): CropSpec {
+  if (ownerType === "provider_shop")     return CROP_PRESETS.cover;   // 10 MB, 3:1 banner
+  if (ownerType === "provider_business") return CROP_PRESETS.logo;    // 5 MB, square
+  return CROP_PRESETS.avatar;                                         // 5 MB, square
+}
 
 export interface ProfilePhotoUploaderProps {
   ownerType: OwnerType;
@@ -82,7 +101,11 @@ export function ProfilePhotoUploader({
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
   const [hover,      setHover]      = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const spec    = cropSpecFor(ownerType);
+  const isCover = spec.shape === "wide";
 
   // Sync when parent async-loads profile data and passes down a real URL
   React.useEffect(() => {
@@ -109,6 +132,17 @@ export function ProfilePhotoUploader({
           asset = await mediaAssetApi.uploadShopPhoto(file); break;
         case "staff_own":
           asset = await mediaAssetApi.uploadStaffPhoto(file); break;
+        case "staff_managed":
+          // A manager uploading on a team member's behalf — the photo is owned
+          // by the tenant until the member record is saved with its URL.
+          //
+          // Uploaded PUBLIC on purpose. A private asset gets no public_url, so
+          // its preview_url falls back to /v1/media/{id}/view, which is behind
+          // get_current_user — and an <img> tag cannot send a bearer token, so
+          // the avatar 401s and silently renders as initials forever. Every
+          // other avatar setter (user photo, business logo, shop photo) already
+          // uploads with is_public=True for exactly this reason.
+          asset = await mediaAssetApi.upload("staff_profile_photo", "tenant", ownerId ?? "", file, true); break;
         case "customer":
           asset = await mediaAssetApi.upload("customer_profile_photo", "user", ownerId ?? "self", file, false); break;
         default:
@@ -136,6 +170,9 @@ export function ProfilePhotoUploader({
           if (mediaId) await mediaAssetApi.removeShopPhoto(mediaId); break;
         case "staff_own":
           await mediaAssetApi.removeStaffPhoto(); break;
+        case "staff_managed":
+          // No dedicated endpoint: the asset itself is what was created.
+          if (mediaId) await mediaAssetApi.delete(mediaId); break;
         default:
           await mediaAssetApi.removeProfilePhoto();
       }
@@ -150,8 +187,24 @@ export function ProfilePhotoUploader({
     }
   }
 
-  const circleStyle: React.CSSProperties = {
-    width: px, height: px, borderRadius: "50%",
+  /**
+   * Picker gate: reject unusable files here, with a specific reason, instead of
+   * uploading them and surfacing a generic server error.
+   */
+  async function handlePicked(file: File) {
+    setError(null);
+    const check = await validateImageFile(file, spec);
+    if (!check.ok) { setError(check.error ?? "That image cannot be used."); return; }
+    setPendingFile(file);
+  }
+
+  // A cover photo is a banner, so preview it as one rather than as a circle.
+  const frameW = isCover ? Math.round(px * spec.aspect) : px;
+  const frameH = px;
+
+  const frameStyle: React.CSSProperties = {
+    width: frameW, height: frameH,
+    borderRadius: isCover ? 10 : "50%",
     position: "relative", flexShrink: 0,
     border: "2px solid var(--border)",
     overflow: "hidden", cursor: disabled ? "default" : "pointer",
@@ -163,7 +216,7 @@ export function ProfilePhotoUploader({
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
       <div
-        style={circleStyle}
+        style={frameStyle}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         onClick={() => !disabled && !loading && fileRef.current?.click()}
@@ -174,8 +227,26 @@ export function ProfilePhotoUploader({
             src={previewUrl}
             alt={displayName ?? "Photo"}
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            onError={() => setPreviewUrl(null)}
+            // Silently blanking here made a stored-but-unreachable photo look
+            // identical to "no photo uploaded", which hid a real bug for a long
+            // time. Say so instead.
+            onError={() => {
+              setPreviewUrl(null);
+              setError("The photo uploaded but could not be displayed. Please try again or contact support.");
+            }}
           />
+        ) : isCover ? (
+          // Initials read as an avatar; a banner placeholder needs to say what
+          // it is instead.
+          <div style={{
+            width: "100%", height: "100%",
+            background: `linear-gradient(135deg, ${pal.bg} 0%, ${pal.text}22 100%)`,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+            color: pal.text,
+          }}>
+            <Camera size={px * 0.22}/>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Add a cover photo</span>
+          </div>
         ) : (
           <div style={{
             width: "100%", height: "100%",
@@ -253,9 +324,18 @@ export function ProfilePhotoUploader({
       <input
         ref={fileRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept={CROP_ACCEPT}
         style={{ display: "none" }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) handlePicked(f); e.target.value = ""; }}
+      />
+
+      <ImageCropModal
+        open={Boolean(pendingFile)}
+        file={pendingFile}
+        spec={spec}
+        title={isCover ? "Adjust cover photo" : "Adjust photo"}
+        onCancel={() => setPendingFile(null)}
+        onConfirm={async cropped => { setPendingFile(null); await handleFile(cropped); }}
       />
     </div>
   );

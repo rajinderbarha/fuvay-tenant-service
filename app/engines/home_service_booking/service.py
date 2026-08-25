@@ -302,6 +302,8 @@ class HomeServiceChatbotBookingService:
 
     async def get_assistant_bootstrap(
         self, customer_id: uuid.UUID, category_slug: str, zipcode: str | None,
+        service_group_slug: str | None = None,
+        master_service_id: uuid.UUID | None = None,
     ) -> dict:
         """Backend-first Booking Assistant bootstrap -- ISSUE-first (real
         customer intent: "what's wrong with your AC", never an internal
@@ -318,7 +320,10 @@ class HomeServiceChatbotBookingService:
         this zipcode."""
         from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
 
-        catalog = await list_serviceable_issues(self.db, category_slug, zipcode)
+        catalog = await list_serviceable_issues(
+            self.db, category_slug, zipcode, service_group_slug=service_group_slug,
+            master_service_id=master_service_id,
+        )
         issues = catalog.get("issues", [])
 
         resumable_draft = None
@@ -348,6 +353,7 @@ class HomeServiceChatbotBookingService:
         return {
             "schema_version": 1,
             "category": {"id": catalog.get("category_id"), "slug": catalog.get("category_slug"), "name": catalog.get("category")},
+            "service_group": catalog.get("service_group"),
             "zipcode": zipcode,
             "serviceable": len(issues) > 0,
             "issues": [
@@ -365,6 +371,8 @@ class HomeServiceChatbotBookingService:
         self, customer_id: uuid.UUID, ai_session_id: uuid.UUID | None,
         category_slug: str, zipcode: str | None, issue_id: str,
         additional_issue_ids: list[str] | None = None,
+        service_group_slug: str | None = None,
+        master_service_id: uuid.UUID | None = None,
     ) -> dict:
         """Canonical issue-selection operation (Phase 7): validates the
         issue(s) against the SAME real, zipcode-serviceable list bootstrap
@@ -392,7 +400,10 @@ class HomeServiceChatbotBookingService:
         from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
         from app.engines.home_service_booking.question_flow_service import QuestionFlowService
 
-        catalog = await list_serviceable_issues(self.db, category_slug, zipcode)
+        catalog = await list_serviceable_issues(
+            self.db, category_slug, zipcode, service_group_slug=service_group_slug,
+            master_service_id=master_service_id,
+        )
         issues = catalog.get("issues", [])
         issues_by_id = {i["id"]: i for i in issues}
 
@@ -891,13 +902,13 @@ class HomeServiceChatbotBookingService:
         return {"selected_provider": match, "draft_status": draft.status}
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 10B. PROVIDER-FIRST MATCHING + CUSTOMER PRICE CHOICE
+    # 10B. PROVIDER-FIRST MATCHING + SERVER-RESOLVED PRICE
     # ══════════════════════════════════════════════════════════════════════════
     # Corrects the list-based flow above (find_bookable_providers + select_provider,
     # which let the customer pick a provider manually from a list). The backend
     # now selects exactly one provider via full eligibility gating + scoring,
-    # THEN computes that provider's Low/Mid/High price options. The customer
-    # never sees or picks from a provider list in this flow.
+    # THEN resolves that provider's published price and Finance charges. The
+    # customer never sees or picks from a provider list in this flow.
 
     async def match_provider_and_price(
         self,
@@ -914,12 +925,12 @@ class HomeServiceChatbotBookingService:
         reveal_internal_score: bool = False,
     ) -> dict:
         """Steps 3-8 of the corrected flow, atomically: find eligible providers,
-        rank them, select the single best one, compute its price options, and
+        rank them, select the single best one, resolve its price, and
         compute a separate area comparison. Returns the ticket-required response
         shape. If draft_id is given, persists a snapshot onto the draft.
 
-        Home Services scope guard: this entire flow — provider-first matching,
-        Low/Mid/High bargain pricing, "customer pays provider directly" — is
+        Home Services scope guard: this entire provider-first, direct-payment
+        flow is
         Home-Services-only. Raises VerticalFlowNotSupported for any other
         vertical (CA/professional services, IELTS/coaching, restaurants, real
         estate, education, listing/menu/subscription businesses)."""
@@ -987,11 +998,9 @@ class HomeServiceChatbotBookingService:
         # offering, so Guramrit's AC Gas Refilling (inspection-mode) got a
         # `standard_price` of literally ₹0.00 from an unrelated, tenant-
         # agnostic global pricing rule, which then reached the customer-
-        # facing Booking Review as if it were a real price. The visit fee /
-        # `requires_inspection_estimate` flag was already correctly resolved
-        # earlier by `resolve_price_estimate` (`_compute_price_snapshot`)
-        # and lives in `draft.price_snapshot` -- this function must leave it
-        # untouched, not overwrite it with a spurious fixed number.
+        # facing Booking Review as if it were a real price. Matching now
+        # persists the visit-fee contract itself, after the provider is known;
+        # it never depends on a provider-neutral estimate running first.
         offering = await self._get_offering(master_service_id)
         pricing_model = await self._effective_pricing_model(offering, job_type_id)
         inspection_mode = pricing_model == PRICING_MODEL_VISIT_FEE
@@ -1097,6 +1106,12 @@ class HomeServiceChatbotBookingService:
                 "price_options": price_options,
                 "standard_price": float(standard_price) if standard_price is not None else None,
             }
+            # Return the exact persisted customer-safe pricing contract as
+            # part of this atomic operation. Native clients must not call the
+            # legacy provider-neutral /price-estimate route first: Home
+            # Services prices belong to the matched provider, so matching and
+            # pricing have one authoritative transaction boundary.
+            result["price_snapshot"] = draft.price_snapshot
             draft.price_status = PRICE_STATUS_ESTIMATED
             draft.provider_match_status = PROVIDER_MATCH_MATCHED
             draft.status = DRAFT_STATUS_PROVIDER_MATCHED
@@ -1259,7 +1274,19 @@ class HomeServiceChatbotBookingService:
         # the commitment -- fall back to it rather than reporting no SLA at
         # all (which would leave the provider with nothing to be held to).
         sla_minutes = offering.estimated_duration_minutes
-        if draft.selected_tenant_id:
+        # Preserve a slot the customer already selected. Rebuilding the
+        # summary must not silently replace their choice with the newest
+        # earliest slot on every refresh.
+        existing_slot = existing.get("promised_slot")
+        if (
+            draft.preferred_date
+            and draft.preferred_time_window
+            and isinstance(existing_slot, dict)
+            and existing_slot.get("date") == draft.preferred_date.isoformat()
+            and existing_slot.get("time_window") == draft.preferred_time_window
+        ):
+            promised_slot = existing_slot
+        elif draft.selected_tenant_id:
             from app.engines.home_service_booking.provider_slot_service import (
                 find_earliest_available_slot,
             )
@@ -1298,10 +1325,22 @@ class HomeServiceChatbotBookingService:
                 and bool(draft.selected_tenant_id)
                 and pricing_ready
                 and job_type_error is None
+                and (
+                    not offering.requires_schedule
+                    or bool(draft.preferred_date and draft.preferred_time_window)
+                )
             ),
             # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 6): the
             # customer-facing field-level readiness contract.
-            "missing": (["job_type"] if job_type_error else []),
+            "missing": (
+                (["job_type"] if job_type_error else [])
+                + (
+                    ["preferred_date", "preferred_time_window"]
+                    if offering.requires_schedule
+                    and not (draft.preferred_date and draft.preferred_time_window)
+                    else []
+                )
+            ),
             "errors":  ([job_type_error] if job_type_error else []),
             # The real, capacity-checked slot this provider can actually
             # honour -- resolved BEFORE the customer confirms so they make
@@ -1455,6 +1494,8 @@ class HomeServiceChatbotBookingService:
         summary = {
             **existing,
             "promised_slot": promised_slot,
+            "preferred_date": day.isoformat(),
+            "preferred_time_window": time_window,
             "service_sla_minutes": promised_slot.get("slot_minutes") or existing.get("service_sla_minutes"),
             "service_due_at": promised_slot.get("ends_at") or existing.get("service_due_at"),
             "is_emergency": bool(emergency),
@@ -1463,6 +1504,18 @@ class HomeServiceChatbotBookingService:
             "emergency_surcharge": str(surcharge) if surcharge is not None else None,
         }
         draft.booking_summary = summary
+
+        # The chosen slot must land on the draft's OWN scheduling columns, not
+        # only inside booking_summary. `preferred_date` is what
+        # `_compute_missing_fields` validates at confirm time (it is in
+        # `required_fields` whenever the offering has requires_schedule), so
+        # writing the slot to the summary alone left the customer with a
+        # successful 200 from this endpoint and then
+        # HOME_BOOKING_REQUIRED_FIELD_MISSING: preferred_date at confirm —
+        # a dead end with no way forward from the UI. Confirmed live before
+        # this fix: select-slot 200, draft.preferred_date still NULL.
+        draft.preferred_date = day
+        draft.preferred_time_window = time_window
         draft.updated_at = utcnow()
         await self._emit_event(
             draft_id=draft.id, actor_type=ACTOR_CUSTOMER,
@@ -1472,7 +1525,10 @@ class HomeServiceChatbotBookingService:
         )
         await self.db.commit()
         await self.db.refresh(draft)
-        return {"booking_summary": summary, "draft_status": draft.status}
+        # Rebuild readiness from the now-persisted schedule and preserve the
+        # selected slot via the existing-slot branch above. This keeps the
+        # response, draft columns and confirm gate on one authoritative state.
+        return await self.build_booking_summary(draft_id=draft.id, customer_id=customer_id)
 
     async def _emergency_surcharge_for(self, draft) -> "Decimal | None":
         """The tenant's own configured emergency surcharge for this offering.
@@ -2112,6 +2168,12 @@ class HomeServiceChatbotBookingService:
         elif pricing_model == PRICING_MODEL_VISIT_FEE:
             tenant_visit_fee = await self._resolve_selected_tenant_visit_fee(draft)
             visit_fee_value = tenant_visit_fee if tenant_visit_fee and tenant_visit_fee > 0 else float(offering.visit_fee)
+            if visit_fee_value <= 0:
+                raise ServiceOSException(
+                    "PROVIDER_VISIT_FEE_NOT_CONFIGURED",
+                    "The matched provider has not published a valid visit or inspection fee.",
+                    status_code=422,
+                )
             base  = max(visit_fee_value, floor_price)
             min_price = base
             max_price = None

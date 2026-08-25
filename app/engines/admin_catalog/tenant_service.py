@@ -449,9 +449,13 @@ class TenantCatalogService:
 
         # Read-only use: no actor/request context is needed because
         # list_service_issue_mappings performs no writes and no audit.
-        problems = await ServiceOptionService(
+        option_service = ServiceOptionService(
             self.db, actor_id=None, actor_role=None, request_id="—", tenant_id=tenant_id,
-        ).list_service_issue_mappings(master_service_id, resolved_job_type_id)
+        )
+        problems = await option_service.list_service_issue_mappings(master_service_id, resolved_job_type_id)
+        option_mappings = await option_service.list_service_option_mappings(
+            master_service_id, resolved_job_type_id,
+        )
         questions_res = await CatalogQuestionService(self.db).list_questions(
             master_service_id, resolved_job_type_id,
         )
@@ -501,7 +505,6 @@ class TenantCatalogService:
                     "issue_type_id": str(p["issue_type"]["id"]),
                     "name": p["issue_type"].get("name"),
                     "description": p["issue_type"].get("description"),
-                    "icon_url": p["issue_type"].get("icon_url"),
                     "severity": p["issue_type"].get("severity"),
                     "is_common": p.get("is_common"),
                     "requires_photo": p.get("requires_photo"),
@@ -517,10 +520,26 @@ class TenantCatalogService:
                     "required": q.get("required"),
                     "customer_visible": q.get("customer_visible"),
                     "help_text": q.get("help_text"),
-                    "icon_url": q.get("icon_url"),
                     "options": [o.get("label") for o in (q.get("options") or [])],
                 }
                 for q in questions_res.get("questions", [])
+            ],
+            "service_options": [
+                {
+                    "mapping_id": mapping["id"],
+                    "service_option_id": mapping["service_option_id"],
+                    "name": mapping["option"].get("name"),
+                    "description": mapping["option"].get("description"),
+                    "usage": mapping.get("usage"),
+                    "customer_selectable": mapping.get("customer_selectable"),
+                    "technician_selectable": mapping.get("technician_selectable"),
+                    "quantity_supported": mapping.get("quantity_supported"),
+                    "minimum_quantity": mapping.get("minimum_quantity"),
+                    "maximum_quantity": mapping.get("maximum_quantity"),
+                    "measurement_unit": mapping.get("measurement_unit") or mapping["option"].get("unit"),
+                }
+                for mapping in option_mappings
+                if mapping.get("status") == "active" and mapping.get("usage") != "DISABLED"
             ],
             "checklists": checklists,
             "tenant_editable": False,
@@ -784,6 +803,9 @@ class TenantCatalogService:
             if val is not None and val < 0:
                 raise ServiceOSException("TENANT_PRICE_NEGATIVE",
                     f"{lbl} cannot be negative.", status_code=422)
+            if val == 0 and lbl != "tenant_visit_fee":
+                raise ServiceOSException("TENANT_PRICE_INVALID",
+                    f"{lbl} must be greater than zero. Leave an optional amount empty instead of using zero.", status_code=422)
         if tenant_min is not None and tenant_max is not None and tenant_min > tenant_max:
             raise ServiceOSException(
                 "INVALID_PRICE_RANGE", "Minimum price cannot exceed maximum price.", status_code=422,
@@ -1130,6 +1152,9 @@ class TenantCatalogService:
         if tmin < 0 or tmax < 0:
             raise ServiceOSException("TENANT_PRICE_NEGATIVE",
                 "Service prices cannot be negative.", status_code=422)
+        if tmin == 0 or tmax == 0:
+            raise ServiceOSException("TENANT_PRICE_INVALID",
+                "Service prices must be greater than zero.", status_code=422)
 
         tst.tenant_min_price = tmin
         tst.tenant_max_price = tmax
@@ -1233,6 +1258,9 @@ class TenantCatalogService:
         if tmin < 0 or tmax < 0:
             raise ServiceOSException("TENANT_PRICE_NEGATIVE",
                 "Service prices cannot be negative.", status_code=422)
+        if tmin == 0 or tmax == 0:
+            raise ServiceOSException("TENANT_PRICE_INVALID",
+                "Service prices must be greater than zero.", status_code=422)
 
         # Upsert scoped by (tenant_service_id, service_type_id, brand_id) —
         # this is the actual fix: previously this looked up by
@@ -1380,7 +1408,7 @@ class TenantCatalogService:
             # Type or Brand. Those dimensions control matching only. The
             # provider collects one visit fee and the eventual work amount is
             # the estimate explicitly approved by the customer.
-            if ts.tenant_visit_fee is None:
+            if ts.tenant_visit_fee is None or ts.tenant_visit_fee <= 0:
                 errors.append({
                     "step": "pricing", "job_type_id": str(ts.job_type_id) if ts.job_type_id else ts.job_type,
                     "dimension_path": {},

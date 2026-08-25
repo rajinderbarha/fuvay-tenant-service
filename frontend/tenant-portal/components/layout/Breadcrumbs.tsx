@@ -36,7 +36,7 @@ export function Breadcrumbs({ crumbs, pathname }: BreadcrumbsProps) {
         alignItems: "center",
         gap: "0.375rem",
         fontSize: "0.78rem",
-        color: "#9ca3af",
+        color: "var(--text-tertiary)",
         marginBottom: "0.75rem",
       }}
     >
@@ -44,16 +44,18 @@ export function Breadcrumbs({ crumbs, pathname }: BreadcrumbsProps) {
         const isLast = i === resolved.length - 1;
         return (
           <span key={i} style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-            {i > 0 && <span style={{ color: "#d1d5db" }}>/</span>}
+            {i > 0 && <span style={{ color: "var(--border-strong)" }}>/</span>}
             {crumb.href && !isLast ? (
               <Link
                 href={crumb.href}
-                style={{ color: "#6b7280", textDecoration: "none" }}
+                style={{ color: "var(--text-secondary)", textDecoration: "none", transition: "color 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--text-link)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--text-secondary)"; }}
               >
                 {crumb.label}
               </Link>
             ) : (
-              <span style={{ color: isLast ? "#374151" : "#9ca3af", fontWeight: isLast ? 500 : 400 }}>
+              <span style={{ color: isLast ? "var(--text-primary)" : "var(--text-tertiary)", fontWeight: isLast ? 500 : 400 }}>
                 {crumb.label}
               </span>
             )}

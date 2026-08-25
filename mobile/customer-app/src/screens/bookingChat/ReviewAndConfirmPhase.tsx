@@ -82,7 +82,7 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
  * Address is resolved BEFORE this component ever mounts (see
  * BookingChatScreen -- it is conditionally rendered, not conditionally
  * hooked), so `useBookingReviewController`'s own load sequence
- * (checkServiceability -> resolvePriceEstimate -> matchAndPrice ->
+ * (checkServiceability -> matchAndPrice ->
  * confirmPriceChoice -> buildBookingSummary) always runs against a draft
  * that already has a real address/zipcode. This reuses that controller
  * completely unchanged -- only the rendering is the new dark chat shell,
@@ -225,7 +225,18 @@ export function ReviewAndConfirmPhase({
           slotSelectionError={c.slotSelectionError}
           onLoadSlots={emergency => c.loadAvailableSlots(emergency)}
           onSelectSlot={(dateIso, timeWindow, emergency) => c.selectSlot(dateIso, timeWindow, emergency)}
-          onContinue={() => setSlotDone(true)}
+          onContinue={async () => {
+            const slot = c.summary?.promisedSlot;
+            if (!slot) return;
+            // The summary's earliest slot is a suggestion until the customer
+            // presses Continue. Persist/revalidate it through the same
+            // select-slot endpoint used by an explicitly changed time; never
+            // show a date that confirm cannot see on the draft.
+            if (!c.summary?.preferredDate) {
+              await c.selectSlot(slot.date, slot.timeWindow, false);
+            }
+            setSlotDone(true);
+          }}
         />
       ) : !checklistDone && checklist.checklist && checklist.checklist.totalPoints > 0 ? (
         <ServiceChecklistCard

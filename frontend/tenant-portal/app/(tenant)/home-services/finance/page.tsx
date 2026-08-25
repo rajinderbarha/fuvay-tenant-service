@@ -27,12 +27,12 @@ import {
   CheckCircle2, RefreshCw, Download, Eye, CreditCard, TrendingDown,
   ArrowUpRight, Clock, XCircle, Info, ExternalLink, ListChecks, Ban,
 } from "lucide-react";
-import { Card, Badge, Btn, Skeleton } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, KpiGrid, SummaryCard } from "../../../../components/shared/ui";
 import {
   homeServicesFinanceApi, ServiceOSError,
   type HsFinanceOverview, type HsFinanceTxnRow, type HsFinanceTxnPage,
   type HsCreditPackage, type HsTopupOrder, type HsRefundRequest,
-  type HsFinanceReadinessCheck, type HsLiabilityHold,
+  type HsFinanceReadinessCheck, type HsLiabilityHold, type HsCommissionRates,
 } from "../../../../lib/api";
 import { useRazorpayCheckout } from "../../../../hooks/useRazorpayCheckout";
 
@@ -96,30 +96,8 @@ function KpiCard({ label, value, sub, icon, variant = "default" }: {
   icon: React.ReactNode;
   variant?: "default" | "success" | "warning" | "danger" | "info";
 }) {
-  const tone: Record<string, { bg: string; fg: string }> = {
-    default: { bg: "var(--accent-muted)",  fg: "var(--accent)"        },
-    success: { bg: "var(--success-bg)",    fg: "var(--success-text)"  },
-    warning: { bg: "var(--warning-bg)",    fg: "var(--warning-text)"  },
-    danger:  { bg: "var(--danger-bg)",     fg: "var(--danger-text)"   },
-    info:    { bg: "var(--info-bg)",       fg: "var(--info-text)"     },
-  };
-  const t = tone[variant];
-  return (
-    <Card padding={16}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-            color: "var(--text-tertiary)", margin: "0 0 8px" }}>{label}</p>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.1,
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-          {sub && <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "6px 0 0" }}>{sub}</p>}
-        </div>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: t.bg, color: t.fg,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          border: "1px solid var(--border)" }}>{icon}</div>
-      </div>
-    </Card>
-  );
+  return <SummaryCard label={label} value={value} sub={sub} icon={icon}
+    tone={variant === "default" ? undefined : variant} />;
 }
 
 function SectionTitle({ icon, title, subtitle, actions }: {
@@ -253,6 +231,20 @@ function ReadinessCard({ data }: { data: HsFinanceOverview["readiness"] }) {
 
 /* ── financial activity table (spec section 14) ──────────────────────────── */
 
+/**
+ * The only receipt endpoint is `/top-ups/{id}`, and the composed activity rows
+ * carry a prefixed `row_id`: `cto:<uuid>` (top-up), `cto-gst:<uuid>` (its GST
+ * half), `ucl:<uuid>` (usage-credit ledger) and `dep:<uuid>` (deposit
+ * transaction). Only the first two map to something a receipt can be fetched
+ * for. Returns null when the row has no reachable receipt, so the button is
+ * not rendered at all rather than rendered dead.
+ */
+function topupIdFromRow(r: HsFinanceTxnRow): string | null {
+  const id = String((r as { row_id?: string }).row_id ?? "");
+  const m = /^cto(?:-gst)?:(.+)$/.exec(id);
+  return m ? m[1] : null;
+}
+
 function ActivityTable({ page, compact, onReceipt }: {
   page: HsFinanceTxnPage; compact?: boolean; onReceipt?: (row: HsFinanceTxnRow) => void;
 }) {
@@ -316,9 +308,13 @@ function ActivityTable({ page, compact, onReceipt }: {
               )}
               {!compact && (
                 <td style={td()}>
-                  {r.receipt_available
+                  {/* `onReceipt` was an optional prop NO caller ever passed, so
+                      every one of these buttons rendered, looked clickable and
+                      did nothing. It is now wired, and only shown for rows that
+                      resolve to a real top-up receipt. */}
+                  {r.receipt_available && onReceipt && topupIdFromRow(r)
                     ? <Btn size="xs" variant="ghost" icon={<Eye size={12} />}
-                        onClick={() => onReceipt?.(r)}>Receipt</Btn>
+                        onClick={() => onReceipt(r)}>Receipt</Btn>
                     : <span style={{ color: "var(--text-tertiary)", fontSize: 11.5 }}>—</span>}
                 </td>
               )}
@@ -360,8 +356,38 @@ function HoldsList({ holds }: { holds: HsLiabilityHold[] }) {
 
 /* ── refund request card ─────────────────────────────────────────────────── */
 
-function RefundRequestCard({ rr }: { rr: HsRefundRequest }) {
+function RefundRequestCard({ rr, onChanged }: { rr: HsRefundRequest; onChanged: () => void }) {
   const idx = rr.workflow_stages.indexOf(rr.status);
+  const [replying, setReplying] = React.useState(false);
+  const [reply, setReply] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  const awaitingInfo = rr.status === "info_requested";
+  // Mirrors the server guard exactly: withdraw is legal from any state that is
+  // neither terminal nor already being processed.
+  const canWithdraw = !["refunded", "rejected", "withdrawn", "processing"].includes(rr.status);
+
+  async function submitReply() {
+    if (reply.trim().length < 2) return;
+    setBusy(true); setErr(null);
+    try {
+      await homeServicesFinanceApi.respondRefundRequest(rr.refund_request_id, reply.trim());
+      setReply(""); setReplying(false); onChanged();
+    } catch (e) {
+      setErr(e instanceof ServiceOSError ? e.message : "Your response could not be sent.");
+    } finally { setBusy(false); }
+  }
+
+  async function withdraw() {
+    setBusy(true); setErr(null);
+    try {
+      await homeServicesFinanceApi.withdrawRefundRequest(rr.refund_request_id);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof ServiceOSError ? e.message : "This request could not be withdrawn.");
+    } finally { setBusy(false); }
+  }
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 14, marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -405,6 +431,52 @@ function RefundRequestCard({ rr }: { rr: HsRefundRequest }) {
           <strong>Admin requested information: </strong>{rr.info_requested_note}
         </div>
       )}
+      {rr.tenant_response && (
+        <div style={{ marginTop: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)",
+          borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--text-secondary)" }}>
+          <strong style={{ color: "var(--text-primary)" }}>Your response: </strong>{rr.tenant_response}
+        </div>
+      )}
+
+      {/* The admin's question used to be rendered with no way to answer it, so
+          a request parked in `info_requested` could never move again. Both of
+          these endpoints already existed; only the callers were missing. */}
+      {(awaitingInfo || canWithdraw) && (
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          {awaitingInfo && !replying && (
+            <Btn size="sm" variant="primary" onClick={() => setReplying(true)}>Respond to Admin</Btn>
+          )}
+          {awaitingInfo && replying && (
+            <div>
+              <label htmlFor={`rr-reply-${rr.refund_request_id}`}
+                style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Your response to Admin
+              </label>
+              <textarea
+                id={`rr-reply-${rr.refund_request_id}`} rows={3} value={reply}
+                onChange={e => setReply(e.target.value.slice(0, 2000))}
+                placeholder="Answer the question above so the review can continue…"
+                style={{ width: "100%", padding: 10, fontSize: 13, background: "var(--surface-sunken)",
+                  border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)",
+                  resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <Btn size="sm" variant="primary" loading={busy} disabled={reply.trim().length < 2} onClick={submitReply}>
+                  Send response
+                </Btn>
+                <Btn size="sm" variant="secondary" onClick={() => { setReplying(false); setReply(""); }}>Cancel</Btn>
+              </div>
+            </div>
+          )}
+          {canWithdraw && !replying && (
+            <Btn size="sm" variant="secondary" loading={busy} onClick={withdraw}
+              style={{ marginLeft: awaitingInfo ? 8 : 0 }}>
+              Withdraw request
+            </Btn>
+          )}
+          {err && <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: "8px 0 0" }}>{err}</p>}
+        </div>
+      )}
       {rr.blockers.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
@@ -430,6 +502,43 @@ export default function HomeServicesFinancePage() {
   const [txns, setTxns] = useState<HsFinanceTxnPage | null>(null);
   const [txnLedger, setTxnLedger] = useState<string>("");
   const [txnStatus, setTxnStatus] = useState<string>("");
+  // The endpoint accepts `from`, `to` and `type` as well as ledger/status, but
+  // only two of the five filters had controls, so a tenant could not narrow
+  // financial activity to a period -- the single most common thing to want
+  // when reconciling a statement.
+  const [txnFrom, setTxnFrom] = useState<string>("");
+  const [txnTo, setTxnTo] = useState<string>("");
+  const [txnType, setTxnType] = useState<string>("");
+  /** Commission actually charged on completed jobs. The endpoint exists to
+   *  close a transparency gap ("the tenant had NO way to see the commission
+   *  rate being charged") but the Finance Hub never called it -- pricing was
+   *  only visible on the dashboard, not on the page about money. */
+  const [rates, setRates] = useState<HsCommissionRates | null>(null);
+  const [ratesFailed, setRatesFailed] = useState(false);
+  /**
+   * The overview carries only the single OPEN request, as
+   * `security_deposit.open_refund_request`. The Refund requests card was
+   * reading `security_deposit.refund_requests.items`, a field this endpoint
+   * has never returned, so the optional chain always fell through to the empty
+   * state and the card NEVER rendered a request -- which is also why the
+   * admin's information request and the actions on it were unreachable.
+   * `HsFinanceOverview` being `any` hid the mismatch from the compiler.
+   * History comes from the real paged list endpoint.
+   */
+  const [refundHistory, setRefundHistory] = useState<HsRefundRequest[] | null>(null);
+  /**
+   * Top-ups were loaded once as `{ page_size: 25 }` with no page and no
+   * status, so only the newest 25 orders were ever reachable and the endpoint's
+   * `status`/`page` parameters had no controls. `total` was discarded too, so
+   * there was nothing to page against.
+   */
+  const [topupTotal, setTopupTotal] = useState(0);
+  const [topupPage, setTopupPage] = useState(1);
+  const [topupStatus, setTopupStatus] = useState("");
+  /** GST receipt for a credited order. `getTopup` returns it, but nothing
+   *  called that endpoint, so the receipt a tenant needs for their books was
+   *  unreachable from the UI. */
+  const [receipt, setReceipt] = useState<{ order: HsTopupOrder; loading: boolean } | null>(null);
   const [txnPage, setTxnPage] = useState(1);
   const [txnLoading, setTxnLoading] = useState(false);
 
@@ -460,10 +569,16 @@ export default function HomeServicesFinancePage() {
     if (t && TABS.some(x => x.key === t)) setTab(t);
     if (sp.get("ledger")) setTxnLedger(sp.get("ledger") as string);
     if (sp.get("status")) setTxnStatus(sp.get("status") as string);
+    if (sp.get("from")) setTxnFrom(sp.get("from") as string);
+    if (sp.get("to")) setTxnTo(sp.get("to") as string);
+    if (sp.get("type")) setTxnType(sp.get("type") as string);
     const p = Number(sp.get("page")); if (p > 0) setTxnPage(p);
   }, []);
 
-  const pushUrl = useCallback((next: Partial<{ tab: string; ledger: string; status: string; page: number }>) => {
+  const pushUrl = useCallback((next: Partial<{
+    tab: string; ledger: string; status: string; page: number;
+    from: string; to: string; type: string;
+  }>) => {
     const sp = new URLSearchParams(window.location.search);
     Object.entries(next).forEach(([k, v]) => {
       if (v === undefined || v === null || v === "" || v === 0) sp.delete(k);
@@ -489,19 +604,48 @@ export default function HomeServicesFinancePage() {
 
   useEffect(load, [load]);
 
+  const loadRefundHistory = useCallback(() => {
+    homeServicesFinanceApi.listRefundRequests({ page_size: 25 })
+      .then(r => setRefundHistory(r.items))
+      .catch(() => setRefundHistory(null));
+  }, []);
+
+  useEffect(() => { loadRefundHistory(); }, [loadRefundHistory]);
+
+  useEffect(() => {
+    homeServicesFinanceApi.getCommissionRates()
+      .then(r => { setRates(r); setRatesFailed(false); })
+      // Never render a fabricated rate; show the panel as unavailable instead.
+      .catch(() => { setRates(null); setRatesFailed(true); });
+  }, []);
+
   const loadTxns = useCallback(() => {
     setTxnLoading(true);
     homeServicesFinanceApi.getTransactions({
       ledger: txnLedger || undefined, status: txnStatus || undefined,
+      // The endpoint aliases these as `from` / `to` / `type`.
+      from: txnFrom || undefined, to: txnTo || undefined, type: txnType || undefined,
       page: txnPage, page_size: 25,
     }).then(setTxns).catch(() => setTxns(null)).finally(() => setTxnLoading(false));
-  }, [txnLedger, txnStatus, txnPage]);
+  }, [txnLedger, txnStatus, txnFrom, txnTo, txnType, txnPage]);
 
   useEffect(() => { if (tab === "topups") loadTxns(); }, [tab, loadTxns]);
   useEffect(() => {
     if (tab !== "topups") return;
-    homeServicesFinanceApi.listTopups({ page_size: 25 }).then(r => setTopups(r.items)).catch(() => setTopups(null));
-  }, [tab]);
+    homeServicesFinanceApi.listTopups({ status: topupStatus || undefined, page: topupPage, page_size: 25 })
+      .then(r => { setTopups(r.items); setTopupTotal(Number(r.total ?? 0)); })
+      .catch(() => setTopups(null));
+  }, [tab, topupStatus, topupPage]);
+
+  const openReceipt = useCallback(async (topupId: string) => {
+    setReceipt({ order: {} as HsTopupOrder, loading: true });
+    try {
+      const full = await homeServicesFinanceApi.getTopup(topupId);
+      setReceipt({ order: full, loading: false });
+    } catch {
+      setReceipt(null);
+    }
+  }, []);
 
   const openBuy = useCallback(() => {
     setBuyOpen(true); setBuyResult(null);
@@ -568,7 +712,12 @@ export default function HomeServicesFinancePage() {
 
   const doExport = useCallback(() => {
     setExportMsg("Preparing…");
-    homeServicesFinanceApi.exportStatement({ ledger: txnLedger || undefined })
+    // Export previously ignored every filter except ledger, so a filtered
+    // view exported a different (wider) set of rows than it displayed.
+    homeServicesFinanceApi.exportStatement({
+      ledger: txnLedger || undefined, status: txnStatus || undefined,
+      from: txnFrom || undefined, to: txnTo || undefined, type: txnType || undefined,
+    })
       .then(r => {
         const blob = new Blob([r.csv], { type: "text/csv;charset=utf-8" });
         const a = document.createElement("a");
@@ -577,7 +726,7 @@ export default function HomeServicesFinancePage() {
         setExportMsg(`Exported ${r.row_count} row(s) — your tenant, Home Services only.`);
       })
       .catch((e: unknown) => setExportMsg(e instanceof ServiceOSError ? e.message : "Export failed."));
-  }, [txnLedger]);
+  }, [txnLedger, txnStatus, txnFrom, txnTo, txnType]);
 
   const kpis = data?.kpis;
   const statusVar = useMemo<"success" | "warning" | "danger">(() => {
@@ -631,9 +780,9 @@ export default function HomeServicesFinancePage() {
 
       {/* ── 6 KPI cards ────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="fh-kpis">{[0, 1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={104} radius={20} />)}</div>
+        <KpiGrid className="fh-kpis">{[0, 1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={104} radius={20} />)}</KpiGrid>
       ) : kpis && (
-        <div className="fh-kpis">
+        <KpiGrid className="fh-kpis">
           <KpiCard label="Usable credits" value={moneyCompact(kpis.usable_credits)}
             sub={data?.usage_credits.is_low_balance ? "Below low-balance threshold" : "Available to spend on jobs"}
             icon={<Wallet size={17} />} variant={data?.usage_credits.is_low_balance ? "warning" : "success"} />
@@ -654,7 +803,7 @@ export default function HomeServicesFinancePage() {
             sub="Server-computed readiness"
             icon={statusVar === "success" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
             variant={statusVar} />
-        </div>
+        </KpiGrid>
       )}
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
@@ -846,8 +995,23 @@ export default function HomeServicesFinancePage() {
                 return (
                   <button key={q.code} onClick={() => {
                     goTab(q.tab as TabKey);
-                    if (q.filter && typeof q.filter.ledger === "string") { setTxnLedger(q.filter.ledger); pushUrl({ ledger: q.filter.ledger }); }
-                    if (q.filter && typeof q.filter.status === "string") { setTxnStatus(q.filter.status); pushUrl({ status: q.filter.status }); }
+                    if (q.filter && typeof q.filter.ledger === "string") {
+                      setTxnLedger(q.filter.ledger); pushUrl({ ledger: q.filter.ledger });
+                    }
+                    if (q.filter && typeof q.filter.status === "string") {
+                      // FAILED_TOPUPS / PENDING_TOPUPS carry a top-up PAYMENT
+                      // status ("failed" / "initiated"). This applied it to the
+                      // transactions filter, where those are not valid statuses
+                      // at all (the ledger only has posted/cancelled) — so the
+                      // click filtered the activity table to nothing while the
+                      // top-up table below stayed unfiltered, i.e. it produced
+                      // a misleading empty state instead of the rows it named.
+                      if (q.code === "FAILED_TOPUPS" || q.code === "PENDING_TOPUPS") {
+                        setTopupStatus(q.filter.status); setTopupPage(1);
+                      } else {
+                        setTxnStatus(q.filter.status); pushUrl({ status: q.filter.status });
+                      }
+                    }
                   }} style={{
                     textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                     background: active
@@ -1023,12 +1187,21 @@ export default function HomeServicesFinancePage() {
 
           <Card>
             <SectionTitle icon={<ListChecks size={16} />} title="Refund requests"
-              subtitle={data.security_deposit.refund_requests?.approval_note
-                ?? "Approval is an Admin-only action."} />
-            {(data.security_deposit.refund_requests?.items.length ?? 0) === 0
-              ? <EmptyRow text="You have not submitted any deposit refund requests." />
-              : data.security_deposit.refund_requests!.items.map(rr =>
-                  <RefundRequestCard key={rr.refund_request_id} rr={rr} />)}
+              subtitle="Approval is an Admin-only action." />
+            {(() => {
+              // Prefer the paged history; fall back to the overview's single
+              // open request if the list call failed, so an open request is
+              // never invisible.
+              const open = data.security_deposit.open_refund_request as HsRefundRequest | null | undefined;
+              const rows: HsRefundRequest[] = refundHistory ?? (open ? [open] : []);
+              if (rows.length === 0) {
+                return <EmptyRow text="You have not submitted any deposit refund requests." />;
+              }
+              return rows.map(rr => (
+                <RefundRequestCard key={rr.refund_request_id} rr={rr}
+                  onChanged={() => { load(); loadRefundHistory(); }} />
+              ));
+            })()}
           </Card>
 
           <Card padding={0}>
@@ -1049,14 +1222,28 @@ export default function HomeServicesFinancePage() {
           <Card>
             <SectionTitle icon={<CreditCard size={16} />} title="Credit top-up orders"
               subtitle="A pending payment never credits the wallet; a duplicate gateway callback never double-credits"
-              actions={<Btn size="sm" variant="primary" icon={<CreditCard size={13} />} onClick={openBuy}>Buy usage credits</Btn>} />
+              actions={
+                <>
+                  {/* `status` was a supported query parameter with no control. */}
+                  <select className="fh-input" style={{ width: 180 }} value={topupStatus}
+                    onChange={e => { setTopupStatus(e.target.value); setTopupPage(1); }}>
+                    <option value="">All payment statuses</option>
+                    <option value="initiated">Initiated</option>
+                    <option value="paid">Paid</option>
+                    <option value="credited">Credited</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <Btn size="sm" variant="primary" icon={<CreditCard size={13} />} onClick={openBuy}>Buy usage credits</Btn>
+                </>
+              } />
             {topups === null ? <Skeleton height={120} /> : topups.length === 0
               ? <EmptyRow text="No credit top-up orders yet." />
               : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
                     <thead><tr>
-                      {["Created", "Order ref", "Base credits", "GST", "Total payable", "Payment", "Wallet", "Gateway payment"].map(c =>
+                      {["Created", "Order ref", "Base credits", "GST", "Total payable", "Payment", "Wallet", "Gateway payment", "Receipt"].map(c =>
                         <th key={c} style={{ textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em",
                           textTransform: "uppercase", color: "var(--text-tertiary)", padding: "8px 10px",
                           borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{c}</th>)}
@@ -1072,10 +1259,28 @@ export default function HomeServicesFinancePage() {
                           <td style={td()}><Badge variant={statusVariant(t.payment_status)} size="sm">{humanStatus(t.payment_status)}</Badge></td>
                           <td style={td()}><Badge variant={statusVariant(t.wallet_credit_status)} size="sm">{humanStatus(t.wallet_credit_status)}</Badge></td>
                           <td style={{ ...td(), fontFamily: "monospace", fontSize: 10.5 }}>{t.gateway_payment_id ?? "—"}</td>
+                          <td style={td()}>
+                            {t.payment_status === "credited"
+                              ? <Btn size="xs" variant="secondary" icon={<Eye size={11} />}
+                                  onClick={() => openReceipt(String(t.topup_id))}>Receipt</Btn>
+                              : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                    gap: 12, padding: "12px 2px 2px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>
+                      Showing {(topupPage - 1) * 25 + 1}–{Math.min(topupPage * 25, topupTotal)} of {topupTotal} order(s)
+                    </span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Btn size="xs" variant="secondary" disabled={topupPage <= 1}
+                        onClick={() => setTopupPage(p => Math.max(1, p - 1))}>Previous</Btn>
+                      <Btn size="xs" variant="secondary" disabled={topupPage * 25 >= topupTotal}
+                        onClick={() => setTopupPage(p => p + 1)}>Next</Btn>
+                    </div>
+                  </div>
                 </div>
               )}
           </Card>
@@ -1092,15 +1297,39 @@ export default function HomeServicesFinancePage() {
                       {(txns?.ledgers ?? data.recent_activity.ledgers).map(l =>
                         <option key={l.value} value={l.value}>{l.label}</option>)}
                     </select>
-                    <input className="fh-input" style={{ width: 150 }} placeholder="Status…" value={txnStatus}
-                      onChange={e => { setTxnStatus(e.target.value); setTxnPage(1); pushUrl({ status: e.target.value, page: 1 }); }} />
+                    {/* Status and type were free-text boxes, so the caller had
+                        to guess the exact stored value. Both are now driven by
+                        facets the endpoint returns. */}
+                    <select className="fh-input" style={{ width: 160 }} value={txnStatus}
+                      onChange={e => { setTxnStatus(e.target.value); setTxnPage(1); pushUrl({ status: e.target.value, page: 1 }); }}>
+                      <option value="">All statuses</option>
+                      {(txns?.statuses ?? []).map(v => <option key={v} value={v}>{humanStatus(v)}</option>)}
+                    </select>
+                    <select className="fh-input" style={{ width: 180 }} value={txnType}
+                      onChange={e => { setTxnType(e.target.value); setTxnPage(1); pushUrl({ type: e.target.value, page: 1 }); }}>
+                      <option value="">All event types</option>
+                      {(txns?.types ?? []).map(v => <option key={v} value={v}>{humanStatus(v)}</option>)}
+                    </select>
+                    <input className="fh-input" style={{ width: 145 }} type="date" aria-label="From date" value={txnFrom}
+                      onChange={e => { setTxnFrom(e.target.value); setTxnPage(1); pushUrl({ from: e.target.value, page: 1 }); }} />
+                    <input className="fh-input" style={{ width: 145 }} type="date" aria-label="To date" value={txnTo}
+                      onChange={e => { setTxnTo(e.target.value); setTxnPage(1); pushUrl({ to: e.target.value, page: 1 }); }} />
+                    {(txnLedger || txnStatus || txnType || txnFrom || txnTo) && (
+                      <Btn size="sm" variant="secondary" onClick={() => {
+                        setTxnLedger(""); setTxnStatus(""); setTxnType(""); setTxnFrom(""); setTxnTo(""); setTxnPage(1);
+                        pushUrl({ ledger: "", status: "", type: "", from: "", to: "", page: 1 });
+                      }}>Clear</Btn>
+                    )}
                     <Btn size="sm" variant="secondary" icon={<Download size={13} />} onClick={doExport}>Export</Btn>
                   </>
                 } />
             </div>
             {txnLoading ? <div style={{ padding: 18 }}><Skeleton height={160} /></div>
               : txns ? <>
-                  <ActivityTable page={txns} />
+                  <ActivityTable page={txns} onReceipt={r => {
+                    const id = topupIdFromRow(r);
+                    if (id) openReceipt(id);
+                  }} />
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                     gap: 12, padding: "12px 18px", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>
@@ -1124,6 +1353,78 @@ export default function HomeServicesFinancePage() {
       {/* ══ POLICY & AUDIT ════════════════════════════════════════════════ */}
       {!loading && data && tab === "policy" && (
         <div style={{ display: "grid", gap: 16 }}>
+          {/* Commission actually charged on completed jobs. `/commission-rates`
+              exists specifically to close the transparency gap of a tenant
+              having no way to see its own rate, but the Finance Hub never
+              called it -- the rate was visible only on the dashboard, not on
+              the page about money. */}
+          <Card>
+            <SectionTitle icon={<CreditCard size={16} />} title="Commission charged to you"
+              subtitle="The rate resolved the same way job completion resolves it — not an estimate"
+              actions={rates
+                ? <Badge variant={rates.is_live ? "default" : "muted"} size="lg">
+                    {rates.is_live ? "Live" : "Not charging"}
+                  </Badge>
+                : undefined} />
+            {ratesFailed ? (
+              <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
+                borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: "var(--danger-text)" }}>
+                Commission rates could not be loaded. No rate is shown rather than a misleading zero.
+              </div>
+            ) : !rates ? (
+              <Skeleton height={90} />
+            ) : (
+              <>
+                <div className="fh-two">
+                  <div>
+                    <Row label="Provider model" value={rates.provider_model ?? "—"} />
+                    <Row label="Default rate" value={rates.default_rate_pct ? `${rates.default_rate_pct}%` : "—"} />
+                  </div>
+                  <div>
+                    <Row label="Charged on" value={rates.basis || "—"} />
+                    <Row label="Charged as" value={rates.charged_as || "—"} />
+                  </div>
+                </div>
+                {!rates.is_live && rates.not_live_reason && (
+                  <div style={{ marginTop: 10, background: "var(--surface-sunken)", border: "1px solid var(--border)",
+                    borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--text-secondary)" }}>
+                    {rates.not_live_reason}
+                  </div>
+                )}
+                {rates.categories.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                      color: "var(--text-tertiary)", margin: "0 0 8px" }}>
+                      Rate per service category
+                    </p>
+                    {/* These categories are derived from the tenant's own
+                        enabled `tenant_services` rows — i.e. exactly the
+                        catalogue the Services & Pricing setup page manages. */}
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {rates.categories.map(c => (
+                        <div key={c.category_id} style={{ display: "flex", justifyContent: "space-between",
+                          alignItems: "center", gap: 10, padding: "8px 11px", background: "var(--surface-sunken)",
+                          border: "1px solid var(--border)", borderRadius: 9 }}>
+                          <span style={{ fontSize: 12.5, color: "var(--text-primary)" }}>
+                            {c.category_name || "Category"}
+                          </span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {c.using_default && (
+                              <span style={{ fontSize: 10.5, color: "var(--text-tertiary)" }}>default</span>
+                            )}
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-primary)" }}>
+                              {c.effective_rate_pct != null ? `${c.effective_rate_pct}%` : "—"}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
           <Card>
             <SectionTitle icon={<FileText size={16} />} title="Published finance policy"
               subtitle="Immutable, versioned, published by ServiceOS Admin — your business cannot edit it"
@@ -1260,6 +1561,40 @@ export default function HomeServicesFinancePage() {
               )}
             </Card>
           </div>
+        </div>
+      )}
+      {/* GST receipt for a credited top-up. `/top-ups/{id}` returns a real
+          receipt object (number, base/GST split, transaction reference,
+          policy version) but had no caller, so the document a tenant needs
+          for their own books was unreachable from the product. */}
+      {receipt && (
+        <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) setReceipt(null); }}
+          style={{ position: "fixed", inset: 0, zIndex: 900, display: "grid", placeItems: "center",
+            background: "rgba(0,0,0,.5)", padding: 20 }}>
+          <Card style={{ width: "min(520px, 100%)", maxHeight: "88vh", overflowY: "auto" }}>
+            <SectionTitle icon={<Receipt size={16} />} title="Usage credit receipt"
+              subtitle="Issued by ServiceOS for this credit purchase"
+              actions={<Btn size="sm" variant="ghost" onClick={() => setReceipt(null)}>Close</Btn>} />
+            {receipt.loading ? <Skeleton height={200} /> : !receipt.order.receipt ? (
+              <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)",
+                borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: "var(--text-secondary)" }}>
+                A receipt is issued once the payment is credited to your wallet.
+              </div>
+            ) : (
+              <>
+                <Row label="Receipt number" value={receipt.order.receipt.receipt_number} />
+                <Row label="Issued" value={dt(receipt.order.receipt.issued_at)} />
+                <Row label="Order reference" value={receipt.order.order_ref ?? "—"} />
+                <Row label="Base credit value" value={money(receipt.order.receipt.base_credit_value)} />
+                <Row label="GST" value={money(receipt.order.receipt.gst_amount)} />
+                <Row label="Total paid" value={money(receipt.order.receipt.total_paid)} />
+                <Row label="Posted to usable wallet" value={money(receipt.order.receipt.usable_credit_posted)}
+                  hint="GST never enters the wallet" />
+                <Row label="Transaction reference" value={receipt.order.receipt.transaction_reference ?? "—"} />
+                <Row label="Policy version" value={receipt.order.receipt.policy_version ?? "—"} />
+              </>
+            )}
+          </Card>
         </div>
       )}
     </div>

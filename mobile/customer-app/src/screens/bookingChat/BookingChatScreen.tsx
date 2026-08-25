@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from "react-native";
+import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
@@ -11,7 +11,7 @@ import {
 } from "../../domain/assistantEntry";
 import type { AssistantEntryContext } from "../../domain/assistantEntry";
 import { CategoryChoiceTurn } from "../../components/bookingChat/CategoryChoiceTurn";
-import { useAssistantController } from "../assistant/useAssistantController";
+import { useAssistantController, type AssistantOfferingOption } from "../assistant/useAssistantController";
 import { useBookingChatAddress } from "./useBookingChatAddress";
 import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
 import type { ConfirmPhaseState, ReviewReadyState } from "./ReviewAndConfirmPhase";
@@ -25,6 +25,8 @@ import {
 } from "../../components/bookingChat/BotPrimitives";
 import { AddressTurn } from "../../components/bookingChat/AddressTurn";
 import { BotCard, BotPrimaryButton } from "../../components/bookingChat/BotPrimitives";
+import { useServiceLocationPreference } from "../../hooks/useServiceLocationPreference";
+import { FuvayIcon } from "../../components/FuvayIcon";
 
 type Route = RouteProp<CustomerTabsParamList, "Assistant">;
 
@@ -32,7 +34,7 @@ const STAGES = ["Understand", "Match technician", "Confirm & price", "Book"];
 
 /**
  * Composition root for the merged booking chat. Same entry-context/profile
- * resolution as the old AssistantScreen (route params or Home's own ZIP,
+ * resolution (route params or Home's own ZIP,
  * never a fabricated location) -- only what happens once inside is new.
  */
 export function BookingChatScreen() {
@@ -40,7 +42,8 @@ export function BookingChatScreen() {
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const { data: profile } = useCustomerProfileQuery();
-  const { data: home, isPending: homePending } = useCustomerHomeQuery();
+  const serviceLocation = useServiceLocationPreference();
+  const { data: home, isPending: homePending } = useCustomerHomeQuery(serviceLocation.zipcode ?? undefined);
 
   /**
    * A category the customer picked HERE, when they opened the assistant from
@@ -53,10 +56,17 @@ export function BookingChatScreen() {
   const entryContext = useMemo(() => {
     if (route.params) return route.params;
     if (pickedCategory) return pickedCategory;
-    return createAssistantCardEntryContext({ zipcode: home?.address?.zipcode ?? "" });
-  }, [route.params, pickedCategory, home?.address?.zipcode]);
+    return createAssistantCardEntryContext({
+      zipcode: serviceLocation.zipcode ?? home?.address?.zipcode ?? "",
+    });
+  }, [route.params, pickedCategory, serviceLocation.zipcode, home?.address?.zipcode]);
 
-  if (!profile) {
+  const locationResolutionPending = !route.params
+    && !pickedCategory
+    && !home?.address?.zipcode
+    && !serviceLocation.isLoaded;
+
+  if (!profile || locationResolutionPending) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: BOT.bg }}>
         <View
@@ -104,12 +114,17 @@ export function BookingChatScreen() {
   if (entryContext.source === "assistant_card") {
     return (
       <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
-        <AssistantIntroHeader />
-        <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
+        <AssistantIntroHeader locationLabel={home?.address?.city ?? entryContext.zipcode} />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 32 }}
+        >
           <CategoryChoiceTurn
             categories={home?.bookableCategories ?? []}
+            serviceGroups={home?.bookableServiceGroups ?? []}
             loading={homePending}
             city={home?.address?.city ?? null}
+            zipcode={entryContext.zipcode}
             onSelect={category => setPickedCategory(createServiceCardEntryContext({
               categoryId: category.categoryId,
               categoryName: category.name,
@@ -119,8 +134,15 @@ export function BookingChatScreen() {
               categorySlug: category.slug ?? "",
               zipcode: entryContext.zipcode,
             }))}
+            onSelectGroup={group => setPickedCategory(createServiceCardEntryContext({
+              categoryId: group.categoryId,
+              categoryName: group.name,
+              categorySlug: group.categorySlug,
+              serviceGroupSlug: group.slug,
+              zipcode: entryContext.zipcode,
+            }))}
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -144,28 +166,75 @@ export function BookingChatScreen() {
 
 /** Same identity strip the conversation shows, so the picker reads as the
  * beginning of that conversation rather than a different screen. */
-function AssistantIntroHeader() {
+function AssistantIntroHeader({ locationLabel }: { locationLabel?: string | null }) {
   const BOT = useBotColors();
   return (
     <View
       style={{
         flexDirection: "row", alignItems: "center", gap: 12,
-        paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
+        paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14,
+        backgroundColor: BOT.surface,
         borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle,
       }}
     >
       <View
         style={{
-          width: 36, height: 36, borderRadius: 18, alignItems: "center",
-          justifyContent: "center", backgroundColor: BOT.brand,
+          width: 42, height: 42, borderRadius: 21, alignItems: "center",
+          justifyContent: "center", backgroundColor: "#FFFFFF",
+          borderWidth: 1, borderColor: BOT.border,
         }}
       >
-        <Ionicons name="sparkles" size={16} color={BOT.bubbleOnBrand} />
+        <FuvayIcon size={28} accessibilityLabel="Fuvay booking assistant" />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
-        <Text style={{ fontSize: 12, color: BOT.textMuted }}>Ready when you are</Text>
+        <Text style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</Text>
+        <Text style={{ fontSize: 12, color: BOT.textMuted }}>Book confidently in a few simple steps</Text>
       </View>
+      {locationLabel ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 104 }}>
+          <Ionicons name="location-outline" size={14} color={BOT.textTertiary} />
+          <Text style={{ fontSize: 12, fontWeight: "600", color: BOT.textSecondary }} numberOfLines={1}>{locationLabel}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** The first actionable assistant turn. Problem identity comes from
+ * assistant-bootstrap; IDs are the React/selection keys so repeated
+ * labels cannot collide or select the wrong backend issue. */
+function ProblemChoiceGrid({ items, onSelect }: {
+  items: AssistantOfferingOption[];
+  onSelect: (item: AssistantOfferingOption) => void;
+}) {
+  const BOT = useBotColors();
+  const unique = Array.from(new Map(items.map(item => [item.id, item])).values());
+  return (
+    <View style={{ gap: 0, marginLeft: 36, marginRight: 12, overflow: "hidden", borderRadius: 12, borderWidth: 1, borderColor: BOT.borderSubtle, backgroundColor: BOT.surface }}>
+      {unique.map(item => {
+        return (
+          <Pressable
+            key={item.id}
+            onPress={() => onSelect(item)}
+            accessibilityRole="button"
+            accessibilityLabel={item.name}
+            style={({ pressed }) => ({
+              minHeight: 54, paddingHorizontal: 14, paddingVertical: 11,
+              flexDirection: "row", alignItems: "center", gap: 10,
+              borderBottomWidth: item.id === unique[unique.length - 1]?.id ? 0 : 1,
+              borderBottomColor: BOT.borderSubtle,
+              backgroundColor: pressed ? BOT.surfaceActive : BOT.surface,
+              opacity: pressed ? 0.84 : 1,
+            })}
+          >
+            <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
+              <Ionicons name="construct-outline" size={16} color={BOT.textSecondary} />
+            </View>
+            <Text style={{ flex: 1, fontSize: 14, lineHeight: 19, fontWeight: "600", color: BOT.textPrimary }} numberOfLines={2}>{item.name}</Text>
+            <Ionicons name="chevron-forward" size={17} color={BOT.textFaint} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -406,19 +475,31 @@ function BookingChatConversation({
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {/* Header */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 10,
+            paddingBottom: 12,
+            backgroundColor: BOT.surface,
+            borderBottomWidth: 1,
+            borderBottomColor: BOT.borderSubtle,
+          }}
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border }}>
-              <Ionicons name="chevron-back" size={17} color={BOT.textTertiary} />
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 36, height: 40, alignItems: "flex-start", justifyContent: "center" }}>
+              <Ionicons name="chevron-back" size={19} color={BOT.textSecondary} />
             </Pressable>
-            <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}>
-              <Ionicons name="sparkles" size={16} color={BOT.bubbleOnBrand} />
+            <View style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: BOT.border }}>
+              <FuvayIcon size={27} accessibilityLabel="Fuvay booking assistant" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>Fuvay AI</Text>
+              <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 1.1, color: BOT.textTertiary }}>GUIDED BOOKING</Text>
+              <Text style={{ fontSize: 18, lineHeight: 21, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <BotPulseDot color={booked ? BOT.success : BOT.brand} />
-                <Text style={{ fontSize: 12, color: BOT.textMuted }}>{booked ? "Booking confirmed" : "Working on your booking"}</Text>
+                <Text style={{ fontSize: 12, color: BOT.textMuted }} numberOfLines={1}>
+                  {booked ? "Booking confirmed" : `${entryContext.categoryName ?? "Service"} booking`}
+                </Text>
               </View>
             </View>
 
@@ -434,12 +515,12 @@ function BookingChatConversation({
                 accessibilityLabel="Start over"
                 hitSlop={8}
                 style={{
-                  width: 36, height: 36, borderRadius: 18,
+                  width: 40, height: 40, borderRadius: 10,
                   alignItems: "center", justifyContent: "center",
-                  backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
+                  backgroundColor: BOT.surfaceSunken,
                 }}
               >
-                <Ionicons name="refresh" size={16} color={BOT.textTertiary} />
+                <Ionicons name="refresh" size={17} color={BOT.textSecondary} />
               </Pressable>
             ) : null}
           </View>
@@ -502,13 +583,10 @@ function BookingChatConversation({
 
               {c.offeringChoice && !selectedIssueLabel && !traceBusy ? (
                 c.offeringChoice.offerings.length > 0 ? (
-                  <BotOptionChips
-                    items={c.offeringChoice.offerings.map(o => o.name)}
-                    selected={null}
-                    onSelect={label => {
-                      const offering = c.offeringChoice!.offerings.find(o => o.name === label);
-                      if (!offering) return;
-                      setSelectedIssueLabel(label);
+                  <ProblemChoiceGrid
+                    items={c.offeringChoice.offerings}
+                    onSelect={offering => {
+                      setSelectedIssueLabel(offering.name);
                       c.selectOffering([offering]);
                     }}
                   />
@@ -605,6 +683,7 @@ function BookingChatConversation({
                   resolved so its serviceability check never runs early. */}
               {addr.resolvedAddressId && c.draftId ? (
                 <ReviewAndConfirmPhase
+                  key={c.draftId}
                   draftId={c.draftId}
                   onConfirmed={onBookingConfirmed}
                   onConfirmPhase={onConfirmPhase}
@@ -655,7 +734,7 @@ function BookingChatConversation({
             </View>
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, minHeight: 24 }}>
-              <Ionicons name="sparkles" size={15} color={BOT.textTertiary} />
+              <FuvayIcon size={16} accessibilityLabel="Fuvay assistant" />
               <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
                 {booked
                   ? "Your booking is confirmed"

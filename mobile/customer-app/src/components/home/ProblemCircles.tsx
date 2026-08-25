@@ -1,100 +1,116 @@
 import React from "react";
-import { View, Pressable, Image } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+
 import { useTheme } from "../../design-system/theme";
-import { AppText } from "../AppText";
-import { Icon } from "../Icon";
 import { HomeQuickIssue } from "../../domain/customerHome";
-import { resolveQuickIssueIcon } from "../../domain/quickIssueIcon";
-import { resolveMediaUrl } from "../../domain/mediaUrl";
+import { AppText } from "../AppText";
 
 export interface ProblemCirclesProps {
   issues: readonly HomeQuickIssue[];
   title?: string | null;
+  variant?: "showcase" | "expert" | "compact";
   onPressIssue: (issue: HomeQuickIssue) => void;
 }
 
-/** Four across, three rows deep at twelve items. */
-const COLUMNS = 4;
-const CIRCLE = 56;
-
-/**
- * The second, larger problem surface, further down the screen.
- *
- * Circles rather than the cards used higher up, and deliberately so: a customer
- * arriving here has already passed the shortlist, so this is browsing, not
- * choosing. Lighter chrome (no card, no border, just the glyph and its label)
- * lets twelve fit without the section feeling like a second attempt at the same
- * thing.
- *
- * Same real problems, same one-tap route into the assistant with the category and
- * problem already chosen. No price, no severity -- for the same reasons as the
- * tile grid: the amount depends on answers not yet given, and a customer already
- * knows how bad their own fault is.
- */
-export function ProblemCircles({ issues, title, onPressIssue }: ProblemCirclesProps) {
+/** Purpose-built browsing surfaces keep adjacent Home sections from repeating. */
+export function ProblemCircles({ issues, title, variant = "showcase", onPressIssue }: ProblemCirclesProps) {
   const { theme } = useTheme();
-  const tappable = issues.filter(i => !!i.categorySlug);
+  const tappable = issues.filter(issue => !!issue.categorySlug);
   if (tappable.length === 0) return null;
-
-  const rows: HomeQuickIssue[][] = [];
-  for (let i = 0; i < tappable.length; i += COLUMNS) rows.push(tappable.slice(i, i + COLUMNS));
 
   return (
     <View>
-      <View style={{ gap: 2, marginBottom: theme.spacing.sm }}>
+      <View style={{ marginBottom: theme.spacing.md }}>
         <AppText variant="headingSmall">{title || "More things we fix"}</AppText>
-        <AppText variant="caption" color="tertiary">Tap one to book it in a couple of taps</AppText>
+        <AppText variant="caption" color="tertiary" style={{ marginTop: 2 }}>
+          {variant === "expert" ? "Describe it once and an expert will take it from there" : "Choose a service need to continue"}
+        </AppText>
       </View>
-
-      <View style={{ gap: theme.spacing.base }}>
-        {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-            {row.map(issue => (
-              <ProblemCircle key={issue.issueId} issue={issue} onPress={() => onPressIssue(issue)} />
-            ))}
-            {/* Equal-flex spacers keep a short final row's circles the same size
-                and position as the rows above, rather than spreading them. */}
-            {Array.from({ length: COLUMNS - row.length }).map((_, i) => (
-              <View key={`spacer-${i}`} style={{ flex: 1 }} />
-            ))}
-          </View>
-        ))}
-      </View>
+      {variant === "expert" ? (
+        <ExpertList issues={tappable} onPressIssue={onPressIssue} />
+      ) : variant === "compact" ? (
+        <CompactGrid issues={tappable} onPressIssue={onPressIssue} />
+      ) : (
+        <ShowcaseRail issues={tappable} onPressIssue={onPressIssue} />
+      )}
     </View>
   );
 }
 
-function ProblemCircle({ issue, onPress }: { issue: HomeQuickIssue; onPress: () => void }) {
+function ShowcaseRail({ issues, onPressIssue }: { issues: HomeQuickIssue[]; onPressIssue: (issue: HomeQuickIssue) => void }) {
   const { theme } = useTheme();
-  const glyph = resolveQuickIssueIcon(issue.label, issue.categoryName);
-  const artwork = issue.iconUrl ? resolveMediaUrl(issue.iconUrl) : null;
-
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
-      accessibilityHint="Opens the booking assistant with this problem selected"
-      style={({ pressed }) => ({
-        flex: 1, alignItems: "center", gap: theme.spacing.xs, opacity: pressed ? 0.8 : 1,
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.spacing.sm }}>
+      {issues.map((issue, index) => {
+        const surfaces = [theme.colors.statusSuccessSurface, theme.colors.statusInfoSurface, theme.colors.statusWarningSurface, theme.colors.surfaceSecondary];
+        return (
+          <Pressable
+            key={issue.issueId}
+            onPress={() => onPressIssue(issue)}
+            accessibilityRole="button"
+            accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
+            style={({ pressed }) => ({ width: 176, minHeight: 142, padding: theme.spacing.md, borderRadius: theme.radius.radiusSmall, backgroundColor: surfaces[index % surfaces.length], opacity: pressed ? 0.82 : 1 })}
+          >
+            <View style={{ flex: 1, justifyContent: "space-between" }}>
+              <View style={{ alignSelf: "flex-start", width: 36, height: 4, borderRadius: 2, backgroundColor: theme.colors.brandPrimary }} />
+              <View>
+                <AppText variant="bodyStrong" numberOfLines={3}>{issue.label}</AppText>
+                <AppText variant="caption" color="secondary" style={{ marginTop: 6 }}>Explore →</AppText>
+              </View>
+            </View>
+          </Pressable>
+        );
       })}
-    >
-      <View
-        style={{
-          width: CIRCLE, height: CIRCLE, borderRadius: CIRCLE / 2,
-          alignItems: "center", justifyContent: "center", overflow: "hidden",
-          // The wording-derived tint, so a wall of twelve reads as distinct
-          // things rather than twelve grey discs.
-          backgroundColor: artwork ? theme.colors.surfaceSecondary : `${glyph.tint}1F`,
-        }}
-      >
-        {artwork ? (
-          <Image source={{ uri: artwork }} style={{ width: "100%", height: "100%" }} resizeMode="contain" />
-        ) : (
-          <Icon name={glyph.name} size="navigation" color={glyph.tint} decorative />
-        )}
-      </View>
-      <AppText variant="caption" numberOfLines={2} align="center">{issue.label}</AppText>
-    </Pressable>
+    </ScrollView>
+  );
+}
+
+function ExpertList({ issues, onPressIssue }: { issues: HomeQuickIssue[]; onPressIssue: (issue: HomeQuickIssue) => void }) {
+  const { theme } = useTheme();
+  return (
+    <View style={{ borderTopWidth: 1, borderTopColor: theme.colors.borderSubtle }}>
+      {issues.map(issue => {
+        return (
+          <Pressable
+            key={issue.issueId}
+            onPress={() => onPressIssue(issue)}
+            accessibilityRole="button"
+            accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
+            style={({ pressed }) => ({ minHeight: 74, flexDirection: "row", alignItems: "center", gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.borderSubtle, opacity: pressed ? 0.72 : 1 })}
+          >
+            <View style={{ width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19, backgroundColor: theme.colors.surfaceSecondary }}>
+              <View style={{ width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: theme.colors.brandPrimary }} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="bodyStrong" numberOfLines={1}>{issue.label}</AppText>
+              <AppText variant="caption" color="secondary" numberOfLines={1}>{issue.categoryName}</AppText>
+            </View>
+            <AppText variant="bodyStrong" color="tertiary">›</AppText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function CompactGrid({ issues, onPressIssue }: { issues: HomeQuickIssue[]; onPressIssue: (issue: HomeQuickIssue) => void }) {
+  const { theme } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
+      {issues.map(issue => {
+        return (
+          <Pressable
+            key={issue.issueId}
+            onPress={() => onPressIssue(issue)}
+            accessibilityRole="button"
+            accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
+            style={({ pressed }) => ({ width: "48%", minHeight: 76, padding: theme.spacing.sm, justifyContent: "space-between", backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.radiusSmall, opacity: pressed ? 0.8 : 1 })}
+          >
+            <AppText variant="caption" color="secondary" numberOfLines={1} style={{ fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>{issue.categoryName}</AppText>
+            <AppText variant="caption" numberOfLines={2} style={{ fontWeight: "700" }}>{issue.label}</AppText>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }

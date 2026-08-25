@@ -33,7 +33,7 @@ export interface GridSchedule {
   working_hours: { start: string | null; end: string | null } | null;
   break: { start: string; end: string } | null;
   assignments_today: {
-    job_number: string; status: string; time_window: string | null; service_name?: string | null;
+    job_id: string; job_number: string; status: string; time_window: string | null; service_name?: string | null;
   }[];
   daily_capacity: { limit: number | null; used?: number; remaining?: number | null } | null;
   concurrent_capacity?: {
@@ -51,6 +51,7 @@ const REASON_LABELS: Record<string, string> = {
   on_time_off: "Time off", staff_time_off: "Time off", during_break: "Break",
   schedule_conflict: "Conflict", daily_capacity_exceeded: "Day full",
   concurrent_capacity_exceeded: "At capacity", timezone_context_invalid: "Timezone invalid",
+  assignment_outside_availability: "Assignment outside availability",
 };
 function reasonLabel(code: string): string {
   return REASON_LABELS[code.toLowerCase()] ?? code;
@@ -102,7 +103,7 @@ button.avail-cell { cursor:pointer; font-family:inherit; }
 
 function DayCell({ schedule, onSelectJob }: {
   schedule: GridSchedule | undefined;
-  onSelectJob?: (jobNumber: string) => void;
+  onSelectJob?: (jobId: string) => void;
 }) {
   const pad: React.CSSProperties = { padding: "7px 6px" };
 
@@ -121,7 +122,7 @@ function DayCell({ schedule, onSelectJob }: {
   const capacityOnly = !schedule.available && codes.every(c =>
     ["daily_capacity_exceeded", "concurrent_capacity_exceeded", "schedule_conflict"].includes(c));
 
-  if (!schedule.available && !capacityOnly) {
+  if (!schedule.available && !capacityOnly && schedule.assignments_today.length === 0) {
     // Leave gets its own cell rather than a generic reason chip: "Time off" is the
     // single fact the provider is scanning the row for, and burying it in a list of
     // codes is what made this column unreadable.
@@ -189,7 +190,7 @@ function DayCell({ schedule, onSelectJob }: {
           <button
             key={a.job_number}
             className={`avail-cell ${clash ? "avail-cf" : "avail-as"}`}
-            onClick={onSelectJob ? () => onSelectJob(a.job_number) : undefined}
+            onClick={onSelectJob ? event => { event.stopPropagation(); onSelectJob(a.job_id); } : undefined}
             title={clash
               ? `${a.job_number} — this job's window overlaps another beyond concurrent capacity.`
               : a.job_number}
@@ -220,12 +221,12 @@ function DayCell({ schedule, onSelectJob }: {
 }
 
 export function WeeklyGrid({
-  technicians, days, scheduleFor, selectedStaffId, onSelectStaff, onSelectJob, todayISO,
+  technicians, days, scheduleFor, selectedStaffId, onSelectCell, onSelectJob, todayISO,
 }: {
   technicians: GridTechnician[]; days: string[];
   scheduleFor: (staffId: string, date: string) => GridSchedule | undefined;
-  selectedStaffId: string | null; onSelectStaff: (id: string) => void;
-  onSelectJob?: (jobNumber: string) => void; todayISO: string;
+  selectedStaffId: string | null; onSelectCell: (id: string, date: string) => void;
+  onSelectJob?: (jobId: string) => void; todayISO: string;
 }) {
   return (
     <div className="avail-grid" style={{ flex: 1, minWidth: 0, overflowX: "auto",
@@ -247,7 +248,7 @@ export function WeeklyGrid({
         </thead>
         <tbody>
           {technicians.map(t => (
-            <tr key={t.id} onClick={() => onSelectStaff(t.id)} style={{
+            <tr key={t.id} style={{
               borderBottom: "1px solid var(--border)", cursor: "pointer",
               background: selectedStaffId === t.id ? "var(--accent-muted)" : "transparent",
             }}>
@@ -258,7 +259,7 @@ export function WeeklyGrid({
                 )}
               </td>
               {days.map(d => (
-                <td key={d} style={{ verticalAlign: "top", borderLeft: "1px solid var(--border)" }}>
+                <td key={d} onClick={() => onSelectCell(t.id, d)} style={{ verticalAlign: "top", borderLeft: "1px solid var(--border)" }}>
                   <DayCell schedule={scheduleFor(t.id, d)} onSelectJob={onSelectJob}/>
                 </td>
               ))}

@@ -18,7 +18,7 @@ export interface PriceProviderCardProps {
  * Real matched provider + real resolved price, rendered as one card --
  * every field here is backend data already flowing through
  * useBookingReviewController's proven load sequence (checkServiceability
- * -> resolvePriceEstimate -> matchAndPrice -> confirmPriceChoice), just
+ * -> matchAndPrice -> confirmPriceChoice), just
  * restyled into the chat's dark card language. Nothing here is invented:
  * a bargain-available or unresolved price renders its own honest message
  * instead of a fabricated total.

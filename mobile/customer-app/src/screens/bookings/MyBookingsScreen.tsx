@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { View, FlatList, RefreshControl, ActivityIndicator, Pressable, Animated } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, FlatList, RefreshControl, ActivityIndicator, Pressable } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
@@ -36,17 +36,10 @@ import { isOffline } from "../../api/networkState";
  * own authoritative `counts` (spec closure item 1), never a partial-page
  * guess.
  */
-/** Measured height of the title + subtitle block, at the smaller type it now
- * uses (headingSmall + caption rather than headingLarge + bodySmall). */
 /** A row in the list: either a group heading or a booking card. */
 type BookingRow =
   | { kind: "heading"; urgency: BookingUrgency; title: string; subtitle: string | null; count: number }
   | { kind: "booking"; booking: CustomerBookingListItem };
-
-const HEADER_HEIGHT = 40;
-/** Scroll distance over which it folds away. Short enough that the space is
- * reclaimed almost immediately, long enough not to snap. */
-const HEADER_COLLAPSE_DISTANCE = 60;
 
 export function MyBookingsScreen() {
   const { theme } = useTheme();
@@ -64,33 +57,6 @@ export function MyBookingsScreen() {
    * (see `searchOpen` below) so a narrowed list always shows why.
    */
   const [searchRequested, setSearchRequested] = useState(false);
-  /**
-   * Drives the collapsing title block.
-   *
-   * The title and its subtitle are worth ~64px, which is a lot of a phone screen
-   * spent restating the tab the customer is already on. They now fold away as the
-   * list scrolls, while the search box and the tab filters stay pinned -- those
-   * are controls, and a control that scrolls out of reach is worse than a title
-   * that does.
-   *
-   * `useNativeDriver` is off because the collapse animates HEIGHT: translating
-   * instead would slide the title behind the search box and leave its space
-   * behind, which is the gap this is meant to reclaim. One small view on the JS
-   * driver is not a scroll-performance problem.
-   */
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
-    outputRange: [HEADER_HEIGHT, 0],
-    extrapolate: "clamp",
-  });
-  const headerOpacity = scrollY.interpolate({
-    // Fades out over the first half of the travel, so the text is gone before
-    // the box is, rather than being clipped mid-letter.
-    inputRange: [0, HEADER_COLLAPSE_DISTANCE / 2],
-    outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
   // Debounced so typing does not fire a request per keystroke; the term
   // itself is applied server-side (see useCustomerBookingsListQuery).
   /**
@@ -178,7 +144,10 @@ export function MyBookingsScreen() {
   if (query.isPending) {
     return (
       <AppScreen>
-        <LoadingState label="Loading your bookings" />
+        <View style={{ flex: 1, gap: theme.spacing.xl }}>
+          <BookingsHeader />
+          <LoadingState label="Loading your bookings" />
+        </View>
       </AppScreen>
     );
   }
@@ -186,7 +155,10 @@ export function MyBookingsScreen() {
   if (query.isError && query.items.length === 0) {
     return (
       <AppScreen>
-        <ErrorState title="We couldn't load your bookings" actionLabel="Try again" onAction={() => query.refetch()} />
+        <View style={{ flex: 1, gap: theme.spacing.xl }}>
+          <BookingsHeader onSearch={() => setSearchRequested(true)} />
+          <ErrorState title="We couldn't load your bookings" actionLabel="Try again" onAction={() => query.refetch()} />
+        </View>
       </AppScreen>
     );
   }
@@ -200,10 +172,12 @@ export function MyBookingsScreen() {
     // background between the last card and the tab bar.
     <AppScreen edges={["top"]}>
       {isOffline() ? <OfflineBanner /> : null}
-      <View style={{ gap: theme.spacing.sm, flex: 1 }}>
-        <Animated.View style={{ height: headerHeight, opacity: headerOpacity, overflow: "hidden" }}>
-          <BookingsHeader />
-        </Animated.View>
+      <View style={{ gap: theme.spacing.md, flex: 1 }}>
+        <BookingsHeader
+          activeCount={query.counts.active}
+          completedCount={query.counts.completed}
+          onSearch={() => setSearchRequested(true)}
+        />
 
         {searchOpen ? (
           <BookingSearchBar
@@ -260,35 +234,12 @@ export function MyBookingsScreen() {
           </View>
         ) : null}
 
-        {/* The tabs are what customers actually use to switch views, so the search
-            affordance rides alongside them rather than taking a row of its own. */}
-        <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <BookingFilterTabs
-              selected={filter}
-              onSelect={setFilter}
-              activeCount={query.counts.active}
-              completedCount={query.counts.completed}
-            />
-          </View>
-          {!searchOpen ? (
-            <Pressable
-              onPress={() => setSearchRequested(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Search and filter bookings"
-              hitSlop={8}
-              style={({ pressed }) => ({
-                width: theme.touchTargets.minimum, height: theme.touchTargets.minimum,
-                alignItems: "center", justifyContent: "center",
-                borderRadius: theme.radiusUsage.input,
-                backgroundColor: theme.colors.surfaceSecondary,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Icon name="search-outline" size="standard" color={theme.colors.iconDefault} decorative />
-            </Pressable>
-          ) : null}
-        </View>
+        <BookingFilterTabs
+          selected={filter}
+          onSelect={setFilter}
+          activeCount={query.counts.active}
+          completedCount={query.counts.completed}
+        />
 
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           {/* Never claims "Updated just now" for cached/offline data --
@@ -343,11 +294,6 @@ export function MyBookingsScreen() {
             data={rows}
             keyExtractor={row => (row.kind === "heading" ? `h:${row.urgency}` : row.booking.bookingId)}
             renderItem={renderItem}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: false },
-            )}
-            scrollEventThrottle={16}
             refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
             onEndReachedThreshold={0.4}
             onEndReached={() => {

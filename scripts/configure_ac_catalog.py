@@ -59,6 +59,7 @@ from app.engines.tenant_engine.models import Tenant
 
 NOW = lambda: datetime.now(timezone.utc)
 AC_GROUP_SLUG = "ac_services"
+AC_GROUP_ICON_URL = "https://res.cloudinary.com/dr1b4ezct/image/upload/v1787511005/serviceos/customer-home/service-groups/946f4a221bb1ed857f466041.png.png"
 AC_SERVICE_JOB_TYPES = {
     "ac_repair": "repair",
     "ac_installation": "installation",
@@ -128,9 +129,75 @@ WORKFLOW_TRANSITIONS = [
     {"from_step_key": "inspection_started", "to_step_key": "inspection_done", "action_label": "Finish Inspection", "allowed_role": "technician", "requires_reason": False, "triggers_notification": False, "auto_transition": False},
     {"from_step_key": "inspection_done", "to_step_key": "work_started", "action_label": "Start Work", "allowed_role": "technician", "requires_reason": False, "triggers_notification": False, "auto_transition": False},
     {"from_step_key": "work_started", "to_step_key": "work_completed", "action_label": "Complete Work", "allowed_role": "technician", "requires_reason": False, "triggers_notification": True, "auto_transition": False},
-    {"from_step_key": "work_completed", "to_step_key": "job_completed", "action_label": "Close Job", "allowed_role": "system", "requires_reason": False, "triggers_notification": True, "auto_transition": True},
+    # The assigned technician explicitly finalizes after completion proof,
+    # customer handover, and direct-payment reconciliation. This is not an
+    # automatic system transition; authoring it as system-only made the staff
+    # app's real Finalize action impossible to complete.
+    {"from_step_key": "work_completed", "to_step_key": "job_completed", "action_label": "Finalize Job", "allowed_role": "technician", "requires_reason": False, "triggers_notification": True, "auto_transition": False},
     {"from_step_key": "job_completed", "to_step_key": "review_requested", "action_label": "Request Review", "allowed_role": "system", "requires_reason": False, "triggers_notification": True, "auto_transition": True},
 ]
+
+
+def _workflow_journey(*, quote_approval_required: bool) -> tuple[list[dict], list[dict]]:
+    """Return a runtime-valid journey for the workflow capability flags.
+
+    Inspection-first services must expose the estimate gate in every app.
+    Keeping this construction beside the catalog content prevents a future
+    re-run from publishing the pre-migration journey that skipped directly
+    from inspection to work while the backend still required approval.
+    """
+    steps = [dict(step) for step in WORKFLOW_STEPS]
+    transitions = [dict(transition) for transition in WORKFLOW_TRANSITIONS]
+    if not quote_approval_required:
+        # Fixed-price installation and maintenance have no diagnostic quote
+        # gate. Keeping inspection_started/inspection_done in those journeys
+        # made the runtime contradict the published blueprint and forced a
+        # technician through two meaningless repair-only screens.
+        inspection_keys = {"inspection_started", "inspection_done"}
+        steps = [step for step in steps if step["step_key"] not in inspection_keys]
+        transitions = [
+            transition for transition in transitions
+            if transition["from_step_key"] not in inspection_keys
+            and transition["to_step_key"] not in inspection_keys
+        ]
+        transitions.append({
+            "from_step_key": "arrived", "to_step_key": "work_started",
+            "action_label": "Start Work", "allowed_role": "technician",
+            "requires_reason": False, "triggers_notification": False,
+            "auto_transition": False,
+        })
+        for order, step in enumerate(steps, start=1):
+            step["display_order"] = order
+        return steps, transitions
+
+    insertion = next(
+        index + 1 for index, step in enumerate(steps)
+        if step.get("maps_to_status") == "inspection_done"
+    )
+    steps.insert(insertion, _step(
+        "estimate_approval", "Estimate Approval", "quote_required",
+        "customer_app", "customer", insertion + 1,
+        customer=True, tenant=True, staff=True,
+    ) | {"requires_approval": True})
+    for order, step in enumerate(steps, start=1):
+        step["display_order"] = order
+
+    transitions = [
+        transition for transition in transitions
+        if not (
+            transition["from_step_key"] == "inspection_done"
+            and transition["to_step_key"] == "work_started"
+        )
+    ]
+    transitions.extend([
+        {"from_step_key": "inspection_done", "to_step_key": "estimate_approval", "action_label": "Submit Estimate", "allowed_role": "technician", "requires_reason": False, "triggers_notification": True, "auto_transition": False},
+        # Quote approval is recorded by the dedicated customer quote endpoint;
+        # the job remains at quote_required until the assigned technician
+        # starts the approved work. Making this transition customer-owned made
+        # the staff app impossible to advance after a valid approval.
+        {"from_step_key": "estimate_approval", "to_step_key": "work_started", "action_label": "Start Approved Work", "allowed_role": "technician", "requires_reason": False, "triggers_notification": True, "auto_transition": False},
+    ])
+    return steps, transitions
 
 WORKFLOW_RULES = {
     "ac_repair": dict(inspection_required=True, quote_approval_required=True,
@@ -305,7 +372,7 @@ async def _ensure_question(db, service, job_type, key, label, input_type,
     return row
 
 
-async def _ensure_checklist(db, slug, service, link, workflow):
+async def _ensure_checklist(db, slug, service, link, workflow, *, sections=None):
     code = f"{slug.upper()}_COMPLETION_V1"
     template = await _one(db, ChecklistTemplate, code=code)
     if not template:
@@ -324,7 +391,7 @@ async def _ensure_checklist(db, slug, service, link, workflow):
                                             published_at=NOW())
         db.add(version)
         await db.flush()
-        for section_order, (title, items) in enumerate(CHECKLISTS[slug]):
+        for section_order, (title, items) in enumerate(sections or CHECKLISTS[slug]):
             section = ChecklistSection(checklist_template_version_id=version.id, title=title,
                                        display_order=section_order)
             db.add(section)
@@ -346,17 +413,20 @@ async def _ensure_checklist(db, slug, service, link, workflow):
     # One authoritative active completion checklist per AC job type.
     old_mappings = (await db.execute(select(JobTypeChecklistMapping).where(
         JobTypeChecklistMapping.master_service_job_type_id == link.id,
-        JobTypeChecklistMapping.phase == "completion",
     ))).scalars().all()
     for old in old_mappings:
-        old.status = "active" if old.checklist_template_version_id == version.id else "inactive"
-    mapping = next((m for m in old_mappings if m.checklist_template_version_id == version.id), None)
+        old.status = "active" if (
+            old.checklist_template_version_id == version.id and old.phase == "EXECUTION"
+        ) else "inactive"
+    mapping = next((m for m in old_mappings if (
+        m.checklist_template_version_id == version.id and m.phase == "EXECUTION"
+    )), None)
     if not mapping:
         mapping = JobTypeChecklistMapping(
             master_service_job_type_id=link.id,
             service_job_workflow_id=workflow.id,
             checklist_template_version_id=version.id,
-            phase="completion", usage="REQUIRED", actor="TECHNICIAN",
+            phase="EXECUTION", usage="REQUIRED", actor="TECHNICIAN",
             completion_gate="REQUIRE_BEFORE_JOB_COMPLETION", status="active",
         )
         db.add(mapping)
@@ -384,6 +454,7 @@ async def configure() -> None:
         if not group:
             raise RuntimeError("Active AC & HVAC service group is missing")
         group.status = "active"
+        group.icon_url = AC_GROUP_ICON_URL
 
         type_dimension = await _ensure_dimension(db, "type", "Equipment Type", "service_types", 10)
         brand_dimension = await _ensure_dimension(db, "brand", "Brand", "brands", 20)
@@ -564,6 +635,9 @@ async def configure() -> None:
     async with session_factory() as db:
         workflow_writer = JobTypeBlueprintService(db)
         for slug, (service, job_type) in services.items():
+            steps, transitions = _workflow_journey(
+                quote_approval_required=WORKFLOW_RULES[slug]["quote_approval_required"],
+            )
             await workflow_writer.set_workflow(
                 service.id, job_type.id,
                 {
@@ -573,8 +647,8 @@ async def configure() -> None:
                     "technician_required": True,
                     "service_area_required": True,
                     "availability_required": True,
-                    "steps": WORKFLOW_STEPS,
-                    "transitions": WORKFLOW_TRANSITIONS,
+                    "steps": steps,
+                    "transitions": transitions,
                 },
             )
 

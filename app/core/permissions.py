@@ -338,6 +338,15 @@ class P:
     HOME_SERVICES_CUSTOMERS_VIEW       = "home_services:customers:view"
     HOME_SERVICES_PROVIDERS_VIEW       = "home_services:providers:view"
     HOME_SERVICES_PROVIDERS_EXPORT     = "home_services:providers:export"
+    HOME_SERVICES_COMPLAINTS_VIEW          = "home_services:complaints:view"
+    HOME_SERVICES_COMPLAINTS_EXPORT        = "home_services:complaints:export"
+    HOME_SERVICES_COMPLAINTS_ASSIGN        = "home_services:complaints:assign"
+    HOME_SERVICES_COMPLAINTS_MESSAGE       = "home_services:complaints:message"
+    HOME_SERVICES_COMPLAINTS_ESCALATE      = "home_services:complaints:escalate"
+    HOME_SERVICES_COMPLAINTS_RESOLVE       = "home_services:complaints:resolve"
+    HOME_SERVICES_COMPLAINTS_REOPEN        = "home_services:complaints:reopen"
+    HOME_SERVICES_COMPLAINTS_CREDIT_ISSUE  = "home_services:complaints:credit_issue"
+    HOME_SERVICES_COMPLAINTS_CREDIT_ADJUST = "home_services:complaints:credit_adjust"
     CATALOG_COACHING_READ              = "catalog:coaching:read"
     CATALOG_COACHING_UPDATE            = "catalog:coaching:update"
     CATALOG_REAL_ESTATE_READ           = "catalog:real_estate:read"
@@ -768,6 +777,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # reports"), and Operations Admin already holds REVIEW_MODERATE
         # for this same domain.
         P.OPERATIONS_EXPORT,
+        P.HOME_SERVICES_COMPLAINTS_VIEW, P.HOME_SERVICES_COMPLAINTS_EXPORT,
+        P.HOME_SERVICES_COMPLAINTS_ASSIGN, P.HOME_SERVICES_COMPLAINTS_MESSAGE,
+        P.HOME_SERVICES_COMPLAINTS_ESCALATE, P.HOME_SERVICES_COMPLAINTS_RESOLVE,
+        P.HOME_SERVICES_COMPLAINTS_REOPEN, P.HOME_SERVICES_COMPLAINTS_CREDIT_ISSUE,
+        P.HOME_SERVICES_COMPLAINTS_CREDIT_ADJUST,
         # FINAL-L5-05O: dashboard-widget read permissions, distinct from the
         # underlying domain read permissions above (Part 3/4's separation of
         # concerns) — Operations Admin sees the base + operations-domain
@@ -863,6 +877,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
         P.AUTH_USERS_READ,
         P.ANALYTICS_READ,
+        P.HOME_SERVICES_COMPLAINTS_VIEW,
         # FINAL-L5-05O: base dashboard read only -- deliberately NOT granted
         # any of DASHBOARD_FINANCE_READ / DASHBOARD_OPERATIONS_READ /
         # DASHBOARD_SECURITY_READ / DASHBOARD_ACTION_QUEUE_MANAGE / export,

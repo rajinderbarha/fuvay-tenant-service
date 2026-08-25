@@ -28,6 +28,7 @@ see `docs` note at bottom of file).
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 import uuid
 
@@ -47,6 +48,7 @@ R_DATE_OVERRIDE_BLOCKED = "DATE_OVERRIDE_BLOCKED"
 R_ON_TIME_OFF = "ON_TIME_OFF"
 R_DURING_BREAK = "DURING_BREAK"
 R_SCHEDULE_CONFLICT = "SCHEDULE_CONFLICT"
+R_ASSIGNMENT_OUTSIDE_AVAILABILITY = "ASSIGNMENT_OUTSIDE_AVAILABILITY"
 # Either origin means the same thing to a summary count: this person is not working today.
 LEAVE_REASONS = {R_STAFF_TIME_OFF, R_ON_TIME_OFF}
 R_DAILY_CAPACITY_EXCEEDED = "DAILY_CAPACITY_EXCEEDED"
@@ -62,6 +64,9 @@ DEFAULT_TIMEZONE = "Asia/Kolkata"
 
 
 async def _fetch_business_hours(db: AsyncSession, tenant_id: uuid.UUID, dow: int) -> list[dict]:
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["business_hours"].get(dow, [])
     rows = (await db.execute(text(
         "SELECT * FROM provider_availability_rules "
         "WHERE tenant_id=:tid AND scope_type='provider' AND scope_id IS NULL "
@@ -71,6 +76,9 @@ async def _fetch_business_hours(db: AsyncSession, tenant_id: uuid.UUID, dow: int
 
 
 async def _fetch_tenant_exception(db: AsyncSession, tenant_id: uuid.UUID, target_date: dt.date) -> dict | None:
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["tenant_exceptions"].get(target_date)
     row = (await db.execute(text(
         "SELECT * FROM tenant_availability_exceptions "
         "WHERE tenant_id=:tid AND date=:d AND status='active'"
@@ -79,6 +87,9 @@ async def _fetch_tenant_exception(db: AsyncSession, tenant_id: uuid.UUID, target
 
 
 async def _fetch_staff_pattern(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID, dow: int) -> dict | None:
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["staff_patterns"].get((str(staff_id), dow))
     row = (await db.execute(text(
         "SELECT * FROM provider_availability_rules "
         "WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid "
@@ -88,6 +99,9 @@ async def _fetch_staff_pattern(db: AsyncSession, tenant_id: uuid.UUID, staff_id:
 
 
 async def _fetch_staff(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> dict | None:
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["staff"].get(str(staff_id))
     row = (await db.execute(text(
         "SELECT id, tenant_id, full_name, status, max_concurrent_jobs, deleted_at "
         "FROM provider_team_members WHERE id=:sid AND tenant_id=:tid"
@@ -108,6 +122,9 @@ async def _fetch_assignments(db: AsyncSession, tenant_id: uuid.UUID, staff_id: u
     the tenant's display name where one exists -- that is the name the provider gave the
     service, and the master name is the fallback, not the other way round.
     """
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["assignments"].get((str(staff_id), target_date), [])
     rows = (await db.execute(text(
         "SELECT j.id, j.job_number, j.status, j.scheduled_time_window, "
         "       COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
@@ -145,6 +162,10 @@ async def _staff_time_off(db: AsyncSession, tenant_id, staff_id, day: dt.date) -
     Full-day leave wins the ordering: if someone has both a half day and a full day
     recorded over one date, the full day is the stronger claim and blocks it.
     """
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["time_off"].get((str(staff_id), day))
+
     owner_booked = (await db.execute(text(
         "SELECT id, all_day, start_time, end_time, reason "
         "FROM staff_time_off "
@@ -196,6 +217,9 @@ async def _staff_time_off(db: AsyncSession, tenant_id, staff_id, day: dt.date) -
 
 async def _staff_override(db: AsyncSession, tenant_id, staff_id, day: dt.date) -> dict | None:
     """This technician's hours for this specific date, replacing the weekly pattern."""
+    cache = db.info.get("availability_resolution_cache")
+    if cache and cache["tenant_id"] == str(tenant_id):
+        return cache["overrides"].get((str(staff_id), day))
     row = (await db.execute(text(
         "SELECT start_time, end_time, full_day_closed, reason "
         "FROM staff_availability_overrides "
@@ -205,7 +229,157 @@ async def _staff_override(db: AsyncSession, tenant_id, staff_id, day: dt.date) -
     return dict(row._mapping) if row else None
 
 
-_WINDOW_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})\s*$")
+async def _prefetch_resolution_cache(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    staff_rows: list[dict],
+    date_from: dt.date,
+    date_to: dt.date,
+) -> dict:
+    """Load a whole planner page in a bounded, constant number of queries.
+
+    ``resolve_staff_day`` remains the single rules engine. Its small fetch
+    helpers read this request-local cache while the planner projection loops
+    through staff and dates, avoiding the old staff x day x query explosion.
+    """
+    staff_ids = [str(row["id"]) for row in staff_rows]
+    cache = {
+        "tenant_id": str(tenant_id),
+        "business_hours": {},
+        "tenant_exceptions": {},
+        "staff_patterns": {},
+        "staff": {str(row["id"]): row for row in staff_rows},
+        "overrides": {},
+        "time_off": {},
+        "assignments": {},
+    }
+    if not staff_ids:
+        return cache
+
+    business_rows = (await db.execute(text(
+        "SELECT * FROM provider_availability_rules "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND scope_type='provider' "
+        "AND scope_id IS NULL AND is_active=true"
+    ), {"tid": str(tenant_id)})).all()
+    for row in business_rows:
+        value = dict(row._mapping)
+        cache["business_hours"].setdefault(value["day_of_week"], []).append(value)
+
+    exception_rows = (await db.execute(text(
+        "SELECT * FROM tenant_availability_exceptions "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND date BETWEEN :date_from AND :date_to "
+        "AND status='active'"
+    ), {"tid": str(tenant_id), "date_from": date_from, "date_to": date_to})).all()
+    for row in exception_rows:
+        value = dict(row._mapping)
+        cache["tenant_exceptions"][value["date"]] = value
+
+    pattern_rows = (await db.execute(text(
+        "SELECT * FROM provider_availability_rules "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND scope_type='staff_member' "
+        "AND scope_id=ANY(CAST(:staff_ids AS uuid[])) AND is_active=true"
+    ), {"tid": str(tenant_id), "staff_ids": staff_ids})).all()
+    for row in pattern_rows:
+        value = dict(row._mapping)
+        cache["staff_patterns"][(str(value["scope_id"]), value["day_of_week"])] = value
+
+    override_rows = (await db.execute(text(
+        "SELECT staff_member_id, override_date, start_time, end_time, full_day_closed, reason "
+        "FROM staff_availability_overrides "
+        "WHERE tenant_id=CAST(:tid AS uuid) "
+        "AND staff_member_id=ANY(CAST(:staff_ids AS uuid[])) "
+        "AND override_date BETWEEN :date_from AND :date_to"
+    ), {
+        "tid": str(tenant_id), "staff_ids": staff_ids,
+        "date_from": date_from, "date_to": date_to,
+    })).all()
+    for row in override_rows:
+        value = dict(row._mapping)
+        cache["overrides"][(str(value.pop("staff_member_id")), value.pop("override_date"))] = value
+
+    def add_time_off(value: dict) -> None:
+        start = max(value.pop("start_date"), date_from)
+        end = min(value.pop("end_date"), date_to)
+        staff_id = str(value.pop("staff_member_id"))
+        day = start
+        while day <= end:
+            key = (staff_id, day)
+            current = cache["time_off"].get(key)
+            if current is None or (value["all_day"] and not current["all_day"]):
+                cache["time_off"][key] = dict(value)
+            day += dt.timedelta(days=1)
+
+    owner_leave_rows = (await db.execute(text(
+        "SELECT id, staff_member_id, start_date, end_date, all_day, start_time, end_time, reason "
+        "FROM staff_time_off WHERE tenant_id=CAST(:tid AS uuid) "
+        "AND staff_member_id=ANY(CAST(:staff_ids AS uuid[])) AND status='approved' "
+        "AND start_date<=:date_to AND end_date>=:date_from "
+        "ORDER BY all_day DESC, created_at DESC"
+    ), {
+        "tid": str(tenant_id), "staff_ids": staff_ids,
+        "date_from": date_from, "date_to": date_to,
+    })).all()
+    for row in owner_leave_rows:
+        value = dict(row._mapping)
+        value.update({
+            "id": str(value["id"]), "start": _time_str(value.pop("start_time")),
+            "end": _time_str(value.pop("end_time")), "source": "owner_booked",
+        })
+        add_time_off(value)
+
+    requested_leave_rows = (await db.execute(text(
+        "SELECT id, staff_member_id, start_date, end_date, is_full_day, start_time, end_time, reason_category "
+        "FROM staff_time_off_requests WHERE tenant_id=CAST(:tid AS uuid) "
+        "AND staff_member_id=ANY(CAST(:staff_ids AS uuid[])) AND status='approved' "
+        "AND cancelled_at IS NULL AND start_date<=:date_to AND end_date>=:date_from "
+        "ORDER BY is_full_day DESC, created_at DESC"
+    ), {
+        "tid": str(tenant_id), "staff_ids": staff_ids,
+        "date_from": date_from, "date_to": date_to,
+    })).all()
+    for row in requested_leave_rows:
+        value = dict(row._mapping)
+        value.update({
+            "id": str(value["id"]), "all_day": bool(value.pop("is_full_day")),
+            "start": _time_str(value.pop("start_time")),
+            "end": _time_str(value.pop("end_time")),
+            "reason": value.pop("reason_category"), "source": "requested",
+        })
+        add_time_off(value)
+
+    # Some historical jobs store the roster id, while older rows store the
+    # linked user id. Resolve both to one canonical roster row so capacity is
+    # never understated during the transition.
+    assignment_owner: dict[str, str] = {}
+    for row in staff_rows:
+        canonical = str(row["id"])
+        assignment_owner[canonical] = canonical
+        if row.get("user_id"):
+            assignment_owner[str(row["user_id"])] = canonical
+    assignment_ids = list(assignment_owner)
+    assignment_rows = (await db.execute(text(
+        "SELECT j.id, j.assigned_staff_id, j.scheduled_date, j.job_number, j.status, "
+        "j.scheduled_time_window, COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
+        "FROM service_jobs j "
+        "LEFT JOIN tenant_services ts ON ts.id=j.offering_id "
+        "LEFT JOIN master_services ms ON ms.id=COALESCE(ts.master_service_id,j.offering_id) "
+        "WHERE j.tenant_id=CAST(:tid AS uuid) "
+        "AND j.assigned_staff_id=ANY(CAST(:assignment_ids AS uuid[])) "
+        "AND j.scheduled_date BETWEEN :date_from AND :date_to"
+    ), {
+        "tid": str(tenant_id), "assignment_ids": assignment_ids,
+        "date_from": date_from, "date_to": date_to,
+    })).all()
+    for row in assignment_rows:
+        value = dict(row._mapping)
+        canonical = assignment_owner.get(str(value.pop("assigned_staff_id")))
+        scheduled_date = value.pop("scheduled_date")
+        if canonical:
+            cache["assignments"].setdefault((canonical, scheduled_date), []).append(value)
+    return cache
+
+
+_WINDOW_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*[-\u2013\u2014]\s*(\d{1,2}):(\d{2})\s*$")
 
 
 def _parse_window(label: str | None) -> tuple[int, int] | None:
@@ -302,18 +476,38 @@ async def resolve_staff_day(
         "overlapping_jobs": [],
     }
 
+    # Committed work must remain visible even when a later availability rule closes the
+    # day. Those are the assignments an operator has to move, not records to hide.
+    assignments = await _fetch_assignments(db, tenant_id, staff_id, target_date)
+    active_assignments = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
+    result["assignments_today"] = [
+        {
+            "job_id": str(a["id"]),
+            "job_number": a["job_number"],
+            "status": a["status"],
+            "time_window": a["scheduled_time_window"],
+            "service_name": a.get("service_name"),
+        }
+        for a in assignments
+    ]
+
+    def unavailable_result() -> dict:
+        if active_assignments and R_ASSIGNMENT_OUTSIDE_AVAILABILITY not in reasons:
+            reasons.append(R_ASSIGNMENT_OUTSIDE_AVAILABILITY)
+            result["overlapping_jobs"] = [a["job_number"] for a in active_assignments]
+        result["reasons"] = reasons
+        return result
+
     # Step 2 — business operating hours (tenant-wide exception first, then weekly rule).
     exc = await _fetch_tenant_exception(db, tenant_id, target_date)
     if exc and exc.get("full_day_closed"):
         reasons.append(R_BUSINESS_CLOSED)
-        result["reasons"] = reasons
-        return result
+        return unavailable_result()
 
     biz_rules = await _fetch_business_hours(db, tenant_id, dow)
     if not biz_rules and not exc:
         reasons.append(R_BUSINESS_CLOSED)
-        result["reasons"] = reasons
-        return result
+        return unavailable_result()
     if biz_rules:
         result["business_hours"] = {
             "start": _time_str(biz_rules[0]["start_time"]),
@@ -324,12 +518,10 @@ async def resolve_staff_day(
     staff = await _fetch_staff(db, tenant_id, staff_id)
     if not staff or staff.get("deleted_at") is not None:
         reasons.append(R_STAFF_INACTIVE)
-        result["reasons"] = reasons
-        return result
+        return unavailable_result()
     if staff.get("status") != "active":
         reasons.append(R_STAFF_INACTIVE)
-        result["reasons"] = reasons
-        return result
+        return unavailable_result()
 
     concurrent_cap = staff.get("max_concurrent_jobs")
     # Same keys the fully-resolved result carries, so a caller reading `used` does not
@@ -360,8 +552,7 @@ async def resolve_staff_day(
         }
         if override["full_day_closed"]:
             reasons.append(R_STAFF_OFF_DAY)
-            result["reasons"] = reasons
-            return result
+            return unavailable_result()
         result["working_hours"] = {
             "start": _time_str(override["start_time"]),
             "end": _time_str(override["end_time"]),
@@ -379,8 +570,7 @@ async def resolve_staff_day(
             # this person off" and "this person asked for leave and it was approved" are
             # different answers, and collapsing them would lose that.
             reasons.append(R_ON_TIME_OFF if time_off["source"] == "requested" else R_STAFF_TIME_OFF)
-            result["reasons"] = reasons
-            return result
+            return unavailable_result()
         # A part-day absence leaves the rest of the day workable, so the day is NOT
         # closed -- the board draws the blocked hours and the technician keeps the rest.
         result["time_off_window"] = {"start": time_off["start"], "end": time_off["end"]}
@@ -412,8 +602,7 @@ async def resolve_staff_day(
             # so say so rather than rendering a backwards range.
             result["working_hours"] = {"start": start, "end": end}
             reasons.append(R_OUTSIDE_WORKING_HOURS)
-            result["reasons"] = reasons
-            return result
+            return unavailable_result()
         result["working_hours"] = {"start": start, "end": end}
 
     # Step 8 — break.
@@ -425,7 +614,7 @@ async def resolve_staff_day(
     assignments = await _fetch_assignments(db, tenant_id, staff_id, target_date)
     active_assignments = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
     result["assignments_today"] = [
-        {"job_number": a["job_number"], "status": a["status"],
+        {"job_id": str(a["id"]), "job_number": a["job_number"], "status": a["status"],
          "time_window": a["scheduled_time_window"], "service_name": a.get("service_name")}
         for a in assignments
     ]
@@ -447,6 +636,32 @@ async def resolve_staff_day(
         # `overlapping_jobs` red and says which day.
         reasons.append(R_SCHEDULE_CONFLICT)
 
+    working = result.get("working_hours") or {}
+    working_window = _parse_window(
+        f"{working.get('start')}-{working.get('end')}"
+        if working.get("start") and working.get("end") else None
+    )
+    break_window = _parse_window(f"{break_start}-{break_end}" if break_start and break_end else None)
+    leave_window = None
+    if time_off and not time_off.get("all_day"):
+        leave_window = _parse_window(f"{time_off.get('start')}-{time_off.get('end')}")
+
+    outside_jobs: list[str] = []
+    for assignment in active_assignments:
+        window = _parse_window(assignment.get("scheduled_time_window"))
+        if not window:
+            continue
+        outside_shift = bool(working_window and (window[0] < working_window[0] or window[1] > working_window[1]))
+        during_break = bool(break_window and window[0] < break_window[1] and break_window[0] < window[1])
+        during_leave = bool(leave_window and window[0] < leave_window[1] and leave_window[0] < window[1])
+        if outside_shift or during_break or during_leave:
+            outside_jobs.append(assignment["job_number"])
+    if outside_jobs:
+        if R_ASSIGNMENT_OUTSIDE_AVAILABILITY not in reasons:
+            reasons.append(R_ASSIGNMENT_OUTSIDE_AVAILABILITY)
+        if R_SCHEDULE_CONFLICT not in reasons:
+            reasons.append(R_SCHEDULE_CONFLICT)
+
     # Step 11 — daily capacity (volume across the whole day, timed or not).
     daily_cap = pattern.get("max_jobs_per_day")
     if daily_cap is not None and len(active_assignments) >= daily_cap:
@@ -464,7 +679,7 @@ async def resolve_staff_day(
         # day is emptier than it is.
         "untimed_assignments": len(untimed),
     }
-    result["overlapping_jobs"] = peak_jobs if R_SCHEDULE_CONFLICT in reasons else []
+    result["overlapping_jobs"] = sorted(set(peak_jobs + outside_jobs)) if R_SCHEDULE_CONFLICT in reasons else []
 
     result["reasons"] = reasons
     result["available"] = len(reasons) == 0
@@ -574,7 +789,7 @@ async def aggregate_slot_available(
     }
 
 
-async def resolve_tenant_week(
+async def _resolve_tenant_week_legacy(
     db: AsyncSession,
     tenant_id: uuid.UUID,
     date_from: dt.date,
@@ -645,6 +860,142 @@ async def resolve_tenant_week(
         # Conflicts are derived from overlapping assignment windows rather than stored, so
         # that flag stays false and means what it says: there is no conflict table, and
         # a conflict is a live reading of the jobs on the day.
+        "capability_flags": {
+            "time_off_supported": True,
+            "date_override_supported_per_staff": True,
+            "schedule_conflict_table_supported": False,
+            "schedule_conflict_derived": True,
+        },
+    }
+
+
+async def resolve_tenant_week(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    date_from: dt.date,
+    date_to: dt.date,
+    staff_id: uuid.UUID | None = None,
+    *,
+    search: str | None = None,
+    designation: str | None = None,
+    capability: uuid.UUID | None = None,
+    availability: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    focus_date: dt.date | None = None,
+) -> dict:
+    """Enterprise planner projection with bounded queries and tenant-scoped paging."""
+    clauses = [
+        "tenant_id=CAST(:tid AS uuid)",
+        "deleted_at IS NULL",
+        "member_type IN ('technician','owner_technician')",
+    ]
+    params: dict = {"tid": str(tenant_id), "limit": limit, "offset": offset}
+    if staff_id:
+        clauses.append("id=CAST(:staff_id AS uuid)")
+        params["staff_id"] = str(staff_id)
+    if search:
+        clauses.append("(lower(full_name) LIKE :search OR lower(COALESCE(designation,'')) LIKE :search)")
+        params["search"] = f"%{search.strip().lower()}%"
+    if designation:
+        clauses.append("lower(COALESCE(designation,''))=lower(:designation)")
+        params["designation"] = designation
+    if capability:
+        clauses.append("COALESCE(supported_offering_ids,'[]'::jsonb) @> CAST(:capability AS jsonb)")
+        params["capability"] = json.dumps([str(capability)])
+
+    where = " AND ".join(clauses)
+    total = int((await db.execute(text(
+        f"SELECT count(*) FROM provider_team_members WHERE {where}"
+    ), params)).scalar() or 0)
+    rows = (await db.execute(text(
+        "SELECT id, user_id, full_name, designation, member_type, status, "
+        "max_concurrent_jobs, profile_photo_url, supported_offering_ids, deleted_at "
+        f"FROM provider_team_members WHERE {where} "
+        "ORDER BY lower(full_name), id LIMIT :limit OFFSET :offset"
+    ), params)).all()
+    staff_list = [dict(row._mapping) for row in rows]
+
+    offering_rows = (await db.execute(text(
+        "SELECT ts.id::text AS id, COALESCE(ts.tenant_display_name, ms.service_name) AS name "
+        "FROM tenant_services ts JOIN master_services ms ON ms.id=ts.master_service_id "
+        "WHERE ts.tenant_id=CAST(:tid AS uuid) AND COALESCE(ts.is_enabled,true)=true "
+        "ORDER BY lower(COALESCE(ts.tenant_display_name, ms.service_name)), ts.id"
+    ), {"tid": str(tenant_id)})).all()
+    offering_map = {row.id: row.name for row in offering_rows}
+    capabilities = [{"id": row.id, "name": row.name} for row in offering_rows]
+    for staff in staff_list:
+        supported_ids = [str(value) for value in (staff.get("supported_offering_ids") or [])]
+        staff["supported_service_ids"] = supported_ids
+        staff["supported_services"] = [
+            {"id": service_id, "name": offering_map[service_id]}
+            for service_id in supported_ids if service_id in offering_map
+        ]
+
+    cache = await _prefetch_resolution_cache(db, tenant_id, staff_list, date_from, date_to)
+    db.info["availability_resolution_cache"] = cache
+    schedules: list[dict] = []
+    conflicts: list[dict] = []
+    try:
+        day = date_from
+        while day <= date_to:
+            for staff in staff_list:
+                resolved = await resolve_staff_day(db, tenant_id, staff["id"], day)
+                schedules.append(resolved)
+                if R_SCHEDULE_CONFLICT in resolved["reasons"]:
+                    conflicts.append({
+                        "staff_id": str(staff["id"]),
+                        "date": day.isoformat(),
+                        "reasons": resolved["reasons"],
+                        "overlapping_jobs": resolved.get("overlapping_jobs", []),
+                        "concurrent_limit": (resolved.get("concurrent_capacity") or {}).get("limit"),
+                        "peak_concurrent": (resolved.get("concurrent_capacity") or {}).get("used"),
+                    })
+            day += dt.timedelta(days=1)
+    finally:
+        db.info.pop("availability_resolution_cache", None)
+
+    selected_day = focus_date or date_from
+    if availability in {"available", "unavailable"}:
+        wanted = availability == "available"
+        included = {
+            item["staff_id"] for item in schedules
+            if item["date"] == selected_day.isoformat() and item["available"] is wanted
+        }
+        staff_list = [staff for staff in staff_list if str(staff["id"]) in included]
+        schedules = [item for item in schedules if item["staff_id"] in included]
+        conflicts = [item for item in conflicts if item["staff_id"] in included]
+
+    focus_iso = selected_day.isoformat()
+    focus_schedules = [item for item in schedules if item["date"] == focus_iso]
+    designations = (await db.execute(text(
+        "SELECT DISTINCT designation FROM provider_team_members "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND deleted_at IS NULL "
+        "AND member_type IN ('technician','owner_technician') AND designation IS NOT NULL "
+        "ORDER BY designation"
+    ), {"tid": str(tenant_id)})).scalars().all()
+
+    return {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "timezone": DEFAULT_TIMEZONE,
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+        "focus_date": focus_iso,
+        "summary": {
+            "available_today": sum(1 for item in focus_schedules if item["available"]),
+            "on_leave_today": sum(1 for item in focus_schedules if LEAVE_REASONS & set(item.get("reasons", []))),
+            "total_capacity": sum((item.get("concurrent_capacity") or {}).get("limit") or 0 for item in focus_schedules),
+            "technician_count": total,
+            "conflicts": len(conflicts),
+        },
+        "technicians": staff_list,
+        "effective_schedules": schedules,
+        "conflicts": conflicts,
+        "pagination": {
+            "total": total, "limit": limit, "offset": offset,
+            "has_next": offset + limit < total,
+        },
+        "available_filters": {"designations": list(designations), "capabilities": capabilities},
         "capability_flags": {
             "time_off_supported": True,
             "date_override_supported_per_staff": True,

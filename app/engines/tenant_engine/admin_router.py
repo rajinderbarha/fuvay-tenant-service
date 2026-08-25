@@ -949,18 +949,41 @@ async def admin_refresh_offerings_readiness(
 async def admin_list_team_members(
     tenant_id: uuid.UUID,
     request: Request,
+    search: str | None = Query(None),
+    status: str | None = Query(None),
+    member_type: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ):
-    result = await db.execute(text("""
+    where = ["tenant_id = :tid", "deleted_at IS NULL"]
+    params: dict = {"tid": str(tenant_id), "limit": page_size, "offset": (page - 1) * page_size}
+    if search and search.strip():
+        params["search"] = f"%{search.strip().lower()}%"
+        where.append("(lower(full_name) LIKE :search OR lower(COALESCE(email,'')) LIKE :search "
+                     "OR lower(COALESCE(phone,'')) LIKE :search OR lower(COALESCE(designation,'')) LIKE :search)")
+    if status:
+        params["status"] = status.lower()
+        where.append("lower(status)=:status")
+    if member_type:
+        params["member_type"] = member_type.lower()
+        where.append("lower(member_type)=:member_type")
+    where_sql = " AND ".join(where)
+    total = int((await db.execute(text(
+        f"SELECT count(*) FROM provider_team_members WHERE {where_sql}"
+    ), params)).scalar() or 0)
+    result = await db.execute(text(f"""
         SELECT id as member_id, member_type, full_name, phone, email,
                designation, skills, can_receive_assignment, status, created_at
         FROM provider_team_members
-        WHERE tenant_id = :tid AND deleted_at IS NULL
-        ORDER BY created_at DESC
-    """), {"tid": str(tenant_id)})
+        WHERE {where_sql}
+        ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset
+    """), params)
     rows = [dict(r._mapping) for r in result.fetchall()]
-    return ok({"members": rows, "count": len(rows)}, _rid(request))
+    return ok({"members": rows, "count": len(rows), "total": total,
+               "pagination": {"page": page, "page_size": page_size,
+                              "pages": (total + page_size - 1) // page_size}}, _rid(request))
 
 
 @router.get("/{tenant_id}/availability", summary="Admin view: provider availability rules")

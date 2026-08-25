@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -27,7 +27,7 @@ CONDITION_TYPES = {"job_type", "problem", "dimension_enabled", "answer_equals"}
 # Explicit editable field allowlist -- fails closed against any monetary key.
 EDITABLE_FIELDS = {"label", "input_type", "answer_source", "dimension_id", "required",
                    "customer_visible", "tenant_setup_visible", "deepseek_enabled",
-                   "validation", "help_text", "icon_url", "display_order", "is_active"}
+                   "validation", "help_text", "display_order", "is_active"}
 
 
 class CatalogQuestionService:
@@ -38,15 +38,20 @@ class CatalogQuestionService:
     # ── Questions CRUD ────────────────────────────────────────────────────────
     async def list_questions(self, master_service_id: uuid.UUID,
                              job_type_id: uuid.UUID | None) -> dict:
+        job_scope = (
+            or_(CatalogQuestion.job_type_id == job_type_id,
+                CatalogQuestion.job_type_id.is_(None))
+            if job_type_id else CatalogQuestion.job_type_id.is_(None)
+        )
         q = select(CatalogQuestion).where(
             CatalogQuestion.master_service_id == master_service_id,
-            CatalogQuestion.job_type_id == job_type_id
-            if job_type_id else CatalogQuestion.job_type_id.is_(None),
+            job_scope,
         ).order_by(CatalogQuestion.display_order)
         rows = (await self.db.execute(q)).scalars().all()
         out = []
         for qn in rows:
             d = qn.to_dict()
+            d.pop("icon_url", None)
             # The catalog workspace and the tenant requirements preview must
             # expose the same selectable values that the customer booking
             # resolver uses. Returning an empty list for dimension-backed
@@ -80,28 +85,32 @@ class CatalogQuestionService:
             tenant_setup_visible=bool(data.get("tenant_setup_visible", False)),
             deepseek_enabled=bool(data.get("deepseek_enabled", True)),
             validation=data.get("validation"), help_text=data.get("help_text"),
-            icon_url=data.get("icon_url"),
             display_order=int(data.get("display_order", 0)))
         self.db.add(qn)
         await self.db.commit()
         await self.db.refresh(qn)
-        return qn.to_dict()
+        result = qn.to_dict()
+        result.pop("icon_url", None)
+        return result
 
     async def update_question(self, question_id: uuid.UUID, data: dict) -> dict:
         qn = await self._load(question_id)
         for field in EDITABLE_FIELDS:
-            if field in data and data[field] is not None:
-                if field == "input_type" and data[field] not in INPUT_TYPES:
+            if field in data:
+                value = data[field]
+                if field == "input_type" and value not in INPUT_TYPES:
                     raise ServiceOSException("INVALID_INPUT_TYPE", "Invalid input_type.", status_code=422)
-                if field == "answer_source" and data[field] not in ANSWER_SOURCES:
+                if field == "answer_source" and value not in ANSWER_SOURCES:
                     raise ServiceOSException("INVALID_ANSWER_SOURCE", "Invalid answer_source.", status_code=422)
                 if field == "dimension_id":
-                    setattr(qn, field, uuid.UUID(str(data[field])))
+                    setattr(qn, field, uuid.UUID(str(value)) if value else None)
                 else:
-                    setattr(qn, field, data[field])
+                    setattr(qn, field, value)
         await self.db.commit()
         await self.db.refresh(qn)
-        return qn.to_dict()
+        result = qn.to_dict()
+        result.pop("icon_url", None)
+        return result
 
     # ── Options ───────────────────────────────────────────────────────────────
     async def add_option(self, question_id: uuid.UUID, data: dict) -> dict:
@@ -172,6 +181,7 @@ class CatalogQuestionService:
             if not self._rules_pass(rules, job_type_id, selected_problem, enabled_dims, prior):
                 continue
             d = qn.to_dict()
+            d.pop("icon_url", None)
             d["options"] = await self._resolved_options(qn)
             applicable.append(d)
         return {"questions": applicable, "known": list(prior.keys())}

@@ -108,7 +108,9 @@ export function BookingDetailsScreen() {
 
   const details = query.data.details;
   const activeStage = resolveActiveJobStage(details.job?.rawStage);
-  const presentation = activeStage ? resolveActiveJobPresentation(activeStage) : null;
+  const presentation = activeStage
+    ? resolveActiveJobPresentation(activeStage, details.job?.rawStatus)
+    : null;
   const technician = details.job?.technician ?? null;
 
   const currentQuote = quoteQuery.data?.kind === "found" ? quoteQuery.data.quote : null;

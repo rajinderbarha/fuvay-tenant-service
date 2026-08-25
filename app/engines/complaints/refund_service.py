@@ -18,6 +18,29 @@ from app.engines.complaints.constants import (
 )
 from app.engines.complaints.models import RefundRequest, CustomerComplaint, ComplaintEvent
 from app.engines.complaints.complaint_service import ComplaintService
+
+
+def _parse_boundary(value: str, *, end_of_day: bool = False):
+    """Turn a `YYYY-MM-DD` or ISO-8601 filter bound into a tz-aware datetime.
+
+    A bare date is expanded to cover the whole day so `date_to=2026-08-21`
+    includes refunds raised at 18:40 that day. Unparseable input drops the
+    bound rather than erroring the whole queue.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if len(raw) == 10 and end_of_day:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 from app.exceptions import ServiceOSException
 
 
@@ -192,6 +215,23 @@ class RefundRequestService:
             refund.approved_by_user_id = actor_user_id
             refund.approved_at = datetime.now(timezone.utc)
             refund.resolution_method = "provider_direct_refund"
+
+            # Keep the complaint and provider-owned refund state machines in
+            # lockstep. Previously the refund became approved while its case
+            # remained refund_requested, leaving admin/customer timelines and
+            # finance filters disagreeing about the same decision.
+            complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+            old_status = complaint.status
+            applied = None
+            if STATUS_REFUND_APPROVED in ALLOWED_TRANSITIONS.get(old_status, set()):
+                complaint.status = STATUS_REFUND_APPROVED
+                applied = STATUS_REFUND_APPROVED
+                await db.flush()
+            await self._log_event(
+                db, refund.complaint_id, refund.tenant_id, ACTOR_PROVIDER, actor_user_id,
+                EVT_REFUND_APPROVED, old_status, applied,
+                {"approved_amount": str(amount)}, request_id,
+            )
         else:
             if not reason or not reason.strip():
                 raise ServiceOSException("VALIDATION_ERROR", "A rejection reason is required.", status_code=422)
@@ -468,18 +508,123 @@ class RefundRequestService:
         r = await db.execute(q)
         return r.scalars().all()
 
+    async def refund_queue_summary(self, db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+        """Counts and money totals for the remedies workspace KPI strip.
+
+        The queue had no summary at all, so a provider could not see how much
+        money was actually at stake, or how many requests were waiting on
+        them, without paging through every row.
+        """
+        from app.engines.complaints.constants import (
+            REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_APPROVED,
+            REFUND_RECORDED, REFUND_VERIFIED, REFUND_REJECTED, REFUND_ADMIN_REVIEW,
+        )
+        rows = (await db.execute(
+            select(RefundRequest).where(RefundRequest.tenant_id == tenant_id)
+        )).scalars().all()
+
+        def _money(values) -> str:
+            total = sum((v for v in values if v is not None), Decimal("0"))
+            return str(total)
+
+        needs_action = [r for r in rows if r.status in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW)]
+        approved = [r for r in rows if r.status == REFUND_APPROVED]
+        settled = [r for r in rows if r.status in (REFUND_RECORDED, REFUND_VERIFIED)]
+        return {
+            "total":        len(rows),
+            "needs_action": len(needs_action),
+            "approved":     len(approved),
+            "settled":      len(settled),
+            "escalated":    len([r for r in rows if r.status == REFUND_ADMIN_REVIEW]),
+            "rejected":     len([r for r in rows if r.status == REFUND_REJECTED]),
+            # Money the provider is actually exposed to, not just row counts.
+            "requested_amount": _money(r.requested_amount for r in needs_action),
+            "approved_amount":  _money(r.approved_amount for r in approved),
+            "recorded_amount":  _money(r.recorded_amount for r in settled),
+            "provider_exposure": _money(
+                [r.provider_credit_deducted for r in rows]
+                + [r.security_deposit_deducted for r in rows]
+            ),
+        }
+
+    async def refund_filter_options(self, db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+        """Facets built from the SAME columns the filters match on, so an
+        option can never be offered that returns nothing."""
+        from sqlalchemy import text as _text
+        statuses = (await db.execute(_text(
+            "SELECT DISTINCT status FROM refund_requests WHERE tenant_id = :tid ORDER BY status"
+        ), {"tid": str(tenant_id)})).fetchall()
+        types = (await db.execute(_text(
+            "SELECT DISTINCT refund_type FROM refund_requests "
+            "WHERE tenant_id = :tid AND refund_type IS NOT NULL ORDER BY refund_type"
+        ), {"tid": str(tenant_id)})).fetchall()
+        return {
+            "status": [r.status for r in statuses],
+            "refund_type": [r.refund_type for r in types],
+        }
+
+    async def _refund_case_context(self, db: AsyncSession, rows) -> dict:
+        """Complaint number, job number and service name per refund.
+
+        A refund row carries a NOT NULL `complaint_id` and usually a `job_id`,
+        but the queue exposed neither -- so the provider saw an amount and a
+        type with no way to tell WHICH case or job it came from. Service name
+        resolves through `tenant_services`, i.e. the catalogue the Services &
+        Pricing setup page manages.
+        """
+        from sqlalchemy import text as _text
+        ids = [str(r.id) for r in rows]
+        if not ids:
+            return {}
+        placeholders = ", ".join(":id%d" % i for i in range(len(ids)))
+        params = {"id%d" % i: v for i, v in enumerate(ids)}
+        sql = (
+            "SELECT rr.id AS refund_id, cc.complaint_number, sj.job_number, "
+            "COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
+            "FROM refund_requests rr "
+            "LEFT JOIN customer_complaints cc ON cc.id = rr.complaint_id "
+            "LEFT JOIN service_jobs sj ON sj.id = COALESCE(rr.job_id, cc.job_id) "
+            "LEFT JOIN tenant_services ts ON ts.id = sj.offering_id "
+            "LEFT JOIN master_services ms ON ms.id = ts.master_service_id "
+            "WHERE rr.id IN (" + placeholders + ")"
+        )
+        result = (await db.execute(_text(sql), params)).fetchall()
+        return {
+            str(row.refund_id): {
+                "complaint_number": row.complaint_number,
+                "job_number": row.job_number,
+                "service_name": row.service_name,
+            } for row in result
+        }
+
     async def list_refund_requests_page(
         self, db: AsyncSession, *, tenant_id: uuid.UUID, status: str | None,
         q: str | None, page: int, page_size: int,
+        refund_type: str | None = None,
+        date_from: str | None = None, date_to: str | None = None,
     ) -> dict:
         filters = [RefundRequest.tenant_id == tenant_id]
         if status:
             filters.append(RefundRequest.status == status)
+        if refund_type:
+            filters.append(RefundRequest.refund_type == refund_type)
+        # Bind real datetimes, never strings: asyncpg rejects a str against a
+        # timestamptz column outright ("expected a datetime.date or
+        # datetime.datetime instance, got 'str'").
+        parsed_from = _parse_boundary(date_from) if date_from else None
+        if parsed_from:
+            filters.append(RefundRequest.created_at >= parsed_from)
+        parsed_to = _parse_boundary(date_to, end_of_day=True) if date_to else None
+        if parsed_to:
+            filters.append(RefundRequest.created_at <= parsed_to)
         if q and q.strip():
-            term = f"%{q.strip()}%"
+            term = "%" + q.strip() + "%"
             filters.append(or_(
                 RefundRequest.refund_number.ilike(term),
                 RefundRequest.refund_type.ilike(term),
+                # The customer's stated reason is the single most useful thing
+                # to search for and was not searchable at all.
+                RefundRequest.reason.ilike(term),
             ))
         total = await db.scalar(select(func.count()).select_from(RefundRequest).where(*filters)) or 0
         rows = (await db.execute(
@@ -487,13 +632,16 @@ class RefundRequestService:
             .order_by(RefundRequest.created_at.desc(), RefundRequest.id.desc())
             .limit(page_size).offset((page - 1) * page_size)
         )).scalars().all()
+        context = await self._refund_case_context(db, rows)
         return {
-            "items": [row.to_dict() for row in rows],
+            "items": [dict(row.to_dict(), **context.get(str(row.id), {})) for row in rows],
             "pagination": {
                 "page": page, "page_size": page_size, "total_items": total,
                 "total_pages": max(1, (total + page_size - 1) // page_size),
                 "has_next": page * page_size < total, "has_previous": page > 1,
             },
+            "summary": await self.refund_queue_summary(db, tenant_id),
+            "available_filters": await self.refund_filter_options(db, tenant_id),
         }
 
     async def get_refund(self, db: AsyncSession, refund_id: uuid.UUID,

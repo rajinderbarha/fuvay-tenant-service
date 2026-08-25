@@ -123,9 +123,18 @@ class HomeServicesFinanceService:
     def _date_filters(self, date_from: str | None, date_to: str | None, col):
         clauses = []
         if date_from:
-            clauses.append(col >= datetime.fromisoformat(date_from))
+            start = datetime.fromisoformat(date_from)
+            # API timestamps are serialized in UTC. PostgreSQL otherwise
+            # interprets a naive YYYY-MM-DD value in the connection timezone,
+            # which can exclude late-UTC rows from the exact date shown in the
+            # Admin table. Make all offset-less bounds explicit UTC instants.
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            clauses.append(col >= start)
         if date_to:
             end = datetime.fromisoformat(date_to)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
             # HTML date inputs send YYYY-MM-DD. Treat the selected end date
             # as an inclusive calendar day instead of midnight at its start.
             if len(date_to) == 10:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import require_staff_or_above_mutation
 from app.dependencies.auth import get_current_user, require_staff_or_technician_only, UserContext
 from app.dependencies.db import get_db
+from app.exceptions import ServiceOSException
 from app.schemas.base import ApiResponse, ok
 from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
 from app.engines.home_service_assignment.constants import (
@@ -67,8 +68,38 @@ _MESSAGES = {
 }
 
 
-def _err(code: str) -> dict:
-    return {"success": False, "error": {"code": code, "message": _MESSAGES.get(code, "Action failed.")}}
+#: Same status table as the provider router — see `_fail` there for why these
+#: are raised rather than returned inside a 200 envelope.
+_ERR_STATUS = {
+    "JOB_ASSIGNMENT_JOB_NOT_FOUND":        404,
+    "JOB_ASSIGNMENT_NOT_FOUND":            404,
+    "STAFF_JOB_NOT_ASSIGNED_TO_USER":      403,
+    # 404, not 403: on the STAFF side this code is the non-leaking guard for
+    # "this job is not yours, or does not exist" — its own message is literally
+    # "Job not found." Answering 403 would both contradict that message and
+    # confirm the id exists to someone who may not see it.
+    "JOB_ASSIGNMENT_ACCESS_DENIED":        404,
+    "STAFF_JOB_ALREADY_ACCEPTED":          409,
+    "STAFF_JOB_ALREADY_REJECTED":          409,
+    "JOB_ASSIGNMENT_JOB_CANCELLED":        409,
+    "JOB_ASSIGNMENT_JOB_COMPLETED":        409,
+    "JOB_ASSIGNMENT_STALE_VERSION":        409,
+}
+
+
+def _fail(code: str) -> ServiceOSException:
+    """Raise a real error rather than a 200 that reports failure in its body.
+
+    These handlers returned `ok(_err(code))`: HTTP 200, envelope `success: true`,
+    with the actual refusal nested at `data.success = false`. The staff mobile
+    app checks the transport, so "this job is not assigned to you" arrived
+    looking exactly like a successful accept.
+    """
+    return ServiceOSException(
+        error_code=code,
+        detail=_MESSAGES.get(code, "Action failed."),
+        status_code=_ERR_STATUS.get(code, 422),
+    )
 
 
 class RejectRequest(BaseModel):
@@ -101,7 +132,7 @@ async def submit_job_location(
     try:
         staff_id = await _resolve_staff_member_id(user, db)
     except ValueError:
-        return ok(_err(ERR_STAFF_JOB_NOT_ASSIGNED), _RID(r), "assignment")
+        raise _fail(ERR_STAFF_JOB_NOT_ASSIGNED)
     svc = HomeServiceJobAssignmentService(db)
     try:
         result = await svc.submit_technician_location(
@@ -111,7 +142,7 @@ async def submit_job_location(
             accuracy_meters=body.accuracy_meters,
         )
     except ValueError as exc:
-        return ok(_err(str(exc)), _RID(r), "assignment")
+        raise _fail(str(exc))
     return ok(result, _RID(r), "assignment")
 
 
@@ -145,7 +176,7 @@ async def get_my_job(
         detail = await svc.get_staff_job_detail(job_id, staff_id)
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok(detail, _RID(r), "assignment")
 
 
@@ -164,7 +195,7 @@ async def accept_job(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
@@ -184,7 +215,7 @@ async def reject_job(
         await db.commit()
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     return ok({"success": True, "data": result}, _RID(r), "assignment")
 
 
@@ -203,6 +234,6 @@ async def get_my_job_timeline(
         await svc.get_staff_job_detail(job_id, staff_id)
     except ValueError as exc:
         code = str(exc)
-        return ok(_err(code), _RID(r), "assignment")
+        raise _fail(code)
     events = await svc.get_assignment_timeline(job_id)
     return ok({"job_id": str(job_id), "events": events}, _RID(r), "assignment")

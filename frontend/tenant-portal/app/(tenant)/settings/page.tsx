@@ -53,6 +53,9 @@ export default function SettingsPage() {
   const settings = useApi(() => settingsApi.get(), []);
   const [editKey,    setEditKey]    = useState("");
   const [editVal,    setEditVal]    = useState("");
+  // A tenant override is an audited change and the API refuses one without a
+  // reason; it is stored alongside the value.
+  const [editReason, setEditReason] = useState("");
   const [editModal,  setEditModal]  = useState(false);
   const [deleteKey,  setDeleteKey]  = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
@@ -63,14 +66,20 @@ export default function SettingsPage() {
   const deliveries = useApi(() => settingsApi.listDeliveries({ limit: 30 }), [tab === "deliveries"]);
   const [whModal,  setWhModal]  = useState(false);
   const [whUrl,    setWhUrl]    = useState("");
-  const [whEvents, setWhEvents] = useState("job.completed,booking.confirmed");
+  const [whDesc,   setWhDesc]   = useState("");
+  // Chosen from the catalogue the API returns. This used to be a free-text
+  // comma-separated string pre-filled with "job.completed,booking.confirmed" —
+  // and `job.completed` is not a real event (the catalogue has job.created /
+  // job.status_changed / job.closed), so the default itself was invalid.
+  const [whEvents, setWhEvents] = useState<string[]>([]);
 
   const notify = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
 
   const updateSetting = useAction(async () => {
-    await settingsApi.update(editKey, editVal);
+    await settingsApi.update(editKey, editVal, editReason.trim());
     await settings.refetch();
     setEditModal(false);
+    setEditReason("");
     notify("Setting saved.");
   });
 
@@ -82,11 +91,10 @@ export default function SettingsPage() {
   });
 
   const createWebhook = useAction(async () => {
-    const events = whEvents.split(",").map(e => e.trim()).filter(Boolean);
-    await settingsApi.createWebhook(whUrl, events);
+    await settingsApi.createWebhook(whUrl.trim(), whEvents, whDesc.trim() || undefined);
     await webhooks.refetch();
     setWhModal(false);
-    setWhUrl(""); setWhEvents("job.completed,booking.confirmed");
+    setWhUrl(""); setWhDesc(""); setWhEvents([]);
     notify("Webhook created.");
   });
 
@@ -486,14 +494,22 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-                  {(webhooks.data?.webhooks ?? []).map((w: Webhook) => (
-                    <div key={w.id} style={{ padding:"14px 16px", border:"1px solid var(--border)", borderRadius:10 }}>
+                  {(webhooks.data?.endpoints ?? []).map((w: Webhook) => (
+                    <div key={w.endpoint_id} style={{ padding:"14px 16px", border:"1px solid var(--border)", borderRadius:10 }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
                         <div>
                           <code style={{ fontSize:13, fontWeight:600 }}>{w.url}</code>
                           <p style={{ margin:"4px 0 0", fontSize:11, color:"var(--text-secondary)" }}>
-                            Events: {w.events.join(", ")}
+                            {w.subscribed_events.length > 0
+                              ? `Events: ${w.subscribed_events.join(", ")}`
+                              : "No events subscribed — this endpoint will never fire."}
                           </p>
+                          {w.total_deliveries > 0 && (
+                            <p style={{ margin:"2px 0 0", fontSize:11, color:"var(--text-tertiary)" }}>
+                              {w.total_deliveries} deliveries
+                              {w.last_success_at ? ` · last success ${new Date(w.last_success_at).toLocaleString()}` : ""}
+                            </p>
+                          )}
                         </div>
                         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                           <DsStatusBadge status={w.status === "active" ? "active" : w.status === "paused" ? "pending" : "inactive"}/>
@@ -506,16 +522,16 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                        <Button size="sm" variant="ghost" onClick={() => testWebhook.execute(w.id)}>Test</Button>
+                        <Button size="sm" variant="ghost" onClick={() => testWebhook.execute(w.endpoint_id)}>Test</Button>
                         {w.status === "active"
-                          ? <Button size="sm" variant="ghost" onClick={() => pauseWebhook.execute(w.id)}>Pause</Button>
-                          : <Button size="sm" variant="ghost" onClick={() => resumeWebhook.execute(w.id)}>Resume</Button>
+                          ? <Button size="sm" variant="ghost" onClick={() => pauseWebhook.execute(w.endpoint_id)}>Pause</Button>
+                          : <Button size="sm" variant="ghost" onClick={() => resumeWebhook.execute(w.endpoint_id)}>Resume</Button>
                         }
-                        <Button size="sm" variant="destructive" onClick={() => deleteWebhook.execute(w.id)}>Delete</Button>
+                        <Button size="sm" variant="destructive" onClick={() => deleteWebhook.execute(w.endpoint_id)}>Delete</Button>
                       </div>
                     </div>
                   ))}
-                  {(webhooks.data?.webhooks ?? []).length === 0 && (
+                  {(webhooks.data?.endpoints ?? []).length === 0 && (
                     <p style={{ color:"var(--text-secondary)", fontSize:13, textAlign:"center", padding:32 }}>
                       No webhooks configured yet.
                     </p>
@@ -754,9 +770,12 @@ export default function SettingsPage() {
       <Modal open={editModal} onClose={() => setEditModal(false)} title={`Edit: ${editKey}`}
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setEditModal(false)}>Cancel</Button>
-          <Button size="sm" onClick={updateSetting.execute} loading={updateSetting.loading}>Save</Button>
+          <Button size="sm" onClick={updateSetting.execute} loading={updateSetting.loading}
+            disabled={!editKey.trim() || !editReason.trim()}>Save</Button>
         </>}>
         <Input label="Value" value={editVal} onChange={e => setEditVal(e.target.value)} />
+        <Input label="Reason" value={editReason} onChange={e => setEditReason(e.target.value)}
+          description="Why this override is being set — stored on the audit record." />
       </Modal>
 
       {/* Delete/reset modal */}
@@ -772,13 +791,55 @@ export default function SettingsPage() {
       <Modal open={whModal} onClose={() => setWhModal(false)} title="Add Webhook Endpoint"
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setWhModal(false)}>Cancel</Button>
-          <Button size="sm" onClick={createWebhook.execute} loading={createWebhook.loading}>Create Webhook</Button>
+          <Button size="sm" onClick={createWebhook.execute} loading={createWebhook.loading}
+            disabled={!whUrl.trim() || whEvents.length === 0}>Create Webhook</Button>
         </>}>
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
           <Input label="URL" value={whUrl} onChange={e => setWhUrl(e.target.value)}
             description="https://your-server.com/webhook" />
-          <Input label="Events (comma-separated)" value={whEvents} onChange={e => setWhEvents(e.target.value)}
-            description="e.g. job.completed,booking.confirmed,payment.received" />
+          <Input label="Description (optional)" value={whDesc} onChange={e => setWhDesc(e.target.value)}
+            description="What this endpoint is for" />
+          <div>
+            <p style={{ fontSize:13, fontWeight:600, margin:"0 0 2px" }}>Events</p>
+            <p style={{ fontSize:11, color:"var(--text-secondary)", margin:"0 0 10px" }}>
+              Pick from the events this platform emits. An endpoint with none selected
+              will never fire.
+            </p>
+            {/* Chosen from the server's own catalogue, so an unknown event name
+                can no longer be typed in and rejected — or worse, accepted and
+                silently never delivered. */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(190px,1fr))", gap:6 }}>
+              {(webhooks.data?.available_events ?? []).map(ev => {
+                const on = whEvents.includes(ev);
+                return (
+                  <label key={ev} style={{
+                    display:"flex", alignItems:"center", gap:8, fontSize:12,
+                    padding:"7px 10px", border:`1px solid ${on ? "var(--brand)" : "var(--border)"}`,
+                    borderRadius:"var(--radius-md)", cursor:"pointer",
+                    background: on ? "var(--brand-bg, var(--surface-sunken))" : "var(--surface)",
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => setWhEvents(prev =>
+                        prev.includes(ev) ? prev.filter(x => x !== ev) : [...prev, ev])}
+                    />
+                    <code style={{ fontSize:11.5 }}>{ev}</code>
+                  </label>
+                );
+              })}
+            </div>
+            {(webhooks.data?.available_events ?? []).length === 0 && (
+              <p style={{ fontSize:12, color:"var(--text-secondary)", margin:0 }}>
+                The event catalogue could not be loaded.
+              </p>
+            )}
+          </div>
+          {whEvents.length === 0 && (
+            <p style={{ fontSize:12, color:"var(--warning-text, var(--text-secondary))", margin:0 }}>
+              Select at least one event.
+            </p>
+          )}
           {createWebhook.error && <p style={{ color:"var(--danger)", fontSize:12 }}>{createWebhook.error}</p>}
         </div>
       </Modal>

@@ -35,10 +35,9 @@ export async function checkServiceability(draftId: string) {
   return parseApiSuccess(res.json, serviceabilityCheckResponseSchema);
 }
 
-/** Resolves `requires_inspection_estimate`/`visit_fee` -- must be called
- * BEFORE match-and-price so both merge onto the same draft.price_snapshot
- * (confirmed in source: match-and-price spreads the existing snapshot
- * rather than replacing it). */
+/** Legacy compatibility endpoint. New Home Services UI must use the atomic
+ * match-and-price response because the amount belongs to the matched
+ * provider and cannot be resolved truthfully before provider selection. */
 /** Returns the `{ price_snapshot, draft_status }` ENVELOPE the backend
  * actually sends -- see priceEstimateResponseSchema for the bug this
  * fixed (the snapshot was previously parsed one level too high, so every
@@ -48,8 +47,8 @@ export async function resolvePriceEstimate(draftId: string) {
   return parseApiSuccess(res.json, priceEstimateResponseSchema);
 }
 
-/** Backend selects the single eligible provider server-side -- the app
- * never sends a body and never receives a list to choose from. */
+/** Backend selects the single eligible provider and returns its persisted,
+ * customer-safe price contract atomically. */
 export async function matchAndPrice(draftId: string) {
   const res = await authenticatedRequest({ method: "POST", path: `${base(draftId)}/match-and-price` });
   return parseApiSuccess(res.json, matchAndPriceResponseSchema);

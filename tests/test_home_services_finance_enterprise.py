@@ -118,15 +118,17 @@ def test_warranty_workflow_and_audit_pagination_are_reachable_from_workspace():
     assert "<Pagination page={page} total={audit.data?.total ?? 0}" in page
 
 
-def test_dead_direct_payment_workspace_client_was_removed():
+def test_direct_payment_oversight_uses_the_canonical_finance_client():
     client = Path("frontend/super-admin/lib/api-hs-finance.ts").read_text(encoding="utf-8")
     page = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
-    for name in (
-        "DirectPaymentsTab", "DirectPaymentDetail", "ChargeLedgerCard",
-        "listDirectPayments", "getDirectPaymentsSummary", "openDirectPaymentDispute",
-    ):
+    # The abandoned parallel client remains gone. Admin oversight now uses
+    # the same Home Services finance client as the rest of this workspace.
+    for name in ("DirectPaymentDetail", "ChargeLedgerCard"):
         assert name not in client
         assert name not in page
+    assert "function DirectPaymentsTab" in page
+    for name in ("listDirectPayments", "getDirectPaymentsSummary", "openDirectPaymentDispute"):
+        assert f"homeServicesFinanceApi.{name}" in page
 
 
 def test_sensitive_finance_actions_have_dedicated_permissions():

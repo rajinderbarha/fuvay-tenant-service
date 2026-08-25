@@ -7,6 +7,7 @@ import { AppBadge } from "../AppBadge";
 import { Icon } from "../Icon";
 import { CustomerBookingListItem } from "../../domain/bookingList";
 import { formatMoney } from "../../domain/money";
+import { formatCreatedAt } from "../../domain/dates";
 
 export interface CompletedBookingCardProps {
   item: CustomerBookingListItem;
@@ -23,14 +24,15 @@ export function CompletedBookingCard({ item, onViewDetails }: CompletedBookingCa
       accessibilityRole="button"
       accessibilityLabel={`${item.serviceName ?? "Booking"} ${item.bookingNumber ?? ""}, ${item.statusLabel}`}
     >
-      <AppCard>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
-        <View style={{ width: 40, height: 40, borderRadius: theme.radiusUsage.card, backgroundColor: theme.colors.statusSuccessSurface, alignItems: "center", justifyContent: "center" }}>
+      <AppCard style={{ padding: theme.spacing.md }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.md }}>
+        <View style={{ width: 44, height: 44, borderRadius: theme.radius.radiusFull, backgroundColor: theme.colors.statusSuccessSurface, alignItems: "center", justifyContent: "center" }}>
           <Icon name="checkmark-circle-outline" size="standard" color={theme.colors.statusSuccess} decorative />
         </View>
         <View style={{ flex: 1 }}>
           {item.serviceName ? <AppText variant="bodyStrong">{item.serviceName}</AppText> : null}
           {item.bookingNumber ? <AppText variant="caption" color="tertiary">{item.bookingNumber}</AppText> : null}
+          {item.createdAt ? <AppText variant="caption" color="secondary">{formatCreatedAt(item.createdAt)}</AppText> : null}
         </View>
         <View style={{ alignItems: "flex-end", gap: theme.spacing.xxs }}>
           <AppBadge label="Completed" tone="success" />
@@ -38,6 +40,7 @@ export function CompletedBookingCard({ item, onViewDetails }: CompletedBookingCa
             <AppText variant="bodySmall">{formatMoney(item.pricing.state.amount)}</AppText>
           ) : null}
         </View>
+        <Icon name="chevron-forward" size="compact" color={theme.colors.textTertiary} decorative />
       </View>
       </AppCard>
     </Pressable>

@@ -30,7 +30,13 @@ export function LoginMethodScreen() {
   const navigation = useNavigation<Nav>();
   const [method, setMethod] = useState<LoginMethod>("otp");
   const [countryCode, setCountryCode] = useState<CountryCode>(DEFAULT_COUNTRY_CODE);
-  const [nationalNumber, setNationalNumber] = useState("");
+  // Local-development convenience: EXPO_PUBLIC_DEV_PHONE prefills the field so
+  // a test number does not have to be retyped on every reload. Unset outside
+  // dev (and ignored in production builds), so the field starts empty for real
+  // users -- same posture as the otp_hint guard below.
+  const [nationalNumber, setNationalNumber] = useState(
+    ENV.appEnv !== "production" ? (process.env.EXPO_PUBLIC_DEV_PHONE ?? "") : "",
+  );
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [screenError, setScreenError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);

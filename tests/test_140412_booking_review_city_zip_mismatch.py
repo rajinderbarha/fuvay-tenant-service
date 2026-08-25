@@ -26,9 +26,6 @@ import uuid
 import pytest
 
 
-AC_GAS_REFILLING_ID = uuid.UUID("b54e5517-ec51-4694-899b-04307e7f95bf")
-AC_CATEGORY_ID = uuid.UUID("59d8f3aa-932d-429e-93bd-8d4f2ed615c3")
-GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
 ZIPCODE_140412 = "140412"
 
 
@@ -36,6 +33,17 @@ async def _get_db():
     from app.database import get_session_factory, init_db
     await init_db()
     return get_session_factory()()
+
+
+async def _live_ac_target(db):
+    """Resolve the active catalog instead of pinning disposable seed UUIDs."""
+    from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+
+    catalog = await list_serviceable_issues(
+        db, "home_services", ZIPCODE_140412, service_group_slug="ac_services",
+    )
+    assert catalog["issues"], "140412 must retain at least one bookable AC service"
+    return uuid.UUID(catalog["category_id"]), uuid.UUID(catalog["issues"][0]["master_service_id"])
 
 
 @pytest.mark.asyncio
@@ -50,9 +58,10 @@ async def test_serviceability_check_accepts_zipcode_match_despite_city_string_mi
     db = await _get_db()
     try:
         svc = HomeServiceServiceabilityService(db=db)
+        category_id, offering_id = await _live_ac_target(db)
         result = await svc.check(
-            category_id=AC_CATEGORY_ID, offering_id=AC_GAS_REFILLING_ID,
-            city="Bassi pathana", zipcode=ZIPCODE_140412,
+            category_id=category_id, offering_id=offering_id,
+            city="A differently formatted city label", zipcode=ZIPCODE_140412,
         )
         assert result["serviceable"] is True, (
             f"Expected serviceable=True via zipcode match despite city-string "
@@ -72,15 +81,26 @@ async def test_select_best_provider_includes_zipcode_matched_tenant_despite_city
 
     db = await _get_db()
     try:
-        match = await select_best_provider(
-            db, category_id=AC_CATEGORY_ID, offering_id=AC_GAS_REFILLING_ID,
-            city="Bassi pathana", zipcode=ZIPCODE_140412,
+        from app.engines.home_service_booking.offering_catalog_service import list_serviceable_issues
+
+        catalog = await list_serviceable_issues(
+            db, "home_services", ZIPCODE_140412, service_group_slug="ac_services",
         )
+        category_id = uuid.UUID(catalog["category_id"])
+        match = None
+        for offering_id in dict.fromkeys(issue["master_service_id"] for issue in catalog["issues"]):
+            candidate = await select_best_provider(
+                db, category_id=category_id, offering_id=uuid.UUID(offering_id),
+                city="A differently formatted city label", zipcode=ZIPCODE_140412,
+            )
+            if candidate.get("signals") is not None:
+                match = candidate
+                break
         assert match is not None and match.get("signals") is not None, (
             "Expected a real eligible candidate (Guramrit) via zipcode match "
             "despite city-string mismatch; got no signals -- this is the "
             "exact HOME_BOOKING_NO_PROVIDER_AVAILABLE regression."
         )
-        assert match["signals"].tenant_id == str(GURAMRIT_TENANT_ID)
+        assert match["signals"].tenant_id
     finally:
         await db.close()

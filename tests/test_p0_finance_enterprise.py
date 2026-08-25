@@ -175,12 +175,13 @@ def test_claims_service_methods_exist():
         assert f"async def {fn}" in src, f"Missing claim method: {fn}"
 
 
-def test_settle_claim_requires_approved_status():
+def test_claim_settlement_is_atomic_with_admin_approval():
     src = _read(FINANCE_SERVICE)
     idx = src.index("async def settle_claim(")
     snippet = src[idx:idx + 700]
-    assert '"approved"' in snippet
-    assert "CONFLICT" in snippet
+    assert "WARRANTY_SETTLEMENT_ATOMIC" in snippet
+    assert "issued atomically when Admin approves" in snippet
+    assert "status_code=409" in snippet
 
 
 # ── Service — Payouts ──────────────────────────────────────────────────────────

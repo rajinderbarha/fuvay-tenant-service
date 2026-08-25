@@ -3,6 +3,7 @@ import { View, Text, Pressable, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
+import { FuvayIcon } from "../FuvayIcon";
 
 /**
  * Visual primitives for the merged booking chat -- its own dark, animated
@@ -14,31 +15,44 @@ import { useBotColors } from "./botTheme";
 
 export type BotStageStatus = "done" | "active" | "pending";
 
+function stageIcon(index: number): React.ComponentProps<typeof Ionicons>["name"] {
+  return ["chatbubble-ellipses-outline", "people-outline", "document-text-outline", "checkmark-circle-outline"][index] as React.ComponentProps<typeof Ionicons>["name"];
+}
+
 export function BotStageTracker({ stages, activeIndex, allDone }: { stages: string[]; activeIndex: number; allDone: boolean }) {
   const BOT = useBotColors();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 14 }}>
+    <View
+      accessibilityLabel={`Booking step ${Math.min(activeIndex + 1, stages.length)} of ${stages.length}: ${stages[activeIndex] ?? stages[stages.length - 1]}`}
+      style={{ marginTop: 12, padding: 4, borderRadius: 10, flexDirection: "row", gap: 3, backgroundColor: BOT.surfaceSunken }}
+    >
       {stages.map((s, i) => {
-        const done = i < activeIndex || allDone;
-        const active = i === activeIndex && !allDone;
-        return (
-          <React.Fragment key={s}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {done ? (
-                <Ionicons name="checkmark-circle" size={13} color={BOT.success} />
-              ) : active ? (
-                <SpinningIcon />
-              ) : (
-                <Ionicons name="ellipse-outline" size={11} color={BOT.textFaint} />
-              )}
-              <Text style={{ fontSize: 12, color: done ? BOT.success : active ? BOT.brandLight : BOT.textFaint }}>
-                {s}
-              </Text>
+          const done = i < activeIndex || allDone;
+          const active = i === activeIndex && !allDone;
+          return (
+            <View key={s} style={{ flex: 1, minWidth: 0, minHeight: 52, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 7, justifyContent: "space-between", backgroundColor: active ? BOT.surface : "transparent", borderWidth: active ? 1 : 0, borderColor: BOT.borderSubtle }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View
+                style={{
+                  width: 18, height: 18, borderRadius: 6,
+                  alignItems: "center", justifyContent: "center",
+                  backgroundColor: done ? BOT.success : active ? BOT.brand : BOT.surfaceRaised,
+                  borderWidth: done || active ? 0 : 1,
+                  borderColor: BOT.border,
+                }}
+              >
+                {done ? (
+                  <Ionicons name="checkmark" size={11} color={BOT.bubbleOnBrand} />
+                ) : (
+                  <Ionicons name={stageIcon(i)} size={11} color={active ? BOT.bubbleOnBrand : BOT.textFaint} />
+                )}
+              </View>
+              <Text style={{ fontSize: 8, fontWeight: "800", color: active ? BOT.brandLight : BOT.textTertiary }}>{done ? "DONE" : active ? "CURRENT" : "UP NEXT"}</Text>
+              </View>
+              <Text style={{ fontSize: 9, lineHeight: 11, fontWeight: active ? "700" : "600", color: active ? BOT.textPrimary : BOT.textMuted }} numberOfLines={2}>{s}</Text>
             </View>
-            {i < stages.length - 1 ? <View style={{ flex: 1, height: 1, marginHorizontal: 4, backgroundColor: BOT.borderSubtle }} /> : null}
-          </React.Fragment>
-        );
-      })}
+          );
+        })}
     </View>
   );
 }
@@ -426,8 +440,8 @@ export function BotAssistantBubble({ text, children }: { text?: string; children
   const entrance = useTurnEntrance();
   return (
     <Animated.View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 8 }, entrance]}>
-      <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
-        <Ionicons name="sparkles" size={13} color={BOT.brand} />
+      <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
+        <FuvayIcon size={18} accessibilityLabel="Fuvay assistant" />
       </View>
       {text ? (
         <View style={{ maxWidth: "80%", borderRadius: 16, borderTopLeftRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
@@ -456,9 +470,13 @@ export function BotOptionChips({
   items, selected, disabled, onSelect,
 }: { items: string[]; selected: string | null; disabled?: boolean; onSelect: (label: string) => void }) {
   const BOT = useBotColors();
+  // Labels are the selection identity for this component. Duplicate labels
+  // are therefore not two distinct actions; render one canonical chip rather
+  // than producing duplicate React keys and an ambiguous selection.
+  const uniqueItems = Array.from(new Set(items));
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingLeft: 36 }}>
-      {items.map((label, i) => (
+    <View style={{ gap: 8, paddingLeft: 36 }}>
+      {uniqueItems.map((label, i) => (
         <OptionChip
           key={label}
           label={label}
@@ -488,14 +506,18 @@ function OptionChip({
         accessibilityRole="button"
         accessibilityLabel={label}
         style={{
-          paddingHorizontal: 14, height: 36, borderRadius: 18,
-          alignItems: "center", justifyContent: "center",
+          minHeight: 52, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10,
+          flexDirection: "row", alignItems: "center", gap: 10,
           backgroundColor: isSelected ? BOT.brand : BOT.surface,
           borderWidth: 1, borderColor: isSelected ? BOT.brand : BOT.border,
           opacity: isInactive ? 0.4 : 1,
         }}
       >
-        <Text style={{ fontSize: 15, fontWeight: "500", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
+        <View style={{ width: 24, alignItems: "center" }}>
+          <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={17} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
+        </View>
+        <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
+        <Ionicons name="chevron-forward" size={15} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
       </Pressable>
     </Animated.View>
   );
@@ -505,7 +527,7 @@ export function BotCard({ children }: { children: React.ReactNode }) {
   const BOT = useBotColors();
   const entrance = useTurnEntrance();
   return (
-    <Animated.View style={[{ marginLeft: 36, borderRadius: 20, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }, entrance]}>
+    <Animated.View style={[{ marginLeft: 36, borderRadius: 12, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }, entrance]}>
       {children}
     </Animated.View>
   );
@@ -531,7 +553,7 @@ export function BotPrimaryButton({ label, onPress, disabled, loading }: { label:
       accessibilityLabel={label}
       accessibilityState={{ disabled: isDisabled }}
       style={{
-        height: 44, borderRadius: 16, alignItems: "center", justifyContent: "center",
+        height: 46, borderRadius: 10, alignItems: "center", justifyContent: "center",
         backgroundColor: isDisabled && !loading && !busy ? BOT.surfaceRaised : BOT.brand,
         opacity: isDisabled && !loading && !busy ? 0.6 : 1,
       }}

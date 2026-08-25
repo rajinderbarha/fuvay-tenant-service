@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Keep generated AI-agent instruction files out of the application workspace.
+  agentRules: false,
 
   env: {
     // Expose API URL to the browser bundle.

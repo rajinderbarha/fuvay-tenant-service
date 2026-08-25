@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Animated, AccessibilityInfo } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
-import { Icon } from "../Icon";
+import { FuvayIcon } from "../FuvayIcon";
 import { formatCreatedAt, ServerTimestamp } from "../../domain/dates";
 
 export interface CurrentStatusCardProps {
@@ -24,7 +24,7 @@ const ICON_SIZE = 72;
  * same `statusLabel` the rest of the app already computed.
  *
  * Centered hero layout, but the icon itself is the SAME solid
- * brandPrimaryMuted circle + sparkles glyph used everywhere else the app
+ * branded Fuvay identity used everywhere else the app
  * represents its own automated matching/assistant activity
  * (AssistantHeader, TypingBubble) -- not a bespoke ringed badge invented
  * for this one card. A gentle pulse says "this is actively working",
@@ -62,7 +62,7 @@ export function CurrentStatusCard({ statusLabel, activityText, supportingText, c
           transform: [{ scale: reducedMotion ? 1 : pulse }],
         }}
       >
-        <Icon name="sparkles" size="navigation" color={theme.colors.brandPrimaryStrong} decorative />
+        <FuvayIcon size={42} accessibilityLabel="Fuvay assistant" />
       </Animated.View>
 
       <AppText variant="headingSmall" align="center" style={{ marginTop: theme.spacing.sm }}>

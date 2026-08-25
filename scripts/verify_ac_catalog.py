@@ -101,8 +101,19 @@ async def verify() -> None:
                 ServiceJobWorkflow.is_current.is_(True),
                 ServiceJobWorkflow.status == "published",
             ))).scalar_one()
-            assert len(workflow.steps_json or []) == 12
-            assert len(workflow.transitions_json or []) == 11
+            expected_steps = 13 if workflow.quote_approval_required else 10
+            assert len(workflow.steps_json or []) == expected_steps
+            assert len(workflow.transitions_json or []) == expected_steps - 1
+            if workflow.quote_approval_required:
+                assert any(
+                    step.get("maps_to_status") == "quote_required"
+                    for step in (workflow.steps_json or [])
+                ), "A quote-required workflow must expose its customer approval gate."
+            else:
+                assert not any(
+                    step.get("step_key") in {"inspection_started", "inspection_done"}
+                    for step in (workflow.steps_json or [])
+                ), "Fixed-price work must not expose repair-only inspection steps."
 
             mapping = (await db.execute(select(JobTypeChecklistMapping).where(
                 JobTypeChecklistMapping.master_service_job_type_id == link.id,

@@ -49,18 +49,24 @@ class TestBookingConfirmNotifyLive:
         c = await asyncpg.connect("postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos")
         try:
             tmpl = await c.fetchrow(
-                "SELECT sb.category_id, sb.offering_id, sb.tenant_id, sb.customer_id, t.owner_user_id "
+                "SELECT sb.category_id, sb.offering_id, sb.tenant_id, sb.customer_id, t.owner_user_id, "
+                "msjt.job_type_id, sjw.id AS workflow_id "
                 "FROM service_bookings sb JOIN tenants t ON t.id = sb.tenant_id "
+                "JOIN master_service_job_types msjt ON msjt.master_service_id=sb.offering_id AND msjt.is_active=true "
+                "JOIN service_job_workflow sjw ON sjw.master_service_id=sb.offering_id "
+                "AND sjw.job_type_id=msjt.job_type_id AND sjw.is_current=true AND sjw.status='published' "
                 "WHERE sb.customer_id IS NOT NULL AND t.owner_user_id IS NOT NULL LIMIT 1")
             if not tmpl:
                 pytest.skip("no booking template with an owner")
             did = uuid.uuid4()
             await c.execute(
                 """INSERT INTO home_service_booking_drafts
-                   (id, customer_id, category_id, offering_id, selected_tenant_id, status,
+                   (id, customer_id, category_id, offering_id, selected_tenant_id, job_type_id,
+                    service_job_workflow_id, status,
                     booking_summary, price_snapshot, created_at, updated_at)
-                   VALUES ($1,$2,$3,$4,$5,'ready_for_confirmation',$6::jsonb,'{}'::jsonb,now(),now())""",
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,'ready_for_confirmation',$8::jsonb,'{}'::jsonb,now(),now())""",
                 did, tmpl["customer_id"], tmpl["category_id"], tmpl["offering_id"], tmpl["tenant_id"],
+                tmpl["job_type_id"], tmpl["workflow_id"],
                 json.dumps({"selected_price_tier": "standard", "customer_offer": 500}))
             cb = await c.fetchval(
                 "SELECT count(*) FROM in_app_notifications WHERE user_id=$1 "

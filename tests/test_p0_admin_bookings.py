@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT           = Path(__file__).parent.parent
 ROUTER         = ROOT / "app" / "engines" / "booking" / "admin_router.py"
-FRONTEND_PAGE  = ROOT / "frontend" / "super-admin" / "app" / "admin" / "bookings" / "page.tsx"
+FRONTEND_PAGE  = ROOT / "frontend" / "super-admin" / "app" / "admin" / "home-services" / "bookings-jobs" / "page.tsx"
 DETAIL_PAGE    = ROOT / "frontend" / "super-admin" / "app" / "admin" / "bookings" / "[id]" / "page.tsx"
 API_TS         = ROOT / "frontend" / "super-admin" / "lib" / "api.ts"
 MAIN_PY        = ROOT / "app" / "main.py"
@@ -264,7 +264,7 @@ def test_frontend_uses_admin_bookings_api():
 
 def test_frontend_has_summary_cards():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert "SummaryCard" in src
+    assert "METRIC_TILES" in src
 
 def test_frontend_has_clickable_summary_cards():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
@@ -272,11 +272,11 @@ def test_frontend_has_clickable_summary_cards():
 
 def test_frontend_has_advanced_filters():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert "showAdvanced" in src
+    assert "filtersOpen" in src
 
 def test_frontend_has_async_tenant_selector():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert "AsyncTenantSelect" in src
+    assert "ProviderFilter" in src and "tenantSearch" in src
 
 def test_frontend_has_filter_chips():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
@@ -320,7 +320,7 @@ def test_frontend_export_csv():
 
 def test_frontend_has_sla_breached_indicator():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert "sla_breached" in src
+    assert "SLA_BADGE" in src and "BREACHED" in src
 
 def test_frontend_has_assignment_status_column():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
@@ -328,7 +328,7 @@ def test_frontend_has_assignment_status_column():
 
 def test_frontend_reset_all_filters():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert "resetAll" in src or "Reset" in src
+    assert "Clear all" in src
 
 def test_frontend_no_static_tenant_dropdown():
     """Provider selector must be async, not a static hardcoded list."""
@@ -342,7 +342,7 @@ def test_frontend_page_size_options():
 
 def test_frontend_correct_active_nav():
     src = FRONTEND_PAGE.read_text(encoding="utf-8")
-    assert 'activeNav="bookings"' in src
+    assert 'activeNav="home-services-operations"' in src
 
 # ── Detail page ───────────────────────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ Endpoints:
 """
 from __future__ import annotations
 import uuid
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -77,6 +78,16 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
             "completed_at":     job.completion_data.get("completed_at"),
         }
 
+    warranty_expires_at = getattr(job, "warranty_expires_at", None)
+    # ORM instances always carry a datetime/None here, but keeping this
+    # projection defensive prevents partially-loaded objects and test doubles
+    # from turning a customer booking-detail read into a 500.
+    if not isinstance(warranty_expires_at, datetime):
+        warranty_expires_at = None
+    warranty_days = getattr(job, "warranty_days_snapshot", None)
+    if not isinstance(warranty_days, int):
+        warranty_days = None
+
     return {
         # ARRIVAL-INSPECTION-QUOTE-APPROVAL phase: the job's own id is not
         # sensitive (unlike assigned_staff_id/tenant_id/category_id, it
@@ -94,9 +105,9 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
         "technician":            technician,
         "updated_at":            job.updated_at.isoformat() if job.updated_at else None,
         "completion":            completion,
-        "warranty_days":         job.warranty_days_snapshot,
-        "warranty_expires_at":   job.warranty_expires_at.isoformat() if job.warranty_expires_at else None,
-        "warranty_active":       bool(job.warranty_expires_at and job.warranty_expires_at >= datetime.now(timezone.utc)),
+        "warranty_days":         warranty_days,
+        "warranty_expires_at":   warranty_expires_at.isoformat() if warranty_expires_at else None,
+        "warranty_active":       bool(warranty_expires_at and warranty_expires_at >= datetime.now(timezone.utc)),
     }
 
 
@@ -368,6 +379,7 @@ async def get_my_booking(
     job = job_result.scalars().first()
 
     data = booking.to_dict()
+    data["customer_photo_urls"] = await _customer_booking_photo_urls(db, booking)
     data["job"] = await _customer_safe_job(db, job) if job else None
     data.update(await _catalog_labels(db, booking))
     # The journey as the CUSTOMER should see it: only steps flagged
@@ -383,6 +395,57 @@ async def get_my_booking(
         if stages:
             data["workflow_stages"] = to_client_stages(stages)
     return ok(data, _RID(r), "final_records")
+
+
+_MEDIA_VIEW_RE = re.compile(
+    r"(?:^|/)v1/media/([0-9a-fA-F-]{36})/view(?:$|[?#])"
+)
+
+
+async def _customer_booking_photo_urls(db: AsyncSession, booking: ServiceBooking) -> list[str]:
+    """Resolve customer-owned Cloudinary photos after booking authorization.
+
+    React Native's image loader does not reliably retain a bearer header over
+    the authenticated API's 302 redirect to Cloudinary, so valid photos
+    appeared as empty tiles. The booking endpoint has already proven customer
+    ownership; at this point returning the asset's opaque CDN delivery URL is
+    safe and avoids a second authorization hop. Local/private drivers retain
+    the access-checked API URL and its bearer header.
+    """
+    refs = list(booking.customer_photo_urls or [])
+    media_ids: list[uuid.UUID] = []
+    ref_to_id: dict[str, uuid.UUID] = {}
+    for ref in refs:
+        match = _MEDIA_VIEW_RE.search(str(ref))
+        if not match:
+            continue
+        try:
+            media_id = uuid.UUID(match.group(1))
+        except ValueError:
+            continue
+        media_ids.append(media_id)
+        ref_to_id[str(ref)] = media_id
+
+    if not media_ids:
+        return refs
+
+    from app.cloudinary_client import build_delivery_url
+    from app.engines.media.models import MediaAsset
+
+    assets = (await db.execute(
+        select(MediaAsset).where(MediaAsset.id.in_(media_ids))
+    )).scalars().all()
+    by_id = {asset.id: asset for asset in assets}
+    resolved: list[str] = []
+    for raw_ref in refs:
+        ref = str(raw_ref)
+        asset = by_id.get(ref_to_id.get(ref))
+        if asset is not None and asset.storage_driver == "cloudinary":
+            resource_type = "image" if asset.mime_type.startswith("image/") else "raw"
+            resolved.append(build_delivery_url(asset.storage_key, resource_type))
+        else:
+            resolved.append(ref)
+    return resolved
 
 
 async def _catalog_labels(db: AsyncSession, booking: ServiceBooking) -> dict:

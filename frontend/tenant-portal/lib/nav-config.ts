@@ -32,7 +32,6 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     label: "Setup",
     items: [
       { id: "profile",                  label: "Business Profile", href: "/profile",                  icon: "Building2",   group: "setup" },
-      { id: "provider-service-areas",   label: "Service Areas",   href: "/home-services/coverage",   icon: "MapPin",      group: "setup" },
       { id: "provider-services",        label: "Service Setup",    href: "/home-services/services",   icon: "Wrench",      group: "setup" },
       { id: "provider-service-coverage",label: "Service Coverage", href: "/home-services/services",   icon: "Shield",      group: "setup" },
       { id: "provider-availability",    label: "Availability",     href: "/business/coverage-hours",  icon: "Clock",       group: "setup" },
@@ -70,7 +69,7 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "jobs",         label: "Bookings & Jobs", href: "/jobs",       icon: "Wrench",       group: "operations" },
       { id: "appointments", label: "Appointments", href: "/appointments", icon: "Calendar",     group: "operations" },
-      { id: "dispatch",     label: "Dispatch",     href: "/dispatch",     icon: "Truck",        group: "operations" },
+      { id: "dispatch",     label: "Dispatch",     href: "/home-services/dispatch", icon: "Truck", group: "operations" },
       { id: "operational-exceptions", label: "Operational Exceptions", href: "/operations/exceptions", icon: "AlertTriangle", group: "operations" },
     ],
   },
@@ -108,10 +107,10 @@ export const TENANT_PATH_TO_NAV_ID: Record<string, string> = {
   appointments:        "appointments",
   dispatch:            "dispatch",
   "operations/exceptions": "operational-exceptions",
-  "service-areas":     "provider-service-areas",
+  "service-areas":     "business-hours",
   staff:               "provider-staff",
   catalog:             "provider-services",
-  inventory:           "provider-services",
+  inventory:           "inventory",
   documents:           "documents",
   finance:             "finance-package",
   customers:           "customers",
@@ -133,7 +132,7 @@ export const TENANT_PROVIDER_PATH_TO_NAV_ID: Record<string, string> = {
   status:               "provider-status",
   marketing:            "marketing",
   offerings:              "provider-services",
-  "service-areas":        "provider-service-areas",
+  "service-areas":        "business-hours",
   "service-coverage":     "provider-service-coverage",
   "team-members":       "provider-staff",
   availability:         "provider-availability",
@@ -171,8 +170,10 @@ export function resolveTenantNavId(pathname: string): string {
   // "hs-<sub>" (see TenantLayout NAV_GROUPS).
   if (section === "home-services") {
     const sub = segs[1] ?? "";
+    if (sub === "coverage") return "business-hours";
     return sub ? `hs-${sub}` : "hs-bookings-jobs";
   }
+  if (section === "business" && segs[1] === "coverage-hours") return "business-hours";
 
   // The onboarding wizard lives at /tenant/home-services/setup/* and is a
   // single nav entry ("Business Setup"), so every step highlights it.

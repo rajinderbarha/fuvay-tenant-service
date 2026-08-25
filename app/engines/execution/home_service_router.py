@@ -94,6 +94,12 @@ class PartsRejectBody(BaseModel):
     reason: Optional[str] = None
 
 
+class PartsApproveBody(BaseModel):
+    procurement_source: str = "external"
+    inventory_item_id: Optional[uuid.UUID] = None
+    stock_location_id: Optional[uuid.UUID] = None
+
+
 # HS8B — single validated completion action.
 # work_summary/collected_amount are Optional here (not required by
 # Pydantic) so a missing value reaches the service layer's explicit
@@ -349,9 +355,17 @@ async def provider_list_parts_requests(job_id: uuid.UUID, r: Request, user=Depen
 
 
 @provider_router.post("/{job_id}/parts-requests/{parts_request_id}/approve")
-async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID,
+                                         body: PartsApproveBody, r: Request,
+                                         user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.approve_parts_request(db, parts_request_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), request_id=rid)
+    result = await _svc.approve_parts_request(
+        db, parts_request_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)),
+        procurement_source=body.procurement_source,
+        inventory_item_id=body.inventory_item_id,
+        stock_location_id=body.stock_location_id,
+        request_id=rid,
+    )
     await db.commit()
     return ok(result, rid, "provider-exec-parts-approve")
 

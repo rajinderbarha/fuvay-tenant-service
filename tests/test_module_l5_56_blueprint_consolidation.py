@@ -206,7 +206,7 @@ class TestBookingPrefersTenantPrice:
         svc = HomeServiceChatbotBookingService.__new__(HomeServiceChatbotBookingService)
         svc.db = AsyncMock()
         result_mock = MagicMock()
-        result_mock.scalars.return_value.first.return_value = None
+        result_mock.scalars.return_value.all.return_value = []
         svc.db.execute = AsyncMock(return_value=result_mock)
         draft = MagicMock(selected_tenant_id=uuid.uuid4(), offering_id=uuid.uuid4())
         result = await svc._resolve_selected_tenant_price(draft)
@@ -223,7 +223,7 @@ class TestBookingPrefersTenantPrice:
         svc.db = AsyncMock()
         ts_mock = MagicMock(id=uuid.uuid4())
         result_mock = MagicMock()
-        result_mock.scalars.return_value.first.return_value = ts_mock
+        result_mock.scalars.return_value.all.return_value = [ts_mock]
         svc.db.execute = AsyncMock(return_value=result_mock)
 
         resolved = {"resolved": True, "minimum_price": 500.0, "maximum_price": 700.0, "source": "tenant_default"}

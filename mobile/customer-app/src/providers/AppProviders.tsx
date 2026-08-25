@@ -8,6 +8,7 @@ import { queryClient } from "../api/queryClient";
 import { startNetworkMonitoring, stopNetworkMonitoring } from "../api/networkState";
 import { ErrorBoundary } from "../root/ErrorBoundary";
 import { AuthProvider } from "../auth/AuthContext";
+import { ServiceLocationProvider } from "../hooks/useServiceLocationPreference";
 
 function ThemedStatusBar() {
   const { mode } = useTheme();
@@ -46,7 +47,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <SafeAreaProvider initialMetrics={INITIAL_SAFE_AREA_METRICS}>
             <ThemedStatusBar />
             <NetworkMonitor />
-            <AuthProvider>{children}</AuthProvider>
+            <ServiceLocationProvider>
+              <AuthProvider>{children}</AuthProvider>
+            </ServiceLocationProvider>
           </SafeAreaProvider>
         </ThemeProvider>
       </QueryClientProvider>

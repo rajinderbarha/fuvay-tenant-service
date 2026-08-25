@@ -1,13 +1,18 @@
 "use client";
-/** Complaint case detail -- Phase 1 implements Overview/Job Context/Activity
- * with real data. Conversation/Evidence/Resolution are honest placeholders
- * (not fabricated) until Phase 2 wires the mutation/messaging/evidence
- * endpoints already documented in the delivery report. */
+/** Complaint case detail.
+ *
+ * Conversation/Evidence/Resolution were placeholders reading "ships in a later
+ * phase". Two of the three endpoints they needed already existed on the
+ * secured provider router (`/messages`, `/respond`, `/resolutions`,
+ * `/offer-resolution`); the third (evidence) had a service method
+ * (`ComplaintService.list_media`) that no router exposed, so customer-attached
+ * photos were stored and unreachable. All three are now real. */
 import React, { useCallback } from "react";
-import { Wrench, Clock3, CreditCard, Info } from "lucide-react";
+import { Wrench, CreditCard, Lock } from "lucide-react";
 import { Card, Badge, Skeleton } from "../shared/ui";
 import { tenantComplaintsApi, type ComplaintDetail } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
+import { ConversationTab, EvidenceTab, ResolutionTab } from "./ComplaintCaseTabs";
 import { severityVariant, slaVariant, statusLabel } from "./ComplaintQueueList";
 
 const TABS = ["overview", "conversation", "evidence", "job-context", "resolution", "activity"] as const;
@@ -90,15 +95,17 @@ export function ComplaintCaseDetail({ complaintId, tab, onTabChange }: {
                 </div>
               )
             )}
-            {(tab === "conversation" || tab === "evidence" || tab === "resolution") && (
-              <div style={{ display: "flex", gap: 8, padding: "14px 16px", borderRadius: 8,
-                background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
-                <Info size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 1 }}/>
-                <span style={{ fontSize: 12.5, color: "var(--text-tertiary)" }}>
-                  {TAB_LABELS[tab]} is not yet available on this case workspace -- it's on the roadmap for a
-                  later phase (messaging/evidence/resolution actions), not fabricated here.
-                </span>
-              </div>
+            {tab === "conversation" && (
+              <ConversationTab complaintId={complaintId} canReply={c.available_actions.includes("SEND_MESSAGE")}/>
+            )}
+            {tab === "evidence" && <EvidenceTab complaintId={complaintId}/>}
+            {tab === "resolution" && (
+              <ResolutionTab
+                complaintId={complaintId}
+                canOffer={c.available_actions.includes("OFFER_RESOLUTION")}
+                blockedReason={c.action_blocked_reason ?? null}
+                onChanged={() => detail.refetch()}
+              />
             )}
           </>
         )}
@@ -142,15 +149,22 @@ function OverviewTab({ c }: { c: ComplaintDetail }) {
           </div>
         )}
       </div>
+      {/* This used to list raw next-STATUSES from the state machine and call
+          them "available next states". None of them were things a tenant could
+          do -- there is no tenant status-transition endpoint -- so it described
+          capabilities that did not exist. It now lists the real actions. */}
       {c.available_actions.length > 0 && (
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>Available next states</p>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>What you can do</p>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {c.available_actions.map(a => <Badge key={a} variant="muted" size="sm">{statusLabel(a)}</Badge>)}
+            {c.available_actions.includes("SEND_MESSAGE") && <Badge variant="info" size="sm">Reply to customer</Badge>}
+            {c.available_actions.includes("OFFER_RESOLUTION") && <Badge variant="success" size="sm">Propose resolution</Badge>}
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
-            Case actions (acknowledge, respond, propose resolution, escalate) ship in the next phase of this workspace.
-          </p>
+          {c.action_blocked_reason && (
+            <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 8, display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <Lock size={11} style={{ marginTop: 2, flexShrink: 0 }}/>{c.action_blocked_reason}
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -192,8 +192,68 @@ async def provider_list_reports(
     definitions = _rpt.list_reports(SCOPE_PROVIDER)
     runs = await _rpt.list_report_runs(db, SCOPE_PROVIDER,
                                         tenant_id=tenant_id, limit=limit, offset=offset)
-    return ok({"definitions": definitions, "recent_runs": runs},
+    # Each definition declares `allowed_filters` (category_id, offering_id,
+    # staff_member_id, status ...) and the run endpoint validates them, but
+    # nothing ever told a client what the VALID VALUES are — so the portal
+    # offered no filters at all and every report ran unfiltered over all time.
+    # These options come from the tenant's own rows, so a value offered here
+    # always matches something.
+    filter_options = await _provider_filter_options(db, tenant_id)
+    return ok({"definitions": definitions, "recent_runs": runs,
+               "filter_options": filter_options},
               _rid(r), "provider.reports.list")
+
+
+async def _provider_filter_options(db: AsyncSession, tenant_id) -> dict:
+    """Selectable values for the id-based report filters, for one tenant."""
+    from sqlalchemy import text as _text
+
+    if tenant_id is None:
+        return {"offerings": [], "staff": [], "statuses": [], "categories": []}
+
+    tid = {"tid": str(tenant_id)}
+
+    offerings = (await db.execute(_text("""
+        SELECT DISTINCT ms.id::text AS id, ms.service_name AS name
+          FROM tenant_services ts
+          JOIN master_services ms ON ms.id = ts.master_service_id
+         WHERE ts.tenant_id = :tid AND ts.is_active = true AND ts.deleted_at IS NULL
+         ORDER BY ms.service_name
+    """), tid)).fetchall()
+
+    categories = (await db.execute(_text("""
+        SELECT DISTINCT sc.id::text AS id, sc.name AS name
+          FROM tenant_services ts
+          JOIN master_services ms ON ms.id = ts.master_service_id
+          JOIN service_categories sc ON sc.id = ms.category_id
+         WHERE ts.tenant_id = :tid AND ts.is_active = true AND ts.deleted_at IS NULL
+         ORDER BY sc.name
+    """), tid)).fetchall()
+
+    staff = (await db.execute(_text("""
+        SELECT id::text AS id,
+               COALESCE(NULLIF(TRIM(full_name), ''), designation, 'Technician') AS name
+          FROM provider_team_members
+         WHERE tenant_id = :tid AND status = 'active'
+         ORDER BY 2
+    """), tid)).fetchall()
+
+    # Built from the statuses this tenant's jobs are actually in, for the same
+    # reason: a status nobody has can only ever return an empty report.
+    statuses = (await db.execute(_text("""
+        SELECT DISTINCT status FROM service_jobs
+         WHERE tenant_id = :tid AND status IS NOT NULL ORDER BY status
+    """), tid)).fetchall()
+
+    def _lbl(v: str) -> str:
+        return v.replace("_", " ").capitalize()
+
+    return {
+        "offerings":  [{"value": x.id, "label": x.name} for x in offerings],
+        "categories": [{"value": x.id, "label": x.name} for x in categories],
+        "staff":      [{"value": x.id, "label": x.name} for x in staff],
+        "statuses":   [{"value": x.status, "label": _lbl(x.status)} for x in statuses],
+    }
 
 
 @provider_reports_router.post(

@@ -130,6 +130,13 @@ describe("NotificationCenterScreen", () => {
     expect(queryByText("You're all caught up")).toBeNull();
   });
 
+  it("does not claim the customer is caught up while unread notifications remain", () => {
+    mockList([notification()], { hasNextPage: false });
+    mockUnreadCount(1); mockMarkRead(); mockMarkAllRead();
+    const { queryByText } = renderWithProviders(<NotificationCenterScreen />);
+    expect(queryByText("You're all caught up")).toBeNull();
+  });
+
   it("navigates to BookingDetails for a real service_bookings destination and marks it read", () => {
     const markRead = jest.fn();
     jest.spyOn(queriesModule, "useMarkNotificationReadMutation").mockReturnValue({

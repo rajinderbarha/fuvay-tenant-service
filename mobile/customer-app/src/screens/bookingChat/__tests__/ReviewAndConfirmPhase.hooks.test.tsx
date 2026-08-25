@@ -137,9 +137,11 @@ describe("ReviewAndConfirmPhase — hook order", () => {
   });
 
   it("reopens the slot turn and withdraws the ready state when the customer goes back", async () => {
+    const selectSlot = jest.fn().mockResolvedValue(undefined);
     (controllerModule.useBookingReviewController as jest.Mock).mockReturnValue(
       controllerState({
         uiState: "ready", loadStage: null,
+        selectSlot,
         // A slot already chosen, so the turn offers Continue.
         summary: {
           ...READY_SUMMARY,
@@ -152,6 +154,9 @@ describe("ReviewAndConfirmPhase — hook order", () => {
 
     // Walk the turns the way the customer does, so the sheet becomes ready.
     fireEvent.press(screen.getByLabelText("Continue"));
+    await waitFor(() =>
+      expect(selectSlot).toHaveBeenCalledWith("2026-08-09", "14:00-15:00", false),
+    );
     await waitFor(() => expect(screen.getByText("Add a photo? (optional)")).toBeTruthy());
     fireEvent.press(screen.getByLabelText("Continue"));
 

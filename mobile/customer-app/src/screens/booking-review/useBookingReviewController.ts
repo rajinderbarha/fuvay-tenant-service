@@ -123,10 +123,6 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
         return;
       }
 
-      setLoadStage("checking_pricing");
-      await reviewApi.resolvePriceEstimate(draftId);
-      if (generation !== generationRef.current) return;
-
       setLoadStage("finding_provider");
       let matchResult;
       try {
@@ -183,10 +179,18 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
   }, [draftId]);
 
   useEffect(() => {
-    load();
+    // This hook can stay mounted while the assistant starts a new draft in
+    // the same category. Treat a draft-id change as a hard review boundary:
+    // no summary, actions, slot list or confirmation from the previous draft
+    // may survive into the new request.
+    busyRef.current = false;
+    setSummary(null);
+    setConfirmation(null);
+    setAvailableSlots(null);
+    setSlotSelectionError(null);
+    void load();
     return () => { generationRef.current += 1; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   const eligibility = summary
     ? resolveConfirmationEligibility({

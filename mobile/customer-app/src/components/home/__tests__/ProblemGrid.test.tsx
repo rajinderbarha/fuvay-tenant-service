@@ -12,7 +12,6 @@ function issue(label: string, category = "Air Conditioning"): HomeQuickIssue {
     categoryId: asCategoryId("cat-1"),
     categorySlug: "air-conditioning",
     categoryName: category,
-    iconUrl: null,
     intent: "repair" as const,
   };
 }

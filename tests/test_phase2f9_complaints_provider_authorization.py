@@ -329,7 +329,7 @@ class TestCrossTenantServiceLayerBypassesFixed:
         rework = MagicMock(spec=ServiceReworkRequest)
         rework.id = uuid.UUID(REWORK_ID)
         rework.tenant_id = my_tenant
-        rework.status = None
+        rework.status = "approved"
 
         db = MagicMock()
         result_mock = MagicMock()
@@ -349,6 +349,7 @@ class TestCrossTenantServiceLayerBypassesFixed:
         rework = MagicMock(spec=ServiceReworkRequest)
         rework.id = uuid.UUID(REWORK_ID)
         rework.tenant_id = uuid.uuid4()
+        rework.status = "approved"
 
         db = MagicMock()
         result_mock = MagicMock()

@@ -23,10 +23,82 @@ type FinPayload = any;
 
 export type HsFinanceOverview = FinPayload;
 export type HsFinanceTxnRow = FinPayload;
-export type HsFinanceTxnPage = FinPayload;
+/** One composed row across all four ledgers. */
+export interface HsFinanceTxnRowFull {
+  row_id: string;
+  ledger: string;
+  ledger_label: string;
+  /** The value the `type` filter matches on — NOT a field called `type`. */
+  event_type: string | null;
+  event_label: string | null;
+  status: string | null;
+  description: string | null;
+  reference: string | null;
+  related_job_id: string | null;
+  related_transaction_ref: string | null;
+  debit: string | null;
+  credit: string | null;
+  usage_credit_balance_after: string | null;
+  receipt_available: boolean;
+  reversible: boolean;
+  occurred_at: string | null;
+}
+
+export interface HsFinanceTxnPage {
+  items: HsFinanceTxnRowFull[];
+  total: number;
+  page: number;
+  page_size: number;
+  ledgers: { value: string; label: string }[];
+  /** Facets for the `type` and `status` filters. */
+  types: string[];
+  statuses: string[];
+  ledger_totals: Record<string, { rows: number; debit_total: string; credit_total: string }>;
+  never_combined_note: string;
+}
 export type HsCreditPackage = FinPayload;
 export type HsTopupOrder = FinPayload;
-export type HsRefundRequest = FinPayload;
+/**
+ * Was `FinPayload` (= any), so the Finance Hub's refund-request card was not
+ * checked against the endpoint at all. Mirrors
+ * HsDepositRefundRequest.to_dict() in
+ * app/engines/finance_hub/deposit_refund_models.py exactly.
+ */
+export interface HsRefundRequest {
+  refund_request_id: string;
+  tenant_id: string;
+  vertical_key: string;
+  request_ref: string;
+  status: string;
+  status_label: string;
+  /** Ordered happy path the card renders as a progress tracker. */
+  workflow_stages: string[];
+  is_terminal: boolean;
+  requested_amount: string;
+  approved_amount: string | null;
+  eligible_amount_snapshot: string;
+  deposit_held_snapshot: string;
+  deposit_required_snapshot: string;
+  qualifying_technicians_snapshot: number;
+  policy_version: string | null;
+  reason: string | null;
+  bank_account_name: string | null;
+  bank_account_number_masked: string | null;
+  bank_ifsc: string | null;
+  eligibility_checks: Record<string, unknown>;
+  blockers: HsLiabilityHold[];
+  submitted_at: string | null;
+  decision_at: string | null;
+  decision_note: string | null;
+  /** Set when an admin asks the tenant a question; the tenant answers via
+   *  `respondRefundRequest`. */
+  info_requested_note: string | null;
+  tenant_response: string | null;
+  refunded_at: string | null;
+  payout_reference: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
 export type HsFinanceReadinessCheck = FinPayload;
 export type HsLiabilityHold = FinPayload;
 export type HsDpQueue = FinPayload;
@@ -115,6 +187,32 @@ export const homeServicesFinanceApi = {
   createRefundRequest: <T = HsRefundRequest>(payload: Record<string, unknown>) =>
     apiFetch<T>(`${FIN}/security-deposit/refund-requests`, post(payload)),
 
+  /** Paged list of the tenant's own deposit refund requests. The overview
+   *  seeds only the most recent few, so there was no way to reach older ones. */
+  listRefundRequests: <T = { items: HsRefundRequest[]; total: number; page: number; page_size: number }>(
+    params?: { status?: string; page?: number; page_size?: number },
+  ) => apiFetch<T>(`${FIN}/security-deposit/refund-requests${query(params as Record<string, string | number | undefined>)}`),
+
+  /**
+   * Real workflow deadlock fixed here. When an admin moves a deposit refund
+   * request to `info_requested`, the Finance Hub RENDERED the admin's
+   * question ("Admin requested information: …") but had no caller for this
+   * endpoint -- so the tenant could read the question and had no way to
+   * answer it, and the request sat in `info_requested` permanently. The
+   * endpoint existed and was correct; only the client was missing.
+   */
+  respondRefundRequest: <T = HsRefundRequest>(requestId: string, response: string) =>
+    apiFetch<T>(`${FIN}/security-deposit/refund-requests/${requestId}/respond`, post({ response })),
+
+  /** Same class of gap: a tenant could open a deposit refund request but not
+   *  take it back. Legal from any non-terminal, non-processing state. */
+  withdrawRefundRequest: <T = HsRefundRequest>(requestId: string) =>
+    apiFetch<T>(`${FIN}/security-deposit/refund-requests/${requestId}/withdraw`, post()),
+
+  /** Top-up order detail + receipt. Had no caller, so a completed top-up's
+   *  receipt was unreachable from the Transactions tab. */
+  getTopup: <T = HsTopupOrder>(topupId: string) => apiFetch<T>(`${FIN}/top-ups/${topupId}`),
+
   /** Returns a signed/streamed statement; the caller handles the download. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   exportStatement: <T = FinPayload>(params?: Record<string, any>) =>
@@ -131,6 +229,46 @@ export const homeServicesDirectPaymentsApi = {
     apiFetch<T>(`${DP}/${paymentId}/remind-customer`, post()),
   openDispute: <T = FinPayload>(paymentId: string, reason: string) =>
     apiFetch<T>(`${DP}/${paymentId}/open-dispute`, post({ reason })),
+
+  /**
+   * Correct a declaration before the customer confirms it.
+   *
+   * The detail panel rendered an "Edit declaration" button gated on the
+   * server's `available_actions.edit_declaration`, but the button had no
+   * onClick at all -- so when the server said editing WAS allowed the control
+   * enabled itself, looked actionable and did nothing. This endpoint existed
+   * the whole time and had no caller.
+   *
+   * `expected_version` is the optimistic-concurrency guard: the server rejects
+   * the write if the declaration moved on since it was read (e.g. the customer
+   * confirmed in the meantime), so a correction can never silently overwrite a
+   * newer state.
+   */
+  correctDeclaration: <T = FinPayload>(paymentId: string, body: {
+    expected_version?: number;
+    amount?: string;
+    method?: string;
+    reference_id?: string;
+    note?: string;
+    received_at?: string;
+    correction_reason?: string;
+    difference_reason?: string;
+  }) => apiFetch<T>(`${DP}/${paymentId}/declaration`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  /** Expected payable, approved estimate and visit-fee treatment for a job
+   *  BEFORE declaring. Never had a caller in any frontend, so nothing ever
+   *  showed the provider what the canonical expected amount was. */
+  declarationPreflight: <T = FinPayload>(jobId: string) =>
+    apiFetch<T>(`/v1/tenant/home-services/jobs/${jobId}/direct-payment/preflight`),
+
+  /** Record a direct payment from the web portal. Declarations could only be
+   *  created from the staff MOBILE app (`/v1/staff/service-jobs/{id}/
+   *  mobile-direct-payment/declare`); this tenant-side endpoint had no caller,
+   *  so office staff working in the portal could not record a payment at all. */
+  createDeclaration: <T = FinPayload>(jobId: string, body: {
+    amount: string; method: string; reference_id?: string; note?: string;
+    received_at?: string; difference_reason?: string;
+  }) => apiFetch<T>(`/v1/tenant/home-services/jobs/${jobId}/direct-payment/declaration`, post(body)),
 };
 
 export const onboardingDeclarationsApi = {

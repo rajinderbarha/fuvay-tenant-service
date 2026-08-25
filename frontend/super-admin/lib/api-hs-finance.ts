@@ -109,6 +109,52 @@ export const homeServicesFinanceApi = {
       method: "POST", body: JSON.stringify({ amount, reason, category }),
     }),
 
+  // ── Deposit refund requests (tenant-initiated) ──────────────────────────
+  // A DIFFERENT resource from `/deposits/{id}/refund` above: that is an admin
+  // refunding a deposit directly, this is the queue of refund requests the
+  // TENANT raised against its own held deposit
+  // (finance_hub/deposit_refund_models.py). Its router existed but was never
+  // mounted, so every endpoint here 404'd until main.py was fixed — which is
+  // why no admin screen was ever built against it.
+  listDepositRefundRequests: <T = FinanceListEnvelope>(params?: {
+    status?: string; tenant_id?: string; page?: number; page_size?: number;
+  }) => apiFetch<T>(`/v1/admin/finance/home-services/deposit-refund-requests${_q(params)}`),
+
+  /**
+   * `action` is one of the seven the server accepts:
+   * advance_eligibility | advance_liability | advance_decision | request_info
+   * | approve | mark_refunded | reject.
+   * `note` carries the question for request_info and the payout reference for
+   * mark_refunded.
+   */
+  decideDepositRefundRequest: <T = FinRow>(
+    id: string,
+    body: { action: string; approved_amount?: string; note?: string },
+  ) => apiFetch<T>(`/v1/admin/finance/home-services/deposit-refund-requests/${id}/decision`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
+
+  // ── Direct payments (customer pays the provider directly) ───────────────
+  // These five endpoints were live and complete, but nothing in super-admin
+  // called any of them: the TENANT had a full direct-payments console while
+  // the platform admin had no view of the same money at all. Note the params
+  // here are the admin router's own (`q`, `pageSize`, `confirmed`), which do
+  // NOT match the tenant queue's (`search`, `limit`, `method`).
+  getDirectPaymentsSummary: <T = FinRow>() =>
+    apiFetch<T>("/v1/admin/home-services/finance/payments/summary"),
+  listDirectPayments: <T = FinanceListEnvelope>(params?: {
+    status?: string; tenant_id?: string; confirmed?: boolean; q?: string;
+    date_from?: string; date_to?: string; page?: number; pageSize?: number;
+  }) => apiFetch<T>(`/v1/admin/home-services/finance/payments${_q(params)}`),
+  getDirectPayment: <T = FinRow>(paymentId: string) =>
+    apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}`),
+  remindDirectPaymentCustomer: <T = FinRow>(paymentId: string) =>
+    apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}/remind-customer`, { method: "POST" }),
+  openDirectPaymentDispute: <T = FinRow>(paymentId: string, reason: string) =>
+    apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}/open-dispute`, {
+      method: "POST", body: JSON.stringify({ reason }),
+    }),
+
   // ── Top-ups ─────────────────────────────────────────────────────────────
   listTopups: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/topups${_q({
     ...params,

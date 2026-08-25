@@ -19,8 +19,13 @@ class InventoryItem(ServiceOSBase):
     name:        Mapped[str]       = mapped_column(String(200), nullable=False)
     sku:         Mapped[str]       = mapped_column(String(100), nullable=False)
     category:    Mapped[str|None]  = mapped_column(String(100), nullable=True)
+    # Stable link to the admin-owned service group the provider was entitled
+    # to during setup. ``category`` remains a human-readable snapshot.
+    service_group_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     unit:        Mapped[str]       = mapped_column(String(20), default="unit", nullable=False)
+    # Provider acquisition cost and customer-facing part price are separate.
     unit_cost:   Mapped[Decimal]   = mapped_column(Numeric(10,2), nullable=False)
+    selling_price: Mapped[Decimal|None] = mapped_column(Numeric(10,2), nullable=True)
     min_quantity:Mapped[int]       = mapped_column(Integer, default=5, nullable=False)
     is_active:   Mapped[bool]      = mapped_column(Boolean, default=True, nullable=False)
     meta:        Mapped[dict]      = mapped_column(JSONB, default=dict, nullable=False)

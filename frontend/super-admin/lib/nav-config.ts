@@ -103,7 +103,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { id: "marketing",     label: "Marketing",      href: "/admin/marketing",     icon: "📣", group: "engagement" },
       { id: "notifications", label: "Notifications",  href: "/admin/notifications", icon: "🔔", group: "engagement" },
       { id: "reviews",       label: "Reviews",        href: "/admin/reviews",       icon: "⭐", group: "engagement" },
-      { id: "complaints",    label: "Complaints",     href: "/admin/complaints",    icon: "⚠️", group: "engagement" },
+      { id: "complaints",    label: "Complaints",     href: "/admin/home-services/complaints", icon: "⚠️", group: "engagement" },
     ],
   },
   {

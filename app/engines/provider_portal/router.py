@@ -21,6 +21,7 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.core.permissions import P, require_tenant_mutation_permission, require_tenant_owner_mutation
+from app.core.audit import record_platform_audit
 from app.config import get_settings
 from app.models.base import utcnow
 from app.engines.admin_catalog.skill_catalog_router import (
@@ -323,6 +324,13 @@ async def create_team_member(
         db, tenant_id=tid, member_id=uuid.UUID(new_id), selected=selected_skills,
         actor_id=user.user_id,
     )
+    await record_platform_audit(
+        db, operation="provider_team_member.created", engine_id="provider_portal",
+        tenant_id=tid, entity_type="provider_team_member", entity_id=new_id,
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={"full_name": str(payload.get("full_name")).strip(), "member_type": member_type,
+               "designation": designation, "status": payload.get("status") or "active"},
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": new_id})
     member = _member_row(row.fetchone())
@@ -560,7 +568,6 @@ async def update_team_member(
             db, tenant_id=tid, member_id=member_id, selected=selected_skills,
             actor_id=user.user_id,
         )
-    await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
     fetched = row.fetchone()
@@ -568,6 +575,15 @@ async def update_team_member(
         raise HTTPException(404, "Team member not found")
     member = _member_row(fetched)
     member["skill_ids"] = (await member_skill_ids(db, tid, [member["member_id"]])).get(member["member_id"], [])
+    await record_platform_audit(
+        db, operation="provider_team_member.updated", engine_id="provider_portal",
+        tenant_id=tid, entity_type="provider_team_member", entity_id=str(member_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={key: member.get(key) for key in (
+            "full_name", "member_type", "designation", "status", "can_receive_assignment", "supported_offering_ids"
+        )},
+    )
+    await db.commit()
     return ok(member, request_id=rid)
 
 
@@ -580,9 +596,16 @@ async def delete_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    await db.execute(
+    result = await db.execute(
         text("UPDATE provider_team_members SET deleted_at=now() WHERE id=:id AND tenant_id=:tid"),
         {"id": str(member_id), "tid": str(tid)}
+    )
+    if result.rowcount == 0:
+        raise HTTPException(404, "Team member not found")
+    await record_platform_audit(
+        db, operation="provider_team_member.offboarded", engine_id="provider_portal",
+        tenant_id=tid, entity_type="provider_team_member", entity_id=str(member_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
     )
     await db.commit()
     return ok({"deleted": True}, request_id=rid)
@@ -596,7 +619,15 @@ async def activate_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    await db.execute(text("UPDATE provider_team_members SET status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(member_id), "tid": str(tid)})
+    result = await db.execute(text("UPDATE provider_team_members SET status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"), {"id": str(member_id), "tid": str(tid)})
+    if result.rowcount == 0:
+        raise HTTPException(404, "Team member not found")
+    await record_platform_audit(
+        db, operation="provider_team_member.activated", engine_id="provider_portal",
+        tenant_id=tid, entity_type="provider_team_member", entity_id=str(member_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={"status": "active"},
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
@@ -648,6 +679,12 @@ async def deactivate_team_member(
                     await redis.setex(f"serviceos:session:revoked:{sid}", ACCESS_TOKEN_EXPIRE_MINUTES * 60, "1")
                 except Exception:
                     pass
+    await record_platform_audit(
+        db, operation="provider_team_member.deactivated", engine_id="provider_portal",
+        tenant_id=tid, entity_type="provider_team_member", entity_id=str(member_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={"status": "inactive", "sessions_revoked": bool(member.user_id)},
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
@@ -1657,7 +1694,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
     else:
         reason = {"code": "NO_PUBLISHED_SERVICE",
                   "message": "Publish at least one service before you can be booked.",
-                  "severity": "critical", "route": "/tenant/setup/services"}
+                  "severity": "critical", "route": "/tenant/home-services/setup/services-pricing"}
         visibility_blockers.append(reason)
         bookability_blockers.append(reason)
 
@@ -1687,7 +1724,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         bookability_blockers.append({
             "code": "PROVIDER_PRICE_RANGE_MISSING",
             "message": "Set your provider price range for at least one published service.",
-            "severity": "critical", "route": "/tenant/setup/services"})
+            "severity": "critical", "route": "/tenant/home-services/setup/services-pricing"})
 
     active_areas = (await db.execute(
         text("SELECT count(*) FROM tenant_service_areas WHERE tenant_id=:tid AND is_active=true"),

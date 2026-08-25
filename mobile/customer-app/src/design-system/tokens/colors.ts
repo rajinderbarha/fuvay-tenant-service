@@ -72,6 +72,28 @@ export interface ColorTokens {
   campaignBackground: string;
   campaignGradientStart: string;
   campaignGradientEnd: string;
+  campaignAccent: string;
+  campaignBadgeForeground: string;
+  campaignScrim: string;
+  campaignBadgeScrim: string;
+
+  /** Content placed on photography. This deliberately does not invert in
+   * dark mode: campaign artwork always needs a stable white foreground and
+   * a predictable scrim, regardless of the page theme or image palette. */
+  mediaForeground: string;
+  mediaForegroundMuted: string;
+  mediaScrim: string;
+  mediaScrimStrong: string;
+
+  /** Product accents are intentionally plural. The permanent shell stays
+   * neutral while service glyphs, campaigns and editorial modules can carry
+   * their own colour without turning the whole application blue. */
+  accentCyan: string;
+  accentMint: string;
+  accentCoral: string;
+  accentAmber: string;
+  accentViolet: string;
+  accentVioletSurface: string;
 
   statusSuccess: string;
   statusSuccessSurface: string;
@@ -142,6 +164,21 @@ export const lightColors: ColorTokens = {
   campaignBackground: "#EEF3FF",
   campaignGradientStart: "#EEF3FF",
   campaignGradientEnd: "#EEF3FF",
+  campaignAccent: "#F6C344",
+  campaignBadgeForeground: "#211806",
+  campaignScrim: "rgba(3, 18, 48, 0.24)",
+  campaignBadgeScrim: "rgba(3, 18, 48, 0.75)",
+
+  mediaForeground: "#FFFFFF",
+  mediaForegroundMuted: "#EEEAE2",
+  mediaScrim: "rgba(8, 9, 10, 0.30)",
+  mediaScrimStrong: "rgba(8, 9, 10, 0.60)",
+  accentCyan: "#3AA7C7",
+  accentMint: "#33A879",
+  accentCoral: "#EE765F",
+  accentAmber: "#E7A63D",
+  accentViolet: "#9D4EDD",
+  accentVioletSurface: "#F2EAFE",
 
   statusSuccess: "#1E8E5A",
   statusSuccessSurface: "#E6F5EC",
@@ -202,6 +239,21 @@ export const darkColors: ColorTokens = {
   campaignBackground: "#1A3A5C",
   campaignGradientStart: "#1A3A5C",
   campaignGradientEnd: "#202024",
+  campaignAccent: "#F6C344",
+  campaignBadgeForeground: "#211806",
+  campaignScrim: "rgba(3, 18, 48, 0.36)",
+  campaignBadgeScrim: "rgba(3, 18, 48, 0.82)",
+
+  mediaForeground: "#FFFFFF",
+  mediaForegroundMuted: "#E8E5DF",
+  mediaScrim: "rgba(0, 0, 0, 0.34)",
+  mediaScrimStrong: "rgba(0, 0, 0, 0.66)",
+  accentCyan: "#53C5E3",
+  accentMint: "#4ED5A1",
+  accentCoral: "#FF8D78",
+  accentAmber: "#F5B84E",
+  accentViolet: "#C16CFF",
+  accentVioletSurface: "#24114A",
 
   statusSuccess: "#4ADE80",
   statusSuccessSurface: "#16301F",

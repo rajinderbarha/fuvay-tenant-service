@@ -17,11 +17,57 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_SLA_MINUTES = 60
-TERMINAL_STATUSES = {"completed", "cancelled", "failed", "force_closed", "voided"}
+TERMINAL_STATUSES = {
+    "completed", "cancelled", "failed", "closed_estimate_declined",
+    "force_closed", "voided",
+}
+
+
+def sla_filter_condition(job_model, status: str):
+    """Build the same SLA rule as ``attach_sla`` as a SQL predicate.
+
+    This lets list/count queries apply SLA before pagination. Postcode tier
+    wins, then city tier, then the documented 60 minute default.
+    """
+    from app.engines.admin_catalog.models import PricingTier, TierLocation
+
+    zip_minutes = (
+        select(PricingTier.default_sla_minutes)
+        .join(TierLocation, TierLocation.tier_id == PricingTier.id)
+        .where(
+            TierLocation.is_active.is_(True), PricingTier.is_active.is_(True),
+            TierLocation.zipcode == job_model.zipcode,
+        )
+        .order_by(TierLocation.priority.asc()).limit(1)
+        .correlate(job_model).scalar_subquery()
+    )
+    city_minutes = (
+        select(PricingTier.default_sla_minutes)
+        .join(TierLocation, TierLocation.tier_id == PricingTier.id)
+        .where(
+            TierLocation.is_active.is_(True), PricingTier.is_active.is_(True),
+            TierLocation.city == job_model.city,
+        )
+        .order_by(TierLocation.priority.asc()).limit(1)
+        .correlate(job_model).scalar_subquery()
+    )
+    minutes = func.coalesce(zip_minutes, city_minutes, DEFAULT_SLA_MINUTES)
+    one_minute = literal_column("INTERVAL '1 minute'")
+    deadline = job_model.created_at + minutes * one_minute
+    risk_start = job_model.created_at + (minutes * 0.8) * one_minute
+    open_job = job_model.status.notin_(TERMINAL_STATUSES)
+    normalized = status.upper()
+    if normalized == "BREACHED":
+        return and_(open_job, func.now() > deadline)
+    if normalized == "AT_RISK":
+        return and_(open_job, func.now() >= risk_start, func.now() <= deadline)
+    if normalized == "ON_TRACK":
+        return and_(open_job, func.now() < risk_start)
+    raise ValueError("INVALID_SLA_STATUS")
 
 
 def _now() -> datetime:

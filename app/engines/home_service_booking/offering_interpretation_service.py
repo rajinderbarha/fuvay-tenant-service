@@ -192,6 +192,8 @@ class OfferingInterpretationService:
 
     async def interpret(
         self, category_slug: str, zipcode: str | None, text: str, session_id: str | None = None,
+        service_group_slug: str | None = None,
+        master_service_id: uuid.UUID | None = None,
     ) -> dict:
         """Returns {"action", "reply", "matched_offering": {...} | None,
         "offerings": [...]} -- `offerings` here carries the real,
@@ -199,7 +201,10 @@ class OfferingInterpretationService:
         `offerings` keys for wire-contract stability with the existing
         frontend adapter), so the caller never has to guess what to
         render next."""
-        catalog = await list_serviceable_issues(self.db, category_slug, zipcode)
+        catalog = await list_serviceable_issues(
+            self.db, category_slug, zipcode, service_group_slug=service_group_slug,
+            master_service_id=master_service_id,
+        )
         issues = catalog.get("issues", [])
         if not issues:
             raise ServiceOSException(
@@ -211,8 +216,11 @@ class OfferingInterpretationService:
         valid_ids = {i["id"] for i in safe_issues}
 
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
-            category_name=catalog.get("category") or category_slug,
-            issues_json=json.dumps(safe_issues),
+            category_name=(catalog.get("service_group") or {}).get("name") or catalog.get("category") or category_slug,
+            # Media URLs are presentation data, not model input. Keep them in
+            # the response contract while sending only stable IDs and labels
+            # to the interpreter.
+            issues_json=json.dumps([{"id": item["id"], "name": item["name"]} for item in safe_issues]),
         )
 
         client = DeepSeekClientService(db=self.db, session_id=session_id, request_id=self.request_id)

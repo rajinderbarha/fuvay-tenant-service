@@ -35,7 +35,7 @@ describe("CompletionConfirmationCard", () => {
   it("shows backend-recorded payment data and both customer decisions", () => {
     const acknowledged = { ...handover, status: "acknowledged" as const, can_acknowledge: false };
     const { getByText, props } = renderCard({ handover: acknowledged, payment });
-    expect(getByText("Acme Home Services recorded INR 1200.00 paid by Cash. ServiceOS did not collect this money.")).toBeTruthy();
+    expect(getByText("Acme Home Services recorded INR 1200.00 paid by Cash. Fuvay did not collect this money.")).toBeTruthy();
     fireEvent.press(getByText("Yes, I paid INR 1200.00"));
     fireEvent.press(getByText("I did not make this payment"));
     expect(props.onReportNotPaid).not.toHaveBeenCalled();

@@ -29,7 +29,6 @@ from app.engines.admin_catalog.models import (
 from app.engines.tenant_engine.models import Tenant
 from app.engines.admin_catalog.bargain_engine import (
     evaluate_customer_bargain, validate_price_range_config, BargainValidationError,
-    compute_symmetric_customer_price_tiers,
 )
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -1778,7 +1777,14 @@ class AdminCatalogService:
                     "The selected service group does not belong to this service's category.",
                     status_code=422,
                 )
-        for field in ("service_name", "description", "image_url", "icon_url", "display_order",
+            svc.service_group_id = group_id
+        # Cosmetic assets are nullable. The old non-None guard made the
+        # admin's explicit "Remove icon" action a successful no-op because
+        # JSON null was silently discarded.
+        for field in ("description", "image_url", "icon_url"):
+            if field in data:
+                setattr(svc, field, data[field])
+        for field in ("service_name", "display_order",
                       "requires_checklist", "is_brand_required", "is_type_required",
                       "requires_issue_type", "requires_schedule", "requires_address",
                       "tenant_override_allowed", "tenant_custom_name_allowed",
@@ -2496,8 +2502,8 @@ class AdminCatalogService:
     # ═══════════════════════════════════════════════════════════
     # HOME SERVICES CATALOG CONSOLE — consolidated admin console
     # (composes existing master-service/type/brand/pricing-rule data;
-    # adds type-scoped and brand-scoped admin floor/ceiling upsert plus
-    # the symmetric Low/Mid/High customer price preview.)
+    # exposes catalog dimensions and workflow metadata. Price amounts remain
+    # provider-owned and customer charges come from Home Services Finance.)
     # ═══════════════════════════════════════════════════════════
 
     async def get_home_services_category_id(self) -> uuid.UUID:
@@ -3646,11 +3652,18 @@ class AdminCatalogService:
         stmt = stmt.order_by(MasterIssueType.display_order, MasterIssueType.name)
         result = await self.db.execute(stmt)
         rows = result.scalars().all()
-        return {"issue_types": [r.to_dict() for r in rows], "total": len(rows)}
+        issue_types = []
+        for row in rows:
+            payload = row.to_dict()
+            payload.pop("icon_url", None)
+            issue_types.append(payload)
+        return {"issue_types": issue_types, "total": len(rows)}
 
     async def get_issue_type(self, issue_type_id: uuid.UUID) -> dict:
         row = await self._load_issue_type(issue_type_id)
-        return row.to_dict()
+        payload = row.to_dict()
+        payload.pop("icon_url", None)
+        return payload
 
     async def create_issue_type(self, data: dict) -> dict:
         name = (data.get("name") or "").strip()
@@ -3684,7 +3697,9 @@ class AdminCatalogService:
         await self.db.flush()
         await self._audit("master_issue_type", row.id, "create", None, row.to_dict(), f"Created issue type '{name}'")
         logger.info("issue_type.created", id=str(row.id), name=name)
-        return row.to_dict()
+        payload = row.to_dict()
+        payload.pop("icon_url", None)
+        return payload
 
     async def update_issue_type(self, issue_type_id: uuid.UUID, data: dict) -> dict:
         row = await self._load_issue_type(issue_type_id)
@@ -3696,7 +3711,9 @@ class AdminCatalogService:
             row.code = str(data["code"]).strip().upper()
         await self.db.flush()
         await self._audit("master_issue_type", row.id, "update", old, row.to_dict(), f"Updated issue type '{row.name}'")
-        return row.to_dict()
+        payload = row.to_dict()
+        payload.pop("icon_url", None)
+        return payload
 
     async def delete_issue_type(self, issue_type_id: uuid.UUID) -> dict:
         row = await self._load_issue_type(issue_type_id)

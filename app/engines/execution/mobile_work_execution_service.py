@@ -183,6 +183,28 @@ class MobileWorkExecutionService:
         detail = await self.get_detail(db, user_id, tenant_id, job_id)
         if not detail["readiness"]["can_finish_work"]:
             raise ServiceOSException("WORK_NOT_READY_TO_FINISH", "Complete every required item before finishing work.", status_code=409, context={"blockers": detail["readiness"]["blockers"]})
+
+        # The mobile work screen saves item responses inline and exposes one
+        # final "Finish work" action; it has no separate complete-checklist
+        # action. Previously this moved the job to work_done while leaving the
+        # canonical checklist instance IN_PROGRESS. The later completion gate
+        # then blocked payment finalization forever even though every required
+        # answer was present. Make the user-visible action atomic: validate and
+        # complete its resolved EXECUTION instance before advancing the job.
+        checklist_instance_id = (detail.get("checklist") or {}).get("instance_id")
+        if checklist_instance_id:
+            from app.engines.checklist_catalog.models import JobChecklistInstance
+            from app.engines.checklist_catalog.service import complete_instance
+
+            instance = await db.get(JobChecklistInstance, uuid.UUID(str(checklist_instance_id)))
+            if instance is None or instance.job_id != job.id or instance.tenant_id != tenant_id:
+                raise ServiceOSException(
+                    "CHECKLIST_INSTANCE_NOT_FOUND",
+                    "The work checklist could not be resolved for this job.",
+                    status_code=409,
+                )
+            await complete_instance(db, instance, completed_by=user_id)
+
         await _session_svc.finish(db, job.id)
         # Reuses the EXISTING mark_work_done transition verbatim -- moves the
         # job to work_done only, never triggers completion/commission (those

@@ -39,7 +39,7 @@ test.describe('ADMIN-TENANT-E2E-09 tenant service setup + coverage', () => {
     await loginAsTenantOwner(page);
     const routes = [
       '/dashboard',
-      '/tenant/setup/services',
+      '/tenant/home-services/setup/services-pricing',
       '/provider/service-coverage',
       '/setup/service-coverage',
       '/onboarding-status',

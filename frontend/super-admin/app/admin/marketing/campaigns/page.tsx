@@ -13,7 +13,7 @@ import {
   Skeleton,
 } from "@/components/shared/ui";
 import { useApi } from "@/hooks/useApi";
-import { RefreshCw, Eye } from "lucide-react";
+import { RefreshCw, Eye, Smartphone } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_OPTIONS = [
@@ -63,9 +63,10 @@ export default function AdminMarketingCampaignsPage() {
             Provider launch campaigns and their review status.
           </p>
         </div>
-        <Btn onClick={() => refetch()}>
-          <RefreshCw size={14} /> Refresh
-        </Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link href="/admin/marketing/home"><Btn variant="secondary"><Smartphone size={14} /> Customer Home</Btn></Link>
+          <Btn onClick={() => refetch()}><RefreshCw size={14} /> Refresh</Btn>
+        </div>
       </div>
 
       <Card>
