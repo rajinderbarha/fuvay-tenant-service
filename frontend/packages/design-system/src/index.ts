@@ -24,4 +24,5 @@ export * from "./components/IconButton";
 export * from "./components/QuickActionGrid";
 export * from "./components/TableSurface";
 export * from "./components/ActionMenu";
+export * from "./components/EnterpriseFilterBar";
 export * from "./components/PortalKit";

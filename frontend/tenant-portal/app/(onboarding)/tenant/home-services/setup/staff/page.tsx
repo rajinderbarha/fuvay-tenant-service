@@ -65,18 +65,15 @@ export default function StaffTechniciansPage() {
     if (!confirm("Disable access for this team member? They will no longer be able to sign in or receive new assignments.")) return;
     try { await providerTeamMembersApi.deactivate(id); load(); }
     catch (e) { setError(e instanceof ServiceOSError ? e.message : "Could not disable access."); }
-    setMenuOpenId(null);
   }
   async function handleActivate(id: string) {
     try { await providerTeamMembersApi.activate(id); load(); }
     catch (e) { setError(e instanceof ServiceOSError ? e.message : "Could not restore access."); }
-    setMenuOpenId(null);
   }
   async function handleSendInvite(member: ProviderTeamMember) {
     if (!member.email) {
       setEditingMember(member);
       setWizardOpen(true);
-      setMenuOpenId(null);
       return;
     }
     try {
@@ -95,7 +92,6 @@ export default function StaffTechniciansPage() {
     } catch (e) {
       setError(e instanceof ServiceOSError ? e.message : "Could not send the app invitation.");
     }
-    setMenuOpenId(null);
   }
 
   const filtered = members.filter(m => {
@@ -186,7 +182,7 @@ export default function StaffTechniciansPage() {
                 const r = readiness?.per_member[m.member_id];
                 const meta = READINESS_META[r?.status ?? "needs_identity"];
                 return (
-                  <div key={m.member_id} className="staff-row" style={{ borderBottom: i === filtered.length - 1 ? "none" : "1px solid var(--border)", position: "relative", zIndex: menuOpenId === m.member_id ? 100 : 1, background: "var(--surface)" }}>
+                  <div key={m.member_id} className="staff-row" style={{ borderBottom: i === filtered.length - 1 ? "none" : "1px solid var(--border)", background: "var(--surface)" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", overflow: "hidden" }}>
                       {m.profile_photo_url ? <img src={m.profile_photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : m.full_name.slice(0, 2).toUpperCase()}
                     </div>
@@ -199,26 +195,20 @@ export default function StaffTechniciansPage() {
                     <button onClick={() => { setEditingMember(m); setWizardOpen(true); }} style={{
                       fontSize: 12, fontWeight: 600, color: "var(--brand)", background: "none", border: "none", cursor: "pointer",
                     }}>View setup</button>
-                    <div style={{ position: "relative", zIndex: menuOpenId === m.member_id ? 110 : 1 }}>
-                      <button aria-label="More actions" onClick={() => setMenuOpenId(menuOpenId === m.member_id ? null : m.member_id)} style={{
-                        width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
-                        background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", borderRadius: 6,
-                      }}><MoreVertical size={16}/></button>
-                      {menuOpenId === m.member_id && (
-                        <div style={{ position: "absolute", right: 0, top: 36, zIndex: 1000, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "var(--shadow-lg)", minWidth: 210, padding: 4 }}>
-                          {!m.login_active && (
-                            <button onClick={() => handleSendInvite(m)} style={menuItemStyle}>
-                              {m.email ? (m.password_generated ? "Resend app invitation" : "Send app invitation") : "Add email to send invitation"}
-                            </button>
-                          )}
-                          {m.status === "active" ? (
-                            <button onClick={() => handleDeactivate(m.member_id)} style={menuItemStyle}>Disable access</button>
-                          ) : (
-                            <button onClick={() => handleActivate(m.member_id)} style={menuItemStyle}>Restore access</button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <ActionMenu
+                      size="xs"
+                      items={[
+                        !m.login_active && {
+                          label: m.email
+                            ? (m.password_generated ? "Resend app invitation" : "Send app invitation")
+                            : "Add email to send invitation",
+                          onClick: () => handleSendInvite(m),
+                        },
+                        m.status === "active"
+                          ? { label: "Disable access", onClick: () => handleDeactivate(m.member_id), variant: "danger", divider: !m.login_active }
+                          : { label: "Restore access", onClick: () => handleActivate(m.member_id), divider: !m.login_active },
+                      ]}
+                    />
                   </div>
                 );
               })}
@@ -308,7 +298,3 @@ export default function StaffTechniciansPage() {
   );
 }
 
-const menuItemStyle: React.CSSProperties = {
-  display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13,
-  color: "var(--text-primary)", background: "none", border: "none", cursor: "pointer", borderRadius: 6,
-};
