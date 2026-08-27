@@ -17,6 +17,7 @@ import {
   type ProviderTeamMember, type StaffOverview, type TeamDirectoryStaffRow,
 } from "../../../../../lib/api";
 import { useApi } from "../../../../../hooks/useApi";
+import { topupApi } from "../../../../../lib/api-topup";
 
 const TABS = [
   ["overview", "Overview"], ["capabilities", "Capabilities"], ["availability", "Availability"],
@@ -67,6 +68,14 @@ function TeamDirectory() {
   }), [search, role, status, availability, readiness, cursor, limit]);
   const directory = useApi(loader, [search, role, status, availability, readiness, cursor, limit]);
   const funding = useApi(useCallback(() => activationPaymentApi.getFundingQuote(), []), []);
+  // Seats are bought, not granted, so the roster is gated on the plan. This is
+  // the same call the header credit pill makes: balance, seats and buyable
+  // plans in one response.
+  const topup = useApi(useCallback(() => topupApi.status(), []), []);
+  const seatsOwned = topup.data?.entitled_seats ?? null;
+  const noPlan = seatsOwned === 0;
+  const seatsFull = seatsOwned != null && (topup.data?.available_seats ?? 0) <= 0 && !noPlan;
+  const creditOut = (topup.data?.credit_balance ?? 1) <= 0;
   const hasFilters = Boolean(searchInput || role || status || availability || readiness);
   const clearFilters = () => { setSearchInput(""); setRole(""); setStatus(""); setAvailability(""); setReadiness(""); };
 
@@ -86,8 +95,25 @@ function TeamDirectory() {
   return <TenantLayout activeNav="provider-staff"><PageShell>
     <PageHeader title="Staff & technicians"
       description="One operational roster for setup readiness, dispatch capacity, staff access and service delivery."
-      actions={<><Button variant="secondary" leftIcon={<Download size={14} />} disabled={!directory.data?.staff.length} onClick={exportPage}>Export page</Button><Button variant="primary" leftIcon={<UserPlus size={14} />} onClick={() => setAddOpen(true)}>Add team member</Button></>} />
+      actions={<><Button variant="secondary" leftIcon={<Download size={14} />} disabled={!directory.data?.staff.length} onClick={exportPage}>Export page</Button><Button variant="primary" leftIcon={<UserPlus size={14} />} disabled={noPlan || seatsFull} onClick={() => setAddOpen(true)}>Add team member</Button></>} />
     {directory.error && <Alert tone="danger">{directory.error}</Alert>}
+    {/* The roster stays visible without a plan so the provider can see what a
+        plan unlocks and reach the purchase -- it is locked, not hidden. */}
+    {noPlan && <Alert tone="warning">
+      <strong>Buy a top-up plan to add technicians.</strong>{" "}
+      A plan grants the technician seats that decide how many jobs you can run in one slot.{" "}
+      <Link href="/home-services/finance">Buy a plan</Link>
+    </Alert>}
+    {seatsFull && <Alert tone="warning">
+      All {seatsOwned} purchased seat{seatsOwned === 1 ? "" : "s"} are in use.{" "}
+      <Link href="/home-services/finance">Buy another plan</Link> to add more technicians.
+    </Alert>}
+    {creditOut && !noPlan && <Alert tone="danger">
+      <strong>Your team is suspended — the workspace is out of credit.</strong>{" "}
+      Technicians are set inactive and cannot be assigned work. They are restored
+      automatically the moment you top up.{" "}
+      <Link href="/home-services/finance">Add credit</Link>
+    </Alert>}
     <section className="team-kpis" aria-label="Team summary">{directory.loading || !summary
       ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} height={104} />) : <>
         <StatCard icon={Users} label="Total team" value={summary.total_team} tone="brand" />
@@ -97,7 +123,7 @@ function TeamDirectory() {
         <StatCard icon={AlertTriangle} label="Needs setup" value={summary.setup_incomplete} tone="warning" />
         <StatCard icon={CalendarClock} label="Schedule conflicts" value={summary.schedule_conflicts} tone="danger" />
       </>}</section>
-    <div className="team-insight-grid"><Card><div className="team-insight"><span className="team-insight-icon"><ShieldCheck size={18} /></span><div><strong>Setup and dispatch use this same roster</strong><p>Services, admin-managed skills and staff schedules resolve from the records used by onboarding and job assignment.</p></div><Link href="/tenant/home-services/setup/staff">Review setup mapping</Link></div></Card><Card><div className="team-insight"><span className="team-insight-icon"><Wallet size={18} /></span><div><strong>Workforce funding impact</strong><p>{funding.loading ? "Checking finance policy…" : fundingQuote ? `${fundingQuote.qualifying_technician_count ?? 0} qualifying technicians · ${money(fundingQuote.deposit_required)} deposit required` : "Finance policy is shown in the canonical Home Services finance workspace."}</p></div><Link href="/home-services/finance">Open finance</Link></div></Card></div>
+    <div className="team-insight-grid"><Card><div className="team-insight"><span className="team-insight-icon"><ShieldCheck size={18} /></span><div><strong>Setup and dispatch use this same roster</strong><p>Services, admin-managed skills and staff schedules resolve from the records used by onboarding and job assignment.</p></div><Link href="/tenant/home-services/setup/staff">Review setup mapping</Link></div></Card><Card><div className="team-insight"><span className="team-insight-icon"><Wallet size={18} /></span><div><strong>Workforce funding impact</strong><p>{funding.loading ? "Checking finance policy…" : fundingQuote ? `${fundingQuote.qualifying_technician_count ?? 0} qualifying technicians · ${seatsOwned ?? 0} seat${seatsOwned === 1 ? "" : "s"} purchased` : "Finance policy is shown in the canonical Home Services finance workspace."}</p></div><Link href="/home-services/finance">Open finance</Link></div></Card></div>
     <Card padding="none"><div className="team-toolbar"><label className="team-search"><Search size={15} /><input aria-label="Search team" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search name, email, phone or designation" /></label><Filter label="Role" value={role} onChange={setRole} options={directory.data?.available_filters.role ?? ["technician", "staff", "manager"]} /><Filter label="Status" value={status} onChange={setStatus} options={directory.data?.available_filters.status ?? ["active", "inactive"]} /><Filter label="Availability" value={availability} onChange={setAvailability} options={directory.data?.available_filters.availability ?? ["available", "busy", "offline", "unavailable"]} /><Filter label="Readiness" value={readiness} onChange={setReadiness} options={directory.data?.available_filters.readiness ?? ["ready", "needs_setup", "invitation_pending", "access_disabled"]} />{hasFilters && <Button variant="ghost" size="sm" leftIcon={<FilterX size={14} />} onClick={clearFilters}>Clear</Button>}</div>
       <div className="team-result-line"><span>{directory.loading ? "Loading roster…" : `${directory.data?.pagination.total ?? 0} team member${directory.data?.pagination.total === 1 ? "" : "s"}`}</span><span>Live capacity · {directory.data?.generated_at ? dateText(directory.data.generated_at) : "—"}</span></div>
       {directory.loading ? <div className="team-loading"><Skeleton height={56} /><Skeleton height={56} /><Skeleton height={56} /></div> : !directory.data?.staff.length ? <EmptyTeam filtered={hasFilters} onClear={clearFilters} onAdd={() => setAddOpen(true)} /> : <div className="team-table-wrap"><TableSurface className="team-table"><thead><tr><th>Team member</th><th>Role</th><th>Live availability</th><th>Today</th><th>Readiness</th><th></th></tr></thead><tbody>{directory.data.staff.map(row => <TeamRow key={row.staff_id} row={row} onOpen={() => router.push(`/home-services/team/${row.staff_id}`)} />)}</tbody></TableSurface></div>}

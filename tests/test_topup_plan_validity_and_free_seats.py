@@ -59,18 +59,24 @@ class TestOnlyUnspentCreditLapses:
         assert self._withdraw(Decimal("500"), Decimal("900"), Decimal("100")) == Decimal("0")
 
 
-class TestFreeStarterSeat:
-    def test_a_workspace_can_reach_its_first_job_without_paying(self):
+class TestSeatsAreBoughtNotGranted:
+    def test_no_free_starter_seat(self):
         from app.engines.vertical_catalog.seat_enforcement import FREE_STARTER_SEATS
-        # Activation stopped blocking on purchase; without an allowance the
-        # dead end would simply move to the Add Technician button.
-        assert FREE_STARTER_SEATS >= 1
+        # Product decision: a technician seat is bought. The Team surface stays
+        # VISIBLE without a plan so the purchase is reachable, but it is locked.
+        assert FREE_STARTER_SEATS == 0
 
-    def test_the_allowance_is_a_floor_not_a_bonus(self):
+    def test_the_allowance_never_inflates_a_purchase(self):
         from app.engines.vertical_catalog.seat_enforcement import FREE_STARTER_SEATS
-        # A 3-seat plan must grant 3 seats, not 3 + the freebie.
-        purchased = 3
-        assert max(purchased, FREE_STARTER_SEATS) == 3
+        # A 3-seat plan must grant exactly 3 seats.
+        assert max(3, FREE_STARTER_SEATS) == 3
+
+    def test_the_team_page_locks_rather_than_hides(self):
+        from pathlib import Path
+        src = Path("frontend/tenant-portal/app/(tenant)/home-services/team/"
+                   "[[...staffId]]/page.tsx").read_text(encoding="utf-8")
+        assert "Buy a top-up plan to add technicians" in src
+        assert "disabled={noPlan || seatsFull}" in src
 
 
 class TestActivationDoesNotBlockOnPurchase:

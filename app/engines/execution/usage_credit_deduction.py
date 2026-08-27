@@ -211,6 +211,16 @@ async def deduct_for_completed_job(
     )
     db.add(ledger)
     await db.flush()
+
+    # A deduction can be what takes the workspace to zero, so the team state is
+    # reconciled here rather than waiting for the next sweep -- otherwise a
+    # provider keeps assigning work they can no longer pay commission on.
+    try:
+        from app.engines.vertical_catalog.seat_enforcement import sync_team_credit_suspension
+        await sync_team_credit_suspension(db, tenant_id)
+    except Exception as exc:  # noqa: BLE001 -- never undo a real deduction
+        logger.warning("team.credit_sync_failed", tenant_id=str(tenant_id), error=str(exc))
+
     return {**ledger.to_dict(), "deduction_status": "deducted"}
 
 

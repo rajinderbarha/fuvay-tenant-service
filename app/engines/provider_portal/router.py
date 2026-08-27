@@ -271,11 +271,16 @@ async def create_team_member(
     # bookable per slot -- so this is the capacity limit, not just a billing
     # one. Checked only for technician-type members: an owner or dispatcher
     # occupies no seat because they take no job.
+    # Uses the SHARED predicate. Lowercasing the designation and comparing it
+    # to snake_case keys let every MULTI-WORD title through: a "Senior
+    # Technician" or "Field Engineer" folded to "senior technician", matched
+    # nothing, and was created without consuming a seat -- so the seat limit
+    # could be walked straight past. `member_type` counts too, so a technician
+    # whose provider left the free-text designation blank is caught as well.
     from app.engines.vertical_catalog.seat_enforcement import assert_seat_available
-    from app.engines.home_service_assignment.constants import ELIGIBLE_DESIGNATIONS
+    from app.engines.home_service_assignment.eligibility import is_technician_role
 
-    _desig = (payload.get("designation") or "").strip().lower()
-    if _desig in ELIGIBLE_DESIGNATIONS:
+    if is_technician_role(payload.get("designation"), payload.get("member_type")):
         await assert_seat_available(db, tenant_id)
 
     new_id = str(uuid.uuid4())
@@ -1810,9 +1815,12 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "message": "Set at least one open availability slot to receive bookings.",
             "severity": "critical", "route": "/home-services/availability"})
 
+    # `security_deposit_paid` / `security_deposit_amount` were dropped with the
+    # deposit (migration 317/318). Selecting them raised UndefinedColumnError,
+    # so recomputing bookability 500'd and a provider's visible/bookable state
+    # was frozen at whatever had last been stored.
     billing_row = (await db.execute(
-        text("SELECT credit_balance, security_deposit_paid, security_deposit_amount "
-             "FROM tenant_billing WHERE tenant_id=:tid"),
+        text("SELECT credit_balance FROM tenant_billing WHERE tenant_id=:tid"),
         {"tid": str(tid)},
     )).fetchone()
     credit_balance = float(billing_row.credit_balance) if billing_row and billing_row.credit_balance is not None else 0.0
@@ -1824,15 +1832,9 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "message": "Add usage credits to your account to receive bookings.",
             "severity": "critical", "route": "/home-services/finance?tab=usage-credits"})
 
-    deposit_required = bool(billing_row) and billing_row.security_deposit_amount and float(billing_row.security_deposit_amount) > 0
-    deposit_satisfied = (not deposit_required) or bool(billing_row and billing_row.security_deposit_paid)
-    if deposit_satisfied:
-        passed.append("security_deposit_satisfied")
-    else:
-        bookability_blockers.append({
-            "code": "SECURITY_DEPOSIT_REQUIRED",
-            "message": "Pay the required security deposit to become bookable.",
-            "severity": "critical", "route": "/home-services/finance?tab=security-deposit"})
+    # The deposit no longer exists, so it can no longer block bookability. The
+    # credit balance checked just above is what stands in its place.
+    deposit_satisfied = True
 
     is_visible = tenant_active and profile_complete and published_count > 0
     is_bookable = is_visible and priced_count > 0 and active_areas > 0 \

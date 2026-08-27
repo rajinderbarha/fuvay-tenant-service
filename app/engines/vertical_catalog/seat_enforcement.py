@@ -37,18 +37,14 @@ from app.exceptions import ServiceOSException
 
 logger = structlog.get_logger("vertical_catalog.seat_enforcement")
 
-#: Seats every Home Services workspace gets without buying a plan.
+#: Seats a Home Services workspace gets without buying a plan.
 #:
-#: Activation no longer blocks on buying capacity -- the top-up plan is an
-#: OFFER made during onboarding. That offer is only real if a provider can
-#: reach their first job without it: with a hard limit of zero purchased
-#: seats, "optional" would simply move the dead end from the activation gate
-#: to the Add Technician button. Revenue is commission on completed work, so a
-#: provider who cannot start earns nothing for anyone.
-#:
-#: Beyond this allowance a plan is required, and the credit floor still stops
-#: new bookings once the balance runs low.
-FREE_STARTER_SEATS = 1
+#: Zero, by product decision: a technician seat is bought, not granted. The
+#: Team surface stays VISIBLE with no plan -- so the provider can see what a
+#: plan unlocks and reach the purchase -- but it is locked until one is bought.
+#: Activation itself still does not block on payment; the wall is here, at the
+#: point where capacity is actually consumed, and it says how to get past it.
+FREE_STARTER_SEATS = 0
 
 #: Job states that occupy a technician. The seat frees at `work_done` — see
 #: the module docstring for why that boundary and not `completed`.
@@ -212,3 +208,56 @@ async def assert_booking_allowed(db: AsyncSession, tenant_id: uuid.UUID) -> None
             resolution="Buy a top-up plan to resume accepting bookings.",
             context=state,
         )
+
+
+# ── 4. Credit suspension ─────────────────────────────────────────────────────
+async def sync_team_credit_suspension(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Suspend the team when credit runs out; restore it when credit returns.
+
+    Called after anything that moves the balance. Idempotent: running it twice
+    changes nothing the second time, and running it late reaches the same state
+    as running it on time, because it is driven by the balance rather than by
+    the event that changed it.
+
+    Only members this function suspended are restored. `credit_suspended_at`
+    is what separates them from someone the provider deactivated deliberately,
+    who is left exactly as they were set.
+    """
+    balance = (await db.execute(
+        text("SELECT COALESCE(credit_balance, 0) FROM tenant_billing WHERE tenant_id = :tid"),
+        {"tid": str(tenant_id)},
+    )).scalar()
+    if balance is None:
+        return {"action": "no_billing_row", "suspended": 0, "restored": 0}
+
+    exhausted = Decimal(str(balance)) <= 0
+    if exhausted:
+        # Only members who are active RIGHT NOW; someone already inactive is
+        # left alone so restoring cannot switch on a person who was off.
+        result = await db.execute(text(
+            "UPDATE provider_team_members "
+            "SET status = 'inactive', credit_suspended_at = now(), updated_at = now() "
+            "WHERE tenant_id = CAST(:tid AS uuid) AND deleted_at IS NULL "
+            "  AND status = 'active' AND credit_suspended_at IS NULL "
+            "RETURNING id"
+        ), {"tid": str(tenant_id)})
+        n = len(result.fetchall())
+        if n:
+            logger.info("team.credit_suspended", tenant_id=str(tenant_id), members=n,
+                        balance=float(balance))
+        return {"action": "suspended", "suspended": n, "restored": 0,
+                "credit_balance": float(balance)}
+
+    result = await db.execute(text(
+        "UPDATE provider_team_members "
+        "SET status = 'active', credit_suspended_at = NULL, updated_at = now() "
+        "WHERE tenant_id = CAST(:tid AS uuid) AND deleted_at IS NULL "
+        "  AND credit_suspended_at IS NOT NULL "
+        "RETURNING id"
+    ), {"tid": str(tenant_id)})
+    n = len(result.fetchall())
+    if n:
+        logger.info("team.credit_restored", tenant_id=str(tenant_id), members=n,
+                    balance=float(balance))
+    return {"action": "restored", "suspended": 0, "restored": n,
+            "credit_balance": float(balance)}

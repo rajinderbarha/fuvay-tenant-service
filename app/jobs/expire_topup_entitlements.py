@@ -29,17 +29,35 @@ async def run_once() -> dict:
     from app.database import get_session_factory
     from app.engines.vertical_catalog import topup_entitlement_service as entitlements
 
+    from sqlalchemy import text
+    from app.engines.vertical_catalog.seat_enforcement import sync_team_credit_suspension
+
     async with get_session_factory()() as db:
         result = await entitlements.expire_due(db)
+
+        # Expiry can withdraw credit, and a balance can also move by paths that
+        # do not reconcile inline (admin adjustment, settlement). This is the
+        # backstop that makes team state converge either way.
+        suspended = restored = 0
+        for (tid,) in (await db.execute(text(
+            "SELECT tenant_id FROM tenant_billing WHERE vertical_key = 'home_services'"
+        ))).all():
+            try:
+                r = await sync_team_credit_suspension(db, tid)
+                suspended += r["suspended"]
+                restored += r["restored"]
+            except Exception as exc:  # noqa: BLE001 -- one tenant must not stop the sweep
+                logger.warning("team.credit_sync_failed", tenant_id=str(tid), error=str(exc))
+
         await db.commit()
-        return result
+        return {**result, "team_suspended": suspended, "team_restored": restored}
 
 
 async def background_loop() -> None:
     while True:
         try:
             result = await run_once()
-            if result["expired"]:
+            if result["expired"] or result["team_suspended"] or result["team_restored"]:
                 logger.info("topup_entitlements.swept", **result)
         except asyncio.CancelledError:
             raise

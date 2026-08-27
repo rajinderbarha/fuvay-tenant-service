@@ -545,6 +545,15 @@ async def confirm_activation_payment_webhook(
         billing.credit_balance = Decimal(str(billing.credit_balance or 0)) + Decimal(str(credited))
         billing.updated_at = utcnow()
 
+        # Paying restores a team suspended for lack of credit, in the same
+        # transaction as the credit itself -- the provider should not have to
+        # wait for a sweep to be able to work again.
+        try:
+            from app.engines.vertical_catalog.seat_enforcement import sync_team_credit_suspension
+            await sync_team_credit_suspension(db, tenant_id)
+        except Exception:  # noqa: BLE001 -- never void a captured payment
+            pass
+
         from app.engines.tenant_engine.models import UsageCreditLedger
         db.add(UsageCreditLedger(
             tenant_id=tenant_id, event_type="activation_credit_package_purchase",
