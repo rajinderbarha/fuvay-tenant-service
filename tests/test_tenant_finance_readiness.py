@@ -34,12 +34,16 @@ class TestRouterStructure:
         assert "from app.engines.package_commerce" not in c
         assert "_resolve_commission_rate" not in c
 
-    def test_uses_live_tenant_billing_for_deposit_and_credits(self):
+    def test_uses_live_tenant_billing_for_credits(self):
+        """The deposit fields went with the deposit (migration 317/318).
+
+        `tenant_billing.credit_balance` is the one live number this surface
+        reads now; capacity and the booking floor are what replaced collateral.
+        """
         c = _read(ROUTER)
         assert "tenant_billing" in c
-        assert "security_deposit_amount" in c
-        assert "security_deposit_paid" in c
         assert "credit_balance" in c
+        assert "security_deposit" not in c
 
     def test_no_payout_or_settlement_fields_exposed(self):
         c = _read(ROUTER)
@@ -99,11 +103,10 @@ class TestModel:
         block_start = c.index("class TenantFinanceReadiness")
         block_end = c.index("class TenantLimits")
         block = c[block_start:block_end]
-        # Deposit readiness is now a required activation snapshot and is
-        # intentionally part of this model. Job-payment payout/settlement
-        # concepts remain forbidden because customers pay providers directly.
-        assert "security_deposit_paid" in block
-        assert "security_deposit_amount" in block
+        # The deposit was removed in migration 317/318, so its readiness
+        # snapshot is gone too. Job-payment payout/settlement concepts remain
+        # forbidden because customers pay providers directly.
+        assert "security_deposit" not in block
         for forbidden in ("payout", "settlement", "bank_account"):
             assert forbidden not in block.lower()
 

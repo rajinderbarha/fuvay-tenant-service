@@ -855,180 +855,23 @@ function MonetizationTab() {
   );
 }
 
-// ── Provider Activation Requirement + Top-up Plans ──────────────────────────
-// Lives under Credits & Top-ups > "Top-up Plans" sub-tab. Two genuinely
-// separate things, both on HomeServicesActivationFinancePolicy (NOT
-// VerticalMonetizationPolicy): (1) the ONE-TIME starter credit purchase a
-// tenant must clear to activate as a provider (read by
-// vertical_catalog/activation.py, activation_payment_service.py,
-// tenant_finance_readiness_router.py -- genuinely load-bearing, cannot be
-// removed), and (2) the REPEATABLE top-up plans a tenant can buy any time,
-// any number of times (backed by CreditPackage, platform_commerce engine).
-// Deliberately called "Plans" in the UI, not "Packages" -- per explicit user
-// preference, matches how they think about tenant-facing pricing tiers.
+// ── Top-up Plans ────────────────────────────────────────────────────────────
+// Lives under Credits & Top-ups > "Top-up Plans" sub-tab.
+//
+// The "Provider Activation Requirement" card that used to sit above this was
+// removed: activation no longer blocks on buying anything, so a one-time
+// starter purchase an admin could configure no longer had a job. A provider is
+// offered a top-up plan during onboarding and from their header, and that plan
+// is the only thing sold. The finance policy row still carries the credit
+// FLOOR and warning threshold, which are what actually protect the platform.
 
 function TopupPackagesPanel() {
   const { toasts, push, remove } = useToasts();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Toaster toasts={toasts} onRemove={remove} />
-      <TopupPlanSection onToast={push} />
       <TopupPackagesSection onToast={push} />
     </div>
-  );
-}
-
-function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastItem["variant"]) => void }) {
-  const [showDrawer, setShowDrawer] = useState(false);
-  const [form, setForm] = useState<Partial<TopupPlan>>({});
-  const [reason, setReason] = useState("");
-  const [errors, setErrors] = useState<string[]>([]);
-
-  const currentApi = useApi(useCallback(() => homeServicesTopupPlanApi.getCurrent(), []));
-  const draftApi = useApi(useCallback(() => homeServicesTopupPlanApi.getDraft(), []));
-  const saveDraftAction = useAction((p: Partial<TopupPlan>) => homeServicesTopupPlanApi.saveDraft(p));
-  const publishAction = useAction((r: string) => homeServicesTopupPlanApi.publish(r));
-  const discardDraftAction = useAction(() => homeServicesTopupPlanApi.discardDraft());
-
-  const current = currentApi.data as TopupPlan | null;
-  const draft = draftApi.data as TopupPlan | null;
-
-  function startDraft() {
-    setForm(draft ?? current ?? {
-      credit_package_base_amount: 1000, credit_package_gst_percent: 18,
-      credited_wallet_amount: 5000, currency: "INR",
-    });
-    setErrors([]);
-    setShowDrawer(true);
-  }
-
-  async function validateNow(): Promise<boolean> {
-    const v = await homeServicesTopupPlanApi.validate(form);
-    setErrors(v.errors);
-    if (v.errors.length > 0) onToast("Fix validation errors first.", "warning");
-    return v.errors.length === 0;
-  }
-
-  async function saveDraft() {
-    if (!(await validateNow())) return;
-    const r = await saveDraftAction.execute(form);
-    if (r) { draftApi.refetch(); onToast("Top-up plan draft saved."); }
-    else onToast(saveDraftAction.error ?? "Failed to save draft.", "danger");
-  }
-
-  async function confirmPublish() {
-    if (!reason.trim()) return;
-    if (!(await validateNow())) return;
-    // Publish only takes a reason -- it publishes whatever draft is already
-    // saved server-side, so on-screen edits that were never sent via
-    // "Save Draft" were silently lost (or publish 404'd with no draft to
-    // publish at all). Always sync the form first, then publish it.
-    const saved = await saveDraftAction.execute(form);
-    if (!saved) {
-      onToast(saveDraftAction.error ?? "Failed to save your changes before publishing.", "danger");
-      return;
-    }
-    const r = await publishAction.execute(reason.trim());
-    if (r) {
-      setShowDrawer(false); setReason(""); currentApi.refetch(); draftApi.refetch();
-      onToast("Top-up plan published — now live.");
-    } else {
-      onToast(publishAction.error ?? "Failed to publish.", "danger");
-    }
-  }
-
-  async function discardDraft() {
-    const r = await discardDraftAction.execute();
-    if (r) { setShowDrawer(false); draftApi.refetch(); onToast("Draft discarded."); }
-    else onToast(discardDraftAction.error ?? "Failed to discard draft.", "danger");
-  }
-
-  const gstAmount = current ? Math.round((current.credit_package_base_amount * current.credit_package_gst_percent) / 100) : 0;
-  const nothingRequired = current && !current.initial_credit_purchase_required;
-
-  return (
-    <Card padding={16}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-          Provider Activation Requirement
-          {draft && <Badge variant="warning">Draft v{draft.version_number} pending</Badge>}
-        </p>
-        <div style={{ display: "flex", gap: 6 }}>
-          {draft && (
-            <Btn variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={discardDraft} disabled={discardDraftAction.loading}
-              style={{ color: "var(--danger-text)" }}>
-              {discardDraftAction.loading ? "Deleting…" : "Delete Draft"}
-            </Btn>
-          )}
-          <Btn variant="ghost" size="sm" icon={<Sparkles size={14} />} onClick={startDraft}>{draft ? "Edit Draft" : "Edit"}</Btn>
-        </div>
-      </div>
-
-      {nothingRequired ? (
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-          No starter purchase required — providers can activate immediately. Ongoing credit purchases
-          are the Top-up Plans below.
-        </p>
-      ) : (
-        <>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-            One-time requirement to activate as a provider — separate from the repeatable Top-up Plans below.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, fontSize: 12 }}>
-            {current?.initial_credit_purchase_required && (
-              <>
-                <KV label="Starter purchase amount" value={money(current.credit_package_base_amount)} />
-                <KV label="GST" value={`${current.credit_package_gst_percent}% (${money(gstAmount)})`} />
-                <KV label="Credits granted" value={units(current.credited_wallet_amount)} />
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      {showDrawer && (
-        <Modal open onClose={() => setShowDrawer(false)} title="Edit Activation Requirement" size="md">
-          <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 16 }}>Starter credit purchase</label>
-          <div style={{ display: "flex", gap: 8, margin: "4px 0 10px" }}>
-            <Btn variant={form.initial_credit_purchase_required !== false ? "primary" : "ghost"}
-              onClick={() => setForm({ ...form, initial_credit_purchase_required: true })}>Required</Btn>
-            <Btn variant={form.initial_credit_purchase_required === false ? "primary" : "ghost"}
-              onClick={() => setForm({ ...form, initial_credit_purchase_required: false })}>Not required</Btn>
-          </div>
-          {form.initial_credit_purchase_required !== false && (
-            <>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Starter purchase amount (₹)</label>
-              <Input value={String(form.credit_package_base_amount ?? "")}
-                onChange={v => setForm({ ...form, credit_package_base_amount: Number(v), credited_wallet_amount: Number(v) })} />
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 10 }}>GST %</label>
-              <Input value={String(form.credit_package_gst_percent ?? "")}
-                onChange={v => setForm({ ...form, credit_package_gst_percent: Number(v) })} />
-            </>
-          )}
-          {errors.length > 0 && errors.map(e => <p key={e} style={{ fontSize: 11, color: "var(--danger-text)", margin: "4px 0 0" }}>{e}</p>)}
-          <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-            <Btn variant="secondary" onClick={validateNow}>Validate</Btn>
-            <Btn variant="secondary" onClick={saveDraft} disabled={saveDraftAction.loading}>
-              {saveDraftAction.loading ? "Saving…" : "Save Draft"}
-            </Btn>
-            {draft && (
-              <Btn variant="ghost" onClick={discardDraft} disabled={discardDraftAction.loading}
-                style={{ color: "var(--danger-text)" }}>
-                {discardDraftAction.loading ? "Discarding…" : "Discard Draft"}
-              </Btn>
-            )}
-          </div>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Publish reason (required)</label>
-          <Input value={reason} onChange={setReason} />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-            <Btn variant="ghost" onClick={() => setShowDrawer(false)}>Cancel</Btn>
-            <Btn variant="primary" disabled={!reason.trim() || errors.length > 0} onClick={confirmPublish}>
-              {publishAction.loading ? "Publishing…" : "Review & Publish"}
-            </Btn>
-          </div>
-        </Modal>
-      )}
-    </Card>
   );
 }
 

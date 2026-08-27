@@ -72,9 +72,15 @@ async def _policy(db: AsyncSession):
     Returns None rather than raising: a missing policy must not make the
     platform unusable, and each caller decides whether to fail open or closed.
     """
+    # Scoped to Home Services. `is_current` is unique PER VERTICAL, so an
+    # unfiltered "WHERE is_current = true LIMIT 1" could return another
+    # vertical's policy -- and with it another vertical's booking floor.
     return (await db.execute(text(
-        "SELECT credit_warning_threshold, credit_booking_floor, seat_accrual_mode "
-        "FROM home_services_activation_finance_policies WHERE is_current = true LIMIT 1"
+        "SELECT p.credit_warning_threshold, p.credit_booking_floor, p.seat_accrual_mode "
+        "FROM home_services_activation_finance_policies p "
+        "JOIN verticals v ON v.id = p.vertical_id "
+        "WHERE p.is_current = true AND v.key = 'home_services' "
+        "ORDER BY p.version_number DESC LIMIT 1"
     ))).fetchone()
 
 

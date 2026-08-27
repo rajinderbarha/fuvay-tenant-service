@@ -275,10 +275,13 @@ class TenantHomeServicesFinanceService:
         )).scalar() or 0
 
         threshold = DEFAULT_LOW_USAGE_CREDIT_THRESHOLD
+        # The one-time starter purchase is retired. Activation stopped blocking
+        # on buying anything, and the admin console that configured it was
+        # removed with it, so honouring the stored flag would have left the
+        # requirement switched on with no way to switch it off. What protects
+        # the platform is the credit FLOOR, applied when a booking is actually
+        # taken. The column stays for historical policy versions.
         initial_purchase_required = False
-        if policy and policy.initial_credit_purchase_required:
-            initial_purchase_required = available < _d(policy.credit_package_base_amount) and \
-                not await self._has_any_credit_purchase()
 
         wallet_status = "active"
         if initial_purchase_required:

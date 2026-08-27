@@ -135,3 +135,37 @@ class TestFinanceTabUsesOneCatalogue:
         assert "GST %" in src
         assert "Validity (days)" in src
         assert "Technician seats" in src
+
+
+class TestActivationRequirementRetired:
+    """The one-time starter purchase is gone; the plan is the only thing sold."""
+
+    def test_the_admin_card_is_removed(self):
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(
+            encoding="utf-8")
+        # Match what the card RENDERED, not the phrase -- a comment in the file
+        # still explains why the card was removed.
+        assert "Starter purchase amount" not in src
+        assert "One-time requirement to activate as a provider" not in src
+        assert "Edit Activation Requirement" not in src
+        assert "TopupPlanSection" not in src
+        # The plan catalogue is what remains.
+        assert "TopupPackagesSection" in src
+
+    def test_tenant_wallet_never_demands_a_starter_purchase(self):
+        import inspect
+        from app.engines.finance_hub.tenant_hs_finance_service import TenantHomeServicesFinanceService
+        src = inspect.getsource(TenantHomeServicesFinanceService)
+        # Honouring the stored flag would have left the requirement switched on
+        # with no admin console left to switch it off.
+        assert "if policy and policy.initial_credit_purchase_required:" not in src
+
+    def test_the_finance_policy_read_is_scoped_to_its_vertical(self):
+        import inspect
+        from app.engines.vertical_catalog import seat_enforcement
+        src = inspect.getsource(seat_enforcement._policy)
+        # `is_current` is unique PER VERTICAL, so an unfiltered read could
+        # return another vertical's booking floor.
+        assert "home_services" in src
+        assert "verticals" in src
