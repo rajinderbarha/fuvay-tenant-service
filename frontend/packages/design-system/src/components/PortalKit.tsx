@@ -26,9 +26,11 @@
 import React, { useState } from "react";
 import {
   Plus, Pencil, Trash2, Eye, X, CheckCircle2, AlertTriangle,
-  XCircle, Info, TrendingUp, TrendingDown, Minus, ChevronRight,
-  MoreHorizontal,
+  XCircle, Info, TrendingUp, TrendingDown, Minus, ChevronLeft, ChevronRight,
+  ChevronsLeft, ChevronsRight, MoreHorizontal, Home,
 } from "lucide-react";
+export { Card as SurfaceCard } from "./Card";
+export { PageHeader as PkSectionHeader } from "./PageShell";
 
 // ── Btn ───────────────────────────────────────────────────────────────────
 export type PkBtnVariant = "primary" | "secondary" | "ghost" | "danger" | "success" | "warning";
@@ -97,7 +99,7 @@ export function IconBtn({
   };
   return (
     <button
-      onClick={onClick} disabled={disabled} title={tooltip}
+      type="button" onClick={onClick} disabled={disabled} title={tooltip} aria-label={tooltip ?? "Action"}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         width: dim, height: dim, borderRadius: rad,
@@ -188,23 +190,6 @@ export function PkBadge({ children, variant, tone, size = "md", dot }: {
       {dot && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", flexShrink: 0 }}/>}
       {children}
     </span>
-  );
-}
-
-// ── SurfaceCard (distinct from the package's own richer `Card`) ─────────
-export function SurfaceCard({ children, style = {}, padding = 20, hover = false, onClick }: {
-  children: React.ReactNode; style?: React.CSSProperties; padding?: number;
-  hover?: boolean; onClick?: () => void;
-}) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div className="ds-surface-card" onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
-      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl, 1rem)",
-      padding, boxShadow: hov && hover ? "var(--shadow-md)" : "var(--shadow-sm)",
-      transform: hov && hover ? "translateY(-1px)" : "none",
-      borderColor: hov && hover ? "var(--border-strong)" : "var(--border)",
-      transition: "all 0.15s ease", cursor: onClick ? "pointer" : undefined, ...style,
-    }}>{children}</div>
   );
 }
 
@@ -505,54 +490,31 @@ export function PkToaster({ toasts, onRemove }: { toasts: PkToastItem[]; onRemov
 }
 
 // ── MetricCard (distinct from the package's own `StatCard`) ─────────────
+/**
+ * MetricCard — kept only as the name 13 admin pages already import (aliased
+ * `StatCard`). It renders the ONE canonical tile below.
+ *
+ * It used to be a second, visually different KPI card: 18px padding vs 16,
+ * gap 12 vs 8, a bordered 36px icon chip vs a 32px filled one, and `alert`
+ * repainting the whole card red. Two cards meant every admin page looked
+ * like whichever one its author happened to import. `alert` now maps to
+ * tone="danger", which colours the value — the same signal, rendered once.
+ */
 export function MetricCard({ label, value, change, trend, icon, onClick, alert, accent }: {
   label: string; value: string | number; change?: string; trend?: "up" | "down" | "neutral";
   icon?: React.ReactNode; onClick?: () => void; alert?: boolean; accent?: string;
 }) {
-  const [hov, setHov] = useState(false);
-  const tC = trend === "up" ? "var(--success-text)" : trend === "down" ? "var(--danger-text)" : "var(--text-tertiary)";
-  const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
-  const iconBg = alert ? "var(--danger-border)" : accent ? `${accent}18` : "var(--accent-muted)";
-  const iconColor = alert ? "var(--danger-text)" : accent ?? "var(--accent)";
   return (
-    <div className="ds-metric-card" onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} style={{
-      background: alert ? "var(--danger-bg)" : "var(--surface)",
-      border: `1px solid ${alert ? "var(--danger-border)" : hov && onClick ? "var(--border-strong)" : "var(--border)"}`,
-      borderRadius: "var(--radius-xl, 1rem)", padding: "18px 20px",
-      boxShadow: hov && onClick ? "var(--shadow-md)" : "var(--shadow-sm)",
-      display: "flex", flexDirection: "column", gap: 12,
-      cursor: onClick ? "pointer" : undefined,
-      transform: hov && onClick ? "translateY(-1px)" : "none",
-      transition: "all 0.15s ease",
-    }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <p style={{
-          fontSize: 11, fontWeight: 600,
-          color: alert ? "var(--danger-text)" : "var(--text-tertiary)",
-          margin: 0, textTransform: "uppercase", letterSpacing: "0.06em",
-        }}>{label}</p>
-        {icon && (
-          <div style={{
-            width: 36, height: 36, borderRadius: "var(--radius-lg)",
-            background: iconBg,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: iconColor, flexShrink: 0,
-            border: `1px solid ${alert ? "var(--danger-border)" : accent ? `${accent}25` : "var(--border)"}`,
-          }}>
-            {React.isValidElement(icon)
-              ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })
-              : icon}
-          </div>
-        )}
-      </div>
-      <p style={{ fontSize: 28, fontWeight: 700, color: alert ? "var(--danger-text)" : "var(--text-primary)", margin: 0, lineHeight: 1, letterSpacing: "-0.02em" }}>{value}</p>
-      {change && (
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <TrendIcon size={12} color={tC}/>
-          <p style={{ fontSize: 12, color: tC, margin: 0 }}>{change}</p>
-        </div>
-      )}
-    </div>
+    <SummaryCard
+      label={label}
+      value={value}
+      icon={icon}
+      onClick={onClick}
+      accent={accent}
+      tone={alert ? "danger" : undefined}
+      change={change}
+      trend={trend}
+    />
   );
 }
 
@@ -563,10 +525,10 @@ export function MetricCard({ label, value, change, trend, icon, onClick, alert, 
 // Layout intentionally matches MetricCard above (uppercase label, then a
 // large value) so a SummaryCard row and a MetricCard row line up visually.
 export function SummaryCard({
-  label, value, sub, tone, accent, icon, active, onClick,
+  label, value, sub, tone, accent, icon, active, onClick, href, loading, change, trend,
 }: {
   label: string;
-  value: React.ReactNode;
+  value?: React.ReactNode;
   sub?: string;
   tone?: "success" | "warning" | "danger" | "info";
   /** `true` uses the brand accent; a string is an explicit CSS colour
@@ -575,6 +537,17 @@ export function SummaryCard({
   icon?: React.ReactNode;
   active?: boolean;
   onClick?: () => void;
+  /** Navigates on click. Renders a real <a>, so middle-click and
+   *  open-in-new-tab work — which a div with an onClick silently breaks. */
+  href?: string;
+  /** Draws a placeholder bar in place of the value. Built in because every
+   *  page that wrapped this component did so to add exactly this, and each
+   *  wrapper sized its own skeleton differently. */
+  loading?: boolean;
+  /** Delta caption under the value, e.g. "+12% vs last month". Absorbed from
+   *  the old MetricCard so there is only one KPI tile in the system. */
+  change?: string;
+  trend?: "up" | "down" | "neutral";
 }) {
   const [hov, setHov] = useState(false);
   const toneColor =
@@ -584,38 +557,47 @@ export function SummaryCard({
     tone === "info"    ? "var(--info-text, var(--accent))" : undefined;
   const accentColor = accent === true ? "var(--accent)" : typeof accent === "string" ? accent : undefined;
   const valueColor = toneColor ?? accentColor ?? "var(--text-primary)";
-  const clickable = !!onClick;
+  const clickable = !!onClick || !!href;
+  const Component: React.ElementType = href ? "a" : onClick ? "button" : "div";
 
   return (
-    <div
+    <Component
       className="ds-summary-card"
+      type={onClick && !href ? "button" : undefined}
+      href={href}
+      aria-pressed={onClick && !href ? Boolean(active) : undefined}
+      aria-current={href && active ? "page" : undefined}
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
         background: "var(--surface)",
         border: `1px solid ${active ? "var(--accent)" : hov && clickable ? "var(--border-strong)" : "var(--border)"}`,
-        borderTop: accentColor ? `3px solid ${accentColor}` : undefined,
-        borderRadius: "var(--radius-xl, 1rem)",
-        boxShadow: hov && clickable ? "var(--shadow-md)" : "var(--shadow-sm)",
-        padding: "16px 20px",
-        display: "flex", flexDirection: "column", gap: 8,
-        minWidth: 0,
+        borderRadius: "var(--radius-kpi)",
+        boxShadow: "none",
+        padding: "var(--layout-card-padding-block) var(--layout-card-padding-inline)",
+        display: "flex", flexDirection: "column", gap: "var(--layout-control-gap)",
+        minWidth: 0, minHeight: 126, boxSizing: "border-box",
+        flex: "1 1 170px",
         cursor: clickable ? "pointer" : undefined,
-        transform: hov && clickable ? "translateY(-1px)" : "none",
-        transition: "all 0.15s ease",
+        width: "auto",
+        fontFamily: "inherit",
+        textAlign: "left",
+        textDecoration: "none",
+        transform: "none",
+        transition: "border-color 0.15s ease, background 0.15s ease",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--layout-control-gap)" }}>
         <p style={{
-          fontSize: 11, fontWeight: 600, margin: 0,
+          fontSize: 10, fontWeight: 700, margin: 0,
           color: "var(--text-tertiary)",
-          textTransform: "uppercase", letterSpacing: "0.06em",
+          textTransform: "uppercase", letterSpacing: "0.08em",
         }}>{label}</p>
         {icon && (
           <div style={{
-            width: 32, height: 32, borderRadius: "var(--radius-lg)",
-            background: "var(--accent-muted)", color: accentColor ?? "var(--accent)",
+            width: 32, height: 32, borderRadius: 11,
+            background: "color-mix(in srgb, var(--text-link) 15%, var(--surface))", color: "var(--text-link)",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
             {React.isValidElement(icon)
@@ -624,12 +606,31 @@ export function SummaryCard({
           </div>
         )}
       </div>
-      <p style={{
-        fontSize: 28, fontWeight: 700, margin: 0, lineHeight: 1,
-        letterSpacing: "-0.02em", color: valueColor,
-      }}>{value}</p>
-      {sub && <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>{sub}</p>}
-    </div>
+      {loading ? (
+        <div aria-hidden style={{
+          height: 28, width: 84, borderRadius: 6,
+          background: "var(--surface-sunken)",
+        }}/>
+      ) : (
+        <p style={{
+          fontSize: 29, fontWeight: 700, margin: 0, lineHeight: 1,
+          letterSpacing: "-0.02em", color: valueColor,
+        }}>{value}</p>
+      )}
+      {sub && <p style={{ fontSize: 11, lineHeight: 1.35, color: "var(--text-tertiary)", margin: 0 }}>{sub}</p>}
+      {change && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+          {trend === "up" ? <TrendingUp size={12} color="var(--success-text)"/>
+            : trend === "down" ? <TrendingDown size={12} color="var(--danger-text)"/>
+            : <Minus size={12} color="var(--text-tertiary)"/>}
+          <p style={{
+            fontSize: 12, margin: 0,
+            color: trend === "up" ? "var(--success-text)"
+              : trend === "down" ? "var(--danger-text)" : "var(--text-tertiary)",
+          }}>{change}</p>
+        </div>
+      )}
+    </Component>
   );
 }
 
@@ -649,7 +650,7 @@ export function KpiGrid({
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${minCardWidth}px), 1fr))`,
-        gap: 14,
+        gap: "var(--space-3)",
         alignItems: "stretch",
         ...style,
       }}
@@ -659,31 +660,70 @@ export function KpiGrid({
   );
 }
 
-export function PkSectionHeader({ title, subtitle, actions, icon }: {
-  title: string; subtitle?: string; actions?: React.ReactNode; icon?: React.ReactNode;
+/** Canonical data-driven KPI row for pages that do not need bespoke card
+ * composition. It still renders the same SummaryCard and KpiGrid primitives. */
+export function SummaryCardsRow({ cards, minCardWidth = 130, style }: {
+  cards: Array<{
+    label: string;
+    value: React.ReactNode;
+    sub?: string;
+    icon?: React.ReactNode;
+    tone?: "success" | "warning" | "danger" | "info";
+    accent?: boolean | string;
+    active?: boolean;
+    onClick?: () => void;
+    href?: string;
+  }>;
+  minCardWidth?: number;
+  style?: React.CSSProperties;
 }) {
   return (
-    <div className="ds-section-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {icon && (
-          <div style={{
-            width: 40, height: 40, borderRadius: 12,
-            background: "var(--accent-muted)", color: "var(--accent)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            border: "1px solid var(--border)", flexShrink: 0,
-          }}>
-            {React.isValidElement(icon)
-              ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 18 })
-              : icon}
-          </div>
-        )}
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>{title}</h1>
-          {subtitle && <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "4px 0 0" }}>{subtitle}</p>}
-        </div>
-      </div>
-      {actions && <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>{actions}</div>}
-    </div>
+    <KpiGrid minCardWidth={minCardWidth} style={{ marginBottom: "var(--layout-section-gap)", ...style }}>
+      {cards.map((card, index) => <SummaryCard key={`${card.label}-${index}`} {...card} />)}
+    </KpiGrid>
+  );
+}
+
+export type BreadcrumbTrailItem = { label: string; href?: string };
+
+/** One breadcrumb renderer for every authenticated portal. Route resolution
+ * remains portal-specific; spacing, typography, focus targets and semantics
+ * live here so admin and provider pages cannot drift apart. */
+export function BreadcrumbTrail({
+  items,
+  renderLink,
+  className,
+}: {
+  items: BreadcrumbTrailItem[];
+  renderLink: (href: string, children: React.ReactNode) => React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      className={className}
+      style={{
+        display: "flex", alignItems: "center", gap: "0.25rem",
+        minHeight: "1.25rem", marginBottom: "0.875rem",
+        overflowX: "auto", whiteSpace: "nowrap",
+        color: "var(--text-tertiary)", fontSize: "0.75rem",
+      }}
+    >
+      {items.map((item, index) => {
+        const current = index === items.length - 1;
+        const content = index === 0
+          ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Home size={12} aria-hidden="true" />{item.label}</span>
+          : item.label;
+        return (
+          <span key={`${item.label}-${index}`} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+            {index > 0 && <ChevronRight size={13} aria-hidden="true" style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />}
+            {item.href && !current
+              ? renderLink(item.href, content)
+              : <span aria-current={current ? "page" : undefined} style={{ color: current ? "var(--text-primary)" : "var(--text-tertiary)", fontWeight: current ? 600 : 400 }}>{content}</span>}
+          </span>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -702,7 +742,15 @@ function PkDtRow<T extends Record<string, unknown>>({ row, columns, index, rowCo
   return (
     <tr
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onClick={() => onRowClick?.(row)} style={{
+      onClick={() => onRowClick?.(row)}
+      onKeyDown={event => {
+        if (!onRowClick || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onRowClick(row);
+      }}
+      tabIndex={onRowClick ? 0 : undefined}
+      aria-label={onRowClick ? "Open record" : undefined}
+      style={{
         borderBottom: index < rowCount - 1 ? "1px solid var(--border)" : "none",
         background: hov && onRowClick ? "var(--surface-sunken)" : "transparent",
         cursor: onRowClick ? "pointer" : "default",
@@ -716,9 +764,10 @@ function PkDtRow<T extends Record<string, unknown>>({ row, columns, index, rowCo
     </tr>
   );
 }
-export function SimpleTable<T extends Record<string, unknown>>({ columns, rows, loading, emptyText = "No data found.", onRowClick }: {
+export function SimpleTable<T extends Record<string, unknown>>({ columns, rows, loading, emptyText = "No data found.", onRowClick, getRowKey }: {
   columns: { key: string; label: string; width?: number; render?: (v: unknown, row: T) => React.ReactNode }[];
   rows: T[]; loading?: boolean; emptyText?: string; onRowClick?: (row: T) => void;
+  getRowKey?: (row: T, index: number) => React.Key;
 }) {
   return (
     <div className="ds-simple-table" style={{
@@ -729,7 +778,7 @@ export function SimpleTable<T extends Record<string, unknown>>({ columns, rows, 
         <thead>
           <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
             {columns.map(c => (
-              <th key={c.key} style={{
+              <th key={c.key} scope="col" style={{
                 padding: "11px 16px", textAlign: "left", fontSize: 11, fontWeight: 700,
                 color: "var(--text-tertiary)", letterSpacing: "0.07em", textTransform: "uppercase",
                 width: c.width ? `${c.width}px` : undefined,
@@ -754,35 +803,10 @@ export function SimpleTable<T extends Record<string, unknown>>({ columns, rows, 
                 </td></tr>
               )
             : rows.map((row, i) => (
-                <PkDtRow key={i} row={row} columns={columns} index={i} rowCount={rows.length} onRowClick={onRowClick}/>
+                <PkDtRow key={getRowKey?.(row, i) ?? String(row.id ?? i)} row={row} columns={columns} index={i} rowCount={rows.length} onRowClick={onRowClick}/>
               ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// ── PkEmptyState (distinct from the package's own `StateViews`) ─────────
-export function PkEmptyState({ icon, title, description, action }: {
-  icon?: React.ReactNode; title: string; description?: string; action?: React.ReactNode;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 32px", textAlign: "center", gap: 12 }}>
-      {icon && (
-        <div style={{
-          width: 56, height: 56, borderRadius: 16,
-          background: "var(--surface-sunken)", border: "1px solid var(--border)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--text-tertiary)", marginBottom: 4,
-        }}>
-          {React.isValidElement(icon)
-            ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 24 })
-            : icon}
-        </div>
-      )}
-      <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{title}</h3>
-      {description && <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0, maxWidth: 400 }}>{description}</p>}
-      {action && <div style={{ marginTop: 12 }}>{action}</div>}
     </div>
   );
 }
@@ -880,20 +904,61 @@ export function JobStatusBadge({ status }: { status: string }) {
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────
-export function Pagination({ page, total, pageSize = 20, onPage, alwaysShow = false }: {
-  page: number; total: number; pageSize?: number; onPage: (p: number) => void; alwaysShow?: boolean;
+export function Pagination({
+  page, total, pageSize = 20, onPage, alwaysShow = false,
+  pageCount, hasNext, hasPrevious, pageSizes, onPageSize,
+  itemLabel = "results", navigationMode = "full",
+}: {
+  page: number;
+  total?: number;
+  pageSize?: number;
+  onPage: (p: number) => void;
+  alwaysShow?: boolean;
+  pageCount?: number;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
+  pageSizes?: number[];
+  onPageSize?: (size: number) => void;
+  itemLabel?: string;
+  navigationMode?: "full" | "adjacent";
 }) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const knownTotal = typeof total === "number";
+  const safeTotal = total ?? 0;
+  const pages = Math.max(1, pageCount ?? (knownTotal ? Math.ceil(safeTotal / pageSize) : page + (hasNext ? 1 : 0)));
+  const canGoBack = hasPrevious ?? page > 1;
+  const canGoForward = hasNext ?? page < pages;
   if (!alwaysShow && pages <= 1) return null;
   return (
-    <div role="navigation" aria-label="Pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-      <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-        {total === 0 ? "0 results" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-      </p>
-      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        <IconBtn icon={<ChevronRight style={{ transform: "scaleX(-1)" }}/>} onClick={() => onPage(page - 1)} disabled={page <= 1} size="sm" variant="default" tooltip="Previous"/>
-        <span style={{ display: "flex", alignItems: "center", padding: "0 10px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{page} / {pages}</span>
-        <IconBtn icon={<ChevronRight/>} onClick={() => onPage(page + 1)} disabled={page >= pages} size="sm" variant="default" tooltip="Next"/>
+    <div className="ds-pagination" role="navigation" aria-label="Pagination" style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: "var(--space-3)", flexWrap: "wrap", padding: "12px 16px",
+      borderTop: "1px solid var(--border)", background: "var(--surface-sunken)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, whiteSpace: "nowrap" }}>
+          {knownTotal
+            ? safeTotal === 0 ? `0 ${itemLabel}` : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, safeTotal)} of ${safeTotal.toLocaleString()} ${itemLabel}`
+            : `Page ${page}`}
+        </p>
+        {onPageSize && pageSizes && pageSizes.length > 0 && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", fontSize: 12, color: "var(--text-secondary)" }}>
+            Rows
+            <select aria-label="Rows per page" value={pageSize} onChange={event => onPageSize(Number(event.target.value))} style={{
+              height: 30, padding: "0 28px 0 9px", border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)",
+              font: "inherit", cursor: "pointer",
+            }}>
+              {pageSizes.map(size => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+        {navigationMode === "full" && <IconBtn icon={<ChevronsLeft/>} onClick={() => onPage(1)} disabled={!canGoBack} size="sm" variant="default" tooltip="First page"/>}
+        <IconBtn icon={<ChevronLeft/>} onClick={() => onPage(Math.max(1, page - 1))} disabled={!canGoBack} size="sm" variant="default" tooltip="Previous page"/>
+        <span aria-live="polite" style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 92, padding: "0 8px", fontSize: 12, color: "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>Page {page} of {pages}</span>
+        <IconBtn icon={<ChevronRight/>} onClick={() => onPage(page + 1)} disabled={!canGoForward} size="sm" variant="default" tooltip="Next page"/>
+        {navigationMode === "full" && <IconBtn icon={<ChevronsRight/>} onClick={() => onPage(pages)} disabled={!canGoForward} size="sm" variant="default" tooltip="Last page"/>}
       </div>
     </div>
   );

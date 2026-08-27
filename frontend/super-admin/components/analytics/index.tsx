@@ -1,9 +1,11 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Sprint 28 — Shared Analytics Components (design-token edition)
  * All className removed — uses inline CSS with design token variables.
  */
 import { useState } from "react";
+import { SummaryCard } from "../shared/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,18 +37,6 @@ export interface AlertListProps { alerts: AlertItem[]; loading?: boolean; }
 
 // ── Severity token mappings ────────────────────────────────────────────────────
 
-const SEV_BORDER: Record<string, string> = {
-  normal:   "var(--border)",
-  warning:  "var(--warning)",
-  critical: "var(--danger)",
-  success:  "var(--success)",
-};
-const SEV_VALUE_COLOR: Record<string, string> = {
-  normal:   "var(--text-primary)",
-  warning:  "var(--warning-text)",
-  critical: "var(--danger-text)",
-  success:  "var(--success-text)",
-};
 const ALERT_BG: Record<string, string> = {
   critical: "var(--danger-bg)",
   warning:  "var(--warning-bg)",
@@ -67,34 +57,13 @@ const ALERT_ICON: Record<string, string> = { critical: "🚨", warning: "⚠️"
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
 export function AnalyticsKpiCard({ label, value, unit, loading, severity = "normal" }: KpiCardProps) {
-  return (
-    <div style={{
-      background: "var(--surface)", borderRadius: 12,
-      padding: "16px 20px",
-      boxShadow: "var(--shadow-sm)",
-      borderLeft: `4px solid ${SEV_BORDER[severity] ?? SEV_BORDER.normal}`,
-      border: `1px solid var(--border)`,
-      borderLeftColor: SEV_BORDER[severity] ?? SEV_BORDER.normal,
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
-        textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 8 }}>
-        {label}
-      </div>
-      {loading ? (
-        <div style={{ height: 28, width: 64, borderRadius: 6,
-          background: "var(--surface-sunken)", animation: "pulse 1.5s ease-in-out infinite" }}/>
-      ) : (
-        <div style={{ fontSize: 24, fontWeight: 700, color: SEV_VALUE_COLOR[severity] ?? SEV_VALUE_COLOR.normal, lineHeight: 1 }}>
-          {value == null
-            ? <span style={{ color: "var(--text-tertiary)", fontSize: 14 }}>—</span>
-            : value}
-          {unit && value != null && (
-            <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)", marginLeft: 4 }}>{unit}</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const tone = severity === "normal" ? undefined : severity === "critical" ? "danger" : severity;
+  const displayValue = value == null
+    ? "—"
+    : unit
+      ? <>{value}<span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginLeft: 4 }}>{unit}</span></>
+      : value;
+  return <SummaryCard label={label} value={displayValue} loading={loading} tone={tone} />;
 }
 
 // ── Date Filter Bar ───────────────────────────────────────────────────────────
@@ -161,7 +130,7 @@ export function AnalyticsBreakdownTable({ rows, columns, loading, emptyText = "N
   }
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
             {columns.map(c => (
@@ -190,7 +159,7 @@ export function AnalyticsBreakdownTable({ rows, columns, loading, emptyText = "N
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Modal } from "../../../../components/shared/ui";
-import { SummaryCardsRow } from "../../../../components/pricing/SummaryCard";
+import { Card, Badge, Btn, SectionHeader, Modal, SummaryCardsRow, Pagination } from "../../../../components/shared/ui";
 import { financeApi, DisputeSettlement, DisputeSettlementSummary } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -28,7 +28,7 @@ function SettlementRow({ s, onApprove, onExecute, onCancel }: {
       <td style={{ padding: "10px 12px", fontSize: 12 }}>{s.settlement_type.replace(/_/g, " ")}</td>
       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 700 }}>{fmt(s.settlement_amount)}</td>
       <td style={{ padding: "10px 12px", fontSize: 12 }}>
-        {fmt(s.tenant_wallet_deduction_amount)} wallet / {fmt(s.security_deposit_deduction_amount)} deposit
+        {fmt(s.tenant_wallet_deduction_amount)} from credit
       </td>
       <td style={{ padding: "10px 12px", fontSize: 12 }}>
         {s.executed_at ? new Date(s.executed_at).toLocaleDateString("en-IN") :
@@ -88,7 +88,7 @@ export default function DisputeSettlementsPage() {
     <AdminLayout activeNav="finance">
       <SectionHeader
         title="Dispute Settlements"
-        subtitle="Platform credit issued after dispute review. Tenant wallet / security deposit deducted."
+        subtitle="Platform credit issued after dispute review, deducted from the tenant's credit balance."
         actions={<Btn variant="ghost" onClick={() => { summary.refetch(); list.refetch(); }}>Refresh</Btn>}
       />
 
@@ -99,7 +99,6 @@ export default function DisputeSettlementsPage() {
           { label: "Executed", value: s.executed_settlements },
           { label: "Credits Issued", value: fmt(s.customer_credits_issued) },
           { label: "Wallet Deducted", value: fmt(s.tenant_wallet_deducted) },
-          { label: "Deposit Deducted", value: fmt(s.security_deposit_deducted) },
         ]} />
       )}
 
@@ -121,7 +120,7 @@ export default function DisputeSettlementsPage() {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle, var(--bg))" }}>
                 {["Settlement #","Status","Type","Amount","Deductions","Date","Actions"].map(h => (
@@ -144,16 +143,11 @@ export default function DisputeSettlementsPage() {
                 />
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
 
-        {(list.data?.meta.total_pages ?? 1) > 1 && (
-          <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-            <span style={{ fontSize: 13, padding: "6px 0" }}>Page {page} / {list.data?.meta.total_pages}</span>
-            <Btn size="sm" variant="ghost" disabled={page >= (list.data?.meta.total_pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
-          </div>
-        )}
+        {list.data?.meta && <Pagination page={page} pageSize={50} total={list.data.meta.total}
+          pageCount={list.data.meta.total_pages} onPage={setPage} itemLabel="settlements" />}
       </Card>
 
       <Modal open={cancelId !== null} onClose={() => setCancelId(null)} title="Cancel Settlement">

@@ -1,8 +1,10 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { customerFlowApi, CustomerFlowConfig } from "../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
 
 const FLOW_TYPE_COLORS: Record<string, string> = {
   service_booking:     "#dbeafe",
@@ -30,19 +32,13 @@ export default function CustomerFlowOverviewPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Customer Flow Configuration</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            Per-category booking flow types. Backend validates all catalog choices — AI cannot invent IDs. ({total} configured)
-          </p>
-        </div>
-        <Link href="/admin/customer-flow/drafts"
-          style={{ padding: "0.5rem 1rem", background: "#1e3a5f", color: "#fff", borderRadius: "0.375rem", textDecoration: "none", fontSize: "0.875rem", fontWeight: 600 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader eyebrow="Catalog" title="Customer Flow Configuration"
+        description={`Per-category booking flow types. Backend validates all catalog choices — AI cannot invent IDs. (${total} configured)`}
+        actions={<Link href="/admin/customer-flow/drafts"
+          style={{ padding: "var(--space-2) var(--space-4)", background: "var(--brand)", color: "var(--text-on-brand)", borderRadius: "var(--radius-md)", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
           View Booking Drafts
-        </Link>
-      </div>
+        </Link>} />
 
       {/* Flow type legend */}
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
@@ -66,7 +62,7 @@ export default function CustomerFlowOverviewPage() {
         </div>
       ) : (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
                 {["Category ID", "Flow Type", "Component Key", "Engine Key", "Required Steps", "Optional Steps"].map(h => (
@@ -96,7 +92,7 @@ export default function CustomerFlowOverviewPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
 

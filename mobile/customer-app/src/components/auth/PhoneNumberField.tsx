@@ -12,6 +12,8 @@ export interface PhoneNumberFieldProps {
   onNationalNumberChange: (value: string) => void;
   error?: string;
   disabled?: boolean;
+  showLabel?: boolean;
+  placeholder?: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export interface PhoneNumberFieldProps {
  */
 export function PhoneNumberField({
   countryCode, onCountryCodeChange, nationalNumber, onNationalNumberChange, error, disabled,
+  showLabel = true, placeholder = "98765 43210",
 }: PhoneNumberFieldProps) {
   const { theme } = useTheme();
 
@@ -36,9 +39,11 @@ export function PhoneNumberField({
 
   return (
     <View>
-      <AppText variant="label" color="secondary" style={{ marginBottom: theme.spacing.xxs }}>
-        Mobile number
-      </AppText>
+      {showLabel ? (
+        <AppText variant="label" color="secondary" style={{ marginBottom: theme.spacing.xxs }}>
+          Mobile number
+        </AppText>
+      ) : null}
       <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
         <View
           accessible
@@ -67,7 +72,7 @@ export function PhoneNumberField({
           textContentType="telephoneNumber"
           autoComplete="tel-national"
           maxLength={countryCode.nationalDigits}
-          placeholder="98765 43210"
+          placeholder={placeholder}
           editable={!disabled}
           error={error}
           accessibilityLabel="Mobile number"

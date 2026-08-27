@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { Card, Badge, Skeleton, Btn, SectionHeader } from "../../../components/shared/ui";
@@ -66,7 +67,7 @@ export default function UsersPage() {
         </Card>
       ) : (
         <Card padding={0}>
-          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
             <thead>
               <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                 {["Name","Contact","Role","Status","MFA","Joined"].map(h => (
@@ -120,7 +121,7 @@ export default function UsersPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </Card>
       )}
     </TenantLayout>

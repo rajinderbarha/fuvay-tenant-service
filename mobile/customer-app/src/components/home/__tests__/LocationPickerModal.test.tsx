@@ -45,17 +45,19 @@ describe("LocationPickerModal", () => {
     return waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it("puts the number pad away on confirm, not just the sheet", () => {
+  it("puts the number pad away on confirm, not just the sheet", async () => {
     // The field lives inside a Modal, and unmounting a focused TextInput with the
     // keyboard up leaves the keyboard on screen -- a number pad covering half of Home
     // with nothing focused to dismiss it by tapping.
     const dismiss = jest.spyOn(Keyboard, "dismiss");
+    const onClose = jest.fn();
     const { getByLabelText, getByText } = renderWithProviders(
-      <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={() => {}} />,
+      <LocationPickerModal visible currentZipcode={null} onClose={onClose} onConfirm={() => {}} />,
     );
     fireEvent.changeText(getByLabelText("ZIP code"), "141001");
     fireEvent.press(getByText("Show services here"));
     expect(dismiss).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     dismiss.mockRestore();
   });
 
@@ -91,16 +93,18 @@ describe("LocationPickerModal", () => {
     return waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it("confirms from the keyboard's done key", () => {
+  it("confirms from the keyboard's done key", async () => {
     // With the sheet lifted above the keyboard the Confirm button is reachable, but
     // the done key is the shorter path once six digits are in.
     const onConfirm = jest.fn();
+    const onClose = jest.fn();
     const { getByLabelText } = renderWithProviders(
-      <LocationPickerModal visible currentZipcode={null} onClose={() => {}} onConfirm={onConfirm} />,
+      <LocationPickerModal visible currentZipcode={null} onClose={onClose} onConfirm={onConfirm} />,
     );
     const field = getByLabelText("ZIP code");
     fireEvent.changeText(field, "141001");
     fireEvent(field, "submitEditing");
     expect(onConfirm).toHaveBeenCalledWith("141001");
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

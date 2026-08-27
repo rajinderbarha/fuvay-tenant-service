@@ -9,7 +9,7 @@ enriched list, 6 action modals). This sprint's real gap found and fixed:
 
 `AdminTenantService._audit()` (the audit helper actually used by every
 admin mutation on the tenant the frontend calls — suspend, approve,
-reject, add-usage-credits, change-plan, etc.) only ever wrote to the
+reject, add-usage-credits, and lifecycle actions) only ever wrote to the
 tenant-scoped `TenantAuditLog` table. It never called
 `record_platform_audit()`, so every admin tenant action was invisible in
 the Platform Command Center's Recent Activity feed (built/certified in
@@ -70,7 +70,7 @@ def test_tenant_directory_is_reachable_somewhere():
 @pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_title_and_columns():
     assert "Tenants" in LIST_PAGE
-    for col in ["Status", "Verification", "Plan", "Health", "Usage Credits", "Jobs", "Issues"]:
+    for col in ["Status", "Verification", "Vertical", "Health", "Location", "Usage Credits", "Jobs", "Issues", "Created"]:
         assert f'label: "{col}"' in LIST_PAGE
 
 
@@ -87,7 +87,7 @@ def test_list_pagination_present():
 
 @pytest.mark.skipif(not LIST_PAGE_EXISTS, reason="tenant list page superseded by Home Services > Providers (consolidation 2026-08-05)")
 def test_list_row_actions_present():
-    for action in ["Review Verification", "Suspend Tenant", "Change Plan", "Add Usage Credits", "View Audit Logs"]:
+    for action in ["Review Verification", "Suspend Tenant", "Add Usage Credits", "View Audit Logs"]:
         assert action in LIST_PAGE
 
 
@@ -117,11 +117,6 @@ def test_kpi_labels_present():
 def test_add_usage_credits_endpoint_real():
     assert '"/{tenant_id}/add-usage-credits"' in ADMIN_ROUTER
     assert "async def add_usage_credits" in ADMIN_SERVICE
-
-
-def test_change_plan_endpoint_real():
-    assert '"/{tenant_id}/change-plan"' in ADMIN_ROUTER
-    assert "async def change_plan" in ADMIN_SERVICE
 
 
 def test_suspend_reactivate_endpoints_real():

@@ -27,16 +27,6 @@ def test_queue_cte_uses_tenants_table():
     assert "FROM tenants" in src or "FROM tenants t" in src
 
 
-def test_queue_cte_joins_package_assignments():
-    src = Path("app/engines/provider_portal/admin_router.py").read_text(encoding="utf-8")
-    assert "tenant_package_assignments" in src
-
-
-def test_queue_cte_joins_service_packages():
-    src = Path("app/engines/provider_portal/admin_router.py").read_text(encoding="utf-8")
-    assert "service_packages" in src
-
-
 def test_enrich_row_function_exists():
     src = Path("app/engines/provider_portal/admin_router.py").read_text(encoding="utf-8")
     assert "_enrich_row" in src
@@ -162,7 +152,6 @@ def test_api_ts_new_interface_fields():
     assert "readiness_status: string" in src
     assert "bookable_status: string" in src
     assert "profile_completion_percentage: number" in src
-    assert "selected_package_name: string | null" in src
 
 
 def test_api_ts_summary_interface_exists():

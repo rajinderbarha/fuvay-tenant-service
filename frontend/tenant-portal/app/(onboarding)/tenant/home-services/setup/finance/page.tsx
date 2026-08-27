@@ -6,7 +6,7 @@
  * records HOW the tenant accepts it (direct payment methods) and the
  * tenant's invoice preferences.
  *
- * Security deposit + usage credit wallet: paid here via the same real
+ * Top-up plan (usage credit + technician seats): paid here via the same real
  * Razorpay flow the Activation Center uses (activationPaymentApi +
  * useRazorpayCheckout, backend: app.engines.vertical_catalog.
  * activation_payment_router — order creation + HMAC-verified webhook
@@ -75,16 +75,16 @@ export default function FinanceReadinessPage() {
       startedOrderId = order.order_id;
 
       // The signed order/payment tuple is verified by the backend. The
-      // browser never supplies an amount or a deposit/credit allocation.
+      // browser never supplies an amount or a seat/credit allocation.
       const payment = await openCheckout({
         keyId: order.key, orderId: order.order_id, amountPaise: order.amount_paise,
         currency: order.currency, name: "Fuvay — Home Services Activation",
         description: order.quote?.checkout_mode === "credits_only"
           ? "Starter usage credits"
-          : "Security deposit and starter credits",
+          : "Top-up plan",
       });
       await activationPaymentApi.confirmFunding(payment);
-      setPaymentNotice("Payment confirmed. Your deposit and usage-credit balances have been updated.");
+      setPaymentNotice("Payment confirmed. Your usage credit and technician seats have been updated.");
       load();
     } catch (e: unknown) {
       if (startedOrderId) {
@@ -266,7 +266,7 @@ export default function FinanceReadinessPage() {
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
               <div>
                 <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Activation funding</p>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>One secure checkout, with deposit and usage credits recorded separately.</p>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>One secure checkout — usage credit and technician seats, recorded separately.</p>
               </div>
               {funding && <Badge variant={funding.can_pay ? "warning" : "success"}>{funding.can_pay ? "Payment required" : "Fully funded"}</Badge>}
             </div>
@@ -282,17 +282,17 @@ export default function FinanceReadinessPage() {
                   <div className="fin-funding-account">
                     <div className="fin-funding-icon"><ShieldCheck size={18}/></div>
                     <div style={{ minWidth: 0 }}>
-                      <p className="fin-funding-label">Security deposit</p>
-                      <p className="fin-funding-value">{money(funding.deposit_held)} <span>held</span></p>
-                      <p className="fin-funding-note">{funding.qualifying_technician_count} qualifying technician{funding.qualifying_technician_count === 1 ? "" : "s"} × {money(funding.deposit_per_technician)} = {money(funding.deposit_required)} required</p>
+                      <p className="fin-funding-label">Technician seats</p>
+                      <p className="fin-funding-value">{funding.entitled_seats} <span>purchased</span></p>
+                      <p className="fin-funding-note">{funding.qualifying_technician_count} qualifying technician{funding.qualifying_technician_count === 1 ? "" : "s"} · one seat lets one technician take one job per slot</p>
                     </div>
-                    <CheckCircle2 size={17} style={{ color: funding.deposit_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
+                    <CheckCircle2 size={17} style={{ color: funding.seats_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
                   </div>
                   <div className="fin-funding-account">
                     <div className="fin-funding-icon"><Wallet size={18}/></div>
                     <div style={{ minWidth: 0 }}>
                       <p className="fin-funding-label">Usage credit wallet</p>
-                      <p className="fin-funding-value">{money(funding.starter_credit_balance)} <span>available</span></p>
+                      <p className="fin-funding-value">{money(funding.credit_balance)} <span>available</span></p>
                       <p className="fin-funding-note">Starter balance {money(funding.starter_credit_base)} · used for job-completion charges</p>
                     </div>
                     <CheckCircle2 size={17} style={{ color: funding.credits_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
@@ -305,9 +305,14 @@ export default function FinanceReadinessPage() {
                       <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{funding.checkout_label}</p>
                       <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>Calculated live from your approved finance policy and qualifying team.</p>
                     </div>
-                    {funding.deposit_shortfall > 0 && <FundingLine label={funding.deposit_held > 0 ? "Deposit top-up" : "Security deposit"} value={money(funding.deposit_shortfall)}/>} 
-                    {funding.credit_purchase_base > 0 && <FundingLine label="Usage credits" value={money(funding.credit_purchase_base)}/>} 
-                    {funding.credit_tax > 0 && <FundingLine label={`GST (${funding.credit_gst_percent}%)`} value={money(funding.credit_tax)}/>} 
+                    {funding.suggested_plan && (
+                      <>
+                        <FundingLine label={`${funding.suggested_plan.name} · ${funding.suggested_plan.seats} seat(s)`}
+                          value={money(funding.suggested_plan.credited_amount)}/>
+                        <FundingLine label={`GST (${funding.suggested_plan.gst_percent}%)`}
+                          value={money(funding.suggested_plan.gst_amount)}/>
+                      </>
+                    )}
                     <div className="fin-funding-total"><span>Payable now</span><strong>{money(funding.total_due)}</strong></div>
                     <Btn variant="primary" disabled={paying} onClick={payActivation} style={{ width: "100%", justifyContent: "center", marginTop: 12 }}>
                       {paying ? "Opening secure checkout…" : `${funding.checkout_label} · ${money(funding.total_due)}`}
@@ -317,7 +322,7 @@ export default function FinanceReadinessPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="fin-funded-banner"><CheckCircle2 size={18}/><div><strong>Activation funding complete</strong><span>Your deposit is fully held and starter credits are available.</span></div></div>
+                  <div className="fin-funded-banner"><CheckCircle2 size={18}/><div><strong>Activation funding complete</strong><span>Your seats are covered and starter credits are available.</span></div></div>
                 )}
               </>
             ) : (
@@ -325,7 +330,7 @@ export default function FinanceReadinessPage() {
             )}
             <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", marginTop: 10 }}>
               <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
-              <span>The security deposit is refundable subject to open jobs and claims. Usage credits are a separate spendable balance; they are never merged with the deposit.</span>
+              <span>Usage credit is spent on job-completion charges; new bookings pause if it falls below the policy floor. GST is never added to spendable credit.</span>
             </div>
           </Card>
         </div>
@@ -355,7 +360,7 @@ export default function FinanceReadinessPage() {
           <Card>
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>What happens after activation</p>
             {[
-              { icon: <ShieldCheck size={16}/>, text: "Your held security deposit automatically scales with the number of qualifying technicians." },
+              { icon: <ShieldCheck size={16}/>, text: "Each seat you buy lets you add one technician — and one more job can be booked in the same slot." },
               { icon: <Wallet size={16}/>, text: "Usage credits stay separate and cover platform charges triggered by completed work." },
               { icon: <ClipboardList size={16}/>, text: "Commission is deducted only through the proven completion event, not at the time of booking." },
               { icon: <TrendingUp size={16}/>, text: "Direct payment records you confirm will be visible in Finance for transparency." },

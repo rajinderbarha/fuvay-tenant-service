@@ -168,8 +168,10 @@ class TenantBilling(ServiceOSBase):
     next_billing_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     subscription_status: Mapped[str] = mapped_column(String(30), nullable=False, default="active")
     credit_balance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0.0)
-    security_deposit_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    security_deposit_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
+    #: Technician seats the tenant has bought, summed from captured top-up
+    #: orders. The security deposit that used to sit here is gone: headcount
+    #: is now bought rather than collateralised (migration 317).
+    entitled_seats: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     vertical_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 

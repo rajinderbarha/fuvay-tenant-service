@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /** Weekly/day availability grid -- one row per technician (aligned with
  * TeamRoster's order), one column per date. Each cell stacks real,
  * server-computed facts vertically: working hours, break, each assigned
@@ -232,7 +233,7 @@ export function WeeklyGrid({
     <div className="avail-grid" style={{ flex: 1, minWidth: 0, overflowX: "auto",
       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20 }}>
       <style>{GRID_TONES}</style>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 700 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 700 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)" }}>
             <th style={{ padding: "11px 12px", fontWeight: 600, color: "var(--text-tertiary)", textAlign: "left", minWidth: 150 }}>Technician</th>
@@ -266,7 +267,7 @@ export function WeeklyGrid({
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }

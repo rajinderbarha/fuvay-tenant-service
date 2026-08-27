@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useRef, useState } from "react";
 import { Modal, Btn, Badge } from "../shared/ui";
 import type { ImportPreviewResult, ImportBatch } from "../../lib/api";
@@ -90,7 +91,7 @@ export function ImportWizard({ open, onClose, previewFn, confirmFn, onComplete, 
               <Badge variant="warning">Conflicts: {preview.conflict_rows}</Badge>
             </div>
             <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                     {["#", "City", "Zipcode", "Tier Code", "Status", "Notes"].map(h => (
@@ -117,7 +118,7 @@ export function ImportWizard({ open, onClose, previewFn, confirmFn, onComplete, 
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
             {preview.conflict_rows > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -152,7 +153,7 @@ export function ImportWizard({ open, onClose, previewFn, confirmFn, onComplete, 
               <Badge variant="muted">Skipped: {report.skipped_rows}</Badge>
             </div>
             <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                     {["#", "City", "Zipcode", "Action", "Reason"].map(h => (
@@ -173,7 +174,7 @@ export function ImportWizard({ open, onClose, previewFn, confirmFn, onComplete, 
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <Btn variant="primary" size="sm" onClick={handleClose}>Done</Btn>

@@ -62,6 +62,11 @@ export type ProfileStackParamList = {
   PrivacyRequestDetail: { requestId: string };
   VoluntaryDataExport: undefined;
   AccountClosureRequest: undefined;
+  /** Terms / Privacy and any other published policy, read from
+   *  /v1/public/legal. `title` is only a placeholder shown while the real
+   *  title loads. */
+  LegalDocuments: undefined;
+  LegalDocumentDetail: { docType: string; title?: string };
   HelpAndSupport: undefined;
   HelpSearch: undefined;
   HelpCategory: { areaKey: string; areaLabel: string };

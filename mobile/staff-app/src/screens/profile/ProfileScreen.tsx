@@ -130,6 +130,7 @@ export function ProfileScreen({ navigation }: Props) {
             <ListRow title="Active sessions" subtitle={`${data.security.active_session_count} signed-in device${data.security.active_session_count === 1 ? "" : "s"}`} onPress={() => navigation.navigate("ActiveSessions")} />
             <ListRow title="Privacy & data" subtitle="Consent and account requests" onPress={() => navigation.navigate("PrivacyAndData")} />
             <ListRow title="Help & support" subtitle="Guides and contact support" onPress={() => navigation.navigate("HelpAndSupport")} />
+            <ListRow title="Legal" subtitle="Terms, privacy and platform policies" onPress={() => navigation.navigate("LegalDocuments")} />
           </Card>
         </Section>
 

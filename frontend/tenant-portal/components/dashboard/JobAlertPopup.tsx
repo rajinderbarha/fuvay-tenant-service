@@ -5,14 +5,14 @@ import type { DashboardAlert } from "../../lib/api";
 import { playAlertTone } from "../../lib/alertTone";
 
 /**
- * The dashboard's interruption: a new job to celebrate, or a job past its slot to fix.
+ * A non-blocking dashboard alert: a new job to celebrate, or a job past its slot to fix.
  *
  * The tone comes from the SERVER (`alert.tone`, the notification registry's own severity
  * vocabulary), and it drives everything a provider reads at a glance -- the colour, the
  * icon, the heading and the button. That is the point: someone should know within a
  * second whether this popup is worth stopping for, without reading a word of it. A single
- * neutral dialog for both would train them to dismiss all of it, and the delay alerts are
- * the ones that cost money.
+ * neutral alert for both would train people to dismiss all of it, and the delay alerts
+ * are the ones that cost money. The panel never blocks the operational dashboard.
  *
  * Delays come FIRST when both are waiting. Good news can be a moment later; a customer
  * standing in their kitchen cannot.
@@ -89,30 +89,27 @@ export function JobAlertPopup({
   // assembled the array.
   const ordered = [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone));
   const lead = ordered[0];
-  const rest = ordered.slice(1);
+  const visible = ordered.slice(0, 4);
+  const rest = visible.slice(1);
   const tone = toneOf(lead.tone);
   const isDelay = lead.tone === "warning" || lead.tone === "critical";
-  const hiddenDelays = Math.max(0, delayedTotal - alerts.filter(a => a.tone !== "success").length);
+  const hiddenAlerts = Math.max(0, newTotal + delayedTotal - visible.length);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <aside
+      role="region"
+      aria-live="polite"
       aria-label={lead.title}
       style={{
-        position: "fixed", inset: 0, zIndex: 1000,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(2,6,23,0.6)", padding: 16,
+        width: "100%",
       }}
-      onClick={onDismiss}
     >
       <div
-        onClick={e => e.stopPropagation()}
         style={{
-          width: "100%", maxWidth: 480, background: "var(--surface)",
+          width: "100%", background: "var(--surface)",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius-lg, 14px)", overflow: "hidden",
-          boxShadow: "0 24px 60px rgba(2,6,23,0.45)",
+          boxShadow: "0 18px 48px rgba(2,6,23,0.28)",
           // A single hairline of the tone colour. A 4px bar PLUS a tinted header PLUS a
           // coloured button was three statements of the same thing.
           borderTop: `3px solid ${tone.accent}`,
@@ -222,7 +219,7 @@ export function JobAlertPopup({
             {delayedTotal > 0
               ? `${delayedTotal} past their slot${newTotal > 0 ? ` · ${newTotal} new` : ""}`
               : `${newTotal} new job${newTotal === 1 ? "" : "s"}`}
-            {hiddenDelays > 0 ? ` (${hiddenDelays} not shown)` : ""}
+            {hiddenAlerts > 0 ? ` · ${hiddenAlerts} more` : ""}
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             {delayedTotal > 1 ? (
@@ -251,6 +248,6 @@ export function JobAlertPopup({
           </div>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminAnalyticsApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 import {
   AnalyticsKpiCard,
   AnalyticsDateFilter,
@@ -32,13 +33,12 @@ export default function ComplaintAnalyticsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Complaints & Disputes</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Complaint volume, resolution rates and refund totals</p>
-        </div>
-        <AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />
-      </div>
+      <PageHeader
+        title="Complaints & Disputes"
+        description="Complaint volume, resolution rates, and refund totals."
+        eyebrow="Analytics"
+        actions={<AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
         <AnalyticsKpiCard label="Total Complaints"  value={s.total_complaints}   loading={loading} />

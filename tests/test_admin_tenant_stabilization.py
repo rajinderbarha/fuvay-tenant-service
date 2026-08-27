@@ -74,9 +74,9 @@ def test_tenant_layout_exists():
 
 
 def test_admin_nav_complaints_present():
-    """Complaints page must appear in admin nav (Sprint 75 enterprise board)."""
+    """Home Services complaints must appear in the rendered admin nav."""
     src = admin_layout_src()
-    assert '"/admin/complaints"' in src, \
+    assert '"/admin/home-services/complaints"' in src, \
         "Complaints href missing from AdminLayout NAV_GROUPS"
 
 
@@ -156,44 +156,14 @@ def test_admin_nav_intelligence_present():
 
 
 # ── Admin: all nav hrefs resolve to page files ────────────────────────────────
-@pytest.mark.parametrize("href", [
-    "/admin/dashboard",
-    "/admin/tenants",
-    "/admin/tenants/onboarding",
-    "/admin/onboarding/providers",
-    "/admin/packages",
-    "/admin/bookings",
-    "/admin/operations",
-    "/admin/customers",
-    "/admin/staff",
-    "/admin/reviews",
-    "/admin/complaints",
-    "/admin/categories",
-    "/admin/service-groups",
-    "/admin/master-services",
-    "/admin/types-brands",
-    "/admin/service-options",
-    "/admin/issue-types",
-    "/admin/pricing-tiers",
-    "/admin/location-mapping",
-    "/admin/pricing-rules",
-    "/admin/finance",
-    "/admin/compliance",
-    "/admin/marketing",
-    "/admin/notifications",
-    "/admin/brands",
-    "/admin/brand-requests",
-    "/admin/analytics",
-    "/admin/intelligence",
-    "/admin/engines",
-    "/admin/security",
-    "/admin/audit-logs",
-    "/admin/users",
-    "/admin/media",
-    "/admin/settings",
-])
+ACTIVE_ADMIN_NAV_HREFS = sorted(set(
+    re.findall(r'href:\s*"(/admin/[^"?#]+)', admin_layout_src())
+))
+
+
+@pytest.mark.parametrize("href", ACTIVE_ADMIN_NAV_HREFS)
 def test_admin_nav_page_exists(href):
-    """Every admin nav href must have a corresponding page.tsx or redirect."""
+    """Every literal href rendered by the current nav resolves to a page."""
     # Strip /admin/ prefix to get relative path
     rel = href.replace("/admin/", "")
     page = os.path.join(ADMIN_APP, rel, "page.tsx")
@@ -363,7 +333,7 @@ def test_admin_operations_group_order():
     assert block, "Operations group not found"
     assert "/admin/customers" in block,  "Customers missing from Operations"
     assert "/admin/staff" in block,      "Staff missing from Operations"
-    assert "/admin/complaints" in block, "Complaints missing from Operations"
+    assert "/admin/home-services/complaints" in block, "Complaints missing from Operations"
     assert "/admin/home-services/bookings-jobs" in src, "Unified HS operations missing"
 
 

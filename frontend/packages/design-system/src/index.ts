@@ -22,4 +22,6 @@ export * from "./components/StatCard";
 export * from "./components/Avatar";
 export * from "./components/IconButton";
 export * from "./components/QuickActionGrid";
+export * from "./components/TableSurface";
+export * from "./components/ActionMenu";
 export * from "./components/PortalKit";

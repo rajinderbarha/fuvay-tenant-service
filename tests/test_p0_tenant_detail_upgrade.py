@@ -4,9 +4,7 @@ P0 Enterprise Provider / Tenant 360 Detail Page Upgrade — backend + frontend t
 Scope: this sprint reuses the large amount of existing tenant-detail infrastructure
 (staff/users/service-areas/enabled-services/pricing/jobs/bookings/media/reviews/audit
 all already had working endpoints) and adds:
-  - reason-required guards on reinstate + change-plan (found + fixed two real bugs:
-    reinstate had no reason requirement at all, and change-plan sent the wrong body
-    key so the endpoint would always KeyError)
+  - reason-required guard on tenant reinstate
   - new frontend tabs wired to already-existing tenant-scoped finance endpoints
     (dispute settlements, tenant penalties) — no new backend needed there
   - Usage Credit / Security Deposit language correction (not real money)
@@ -45,44 +43,8 @@ class TestReinstateReasonRequired:
         assert "async def reinstate_tenant(self, tenant_id: uuid.UUID, reason: str)" in src
 
 
-class TestChangePlanReasonRequired:
-    def test_router_requires_reason(self):
-        src = _read(ROUTER)
-        start = src.index("async def upgrade_plan")
-        end = src.index("async def downgrade_plan")
-        section = src[start:end]
-        assert "reason" in section
-        assert "VALIDATION_ERROR" in section
-        assert 'if not reason' in section
-
-    def test_service_signature_uses_reason(self):
-        src = _read(SERVICE)
-        assert "async def upgrade_plan(self, tenant_id: uuid.UUID, target_plan: str, reason: str)" in src
-
-    def test_service_audits_reason(self):
-        src = _read(SERVICE)
-        start = src.index("async def upgrade_plan(self, tenant_id: uuid.UUID, target_plan: str, reason: str)")
-        end = src.index("async def downgrade_plan")
-        assert "notes=reason" in src[start:end]
-
-
-class TestPlanChangeKeyMismatchBugFix:
-    """Real pre-existing bug: frontend sent {plan_type} but backend always read
-    body['target_plan'] — Change Plan would KeyError 100% of the time."""
-    def test_upgrade_plan_sends_target_plan_key(self):
-        src = _read(API_TS)
-        start = src.index("upgradePlan:")
-        end = src.index("downgradePlan:")
-        section = src[start:end]
-        assert "target_plan: plan_type" in section
-
-    def test_downgrade_plan_sends_target_plan_key(self):
-        src = _read(API_TS)
-        start = src.index("downgradePlan:")
-        end = src.index("convertTrial:")
-        section = src[start:end]
-        assert "target_plan: plan_type" in section
-
+class TestTenantLifecycleClient:
+    """Tenant lifecycle actions keep their required audit reason."""
     def test_reinstate_requires_reason_param(self):
         src = _read(API_TS)
         start = src.index("reinstate:")
@@ -161,13 +123,6 @@ class TestFrontendLabeling:
         assert "reinstateOpen" in src
         assert "reinstateMsg" in src
         assert "Reinstate Tenant" in src
-
-    def test_change_plan_has_reason_field(self):
-        src = _read(PAGE)
-        start = src.index('title="Change Plan"')
-        end = start + 1500
-        section = src[start:end]
-        assert "planReason" in section
 
     def test_uses_existing_finance_api_for_disputes(self):
         """No new backend needed — reuses financeApi.listSettlements/listPenalties

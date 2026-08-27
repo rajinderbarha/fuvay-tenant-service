@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Marketing Automation Command Center — enterprise rebuild.
  * PROVEN: every panel below reads from marketingCommandCenterApi (migration 100)
@@ -140,7 +141,7 @@ export default function MarketingAutomationPage() {
                   onClick={() => { window.location.href = "/admin/marketing/generate"; }}>Generate First Post</Btn>}/>
             ) : (
               <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                <TableSurface style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)", borderTop:"1px solid var(--border)", borderBottom:"1px solid var(--border)" }}>
                       {["Content","Target","Channels","Status","Schedule","AI Cost","Actions"].map(h => (
@@ -191,7 +192,7 @@ export default function MarketingAutomationPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
           </Card>
@@ -251,7 +252,7 @@ export default function MarketingAutomationPage() {
                 No failed posts. Everything is publishing cleanly.
               </p>
             ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)" }}>
                     {["Post","Channel","Failure Reason","Retry Count","Actions"].map(h => (
@@ -272,7 +273,7 @@ export default function MarketingAutomationPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         </div>

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Home Services — Direct Payments (job-linked payment confirmation and
  * reconciliation).
@@ -23,7 +24,7 @@ import {
   Download, ExternalLink, FileText, Image as ImageIcon, Info, Lock, Pencil,
   RefreshCw, Search, ShieldAlert, Wrench,
 } from "lucide-react";
-import { Badge, Btn, Card, Skeleton } from "../../../../components/shared/ui";
+import { Badge, Btn, Card, Skeleton, Pagination } from "../../../../components/shared/ui";
 import {
   API_BASE, ServiceOSError, getToken, homeServicesDirectPaymentsApi,
   type HsDpDetail, type HsDpQueue, type HsDpRecord,
@@ -425,7 +426,7 @@ function DirectPaymentsPageInner() {
             ) : !queue || queue.records.length === 0 ? (
               <EmptyQueue tab={tab} hasError={!!error}/>
             ) : (
-              <table className="dp-table">
+              <TableSurface className="dp-table">
                 <thead>
                   <tr>
                     <th>Job</th><th>Customer</th><th>Service</th>
@@ -444,30 +445,15 @@ function DirectPaymentsPageInner() {
                               onClick={() => setParam({ payment_id: r.id })}/>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </div>
 
           {/* pagination */}
-          {queue && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                          gap: 10, padding: 14, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>
-                {queue.pagination.total} record{queue.pagination.total === 1 ? "" : "s"}
-                {" · page "}{queue.pagination.page} of {queue.pagination.pages}
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Select value={String(limit)} width={92}
-                        onChange={v => { setLimit(Number(v)); setParam({ page: "1" }); }}
-                        options={[10, 25, 50].map(n => ({ value: String(n), label: `${n} / page` }))}/>
-                <Btn variant="secondary" size="sm" disabled={queue.pagination.page <= 1}
-                     onClick={() => setParam({ page: String(page - 1) })}>Prev</Btn>
-                <Btn variant="secondary" size="sm"
-                     disabled={queue.pagination.page >= queue.pagination.pages}
-                     onClick={() => setParam({ page: String(page + 1) })}>Next</Btn>
-              </div>
-            </div>
-          )}
+          {queue && <Pagination page={queue.pagination.page} pageSize={limit} total={queue.pagination.total}
+            pageCount={queue.pagination.pages} onPage={target => setParam({ page: String(target) })}
+            pageSizes={[10, 25, 50]} onPageSize={size => { setLimit(size); setParam({ page: "1" }); }}
+            itemLabel="payments" alwaysShow />}
         </Card>
 
         {/* RIGHT — selected payment detail */}

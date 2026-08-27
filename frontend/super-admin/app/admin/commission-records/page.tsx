@@ -74,7 +74,7 @@ export default function AdminCommissionRecordsPage() {
 
   return (
     <AdminLayout>
-      <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto" }}>
+      <div>
       <EnterpriseDataGrid
         resourceKey="admin_commission_records"
         fetchFn={fetchFn}

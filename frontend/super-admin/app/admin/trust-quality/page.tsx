@@ -1,4 +1,5 @@
 ﻿"use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * MODULE-L5-12 â€” Trust & Quality (badges, provider health, recalculation).
  *
@@ -205,7 +206,7 @@ export default function TrustQualityPage() {
         {tab === "badges" && (
           <Card padding={0}>
             {badgeRules.loading ? <Spinner /> : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "10px 16px" }}>Badge</th>
                   <th style={{ padding: "10px 16px" }}>Rule</th>
@@ -245,7 +246,7 @@ export default function TrustQualityPage() {
                     <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No badge rules — sync the fixed catalog to restore defaults.</td></tr>
                   )}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         )}
@@ -295,7 +296,7 @@ export default function TrustQualityPage() {
         {tab === "health" && (
           <Card padding={0}>
             {healthRules.loading ? <Spinner /> : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "10px 16px" }}>Formula</th>
                   <th style={{ padding: "10px 16px" }}>Target</th>
@@ -325,7 +326,7 @@ export default function TrustQualityPage() {
                     <tr><td colSpan={5} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No health formulas.</td></tr>
                   )}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         )}

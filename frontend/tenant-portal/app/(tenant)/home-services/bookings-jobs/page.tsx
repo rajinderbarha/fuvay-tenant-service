@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -149,8 +150,10 @@ function BookingsJobsWorkspace() {
       </div>
       {showFilters && <AdvancedFilters data={list.data} values={{ offeringId, jobTypeId, technicianId, assignment, sla, complaint, dateFrom, dateTo, sort }} onChange={updateFilter} onDateChange={(key, value) => updateParams({ [key]: value || null, date: null, page: null, job_id: null })} />}
       <div role="tablist" aria-label="Job lifecycle stage" style={{ display: "flex", gap: 4, padding: "10px 14px", borderBottom: "1px solid var(--border)", overflowX: "auto" }}>{STAGE_TABS.map(([id, label]) => <button key={id || "all"} type="button" role="tab" aria-selected={stage === id} onClick={() => updateFilter("stage", id)} style={tabStyle(stage === id)}>{label}</button>)}</div>
-      {list.loading ? <div style={{ padding: 16, display: "grid", gap: 8 }}>{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} height={48} />)}</div> : items.length === 0 ? <EmptyResults filtered={hasAnyFilter} onClear={clearFilters} /> : <div className="bj-table-wrap"><table className="bj-table"><thead><tr>{["Job / booking", "Customer", "Service", "Schedule", "Technician", "Stage", "SLA", "Payment", ""].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{items.map(row => <JobRow key={row.service_job_id} row={row} selected={selectedJobId === row.service_job_id} onOpen={() => updateParams({ job_id: row.service_job_id })} />)}</tbody></table></div>}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}><label style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", fontSize: 12, color: "var(--text-secondary)" }}>Rows<select aria-label="Rows per page" value={pageSize} onChange={e => updateParams({ page_size: e.target.value, page: null, job_id: null })} style={{ ...selectStyle, minHeight: 32, padding: "5px 8px" }}>{PAGE_SIZES.map(size => <option key={size}>{size}</option>)}</select></label><div style={{ flex: "1 1 380px" }}><Pagination page={page} pageSize={pageSize} total={list.data?.total ?? 0} alwaysShow onPage={p => updateParams({ page: String(p), job_id: null })} /></div></div>
+      {list.loading ? <div style={{ padding: 16, display: "grid", gap: 8 }}>{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} height={48} />)}</div> : items.length === 0 ? <EmptyResults filtered={hasAnyFilter} onClear={clearFilters} /> : <div className="bj-table-wrap"><TableSurface className="bj-table"><thead><tr>{["Job / booking", "Customer", "Service", "Schedule", "Technician", "Stage", "SLA", "Payment", ""].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{items.map(row => <JobRow key={row.service_job_id} row={row} selected={selectedJobId === row.service_job_id} onOpen={() => updateParams({ job_id: row.service_job_id })} />)}</tbody></TableSurface></div>}
+      <Pagination page={page} pageSize={pageSize} total={list.data?.total ?? 0} alwaysShow
+        pageSizes={PAGE_SIZES} onPageSize={size => updateParams({ page_size: String(size), page: null, job_id: null })}
+        onPage={p => updateParams({ page: String(p), job_id: null })} itemLabel="jobs" />
     </Card>
   </PageShell>{selectedJobId && <JobPreview jobId={selectedJobId} detail={detail.data} loading={detail.loading} error={detail.error} onClose={() => updateParams({ job_id: null })} onChanged={() => { detail.refetch(); list.refetch(); }} />}</TenantLayout>;
 }

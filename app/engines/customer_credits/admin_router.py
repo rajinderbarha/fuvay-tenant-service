@@ -89,7 +89,7 @@ async def preview_deduction(
 ) -> ApiResponse[dict]:
     tenant_id = uuid.UUID(str(body["tenant_id"]))
     amount = Decimal(str(body.get("settlement_amount", 0)))
-    strategy = body.get("deduction_strategy", "tenant_wallet_then_security_deposit")
+    strategy = body.get("deduction_strategy", "tenant_wallet")
     return ok(await _svc(db, u).preview_deduction(tenant_id, amount, strategy), _rid(r), ENGINE_ID)
 
 

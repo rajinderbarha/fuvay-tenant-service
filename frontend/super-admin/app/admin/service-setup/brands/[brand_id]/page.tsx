@@ -5,6 +5,7 @@ import { AdminLayout } from "../../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Modal, Input } from "../../../../../components/shared/ui";
 import { catalogApi, type Brand34D, type ServiceCategory, type MasterService } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
+import { PageHeader } from "@serviceos/design-system";
 
 type DetailTab = "overview" | "category-availability" | "service-availability" | "merge";
 const TABS: { id: DetailTab; label: string }[] = [
@@ -139,24 +140,18 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
 
   return (
     <AdminLayout>
-      <div style={{ padding: "24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          <Btn variant="ghost" size="sm" onClick={() => window.location.href = "/admin/service-setup/brands"}>
-            <ArrowLeft size={14} />
-          </Btn>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{b.name}</h1>
-              {statusBadge(b.status)}
-              {b.is_global && <Badge variant="info">Global</Badge>}
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.5, marginTop: 2 }}>
-              {b.code && <span style={{ marginRight: 12 }}>{b.code}</span>}
-              {b.country_of_origin && <span>{b.country_of_origin}</span>}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+        <PageHeader
+          title={b.name}
+          description={[b.code, b.country_of_origin].filter(Boolean).join(" · ") || "Brand configuration and availability."}
+          eyebrow="Service Brand"
+          actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap", alignItems: "center" }}>
+            <Btn variant="ghost" size="sm" onClick={() => window.location.href = "/admin/service-setup/brands"}>
+              <ArrowLeft size={14} /> Back
+            </Btn>
+            {statusBadge(b.status)}
+            {b.is_global && <Badge variant="info">Global</Badge>}
             <Btn size="sm" variant="secondary" onClick={() => { setEditName(b.name); setEditCode(b.code ?? ""); setEditDesc(b.description ?? ""); setShowEdit(true); }}>
               Edit
             </Btn>
@@ -176,8 +171,8 @@ export default function BrandDetailPage({ params }: { params: Promise<{ brand_id
                 <Archive size={13} style={{ marginRight: 4 }} /> Archive
               </Btn>
             )}
-          </div>
-        </div>
+          </div>}
+        />
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: "1px solid var(--border)" }}>

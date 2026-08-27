@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * FINAL-L5-05AB — Export Job History.
  *
@@ -149,7 +150,7 @@ export default function ExportJobHistoryPage() {
         )}
         {jobs.data && jobs.data.length > 0 && (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--color-border, #e5e7eb)" }}>
                   <th style={{ padding: "8px 12px" }}>Resource</th>
@@ -201,7 +202,7 @@ export default function ExportJobHistoryPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </Card>

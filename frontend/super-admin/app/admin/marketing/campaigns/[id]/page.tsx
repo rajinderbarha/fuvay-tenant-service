@@ -17,6 +17,7 @@ import {
 import { useApi, useAction } from "@/hooks/useApi";
 import { CheckCircle2, XCircle, AlertCircle, Send, Globe, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { PageHeader } from "@serviceos/design-system";
 
 function statusVariant(s: string): "success" | "warning" | "danger" | "info" | "default" {
   if (s === "published" || s === "manually_published" || s === "approved") return "success";
@@ -58,22 +59,21 @@ export default function AdminCampaignDetailPage() {
   );
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Link href="/admin/marketing/campaigns">
-          <Btn variant="ghost" size="sm"><ArrowLeft size={14} /> Back</Btn>
-        </Link>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{campaign.campaign_name}</h1>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Campaign ID: {campaign.id}</p>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+    <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title={campaign.campaign_name}
+        description={`Campaign ID: ${campaign.id}`}
+        eyebrow="Marketing Campaign"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap" }}>
+          <Link href="/admin/marketing/campaigns">
+            <Btn variant="ghost" size="sm"><ArrowLeft size={14} /> Back</Btn>
+          </Link>
           <Badge variant={statusVariant(campaign.status)}>{campaign.status}</Badge>
           {campaign.admin_review_status && (
             <Badge variant={statusVariant(campaign.admin_review_status)}>Admin: {campaign.admin_review_status}</Badge>
           )}
-        </div>
-      </div>
+        </div>}
+      />
 
       <Card>
         <div style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, fontSize: 13 }}>

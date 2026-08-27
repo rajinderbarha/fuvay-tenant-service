@@ -1,7 +1,7 @@
 "use client";
 import { useCallback } from "react";
 import { adminFinancialEventsApi, type FinancialEventRecord } from "../../../lib/api";
-import { Card, Badge, Btn, Skeleton } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, SectionHeader } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
 import { Activity, RefreshCw } from "lucide-react";
 
@@ -21,19 +21,10 @@ export default function AdminFinancialEventsPage() {
   const events: FinancialEventRecord[] = (Array.isArray(data) ? data : []) as FinancialEventRecord[];
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24, maxWidth: 1100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0,
-            display: "flex", alignItems: "center", gap: 10 }}>
-            <Activity size={22} /> Financial Events
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-            Append-only audit log of all financial events across invoices, payments, and commissions.
-          </p>
-        </div>
-        <Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <SectionHeader eyebrow="Finance" title="Financial Events"
+        description="Append-only audit log of all financial events across invoices, payments, and commissions."
+        icon={<Activity />} actions={<Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>} />
 
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

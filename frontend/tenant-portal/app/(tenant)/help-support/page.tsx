@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Help & Support — the tenant↔ServiceOS platform support workspace.
  *
@@ -860,7 +861,7 @@ function HelpSupportPageInner() {
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+                    <TableSurface style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
                       <thead>
                         <tr>
                           <th style={TH}>Ticket</th>
@@ -905,7 +906,7 @@ function HelpSupportPageInner() {
                           );
                         })}
                       </tbody>
-                    </table>
+                    </TableSurface>
                   </div>
                 )}
               </Card>

@@ -28,13 +28,13 @@ export const shadows = {
 
 // ── Spacing ───────────────────────────────────────────────────────────────────
 export const spacing = {
-  xs:   "4px",
-  sm:   "8px",
-  md:   "12px",
-  lg:   "16px",
-  xl:   "24px",
-  "2xl":"32px",
-  "3xl":"48px",
+  xs:   "var(--space-1)",
+  sm:   "var(--space-2)",
+  md:   "var(--space-3)",
+  lg:   "var(--space-4)",
+  xl:   "var(--space-6)",
+  "2xl":"var(--space-8)",
+  "3xl":"var(--space-12)",
 } as const;
 
 // ── Typography ────────────────────────────────────────────────────────────────

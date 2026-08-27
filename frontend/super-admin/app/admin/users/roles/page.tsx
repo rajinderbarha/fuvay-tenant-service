@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Phase 1B — Admin Roles page.
  * ServiceOS RBAC is code-defined (app/core/permissions.py), not a DB CRUD
@@ -126,7 +127,7 @@ export default function RolesPage() {
         <EmptyState icon={<Shield/>} title="No roles found."/>
       ) : (
         <Card style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--surface-sunken)" }}>
                 {["Role", "Type", "Scope", "Users", "Permissions", "Status", "Actions"].map(h => (
@@ -154,7 +155,7 @@ export default function RolesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </Card>
       )}
       </RequirePermission>

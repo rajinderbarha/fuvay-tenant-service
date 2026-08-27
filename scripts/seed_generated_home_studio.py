@@ -48,6 +48,21 @@ ART_DIR = ROOT / "mobile" / "customer-app" / "assets" / "home-campaigns"
 
 CONTENT = [
     {
+        "key": "fuvay_reference_home_hero_v1",
+        "file": "fuvay-reference-home-hero-v1.png",
+        "image_url": "https://res.cloudinary.com/dr1b4ezct/image/upload/v1787632829/serviceos/customer-home/hero/fuvay-reference-home-hero-v1.png",
+        "title": "Trusted help for every home",
+        "subtitle": "Verified experts, transparent service, and on-time service you can count on.",
+        "placement": "home_hero",
+        "variant": "cinematic",
+        "theme_key": "ink",
+        "badge": "Home services",
+        "offer_text": None,
+        "action_label": "Home Services",
+        "service_group_slug": None,
+        "priority": 900,
+    },
+    {
         "key": "fuvay_home_ac_care_hero_v1",
         "file": "fuvay-ac-care-hero-v1.png",
         "title": "Comfort, handled beautifully",
@@ -103,6 +118,54 @@ CONTENT = [
         "action_url": "fuvay://global-services",
         "service_group_slug": None,
         "priority": 200,
+    },
+    {
+        "key": "fuvay_reference_global_web_v1",
+        "file": "fuvay-reference-digital-v1.png",
+        "image_url": "https://res.cloudinary.com/dr1b4ezct/image/upload/v1787632830/serviceos/customer-home/global/fuvay-reference-digital-v1.png",
+        "title": "Web Development",
+        "subtitle": "Modern, fast & scalable web solutions",
+        "placement": "home_global",
+        "variant": "digital",
+        "theme_key": "violet",
+        "badge": "Global service",
+        "offer_text": None,
+        "action_label": "Explore Service",
+        "action_url": "fuvay://global-services",
+        "service_group_slug": None,
+        "priority": 500,
+    },
+    {
+        "key": "fuvay_reference_global_mobile_v1",
+        "file": "fuvay-reference-digital-v1.png",
+        "image_url": "https://res.cloudinary.com/dr1b4ezct/image/upload/v1787632830/serviceos/customer-home/global/fuvay-reference-digital-v1.png",
+        "title": "Mobile App Development",
+        "subtitle": "Polished native products for iOS and Android",
+        "placement": "home_global",
+        "variant": "digital",
+        "theme_key": "violet",
+        "badge": "Global service",
+        "offer_text": None,
+        "action_label": "Start a Brief",
+        "action_url": "fuvay://global-services",
+        "service_group_slug": None,
+        "priority": 490,
+    },
+    {
+        "key": "fuvay_reference_global_ai_v1",
+        "file": "fuvay-reference-digital-v1.png",
+        "image_url": "https://res.cloudinary.com/dr1b4ezct/image/upload/v1787632830/serviceos/customer-home/global/fuvay-reference-digital-v1.png",
+        "title": "AI & Automation",
+        "subtitle": "Practical automation built around your business",
+        "placement": "home_global",
+        "variant": "digital",
+        "theme_key": "violet",
+        "badge": "Global service",
+        "offer_text": None,
+        "action_label": "Explore Service",
+        "action_url": "fuvay://global-services",
+        "service_group_slug": None,
+        "priority": 480,
     },
 ]
 
@@ -230,21 +293,28 @@ async def main() -> None:
                 user_id=str(admin.id), email=admin.email, role="super_admin",
                 tenant_id=None, full_name=admin.full_name, is_verified=admin.is_verified,
             )
-            composition_exists = (await db.execute(select(PlatformSetting.id).where(
-                PlatformSetting.key == HOME_COMPOSITION_SETTING_KEY
-            ))).scalar_one_or_none()
-            if composition_exists is None:
-                await CustomerHomeMerchandisingService().update_composition(
-                    db,
-                    body=HomeCompositionWrite(
-                        sections=default_home_composition(),
-                        reason="Publish the initial enterprise customer Home composition",
-                    ),
-                    actor_user_id=admin.id,
-                    request_id="seed_generated_home_studio",
-                )
+            reference_order = ["hero", "service_groups", "recent_bookings", "global_services"]
+            defaults = default_home_composition()
+            by_key = {item["key"]: item for item in defaults}
+            composition = [by_key[key] for key in reference_order]
+            composition.extend(item for item in defaults if item["key"] not in reference_order)
+            for item in composition:
+                item["enabled"] = item["key"] in reference_order
+            by_key["hero"].update(variant="marketplace", max_items=5, spacing="compact")
+            by_key["service_groups"].update(title="Services Nearby", variant="compact_grid", max_items=8, spacing="compact")
+            by_key["recent_bookings"].update(title="My Booking", variant="compact_rail", max_items=1, spacing="compact")
+            by_key["global_services"].update(title="Build with Fuvay", variant="compact_services", max_items=5, spacing="compact")
+            await CustomerHomeMerchandisingService().update_composition(
+                db,
+                body=HomeCompositionWrite(
+                    sections=composition,
+                    reason="Publish the approved reference Home hierarchy",
+                ),
+                actor_user_id=admin.id,
+                request_id="seed_reference_customer_home",
+            )
             for spec in CONTENT:
-                url = await ensure_artwork(db, actor, spec["file"])
+                url = spec.get("image_url") or await ensure_artwork(db, actor, spec["file"])
                 await upsert_campaign(db, actor, spec, url)
                 print(f"{spec['key']}={url}")
     finally:

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
@@ -6,7 +7,7 @@ import { CheckCircle, ChevronLeft, ChevronRight, FlaskConical, Globe, Layers, Re
 import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
-import { Badge, Btn, Modal, SectionHeader } from "../../../components/shared/ui";
+import { Badge, Btn, Modal, SectionHeader, SummaryCardsRow, Pagination } from "../../../components/shared/ui";
 import { verticalCatalogApi, type VerticalDetail, type VerticalItem } from "../../../lib/api";
 import { useAction, useApi } from "../../../hooks/useApi";
 
@@ -108,12 +109,6 @@ export default function VerticalsPage() {
 
   return <AdminLayout activeNav="verticals">
     <style>{`
-      .vertical-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
-      .vertical-summary-card{position:relative;overflow:hidden;min-height:92px;padding:15px 17px;border:1px solid var(--border);border-radius:13px;background:var(--surface);box-shadow:var(--shadow-xs)}
-      .vertical-summary-icon{position:absolute;right:14px;top:14px;width:31px;height:31px;border-radius:9px;display:grid;place-items:center;background:var(--surface-sunken)}
-      .vertical-summary-value{font-size:25px;line-height:1;font-weight:760;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-      .vertical-summary-label{margin-top:9px;font-size:11.5px;font-weight:700;color:var(--text-secondary)}
-      .vertical-summary-note{margin-top:3px;font-size:10px;color:var(--text-tertiary)}
       .vertical-filterbar{display:grid;grid-template-columns:minmax(270px,1fr) auto auto auto auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-xs);margin-bottom:9px}
       .vertical-table-shell{border:1px solid var(--border);border-radius:13px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow-xs);margin-top:9px}
       .vertical-table-scroll{overflow-x:auto}
@@ -126,18 +121,16 @@ export default function VerticalsPage() {
       .vertical-code{margin-top:2px;color:var(--text-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
       .vertical-actions{display:flex;justify-content:flex-end;align-items:center;gap:5px}.vertical-count{color:var(--text-primary);font-size:13px;font-weight:720}.vertical-count-sub{margin-top:2px;color:var(--text-tertiary);font-size:10px}
       .vertical-table-footer{min-height:45px;padding:0 14px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;color:var(--text-secondary);font-size:11.5px}
-      @media(max-width:1100px){.vertical-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vertical-filterbar{grid-template-columns:minmax(240px,1fr) auto auto}.vertical-filter-optional{display:none}}
-      @media(max-width:680px){.vertical-summary-grid{grid-template-columns:1fr 1fr}.vertical-summary-card{min-height:84px;padding:13px}.vertical-filterbar{grid-template-columns:1fr}.vertical-filterbar>*{width:100%}.operations-directory-controls{overflow-x:auto;flex-wrap:nowrap!important}}
+      @media(max-width:1100px){.vertical-filterbar{grid-template-columns:minmax(240px,1fr) auto auto}.vertical-filter-optional{display:none}}
+      @media(max-width:680px){.vertical-filterbar{grid-template-columns:1fr}.vertical-filterbar>*{width:100%}.operations-directory-controls{overflow-x:auto;flex-wrap:nowrap!important}}
     `}</style>
     <SectionHeader title="Business Verticals" subtitle="Control platform availability, registration, capabilities, and release lifecycle." icon={<Globe size={20} />} actions={<Btn variant="ghost" size="sm" icon={<RefreshCw size={13} />} onClick={refresh}>Refresh</Btn>} />
-    <div className="vertical-summary-grid">
-      {[
-        ["All verticals", summary.data?.total, "Platform registry", <Globe size={16} />, "var(--brand)"],
-        ["Enabled", summary.data?.enabled, "Available to operate", <Zap size={16} />, "var(--success)"],
-        ["Registration open", summary.data?.registration_open, "Accepting new tenants", <UserPlus size={16} />, "var(--info)"],
-        ["Needs attention", (summary.data?.disabled ?? 0) + (summary.data?.beta ?? 0), `${summary.data?.disabled ?? 0} disabled · ${summary.data?.beta ?? 0} beta`, <XCircle size={16} />, "var(--warning)"],
-      ].map(([label, value, note, icon, color]) => <div key={String(label)} className="vertical-summary-card"><span className="vertical-summary-icon" style={{ color: String(color) }}>{icon}</span><div className="vertical-summary-value">{summary.loading ? "…" : String(value ?? "—")}</div><div className="vertical-summary-label">{label}</div><div className="vertical-summary-note">{note}</div></div>)}
-    </div>
+    <SummaryCardsRow minCardWidth={190} cards={[
+      { label: "All verticals", value: summary.loading ? "…" : String(summary.data?.total ?? "—"), sub: "Platform registry", icon: <Globe size={16} /> },
+      { label: "Enabled", value: summary.loading ? "…" : String(summary.data?.enabled ?? "—"), sub: "Available to operate", icon: <Zap size={16} />, tone: "success" },
+      { label: "Registration open", value: summary.loading ? "…" : String(summary.data?.registration_open ?? "—"), sub: "Accepting new tenants", icon: <UserPlus size={16} />, tone: "info" },
+      { label: "Needs attention", value: summary.loading ? "…" : String((summary.data?.disabled ?? 0) + (summary.data?.beta ?? 0)), sub: `${summary.data?.disabled ?? 0} disabled · ${summary.data?.beta ?? 0} beta`, icon: <XCircle size={16} />, tone: "warning" },
+    ]} />
     <div className="vertical-filterbar">
       <div style={{ position: "relative", flex: "1 1 250px" }}><Search size={14} style={{ position: "absolute", left: 11, top: 11, color: "var(--text-tertiary)" }} /><input aria-label="Search verticals" value={filters.q} onChange={e => setFilter("q", e.target.value)} placeholder="Search name, key, slug or description" style={{ ...selectStyle, width: "100%", paddingLeft: 33 }} /></div>
       <select aria-label="Status" value={filters.status} onChange={e => setFilter("status", e.target.value)} style={selectStyle}><option value="">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select>
@@ -149,7 +142,7 @@ export default function VerticalsPage() {
       onApplyView={(next) => { setFilters({ ...EMPTY, ...next } as Filters); setPage(1); }} />
     {query.error && <div style={{ padding: 12, color: "var(--danger)", background: "var(--danger-bg)", borderRadius: 9, marginTop: 9 }}>{query.error}</div>}
     <div className="vertical-table-shell">
-      <div className="vertical-table-scroll"><table className="vertical-table"><thead><tr>
+      <div className="vertical-table-scroll"><TableSurface className="vertical-table"><thead><tr>
         {visible.has("label") && <th>Vertical</th>}{visible.has("status") && <th>Status</th>}{visible.has("release_stage") && <th>Release</th>}{visible.has("finance_model") && <th>Finance model</th>}{visible.has("lifecycle_status") && <th>Lifecycle</th>}{visible.has("registration_allowed") && <th>Registration</th>}{visible.has("modules") && <th>Modules</th>}{visible.has("enrollments") && <th>Enrollments</th>}{visible.has("actions") && <th style={{ textAlign: "right" }}>Actions</th>}
       </tr></thead><tbody>
         {query.loading ? Array.from({ length: 5 }).map((_, i) => <tr key={i}><td colSpan={9}><div className="skeleton" style={{ height: 38, margin: 7 }} /></td></tr>) : items.map(v => <tr key={v.id}>
@@ -163,9 +156,10 @@ export default function VerticalsPage() {
           {visible.has("enrollments") && <td><span className="vertical-count">{v.active_enrollment_count ?? 0}</span><div className="vertical-count-sub">{v.enrollment_count ?? 0} total</div></td>}
           {visible.has("actions") && <td><div className="vertical-actions"><Btn variant="ghost" size="xs" icon={<Settings size={12} />} onClick={() => setModules(v)}>Modules</Btn><Link href={`/admin/verticals/${v.key}?tab=capabilities`} style={{ textDecoration: "none" }}><Btn variant="secondary" size="xs">Manage</Btn></Link>{v.is_enabled ? <button aria-label={`Disable ${v.label}`} title="Disable vertical" onClick={() => setDisabling(v)} style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "1px solid var(--border)", borderRadius: 7, background: "transparent", color: "var(--text-tertiary)", cursor: "pointer" }}><XCircle size={13} /></button> : <Btn variant="success" size="xs" loading={enable.loading} onClick={async () => { await enable.execute(v.key); refresh(); }}>Enable</Btn>}</div></td>}
         </tr>)}
-      </tbody></table></div>
+      </tbody></TableSurface></div>
       {!query.loading && !items.length && <div style={{ textAlign: "center", padding: 45, color: "var(--text-tertiary)" }}>No verticals match these filters.</div>}
-      <div className="vertical-table-footer"><span>{data?.total ?? 0} verticals · Page {page} of {data?.pages ?? 1}</span><div style={{ display: "flex", gap: 5 }}><Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}><ChevronLeft size={14} /></Btn><Btn size="xs" variant="ghost" disabled={page >= (data?.pages ?? 1)} onClick={() => setPage(p => p + 1)}><ChevronRight size={14} /></Btn></div></div>
+      <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0} pageCount={data?.pages}
+        onPage={setPage} itemLabel="verticals" alwaysShow />
     </div>
     {modules && <ModulesModal vertical={modules} onClose={() => setModules(null)} onChanged={refresh} />}
     {disabling && <DisableModal vertical={disabling} onClose={() => setDisabling(null)} onDisabled={() => { setDisabling(null); refresh(); }} />}

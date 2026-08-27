@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminMarketingApi, AutomationTrigger } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 
 const card: React.CSSProperties = {
   background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20,
@@ -42,13 +43,11 @@ export default function AutomationTriggersPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Automation Triggers</h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-          Run triggers to send targeted notifications based on customer/provider behaviour.
-          Cooldown windows prevent duplicate sends.
-        </p>
-      </div>
+      <PageHeader
+        title="Automation Triggers"
+        description="Run targeted customer and provider notifications with cooldown protection against duplicate sends."
+        eyebrow="Marketing"
+      />
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>Loading triggers…</div>

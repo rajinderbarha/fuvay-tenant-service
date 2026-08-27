@@ -3,7 +3,7 @@
 Business rule: Home Services customers pay tenant directly on-site.
 Platform does NOT collect the original payment. Therefore:
 - Platform issues ServiceOS service credit (not cash) after disputes.
-- Platform recovers from tenant wallet first, then security deposit.
+- Platform recovers from tenant credit alone; the balance may go negative.
 - No silent deductions — every deduction creates an audit trail.
 """
 import uuid
@@ -19,10 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.customer_credits.models import (
     CustomerServiceCredit, CustomerCreditLedger,
     DisputeSettlement, TenantPenalty,
-    SecurityDepositAdjustment, FinanceAuditLog,
+    FinanceAuditLog,
     FinanceVerticalConfig,
 )
-from app.engines.platform_commerce.models import SecurityDeposit, SecurityDepositTransaction
 from app.engines.tenant_engine.models import TenantBilling, UsageCreditLedger
 from app.engines.complaints.models import CustomerComplaint
 from app.engines.booking.models import Booking
@@ -35,8 +34,7 @@ VALID_SETTLEMENT_TYPES = {
     "no_compensation", "platform_goodwill_credit", "manual_customer_refund_exception",
 }
 VALID_DEDUCTION_STRATEGIES = {
-    "tenant_wallet", "security_deposit",
-    "tenant_wallet_then_security_deposit",
+    "tenant_wallet",
     "platform_goodwill", "none",
 }
 CREDIT_EXPIRY_DAYS = 180  # 6 months default
@@ -71,7 +69,7 @@ async def issue_provider_funded_customer_credit(
     job_id: uuid.UUID | None = None,
     currency: str = "INR",
 ) -> dict:
-    """Issue service points funded by provider credits, then deposit.
+    """Issue service points funded by provider credit.
 
     The caller owns the transaction and must lock its claim/refund row first.
     No partial remedy is ever posted: both funding sources are locked and
@@ -93,32 +91,22 @@ async def issue_provider_funded_customer_credit(
         return {
             "credit": existing_credit,
             "provider_credit_deducted": Decimal("0"),
-            "security_deposit_deducted": Decimal("0"),
             "idempotent_replay": True,
         }
 
     billing = await db.scalar(
         select(TenantBilling).where(TenantBilling.tenant_id == tenant_id).with_for_update()
     )
-    deposit = await db.scalar(
-        select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id).with_for_update()
-    )
     usage_available = _two(Decimal(str(billing.credit_balance or 0))) if billing else Decimal("0")
-    deposit_available = _two(Decimal(str(deposit.current_balance))) if deposit else Decimal("0")
-    if usage_available + deposit_available < amount:
-        raise ServiceOSException(
-            "PROVIDER_REMEDY_FUNDS_INSUFFICIENT",
-            "Provider usage credits and security deposit cannot fully fund this customer credit.",
-            status_code=409,
-            context={
-                "required": float(amount),
-                "provider_credits_available": float(usage_available),
-                "security_deposit_available": float(deposit_available),
-            },
-        )
 
-    usage_deduct = min(amount, usage_available)
-    deposit_deduct = amount - usage_deduct
+    # The whole remedy comes out of provider credit, and it is allowed to take
+    # the balance NEGATIVE. There is no security deposit to fall back on any
+    # more (migration 318), and refusing the deduction would be worse than a
+    # negative balance: the customer is owed this credit either way, and a
+    # refusal would leave the platform funding it. A negative balance sits
+    # below `credit_booking_floor`, which stops new bookings until the tenant
+    # tops up, so the debt is collected rather than written off.
+    usage_deduct = amount
     if usage_deduct > 0 and billing:
         before = _two(Decimal(str(billing.credit_balance or 0)))
         billing.credit_balance = before - usage_deduct
@@ -130,7 +118,7 @@ async def issue_provider_funded_customer_credit(
             credit_delta=-usage_deduct,
             balance_before=before,
             balance_after=billing.credit_balance,
-            deduction_source="provider_usage_credits_then_security_deposit",
+            deduction_source="provider_usage_credits",
             reason=reason,
             created_by=actor_id,
             request_id=request_id,
@@ -139,21 +127,6 @@ async def issue_provider_funded_customer_credit(
             source_id=str(reference_id),
             reason_code="provider_failed_resolution",
             actor_role=actor_role,
-        ))
-
-    if deposit_deduct > 0 and deposit:
-        before = _two(Decimal(str(deposit.current_balance)))
-        deposit.warranty_drawn = _two(Decimal(str(deposit.warranty_drawn or 0)) + deposit_deduct)
-        db.add(SecurityDepositTransaction(
-            deposit_id=deposit.id,
-            tenant_id=tenant_id,
-            txn_type="customer_remedy_draw",
-            amount=-deposit_deduct,
-            balance_before=before,
-            balance_after=deposit.current_balance,
-            reference_id=str(reference_id),
-            notes=reason,
-            actor_id=actor_id,
         ))
 
     credit = CustomerServiceCredit(
@@ -207,7 +180,6 @@ async def issue_provider_funded_customer_credit(
             "reference_type": reference_type,
             "reference_id": str(reference_id),
             "provider_credit_deducted": str(usage_deduct),
-            "security_deposit_deducted": str(deposit_deduct),
             "credit_number": credit.credit_number,
         },
         created_at=_utcnow(),
@@ -215,7 +187,6 @@ async def issue_provider_funded_customer_credit(
     return {
         "credit": credit,
         "provider_credit_deducted": usage_deduct,
-        "security_deposit_deducted": deposit_deduct,
         "idempotent_replay": False,
     }
 
@@ -239,10 +210,6 @@ class DisputeSettlementService:
             stmt = stmt.with_for_update()
         return await self.db.scalar(stmt)
 
-    async def _get_deposit(self, tenant_id: uuid.UUID) -> SecurityDeposit | None:
-        return await self.db.scalar(
-            select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id))
-
     async def _get_settlement(self, settlement_id: uuid.UUID) -> DisputeSettlement:
         s = await self.db.scalar(
             select(DisputeSettlement).where(DisputeSettlement.id == settlement_id))
@@ -264,39 +231,40 @@ class DisputeSettlementService:
 
     async def preview_deduction(self, tenant_id: uuid.UUID,
                                  amount: Decimal, strategy: str) -> dict:
-        """Calculate how much comes from wallet vs security deposit."""
-        wallet = await self._get_wallet(tenant_id)
-        deposit = await self._get_deposit(tenant_id)
+        """Show what a settlement will take from the tenant's credit balance.
 
+        Only two funding strategies remain real: take it from tenant credit,
+        or have the platform absorb it as goodwill. The deposit-backed
+        strategies went with the deposit (migration 318) and are normalised to
+        `tenant_wallet` rather than rejected, so an admin console still holding
+        the old value keeps working instead of 422-ing.
+
+        `tenant_wallet` deliberately does NOT cap the deduction at the current
+        balance. The customer is owed the full settlement either way; capping
+        it would silently leave the platform funding the difference. The
+        balance is allowed to go negative, which puts the tenant below
+        `credit_booking_floor` and stops new bookings until they top up.
+        """
+        wallet = await self._get_wallet(tenant_id)
         wallet_balance = _two(wallet.credit_balance if wallet else Decimal("0"))
-        deposit_balance = _two(deposit.current_balance if deposit else Decimal("0"))
-        deposit_total_paid = _two(deposit.total_paid + (deposit.replenishment_total or Decimal("0"))
-                                   if deposit else Decimal("0"))
+
+        if strategy in ("security_deposit", "tenant_wallet_then_security_deposit"):
+            strategy = "tenant_wallet"
 
         wallet_deduct = Decimal("0")
-        deposit_deduct = Decimal("0")
         goodwill_amount = Decimal("0")
         remaining = amount
 
         if strategy == "tenant_wallet":
-            wallet_deduct = min(remaining, wallet_balance)
-            remaining -= wallet_deduct
-        elif strategy == "security_deposit":
-            deposit_deduct = min(remaining, deposit_balance)
-            remaining -= deposit_deduct
-        elif strategy == "tenant_wallet_then_security_deposit":
-            wallet_deduct = min(remaining, wallet_balance)
-            remaining -= wallet_deduct
-            if remaining > Decimal("0"):
-                deposit_deduct = min(remaining, deposit_balance)
-                remaining -= deposit_deduct
+            wallet_deduct = remaining
+            remaining = Decimal("0")
         elif strategy == "platform_goodwill":
             goodwill_amount = amount
             remaining = Decimal("0")
         elif strategy == "none":
             remaining = Decimal("0")  # no_compensation settlement
 
-        can_fully_cover = remaining == Decimal("0")
+        balance_after = wallet_balance - wallet_deduct
 
         return {
             "tenant_id": str(tenant_id),
@@ -304,15 +272,16 @@ class DisputeSettlementService:
             "strategy": strategy,
             "wallet_balance": float(wallet_balance),
             "wallet_deduction": float(wallet_deduct),
-            "wallet_balance_after": float(wallet_balance - wallet_deduct),
-            "deposit_held": float(deposit_total_paid),
-            "deposit_available": float(deposit_balance),
-            "deposit_deduction": float(deposit_deduct),
-            "deposit_remaining": float(deposit_balance - deposit_deduct),
+            "wallet_balance_after": float(balance_after),
+            # Surfaced so the console can warn before the admin commits: the
+            # settlement still executes, but it leaves the tenant in arrears
+            # and blocked from new bookings.
+            "goes_negative": balance_after < Decimal("0"),
+            "shortfall_amount": float(-balance_after) if balance_after < Decimal("0") else 0.0,
             "platform_goodwill_amount": float(goodwill_amount),
             "uncovered_amount": float(remaining),
-            "can_fully_cover": can_fully_cover,
-            "finance_status_after": "blocked" if remaining > Decimal("0") else "normal",
+            "can_fully_cover": remaining == Decimal("0"),
+            "finance_status_after": "blocked" if balance_after < Decimal("0") else "normal",
         }
 
     # ── Create settlement ─────────────────────────────────────────────────────
@@ -329,7 +298,7 @@ class DisputeSettlementService:
                 "VALIDATION_ERROR",
                 f"settlement_type must be one of: {sorted(VALID_SETTLEMENT_TYPES)}")
 
-        strategy = data.get("deduction_strategy", "tenant_wallet_then_security_deposit")
+        strategy = data.get("deduction_strategy", "tenant_wallet")
         if strategy not in VALID_DEDUCTION_STRATEGIES:
             raise ServiceOSException(
                 "VALIDATION_ERROR",
@@ -366,7 +335,6 @@ class DisputeSettlementService:
             currency=data.get("currency", "INR"),
             deduction_source=strategy,
             tenant_wallet_deduction_amount=Decimal(str(preview["wallet_deduction"])),
-            security_deposit_deduction_amount=Decimal(str(preview["deposit_deduction"])),
             platform_goodwill_amount=Decimal(str(preview["platform_goodwill_amount"])),
             admin_decision_reason=data.get("admin_decision_reason", ""),
             customer_message=data.get("customer_message"),
@@ -440,21 +408,23 @@ class DisputeSettlementService:
         if not preview["can_fully_cover"]:
             raise ServiceOSException(
                 "PROVIDER_REMEDY_FUNDS_INSUFFICIENT",
-                "Provider usage credits and security deposit cannot fully fund this customer credit.",
+                "Provider credit cannot fund this customer credit.",
                 status_code=409,
                 context={"uncovered_amount": preview["uncovered_amount"]},
             )
-        wallet_deduct  = _two(Decimal(str(preview["wallet_deduction"])))
-        deposit_deduct = _two(Decimal(str(preview["deposit_deduction"])))
-        goodwill_amt   = _two(Decimal(str(preview["platform_goodwill_amount"])))
+        wallet_deduct = _two(Decimal(str(preview["wallet_deduction"])))
+        goodwill_amt  = _two(Decimal(str(preview["platform_goodwill_amount"])))
 
-        # ── Step 1: Deduct tenant wallet ──────────────────────────────────────
+        # ── Step 1: Deduct tenant credit ──────────────────────────────────────
+        # Takes the FULL amount, even past zero. Clamping to the available
+        # balance (what this did while a deposit backed it up) would quietly
+        # leave the platform funding the remainder, and the tenant would carry
+        # no obligation for a failure that was theirs. Going negative puts them
+        # below `credit_booking_floor`, which stops new bookings until the
+        # balance is restored.
         if wallet_deduct > Decimal("0"):
             wallet = await self._get_wallet(tenant_id, for_update=True)
-            if not wallet or wallet.credit_balance < wallet_deduct:
-                actual_deduct = _two(wallet.credit_balance if wallet else Decimal("0"))
-            else:
-                actual_deduct = wallet_deduct
+            actual_deduct = wallet_deduct
 
             if wallet and actual_deduct > Decimal("0"):
                 bal_before = wallet.credit_balance
@@ -467,7 +437,7 @@ class DisputeSettlementService:
                     credit_delta=-actual_deduct,
                     balance_before=bal_before,
                     balance_after=wallet.credit_balance,
-                    deduction_source="provider_usage_credits_then_security_deposit",
+                    deduction_source="provider_usage_credits",
                     reason=(
                         f"Dispute settlement deduction — {s.settlement_number}. "
                         "ServiceOS platform does not collect direct payments for Home Services; "
@@ -486,55 +456,6 @@ class DisputeSettlementService:
                             tenant_id=tenant_id, settlement_id=settlement_id,
                             dispute_id=s.dispute_id, amount=actual_deduct,
                             reason=f"Wallet deduction for dispute settlement {s.settlement_number}")
-            elif wallet_deduct > (wallet.credit_balance if wallet else Decimal("0")):
-                wallet_deduct = wallet.credit_balance if wallet else Decimal("0")
-                s.tenant_wallet_deduction_amount = wallet_deduct
-
-        # ── Step 2: Deduct security deposit if needed ─────────────────────────
-        if deposit_deduct > Decimal("0"):
-            deposit = await self.db.scalar(
-                select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id).with_for_update()
-            )
-            if deposit and deposit.current_balance >= deposit_deduct:
-                bal_before = deposit.current_balance
-                deposit.warranty_drawn = (deposit.warranty_drawn or Decimal("0")) + deposit_deduct
-                self.db.add(SecurityDepositTransaction(
-                    deposit_id=deposit.id,
-                    tenant_id=tenant_id,
-                    txn_type="admin_adjustment",
-                    amount=-deposit_deduct,
-                    balance_before=bal_before,
-                    balance_after=deposit.current_balance,
-                    reference_id=str(settlement_id),
-                    notes=(f"Dispute settlement {s.settlement_number} — deposit deduction "
-                           "because tenant wallet balance was insufficient."),
-                    actor_id=self.actor_id,
-                ))
-                sda = SecurityDepositAdjustment(
-                    tenant_id=tenant_id,
-                    settlement_id=settlement_id,
-                    dispute_id=s.dispute_id,
-                    adjustment_type="deduct_for_customer_credit",
-                    amount=deposit_deduct,
-                    currency=s.currency,
-                    reason=(f"Deposit deduction for dispute settlement {s.settlement_number}. "
-                            "Tenant wallet insufficient."),
-                    status="executed",
-                    approved_by_admin_id=self.actor_id,
-                    created_at=_utcnow(),
-                    approved_at=_utcnow(),
-                    executed_at=_utcnow(),
-                )
-                self.db.add(sda)
-                s.security_deposit_deduction_amount = deposit_deduct
-                self._audit("security_deposit.adjusted_for_dispute",
-                            tenant_id=tenant_id, settlement_id=settlement_id,
-                            dispute_id=s.dispute_id, amount=deposit_deduct,
-                            reason="Security deposit deduction for dispute settlement")
-            else:
-                deposit_deduct = Decimal("0")
-                s.security_deposit_deduction_amount = Decimal("0")
-
         s.platform_goodwill_amount = goodwill_amt
 
         # ── Step 3: Issue customer service credit ─────────────────────────────
@@ -591,12 +512,9 @@ class DisputeSettlementService:
             dispute_id=s.dispute_id,
             settlement_id=settlement_id,
             penalty_type="dispute_settlement_deduction",
-            amount=wallet_deduct + deposit_deduct,
+            amount=wallet_deduct,
             currency=s.currency,
-            source=(
-                "tenant_wallet_and_security_deposit" if deposit_deduct > Decimal("0") else
-                "tenant_wallet"
-            ),
+            source="tenant_wallet",
             status="applied",
             reason=(s.tenant_message or
                     f"₹{float(total):,.0f} deducted due to dispute settlement {s.settlement_number}."),
@@ -650,7 +568,6 @@ class DisputeSettlementService:
             "penalty": penalty.to_dict(),
             "deduction_summary": {
                 "wallet_deducted": float(s.tenant_wallet_deduction_amount),
-                "deposit_deducted": float(s.security_deposit_deduction_amount),
                 "goodwill_amount": float(s.platform_goodwill_amount),
                 "customer_credit_issued": float(credit_amount),
                 "credit_number": credit.credit_number,
@@ -717,10 +634,6 @@ class DisputeSettlementService:
         wallet_total = await self.db.scalar(
             select(func.sum(DisputeSettlement.tenant_wallet_deduction_amount)).where(
                 DisputeSettlement.settlement_status == "executed"))
-        deposit_total = await self.db.scalar(
-            select(func.sum(DisputeSettlement.security_deposit_deduction_amount)).where(
-                DisputeSettlement.settlement_status == "executed"))
-
         return {
             "total_settlements": total or 0,
             "pending_approval": pending or 0,
@@ -728,7 +641,6 @@ class DisputeSettlementService:
             "failed_cancelled": failed or 0,
             "customer_credits_issued": float(credits_total or 0),
             "tenant_wallet_deducted": float(wallet_total or 0),
-            "security_deposit_deducted": float(deposit_total or 0),
         }
 
 
@@ -1194,17 +1106,12 @@ class CustomerCreditService:
             select(func.sum(TenantPenalty.amount)).where(
                 TenantPenalty.status == "applied",
                 TenantPenalty.source.ilike("%wallet%")))
-        deposit_total = await self.db.scalar(
-            select(func.sum(TenantPenalty.amount)).where(
-                TenantPenalty.status == "applied",
-                TenantPenalty.source.ilike("%deposit%")))
         return {
             "total_penalties": total or 0,
             "applied_penalties": applied or 0,
             "pending_penalties": pending or 0,
             "reversed_penalties": reversed_ or 0,
             "wallet_deducted": float(wallet_total or 0),
-            "deposit_deducted": float(deposit_total or 0),
         }
 
     # ── Finance Vertical Config ────────────────────────────────────────────
@@ -1222,6 +1129,5 @@ class CustomerCreditService:
             "tenant_payouts_enabled": False,
             "customer_service_credits_enabled": True,
             "tenant_wallet_deduction_enabled": True,
-            "security_deposit_adjustment_enabled": True,
             "manual_customer_refund_enabled": False,
         }

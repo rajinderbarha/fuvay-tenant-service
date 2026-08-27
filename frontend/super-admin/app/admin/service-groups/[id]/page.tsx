@@ -6,7 +6,7 @@ import React, { useCallback, useState } from "react";
 import { ArrowLeft, Boxes, Clock3, ExternalLink, FolderTree, RotateCcw, ShieldCheck } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../../components/catalog/HomeServicesCatalogNav";
-import { Badge, Btn, Card, DataTable, Modal, SectionHeader, Skeleton, SummaryCard } from "../../../../components/shared/ui";
+import { Badge, Btn, Card, DataTable, Modal, SectionHeader, Skeleton, SummaryCard, Pagination } from "../../../../components/shared/ui";
 import { catalogApi, type MasterServiceEnriched } from "../../../../lib/api";
 import { useAction, useApi } from "../../../../hooks/useApi";
 
@@ -79,19 +79,9 @@ export default function ServiceGroupDetailPage() {
     </div>}
     {tab === "services" && <div>
       <Card padding={0}><DataTable columns={columns as never} rows={(services.data?.services ?? []) as never} loading={services.loading} emptyText="No master services are linked to this group."/></Card>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginTop:14 }}>
-        <span style={{ fontSize:12, color:"var(--text-secondary)" }}>
-          {serviceTotal ? `${(servicePage - 1) * servicePageSize + 1}-${Math.min(servicePage * servicePageSize, serviceTotal)} of ${serviceTotal}` : "0 services"}
-        </span>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <select value={servicePageSize} onChange={event => { setServicePageSize(Number(event.target.value)); setServicePage(1); }} style={{ height:32, border:"1px solid var(--border)", borderRadius:8, background:"var(--input-bg)", color:"var(--text-primary)", padding:"0 8px" }}>
-            {[25, 50, 100].map(value => <option key={value} value={value}>{value} / page</option>)}
-          </select>
-          <Btn size="sm" variant="secondary" disabled={servicePage <= 1} onClick={() => setServicePage(page => page - 1)}>Previous</Btn>
-          <Badge variant="muted">Page {servicePage} of {servicePages}</Badge>
-          <Btn size="sm" variant="secondary" disabled={servicePage >= servicePages} onClick={() => setServicePage(page => page + 1)}>Next</Btn>
-        </div>
-      </div>
+      <Pagination page={servicePage} pageSize={servicePageSize} total={serviceTotal} pageCount={servicePages}
+        onPage={setServicePage} pageSizes={[25, 50, 100]}
+        onPageSize={size => { setServicePageSize(size); setServicePage(1); }} itemLabel="services" alwaysShow />
     </div>}
     {tab === "activity" && <Card><h3 style={{ marginTop:0 }}>Audit activity</h3>{(audit.data?.audit_log ?? []).length === 0 ? <p style={{ color:"var(--text-tertiary)", fontSize:13 }}>No audited changes yet.</p> : (audit.data?.audit_log ?? []).map(event => <div key={event.id} style={{ display:"grid", gridTemplateColumns:"130px 1fr auto", gap:12, padding:"11px 0", borderBottom:"1px solid var(--border)", alignItems:"center" }}><Badge variant="muted">{event.action}</Badge><div><div style={{ fontSize:13 }}>{event.change_summary || "Service group changed"}</div><div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{event.actor_role || "system"}{event.request_id ? ` · ${event.request_id}`:""}</div></div><span style={{ fontSize:11, color:"var(--text-tertiary)" }}>{event.created_at ? new Date(event.created_at).toLocaleString():"—"}</span></div>)}</Card>}
     <Modal open={restoreOpen} onClose={() => setRestoreOpen(false)} title="Restore service group"><p style={{ color:"var(--text-secondary)", fontSize:13 }}>Restored groups return as inactive so an administrator can review them before activation.</p><textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason for restoring (minimum 10 characters)" rows={3} style={{ width:"100%", boxSizing:"border-box", padding:10, borderRadius:8, border:"1px solid var(--border)", background:"var(--input-bg)", color:"var(--text-primary)" }}/>{restore.error && <p style={{ color:"var(--danger-text)", fontSize:12 }}>{restore.error}</p>}<div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:14 }}><Btn variant="secondary" onClick={()=>setRestoreOpen(false)}>Cancel</Btn><Btn variant="primary" disabled={reason.trim().length<10} loading={restore.loading} onClick={()=>restore.execute()}>Restore as inactive</Btn></div></Modal>

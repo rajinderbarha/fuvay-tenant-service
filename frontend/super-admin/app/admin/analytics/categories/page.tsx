@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { adminAnalyticsApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 import {
   AnalyticsKpiCard,
   AnalyticsDateFilter,
@@ -37,13 +38,12 @@ export default function CategoriesAnalyticsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Category Performance</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Compare revenue and job volume across service categories</p>
-        </div>
-        <AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />
-      </div>
+      <PageHeader
+        title="Category Performance"
+        description="Compare revenue and job volume across service categories."
+        eyebrow="Analytics"
+        actions={<AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
         <AnalyticsKpiCard label="Total Categories"  value={summary.total_categories}  loading={loading} />

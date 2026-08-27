@@ -50,10 +50,6 @@ class TestTenantAdminRouter:
         src = _backend("admin_router.py")
         assert "add-usage-credits" in src or "add_usage_credits" in src
 
-    def test_change_plan_endpoint_exists(self):
-        src = _backend("admin_router.py")
-        assert "change-plan" in src or "change_plan" in src
-
     def test_send_notification_endpoint_exists(self):
         src = _backend("admin_router.py")
         assert "send-notification" in src or "send_notification" in src
@@ -78,10 +74,6 @@ class TestTenantAdminService:
     def test_add_usage_credits_method(self):
         src = _backend("admin_service.py")
         assert "async def add_usage_credits" in src
-
-    def test_change_plan_method(self):
-        src = _backend("admin_service.py")
-        assert "async def change_plan" in src
 
     def test_reactivate_tenant_method(self):
         src = _backend("admin_service.py")
@@ -118,12 +110,6 @@ class TestTenantAdminService:
     def test_add_credits_requires_reason(self):
         src = _backend("admin_service.py")
         idx = src.index("async def add_usage_credits")
-        snippet = src[idx:idx + 400]
-        assert "REASON_REQUIRED" in snippet or "reason" in snippet.lower()
-
-    def test_change_plan_requires_reason(self):
-        src = _backend("admin_service.py")
-        idx = src.index("async def change_plan")
         snippet = src[idx:idx + 400]
         assert "REASON_REQUIRED" in snippet or "reason" in snippet.lower()
 
@@ -224,12 +210,6 @@ class TestApiTs:
         snippet = src[idx:idx + 2000]
         assert "addUsageCredits" in snippet
 
-    def test_change_plan_method(self):
-        src = _frontend("lib/api.ts")
-        idx = src.index("export const adminTenantsApi")
-        snippet = src[idx:idx + 2000]
-        assert "changePlan" in snippet
-
     def test_suspend_method(self):
         src = _frontend("lib/api.ts")
         idx = src.index("export const adminTenantsApi")
@@ -311,10 +291,6 @@ class TestTenantsPage:
         src = _frontend("app/admin/tenants/page.tsx")
         assert "VerificationDonut" in src
 
-    def test_right_sidebar_plan_distribution(self):
-        src = _frontend("app/admin/tenants/page.tsx")
-        assert "PlanDistribution" in src
-
     def test_right_sidebar_top_locations(self):
         src = _frontend("app/admin/tenants/page.tsx")
         assert "TopLocations" in src
@@ -330,10 +306,6 @@ class TestTenantsPage:
     def test_add_credits_modal(self):
         src = _frontend("app/admin/tenants/page.tsx")
         assert "AddCreditsModal" in src
-
-    def test_change_plan_modal(self):
-        src = _frontend("app/admin/tenants/page.tsx")
-        assert "ChangePlanModal" in src
 
     def test_suspend_modal(self):
         src = _frontend("app/admin/tenants/page.tsx")
@@ -373,9 +345,9 @@ class TestTenantsPage:
         assert "payout" not in src.lower()
         assert "withdrawable" not in src.lower()
 
-    def test_section_header_used(self):
+    def test_page_header_used(self):
         src = _frontend("app/admin/tenants/page.tsx")
-        assert "SectionHeader" in src
+        assert "PageHeader" in src
 
     def test_admin_layout_used(self):
         src = _frontend("app/admin/tenants/page.tsx")

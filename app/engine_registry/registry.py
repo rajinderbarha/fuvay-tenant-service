@@ -1,6 +1,6 @@
 """
 ServiceOS — Engine Registry
-The central registry of all 23 engines.
+The central registry of runtime engines.
 Each engine self-registers at import time.
 The registry provides:
   - Engine metadata (name, version, description, dependencies)
@@ -89,7 +89,7 @@ registry = EngineRegistry()
 
 
 def _seed_registry() -> None:
-    """Register all 23 engines at startup."""
+    """Register the canonical runtime engines at startup."""
 
     # ── CORE ENGINES ─────────────────────────────────────────────────────────
     CORE = [
@@ -325,18 +325,6 @@ def _seed_registry() -> None:
             api_prefix="/v1/loyalty",
             endpoint_count=18,
             category="retention",
-            is_enabled_by_default=False,
-        ),
-        EngineDefinition(
-            engine_id="subscription",
-            name="Subscription Engine",
-            description="Recurring plans, pause/resume, proration, billing cycles, dunning management, upgrade/downgrade.",
-            engine_type="plugin",
-            version="1.4.0",
-            dependencies=["auth", "payment"],
-            api_prefix="/v1/subscriptions",
-            endpoint_count=16,
-            category="billing",
             is_enabled_by_default=False,
         ),
         EngineDefinition(

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback } from "react";
 import { TenantLayout } from "../../../../../components/layout/TenantLayout";
 import { Modal as DsModal, Button as DsButton, Skeleton as DsSkeleton } from "@serviceos/design-system";
@@ -271,7 +272,7 @@ function WeeklyScheduleView({ rules, onEdit, onAdd, onDelete }: {
       </div>
 
       {/* Table */}
-      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+      <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
         <thead>
           <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
             {["Day","Status","Working Hours","Action"].map(h => (
@@ -350,7 +351,7 @@ function WeeklyScheduleView({ rules, onEdit, onAdd, onDelete }: {
             );
           })}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }
@@ -1510,7 +1511,7 @@ export default function BusinessHoursPage() {
               </div>
             ) : (
               <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                       {["Day","Hours","Scope","Status","Actions"].map(h => (
@@ -1560,7 +1561,7 @@ export default function BusinessHoursPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
           </div>

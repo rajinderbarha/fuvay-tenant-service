@@ -4,13 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { customerFlowApi, CustomerBookingDraft } from "../../../../../lib/api";
-
-const STATUS_COLORS: Record<string, string> = {
-  draft:     "#f3f4f6",
-  estimated: "#fef9c3",
-  confirmed: "#dcfce7",
-  cancelled: "#fef2f2",
-};
+import { PageHeader } from "@serviceos/design-system";
+import { Badge, Btn } from "../../../../../components/shared/ui";
 
 const FIELD_LABELS: [keyof CustomerBookingDraft, string][] = [
   ["flow_type",        "Flow Type"],
@@ -50,20 +45,16 @@ export default function DraftDetailPage() {
   if (!draft)  return <div style={{ padding: "2rem" }}>Draft not found.</div>;
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "800px" }}>
-      <Link href="/admin/customer-flow/drafts" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
-        ← Back to Drafts
-      </Link>
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: "0.75rem", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: 0 }}>Booking Draft</h1>
-          <code style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{draft.id}</code>
-        </div>
-        <span style={{ fontSize: "0.8rem", padding: "0.3rem 0.75rem", borderRadius: "9999px", background: STATUS_COLORS[draft.status] ?? "#f3f4f6", fontWeight: 600 }}>
-          {draft.status}
-        </span>
-      </div>
+    <div style={{ maxWidth: 900, display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title="Booking Draft"
+        description={`Draft ID: ${draft.id}`}
+        eyebrow="Customer Flow"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center" }}>
+          <Link href="/admin/customer-flow/drafts"><Btn variant="secondary" size="sm">Back to Drafts</Btn></Link>
+          <Badge variant={draft.status === "confirmed" ? "success" : draft.status === "cancelled" ? "danger" : draft.status === "estimated" ? "warning" : "muted"}>{draft.status}</Badge>
+        </div>}
+      />
 
       {/* Main fields */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", padding: "1.25rem", marginBottom: "1.25rem" }}>

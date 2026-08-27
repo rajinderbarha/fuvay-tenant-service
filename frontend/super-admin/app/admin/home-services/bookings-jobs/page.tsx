@@ -1,8 +1,9 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Skeleton, Input } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, Input, SectionHeader, Pagination } from "../../../../components/shared/ui";
 import {
   homeServicesOperationsApi, type UnifiedOperationRow, type UnifiedOperationsMetrics,
   finalRecordsAdminApi, adminExecutionApi, adminBookingsApi, adminReviewApi, adminHomeServiceBookingApi,
@@ -251,18 +252,17 @@ export default function HomeServicesOperationsPage() {
     <AdminLayout activeNav="home-services-operations">
       <div style={{ padding: "0 4px", display: "flex", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
-            <div>
-              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Operations / Home Services</p>
-              <h1 style={{ fontSize: 24, fontWeight: 750, margin: "0 0 4px", color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bookings & Jobs</h1>
-              <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-                One canonical workspace from customer request through job completion.
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ marginBottom: "var(--layout-page-gap)" }}>
+            <SectionHeader
+              eyebrow="Operations"
+              context="Home Services"
+              title="Bookings & Jobs"
+              description="One canonical workspace from customer request through job completion."
+              actions={<>
               <Btn variant="ghost" size="sm" onClick={() => { listApi.refetch(); setForceMetrics(n => n + 1); }}><RefreshCw size={14} style={{ marginRight: 5 }}/>Refresh</Btn>
               <Btn variant="secondary" size="sm" onClick={exportCsv} loading={exporting}><Download size={14} style={{ marginRight: 5 }}/>Export CSV</Btn>
-            </div>
+              </>}
+            />
           </div>
           {exportError && <div role="alert" style={{ marginBottom: 12, fontSize: 12, color: "var(--danger-text)" }}>{exportError}</div>}
 
@@ -432,7 +432,7 @@ export default function HomeServicesOperationsPage() {
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                       {["Work ID", "Customer & Service", "Tenant", "Current Stage", "Assignment", "Schedule / SLA", "Location", "Updated", ""].map(h => (
@@ -478,32 +478,12 @@ export default function HomeServicesOperationsPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
-            {pagination && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                    {pagination.total === 0 ? "No records" : `${(pagination.page - 1) * pagination.page_size + 1}–${Math.min(pagination.page * pagination.page_size, pagination.total)} of ${pagination.total.toLocaleString("en-IN")}`}
-                  </span>
-                  <label style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
-                    Rows
-                    <select value={pageSize} onChange={event => updateParams({ page_size: event.target.value, page: null })}
-                      style={{ ...filterControlStyle, width: 66, height: 30 }}>
-                      {[10, 25, 50, 100].map(size => <option key={size}>{size}</option>)}
-                    </select>
-                  </label>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)", marginRight: 4 }}>Page {pagination.page} of {pagination.total_pages}</span>
-                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => goToPage(1)} aria-label="First page"><ChevronLeft size={13}/><ChevronLeft size={13} style={{ marginLeft: -8 }}/></Btn>
-                  <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ChevronLeft size={13}/>Previous</Btn>
-                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => goToPage(page + 1)}>Next<ChevronRight size={13}/></Btn>
-                  <Btn variant="ghost" size="sm" disabled={page >= pagination.total_pages} onClick={() => goToPage(pagination.total_pages)} aria-label="Last page"><ChevronRight size={13}/><ChevronRight size={13} style={{ marginLeft: -8 }}/></Btn>
-                </div>
-              </div>
-            )}
+            {pagination && <Pagination page={pagination.page} pageSize={pagination.page_size} total={pagination.total}
+              pageCount={pagination.total_pages} onPage={goToPage} pageSizes={[10, 25, 50, 100]}
+              onPageSize={size => updateParams({ page_size: String(size), page: null })} itemLabel="bookings and jobs" alwaysShow />}
           </Card>
         </div>
 

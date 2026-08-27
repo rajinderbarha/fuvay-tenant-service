@@ -2,7 +2,7 @@
 import React, { useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, DataTable, Modal, Input } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, DataTable, EmptyState, Modal, Input } from "../../../../components/shared/ui";
 import { adminCustomersApi, AdminCustomer } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { ArrowLeft, ExternalLink, X } from "lucide-react";
@@ -27,10 +27,6 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
       <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{value ?? "—"}</div>
     </div>
   );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <p style={{ padding: "28px 20px", textAlign: "center", color: "var(--muted-text)", fontSize: 13 }}>{text}</p>;
 }
 
 // Reusable content -- used both by the standalone /admin/customers/[id]
@@ -300,8 +296,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
 
             {tab === "complaints" && (
               <div style={{ padding: complaints.length ? 0 : 20 }}>
-                {complaintsFetch.loading ? <EmptyState text="Loading…" /> : complaints.length === 0 ? (
-                  <EmptyState text="No complaints or disputes for this customer." />
+                {complaintsFetch.loading ? <EmptyState title="Loading…" /> : complaints.length === 0 ? (
+                  <EmptyState title="No complaints or disputes for this customer." />
                 ) : complaints.map((c: any) => (
                   <div key={c.id} style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 4 }}>
@@ -327,8 +323,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
                   )}
                   <Btn variant="primary" size="sm" onClick={() => setCreditModal(true)}>Issue Service Credit</Btn>
                 </div>
-                {creditsFetch.loading ? <EmptyState text="Loading…" /> : (creditsData?.credits.length ?? 0) === 0 ? (
-                  <EmptyState text="No service credits issued to this customer." />
+                {creditsFetch.loading ? <EmptyState title="Loading…" /> : (creditsData?.credits.length ?? 0) === 0 ? (
+                  <EmptyState title="No service credits issued to this customer." />
                 ) : creditsData!.credits.map((c: any) => (
                   <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{c.credit_number}</span>
@@ -342,8 +338,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
 
             {tab === "addresses" && (
               <div style={{ padding: 20 }}>
-                {addressesFetch.loading ? <EmptyState text="Loading…" /> : addresses.length === 0 ? (
-                  <EmptyState text="No saved addresses for this customer." />
+                {addressesFetch.loading ? <EmptyState title="Loading…" /> : addresses.length === 0 ? (
+                  <EmptyState title="No saved addresses for this customer." />
                 ) : addresses.map((a: any) => (
                   <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                     <div style={{ flex: 1 }}>
@@ -359,8 +355,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
             {tab === "sessions" && (
               <div style={{ padding: 20 }}>
                 <h4 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Active Sessions</h4>
-                {sessionsFetch.loading ? <EmptyState text="Loading…" /> : sessions.length === 0 ? (
-                  <EmptyState text="No sessions found." />
+                {sessionsFetch.loading ? <EmptyState title="Loading…" /> : sessions.length === 0 ? (
+                  <EmptyState title="No sessions found." />
                 ) : sessions.map((s: any) => (
                   <div key={s.session_id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ fontSize: 13, flex: 1 }}>{s.device_name}</span>
@@ -369,8 +365,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
                   </div>
                 ))}
                 <h4 style={{ fontSize: 13, fontWeight: 700, margin: "20px 0 10px" }}>Login History</h4>
-                {loginHistoryFetch.loading ? <EmptyState text="Loading…" /> : loginHistory.length === 0 ? (
-                  <EmptyState text="No login history recorded." />
+                {loginHistoryFetch.loading ? <EmptyState title="Loading…" /> : loginHistory.length === 0 ? (
+                  <EmptyState title="No login history recorded." />
                 ) : loginHistory.map((e: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
                     <Badge variant={e.event_type.includes("fail") ? "danger" : "success"} size="sm">{e.event_type}</Badge>
@@ -383,8 +379,8 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
 
             {tab === "privacy" && (
               <div style={{ padding: 20 }}>
-                {privacyFetch.loading ? <EmptyState text="Loading…" /> : privacyRequests.length === 0 ? (
-                  <EmptyState text="No DPDP/privacy requests for this customer." />
+                {privacyFetch.loading ? <EmptyState title="Loading…" /> : privacyRequests.length === 0 ? (
+                  <EmptyState title="No DPDP/privacy requests for this customer." />
                 ) : privacyRequests.map((p: any) => (
                   <div key={p.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ fontSize: 13, flex: 1 }}>{p.request_number} — {p.request_type.replace(/_/g, " ")}</span>

@@ -73,8 +73,8 @@ describe("customer native brand and contrast tokens", () => {
     expect(lightColors.statusDanger).toBe("#C4342A");
   });
 
-  it("uses the approved warm near-black (not pure-black) dark background", () => {
-    expect(darkColors.backgroundPrimary).toBe("#0E0F10");
+  it("uses the approved neutral charcoal (not pure-black) dark background", () => {
+    expect(darkColors.backgroundPrimary).toBe("#1C1C1E");
     expect(darkColors.backgroundPrimary).not.toBe("#000000");
   });
 
@@ -89,8 +89,8 @@ describe("customer native brand and contrast tokens", () => {
     expect(darkColors.backgroundPrimary).not.toBe(darkColors.surfaceDefault);
   });
 
-  it("keeps dark-mode primary text close to warm white, not washed-out gray", () => {
-    expect(darkColors.textPrimary).toBe("#F4F1EA");
+  it("keeps dark-mode primary text close to white, not washed-out gray", () => {
+    expect(darkColors.textPrimary).toBe("#F5F5F7");
   });
 
   it("defines distinct campaign tokens for light and dark treatments", () => {

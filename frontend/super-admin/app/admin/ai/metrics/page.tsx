@@ -3,11 +3,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { adminAiApi, AIMetrics } from "@/lib/api";
 import { AnalyticsKpiCard } from "@/components/analytics";
-
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
-  background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
-};
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 export default function AIMetricsPage() {
   const [metrics, setMetrics] = useState<AIMetrics | null>(null);
@@ -29,15 +26,12 @@ export default function AIMetricsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>AI Metrics</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>AI action execution statistics and rate limiter status</p>
-        </div>
-        <button onClick={load} disabled={loading} style={btnStyle}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
+      <PageHeader
+        title="AI Metrics"
+        description="AI action execution statistics and rate-limiter status."
+        eyebrow="Intelligence"
+        actions={<Btn variant="secondary" size="sm" onClick={load} loading={loading}>Refresh</Btn>}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
         <AnalyticsKpiCard label="Executed Actions"  value={m.executed_count}   loading={loading} severity="success" />

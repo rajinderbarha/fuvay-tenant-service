@@ -2,6 +2,7 @@
 import { useApi, useAction } from "../../../hooks/useApi";
 import { adminComplaintPolicyApi, ComplaintPolicyRecord } from "../../../lib/api";
 import { useState, useCallback } from "react";
+import { PageHeader } from "@serviceos/design-system";
 
 const inputStyle: React.CSSProperties = {
   border: "1px solid var(--border)", borderRadius:"var(--radius-md)", padding: "6px 12px",
@@ -51,7 +52,8 @@ export default function AdminComplaintPoliciesPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Complaint Policies</h1>
+      <PageHeader eyebrow="Trust & quality" title="Complaint Policies"
+        description="Configure the complaint window, remedies, review gates, and settlement controls." />
 
       {loading && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</p>}
       {error   && <p style={{ fontSize: 13, color: "var(--danger-text)" }}>{error}</p>}
@@ -103,7 +105,7 @@ export default function AdminComplaintPoliciesPage() {
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               The AI takes over automatically once the provider has failed to solve the complaint.
               It never pays money &mdash; compensation is credit points, funded from the provider&apos;s
-              credits and then their security deposit. A case worth more than the cap goes to admin
+              credits, which may go negative and pause new bookings. A case worth more than the cap goes to admin
               manual review.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -217,7 +219,7 @@ export default function AdminComplaintPoliciesPage() {
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
                   Refunds and every other cash remedy are deliberately absent: the platform never
                   settles a dispute with real money. Compensation is paid in credit points, deducted
-                  from the provider&apos;s credits and then their security deposit.
+                  from the provider&apos;s credits, which may go negative and pause new bookings.
                 </p>
               </div>
             </div>

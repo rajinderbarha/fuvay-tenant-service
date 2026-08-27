@@ -20,7 +20,7 @@ import {
   PauseCircle, RotateCcw, Send,
 } from "lucide-react";
 import { AdminLayout } from "../layout/AdminLayout";
-import { Card, Badge, Btn, Skeleton, Modal, DataTable, Pagination } from "../shared/ui";
+import { Card, Badge, Btn, Skeleton, Modal, DataTable, Pagination, SummaryCard, KpiGrid } from "../shared/ui";
 import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../lib/api";
 import { openAdminMediaPreview } from "../../lib/open-admin-media-preview";
 import { useApi, useAction } from "../../hooks/useApi";
@@ -271,18 +271,10 @@ function ReadinessRow({ ok, label }: { ok: boolean; label: string }) {
     </div>
   );
 }
-function StatCard({ label, value, sub, icon, alert }: { label: string; value: string; sub?: string; icon?: React.ReactNode; alert?: boolean }) {
-  return (
-    <Card padding={14} style={alert ? { borderColor: "var(--warning-border, var(--warning))" } : undefined}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {icon && <span style={{ color: alert ? "var(--warning-text)" : "var(--text-tertiary)" }}>{icon}</span>}
-        <div style={{ fontSize: 20, fontWeight: 800 }}>{value}</div>
-      </div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{label}{sub ? ` · ${sub}` : ""}</div>
-    </Card>
-  );
-}
-
+/** Thin adapter onto the one canonical card so every stat on this workspace
+ *  matches every stat elsewhere in the admin. `alert` maps to the shared
+ *  card's `tone`, which colours the value rather than the border — the same
+ *  signal, rendered the way the rest of the app renders it. */
 // ── Overview: consolidated dashboard, composed from the same real
 // per-tab endpoints used elsewhere on this page. ──────────────────────────
 function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId: string }) {
@@ -328,19 +320,19 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16, gridColumn: "1 / -1" }}>
         {/* Top stat strip */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-          <StatCard label="Health" value={`${Number(d.health_score ?? 0)}%`} sub={String(d.health_band ?? "")} />
-          <StatCard label="Active Services" value={services.loading ? "…" : String(s?.active_services ?? 0)} icon={<Wrench size={15} />} />
-          <StatCard label="Staff / Available" value={team.loading ? "…" : `${t?.total_staff ?? 0} / ${t?.available_staff ?? 0}`} icon={<Users size={15} />} />
-          <StatCard label="Active Jobs" value={ops.loading ? "…" : String(o?.active_jobs ?? 0)} icon={<Briefcase size={15} />} />
-          <StatCard label="Rating" value={rs ? Number(rs.average_rating).toFixed(1) : Number(d.rating_average ?? 0).toFixed(1)}
+        <KpiGrid minCardWidth={140}>
+          <SummaryCard label="Health" value={`${Number(d.health_score ?? 0)}%`} sub={String(d.health_band ?? "")} />
+          <SummaryCard label="Active Services" value={services.loading ? "…" : String(s?.active_services ?? 0)} icon={<Wrench size={15} />} />
+          <SummaryCard label="Staff / Available" value={team.loading ? "…" : `${t?.total_staff ?? 0} / ${t?.available_staff ?? 0}`} icon={<Users size={15} />} />
+          <SummaryCard label="Active Jobs" value={ops.loading ? "…" : String(o?.active_jobs ?? 0)} icon={<Briefcase size={15} />} />
+          <SummaryCard label="Rating" value={rs ? Number(rs.average_rating).toFixed(1) : Number(d.rating_average ?? 0).toFixed(1)}
             sub={rs ? `${rs.total_reviews} reviews` : undefined} icon={<Star size={15} />} />
-          <StatCard label="Usage Credits" value={finance.loading ? "…" : money(credits?.balance as string)} icon={<Wallet size={15} />} alert={Boolean(credits?.low_balance)} />
-          <StatCard label="Security Deposit" value={finance.loading ? "…" : money(deposit?.current_balance as string)} icon={<DepositIcon size={15} />} />
+          <SummaryCard label="Usage Credits" value={finance.loading ? "…" : money(credits?.balance as string)} icon={<Wallet size={15} />} tone={credits?.low_balance ? "warning" : undefined} />
+          <SummaryCard label="Security Deposit" value={finance.loading ? "…" : money(deposit?.current_balance as string)} icon={<DepositIcon size={15} />} />
           {attention.length > 0 && (
-            <StatCard label="Items need attention" value={String(attention.length)} icon={<AlertTriangle size={15} />} alert />
+            <SummaryCard label="Items need attention" value={String(attention.length)} icon={<AlertTriangle size={15} />} tone="warning" />
           )}
-        </div>
+        </KpiGrid>
       </div>
 
       {/* Left column */}
@@ -558,12 +550,12 @@ function FinanceTab({ providerId }: { providerId: string }) {
         </Card>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-        <StatCard label="Usage Credit Balance" value={money(credits?.balance as string)} sub={credits?.low_balance ? "Low balance" : undefined} />
-        <StatCard label="Security Deposit" value={String(deposit?.status ?? "not_required")} />
-        <StatCard label="Deposit Required" value={money(deposit?.required_amount as string)} />
-        <StatCard label="Deposit Held" value={money(deposit?.current_balance as string)} />
-      </div>
+      <KpiGrid minCardWidth={180}>
+        <SummaryCard label="Usage Credit Balance" value={money(credits?.balance as string)} sub={credits?.low_balance ? "Low balance" : undefined} />
+        <SummaryCard label="Security Deposit" value={String(deposit?.status ?? "not_required")} />
+        <SummaryCard label="Deposit Required" value={money(deposit?.required_amount as string)} />
+        <SummaryCard label="Deposit Held" value={money(deposit?.current_balance as string)} />
+      </KpiGrid>
 
       <div>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>Provider charges</h3>
@@ -612,23 +604,23 @@ function QualityTab({ providerId }: { providerId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <StatCard label="Average Rating" value={rs ? Number(rs.average_rating).toFixed(1) : "—"}
+      <KpiGrid minCardWidth={150}>
+        <SummaryCard label="Average Rating" value={rs ? Number(rs.average_rating).toFixed(1) : "—"}
           sub={rs ? `${rs.total_reviews} reviews` : reviews.error ? "Unavailable" : reviews.loading ? "Loading…" : "No reviews yet"} />
-        <StatCard label="Health Score" value={`${q.health_score}%`} sub={String(q.health_band)} />
-        <StatCard label="Open Complaints" value={String(q.open_complaints_count ?? 0)} />
-        <StatCard label="Total Complaints" value={String(q.total_complaints ?? 0)} />
-        <StatCard label="Completion Rate" value={`${q.completion_rate ?? 0}%`} />
-        <StatCard label="Cancellation Rate" value={`${q.cancellation_rate ?? 0}%`} />
-        <StatCard label="Repeat Customers" value={String(q.repeat_customers ?? 0)} sub={`${q.unique_customers ?? 0} total`} />
+        <SummaryCard label="Health Score" value={`${q.health_score}%`} sub={String(q.health_band)} />
+        <SummaryCard label="Open Complaints" value={String(q.open_complaints_count ?? 0)} />
+        <SummaryCard label="Total Complaints" value={String(q.total_complaints ?? 0)} />
+        <SummaryCard label="Completion Rate" value={`${q.completion_rate ?? 0}%`} />
+        <SummaryCard label="Cancellation Rate" value={`${q.cancellation_rate ?? 0}%`} />
+        <SummaryCard label="Repeat Customers" value={String(q.repeat_customers ?? 0)} sub={`${q.unique_customers ?? 0} total`} />
         {reviews.data && (
           <>
-            <StatCard label="Low-Rating Reviews" value={String(reviews.data.low_rating_count ?? 0)} />
-            <StatCard label="Response Rate" value={`${reviews.data.provider_response_rate ?? 0}%`} />
-            <StatCard label="Open Review Reports" value={String(reviews.data.open_review_reports ?? 0)} />
+            <SummaryCard label="Low-Rating Reviews" value={String(reviews.data.low_rating_count ?? 0)} />
+            <SummaryCard label="Response Rate" value={`${reviews.data.provider_response_rate ?? 0}%`} />
+            <SummaryCard label="Open Review Reports" value={String(reviews.data.open_review_reports ?? 0)} />
           </>
         )}
-      </div>
+      </KpiGrid>
       {recentReviews.length > 0 && (
         <div>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>Recent reviews</h3>
@@ -671,13 +663,13 @@ function TeamTab({ providerId }: { providerId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-        <StatCard label="Total Staff" value={String(t.total_staff ?? 0)} />
-        <StatCard label="Verified" value={String(t.verified_staff ?? 0)} />
-        <StatCard label="Available" value={String(t.available_staff ?? 0)} />
-        <StatCard label="Capability Incomplete" value={String(t.capability_incomplete_staff ?? 0)} />
-        <StatCard label="Suspended" value={String(t.suspended_staff ?? 0)} />
-      </div>
+      <KpiGrid minCardWidth={140}>
+        <SummaryCard label="Total Staff" value={String(t.total_staff ?? 0)} />
+        <SummaryCard label="Verified" value={String(t.verified_staff ?? 0)} />
+        <SummaryCard label="Available" value={String(t.available_staff ?? 0)} />
+        <SummaryCard label="Capability Incomplete" value={String(t.capability_incomplete_staff ?? 0)} />
+        <SummaryCard label="Suspended" value={String(t.suspended_staff ?? 0)} />
+      </KpiGrid>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
         Only staff explicitly assigned to this provider&apos;s Home Services operation appear here — a
         multi-vertical tenant&apos;s staff do not automatically show up in this list.
@@ -710,13 +702,13 @@ function OperationsTab({ providerId }: { providerId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-        <StatCard label="Total Jobs" value={String(o.total_jobs ?? 0)} />
-        <StatCard label="Active Jobs" value={String(o.active_jobs ?? 0)} />
+      <KpiGrid minCardWidth={140}>
+        <SummaryCard label="Total Jobs" value={String(o.total_jobs ?? 0)} />
+        <SummaryCard label="Active Jobs" value={String(o.active_jobs ?? 0)} />
         {Object.entries(byStatus).map(([status, count]) => (
-          <StatCard key={status} label={status.replace(/_/g, " ")} value={String(count)} />
+          <SummaryCard key={status} label={status.replace(/_/g, " ")} value={String(count)} />
         ))}
-      </div>
+      </KpiGrid>
       <DataTable
         rows={jobs}
         emptyText="No Home Services jobs recorded for this provider yet."
@@ -801,13 +793,13 @@ function ServicesTab({ providerId }: { providerId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <StatCard label="Total Services" value={String(s.total_services ?? 0)} />
-        <StatCard label="Published" value={String(s.published_services ?? 0)} />
-        <StatCard label="Active" value={String(s.active_services ?? 0)} />
-        <StatCard label="Price Configured" value={String(s.price_configured_count ?? 0)} />
-        <StatCard label="Missing Price Config" value={String(s.missing_price_config_count ?? 0)} />
-      </div>
+      <KpiGrid minCardWidth={150}>
+        <SummaryCard label="Total Services" value={String(s.total_services ?? 0)} />
+        <SummaryCard label="Published" value={String(s.published_services ?? 0)} />
+        <SummaryCard label="Active" value={String(s.active_services ?? 0)} />
+        <SummaryCard label="Price Configured" value={String(s.price_configured_count ?? 0)} />
+        <SummaryCard label="Missing Price Config" value={String(s.missing_price_config_count ?? 0)} />
+      </KpiGrid>
       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, fontWeight: 600 }}>
         Pricing ownership: Tenant-owned
       </p>

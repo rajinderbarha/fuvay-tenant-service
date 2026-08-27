@@ -5,6 +5,7 @@ import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader,
 } from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import { ActionMenu } from "../../../components/shared/layout";
 import { catalogApi, type Brand34D, type BrandDuplicateWarning } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RefreshCw, Download, Merge } from "lucide-react";
@@ -29,7 +30,7 @@ function isDupWarning(r: unknown): r is BrandDuplicateWarning {
   return (r as BrandDuplicateWarning)?.warning === "BRAND_DUPLICATE_POSSIBLE";
 }
 
-function BrandActionMenu({ brand, onEdit, onActivate, onDeactivate, onArchive, onMerge }: {
+function BrandActions({ brand, onEdit, onActivate, onDeactivate, onArchive, onMerge }: {
   brand: Brand34D;
   onEdit: () => void;
   onActivate: () => void;
@@ -37,42 +38,17 @@ function BrandActionMenu({ brand, onEdit, onActivate, onDeactivate, onArchive, o
   onArchive: () => void;
   onMerge: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const items = [
-    { label: "Edit Brand", action: onEdit },
-    { label: "Merge Into…", action: onMerge },
-    null,
-    brand.status !== "active" ? { label: "Activate", action: onActivate } : null,
-    brand.status === "active" ? { label: "Deactivate", action: onDeactivate } : null,
-    { label: "Archive", action: onArchive, danger: true },
-  ];
   return (
-    <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-      <Btn variant="ghost" size="xs" onClick={() => setOpen(o => !o)}>Actions ▾</Btn>
-      {open && (
-        <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 1000 }} onClick={() => setOpen(false)} />
-          <div style={{
-            position: "absolute", right: 0, top: "100%", zIndex: 1001, marginTop: 4,
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,.12)",
-            overflow: "hidden",
-          }}>
-            {items.map((item, i) =>
-              item === null
-                ? <hr key={i} style={{ margin: 0, border: "none", borderTop: "1px solid var(--border)" }} />
-                : item
-                  ? <button key={i} onClick={() => { setOpen(false); item.action(); }} style={{
-                      display: "block", width: "100%", textAlign: "left",
-                      padding: "9px 16px", fontSize: 13, background: "none", border: "none",
-                      cursor: "pointer", color: item.danger ? "var(--danger-text, #e53e3e)" : "var(--text-primary)",
-                    }}>{item.label}</button>
-                  : null
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <ActionMenu
+      size="xs"
+      items={[
+        { label: "Edit brand", onClick: onEdit },
+        { label: "Merge into…", onClick: onMerge },
+        brand.status !== "active" && { label: "Activate", onClick: onActivate, divider: true },
+        brand.status === "active" && { label: "Deactivate", onClick: onDeactivate, divider: true },
+        { label: "Archive", onClick: onArchive, variant: "danger" },
+      ]}
+    />
   );
 }
 
@@ -203,7 +179,7 @@ export default function BrandsPage() {
     {
       key: "brand_id", label: "", width: 120,
       render: (_: unknown, row: Brand34D) => (
-        <BrandActionMenu brand={row}
+        <BrandActions brand={row}
           onEdit={() => openEdit(row)}
           onActivate={() => activateAction.execute(row.brand_id)}
           onDeactivate={() => deactivateAction.execute(row.brand_id)}

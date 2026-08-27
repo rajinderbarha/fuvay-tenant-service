@@ -26,11 +26,25 @@
   --space-16: 4rem;
   --space-20: 5rem;
 
+  /* Semantic layout rhythm. Components consume these names instead of
+   * inventing one-off pixel values, while the 4px base scale remains the
+   * single source of truth. Portals may override the semantic tokens at a
+   * layout boundary without forking component markup. */
+  --layout-control-gap: var(--space-2);
+  --layout-section-gap: var(--space-5);
+  --layout-page-gap: var(--space-6);
+  --layout-card-padding-block: var(--space-4);
+  --layout-card-padding-inline: var(--space-5);
+  --layout-content-padding-block: var(--space-8);
+  --layout-content-padding-inline: var(--space-8);
+
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-full: 9999px;
+  --radius-card: var(--radius-xl);
+  --radius-kpi: 0.875rem;
 
   --shadow-sm: 0 1px 2px rgba(38, 30, 20, 0.06);
   --shadow-md: 0 4px 12px rgba(38, 30, 20, 0.09);
@@ -129,6 +143,111 @@
 .ds-spin {
   animation: ds-spin 0.8s linear infinite;
 }
+
+/* Canonical data-table contract shared by admin and tenant. */
+.ds-table {
+  --ds-table-cell-padding-block: var(--space-3);
+  --ds-table-cell-padding-inline: var(--space-4);
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: 400 0.8125rem/1.25rem var(--font-family-base);
+}
+.ds-table[data-density="compact"] {
+  --ds-table-cell-padding-block: var(--space-2);
+  --ds-table-cell-padding-inline: var(--space-3);
+}
+.ds-table[data-density="comfortable"] {
+  --ds-table-cell-padding-block: var(--space-4);
+  --ds-table-cell-padding-inline: var(--space-5);
+}
+.ds-table > thead > tr > th {
+  padding: var(--ds-table-cell-padding-block) var(--ds-table-cell-padding-inline) !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: var(--surface-sunken) !important;
+  color: var(--text-tertiary) !important;
+  font: 700 0.6875rem/1rem var(--font-family-base) !important;
+  letter-spacing: 0.05em !important;
+  text-align: left;
+  text-transform: uppercase !important;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.ds-table > tbody > tr > td,
+.ds-table > tfoot > tr > td {
+  padding: var(--ds-table-cell-padding-block) var(--ds-table-cell-padding-inline) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text-primary);
+  font-size: 0.8125rem !important;
+  line-height: 1.25rem !important;
+  vertical-align: middle !important;
+}
+.ds-table > tbody > tr:last-child > td { border-bottom: 0 !important; }
+.ds-table > tbody > tr { transition: background var(--motion-fast) var(--motion-easing); }
+.ds-table > tbody > tr:hover { background: var(--surface-sunken); }
+.ds-table > tbody > tr:focus-within { background: var(--surface-sunken); }
+.ds-table th:last-child,
+.ds-table td:last-child { padding-right: var(--layout-card-padding-inline) !important; }
+
+/* Action menus render in document.body, beyond every card/table overflow boundary. */
+.ds-action-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  font-family: var(--font-family-base);
+  font-weight: 600;
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+}
+.ds-action-menu-trigger:hover,
+.ds-action-menu-trigger[aria-expanded="true"] {
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+.ds-action-menu-trigger:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.ds-action-menu {
+  position: fixed;
+  z-index: var(--z-popover, 10000);
+  max-width: min(18rem, calc(100vw - 1rem));
+  max-height: min(22rem, calc(100vh - 1rem));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-overlay);
+}
+.ds-action-menu > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.625rem var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-family-base);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+}
+.ds-action-menu > button:hover { background: var(--surface-sunken); }
+.ds-action-menu > button:focus-visible { outline: none; background: var(--accent-muted); }
+.ds-action-menu > button:disabled { cursor: not-allowed; opacity: 0.45; }
+.ds-action-menu > button.is-danger { color: var(--danger-text); }
+.ds-action-menu-icon { display: inline-flex; flex: 0 0 auto; opacity: 0.8; }
+.ds-action-menu-divider { height: 1px; margin: var(--space-1) 0; background: var(--border); }
 
 @keyframes ds-skeleton-pulse {
   0%, 100% { opacity: 1; }

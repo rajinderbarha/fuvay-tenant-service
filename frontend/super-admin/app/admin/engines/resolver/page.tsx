@@ -4,9 +4,9 @@ import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, CardHeader, SectionHeader, Badge, Btn, Skeleton } from "../../../../components/shared/ui";
 import { useApi } from "../../../../hooks/useApi";
-import { engineMgmtApi, catalogApi, adminTenantApi, packageApi } from "../../../../lib/api";
+import { engineMgmtApi, catalogApi, adminTenantApi } from "../../../../lib/api";
 import type {
-  PlatformEngine, CategoryOption, AdminTenantRow, AdminPackage, EngineAccessResolution,
+  PlatformEngine, CategoryOption, AdminTenantRow, EngineAccessResolution,
 } from "../../../../lib/api";
 import { ArrowLeft, Zap, CheckCircle2, XCircle, Search } from "lucide-react";
 
@@ -81,7 +81,6 @@ export default function EngineAccessResolverPage() {
   const [engine, setEngine] = useState<PlatformEngine | null>(null);
   const [category, setCategory] = useState<CategoryOption | null>(null);
   const [tenant, setTenant] = useState<AdminTenantRow | null>(null);
-  const [pkg, setPkg] = useState<AdminPackage | null>(null);
 
   const [result, setResult] = useState<EngineAccessResolution | null>(null);
   const [loading, setLoading] = useState(false);
@@ -95,7 +94,6 @@ export default function EngineAccessResolverPage() {
         engine_key: engine.engine_key,
         tenant_id: tenant?.tenant_id,
         category_id: category?.id,
-        package_id: pkg?.id,
       });
       setResult(res);
     } catch (e) {
@@ -115,12 +113,12 @@ export default function EngineAccessResolverPage() {
 
       <SectionHeader
         title="Runtime Access Resolver"
-        subtitle="Simulate the full engine access chain: Global → Category → Package → Tenant Override → Runtime"
+        subtitle="Simulate the runtime access chain: Global → Category → Tenant Override → Runtime"
         icon={<Zap />}
       />
 
       <Card style={{ marginBottom: 20 }}>
-        <CardHeader title="Resolve Access" subtitle="Engine is required; category, package, and tenant are optional context" />
+        <CardHeader title="Resolve Access" subtitle="Engine is required; category and tenant are optional context" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 18 }}>
           <SearchSelect<PlatformEngine>
             value={engine} label="Engine (required)" placeholder="Search engine by name or key…"
@@ -145,22 +143,6 @@ export default function EngineAccessResolverPage() {
             )}
             renderValue={c => c.name}
             onChange={setCategory} onClear={() => setCategory(null)}
-          />
-          <SearchSelect<AdminPackage>
-            value={pkg} label="Package (optional)" placeholder="Search package…"
-            fetcher={async (q) => {
-              const res = await packageApi.list({ limit: 20 });
-              const items = res.packages;
-              return q ? items.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : items;
-            }}
-            renderOption={p => (
-              <div>
-                <div style={{ fontWeight: 600 }}>{p.name}</div>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{p.package_type}</div>
-              </div>
-            )}
-            renderValue={p => p.name}
-            onChange={setPkg} onClear={() => setPkg(null)}
           />
           <SearchSelect<AdminTenantRow>
             value={tenant} label="Tenant (optional)" placeholder="Search tenant by name…"

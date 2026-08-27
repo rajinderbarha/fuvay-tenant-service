@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.engine_mgmt.models import (
     PlatformEngine, EngineDependency, CategoryEngineMatrix,
-    PackageEngineEntitlement, TenantEngineOverride,
+    TenantEngineOverride,
     EngineHealthCheck, EnginePermission, EngineAuditLog,
 )
 from app.exceptions import ServiceOSException
@@ -77,11 +77,22 @@ def _is_prefix_mounted(api_prefix: str, route_paths: set[str]) -> bool:
 CATEGORY_ENGINE_TEMPLATES: dict[str, dict] = {
     "home_services_default": {
         "vertical_type": "home_services",
-        "required": ["auth_iam", "service_catalog", "pricing", "booking", "field_ops",
-                     "notification", "finance", "package_credit", "complaint_dispute",
-                     "customer_svc_credit", "audit", "security"],
-        "optional": ["rag", "analytics", "review_rating", "marketing", "loyalty_rewards",
-                     "chat", "bargain"],
+        # Runtime registry identities are canonical.  Historical governance
+        # aliases (auth_iam, finance, package_credit, customer_svc_credit,
+        # job_dispatch, media_vault, review_rating, ...) are resolved only at
+        # the persistence boundary and must never appear as separate tenant
+        # capabilities.
+        "required": [
+            "auth", "tenant", "service_catalog", "pricing", "geo",
+            "serviceability", "booking", "notification", "payment", "media",
+            "platform_commerce", "field_ops", "dispatch", "inventory",
+            "document", "workflow", "trust_quality", "complaint_dispute",
+            "compliance", "audit", "webhook",
+        ],
+        "optional": [
+            "rag", "analytics", "review", "marketing", "loyalty", "chat",
+            "promo", "data_science",
+        ],
     },
     "real_estate_default": {
         "vertical_type": "real_estate",
@@ -152,11 +163,57 @@ class EngineMgmtService:
     # ── Engine helpers ─────────────────────────────────────────────────────────
 
     async def _get_engine(self, engine_key: str) -> PlatformEngine:
-        e = await self.db.scalar(
-            select(PlatformEngine).where(PlatformEngine.engine_key == engine_key))
+        candidates = [engine_key, *sorted(
+            alias for alias, canonical in LEGACY_ENGINE_ALIASES.items()
+            if canonical == engine_key and alias != engine_key
+        )]
+        rows = (await self.db.execute(
+            select(PlatformEngine).where(PlatformEngine.engine_key.in_(candidates))
+        )).scalars().all()
+        by_key = {row.engine_key: row for row in rows}
+        e = by_key.get(engine_key) or next((by_key[key] for key in candidates if key in by_key), None)
         if not e:
             raise ServiceOSException("NOT_FOUND", f"Engine '{engine_key}' not found.")
         return e
+
+    async def _get_or_create_governance_engine(self, engine_key: str) -> PlatformEngine:
+        """Return the database governance row for a canonical runtime engine.
+
+        A few runtime engines pre-date their ``platform_engines`` record.  A
+        category seed is an explicit admin operation, so it is the correct
+        boundary at which to materialise the missing governance identity.  We
+        never create historical aliases here.
+        """
+        try:
+            return await self._get_engine(engine_key)
+        except ServiceOSException as exc:
+            if exc.error_code != "NOT_FOUND":
+                raise
+
+        definition = runtime_registry.get(engine_key)
+        if not definition:
+            raise ServiceOSException("NOT_FOUND", f"Engine '{engine_key}' not found.")
+        now = _now()
+        engine = PlatformEngine(
+            engine_key=definition.engine_id,
+            display_name=definition.name,
+            description=definition.description,
+            engine_type=definition.engine_type,
+            lifecycle_status="active",
+            global_status="locked" if definition.engine_type == "core" else "enabled",
+            is_core=definition.engine_type == "core",
+            is_locked=definition.engine_type == "core",
+            is_customer_visible=False,
+            is_tenant_visible=True,
+            version=definition.version,
+            owner_team="Runtime registry",
+            metadata_json={"created_from_runtime_registry": True},
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(engine)
+        await self.db.flush()
+        return engine
 
     # ── Registry / List ────────────────────────────────────────────────────────
 
@@ -208,9 +265,6 @@ class EngineMgmtService:
 
         cat_mapped = await self.db.scalar(
             select(func.count(CategoryEngineMatrix.engine_id.distinct())))
-        pkg_entitled = await self.db.scalar(
-            select(func.count(PackageEngineEntitlement.engine_id.distinct())).where(
-                PackageEngineEntitlement.is_included == True))
         overrides = await self.db.scalar(
             select(func.count()).select_from(TenantEngineOverride).where(
                 TenantEngineOverride.status == "active"))
@@ -235,7 +289,6 @@ class EngineMgmtService:
             "core_locked": core_locked or 0,
             "beta_engines": beta or 0,
             "category_mapped": cat_mapped or 0,
-            "package_entitled": pkg_entitled or 0,
             "tenant_overrides_active": overrides or 0,
             "degraded_or_down": degraded + down,
         }
@@ -458,13 +511,6 @@ class EngineMgmtService:
                 CategoryEngineMatrix.is_enabled == True))
         result["category_usage_count"] = cat_count or 0
 
-        # Package count
-        pkg_count = await self.db.scalar(
-            select(func.count()).select_from(PackageEngineEntitlement).where(
-                PackageEngineEntitlement.engine_key == engine_key,
-                PackageEngineEntitlement.is_included == True))
-        result["package_usage_count"] = pkg_count or 0
-
         # Active overrides
         override_count = await self.db.scalar(
             select(func.count()).select_from(TenantEngineOverride).where(
@@ -563,16 +609,12 @@ class EngineMgmtService:
             select(func.count()).select_from(CategoryEngineMatrix).where(
                 CategoryEngineMatrix.engine_key == engine_key,
                 CategoryEngineMatrix.is_enabled == True))
-        pkg_count = await self.db.scalar(
-            select(func.count()).select_from(PackageEngineEntitlement).where(
-                PackageEngineEntitlement.engine_key == engine_key,
-                PackageEngineEntitlement.is_included == True))
         tenant_count = await self.db.scalar(
             select(func.count()).select_from(TenantEngineOverride).where(
                 TenantEngineOverride.engine_key == engine_key,
                 TenantEngineOverride.status == "active"))
 
-        risk = "high" if blockers else ("medium" if cat_count or pkg_count else "low")
+        risk = "high" if blockers else ("medium" if cat_count else "low")
 
         return {
             "engine_key": engine_key,
@@ -582,7 +624,6 @@ class EngineMgmtService:
             "is_locked": e.is_locked,
             "is_core": e.is_core,
             "categories_affected": cat_count or 0,
-            "packages_affected": pkg_count or 0,
             "active_tenant_overrides": tenant_count or 0,
             "blockers": blockers,
             "warnings": warnings,
@@ -590,7 +631,7 @@ class EngineMgmtService:
             "can_proceed": len(blockers) == 0,
             "recommendation": (
                 "Action is blocked. Resolve blockers first." if blockers else
-                f"Safe to proceed. {cat_count or 0} categories and {pkg_count or 0} packages will be affected."
+                f"Safe to proceed. {cat_count or 0} category mappings will be affected."
             ),
         }
 
@@ -702,17 +743,6 @@ class EngineMgmtService:
             raise ServiceOSException("NOT_FOUND", f"Category {category_id} not found.")
         return cat
 
-    async def _packages_for_vertical(self, vertical_type: str | None):
-        from app.engines.package_commerce.models import ServicePackage
-        if not vertical_type:
-            return []
-        rows = (await self.db.execute(
-            select(ServicePackage).where(
-                ServicePackage.vertical_type == vertical_type,
-                ServicePackage.is_active == True)
-        )).scalars().all()
-        return rows
-
     async def _tenants_for_category(self, category_id: uuid.UUID):
         from app.engines.tenant_engine.models import Tenant
         rows = (await self.db.execute(
@@ -744,28 +774,18 @@ class EngineMgmtService:
                 CategoryEngineMatrix.category_id == category_id)
         )).scalars().all()
 
-        packages = await self._packages_for_vertical(category.vertical_type)
         tenants = await self._tenants_for_category(category_id)
-        package_ids = [p.id for p in packages]
 
         result_rows = []
         for row in rows:
             dep_status, missing = await self._compute_dependency_status(row.engine_key)
-
-            pkg_count = 0
-            if package_ids:
-                pkg_count = await self.db.scalar(
-                    select(func.count()).select_from(PackageEngineEntitlement).where(
-                        PackageEngineEntitlement.engine_key == row.engine_key,
-                        PackageEngineEntitlement.package_id.in_(package_ids),
-                        PackageEngineEntitlement.is_included == True)) or 0
 
             tenant_count = len(tenants)
 
             risk = "low"
             if dep_status == "missing":
                 risk = "high"
-            if row.is_required and (pkg_count > 0 or tenant_count > 0):
+            if row.is_required and tenant_count > 0:
                 risk = "high" if risk != "blocked" else risk
             if row.is_required and not row.is_enabled:
                 risk = "blocked"
@@ -773,7 +793,6 @@ class EngineMgmtService:
             d = row.to_dict()
             d["dependency_status"] = dep_status
             d["missing_dependencies"] = missing
-            d["package_usage_count"] = pkg_count
             d["tenant_impact_count"] = tenant_count
             d["runtime_risk"] = risk
             result_rows.append(d)
@@ -799,7 +818,6 @@ class EngineMgmtService:
         required = sum(1 for r in rows if r["is_required"])
         optional = sum(1 for r in rows if not r["is_required"])
         missing_deps = sum(1 for r in rows if r["dependency_status"] == "missing")
-        used_by_packages = sum(1 for r in rows if r["package_usage_count"] > 0)
         used_by_tenants = sum(1 for r in rows if r["tenant_impact_count"] > 0)
         blocked = sum(1 for r in rows if r["runtime_risk"] == "blocked")
         return {
@@ -809,7 +827,6 @@ class EngineMgmtService:
             "required_engines": required,
             "optional_engines": optional,
             "missing_dependencies": missing_deps,
-            "used_by_packages": used_by_packages,
             "used_by_tenants": used_by_tenants,
             "blocked_actions": blocked,
         }
@@ -836,7 +853,7 @@ class EngineMgmtService:
                 f"Pass an explicit template from: {sorted(CATEGORY_ENGINE_TEMPLATES)}")
         tpl = CATEGORY_ENGINE_TEMPLATES[tpl_key]
 
-        existing_keys = {r.engine_key for r in (await self.db.execute(
+        existing_keys = {_canonical_engine_key(r.engine_key) for r in (await self.db.execute(
             select(CategoryEngineMatrix.engine_key).where(
                 CategoryEngineMatrix.category_id == category_id))).all()}
 
@@ -845,9 +862,10 @@ class EngineMgmtService:
         will_create_optional = [k for k in tpl["optional"] if k not in existing_keys]
 
         all_keys = tpl["required"] + tpl["optional"]
-        found_engines = (await self.db.execute(
-            select(PlatformEngine.engine_key).where(
-                PlatformEngine.engine_key.in_(all_keys)))).scalars().all()
+        found_engine_rows = (await self.db.execute(
+            select(PlatformEngine.engine_key))).scalars().all()
+        found_engines = {_canonical_engine_key(key) for key in found_engine_rows}
+        found_engines.update(definition.engine_id for definition in runtime_registry.all())
         for k in all_keys:
             if k not in found_engines:
                 warnings.append(f"Engine '{k}' referenced by template is not registered in platform_engines.")
@@ -876,10 +894,7 @@ class EngineMgmtService:
         for engine_key in tpl["required"] + tpl["optional"]:
             if engine_key in existing_keys:
                 continue
-            engine = await self.db.scalar(
-                select(PlatformEngine).where(PlatformEngine.engine_key == engine_key))
-            if not engine:
-                continue
+            engine = await self._get_or_create_governance_engine(engine_key)
             is_required = engine_key in tpl["required"]
             row = CategoryEngineMatrix(
                 category_id=category_id,
@@ -932,40 +947,26 @@ class EngineMgmtService:
             if dep_status == "missing":
                 blockers.append(f"Missing required global dependencies: {', '.join(missing)}.")
 
-        packages = await self._packages_for_vertical(category.vertical_type)
-        package_ids = [p.id for p in packages]
-        pkg_count = 0
-        if package_ids:
-            pkg_count = await self.db.scalar(
-                select(func.count()).select_from(PackageEngineEntitlement).where(
-                    PackageEngineEntitlement.engine_key == engine_key,
-                    PackageEngineEntitlement.package_id.in_(package_ids),
-                    PackageEngineEntitlement.is_included == True)) or 0
         tenants = await self._tenants_for_category(category_id)
         tenant_count = len(tenants)
 
         if action == "disable":
             is_required = row.is_required if row else False
-            if is_required and pkg_count > 0:
-                blockers.append(
-                    f"'{engine.display_name}' is required for {category.name} and used by "
-                    f"{pkg_count} active package(s).")
             if is_required and tenant_count > 0:
                 blockers.append(
                     f"'{engine.display_name}' is required for {category.name} and "
                     f"{tenant_count} tenant(s) are on this category.")
 
-        risk = "high" if blockers else ("medium" if (pkg_count or tenant_count) else "low")
+        risk = "high" if blockers else ("medium" if tenant_count else "low")
         recommendation = (
             f"Blocked. Resolve blockers before {action} can proceed." if blockers else
-            f"Safe to {action}. {pkg_count} package(s) and {tenant_count} tenant(s) affected."
+            f"Safe to {action}. {tenant_count} tenant(s) affected."
         )
 
         return {
             "category_id": str(category_id),
             "engine_key": engine_key,
             "action": action,
-            "affected_packages": pkg_count,
             "affected_tenants": tenant_count,
             "missing_dependencies": missing,
             "risk_level": risk,
@@ -1059,38 +1060,6 @@ class EngineMgmtService:
         await self.db.commit()
         return row.to_dict()
 
-    async def get_category_engine_package_usage(self, category_id: uuid.UUID, engine_key: str) -> dict:
-        category = await self._get_category(category_id)
-        packages = await self._packages_for_vertical(category.vertical_type)
-        package_ids = [p.id for p in packages]
-        entitlements = {}
-        if package_ids:
-            rows = (await self.db.execute(
-                select(PackageEngineEntitlement).where(
-                    PackageEngineEntitlement.engine_key == engine_key,
-                    PackageEngineEntitlement.package_id.in_(package_ids))
-            )).scalars().all()
-            entitlements = {e.package_id: e for e in rows}
-
-        from app.engines.package_commerce.models import TenantPackageAssignment
-        result = []
-        for p in packages:
-            ent = entitlements.get(p.id)
-            tenant_count = await self.db.scalar(
-                select(func.count()).select_from(TenantPackageAssignment).where(
-                    TenantPackageAssignment.package_id == p.id,
-                    TenantPackageAssignment.status == "active")) or 0
-            result.append({
-                "package_id": str(p.id),
-                "package_name": p.name,
-                "package_type": p.package_type,
-                "status": "active" if p.is_active else "inactive",
-                "tenant_count": tenant_count,
-                "engine_included": bool(ent and ent.is_included),
-                "required": bool(ent and ent.is_included),
-            })
-        return {"packages": result, "total": len(result)}
-
     async def get_category_engine_tenant_impact(self, category_id: uuid.UUID, engine_key: str) -> dict:
         tenants = await self._tenants_for_category(category_id)
         result = []
@@ -1112,64 +1081,6 @@ class EngineMgmtService:
             })
         return {"tenants": result, "total": len(result)}
 
-    # ── Package Entitlements ───────────────────────────────────────────────────
-
-    async def get_package_entitlements(self, package_id: uuid.UUID | None = None,
-                                        page: int = 1, limit: int = 100) -> dict:
-        stmt = select(PackageEngineEntitlement).order_by(
-            PackageEngineEntitlement.engine_key)
-        if package_id:
-            stmt = stmt.where(PackageEngineEntitlement.package_id == package_id)
-
-        total = await self.db.scalar(select(func.count()).select_from(stmt.subquery()))
-        rows = (await self.db.execute(
-            stmt.offset((page - 1) * limit).limit(limit))).scalars().all()
-        return {
-            "entitlements": [r.to_dict() for r in rows],
-            "meta": {"total": total or 0},
-        }
-
-    async def set_package_engine(self, package_id: uuid.UUID, engine_key: str,
-                                  included: bool, limits: dict | None = None,
-                                  feature_flags: dict | None = None,
-                                  reason: str = "") -> dict:
-        engine = await self._get_engine(engine_key)
-        if included and engine.global_status not in ("enabled", "locked"):
-            raise ServiceOSException("BLOCKED",
-                f"Cannot include globally disabled engine '{engine_key}' in package.")
-
-        existing = await self.db.scalar(
-            select(PackageEngineEntitlement).where(
-                PackageEngineEntitlement.package_id == package_id,
-                PackageEngineEntitlement.engine_key == engine_key))
-
-        action_type = "engine.package_entitlement_added" if included else "engine.package_entitlement_removed"
-
-        if existing:
-            existing.is_included = included
-            existing.limits_json = limits or existing.limits_json
-            existing.feature_flags_json = feature_flags or existing.feature_flags_json
-            existing.updated_at = _now()
-            row = existing
-        else:
-            row = PackageEngineEntitlement(
-                package_id=package_id,
-                engine_id=engine.id,
-                engine_key=engine_key,
-                is_included=included,
-                limits_json=limits or {},
-                feature_flags_json=feature_flags or {},
-                added_by_admin_id=self.actor_id,
-                created_at=_now(), updated_at=_now(),
-            )
-            self.db.add(row)
-
-        self._audit(action_type, engine_key=engine_key, engine_id=engine.id,
-                    scope_type="package", scope_id=package_id,
-                    new_value={"is_included": included}, reason=reason)
-        await self.db.commit()
-        return row.to_dict()
-
     # ── Tenant Overrides ───────────────────────────────────────────────────────
 
     async def list_tenant_overrides(self, tenant_id: uuid.UUID | None = None,
@@ -1186,6 +1097,188 @@ class EngineMgmtService:
         return {
             "overrides": [r.to_dict() for r in rows],
             "meta": {"total": total or 0, "page": page, "limit": limit},
+        }
+
+    async def get_tenant_effective_engines(self, tenant_id: uuid.UUID) -> dict:
+        """Resolve the tenant runtime view from global, category and override policy.
+
+        Home Services access is category-scoped. Legacy package entitlements are
+        deliberately not part of this resolution chain.
+        """
+        from app.engines.tenant_engine.models import Tenant
+
+        tenant = await self.db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+        if not tenant:
+            raise ServiceOSException("NOT_FOUND", f"Tenant {tenant_id} not found.")
+
+        governance_rows = (await self.db.execute(
+            select(PlatformEngine).order_by(PlatformEngine.display_name)
+        )).scalars().all()
+        governance_by_canonical: dict[str, list[PlatformEngine]] = {}
+        for row in governance_rows:
+            governance_by_canonical.setdefault(
+                _canonical_engine_key(row.engine_key), []
+            ).append(row)
+
+        category_rows: dict[str, CategoryEngineMatrix] = {}
+        category = None
+        category_policy_configured = False
+        if tenant.category_id:
+            category = await self._get_category(tenant.category_id)
+            rows = (await self.db.execute(
+                select(CategoryEngineMatrix).where(
+                    CategoryEngineMatrix.category_id == tenant.category_id)
+            )).scalars().all()
+            category_policy_configured = bool(rows)
+            for row in rows:
+                canonical = _canonical_engine_key(row.engine_key)
+                current = category_rows.get(canonical)
+                if current is None or row.engine_key == canonical:
+                    category_rows[canonical] = row
+
+        override_rows = (await self.db.execute(
+            select(TenantEngineOverride).where(
+                TenantEngineOverride.tenant_id == tenant_id,
+                TenantEngineOverride.status == "active",
+            ).order_by(TenantEngineOverride.created_at.desc())
+        )).scalars().all()
+        overrides: dict[str, TenantEngineOverride] = {}
+        now = _now()
+        for row in override_rows:
+            canonical = _canonical_engine_key(row.engine_key)
+            if canonical in overrides:
+                continue
+            if row.expires_at and row.expires_at <= now:
+                continue
+            overrides[canonical] = row
+
+        resolved: list[dict] = []
+        definitions = sorted(runtime_registry.all(), key=lambda item: item.name.lower())
+        definitions_by_key = {item.engine_id: item for item in definitions}
+        for definition in definitions:
+            engine_key = definition.engine_id
+            candidates = governance_by_canonical.get(engine_key, [])
+            primary = next((row for row in candidates if row.engine_key == engine_key), None)
+            primary = primary or next(
+                (row for row in candidates if row.global_status == "locked"), None
+            ) or next(
+                (row for row in candidates if row.global_status == "enabled"), None
+            ) or (candidates[0] if candidates else None)
+
+            if any(row.global_status == "locked" for row in candidates):
+                global_status = "locked"
+            elif any(row.global_status == "enabled" for row in candidates):
+                global_status = "enabled"
+            elif candidates:
+                global_status = "disabled"
+            else:
+                # A registry-only engine is not silently activated.  Category
+                # seeding materialises governance rows for engines selected by
+                # an administrator.
+                global_status = "not_configured"
+
+            enabled = global_status in ("enabled", "locked")
+            source = "global"
+            reason = f"Global engine status is {global_status}."
+            matrix_row = category_rows.get(engine_key)
+            if category:
+                source = "category"
+                if not category_policy_configured:
+                    enabled = enabled and engine_key in {"auth", "tenant"}
+                    reason = (
+                        "Category engine policy is not configured; only foundational "
+                        "identity and tenant engines remain enabled."
+                    )
+                elif matrix_row:
+                    enabled = enabled and matrix_row.is_enabled
+                    reason = (
+                        "Enabled by the tenant category policy."
+                        if enabled else "Disabled by global or category policy."
+                    )
+                else:
+                    enabled = False
+                    reason = "Engine is not enabled for this tenant category."
+
+            override = overrides.get(engine_key)
+            if override:
+                if override.effective_status == "disabled":
+                    enabled = False
+                    source = "tenant_override"
+                    reason = override.reason
+                elif engine.global_status in ("enabled", "locked"):
+                    enabled = True
+                    source = "tenant_override"
+                    reason = override.reason
+
+            item = {
+                "id": str(primary.id) if primary else engine_key,
+                "engine_key": engine_key,
+                "display_name": definition.name,
+                "description": definition.description,
+                "engine_type": definition.engine_type,
+                "lifecycle_status": primary.lifecycle_status if primary else "registry_only",
+                "global_status": global_status,
+                "is_core": definition.engine_type == "core",
+                "is_locked": bool(primary and primary.is_locked),
+                "is_customer_visible": bool(primary and primary.is_customer_visible),
+                "is_tenant_visible": bool(primary.is_tenant_visible) if primary else True,
+                "version": definition.version,
+                "owner_team": primary.owner_team if primary else None,
+                "created_at": primary.created_at.isoformat() if primary and primary.created_at else None,
+                "updated_at": primary.updated_at.isoformat() if primary and primary.updated_at else None,
+                "effective_enabled": enabled,
+                "source": source,
+                "is_required": bool(matrix_row and matrix_row.is_required),
+                "dependencies_met": True,
+                "missing_dependencies": [],
+                "reason": reason,
+                "legacy_aliases": sorted(
+                    row.engine_key for row in candidates if row.engine_key != engine_key
+                ),
+            }
+            resolved.append(item)
+
+        # Resolve dependency state from the same canonical effective view in
+        # memory.  This avoids an N+1 database query per engine and prevents a
+        # legacy alias from being interpreted as a missing dependency.
+        resolved_by_key = {item["engine_key"]: item for item in resolved}
+        changed = True
+        while changed:
+            changed = False
+            for engine_key, item in resolved_by_key.items():
+                definition = definitions_by_key[engine_key]
+                missing = [
+                    dependency for dependency in definition.dependencies
+                    if dependency not in resolved_by_key
+                    or not resolved_by_key[dependency]["effective_enabled"]
+                ]
+                item["missing_dependencies"] = missing
+                item["dependencies_met"] = not missing
+                if item["effective_enabled"] and missing:
+                    item["effective_enabled"] = False
+                    item["reason"] = (
+                        f"Missing required dependencies: {', '.join(missing)}."
+                    )
+                    changed = True
+
+        enabled_count = sum(1 for item in resolved if item["effective_enabled"])
+        return {
+            "tenant_id": str(tenant_id),
+            "category": ({
+                "id": str(category.id),
+                "name": category.name,
+            } if category else None),
+            "engines": resolved,
+            "policy": {
+                "configured": category_policy_configured,
+                "source": "category_matrix" if category_policy_configured else "safe_default",
+                "legacy_package_entitlements_used": False,
+            },
+            "summary": {
+                "total": len(resolved),
+                "enabled": enabled_count,
+                "disabled": len(resolved) - enabled_count,
+            },
         }
 
     async def create_tenant_override(self, tenant_id: uuid.UUID, data: dict) -> dict:
@@ -1454,8 +1547,7 @@ class EngineMgmtService:
     # ── Runtime Access Resolver ────────────────────────────────────────────────
 
     async def resolve_access(self, engine_key: str, tenant_id: uuid.UUID | None = None,
-                              category_id: uuid.UUID | None = None,
-                              package_id: uuid.UUID | None = None) -> dict:
+                              category_id: uuid.UUID | None = None) -> dict:
         engine = await self.db.scalar(
             select(PlatformEngine).where(PlatformEngine.engine_key == engine_key))
         if not engine:
@@ -1505,20 +1597,7 @@ class EngineMgmtService:
             else:
                 path.append("Engine not in category matrix — assuming allowed")
 
-        # Check 4: Package includes engine
-        if package_id:
-            pkg_entry = await self.db.scalar(
-                select(PackageEngineEntitlement).where(
-                    PackageEngineEntitlement.package_id == package_id,
-                    PackageEngineEntitlement.engine_key == engine_key))
-            if pkg_entry and pkg_entry.is_included:
-                path.append("Package includes this engine")
-            elif pkg_entry and not pkg_entry.is_included:
-                blockers.append("Package has engine excluded")
-            else:
-                path.append("Engine not in package entitlements — checking tenant overrides")
-
-        # Check 5: Tenant override
+        # Check 4: Tenant override
         if tenant_id:
             override = await self.db.scalar(
                 select(TenantEngineOverride).where(
@@ -1529,8 +1608,6 @@ class EngineMgmtService:
             if override:
                 if override.effective_status == "enabled":
                     path.append(f"Tenant override grants access ({override.override_type})")
-                    # Remove package blocker if override grants
-                    blockers = [b for b in blockers if "Package" not in b]
                 else:
                     blockers.append(f"Tenant override blocks access ({override.override_type})")
             else:

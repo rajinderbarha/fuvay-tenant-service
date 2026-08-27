@@ -1,38 +1,70 @@
 import React from "react";
 
 export function PageShell({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>{children}</div>;
+  // Authenticated application layouts already own the viewport padding and
+  // content width. PageShell only owns vertical rhythm; adding another inset
+  // here created the inconsistent, double-padded headers seen on newer pages.
+  return <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)", width: "100%" }}>{children}</div>;
 }
 
 export function PageHeader({
   title,
   description,
+  subtitle,
   actions,
+  icon,
+  eyebrow,
+  context,
 }: {
   title: string;
   description?: string;
+  /** Backward-compatible alias used by older portal pages. */
+  subtitle?: string;
   actions?: React.ReactNode;
+  icon?: React.ReactNode;
+  eyebrow?: string;
+  context?: string;
 }) {
+  const supportingText = description ?? subtitle;
+  const commandEyebrow = eyebrow ?? "Platform control plane";
+  const hasCommandContext = Boolean(commandEyebrow || context);
+  const renderedIcon = icon && React.isValidElement(icon)
+    ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: hasCommandContext ? 13 : 18 })
+    : icon;
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-      <div>
-        <h1 className="ds-text-page-title" style={{ margin: 0, color: "var(--text-primary)" }}>
-          {title}
-        </h1>
-        {description && (
-          <p className="ds-text-body" style={{ margin: "0.25rem 0 0", color: "var(--text-secondary)" }}>
-            {description}
-          </p>
+    <header className="ds-section-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--layout-section-gap)", flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0, flex: "1 1 32rem" }}>
+        {hasCommandContext && (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--layout-control-gap)", minHeight: 14, marginBottom: "var(--space-2)" }}>
+            {icon && <span style={{ display: "inline-flex", alignItems: "center", color: "var(--text-link)", flexShrink: 0 }}>{renderedIcon}</span>}
+            <span style={{ color: "var(--text-link)", fontSize: 10, lineHeight: 1, fontWeight: 750, letterSpacing: "0.08em", textTransform: "uppercase" }}>{commandEyebrow}</span>
+            {context && <span style={{ paddingLeft: "var(--space-2)", borderLeft: "1px solid var(--border)", color: "var(--text-tertiary)", fontSize: 10, lineHeight: 1, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>{context}</span>}
+          </div>
         )}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-3)", minWidth: 0 }}>
+          {icon && !hasCommandContext && (
+            <span style={{ width: 40, height: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRadius: "var(--radius-lg)", background: "var(--accent-muted)", color: "var(--accent)", border: "1px solid var(--border)" }}>{renderedIcon}</span>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <h1 className="ds-text-page-title" style={{ margin: 0, color: "var(--text-primary)", fontSize: 22, lineHeight: 1.2, fontWeight: 700, letterSpacing: "-0.02em" }}>
+              {title}
+            </h1>
+            {supportingText && (
+              <p className="ds-text-body" style={{ margin: "var(--space-1) 0 0", color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5, maxWidth: 820 }}>
+                {supportingText}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
-      {actions && <div style={{ display: "flex", gap: "0.5rem" }}>{actions}</div>}
-    </div>
+      {actions && <div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap", paddingTop: "var(--space-1)" }}>{actions}</div>}
+    </header>
   );
 }
 
 export function Section({ title, children, actions }: { title?: string; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+    <section style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       {(title || actions) && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           {title && (

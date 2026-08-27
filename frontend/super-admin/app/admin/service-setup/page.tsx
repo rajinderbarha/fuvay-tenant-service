@@ -2,7 +2,7 @@
 import React, { useCallback } from "react";
 import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, SectionHeader, Badge, Btn, Skeleton } from "../../../components/shared/ui";
+import { Card, SectionHeader, Badge, Btn, Skeleton, SummaryCard } from "../../../components/shared/ui";
 import {
   serviceSetupTemplatesApi, bulkWizardApi,
   type SetupTemplateItem, type BulkRunItem,
@@ -13,33 +13,6 @@ import {
   Settings, ArrowRight, CheckCircle2, Clock, AlertTriangle,
   RefreshCw, Sparkles,
 } from "lucide-react";
-
-// ── Summary card ──────────────────────────────────────────────────────────────
-
-function SummaryCard({
-  label, value, icon, color, href,
-}: {
-  label: string; value: number | string; icon: React.ReactNode; color?: string; href?: string;
-}) {
-  const accent = color ?? "var(--brand)";
-  const content = (
-    <Card padding={18} hover={!!href} style={{ height: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{
-          width: 38, height: 38, borderRadius: 10, background: `color-mix(in srgb, ${accent} 14%, transparent)`,
-          display: "flex", alignItems: "center", justifyContent: "center", color: accent, flexShrink: 0,
-        }}>
-          {icon}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.1 }}>{value}</div>
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
-        </div>
-      </div>
-    </Card>
-  );
-  return href ? <Link href={href} style={{ textDecoration: "none", display: "block" }}>{content}</Link> : content;
-}
 
 // ── Module nav card ────────────────────────────────────────────────────────────
 
@@ -120,17 +93,17 @@ export default function ServiceSetupHubPage() {
         ) : (
           <>
             <SummaryCard label="Total Templates" value={tItems.length} icon={<FileStack size={18}/>}
-              color="var(--brand)" href="/admin/service-setup/templates"/>
+              accent="var(--brand)" href="/admin/service-setup/templates"/>
             <SummaryCard label="Published Templates" value={publishedCount} icon={<CheckCircle2 size={18}/>}
-              color="var(--success)" href="/admin/service-setup/templates"/>
+              accent="var(--success)" href="/admin/service-setup/templates"/>
             <SummaryCard label="Draft Templates" value={draftTplCount} icon={<Clock size={18}/>}
-              color="var(--warning)" href="/admin/service-setup/templates"/>
+              accent="var(--warning)" href="/admin/service-setup/templates"/>
             <SummaryCard label="Active Wizard Drafts" value={sum?.ready_to_run ?? sum?.total_drafts ?? 0} icon={<Wrench size={18}/>}
-              color="var(--info)" href="/admin/service-setup/bulk-wizard"/>
+              accent="var(--info)" href="/admin/service-setup/bulk-wizard"/>
             <SummaryCard label="Total Bulk Runs" value={runs.data?.total ?? rItems.length} icon={<History size={18}/>}
-              color="var(--brand)" href="/admin/service-setup/bulk-runs"/>
+              accent="var(--brand)" href="/admin/service-setup/bulk-runs"/>
             <SummaryCard label="Failed Runs" value={sum?.failed_runs ?? 0} icon={<AlertTriangle size={18}/>}
-              color={(sum?.failed_runs ?? 0) > 0 ? "var(--danger)" : "var(--text-tertiary)"} href="/admin/service-setup/bulk-runs"/>
+              accent={(sum?.failed_runs ?? 0) > 0 ? "var(--danger)" : "var(--text-tertiary)"} href="/admin/service-setup/bulk-runs"/>
           </>
         )}
       </div>

@@ -23,10 +23,10 @@
 import { useCallback, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { FileText, Search, SlidersHorizontal } from "lucide-react";
+import { Bell, FileText, Search, SlidersHorizontal } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard, Select } from "../../../../components/shared/ui";
-import { PageHeader } from "../../../../components/shared/layout";
+import { PageHeader } from "@serviceos/design-system";
 import OperationsDirectoryControls from "../../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../../components/enterprise/EnterpriseColumnManager";
 import { hsProviderDirectoryApi, adminOnboardingProvidersApi, adminTenantApi } from "../../../../lib/api";
@@ -65,9 +65,7 @@ function HomeServicesProvidersWorkspace() {
     <AdminLayout activeNav="home_services-providers">
       <PageHeader title="Home Services Providers"
         description="One operational workspace for provider verification, health, lifecycle and approved profile changes."
-        breadcrumbs={[{ label: "Home Services", href: "/admin/home-services/dashboard" }, { label: "Providers" }]}
-        statusBadge={<Badge variant="info">Vertical scoped</Badge>}
-        primaryAction={<Link href="/admin/audit-logs?resource_type=tenant_onboarding" style={{ display:"inline-flex", alignItems:"center", gap:6, height:34, padding:"0 12px", border:"1px solid var(--border)", borderRadius:8, color:"var(--text-secondary)", textDecoration:"none", fontSize:12, fontWeight:600 }}><FileText size={14}/>Audit trail</Link>} />
+        actions={<><Badge variant="info">Vertical scoped</Badge><Link href="/admin/audit-logs?resource_type=tenant_onboarding" style={{ display:"inline-flex", alignItems:"center", gap:6, height:34, padding:"0 12px", border:"1px solid var(--border)", borderRadius:8, color:"var(--text-secondary)", textDecoration:"none", fontSize:12, fontWeight:600 }}><FileText size={14}/>Audit trail</Link></>} />
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", margin: "16px 0" }}>
         {TABS.map(t => (
@@ -456,6 +454,14 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
               ? "Already approved and active."
               : "No review action available for this status."}
           </p>
+          {r.review_status === "not_submitted" && (
+            <div style={{ marginTop: 12 }}>
+              <Btn variant="ghost" disabled={busy === "reminder"}
+                onClick={() => run("reminder", () => adminOnboardingProvidersApi.sendReminder(tenantId))}>
+                <Bell size={14} /> {busy === "reminder" ? "Queuing reminderâ€¦" : "Send setup reminder"}
+              </Btn>
+            </div>
+          )}
         </Card>
       )}
 

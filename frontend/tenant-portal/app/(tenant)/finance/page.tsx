@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 // It then redirected to /packages. Corrected to the Home Services Finance
 // Hub: /packages is the package SELECTION/purchase surface, while the Hub is
 // what the sidebar's "Finance & Credits" item points at and is the canonical
-// home for the usage-credit wallet, security deposit, financial activity,
+// home for the usage-credit wallet, technician seats, financial activity,
 // published policy and commission rates. Sending a finance-named route to a
 // page the sidebar never links left two competing "finance" destinations.
 export default function FinancePage() {

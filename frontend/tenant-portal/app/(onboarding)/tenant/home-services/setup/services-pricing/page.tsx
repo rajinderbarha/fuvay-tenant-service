@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -705,7 +706,7 @@ function ServicesPricingPageContent() {
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>Pricing rules</p>
                           <div style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                               <thead>
                                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                                   <th style={{ textAlign: "left", padding: "8px", color: "var(--text-tertiary)", fontWeight: 600 }}>Rule</th>
@@ -763,7 +764,7 @@ function ServicesPricingPageContent() {
                                   </tr>
                                 ))}
                               </tbody>
-                            </table>
+                            </TableSurface>
                           </div>
                         </div>
                       )}

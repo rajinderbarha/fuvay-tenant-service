@@ -3,9 +3,10 @@ import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "../../design-system/theme";
-import { AppScreen, AppText, AppButton, AppInput } from "../../components";
-import { FuvayMark } from "../../components/FuvayMark";
+import { AppText, AppButton, AppInput } from "../../components";
+import { Icon } from "../../components/Icon";
 import { PasswordField } from "../../components/auth/PasswordField";
+import { LoginExperienceShell } from "../../components/auth/LoginExperienceShell";
 import { AuthErrorBanner } from "../../components/auth/AuthErrorBanner";
 import { copyForAuthError } from "../../components/auth/authErrorCopy";
 import { ENV } from "../../config/environment";
@@ -82,39 +83,17 @@ export function PasswordLoginScreen() {
   }
 
   return (
-    /**
-     * Laid out exactly like the OTP screen: one centred column, same spacing scale.
-     * The two are the same decision seen twice, so they should not look like two
-     * different products.
-     *
-     * The heading was `color="inverse"` on a `backgroundSunken` screen -- white text
-     * on #EAEFF8 in light mode and near-black on #161618 in dark. The title was
-     * invisible in BOTH themes. It uses the ordinary screen background and default
-     * text colour now, which is legible by construction.
-     */
-    <AppScreen scroll>
-      <View style={{ flex: 1, justifyContent: "center", paddingVertical: theme.spacing.xl }}>
-        <View style={{ alignItems: "center", marginBottom: theme.spacing.xl }}>
-          <FuvayMark />
-        </View>
-
-        <AppText variant="headingLarge" accessibilityRole="header" align="center">
-          Sign in with password
-        </AppText>
-        <AppText
-          variant="body"
-          color="secondary"
-          align="center"
-          style={{ marginTop: theme.spacing.xxs, marginBottom: theme.spacing.xl }}
-        >
-          Use your email or mobile number.
-        </AppText>
-
+    <LoginExperienceShell
+      method="password"
+      onMethodChange={next => { if (next === "otp") navigation.navigate("LoginMethod"); }}
+      securityMessage="Your password is encrypted and never shared with service providers."
+      onSignup={() => navigation.navigate("Signup")}
+    >
         {screenError ? (
-          <View style={{ marginBottom: theme.spacing.base }}>
+          <View style={{ marginTop: theme.spacing.base, marginBottom: theme.spacing.base }}>
             <AuthErrorBanner message={screenError} />
           </View>
-        ) : null}
+        ) : <View style={{ height: theme.spacing.lg }} />}
 
         <AppInput
           label="Email or mobile"
@@ -150,6 +129,8 @@ export function PasswordLoginScreen() {
           onPress={handleSignIn}
           loading={submitting}
           disabled={!identifier.trim() || !password}
+          trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
+          style={{ minHeight: 54 }}
           fullWidth
         />
         {/* Only for an email identifier -- the code goes to an inbox, so offering it
@@ -166,23 +147,6 @@ export function PasswordLoginScreen() {
           </View>
         ) : null}
 
-        <View style={{ marginTop: theme.spacing.sm }}>
-          <AppButton label="Use phone OTP instead" tone="secondary" onPress={() => navigation.navigate("LoginMethod")} fullWidth />
-        </View>
-
-        {/* A password screen is where someone discovers they have no account. */}
-        <View style={{ marginTop: theme.spacing.base, alignItems: "center" }}>
-          <AppText
-            variant="bodySmall"
-            color="link"
-            accessibilityRole="link"
-            accessibilityLabel="New to Fuvay? Create an account"
-            onPress={() => navigation.navigate("Signup")}
-          >
-            New to Fuvay? Create an account
-          </AppText>
-        </View>
-      </View>
-    </AppScreen>
+    </LoginExperienceShell>
   );
 }

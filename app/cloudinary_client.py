@@ -51,9 +51,4 @@ def build_delivery_url(public_id: str, resource_type: str = "image") -> str:
     not be repeated.
     """
     settings = get_settings()
-    base = f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/{resource_type}/upload/{public_id}"
-    if resource_type in ("image", "video"):
-        _, _, ext = public_id.rpartition(".")
-        if ext and "/" not in ext:
-            return f"{base}.{ext}"
-    return base
+    return f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/{resource_type}/upload/{public_id}"

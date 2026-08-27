@@ -9,8 +9,7 @@ Every endpoint here:
   * is Home-Services-scoped — no other vertical's ledger can be reached.
 
 Deliberately NOT here: provider payouts, platform settlement, manual ledger
-posting, policy editing, and deposit-refund APPROVAL. Approval lives on the
-admin router behind P.FINANCE_DEPOSITS_REFUND, which no tenant role holds.
+posting, and policy editing.
 """
 from __future__ import annotations
 
@@ -84,21 +83,6 @@ async def get_usage_credits(
     wallet["ledger"] = await svc.get_transactions(ledger="usage_credits", page=1, page_size=50)
     return ok(wallet, _rid(r), ENGINE_ID)
 
-
-# ── 3. Security deposit ──────────────────────────────────────────────────────
-
-@router.get("/security-deposit", response_model=ApiResponse, summary="Security deposit state")
-async def get_security_deposit(
-    r: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_DEPOSIT_READ)),
-    _guard: UserContext = Depends(_hs_active),
-):
-    svc = _svc(r, db, user)
-    data = await svc.get_security_deposit()
-    data["refund_requests"] = await svc.list_refund_requests()
-    data["ledger"] = await svc.get_transactions(ledger="security_deposit", page=1, page_size=50)
-    return ok(data, _rid(r), ENGINE_ID)
 
 
 # ── 4. Transactions ──────────────────────────────────────────────────────────
@@ -290,82 +274,6 @@ async def topup_webhook(r: Request, db: AsyncSession = Depends(get_db)):
 
 # ── 8. Deposit refund requests ───────────────────────────────────────────────
 
-@router.get("/security-deposit/refund-requests", response_model=ApiResponse,
-            summary="List own deposit refund requests")
-async def list_refund_requests(
-    r: Request,
-    status: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_DEPOSIT_READ)),
-    _guard: UserContext = Depends(_hs_active),
-):
-    return ok(await _svc(r, db, user).list_refund_requests(
-        status=status, page=page, page_size=page_size), _rid(r), ENGINE_ID)
-
-
-class CreateRefundRequest(BaseModel):
-    requested_amount: Decimal = Field(..., gt=0)
-    reason: str = Field(..., min_length=5, max_length=2000)
-    bank_account_name: str | None = Field(None, max_length=160)
-    bank_account_number: str | None = Field(None, max_length=40)
-    bank_ifsc: str | None = Field(None, max_length=20)
-    submit: bool = True
-
-
-@router.post("/security-deposit/refund-requests", response_model=ApiResponse, status_code=201,
-             summary="Request a security-deposit refund (tenant CANNOT approve it)")
-async def create_refund_request(
-    body: CreateRefundRequest,
-    r: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_FINANCE_DEPOSIT_REFUND_REQUEST)),
-    _guard: UserContext = Depends(_hs_active),
-):
-    """The eligible amount is recomputed server-side from the published policy,
-    the live qualifying-technician count and real open liabilities — a
-    client-supplied amount above that is rejected with
-    DEPOSIT_REFUND_EXCEEDS_ELIGIBLE, never silently clamped."""
-    return ok(await _svc(r, db, user).create_refund_request(
-        requested_amount=body.requested_amount, reason=body.reason,
-        bank_account_name=body.bank_account_name,
-        bank_account_number=body.bank_account_number,
-        bank_ifsc=body.bank_ifsc, submit=body.submit), _rid(r), ENGINE_ID)
-
-
-class RespondInfoRequest(BaseModel):
-    response: str = Field(..., min_length=2, max_length=2000)
-
-
-@router.post("/security-deposit/refund-requests/{request_id}/respond", response_model=ApiResponse,
-             summary="Respond to an Admin information request")
-async def respond_refund_request(
-    request_id: uuid.UUID,
-    body: RespondInfoRequest,
-    r: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_FINANCE_DEPOSIT_REFUND_REQUEST)),
-    _guard: UserContext = Depends(_hs_active),
-):
-    return ok(await _svc(r, db, user).respond_to_info_request(request_id, body.response),
-              _rid(r), ENGINE_ID)
-
-
-@router.post("/security-deposit/refund-requests/{request_id}/withdraw", response_model=ApiResponse,
-             summary="Withdraw an open refund request")
-async def withdraw_refund_request(
-    request_id: uuid.UUID,
-    r: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_FINANCE_DEPOSIT_REFUND_REQUEST)),
-    _guard: UserContext = Depends(_hs_active),
-):
-    return ok(await _svc(r, db, user).withdraw_refund_request(request_id), _rid(r), ENGINE_ID)
-
-
-# ── 9. Export ────────────────────────────────────────────────────────────────
-
 @router.get("/export", response_model=ApiResponse, summary="Export statement (own tenant + HS only)")
 async def export_statement(
     r: Request,
@@ -396,61 +304,6 @@ async def export_statement(
 # the same way, at router level.
 from app.dependencies.vertical_guard import require_vertical_enabled as _require_vertical_enabled
 
-admin_router = APIRouter(prefix="/v1/admin/finance/home-services/deposit-refund-requests",
-                         tags=["Admin Finance — HS Deposit Refunds"],
-                         dependencies=[Depends(_require_vertical_enabled("home_services"))])
-
-
-@admin_router.get("", response_model=ApiResponse, summary="All tenants' HS deposit refund requests")
-async def admin_list_refund_requests(
-    r: Request,
-    status: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_READ)),
-):
-    from sqlalchemy import select as _select, func as _func
-    from app.engines.finance_hub.deposit_refund_models import HsDepositRefundRequest
-    clauses = []
-    if status:
-        clauses.append(HsDepositRefundRequest.status == status)
-    stmt = _select(HsDepositRefundRequest).where(*clauses).order_by(
-        HsDepositRefundRequest.created_at.desc())
-    total = (await db.execute(_select(_func.count()).select_from(stmt.subquery()))).scalar() or 0
-    rows = (await db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).scalars().all()
-    return ok({"items": [x.to_dict() for x in rows], "total": total,
-               "page": page, "page_size": page_size}, _rid(r), ENGINE_ID)
-
-
-class AdminRefundDecision(BaseModel):
-    action: str = Field(..., description="advance_eligibility | advance_liability | advance_decision "
-                                        "| request_info | approve | mark_refunded | reject")
-    approved_amount: Decimal | None = None
-    note: str | None = Field(None, max_length=2000)
-
-
-@admin_router.post("/{request_id}/decision", response_model=ApiResponse,
-                   summary="Advance/approve/reject a deposit refund request (ADMIN ONLY)")
-async def admin_decide_refund_request(
-    request_id: uuid.UUID,
-    body: AdminRefundDecision,
-    r: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_REFUND)),
-):
-    """P.FINANCE_DEPOSITS_REFUND is granted to NO tenant role — this is the
-    server-side enforcement of "a tenant may not approve its own refund",
-    independent of any UI hiding."""
-    from sqlalchemy import select as _select
-    from app.engines.finance_hub.deposit_refund_models import HsDepositRefundRequest
-    rec = (await db.execute(_select(HsDepositRefundRequest).where(
-        HsDepositRefundRequest.id == request_id))).scalar_one_or_none()
-    if not rec:
-        raise ServiceOSException("NOT_FOUND", "Refund request not found.", status_code=404)
-    svc = TenantHomeServicesFinanceService(
-        db, tenant_id=rec.tenant_id, request_id=_rid(r),
-        actor_id=uuid.UUID(user.user_id) if user.user_id else None, actor_role=user.role)
-    return ok(await svc.admin_decide_refund_request(
-        request_id, action=body.action, approved_amount=body.approved_amount,
-        note=body.note), _rid(r), ENGINE_ID)
+# The deposit-refund admin router was removed with the security deposit
+# itself (migration 317). There is no deposit to refund: a tenant now buys
+# a top-up plan, whose credit is spent down rather than held and returned.

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
@@ -753,7 +754,7 @@ export default function OfferingsPage() {
         ) : (
           <Card padding={0}>
             <div style={{ overflowX:"auto" }}>
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                     {["Offering","Status","Readiness","Coverage","Emergency","Pricing","Blockers","Updated","Actions"].map(h => (
@@ -835,7 +836,7 @@ export default function OfferingsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           </Card>
         )

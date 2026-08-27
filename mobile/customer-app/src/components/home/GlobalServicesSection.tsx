@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ImageBackground, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { ImageBackground, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { useGlobalServicesQuery } from "../../api/globalServices/useGlobalServicesQuery";
 import { useTheme } from "../../design-system/theme";
 import { GlobalService } from "../../domain/globalServices";
+import { HomeCampaign } from "../../domain/customerHome";
+import { resolveMediaUrl } from "../../domain/mediaUrl";
 import { AppText } from "../AppText";
 import { Icon } from "../Icon";
 import { GlobalServiceInquiryModal } from "./GlobalServiceInquiryModal";
@@ -16,14 +18,16 @@ export interface GlobalServicesSectionProps {
   /** Increment to open the primary nationwide-service brief from another Home placement. */
   openRequestToken?: number;
   variant?: "compact_services" | "studio_rail" | string;
+  campaigns?: HomeCampaign[];
 }
 
 /** Nationwide work is independent from local provider serviceability. */
-export function GlobalServicesSection({ defaultZipcode, title = "Web & mobile development", openRequestToken = 0, variant = "compact_services" }: GlobalServicesSectionProps) {
+export function GlobalServicesSection({ defaultZipcode, title = "Build with Fuvay", openRequestToken = 0, variant = "compact_services", campaigns = [] }: GlobalServicesSectionProps) {
   const { theme } = useTheme();
   const { width } = useWindowDimensions();
   const query = useGlobalServicesQuery();
   const [selected, setSelected] = useState<GlobalService | null>(null);
+  const [campaignIndex, setCampaignIndex] = useState(0);
   const services = useMemo(() => query.data ?? [], [query.data]);
   const primary = useMemo(
     () => services.find(service => /web|mobile|software|ai/i.test(service.name)) ?? services[0] ?? null,
@@ -40,44 +44,53 @@ export function GlobalServicesSection({ defaultZipcode, title = "Web & mobile de
   }
 
   if (variant === "compact_services") {
-    const cardWidth = (Math.min(width, 560) - theme.spacing.base * 2 - theme.spacing.sm) / 2;
+    const bannerWidth = Math.min(width, 560) - theme.spacing.base * 2;
     return (
       <View accessibilityLabel="Fuvay digital services">
-        {title ? <AppText variant="headingMedium" style={{ marginBottom: theme.spacing.xs }}>{title}</AppText> : null}
-        <AppText variant="bodySmall" color="secondary" style={{ marginBottom: theme.spacing.sm }}>
-          Product teams for every postcode. Share a brief and Fuvay will contact you.
-        </AppText>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
-          {services.slice(0, 4).map(service => (
-            <Pressable
-              key={service.id}
-              onPress={() => setSelected(service)}
-              accessibilityRole="button"
-              accessibilityLabel={`Discuss ${service.name}`}
-              style={({ pressed }) => ({
-                width: cardWidth,
-                minHeight: 94,
-                padding: theme.spacing.sm,
-                borderWidth: 1,
-                borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
-                borderRadius: theme.radius.radiusMedium,
-                backgroundColor: theme.colors.surfaceDefault,
-                opacity: pressed ? 0.74 : 1,
-              })}
-            >
-              <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.accentVioletSurface }}>
-                <Icon name={serviceIcon(service.name)} size="standard" color={theme.colors.accentViolet} decorative />
-              </View>
-              <AppText variant="bodySmall" numberOfLines={2} style={{ marginTop: theme.spacing.xs, fontWeight: "800" }}>{service.name}</AppText>
-            </Pressable>
-          ))}
-          {services.length === 0 ? (
-            <Pressable onPress={openPrimary} accessibilityRole="button" style={{ minHeight: 86, width: "100%", padding: theme.spacing.base, justifyContent: "center", borderWidth: 1, borderColor: theme.colors.borderSubtle, borderRadius: theme.radius.radiusMedium }}>
-              <AppText variant="bodyStrong">Load digital services</AppText>
-              <AppText variant="caption" color="secondary">Web, mobile, software and AI delivery nationwide.</AppText>
-            </Pressable>
-          ) : null}
+        <View style={{ marginBottom: theme.spacing.sm, flexDirection: "row", alignItems: "baseline" }}>
+          <AppText variant="headingSmall">{title}</AppText>
+          <AppText variant="caption" color="secondary" style={{ marginLeft: theme.spacing.sm, flex: 1 }}>Global services Available</AppText>
+          <Pressable onPress={openPrimary} accessibilityRole="button" accessibilityLabel="See all global services" style={{ minHeight: 36, justifyContent: "center" }}>
+            <AppText variant="bodySmall" style={{ color: theme.colors.brandPrimary, fontWeight: "800" }}>See All</AppText>
+          </Pressable>
         </View>
+        {campaigns.length ? (
+          <>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event: NativeSyntheticEvent<NativeScrollEvent>) => setCampaignIndex(Math.round(event.nativeEvent.contentOffset.x / bannerWidth))}
+            >
+              {campaigns.map(campaign => (
+                <Pressable key={campaign.campaignId} onPress={openPrimary} accessibilityRole="button" accessibilityLabel={`${campaign.actionLabel}: ${campaign.title}`} style={({ pressed }) => ({ width: bannerWidth, opacity: pressed ? .86 : 1 })}>
+                  <ImageBackground source={{ uri: resolveMediaUrl(campaign.imageUrl)! }} resizeMode="cover" style={{ width: bannerWidth, height: 142, overflow: "hidden", borderRadius: 14, backgroundColor: "#6424C7" }} accessibilityIgnoresInvertColors>
+                    <View style={{ flex: 1, width: "60%", padding: theme.spacing.base, justifyContent: "center" }}>
+                      <AppText variant="headingSmall" numberOfLines={2} style={{ color: "#FFFFFF", fontSize: 20, lineHeight: 24 }}>{campaign.title}</AppText>
+                      <AppText variant="caption" numberOfLines={2} style={{ color: "rgba(255,255,255,.82)", marginTop: 4 }}>{campaign.subtitle}</AppText>
+                      <View style={{ marginTop: theme.spacing.md, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <AppText variant="caption" style={{ color: "#FFFFFF", fontWeight: "800" }}>{campaign.actionLabel}</AppText>
+                        <Icon name="arrow-forward-circle" size="compact" color="#FFFFFF" decorative />
+                      </View>
+                    </View>
+                  </ImageBackground>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {campaigns.length > 1 ? (
+              <View style={{ height: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                {campaigns.map((campaign, index) => <View key={campaign.campaignId} style={{ width: index === campaignIndex ? 20 : 7, height: 4, borderRadius: 2, backgroundColor: index === campaignIndex ? theme.colors.brandPrimary : theme.colors.borderStrong }} />)}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <Pressable onPress={openPrimary} accessibilityRole="button" style={{ height: 142, borderRadius: 14, overflow: "hidden" }}>
+            <ImageBackground source={DIGITAL_STUDIO_IMAGE} resizeMode="cover" style={{ flex: 1 }}>
+              <View style={{ flex: 1, padding: theme.spacing.base, justifyContent: "center", backgroundColor: theme.colors.mediaScrim }}><AppText variant="headingSmall" style={{ color: "#FFFFFF" }}>Web Development</AppText><AppText variant="caption" style={{ color: "#FFFFFF", marginTop: 4 }}>Modern, fast & scalable web solutions</AppText></View>
+            </ImageBackground>
+          </Pressable>
+        )}
         <GlobalServiceInquiryModal service={selected} defaultZipcode={defaultZipcode} onClose={() => setSelected(null)} />
       </View>
     );

@@ -307,7 +307,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
                 boxShadow: "var(--shadow-lg)", zIndex: 60, overflow: "hidden", padding: "4px 8px",
               }}>
                 <Link href="/settings" style={menuItemStyle}><User size={15}/> My Profile</Link>
-                <Link href="/settings/security" style={menuItemStyle}><Shield size={15}/> Security &amp; Sessions</Link>
+                <Link href="/settings?tab=security" style={menuItemStyle}><Shield size={15}/> Security &amp; Sessions</Link>
                 <Link href="/help" style={menuItemStyle}><HelpCircle size={15}/> Help</Link>
                 <button onClick={handleLogout} style={{ ...menuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--danger)" }}>
                   <LogOut size={15}/> Sign Out

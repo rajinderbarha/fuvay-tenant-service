@@ -18,7 +18,7 @@ import { useCallback, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Info, RefreshCw } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard,} from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard, KpiGrid, SectionHeader } from "../../../../components/shared/ui";
 import { hsCustomerDirectoryApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -63,14 +63,12 @@ function HomeServicesCustomersWorkspace() {
 
   return (
     <AdminLayout activeNav="home_services-customers">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Home Services Customers</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-            Understand customer activity, repeat usage, service diversity and payment-confirmation reliability.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <SectionHeader
+        eyebrow="Home Services operations"
+        context="Customers"
+        title="Home Services Customers"
+        subtitle="Understand customer activity, repeat usage, service diversity and payment-confirmation reliability."
+        actions={<>
           <Badge variant="info">Home Services only</Badge>
           <Btn variant="ghost" icon={<Info size={14} />} onClick={() => setDefsOpen(true)}>View Definitions</Btn>
           <Btn variant="ghost" icon={<RefreshCw size={14} />} onClick={() => { summary.refetch(); customers.refetch(); }}>Refresh</Btn>
@@ -85,8 +83,8 @@ function HomeServicesCustomersWorkspace() {
             a.href = url; a.download = "home-services-customers.csv"; a.click();
             URL.revokeObjectURL(url);
           }}>Export</Btn>
-        </div>
-      </div>
+        </>}
+      />
 
       <Card padding={12} style={{ background: "var(--surface-sunken)", marginBottom: 16 }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
@@ -104,7 +102,7 @@ function HomeServicesCustomersWorkspace() {
         </Card>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 12 }}>
+      <KpiGrid minCardWidth={170} style={{ marginBottom: "var(--space-3)" }}>
         <SummaryCard label="Total Customers" value={s?.total_customers as number} onClick={() => setListState({ activity: undefined, page: 1 })} />
         <SummaryCard label={`Active · ${s?.active_window_days ?? 90} days`} value={s?.active_customers as number} tone="success" onClick={() => setListState({ activity: "active", page: 1 })} />
         <SummaryCard label={`New · ${s?.new_customer_window_days ?? 30} days`} value={s?.new_customers as number} />
@@ -113,15 +111,15 @@ function HomeServicesCustomersWorkspace() {
         <SummaryCard label="Inactive" value={s?.inactive_customers as number} tone="warning" onClick={() => setListState({ activity: "inactive", page: 1 })} />
         <SummaryCard label="Payment Review" value={s?.payment_review_available ? (s.payment_review as number) : "N/A"} tone="warning" />
         <SummaryCard label="Open Complaints" value={s?.open_complaints as number} tone="danger" />
-      </div>
+      </KpiGrid>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
-        <StatCard label="Completed-job Customers" value={String(s?.completed_job_customers ?? "—")} />
-        <StatCard label="Multi-service Customers" value={String(s?.multi_service_customers ?? "—")} />
-        <StatCard label="Multi-provider Customers" value={String(s?.multi_provider_customers ?? "—")} />
-        <StatCard label="Avg Completed Jobs" value={String(s?.average_completed_jobs ?? "—")} />
-        <StatCard label="Confirmed Job Value" value={money(s?.confirmed_job_value as string)} sub="Not platform collection" />
-      </div>
+      <KpiGrid minCardWidth={170} style={{ marginBottom: "var(--space-4)" }}>
+        <SummaryCard label="Completed-job Customers" value={String(s?.completed_job_customers ?? "—")} />
+        <SummaryCard label="Multi-service Customers" value={String(s?.multi_service_customers ?? "—")} />
+        <SummaryCard label="Multi-provider Customers" value={String(s?.multi_provider_customers ?? "—")} />
+        <SummaryCard label="Avg Completed Jobs" value={String(s?.average_completed_jobs ?? "—")} />
+        <SummaryCard label="Confirmed Job Value" value={money(s?.confirmed_job_value as string)} sub="Not platform collection" />
+      </KpiGrid>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
         <div style={{ flex: 1, maxWidth: 360 }}>
@@ -180,15 +178,6 @@ function HomeServicesCustomersWorkspace() {
         <DefinitionsPanel />
       </Modal>
     </AdminLayout>
-  );
-}
-
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <Card padding={14}>
-      <div style={{ fontSize: 18, fontWeight: 800 }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{label}{sub ? ` · ${sub}` : ""}</div>
-    </Card>
   );
 }
 

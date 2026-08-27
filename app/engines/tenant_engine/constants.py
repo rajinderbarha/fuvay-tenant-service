@@ -39,30 +39,30 @@ DEFAULT_ENGINES_BY_VERTICAL = {
         "auth", "tenant", "platform_commerce", "pricing",
         "notification", "settings", "analytics", "media",
         "chat", "review", "field_ops", "booking", "appointment",
-        "dispatch", "geo", "inventory", "payment", "subscription",
+        "dispatch", "geo", "inventory", "payment",
         "document", "webhook", "data_science",
     ],
     "real_estate": [
         "auth", "tenant", "platform_commerce", "pricing",
         "notification", "settings", "analytics", "media",
-        "chat", "review", "leads", "payment", "subscription",
+        "chat", "review", "leads", "payment",
         "document", "webhook",
     ],
     "coaching": [
         "auth", "tenant", "platform_commerce", "pricing",
         "notification", "settings", "analytics", "media",
-        "chat", "review", "appointment", "payment", "subscription",
+        "chat", "review", "appointment", "payment",
         "document", "webhook",
     ],
     "salon": [
         "auth", "tenant", "platform_commerce", "pricing",
         "notification", "settings", "analytics", "media",
-        "review", "appointment", "payment", "subscription",
+        "review", "appointment", "payment",
     ],
     "cafe": [
         "auth", "tenant", "platform_commerce", "pricing",
         "notification", "settings", "analytics", "media",
-        "review", "payment", "subscription",
+        "review", "payment",
     ],
 }
 

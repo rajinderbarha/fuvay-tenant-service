@@ -401,47 +401,6 @@ async def confirm_termination(tenant_id: uuid.UUID, request: Request,
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 
-# 21. Upgrade plan
-@router.post("/{tenant_id}/plan/upgrade",
-             summary="Upgrade tenant plan (immediate)",
-             response_model=ApiResponse[dict])
-async def upgrade_plan(tenant_id: uuid.UUID, request: Request,
-                        user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
-                        svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
-    _assert_own_tenant_or_super_admin(tenant_id, user)
-    body = await request.json()
-    reason = (body.get("reason") or "").strip()
-    if not reason:
-        raise ServiceOSException("VALIDATION_ERROR", "A reason is required to change a tenant's plan.")
-    data = await svc.upgrade_plan(tenant_id, body["target_plan"], reason)
-    return ok(data, _meta(request).request_id, ENGINE_ID)
-
-
-# 22. Downgrade plan
-@router.post("/{tenant_id}/plan/downgrade",
-             summary="Downgrade tenant plan (deferred to billing cycle end)",
-             response_model=ApiResponse[dict])
-async def downgrade_plan(tenant_id: uuid.UUID, request: Request,
-                          user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
-                          svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
-    _assert_own_tenant_or_super_admin(tenant_id, user)
-    body = await request.json()
-    data = await svc.downgrade_plan(tenant_id, body["target_plan"])
-    return ok(data, _meta(request).request_id, ENGINE_ID)
-
-
-# 23. Convert trial
-@router.post("/{tenant_id}/trial/convert",
-             summary="Convert trial to paid subscription",
-             response_model=ApiResponse[dict])
-async def convert_trial(tenant_id: uuid.UUID, request: Request,
-                         user: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_PLAN_MANAGE)),
-                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
-    _assert_own_tenant_or_super_admin(tenant_id, user)
-    data = await svc.convert_trial(tenant_id)
-    return ok(data, _meta(request).request_id, ENGINE_ID)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # ENGINE MANAGEMENT (24–30)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -625,31 +584,6 @@ async def update_payment_method(tenant_id: uuid.UUID, request: Request,
     _assert_own_tenant_or_super_admin(tenant_id, user)
     body = await request.json()
     data = await svc.update_payment_method(tenant_id, body["gateway"], body["gateway_customer_id"])
-    return ok(data, _meta(request).request_id, ENGINE_ID)
-
-
-# 37. List invoices
-@router.get("/{tenant_id}/billing/invoices",
-            summary="List subscription invoices for this tenant",
-            response_model=ApiResponse[dict])
-async def list_invoices(tenant_id: uuid.UUID, request: Request,
-                         limit: int = Query(default=20, ge=1, le=100),
-                         user: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),
-                         svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
-    _assert_own_tenant_or_super_admin(tenant_id, user)
-    data = await svc.list_invoices(tenant_id, limit)
-    return ok(data, _meta(request).request_id, ENGINE_ID)
-
-
-# 38. Trigger dunning
-@router.post("/{tenant_id}/billing/dunning",
-             summary="[Admin] Manually trigger dunning for a failed payment",
-             response_model=ApiResponse[dict])
-async def trigger_dunning(tenant_id: uuid.UUID, request: Request,
-                           user: UserContext = Depends(require_super_admin),
-                           svc: TenantService = Depends(_svc_with_actor)) -> ApiResponse[dict]:
-    _assert_own_tenant_or_super_admin(tenant_id, user)
-    data = await svc.trigger_dunning(tenant_id)
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
 

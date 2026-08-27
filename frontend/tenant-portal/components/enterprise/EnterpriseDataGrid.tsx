@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import EnterpriseFilterBar, { FilterDef } from "./EnterpriseFilterBar";
@@ -409,7 +410,7 @@ function EnterpriseDataGridInner({
         {!loading && !error && data && (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <TableSurface style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     {visibleColumns.map(c => (
@@ -459,7 +460,7 @@ function EnterpriseDataGridInner({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
 
             {data.pagination && (

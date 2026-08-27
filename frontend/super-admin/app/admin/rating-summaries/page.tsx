@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { adminRatingApi, type TenantRatingSummaryRecord, type StaffRatingSummaryRecord } from "../../../lib/api";
-import { Card, Badge, Btn, Skeleton, Toaster, type ToastItem } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, Toaster, SectionHeader, type ToastItem } from "../../../components/shared/ui";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { BarChart2, RefreshCw, Users, RefreshCcw } from "lucide-react";
 
@@ -41,23 +41,14 @@ export default function AdminRatingSummariesPage() {
   }
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24, maxWidth: 1000 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
       <Toaster toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))} />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0,
-            display: "flex", alignItems: "center", gap: 10 }}>
-            <BarChart2 size={22} /> Rating Summaries
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-            Aggregated ratings by tenant and staff member.
-          </p>
-        </div>
-        <Btn variant="ghost" onClick={() => tab === "tenant" ? refetchTenants() : refetchStaff()}>
+      <SectionHeader eyebrow="Trust & quality" title="Rating Summaries"
+        description="Aggregated ratings by tenant and staff member." icon={<BarChart2 />}
+        actions={<Btn variant="ghost" onClick={() => tab === "tenant" ? refetchTenants() : refetchStaff()}>
           <RefreshCw size={14} /> Refresh
-        </Btn>
-      </div>
+        </Btn>} />
 
       <div style={{ display: "flex", gap: 8 }}>
         {(["tenant", "staff"] as const).map(t => (

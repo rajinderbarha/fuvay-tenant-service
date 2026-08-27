@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Dry-run a badge rule or health formula before activating it.
  *
@@ -168,7 +169,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
               has not earned.
             </p>
           )}
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <tbody>
               {result.component_breakdown.map((c, i) => (
                 <tr key={i}>
@@ -200,7 +201,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
           {result.recommended_actions.length > 0 && (
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 0" }}>
               Recommended: {result.recommended_actions.join("; ")}

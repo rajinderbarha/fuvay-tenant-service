@@ -1,8 +1,9 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Badge, Btn, StatCard, Modal, Skeleton,
+  Badge, Btn, StatCard, Modal, Pagination, Skeleton,
 } from "../../../components/shared/ui";
 import { Card, PageHeader, PageShell } from "@serviceos/design-system";
 import {
@@ -63,37 +64,8 @@ function Pager({
   onPage: (page: number) => void;
   onLimit: (limit: number) => void;
 }) {
-  const safeTotal = Math.max(0, total);
-  const totalPages = Math.max(1, Math.ceil(safeTotal / limit));
-  const start = safeTotal === 0 ? 0 : (page - 1) * limit + 1;
-  const end = Math.min(safeTotal, page * limit);
-
-  return (
-    <div style={{
-      padding: "10px 14px", borderTop: "1px solid var(--border)",
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--text-tertiary)",
-    }}>
-      <span>Showing {start}-{end} of {safeTotal.toLocaleString()}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <select value={limit} onChange={e => onLimit(Number(e.target.value))}
-          style={{ padding: "6px 8px", borderRadius:"var(--radius-md)",
-            border: "1px solid var(--border)", background: "var(--surface-raised)",
-            color: "var(--text-primary)", fontSize: 11 }}>
-          {[25, 50, 100, 200].map(size => (
-            <option key={size} value={size}>{size} / page</option>
-          ))}
-        </select>
-        <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          Previous
-        </Btn>
-        <span>Page {page} of {totalPages}</span>
-        <Btn size="xs" variant="ghost" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
-          Next
-        </Btn>
-      </div>
-    </div>
-  );
+  return <Pagination page={page} pageSize={limit} total={total} onPage={onPage}
+    pageSizes={[25, 50, 100, 200]} onPageSize={size => { onLimit(size); onPage(1); }} alwaysShow />;
 }
 
 // ── Request detail drawer ──────────────────────────────────────────────────────
@@ -685,7 +657,7 @@ export default function CompliancePage() {
             </Card>
           ) : (
             <Card padding="none">
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Priority", "Request", "Type", "SLA", "Status", "Next Action", "Actions"].map(hh => (
@@ -715,7 +687,7 @@ export default function CompliancePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </Card>
           )}
         </div>
@@ -771,7 +743,7 @@ export default function CompliancePage() {
             </Card>
           ) : (
             <Card padding="none">
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Hold", "Entity", "Reason", "Status", "Applied", "Actions"].map(hh => (
@@ -803,7 +775,7 @@ export default function CompliancePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </Card>
           )}
         </div>
@@ -881,7 +853,7 @@ export default function CompliancePage() {
               </p>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                       {["Request #","Subject","Type","Status","SLA","Verification","Due",""].map(h => (
@@ -956,7 +928,7 @@ export default function CompliancePage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
             <Pager
@@ -988,7 +960,7 @@ export default function CompliancePage() {
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     {["Subject (User ID)","Consent Type","Action","Version","Granted At",
@@ -1030,7 +1002,7 @@ export default function CompliancePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
               {(consents.data?.items ?? []).length === 0 && (
                 <p style={{ padding: "32px", textAlign: "center",
                   color: "var(--text-tertiary)", fontSize: 13 }}>No consent records.</p>
@@ -1059,7 +1031,7 @@ export default function CompliancePage() {
               color: "var(--text-tertiary)", fontSize: 13 }}>No exports yet.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     {["Export ID","Subject","Format","Status","Records","Size",
@@ -1122,7 +1094,7 @@ export default function CompliancePage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           )}
         </Card>
@@ -1173,7 +1145,7 @@ export default function CompliancePage() {
                     <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>Retention Policies</h3>
                   </div>
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--border)" }}>
                           {["Table","Retention Days","Exempt","Legal Basis"].map(h => (
@@ -1205,7 +1177,7 @@ export default function CompliancePage() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </TableSurface>
                   </div>
                 </Card>
               )}

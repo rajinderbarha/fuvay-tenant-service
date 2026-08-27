@@ -89,8 +89,8 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
   },
   "/inventory": {
     title: "Inventory",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/catalog" }, { label: "Inventory" }],
+    section: "services",
+    breadcrumbs: [{ label: "Services & Coverage" }, { label: "Parts & Inventory" }],
   },
   "/documents": {
     title: "Documents",
@@ -222,6 +222,11 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [{ label: "Operations" }, { label: "Assignment & Dispatch" }],
   },
+  "/home-services/availability": {
+    title: "Availability & Capacity",
+    section: "operations",
+    breadcrumbs: [{ label: "Operations" }, { label: "Availability & Capacity" }],
+  },
   "/home-services/services": {
     title: "Services & Pricing",
     section: "services",
@@ -237,10 +242,30 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "team",
     breadcrumbs: [{ label: "Team" }, { label: "Team Members" }],
   },
+  "/home-services/reviews": {
+    title: "Reviews",
+    section: "customers",
+    breadcrumbs: [{ label: "Customers" }, { label: "Reviews" }],
+  },
+  "/home-services/complaints": {
+    title: "Complaints",
+    section: "customers",
+    breadcrumbs: [{ label: "Customers" }, { label: "Complaints" }],
+  },
+  "/provider/refund-requests": {
+    title: "Refunds & Warranty",
+    section: "customers",
+    breadcrumbs: [{ label: "Customers" }, { label: "Refunds & Warranty" }],
+  },
   "/home-services/finance": {
     title: "Finance & Credits",
     section: "finance",
     breadcrumbs: [{ label: "Finance" }, { label: "Finance & Credits" }],
+  },
+  "/home-services/direct-payments": {
+    title: "Direct Payments",
+    section: "finance",
+    breadcrumbs: [{ label: "Finance" }, { label: "Direct Payments" }],
   },
   "/business/coverage-hours": {
     title: "Coverage & Hours",
@@ -252,12 +277,77 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "business",
     breadcrumbs: [{ label: "Business" }, { label: "Documents" }],
   },
+  "/provider/compliance": {
+    title: "Compliance",
+    section: "business",
+    breadcrumbs: [{ label: "Business" }, { label: "Compliance" }],
+  },
+  "/operations/exceptions": {
+    title: "Operational Exceptions",
+    section: "operations",
+    breadcrumbs: [{ label: "Operations" }, { label: "Operational Exceptions" }],
+  },
+  "/account/privacy": {
+    title: "Privacy & Data",
+    section: "more",
+    breadcrumbs: [{ label: "More" }, { label: "Privacy & Data" }],
+  },
+  "/activity": {
+    title: "Activity",
+    section: "more",
+    breadcrumbs: [{ label: "More" }, { label: "Activity" }],
+  },
+  "/help-support": {
+    title: "Help & Support",
+    section: "more",
+    breadcrumbs: [{ label: "More" }, { label: "Help & Support" }],
+  },
   "/media": {
     title: "Media",
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/catalog" }, { label: "Media" }],
   },
 };
+
+const ROUTE_LABELS: Record<string, string> = {
+  "ai-chat": "AI Assistant",
+  "bookings-jobs": "Bookings & Jobs",
+  "coverage-hours": "Coverage & Hours",
+  "direct-payments": "Direct Payments",
+  "help-support": "Help & Support",
+  "home-services": "Home Services",
+  "refund-requests": "Refunds & Warranty",
+  "rework-requests": "Rework Requests",
+  "service-areas": "Service Areas",
+  "service-invoices": "Service Invoices",
+  "service-jobs": "Service Jobs",
+  "team-members": "Team Members",
+  "usage-credit-ledger": "Usage Credit Ledger",
+  "verification-documents": "Verification Documents",
+};
+
+const humanizeRoute = (segment: string) => ROUTE_LABELS[segment]
+  ?? segment.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const isOpaqueId = (segment: string) => /^\d+$/.test(segment)
+  || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment)
+  || segment.length > 28;
+const detailTitle = (title: string) => `${title.replace(/ies$/, "y").replace(/s$/, "")} details`;
+
+function childBreadcrumbs(parent: PageMeta | null, baseParts: string[], remaining: string[]): PageMeta {
+  const breadcrumbs = parent ? [...parent.breadcrumbs] : [];
+  let lastTitle = parent?.title ?? "Workspace";
+  remaining.forEach((segment, index) => {
+    const isLast = index === remaining.length - 1;
+    const label = isOpaqueId(segment) ? detailTitle(lastTitle) : humanizeRoute(segment);
+    lastTitle = label.replace(/ details$/, "");
+    const candidate = "/" + [...baseParts, ...remaining.slice(0, index + 1)].join("/");
+    breadcrumbs.push({
+      label,
+      href: !isLast && TENANT_PAGE_REGISTRY[candidate] ? candidate : undefined,
+    });
+  });
+  return { title: lastTitle, section: parent?.section ?? "workspace", breadcrumbs };
+}
 
 export function resolveTenantPageMeta(pathname: string): PageMeta | null {
   if (TENANT_PAGE_REGISTRY[pathname]) {
@@ -267,8 +357,10 @@ export function resolveTenantPageMeta(pathname: string): PageMeta | null {
   for (let len = parts.length - 1; len >= 1; len--) {
     const candidate = "/" + parts.slice(0, len).join("/");
     if (TENANT_PAGE_REGISTRY[candidate]) {
-      return TENANT_PAGE_REGISTRY[candidate];
+      const parent = TENANT_PAGE_REGISTRY[candidate];
+      return childBreadcrumbs(parent, parts.slice(0, len), parts.slice(len));
     }
   }
-  return null;
+  if (!parts.length) return null;
+  return childBreadcrumbs(null, [], parts);
 }

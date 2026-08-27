@@ -83,56 +83,10 @@ export const homeServicesFinanceApi = {
   listAudit: <T = FinanceListEnvelope>(page = 1, pageSize = 50) =>
     apiFetch<T>(`/v1/admin/finance/home-services/audit${_q({ page, page_size: pageSize })}`),
 
-  // ── Deposits ────────────────────────────────────────────────────────────
-  // NOTE: `page_size`/`payment_status` are the real FastAPI Query param
-  // names (finance_hub/admin_router.py) -- camelCase equivalents are also
-  // sent for backward compatibility with existing call sites, but unknown
-  // extra query params are just silently ignored by FastAPI, so the
-  // snake_case ones below are what actually take effect.
-  listDeposits: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/deposits${_q({
-    ...params, page_size: params?.pageSize ?? params?.page_size,
-  })}`),
-  getDepositsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/deposits/summary"),
-  getDepositDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/deposits/${id}`),
-  approveDeposit: <T = FinRow>(id: string, notes?: string) =>
-    apiFetch<T>(`/v1/admin/finance/deposits/${id}/approve`, { method: "POST", body: JSON.stringify({ notes }) }),
-  rejectDeposit: <T = FinRow>(id: string, reason: string) =>
-    apiFetch<T>(`/v1/admin/finance/deposits/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-  recordOfflineDeposit: <T = FinRow>(id: string, amount: number, reference?: string, notes?: string) =>
-    apiFetch<T>(`/v1/admin/finance/deposits/${id}/record-offline`, {
-      method: "POST", body: JSON.stringify({ amount, reference, notes }),
-    }),
-  refundDeposit: <T = FinRow>(id: string, amount: number, reason: string) =>
-    apiFetch<T>(`/v1/admin/finance/deposits/${id}/refund`, { method: "POST", body: JSON.stringify({ amount, reason }) }),
-  adjustDeposit: <T = FinRow>(id: string, amount: number, reason: string, category = "manual") =>
-    apiFetch<T>(`/v1/admin/finance/deposits/${id}/adjust`, {
-      method: "POST", body: JSON.stringify({ amount, reason, category }),
-    }),
-
-  // ── Deposit refund requests (tenant-initiated) ──────────────────────────
-  // A DIFFERENT resource from `/deposits/{id}/refund` above: that is an admin
-  // refunding a deposit directly, this is the queue of refund requests the
-  // TENANT raised against its own held deposit
-  // (finance_hub/deposit_refund_models.py). Its router existed but was never
-  // mounted, so every endpoint here 404'd until main.py was fixed — which is
-  // why no admin screen was ever built against it.
-  listDepositRefundRequests: <T = FinanceListEnvelope>(params?: {
-    status?: string; tenant_id?: string; page?: number; page_size?: number;
-  }) => apiFetch<T>(`/v1/admin/finance/home-services/deposit-refund-requests${_q(params)}`),
-
-  /**
-   * `action` is one of the seven the server accepts:
-   * advance_eligibility | advance_liability | advance_decision | request_info
-   * | approve | mark_refunded | reject.
-   * `note` carries the question for request_info and the payout reference for
-   * mark_refunded.
-   */
-  decideDepositRefundRequest: <T = FinRow>(
-    id: string,
-    body: { action: string; approved_amount?: string; note?: string },
-  ) => apiFetch<T>(`/v1/admin/finance/home-services/deposit-refund-requests/${id}/decision`, {
-    method: "POST", body: JSON.stringify(body),
-  }),
+  // The Deposits and Deposit-refund-request sections were removed with the
+  // security deposit itself (migrations 317/318). Providers hold spendable
+  // credit and purchased seats; there is no held balance to administer and
+  // nothing to refund.
 
   // ── Direct payments (customer pays the provider directly) ───────────────
   // These five endpoints were live and complete, but nothing in super-admin
@@ -322,15 +276,14 @@ export interface MonetizationJobTypeRule {
   status: "active" | "inactive";
 }
 
-// ── Top-up Plan (starter credit package + activation security deposit) ─────
+// ── Activation finance policy (starter credit + credit thresholds) ─────────
 // Separate versioned policy (HomeServicesActivationFinancePolicy) from the
 // provider/customer charge policy above -- this one sets what a tenant pays
-// to BUY credits (top-up price + GST) and their activation security
-// deposit, not what a completed job charges them.
+// to BUY credits (top-up price + GST) and the credit thresholds that replaced
+// the security deposit, not what a completed job charges them.
 export interface TopupPlan {
   id: string; vertical_id: string; version_number: number; status: string; is_current: boolean;
-  deposit_required: boolean; deposit_calculation_mode: string; deposit_amount_per_technician: number;
-  minimum_deposit: number; technician_count_policy: string;
+  credit_warning_threshold: number; credit_booking_floor: number; seat_accrual_mode: string;
   initial_credit_purchase_required: boolean; credit_package_base_amount: number;
   credit_package_gst_percent: number; credited_wallet_amount: number;
   completion_deduction_policy: string | null; currency: string;

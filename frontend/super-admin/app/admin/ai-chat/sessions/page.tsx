@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, Skeleton, Modal } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, Skeleton, Modal, Pagination } from "../../../../components/shared/ui";
 import { MessageSquare, ChevronLeft } from "lucide-react";
 import { adminAIChatApi, AIConversationSession, AIConversationMessage } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
@@ -139,7 +140,7 @@ export default function AISessionsPage() {
 
         <Card>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   {["Session ID", "Customer", "Intent", "Turns", "Status", "Last Active", ""].map(h => (
@@ -178,17 +179,9 @@ export default function AISessionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
-          {totalPages > 1 && (
-            <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Page {page} of {totalPages}</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Btn size="sm" variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Btn>
-                <Btn size="sm" variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Btn>
-              </div>
-            </div>
-          )}
+          <Pagination page={page} pageSize={20} total={total} pageCount={totalPages} onPage={setPage} itemLabel="sessions" />
         </Card>
 
         {selectedId && <SessionDetail sessionId={selectedId} onClose={() => setSelectedId(null)} />}

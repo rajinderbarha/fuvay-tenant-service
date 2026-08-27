@@ -19,7 +19,7 @@ made this sprint are correct and self-consistent:
    example, 3095 lines) had ZERO frontend permission checks across ~24
    mutation actions. The onboarding approve/reject/refresh, offerings
    suspend/reactivate/refresh, bookability override/remove x2, tenant
-   suspend/reinstate/change-plan/request-changes/send-notification/
+   suspend/reinstate/request-changes/send-notification/
    export, staff deactivate, user suspend, and add-staff/add-user/add-area
    triggers are now individually gated.
 
@@ -54,8 +54,6 @@ class TestProviderPortalMutationEndpointsAreGated:
             if not m:
                 continue
             method, path = m.groups()
-            if path == "/monetization/providers/{tenant_id}/sync":
-                continue  # Monetization domain, explicitly out of this sprint's bounded scope
             window = "\n".join(lines[i:i + 15])
             if "Depends(get_current_user" in window and "Depends(require_permission" not in window and "Depends(require_super_admin" not in window:
                 offenders.append(f"{method.upper()} {path}")
@@ -144,7 +142,7 @@ class TestTenantDetailPageActionGating:
 
     def test_tenant_lifecycle_actions_gated_by_super_admin_role(self):
         src = _read("frontend/super-admin/app/admin/tenants/[id]/page.tsx")
-        # Suspend/Reinstate/Change Plan/Request Changes/Send Notification/
+        # Suspend/Reinstate/Request Changes/Send Notification/
         # Export all call backend endpoints requiring super_admin (not yet
         # granular) -- must be gated by role check, not left unguarded.
         count = src.count('perm.role === "super_admin"')

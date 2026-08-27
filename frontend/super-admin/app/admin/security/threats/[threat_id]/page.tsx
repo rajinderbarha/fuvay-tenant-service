@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Ban, CheckCircle2, Clock3, Fingerprint, Network, ShieldAlert, UserX } from "lucide-react";
 import { AdminLayout } from "../../../../../components/layout/AdminLayout";
 import { Badge, Btn, Modal, Select, Textarea } from "../../../../../components/shared/ui";
-import { Skeleton } from "@serviceos/design-system";
+import { PageHeader, Skeleton } from "@serviceos/design-system";
 import { platformUsersApi, securityAdminApi } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { usePermissions } from "../../../../../hooks/usePermissions";
@@ -41,7 +41,7 @@ export default function ThreatDetailPage() {
     revoke_sessions: { title: "Revoke user sessions", description: "Immediately signs the affected user out from every active device.", label: "Revoke sessions", danger: true },
   };
   return <AdminLayout activeNav="security"><main className={styles.page}>
-    <header className={styles.header}><div><button className={styles.back} onClick={() => router.push("/admin/security?tab=threats")}><ArrowLeft size={15} /> Threat queue</button><span className={styles.eyebrow}>Security operations / Investigation</span><h1>{t ? `Threat ${t.threat_number ?? t.threat_id.slice(0, 8)}` : "Threat investigation"}</h1><p>{t ? t.activity_type.replace(/_/g, " ") : "Loading evidence and response controls..."}</p></div>{t && <div className={styles.headerBadges}><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"}>{t.threat_level}</Badge><Badge variant={t.status === "open" ? "danger" : t.status === "resolved" ? "success" : "warning"}>{t.status.replace(/_/g, " ")}</Badge></div>}</header>
+    <PageHeader eyebrow="Security operations" context="Investigation" title={t ? `Threat ${t.threat_number ?? t.threat_id.slice(0, 8)}` : "Threat investigation"} description={t ? t.activity_type.replace(/_/g, " ") : "Loading evidence and response controls..."} actions={<><Btn variant="ghost" size="sm" icon={<ArrowLeft size={15} />} onClick={() => router.push("/admin/security?tab=threats")}>Threat queue</Btn>{t && <div className={styles.headerBadges}><Badge variant={LEVEL_VARIANT[t.threat_level] ?? "muted"}>{t.threat_level}</Badge><Badge variant={t.status === "open" ? "danger" : t.status === "resolved" ? "success" : "warning"}>{t.status.replace(/_/g, " ")}</Badge></div>}</>} />
     {threat.loading ? <Skeleton height={560} /> : !t ? <section className={styles.error}><AlertTriangle size={24} /><strong>Threat could not be loaded</strong><span>{threat.error}</span></section> : <>
       <section className={styles.hero}><div className={styles.risk}><ShieldAlert size={25} /><div><span>Risk score</span><strong>{t.risk_score}<small>/100</small></strong></div></div><div className={styles.description}><span>Detection summary</span><h2>{t.description}</h2><p>Detected {fmt(t.created_at)} · Last observed {fmt(t.last_seen_at)}</p></div><div className={styles.owner}><span>Response owner</span><strong>{t.assigned_to_admin_id ? "Assigned administrator" : "Unassigned"}</strong><small>{t.assigned_to_admin_id ?? "Claim from the threat queue"}</small></div></section>
       <div className={styles.workspace}><div className={styles.mainColumn}>

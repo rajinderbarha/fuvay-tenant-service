@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -7,6 +8,7 @@ import {
   Card, Badge, Btn, HealthMeter, JobStatusBadge,
   Modal, Input, Skeleton, StatCard, Select,
 } from "../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import {
   tenantApi, adminTenantsApi, commerceApi, finalRecordsAdminApi, reviewApi, staffApi, bookingsApi,
   serviceAreaAdminApi, serviceabilityApi, mediaApi, authApi, financeApi, usageCreditsAdminApi,
@@ -15,7 +17,7 @@ import {
   trustQualityApi,
   type TenantAuditLog,
   type AdminStaffUser, type Booking, type GeoZone, type MediaFile,
-  type Deposit, type MatchedTenant, type EnabledService,
+  type MatchedTenant, type EnabledService,
   type EffectiveEngineItem, type AdminProviderOnboarding,
   type AdminTenantEnabledOffering, type AdminTenantServiceArea,
   type AdminTenantTeamMember, type AdminTenantAvailabilityRule,
@@ -36,7 +38,7 @@ import {
 
 type Tab =
   | "overview" | "staff" | "users" | "service-areas" | "enabled-services"
-  | "pricing" | "packages" | "wallet" | "deposit" | "disputes" | "settlements" | "risk-health"
+  | "pricing" | "wallet" | "disputes" | "settlements" | "risk-health"
   | "media" | "jobs" | "bookings"
   | "reviews" | "audit" | "onboarding"
   | "provider-offerings" | "provider-areas" | "provider-team" | "provider-availability"
@@ -50,9 +52,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "service-areas",    label: "Service Areas",     icon: <MapPin/>          },
   { id: "enabled-services", label: "Enabled Services",  icon: <Zap/>             },
   { id: "pricing",          label: "Pricing",           icon: <Tag/>             },
-  { id: "packages",         label: "Packages & Usage Credits", icon: <Banknote/>        },
   { id: "wallet",           label: "Usage Credit Ledger",   icon: <CreditCard/>      },
-  { id: "deposit",          label: "Security Deposit",  icon: <ShieldOff/>       },
   { id: "disputes",         label: "Complaints & Disputes", icon: <AlertCircle/> },
   { id: "settlements",      label: "Customer Credit Settlements", icon: <Banknote/> },
   { id: "risk-health",      label: "Risk & Health",     icon: <Zap/>             },
@@ -79,7 +79,7 @@ const TAB_GROUPS: { key: string; label: string; tabs: Tab[] }[] = [
     "entitlements",
   ] },
   { key: "operations", label: "Operations",     tabs: ["jobs", "bookings", "disputes", "reviews", "bookability"] },
-  { key: "finance",    label: "Finance",        tabs: ["packages", "wallet", "deposit", "settlements"] },
+  { key: "finance",    label: "Finance",        tabs: ["wallet", "settlements"] },
   { key: "trust",      label: "Trust & Quality", tabs: ["risk-health"] },
   { key: "media",      label: "Media",          tabs: ["media"] },
   { key: "audit",      label: "Audit",          tabs: ["audit"] },
@@ -297,8 +297,6 @@ function OnboardingAdminTab({ tenantId }: { tenantId: string }) {
               { label:"Readiness",         value: d.readiness_status?.replace(/_/g," ") ?? "—" },
               { label:"Bookable Status",   value: d.bookable_status?.replace(/_/g," ") ?? "—" },
               { label:"Verification",      value: d.verification_status?.replace(/_/g," ") ?? "not started" },
-              { label:"Package",           value: d.selected_package_name ?? "None selected" },
-              { label:"Package Status",    value: d.package_status?.replace(/_/g," ") ?? "—" },
             ].map(s => (
               <div key={s.label} style={{ background:"var(--surface-sunken)", borderRadius:10,
                 padding:"10px 12px", border:"1px solid var(--border)" }}>
@@ -461,7 +459,7 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
       ) : (
         <Card padding={0}>
           <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                   {["Offering","Type","Status","Readiness","Emerg.","Price","Activated","Blockers","Actions"].map(h => (
@@ -534,7 +532,7 @@ function ProviderOfferingsTab({ tenantId }: { tenantId: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         </Card>
       )}
@@ -595,7 +593,7 @@ function ProviderAreasTab({ tenantId, refreshToken }: { tenantId: string; refres
   return (
     <Card padding={0}>
       <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead>
             <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
               {["Type","State","District","City","Zipcode","Zone","Radius","Primary","Active","Created"].map(h => (
@@ -636,7 +634,7 @@ function ProviderAreasTab({ tenantId, refreshToken }: { tenantId: string; refres
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       </div>
     </Card>
   );
@@ -665,7 +663,7 @@ function ProviderTeamTab({ tenantId }: { tenantId: string }) {
   return (
     <Card padding={0}>
       <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead>
             <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
               {["Name","Type","Phone","Email","Designation","Assignments","Status","Created"].map(h => (
@@ -702,7 +700,7 @@ function ProviderTeamTab({ tenantId }: { tenantId: string }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       </div>
     </Card>
   );
@@ -733,7 +731,7 @@ function ProviderAvailabilityTab({ tenantId }: { tenantId: string }) {
   return (
     <Card padding={0}>
       <div style={{ overflowX:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead>
             <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
               {["Scope","Scope Name","Day","Start","End","Slot (min)","Max/Slot","Active","Created"].map(h => (
@@ -775,7 +773,7 @@ function ProviderAvailabilityTab({ tenantId }: { tenantId: string }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       </div>
     </Card>
   );
@@ -915,7 +913,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
           <p style={{ padding: 20, fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No audit events yet.</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                   {["Event", "Trigger", "Actor", "Date"].map(h => (
@@ -936,7 +934,7 @@ function BookabilityTab({ tenantId }: { tenantId: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </Card>
@@ -988,7 +986,6 @@ function EffectiveEnginesCard({ tenantId }: { tenantId: string }) {
   const SOURCE_LABEL: Record<string, string> = {
     global:              "Global",
     category:            "Category",
-    package_entitlement: "Package",
     tenant_override:     "Override",
   };
 
@@ -1018,7 +1015,6 @@ function EffectiveEnginesCard({ tenantId }: { tenantId: string }) {
           {data?.category && (
             <p style={{ fontSize:11, color:"var(--text-tertiary)", marginBottom:10, marginTop:0 }}>
               Category: <strong>{data.category.name}</strong>
-              {data.package && <> · Package: <strong>{data.package.name}</strong></>}
             </p>
           )}
 
@@ -1109,7 +1105,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const earnedBadges = useApi(useCallback(() => trustQualityApi.listEarnedBadges("tenant", id), [id]));
   const billing     = useApi(useCallback(() => tenantApi.getBillingInfo(id),                [id]));
   const flags       = useApi(useCallback(() => tenantApi.getFeatureFlags(id),               [id]));
-  const invoices    = useApi(useCallback(() => tenantApi.getBillingInvoices(id, 5),         [id]));
   const recentJobs  = useApi(useCallback(() => finalRecordsAdminApi.listForTenant(id, 5),[id]));
   const recentBkgs  = useApi(useCallback(() => bookingsApi.list(id, { limit: "5" }),        [id]));
 
@@ -1122,9 +1117,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
     data: { rules: [] as any[] },
     refetch: enabledSvcs.refetch,
   };
-  const deposit     = useApi(useCallback(() => commerceApi.getDeposit(id),                  [id]));
-  const depositTxns = useApi(useCallback(() => commerceApi.depositTransactions(id),         [id]));
-  const packages    = useApi(useCallback(() => commerceApi.listPackages(),                  []));
   // txns reuses the same authoritative ledger fetch (see `wallet` above) instead of the
   // legacy commerceApi.walletTransactions(id) which read the disconnected tenant_wallets ledger.
   const txns        = useApi(useCallback(() => usageCreditsAdminApi.getTenantLedger(id),    [id]));
@@ -1144,10 +1136,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
     adminTenantsApi.suspend(id, reason), [id]));
   const reinstateAction     = useAction(useCallback((reason: string) =>
     adminTenantsApi.reactivate(id, reason), [id]));
-  const upgradePlanAction   = useAction(useCallback((plan: string, reason: string) =>
-    adminTenantsApi.changePlan(id, plan, reason), [id]));
-  const adjustDepositAction = useAction(useCallback((amount: number, reason: string, category: "goodwill"|"dispute"|"correction"|"refund") =>
-    commerceApi.adminAdjustDeposit(id, amount, reason, category), [id]));
   const deactivateStaffAction = useAction(useCallback((userId: string) =>
     staffApi.deactivate(userId), [id]));
   const deleteMediaAction   = useAction(useCallback((fileId: string) =>
@@ -1169,14 +1157,10 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   const [creditNote,     setCreditNote]     = useState("");
   const [suspendOpen,    setSuspendOpen]    = useState(false);
   const [suspendMsg,     setSuspendMsg]     = useState("");
-  const [planModal,      setPlanModal]      = useState(false);
-  const [newPlan,        setNewPlan]        = useState("enterprise");
-  const [planReason,     setPlanReason]     = useState("");
   const [reinstateOpen,  setReinstateOpen]  = useState(false);
   const [reinstateMsg,   setReinstateMsg]   = useState("");
   const [toast,          setToast]          = useState("");
   const [logoFailed,     setLogoFailed]     = useState(false);
-  const [adjDepositOpen, setAdjDepositOpen] = useState(false);
   const [adjAmt,         setAdjAmt]         = useState("");
   const [adjReason,      setAdjReason]      = useState("");
   const [adjCategory,    setAdjCategory]    = useState<"goodwill"|"dispute"|"correction"|"refund">("correction");
@@ -1310,11 +1294,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
     const res = await reinstateAction.execute(reinstateMsg);
     if (res !== null) { tenant.refetch(); setReinstateOpen(false); setReinstateMsg(""); notify("Tenant reinstated."); }
   }
-  async function handleUpgradePlan() {
-    const res = await upgradePlanAction.execute(newPlan, planReason);
-    if (res !== null) { tenant.refetch(); billing.refetch(); setPlanModal(false); setPlanReason(""); notify(`Plan changed to ${newPlan}.`); }
-  }
-
   return (
     <AdminLayout activeNav="tenants">
       {/* Breadcrumb */}
@@ -1335,6 +1314,18 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       )}
 
       {/* ── Hero card ─────────────────────────────────────────────────────────── */}
+      {!tenant.loading && !tenant.error && (
+        <PageHeader
+          eyebrow="Provider operations"
+          context="Tenant 360"
+          title={t?.tenant_name ?? "Tenant"}
+          description={[
+            [t?.city, t?.state].filter(Boolean).join(", "),
+            t?.created_at ? `On platform since ${new Date(t.created_at).toLocaleDateString("en-IN", { month:"short", year:"numeric" })}` : "",
+          ].filter(Boolean).join(" · ") || "Provider identity, onboarding, finance, operations, trust, and bookability controls."}
+        />
+      )}
+
       {tenant.loading ? (
         <Skeleton height={220} style={{ borderRadius:20, marginBottom:24 }}/>
       ) : tenant.error ? (
@@ -1373,12 +1364,12 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               )}
 
-              {/* Identity block */}
+              {/* Identity details */}
               <div style={{ flex:"1 1 240px", minWidth:200 }}>
-                <h1 style={{ fontSize:22, fontWeight:800, color:"var(--text-primary)", margin:"0 0 5px",
+                <h2 style={{ fontSize:22, fontWeight:800, color:"var(--text-primary)", margin:"0 0 5px",
                   letterSpacing:"-0.01em" }}>
                   {t?.tenant_name ?? "—"}
-                </h1>
+                </h2>
                 <p style={{ fontSize:13, color:"var(--text-secondary)", margin:"0 0 10px" }}>
                   {[t?.city, t?.state].filter(Boolean).join(", ")}
                   {t?.created_at ? ` · Since ${new Date(t.created_at).toLocaleDateString("en-IN",{month:"short",year:"numeric"})}` : ""}
@@ -1389,7 +1380,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <Badge variant={t?.status === "active" ? "success" : t?.status === "suspended" ? "danger" : "warning"}>
                     {labelOf(t?.status)}
                   </Badge>
-                  <Badge variant="info">{labelOf(t?.plan_type)}</Badge>
                   <Badge variant={t?.health_band === "gold" || t?.health_band === "platinum" ? "success" : "muted"}>
                     {labelOf(t?.health_band)}
                   </Badge>
@@ -1435,7 +1425,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               {/* Actions */}
               <div style={{ display:"flex", flexDirection:"column", gap:8, alignItems:"flex-end" }}>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end", position:"relative" }}>
-                  {/* FINAL-L5-05P: Change Plan/Suspend/Reinstate all call
+                  {/* FINAL-L5-05P: Suspend/Reinstate call
                       backend endpoints gated by require_super_admin (not
                       yet granular) -- gated by role, not page-read
                       permission alone. Add Usage Credits is Finance-domain,
@@ -1444,9 +1434,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     <Btn size="sm" icon={<CreditCard size={13}/>} onClick={() => setCreditOpen(true)}>
                       Add Usage Credits
                     </Btn>
-                    {perm.role === "super_admin" && (
-                      <Btn variant="secondary" size="sm" onClick={() => setPlanModal(true)}>Change Plan</Btn>
-                    )}
                     {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
                       <Btn variant="danger" size="sm" loading={suspendAction.loading} onClick={() => setSuspendOpen(true)}>
                         Suspend
@@ -1466,9 +1453,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                         boxShadow:"0 12px 40px rgba(0,0,0,0.18)", minWidth:210, overflow:"hidden" }}>
                         {isMobile && <>
                           <button onClick={() => { setMoreOpen(false); setCreditOpen(true); }} style={menuItemStyle}>Add Usage Credits</button>
-                          {perm.role === "super_admin" && (
-                            <button onClick={() => { setMoreOpen(false); setPlanModal(true); }} style={menuItemStyle}>Change Plan</button>
-                          )}
                           {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
                             <button onClick={() => { setMoreOpen(false); setSuspendOpen(true); }} style={menuItemStyle}>Suspend</button>
                           )}
@@ -1478,16 +1462,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                           <hr style={{ margin:"4px 0", border:"none", borderTop:"1px solid var(--border)" }}/>
                         </>}
                         <button onClick={() => { setMoreOpen(false); setTab("onboarding"); }} style={menuItemStyle}>Approve / Review Tenant</button>
-                        {/* FINAL-L5-05U: previously ungated -- rendered for
-                            every role that could reach this page regardless
-                            of whether they held any Security Deposit
-                            permission at all; the backend endpoint this
-                            calls (platform_commerce.admin_adjust_deposit)
-                            now requires finance:deposits:update. */}
-                        {perm.has("finance:deposits:update") && (
-                          <button onClick={() => { setMoreOpen(false); setAdjDepositOpen(true); }} style={menuItemStyle}>Adjust Security Deposit</button>
-                        )}
-                        {perm.role === "super_admin" && (
+                                                {perm.role === "super_admin" && (
                           <button onClick={() => { setMoreOpen(false); setReqChangesOpen(true); }} style={menuItemStyle}>Request Changes</button>
                         )}
                         {perm.role === "super_admin" && (
@@ -1534,8 +1509,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             trend={w?.low_balance_alert ? "down" : "neutral"} alert={!!w?.low_balance_alert}/>
           <StatCard label="Credits Deducted Lifetime" value={fmt(w?.lifetime_consumed ?? 0)} icon={<CheckCircle2/>}
             trend="neutral" alert={false}/>
-          <StatCard label="Security Deposit Held" value={fmt(deposit.data?.current_balance ?? 0)} icon={<ShieldOff/>}
-            trend="neutral" alert={(deposit.data?.current_balance ?? 0) === 0}/>
           <StatCard label="Health Score" value={Math.round(t?.health_score ?? 0)} icon={<Zap/>} trend="neutral"/>
           <StatCard label="Staff Members" value={(staff.data?.users ?? []).length} icon={<Users/>} trend="neutral"/>
           <StatCard label="Average Rating" value={r?.avg_composite?.toFixed(1) ?? "—"} icon={<Star/>} trend="neutral"/>
@@ -1607,9 +1580,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
           { label: "Services Enabled",          ok: (enabledSvcs.data?.services ?? []).length > 0, jumpTab: "enabled-services" },
           { label: "Pricing Configured",        ok: (pricing.data?.rules ?? []).length > 0, jumpTab: "pricing" },
           { label: "Staff Added",               ok: (staff.data?.users ?? []).length > 0, jumpTab: "staff" },
-          { label: "Package Active",            ok: !!((packages.data as unknown as { packages?: { is_active?: boolean }[] })?.packages ?? []).some(p => p.is_active), jumpTab: "packages" },
           { label: "Usage Credits Available",   ok: (w?.credit_balance ?? w?.balance ?? 0) > 0, jumpTab: "wallet" },
-          { label: "Security Deposit Held",     ok: (deposit.data?.current_balance ?? 0) > 0, jumpTab: "deposit" },
           { label: "Bookable Status Enabled",   ok: t?.status === "active" && t?.is_discoverable !== false, jumpTab: "bookability" },
         ];
         const passCount = checks.filter(c => c.ok).length;
@@ -1905,7 +1876,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No staff found for this tenant</p>
               </div>
             ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                     {["Name / Email","Role","Status","Verified","Last Login","Actions"].map(h => (
@@ -1961,7 +1932,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         </div>
@@ -1991,7 +1962,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No users found for this tenant</p>
               </div>
             ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                     {["Name","Email","Role","Status","Verified","Last Login","Actions"].map(h => (
@@ -2038,7 +2009,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         </div>
@@ -2070,7 +2041,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No service zones configured for this tenant</p>
                 </div>
               ) : (
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                       {["Zone Name","Type","Coverage","Surcharge","Status","Valid From"].map(h => (
@@ -2107,7 +2078,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               )}
             </Card>
           </div>
@@ -2213,7 +2184,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 </p>
               </div>
             ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                     {["Display Name","Job Type","Custom Base Price","Visit Fee","Override","Status"].map(h => (
@@ -2250,7 +2221,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         </div>
@@ -2276,7 +2247,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                 <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>Admin pricing rules are retired for Home Services</p>
               </div>
             ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                     {["Job Type","Model","Base Price","Min–Max","Tier","Status"].map(h => (
@@ -2312,105 +2283,13 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         </div>
       )}
 
       {/* ════════════════════ PACKAGES & USAGE CREDITS ════════════════════ */}
-      {tab === "packages" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
-          {/* Credit packages */}
-          <Card padding={18}>
-            <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:"0 0 12px" }}>Credit Packages</p>
-            {packages.loading ? <Skeleton height={80}/> : (
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {((packages.data as unknown as { packages?: { id:string; name:string; credits:number; price:number; is_active:boolean }[] })?.packages ?? []).length === 0
-                  ? <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No credit packages configured.</p>
-                  : ((packages.data as unknown as { packages: { id:string; name:string; credits:number; price:number; is_active:boolean }[] }).packages ?? []).map(pkg => (
-                    <div key={pkg.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                      padding:"12px 16px", border:"1px solid var(--border)", borderRadius:10 }}>
-                      <div>
-                        <p style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", margin:"0 0 2px" }}>{pkg.name}</p>
-                        <p style={{ fontSize:12, color:"var(--text-secondary)", margin:0 }}>
-                          ₹{(pkg.credits ?? 0).toLocaleString("en-IN")} credits
-                        </p>
-                      </div>
-                      <div style={{ textAlign:"right" }}>
-                        <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:"0 0 2px" }}>
-                          ₹{(pkg.price ?? 0).toLocaleString("en-IN")}
-                        </p>
-                        <Badge variant={pkg.is_active ? "success" : "muted"} size="sm">{pkg.is_active ? "Active" : "Inactive"}</Badge>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
-      {/* ════════════════════ SECURITY DEPOSIT ════════════════════ */}
-      {tab === "deposit" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:"10px 14px", background:"var(--warning-bg)", border:"1px solid var(--warning-border)", borderRadius:"var(--radius-md)" }}>
-            <p style={{ fontSize:12, color:"var(--warning-text)", margin:0 }}>
-              Security deposit is a one-time guarantee held separately from usage credits. It is used to cover risk (disputes, damages)
-              and is only deducted with an admin reason and audit trail — it is never used for routine job-credit deductions.
-            </p>
-          </div>
-          <Card padding={18}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-              <p style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)", margin:0 }}>Security Deposit Held</p>
-              <Btn size="sm" variant="ghost" onClick={() => setAdjDepositOpen(true)}>Adjust Deposit</Btn>
-            </div>
-            {deposit.loading ? <Skeleton height={56}/> : deposit.data ? (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:12 }}>
-                {[
-                  ["Status",   deposit.data.status],
-                  ["Required", fmt(deposit.data.required_amount)],
-                  ["Held / Available", fmt(deposit.data.current_balance)],
-                ].map(([label, val]) => (
-                  <div key={label} style={{ textAlign:"center", padding:"12px 0",
-                    border:"1px solid var(--border)", borderRadius:10 }}>
-                    <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"0 0 4px", textTransform:"uppercase" }}>{label}</p>
-                    <p style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", margin:0 }}>{val}</p>
-                  </div>
-                ))}
-              </div>
-            ) : <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No deposit record found.</p>}
-            {(depositTxns.data as unknown as { transactions?: { txn_id:string; txn_type:string; amount:number; notes?:string; created_at:string }[] })?.transactions && (
-              <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
-                <p style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", margin:"0 0 8px" }}>
-                  Deposit Adjustments / Forfeit / Refund History
-                </p>
-                {((depositTxns.data as unknown as { transactions: { txn_id:string; txn_type:string; amount:number; notes?:string; created_at:string }[] }).transactions ?? []).map(tx => (
-                  <div key={tx.txn_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"8px 0", borderBottom:"1px solid var(--border-subtle)" }}>
-                    <div>
-                      <p style={{ fontSize:12, fontWeight:600, color:"var(--text-primary)", margin:0 }}>{tx.txn_type.replace(/_/g," ")}</p>
-                      {tx.notes && <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"2px 0 0" }}>{tx.notes}</p>}
-                    </div>
-                    <div style={{ textAlign:"right" }}>
-                      <p style={{ fontSize:12, fontWeight:700, color: tx.amount >= 0 ? "var(--success-text)" : "var(--danger-text)", margin:0 }}>
-                        {tx.amount >= 0 ? "+" : ""}₹{Math.abs(tx.amount).toLocaleString("en-IN")}
-                      </p>
-                      <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"2px 0 0" }}>
-                        {new Date(tx.created_at).toLocaleDateString("en-IN")}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {((depositTxns.data as unknown as { transactions: unknown[] }).transactions ?? []).length === 0 && (
-                  <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No deposit adjustments recorded.</p>
-                )}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
       {/* ════════════════════ COMPLAINTS & DISPUTES ════════════════════ */}
       {tab === "disputes" && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -2462,14 +2341,14 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
           <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize:12, color:"var(--info-text)", margin:0 }}>
               Customer service credit is platform credit issued to a customer, not a cash refund. Deduction is sourced from this
-              provider&apos;s usage credits first, then security deposit only if policy allows and an admin approves.
+              provider&apos;s usage credits, which may take the balance negative and pause new bookings until cleared.
             </p>
           </div>
           <Card padding={0}>
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                  {["Settlement", "Status", "Credit Issued", "Usage Credit Deducted", "Deposit Deducted", "Created"].map(h => (
+                  {["Settlement", "Status", "Credit Issued", "Usage Credit Deducted", "Created"].map(h => (
                     <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700,
                       color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
                   ))}
@@ -2482,7 +2361,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     <td style={{ padding:"10px 14px" }}><Badge variant="success" size="sm">{s.settlement_status}</Badge></td>
                     <td style={{ padding:"10px 14px", fontSize:12, fontWeight:600 }}>{fmt(s.settlement_amount)}</td>
                     <td style={{ padding:"10px 14px", fontSize:12 }}>{fmt(s.tenant_wallet_deduction_amount ?? 0)}</td>
-                    <td style={{ padding:"10px 14px", fontSize:12 }}>{fmt(s.security_deposit_deduction_amount ?? 0)}</td>
                     <td style={{ padding:"10px 14px", fontSize:11, color:"var(--text-tertiary)" }}>{s.created_at ? new Date(s.created_at).toLocaleDateString("en-IN") : "—"}</td>
                   </tr>
                 ))}
@@ -2490,7 +2368,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   <tr><td colSpan={6} style={{ padding:"32px 20px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13 }}>No executed settlements yet.</td></tr>
                 )}
               </tbody>
-            </table>
+            </TableSurface>
           </Card>
         </div>
       )}
@@ -2677,7 +2555,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No jobs yet</p>
             </div>
           ) : (
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                   {["Job #","City","Staff","Status","Collected Amount","Completed Job Deduction","Date"].map(h => (
@@ -2711,7 +2589,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           )}
         </Card>
       )}
@@ -2734,7 +2612,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               <p style={{ fontSize:13, color:"var(--text-tertiary)", margin:0 }}>No bookings yet</p>
             </div>
           ) : (
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                   {["Booking #","Service","Status","Preferred Date","Service Price","ServiceOS Credit Applied","Payable To Provider","Created"].map(h => (
@@ -2771,7 +2649,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           )}
         </Card>
       )}
@@ -2890,45 +2768,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
       {/* ════════════════════ BOOKABILITY ════════════════════ */}
       {tab === "bookability" && <BookabilityTab tenantId={id}/>}
 
-      {/* ── Adjust Deposit Modal ──────────────────────────────────────────────── */}
-      <Modal open={adjDepositOpen} onClose={() => setAdjDepositOpen(false)} title="Adjust Security Deposit" size="sm">
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-            Positive amount credits the deposit; negative debits it.
-          </p>
-          {adjustDepositAction.error && (
-            <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{adjustDepositAction.error}</p>
-          )}
-          <Input label="Amount (₹)" placeholder="5000 or -1000" value={adjAmt} onChange={setAdjAmt} type="number"/>
-          <div>
-            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-secondary)", textTransform:"uppercase",
-              display:"block", marginBottom:4 }}>Category</label>
-            <select value={adjCategory} onChange={e => setAdjCategory(e.target.value as typeof adjCategory)}
-              style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
-                background:"var(--bg)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit" }}>
-              <option value="correction">Correction</option>
-              <option value="goodwill">Goodwill</option>
-              <option value="dispute">Dispute</option>
-              <option value="refund">Refund</option>
-            </select>
-          </div>
-          <Input label="Reason (min 10 chars)" placeholder="Explain the reason for adjustment…" value={adjReason} onChange={setAdjReason}/>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setAdjDepositOpen(false)}>Cancel</Btn>
-            <Btn size="sm" loading={adjustDepositAction.loading}
-              disabled={!adjAmt || adjReason.length < 10}
-              onClick={async () => {
-                const res = await adjustDepositAction.execute(Number(adjAmt), adjReason, adjCategory);
-                if (res !== null) {
-                  deposit.refetch(); depositTxns.refetch();
-                  setAdjDepositOpen(false); setAdjAmt(""); setAdjReason(""); setAdjCategory("correction");
-                  notify("Deposit adjusted.");
-                }
-              }}>Apply Adjustment</Btn>
-          </div>
-        </div>
-      </Modal>
-
       {/* ── Add Credits Modal ──────────────────────────────────────────────────── */}
       <Modal open={creditOpen} onClose={() => setCreditOpen(false)} title="Add Usage Credits" size="md">
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -2975,45 +2814,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <Btn variant="ghost" size="sm" onClick={() => setSuspendOpen(false)}>Cancel</Btn>
             <Btn variant="danger" size="sm" loading={suspendAction.loading} onClick={handleSuspend}>
               Confirm Suspension
-            </Btn>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ── Change Plan Modal ─────────────────────────────────────────────────── */}
-      <Modal open={planModal} onClose={() => setPlanModal(false)} title="Change Plan" size="sm">
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <p style={{ fontSize:13, color:"var(--text-secondary)", margin:0 }}>
-            Current plan: <strong>{t?.plan_type ?? "—"}</strong>
-          </p>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", display:"block", marginBottom:6 }}>
-              New Plan
-            </label>
-            <select value={newPlan} onChange={e => setNewPlan(e.target.value)}
-              style={{ width:"100%", height:38, padding:"0 12px", border:"1px solid var(--border)", borderRadius:10,
-                background:"var(--surface)", color:"var(--text-primary)", fontSize:13, outline:"none" }}>
-              <option value="starter">Starter</option>
-              <option value="growth">Growth</option>
-              <option value="enterprise">Enterprise</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)", display:"block", marginBottom:6 }}>
-              Reason <span style={{ color:"var(--danger)" }}>*</span>
-            </label>
-            <textarea value={planReason} onChange={e => setPlanReason(e.target.value)} rows={2}
-              placeholder="Why is this plan change being made?"
-              style={{ width:"100%", padding:"8px 10px", borderRadius:"var(--radius-md)", border:"1px solid var(--border)",
-                background:"var(--surface)", color:"var(--text-primary)", fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }} />
-          </div>
-          {upgradePlanAction.error && (
-            <p style={{ fontSize:12, color:"var(--danger-text)", margin:0 }}>{upgradePlanAction.error}</p>
-          )}
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPlanModal(false)}>Cancel</Btn>
-            <Btn size="sm" loading={upgradePlanAction.loading} disabled={!planReason.trim()} onClick={handleUpgradePlan}>
-              Apply Plan Change
             </Btn>
           </div>
         </div>

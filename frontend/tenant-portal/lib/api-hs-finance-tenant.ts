@@ -58,47 +58,11 @@ export interface HsFinanceTxnPage {
 }
 export type HsCreditPackage = FinPayload;
 export type HsTopupOrder = FinPayload;
-/**
- * Was `FinPayload` (= any), so the Finance Hub's refund-request card was not
- * checked against the endpoint at all. Mirrors
- * HsDepositRefundRequest.to_dict() in
- * app/engines/finance_hub/deposit_refund_models.py exactly.
- */
-export interface HsRefundRequest {
-  refund_request_id: string;
-  tenant_id: string;
-  vertical_key: string;
-  request_ref: string;
-  status: string;
-  status_label: string;
-  /** Ordered happy path the card renders as a progress tracker. */
-  workflow_stages: string[];
-  is_terminal: boolean;
-  requested_amount: string;
-  approved_amount: string | null;
-  eligible_amount_snapshot: string;
-  deposit_held_snapshot: string;
-  deposit_required_snapshot: string;
-  qualifying_technicians_snapshot: number;
-  policy_version: string | null;
-  reason: string | null;
-  bank_account_name: string | null;
-  bank_account_number_masked: string | null;
-  bank_ifsc: string | null;
-  eligibility_checks: Record<string, unknown>;
-  blockers: HsLiabilityHold[];
-  submitted_at: string | null;
-  decision_at: string | null;
-  decision_note: string | null;
-  /** Set when an admin asks the tenant a question; the tenant answers via
-   *  `respondRefundRequest`. */
-  info_requested_note: string | null;
-  tenant_response: string | null;
-  refunded_at: string | null;
-  payout_reference: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-}
+// HsRefundRequest and the deposit refund-request endpoints were removed with
+// the security deposit itself (migrations 317/318). A top-up is spent down
+// as commission rather than held and returned, so there is nothing to
+// refund and no request workflow to model.
+
 export type HsFinanceReadinessCheck = FinPayload;
 export type HsLiabilityHold = FinPayload;
 export type HsDpQueue = FinPayload;
@@ -180,34 +144,6 @@ export const homeServicesFinanceApi = {
    * top-up table. */
   cancelTopup: <T = HsTopupOrder>(topupId: string) =>
     apiFetch<T>(`${FIN}/top-ups/${topupId}/cancel`, post()),
-
-  /** Security-deposit refunds are the tenant's own request against their
-   * held deposit -- a different flow from a customer refund, which is why it
-   * lives under security-deposit/ rather than a generic refunds route. */
-  createRefundRequest: <T = HsRefundRequest>(payload: Record<string, unknown>) =>
-    apiFetch<T>(`${FIN}/security-deposit/refund-requests`, post(payload)),
-
-  /** Paged list of the tenant's own deposit refund requests. The overview
-   *  seeds only the most recent few, so there was no way to reach older ones. */
-  listRefundRequests: <T = { items: HsRefundRequest[]; total: number; page: number; page_size: number }>(
-    params?: { status?: string; page?: number; page_size?: number },
-  ) => apiFetch<T>(`${FIN}/security-deposit/refund-requests${query(params as Record<string, string | number | undefined>)}`),
-
-  /**
-   * Real workflow deadlock fixed here. When an admin moves a deposit refund
-   * request to `info_requested`, the Finance Hub RENDERED the admin's
-   * question ("Admin requested information: …") but had no caller for this
-   * endpoint -- so the tenant could read the question and had no way to
-   * answer it, and the request sat in `info_requested` permanently. The
-   * endpoint existed and was correct; only the client was missing.
-   */
-  respondRefundRequest: <T = HsRefundRequest>(requestId: string, response: string) =>
-    apiFetch<T>(`${FIN}/security-deposit/refund-requests/${requestId}/respond`, post({ response })),
-
-  /** Same class of gap: a tenant could open a deposit refund request but not
-   *  take it back. Legal from any non-terminal, non-processing state. */
-  withdrawRefundRequest: <T = HsRefundRequest>(requestId: string) =>
-    apiFetch<T>(`${FIN}/security-deposit/refund-requests/${requestId}/withdraw`, post()),
 
   /** Top-up order detail + receipt. Had no caller, so a completed top-up's
    *  receipt was unreachable from the Transactions tab. */
@@ -304,8 +240,6 @@ export const activationPaymentApi = {
   }) => apiFetch<T>("/v1/tenant/home-services/activation/funding/confirm", post(result)),
   reconcileFunding: <T = HsTopupOrder>(orderId: string) =>
     apiFetch<T>(`/v1/tenant/home-services/activation/funding/${encodeURIComponent(orderId)}/reconcile`, post()),
-  createSecurityDepositOrder: <T = HsTopupOrder>(payload?: Record<string, unknown>) =>
-    apiFetch<T>("/v1/tenant/home-services/activation/security-deposit/order", post(payload)),
   createCreditPackageOrder: <T = HsTopupOrder>(packageId?: string, payload?: Record<string, unknown>) =>
     apiFetch<T>("/v1/tenant/home-services/activation/credit-package/order", post({ ...payload, package_id: packageId })),
 };

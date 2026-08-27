@@ -1,7 +1,9 @@
 "use client";
 import { useCallback } from "react";
 import {
-  providerStatusApi, tenantSetupApi, staffApi, providerServiceAreasApi, usageCreditsApi,
+  providerStatusApi,
+  homeServicesSetupOverviewApi,
+  type HomeServicesSetupSection,
 } from "../lib/api";
 import { useApi } from "./useApi";
 
@@ -15,9 +17,8 @@ import { useApi } from "./useApi";
 // name to its own <Icon/> the way lib/nav-config.ts already does.
 export const SETUP_STEP_DEFS = [
   { key: "profile_complete",        label: "Business Profile",       desc: "Add business name, GST, address",           href: "/profile",                   icon: "Zap" },
-  { key: "package_active",          label: "Package Active",         desc: "Activate your subscription package",        href: "/finance/package",            icon: "Package" },
-  { key: "credits_available",       label: "Usage Credits",          desc: "Ensure credits are available",              href: "/finance/usage-credit-ledger",icon: "CreditCard" },
-  { key: "security_deposit_ok",     label: "Security Deposit",       desc: "₹5,000 deposit required",                  href: "/finance/security-deposit",   icon: "Shield" },
+  { key: "credits_available",       label: "Usage Credits",          desc: "Maintain credits for completed-job charges", href: "/home-services/finance?tab=usage-credits", icon: "CreditCard" },
+  { key: "technician_seats_ok",     label: "Technician Seats",       desc: "Buy a top-up plan covering your technicians", href: "/home-services/finance", icon: "Shield" },
   { key: "service_areas_count",     label: "Coverage Pincodes",      desc: "Add at least one coverage pincode",         href: "/business/coverage-hours",     icon: "ArrowRight" },
   { key: "active_services_count",   label: "Enable a Service",       desc: "Enable and price a service",                href: "/home-services/services",     icon: "Zap" },
   { key: "coverage_configured",     label: "Service Coverage",       desc: "Set types, brands & job types",             href: "/home-services/services",     icon: "Shield" },
@@ -42,35 +43,37 @@ export interface SetupStatus {
 
 export function useSetupStatus(): SetupStatus {
   const statusApi = useApi(useCallback(() => providerStatusApi.get(), []), []);
-  const pkgApi    = useApi(useCallback(() => tenantSetupApi.getPackage(), []), []);
-  // FINAL-L5-03: Usage Credit Balance (usage_credit_ledger) is the real,
-  // canonical source -- NOT tenantSetupApi.getWallet(), which reads the
-  // dormant tenant_wallets table. See project memory.
-  const creditApi = useApi(useCallback(() => usageCreditsApi.getBalance(), []), []);
-  const staffApi2 = useApi(useCallback(() => staffApi.list(), []), []);
-  const areasApi  = useApi(useCallback(() => providerServiceAreasApi.list(), []), []);
+  const overviewApi = useApi(
+    useCallback(() => homeServicesSetupOverviewApi.getOverview(), []),
+    [],
+  );
 
   const s        = statusApi.data;
   const blockers = [...(s?.visibility_blockers ?? []), ...(s?.bookability_blockers ?? [])];
-  const pkg        = pkgApi.data as Record<string, unknown> | null;
-  const staffCount = staffApi2.data?.users?.length ?? 0;
-  const areasCount = areasApi.data?.total ?? areasApi.data?.areas?.length ?? 0;
-  const creditBal  = creditApi.data?.usage_credit_balance ?? 0;
-  const pkgStatus  = String(pkg?.status ?? "inactive");
-  const depositSt  = String(pkg?.security_deposit_status ?? "pending");
+  const sections = overviewApi.data?.sections ?? [];
+  const section = (key: string): HomeServicesSetupSection | undefined =>
+    sections.find(item => item.key === key);
+  const isSectionComplete = (key: string): boolean => section(key)?.status === "complete";
+  const metric = (key: string, field: string): number => {
+    const raw = section(key)?.[field];
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+  };
+  const hasBlocker = (...codes: string[]) => blockers.some(blocker => {
+    const normalized = String(blocker.code ?? "").trim().toUpperCase();
+    return codes.includes(normalized);
+  });
 
   function isDone(key: string): boolean {
     switch (key) {
-      case "profile_complete":        return !blockers.some(b => b.code?.includes("profile"));
-      case "package_active":          return pkgStatus === "active";
-      case "credits_available":       return creditBal > 0;
-      case "security_deposit_ok":     return depositSt === "received" || depositSt === "waived";
-      case "service_areas_count":     return areasCount > 0;
-      case "active_services_count":   return !blockers.some(b => b.code?.includes("service") || b.code?.includes("offering"));
-      case "coverage_configured":     return !blockers.some(b => b.code?.includes("coverage"));
-      case "staff_count":             return staffCount > 0;
-      case "availability_configured": return !blockers.some(b => b.code?.includes("availability") || b.code?.includes("slot"));
-      case "documents_submitted":     return !blockers.some(b => b.code?.includes("document"));
+      case "profile_complete":        return isSectionComplete("BUSINESS_PROFILE");
+      case "credits_available":       return Boolean(s) && !hasBlocker("USAGE_CREDITS_INSUFFICIENT", "USAGE_CREDITS_MISSING");
+      case "technician_seats_ok":     return Boolean(s) && !hasBlocker("TECHNICIAN_SEAT_LIMIT_REACHED", "PURCHASE_TOPUP_PLAN");
+      case "service_areas_count":     return metric("COVERAGE_AVAILABILITY", "active_areas") > 0;
+      case "active_services_count":   return metric("SERVICES_PRICING", "published_count") > 0;
+      case "coverage_configured":     return isSectionComplete("SERVICES_PRICING");
+      case "staff_count":             return metric("STAFF_TECHNICIANS", "active_staff") > 0;
+      case "availability_configured": return metric("COVERAGE_AVAILABILITY", "availability_rules") > 0;
+      case "documents_submitted":     return isSectionComplete("DOCUMENTS");
       default:                        return false;
     }
   }
@@ -78,10 +81,10 @@ export function useSetupStatus(): SetupStatus {
   const steps: SetupStep[] = SETUP_STEP_DEFS.map(st => ({ ...st, done: isDone(st.key) }));
   const doneCount = steps.filter(st => st.done).length;
   const total     = steps.length;
-  const loading   = statusApi.loading || pkgApi.loading || creditApi.loading || staffApi2.loading || areasApi.loading;
+  const loading   = statusApi.loading || overviewApi.loading;
 
   const refetch = useCallback(() => {
-    statusApi.refetch(); pkgApi.refetch(); creditApi.refetch(); staffApi2.refetch(); areasApi.refetch();
+    statusApi.refetch(); overviewApi.refetch();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -92,7 +95,7 @@ export function useSetupStatus(): SetupStatus {
     isComplete: doneCount === total,
     isBookable: s?.is_bookable ?? false,
     loading,
-    error: statusApi.error,
+    error: statusApi.error ?? overviewApi.error,
     refetch,
   };
 }

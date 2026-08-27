@@ -1,4 +1,5 @@
 'use client';
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Tenant "Activity & Audit Log".
  *
@@ -21,7 +22,7 @@ import { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { tenantSetupApi, type ProviderAuditLogEntry } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
-import { PageHeader, Card, Skeleton, Alert, EmptyState } from "@serviceos/design-system";
+import { PageHeader, Card, Skeleton, Alert, EmptyState, Pagination } from "@serviceos/design-system";
 
 const PAGE_SIZE = 50;
 
@@ -63,7 +64,6 @@ export default function ActivityPage() {
   return (
     <TenantLayout activeNav="activity">
       <div style={{ padding: "var(--space-6)" }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.75rem", margin: "0 0 4px" }}>Tenant Portal &rsaquo; Activity</p>
         <div style={{ marginBottom: 24 }}>
           <PageHeader title="Activity & Audit Log" description="Track all actions and changes made in your provider account." />
         </div>
@@ -81,7 +81,7 @@ export default function ActivityPage() {
             <>
               <Card padding="none">
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)" }}>
                         {["Action", "Actor", "Resource", "Before", "After", "Request ID", "Date"].map(col => (
@@ -118,28 +118,10 @@ export default function ActivityPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               </Card>
-              {totalPages > 1 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                    style={{ padding: "6px 12px", fontSize: "0.8125rem", borderRadius: 6, cursor: page <= 1 ? "default" : "pointer",
-                      border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-secondary)",
-                      opacity: page <= 1 ? 0.5 : 1 }}>
-                    Previous
-                  </button>
-                  <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                    Page {page} of {totalPages} · {total} entries
-                  </span>
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                    style={{ padding: "6px 12px", fontSize: "0.8125rem", borderRadius: 6, cursor: page >= totalPages ? "default" : "pointer",
-                      border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-secondary)",
-                      opacity: page >= totalPages ? 0.5 : 1 }}>
-                    Next
-                  </button>
-                </div>
-              )}
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} pageCount={totalPages} onPage={setPage} itemLabel="entries" />
             </>
           )
         )}

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { useState, useCallback } from "react";
 import Link from "next/link";
@@ -8,13 +9,14 @@ import {
   SetupTemplatesSummary,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
-import { Btn, Modal, Spinner } from "../../../../components/shared/ui";
+import { Btn, EmptyState, Modal, Spinner, SummaryCard, Pagination } from "../../../../components/shared/ui";
 import {
   Globe, Home, BookOpen, Building2, Sparkles, UtensilsCrossed, ShoppingBag, Briefcase,
   Plus, RefreshCw, LayoutGrid, List as ListIcon, Search, X, ExternalLink, Rocket, Archive,
   ArchiveRestore, Copy, Trash2, FileEdit, CheckCircle2, AlertTriangle, Info, ClipboardList,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -134,33 +136,6 @@ function StatusBadge({ status }: { status: string }) {
       {m.icon}
       {status}
     </span>
-  );
-}
-
-function SummaryCard({
-  label, value, onClick, active, icon,
-}: {
-  label: string; value: number | string; onClick?: () => void; active?: boolean; icon?: React.ReactNode;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: active ? "var(--accent-muted)" : "var(--surface)",
-        border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-        borderRadius:"var(--radius-lg)",
-        padding: "16px 20px",
-        cursor: onClick ? "pointer" : "default",
-        transition: "all 0.15s",
-        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)" }}>{value}</div>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>{label}</div>
-      </div>
-      {icon && <div style={{ color: "var(--text-tertiary)", opacity: 0.7 }}>{icon}</div>}
-    </div>
   );
 }
 
@@ -308,26 +283,21 @@ export default function ServiceSetupTemplatesPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: "24px", maxWidth: 1400, margin: "0 auto" }}>
+    <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-            Service Setup Templates
-          </h1>
-          <p style={{ color: "var(--text-secondary)", margin: "4px 0 0", fontSize: 14 }}>
-            Reusable starter packs for launching categories and services
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Service Setup Templates"
+        description="Reusable starter packs for launching categories and services."
+        eyebrow="Service Setup"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <Btn variant="secondary" size="sm" icon={<Sparkles size={14}/>} onClick={handleSeedClick}>
             Seed Defaults
           </Btn>
           <Btn variant="primary" size="sm" icon={<Plus size={14}/>} onClick={() => { setShowCreate(true); setWizardStep(1); setWizard(EMPTY_WIZARD); }}>
             New Template
           </Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Summary Cards */}
       {sum && (
@@ -402,7 +372,15 @@ export default function ServiceSetupTemplatesPage() {
           <span>Loading templates…</span>
         </div>
       ) : templates.length === 0 ? (
-        <EmptyState onSeed={handleSeedClick} onCreate={() => { setShowCreate(true); setWizardStep(1); setWizard(EMPTY_WIZARD); }} />
+        <EmptyState
+          icon={<ClipboardList />}
+          title="No service setup templates found"
+          description="Templates help you quickly launch new categories and services with pre-configured modules, items, and workflows."
+          action={<>
+            <Btn variant="primary" icon={<Sparkles size={14}/>} onClick={handleSeedClick}>Seed Default Templates</Btn>
+            <Btn variant="secondary" icon={<Plus size={14}/>} onClick={() => { setShowCreate(true); setWizardStep(1); setWizard(EMPTY_WIZARD); }}>Create New Template</Btn>
+          </>}
+        />
       ) : viewMode === "grid" ? (
         <GridView
           templates={templates}
@@ -422,15 +400,7 @@ export default function ServiceSetupTemplatesPage() {
       )}
 
       {/* Pagination */}
-      {total > 24 && (
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 24 }}>
-          <Btn variant="secondary" size="sm" icon={<ChevronLeft size={14}/>} disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-          <span style={{ padding: "6px 12px", fontSize: 13, color: "var(--text-secondary)" }}>
-            Page {page} of {Math.ceil(total / 24)}
-          </span>
-          <Btn variant="secondary" size="sm" iconRight={<ChevronRight size={14}/>} disabled={page >= Math.ceil(total / 24)} onClick={() => setPage(p => p + 1)}>Next</Btn>
-        </div>
-      )}
+      <Pagination page={page} pageSize={24} total={total} onPage={setPage} itemLabel="templates" />
 
       {/* Create Wizard Modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={`Create Template — Step ${wizardStep} of 6`} size="xl">
@@ -564,7 +534,7 @@ function TableView({ templates, onPublish, onArchive, onClone, onDelete }: {
 }) {
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)" }}>
             {["Template", "Vertical", "Type", "Status", "System", "Version", "Updated", "Actions"].map(h => (
@@ -607,36 +577,12 @@ function TableView({ templates, onPublish, onArchive, onClone, onDelete }: {
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }
 
 // ── Empty State ───────────────────────────────────────────────────────────────
-
-function EmptyState({ onSeed, onCreate }: { onSeed: () => void; onCreate: () => void }) {
-  return (
-    <div style={{ textAlign: "center", padding: "80px 20px" }}>
-      <div style={{
-        width: 72, height: 72, borderRadius: 18, background: "var(--surface-sunken)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "var(--text-tertiary)", margin: "0 auto 16px",
-      }}>
-        <ClipboardList size={32}/>
-      </div>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
-        No service setup templates found.
-      </h2>
-      <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 32, maxWidth: 400, margin: "0 auto 32px" }}>
-        Templates help you quickly launch new categories and services with pre-configured modules, items, and workflows.
-      </p>
-      <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-        <Btn variant="primary" icon={<Sparkles size={14}/>} onClick={onSeed}>Seed Default Templates</Btn>
-        <Btn variant="secondary" icon={<Plus size={14}/>} onClick={onCreate}>Create New Template</Btn>
-      </div>
-    </div>
-  );
-}
 
 // ── Wizard Content ────────────────────────────────────────────────────────────
 

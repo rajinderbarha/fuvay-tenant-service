@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback } from "react";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { Card, StatCard, Badge, Skeleton, EmptyState } from "../../../components/shared/ui";
@@ -34,7 +35,7 @@ export default function StaffAvailabilityPage() {
           <EmptyState icon={<Clock/>} title="No availability configured yet."
             description="Your tenant admin sets your working hours."/>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {["Day", "Start Time", "End Time", "Status"].map(h => (
@@ -52,7 +53,7 @@ export default function StaffAvailabilityPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </Card>
     </StaffLayout>

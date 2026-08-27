@@ -1,7 +1,7 @@
 "use client";
 import { useCallback } from "react";
 import { adminInvoiceApi, type ServiceInvoiceRecord } from "../../../lib/api";
-import { Card, Badge, Btn, Skeleton } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, SectionHeader } from "../../../components/shared/ui";
 import { useApi } from "../../../hooks/useApi";
 import { FileText, RefreshCw } from "lucide-react";
 
@@ -21,19 +21,9 @@ export default function AdminServiceInvoicesPage() {
   const invoices: ServiceInvoiceRecord[] = (Array.isArray(data) ? data : []) as ServiceInvoiceRecord[];
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24, maxWidth: 1100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0,
-            display: "flex", alignItems: "center", gap: 10 }}>
-            <FileText size={22} /> Service Invoices
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-            All invoices across all providers.
-          </p>
-        </div>
-        <Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <SectionHeader eyebrow="Finance" title="Service Invoices" description="All invoices across all providers."
+        icon={<FileText />} actions={<Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>} />
 
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

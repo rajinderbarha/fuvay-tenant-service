@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback } from "react";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { Card, StatCard, Badge, Skeleton, EmptyState } from "../../../components/shared/ui";
@@ -32,7 +33,7 @@ export default function StaffServiceAreasPage() {
           <EmptyState icon={<MapPin/>} title="No service areas configured yet."
             description="Your tenant admin configures which cities/zipcodes your business serves."/>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {["City", "Zipcode", "Coverage Type", "Status"].map(h => (
@@ -50,7 +51,7 @@ export default function StaffServiceAreasPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </Card>
     </StaffLayout>

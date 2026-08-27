@@ -210,7 +210,6 @@ class TestQueueReconciliation:
             ("POST", "/v1/commerce/warranty/claims"),
             ("POST", "/v1/commerce/tenants/{tenant_id}/badges/recalculate"),
             ("POST", "/v1/payments/tenants/{tenant_id}/payout"),
-            ("PUT", "/v1/subscriptions/tenants/{tenant_id}/plan"),
             ("POST", "/v1/compliance/deletion-requests"),
             ("POST", "/v1/compliance/portability-requests"),
         }

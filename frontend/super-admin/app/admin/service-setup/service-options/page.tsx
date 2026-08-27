@@ -1,218 +1,148 @@
 "use client";
-import { useEffect, useState } from "react";
-import { serviceOptionApi, ServiceOption34E } from "../../../../lib/api";
-import { PageHeader } from "../../../../components/shared/layout";
-import { Btn } from "../../../../components/shared/ui";
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-green-100 text-green-800",
-  inactive: "bg-yellow-100 text-yellow-800",
-  archived: "bg-gray-100 text-gray-500",
-  deprecated: "bg-red-100 text-red-700",
-  pending_review: "bg-blue-100 text-blue-700",
-};
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Archive, CheckCircle2, PauseCircle, Plus, Search } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
+import { serviceOptionApi, type ServiceOption34E } from "../../../../lib/api";
+import { Badge, Btn, DataTable, Input, Modal, Pagination, Select, Textarea } from "../../../../components/shared/ui";
 
-const STATUSES = ["", "active", "inactive", "archived", "deprecated", "pending_review"];
+const PAGE_SIZE = 25;
+const STATUSES = ["active", "inactive", "archived", "deprecated", "pending_review"];
+const OPTION_TYPES = ["add_on", "upgrade", "material", "tool", "visit_fee", "equipment_type"];
+type OptionRow = ServiceOption34E & Record<string, unknown>;
+
+function statusVariant(status: string): "success" | "warning" | "danger" | "muted" | "info" {
+  if (status === "active") return "success";
+  if (status === "inactive") return "warning";
+  if (status === "deprecated") return "danger";
+  if (status === "pending_review") return "info";
+  return "muted";
+}
 
 export default function ServiceOptionsPage() {
   const [items, setItems] = useState<ServiceOption34E[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({
-    name: "", code: "", description: "", option_type: "add_on",
-    unit: "per_unit", default_price: "0", vertical_type: "",
-    is_customer_selectable: true,
-  });
+  const [form, setForm] = useState({ name: "", code: "", description: "", option_type: "add_on", unit: "per_unit", default_price: "0", vertical_type: "", is_customer_selectable: true });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [actionMsg, setActionMsg] = useState("");
+  const [formError, setFormError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionBusy, setActionBusy] = useState("");
 
-  async function load() {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
-      const res = await serviceOptionApi.listOptions({
-        status: statusFilter || undefined,
-        search: search || undefined,
-        page_size: 100,
-      });
-      const d = res as unknown as { items: ServiceOption34E[]; total: number };
-      setItems(d.items ?? []);
-      setTotal(d.total ?? 0);
-    } catch { /* ignore */ }
-    setLoading(false);
-  }
-
-  useEffect(() => { load(); }, [statusFilter, search]);
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name) { setError("Name is required"); return; }
-    setSaving(true); setError("");
-    try {
-      await serviceOptionApi.createOption(form);
-      setShowCreate(false);
-      setForm({ name: "", code: "", description: "", option_type: "add_on",
-                unit: "per_unit", default_price: "0", vertical_type: "",
-                is_customer_selectable: true });
-      await load();
-    } catch (err: unknown) {
-      setError((err as Error).message ?? "Failed to create");
+      const result = await serviceOptionApi.listOptions({ status: statusFilter || undefined, search: debouncedSearch || undefined, page, page_size: PAGE_SIZE });
+      setItems(result.items ?? []);
+      setTotal(result.total ?? 0);
+    } catch (error) {
+      setItems([]);
+      setTotal(0);
+      setLoadError(error instanceof Error ? error.message : "Could not load service options.");
+    } finally {
+      setLoading(false);
     }
-    setSaving(false);
+  }, [debouncedSearch, page, statusFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
+
+  async function handleCreate(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form.name.trim()) { setFormError("Name is required."); return; }
+    if (Number(form.default_price) < 0) { setFormError("Default price cannot be negative."); return; }
+    setSaving(true);
+    setFormError("");
+    try {
+      await serviceOptionApi.createOption({ ...form, name: form.name.trim(), code: form.code.trim(), description: form.description.trim(), vertical_type: form.vertical_type.trim() });
+      setShowCreate(false);
+      setForm({ name: "", code: "", description: "", option_type: "add_on", unit: "per_unit", default_price: "0", vertical_type: "", is_customer_selectable: true });
+      setActionMessage("Service option created.");
+      await load();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not create the service option.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function setStatus(opt: ServiceOption34E, newStatus: "activate" | "deactivate" | "archive") {
+  async function changeStatus(option: ServiceOption34E, action: "activate" | "deactivate" | "archive") {
+    setActionBusy(`${option.id}:${action}`);
+    setActionMessage("");
     try {
-      if (newStatus === "activate") await serviceOptionApi.activateOption(opt.id);
-      else if (newStatus === "deactivate") await serviceOptionApi.deactivateOption(opt.id);
-      else await serviceOptionApi.archiveOption(opt.id);
-      setActionMsg(`Option ${newStatus}d`);
+      if (action === "activate") await serviceOptionApi.activateOption(option.id);
+      else if (action === "deactivate") await serviceOptionApi.deactivateOption(option.id);
+      else await serviceOptionApi.archiveOption(option.id);
+      setActionMessage(`Service option ${action === "activate" ? "activated" : action === "deactivate" ? "deactivated" : "archived"}.`);
       await load();
-      setTimeout(() => setActionMsg(""), 2000);
-    } catch { /* ignore */ }
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "The status change failed.");
+    } finally {
+      setActionBusy("");
+    }
   }
 
   return (
-    <div className="page-root">
-      <PageHeader
-        title="Service Options"
-        description={`${total} options — types and variants customers can select during booking`}
-        primaryAction={<Btn onClick={() => setShowCreate(true)}>+ New Option</Btn>}
-      />
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader eyebrow="Catalog" context="Service setup" title="Service Options" description={`${total.toLocaleString()} selectable options and variants available to service blueprints.`}
+        actions={<Btn onClick={() => { setFormError(""); setShowCreate(true); }}><Plus size={14} /> New option</Btn>} />
 
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <input
-          className="form-input w-64"
-          placeholder="Search options…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <select className="form-input w-48" value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}>
-          {STATUSES.map(s => (
-            <option key={s} value={s}>{s === "" ? "All Statuses" : s}</option>
-          ))}
-        </select>
+      <div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 280px", maxWidth: 440 }}><Input placeholder="Search name, code, or description" value={search} onChange={setSearch} icon={<Search />} /></div>
+        <div style={{ width: 190 }}><Select value={statusFilter} onChange={setStatusFilter} placeholder="All statuses" options={STATUSES.map(value => ({ value, label: value.replace(/_/g, " ") }))} /></div>
       </div>
 
-      {actionMsg && <p className="text-green-600 text-sm mb-3">{actionMsg}</p>}
+      {loadError && <div role="alert" style={{ padding: "var(--space-3) var(--space-4)", border: "1px solid var(--danger-border)", borderRadius: "var(--radius-md)", background: "var(--danger-bg)", color: "var(--danger-text)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)" }}><span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontSize: 13 }}><AlertTriangle size={15} />{loadError}</span><Btn size="sm" variant="secondary" onClick={load}>Retry</Btn></div>}
+      {actionMessage && <div role="status" style={{ fontSize: 13, color: "var(--text-secondary)" }}>{actionMessage}</div>}
 
-      {loading ? (
-        <p className="body-text text-muted">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="body-text text-muted">No service options found.</p>
-      ) : (
-        <div className="card overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Code</th>
-                <th>Type</th>
-                <th>Vertical</th>
-                <th>Status</th>
-                <th>Customer</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(opt => (
-                <tr key={opt.id}>
-                  <td className="font-medium">{opt.name}</td>
-                  <td><code className="text-xs">{opt.code}</code></td>
-                  <td className="text-sm text-muted">{opt.option_type}</td>
-                  <td className="text-sm text-muted">{opt.vertical_type ?? "—"}</td>
-                  <td>
-                    <span className={`badge ${STATUS_COLORS[opt.status] ?? "bg-gray-100 text-gray-600"}`}>
-                      {opt.status}
-                    </span>
-                  </td>
-                  <td className="text-sm">{opt.is_customer_selectable ? "Yes" : "No"}</td>
-                  <td>
-                    <div className="flex gap-1">
-                      {opt.status !== "active" && (
-                        <button className="text-xs text-green-600 hover:underline"
-                          onClick={() => setStatus(opt, "activate")}>Activate</button>
-                      )}
-                      {opt.status === "active" && (
-                        <button className="text-xs text-yellow-600 hover:underline"
-                          onClick={() => setStatus(opt, "deactivate")}>Deactivate</button>
-                      )}
-                      {opt.status !== "archived" && (
-                        <button className="text-xs text-gray-500 hover:underline"
-                          onClick={() => setStatus(opt, "archive")}>Archive</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div>
+        <DataTable<OptionRow> loading={loading} rows={items as OptionRow[]} emptyText="No service options match the current filters." columns={[
+          { key: "name", label: "Option", render: (value, row) => <div><div style={{ fontWeight: 650 }}>{String(value)}</div><div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{row.description || "No description"}</div></div> },
+          { key: "code", label: "Code", render: value => <code style={{ fontSize: 12 }}>{String(value || "—")}</code> },
+          { key: "option_type", label: "Type", render: value => String(value || "—").replace(/_/g, " ") },
+          { key: "vertical_type", label: "Vertical", render: value => String(value || "All") },
+          { key: "default_price", label: "Default", render: value => `₹${Number(value || 0).toLocaleString("en-IN")}` },
+          { key: "is_customer_selectable", label: "Customer", render: value => <Badge variant={value ? "info" : "muted"}>{value ? "Selectable" : "Internal"}</Badge> },
+          { key: "status", label: "Status", render: value => <Badge variant={statusVariant(String(value))}>{String(value).replace(/_/g, " ")}</Badge> },
+          { key: "id", label: "Actions", render: (_, row) => <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
+            {row.status !== "active" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:activate`} onClick={() => changeStatus(row, "activate")}><CheckCircle2 size={12} />Activate</Btn>}
+            {row.status === "active" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:deactivate`} onClick={() => changeStatus(row, "deactivate")}><PauseCircle size={12} />Deactivate</Btn>}
+            {row.status !== "archived" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:archive`} onClick={() => changeStatus(row, "archive")}><Archive size={12} />Archive</Btn>}
+          </div> },
+        ]} />
+        <Pagination page={page} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+      </div>
 
-      {showCreate && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2 className="section-title mb-4">New Service Option</h2>
-            {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-            <form onSubmit={handleCreate} className="form-stack">
-              <label className="form-label">
-                Name <span className="text-red-500">*</span>
-                <input className="form-input" value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Split AC" />
-              </label>
-              <label className="form-label">
-                Code
-                <input className="form-input" value={form.code}
-                  onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
-                  placeholder="split_ac" />
-              </label>
-              <label className="form-label">
-                Description
-                <textarea className="form-input" value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  rows={2} />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="form-label">
-                  Option Type
-                  <select className="form-input" value={form.option_type}
-                    onChange={e => setForm(f => ({ ...f, option_type: e.target.value }))}>
-                    {["add_on", "upgrade", "material", "tool", "visit_fee", "equipment_type"].map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-label">
-                  Vertical Type
-                  <input className="form-input" value={form.vertical_type}
-                    onChange={e => setForm(f => ({ ...f, vertical_type: e.target.value }))}
-                    placeholder="home_service" />
-                </label>
-              </div>
-              <label className="form-label">
-                Default Price
-                <input className="form-input" type="number" value={form.default_price}
-                  onChange={e => setForm(f => ({ ...f, default_price: e.target.value }))} />
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={form.is_customer_selectable}
-                  onChange={e => setForm(f => ({ ...f, is_customer_selectable: e.target.checked }))} />
-                Customer selectable
-              </label>
-              <div className="flex gap-3 mt-4">
-                <Btn type="submit" disabled={saving}>{saving ? "Saving…" : "Create"}</Btn>
-                <Btn variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Btn>
-              </div>
-            </form>
+      <Modal open={showCreate} onClose={() => !saving && setShowCreate(false)} title="New service option" size="lg">
+        <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
+            <Input label="Name" required value={form.name} onChange={value => setForm(current => ({ ...current, name: value }))} placeholder="Split AC" />
+            <Input label="Code" value={form.code} onChange={value => setForm(current => ({ ...current, code: value }))} placeholder="split_ac" hint="Leave blank to generate from the name." />
           </div>
-        </div>
-      )}
+          <Textarea label="Description" value={form.description} onChange={value => setForm(current => ({ ...current, description: value }))} rows={3} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
+            <Select label="Option type" value={form.option_type} onChange={value => setForm(current => ({ ...current, option_type: value }))} options={OPTION_TYPES.map(value => ({ value, label: value.replace(/_/g, " ") }))} />
+            <Input label="Vertical type" value={form.vertical_type} onChange={value => setForm(current => ({ ...current, vertical_type: value }))} placeholder="home_service" />
+            <Input label="Default price" type="number" value={form.default_price} onChange={value => setForm(current => ({ ...current, default_price: value }))} hint="Tenant pricing can override catalog defaults where policy allows." />
+            <Input label="Unit" value={form.unit} onChange={value => setForm(current => ({ ...current, unit: value }))} placeholder="per_unit" />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontSize: 13 }}><input type="checkbox" checked={form.is_customer_selectable} onChange={event => setForm(current => ({ ...current, is_customer_selectable: event.target.checked }))} />Customer selectable</label>
+          {formError && <p role="alert" style={{ margin: 0, color: "var(--danger-text)", fontSize: 13 }}>{formError}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}><Btn type="button" variant="secondary" disabled={saving} onClick={() => setShowCreate(false)}>Cancel</Btn><Btn type="submit" loading={saving}>Create service option</Btn></div>
+        </form>
+      </Modal>
     </div>
   );
 }

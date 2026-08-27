@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard,} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard, Pagination,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import { catalogApi, typesApi } from "../../../lib/api";
 import type {
@@ -307,16 +307,8 @@ function ServiceTypesTab() {
             : <DataTable columns={columns.filter(column => column.key === "actions" || columnPrefs.find(pref => pref.key === column.key)?.visible !== false)} rows={(listRes.data?.types ?? []) as unknown as Record<string, unknown>[]}/>
         }
         {/* Pagination */}
-        {(listRes.data?.pages ?? 1) > 1 && (
-          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
-            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>
-              Page {page} / {listRes.data?.pages}
-            </span>
-            <select aria-label="Rows per page" value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} className="enterprise-select"><option>25</option><option>50</option><option>100</option><option>200</option></select>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=(listRes.data?.pages??1)}>Next</Btn>
-          </div>
-        )}
+        <Pagination page={page} pageSize={pageSize} total={listRes.data?.total ?? 0} pageCount={listRes.data?.pages}
+          onPage={setPage} pageSizes={[25, 50, 100, 200]} onPageSize={size => { setPageSize(size); setPage(1); }} itemLabel="types" />
       </Card>
 
       {/* Modals */}
@@ -829,16 +821,8 @@ function BrandRequestsTab() {
         loading={requests.loading}
         emptyText="No brand requests found for this status."
       />
-      {(requests.data?.pages ?? 1) > 1 && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{requests.data?.total ?? 0} requests</span>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Btn>
-            <Badge variant="muted">Page {page} of {requests.data?.pages ?? 1}</Badge>
-            <Btn size="sm" variant="secondary" disabled={page >= (requests.data?.pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
-          </div>
-        </div>
-      )}
+      <Pagination page={page} pageSize={pageSize} total={requests.data?.total ?? 0} pageCount={requests.data?.pages}
+        onPage={setPage} itemLabel="brand requests" />
       <Modal open={!!modal} onClose={() => setActionModal(null)} title={modalTitle}>
         {modal && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1034,16 +1018,8 @@ function BrandMasterTab() {
         }
         {/* Pagination -- was previously missing entirely on this tab (fetched
             page_size:50 but gave no way to reach page 2+). */}
-        {Math.ceil((listRes.data?.total ?? 0) / pageSize) > 1 && (
-          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
-            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>
-              Page {page} / {Math.ceil((listRes.data?.total ?? 0) / pageSize)}
-            </span>
-            <select aria-label="Brand rows per page" value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1);}} className="enterprise-select"><option>25</option><option>50</option><option>100</option><option>200</option></select>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=Math.ceil((listRes.data?.total ?? 0) / pageSize)}>Next</Btn>
-          </div>
-        )}
+        <Pagination page={page} pageSize={pageSize} total={listRes.data?.total ?? 0} onPage={setPage}
+          pageSizes={[25, 50, 100, 200]} onPageSize={size => { setPageSize(size); setPage(1); }} itemLabel="brands" />
       </Card>
 
       {/* Modals */}
@@ -1391,13 +1367,8 @@ function TypeMappingsTab() {
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> Add Mapping</Btn>}/>
             : <DataTable columns={columns} rows={(listRes.data?.mappings ?? []) as unknown as Record<string, unknown>[]}/>
         }
-        {totalPages > 1 && (
-          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
-            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>Page {page} / {totalPages}</span>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=totalPages}>Next</Btn>
-          </div>
-        )}
+        <Pagination page={page} pageSize={pageSize} total={listRes.data?.total ?? 0} pageCount={totalPages}
+          onPage={setPage} itemLabel="type mappings" />
       </Card>
 
       {createOpen && (
@@ -1571,13 +1542,8 @@ function BrandMappingsTab() {
                 action={<Btn variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus size={14}/> Add Mapping</Btn>}/>
             : <DataTable columns={columns} rows={(listRes.data?.mappings ?? []) as unknown as Record<string, unknown>[]}/>
         }
-        {totalPages > 1 && (
-          <div style={{ display:"flex", justifyContent:"center", gap:8, padding:16 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>Prev</Btn>
-            <span style={{ fontSize:12, color:"var(--text-secondary)", alignSelf:"center" }}>Page {page} / {totalPages}</span>
-            <Btn variant="ghost" size="sm" onClick={() => setPage(p=>p+1)} disabled={page>=totalPages}>Next</Btn>
-          </div>
-        )}
+        <Pagination page={page} pageSize={pageSize} total={listRes.data?.total ?? 0} pageCount={totalPages}
+          onPage={setPage} itemLabel="brand mappings" />
       </Card>
 
       {createOpen && (

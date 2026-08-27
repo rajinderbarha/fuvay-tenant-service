@@ -2,12 +2,8 @@
 import { useEffect, useState } from "react";
 import { adminAnalyticsApi } from "@/lib/api";
 import { OperationalAlertList } from "@/components/analytics";
-
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)",
-  borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-secondary)",
-  cursor: "pointer", fontFamily: "inherit",
-};
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 export default function AlertsPage() {
   const [alerts, setAlerts]   = useState<any[]>([]);
@@ -26,15 +22,12 @@ export default function AlertsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Operational Alerts</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Live platform health signals</p>
-        </div>
-        <button onClick={load} disabled={loading} style={btnStyle}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
+      <PageHeader
+        title="Operational Alerts"
+        description="Live platform health signals and conditions requiring administrator attention."
+        eyebrow="Analytics"
+        actions={<Btn variant="secondary" size="sm" onClick={load} loading={loading}>Refresh</Btn>}
+      />
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>
         <OperationalAlertList alerts={alerts} loading={loading} />

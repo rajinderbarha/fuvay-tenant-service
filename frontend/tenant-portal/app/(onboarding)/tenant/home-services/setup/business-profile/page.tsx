@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
@@ -57,8 +57,10 @@ function ProfileShell({ mode, children }: { mode: "onboarding" | "workspace"; ch
     : <OnboardingShell activeNav="business-profile">{children}</OnboardingShell>;
 }
 
-export function BusinessProfileWorkspace({ mode = "onboarding" }: { mode?: "onboarding" | "workspace" }) {
+function BusinessProfileWorkspace() {
   const router = useRouter();
+  const pathname = usePathname();
+  const mode: "onboarding" | "workspace" = pathname.startsWith("/profile") ? "workspace" : "onboarding";
   const workspace = mode === "workspace";
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [options, setOptions] = useState<BusinessProfileOptions | null>(null);

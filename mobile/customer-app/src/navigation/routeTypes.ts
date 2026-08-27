@@ -55,6 +55,10 @@ export type PublicStackParamList = {
   RecoveryCodeChallenge: undefined;
   ForgotPasswordRequest: undefined;
   ResetPasswordConfirm: { email?: string; phone?: string };
+  /** Terms / Privacy, read from /v1/public/legal before any account exists.
+   *  `docType` is the backend's own document-type key; `title` is only a
+   *  placeholder shown while the real title loads. */
+  LegalDocument: { docType: string; title?: string };
 };
 
 export type ExceptionalStateStackParamList = {
@@ -113,6 +117,9 @@ export type CustomerAppStackParamList = {
   PrivacyRequests: undefined;
   PrivacyRequestSubmitted: { requestId: string };
   PrivacyConsent: undefined;
+  /** Same screen as the public stack's — the profile's Privacy & legal
+   *  section reaches it once signed in. */
+  LegalDocument: { docType: string; title?: string };
   AssistantDataInfo: undefined;
   AccountDeletionRequest: undefined;
   /** Route params carry only the request ID -- the detail screen resolves

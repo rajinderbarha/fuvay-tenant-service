@@ -4,14 +4,14 @@ import { categoryDashboardApi, ServiceOSError } from "../lib/api";
 
 export interface TenantContext {
   tenantId: string | null; tenantName: string | null; vertical: string | null;
-  city: string | null; planType: string | null; healthScore: number | null; userId: string | null;
+  city: string | null; healthScore: number | null; userId: string | null;
   categoryName: string | null; categorySlug: string | null;
   loading: boolean; error: string | null; requestId: string | null;
 }
 
 export function useTenant(): TenantContext {
   const [ctx, setCtx] = useState<TenantContext>({
-    tenantId: null, tenantName: null, vertical: null, city: null, planType: null,
+    tenantId: null, tenantName: null, vertical: null, city: null,
     healthScore: null, userId: null, categoryName: null, categorySlug: null,
     loading: true, error: null, requestId: null,
   });
@@ -26,7 +26,6 @@ export function useTenant(): TenantContext {
       tenantName: localStorage.getItem("serviceos_tenant_name"),
       vertical: cachedVertical,
       city: localStorage.getItem("serviceos_tenant_city"),
-      planType: localStorage.getItem("serviceos_tenant_plan"),
       healthScore: Number(localStorage.getItem("serviceos_tenant_health") || 0) || null,
       userId: localStorage.getItem("serviceos_user_id"),
       // A cached vertical lets dependent pages paint immediately; if it's

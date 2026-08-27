@@ -1,8 +1,11 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { recommendationApi, RecommendationRule } from "../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "../../../../components/shared/ui";
 
 const RULE_TYPES = [
   "brand", "service_option", "issue_type", "document_requirement",
@@ -98,25 +101,16 @@ export default function RecommendationRulesPage() {
   };
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Recommendation Rules</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            Define automatic recommendation rules for brands, options, issues, documents, and more
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader eyebrow="Automation" title="Recommendation Rules"
+        description="Define automatic recommendation rules for brands, options, issues, documents, and more"
+        actions={<>
           <Link href="/admin/automation/recommendation-results"
-            style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
+            style={{ padding: "var(--space-2) var(--space-4)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", color: "var(--text-secondary)", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
             View Results
           </Link>
-          <button onClick={() => setShowCreate(true)}
-            style={{ background: "#1e3a5f", color: "#fff", border: "none", padding: "0.5rem 1.2rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600 }}>
-            + New Rule
-          </button>
-        </div>
-      </div>
+          <Btn onClick={() => setShowCreate(true)}>+ New Rule</Btn>
+        </>} />
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
@@ -146,7 +140,7 @@ export default function RecommendationRulesPage() {
         </div>
       ) : (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
                 {["Name / Code", "Type", "Scope", "Priority", "Status", "Updated", "Actions"].map(h => (
@@ -196,7 +190,7 @@ export default function RecommendationRulesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
 

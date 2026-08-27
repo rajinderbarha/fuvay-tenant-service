@@ -52,6 +52,37 @@
 
 final result: passed
 
+## Admin command-center header and KPI unification — 2026-08-27
+
+**Comparison target**
+
+- Source visual truth: the dark command-center screenshot supplied in this conversation, showing the compact eyebrow/context header, right-aligned actions, operational strip, tabs, and a five-card KPI row.
+- Implementation route: `http://localhost:3000/admin/dashboard`.
+- Target state: authenticated super admin, dark theme, Home Services overview.
+- Target viewport: approximately 1467 x 414 pixels based on the supplied source.
+
+**Implemented**
+
+- `PageHeader` is the single shared page-heading implementation. The dashboard, settings, intelligence, security, and threat-investigation headers now compose it instead of maintaining local hero markup.
+- `SummaryCard` is the single operational KPI tile. The legacy `MetricCard`/`StatCard` name is a compatibility adapter that renders `SummaryCard`; it no longer owns separate markup or styling.
+- Header rhythm, page rhythm, action gaps, KPI gaps, card padding, and responsive admin-shell padding now consume the common `--space-*` scale through semantic `--layout-*` tokens.
+- Admin-only eyebrow wording is explicit at admin call sites. The shared component no longer injects “Fuvay administration” into tenant pages.
+- The architecture guard rejects feature-local implementations of the canonical header, KPI, card, button, form, pagination, empty-state, and action-menu primitives.
+
+**Automated verification**
+
+- Super-admin TypeScript: passed (`npx tsc --noEmit`).
+- Tenant portal TypeScript against the changed shared package: passed (`npx tsc --noEmit`).
+- Super-admin Vitest suite: 2 files, 4 tests passed.
+- Super-admin production build: passed; all 141 routes generated.
+
+**Visual verification status**
+
+- The in-app Browser runtime reported that no browser instance was available, so a same-viewport implementation screenshot and combined visual comparison could not be captured in this run.
+- No claim of pixel-level visual parity is made without that evidence. Automated and structural validation are complete; browser-rendered visual comparison remains blocked by the unavailable Browser runtime.
+
+final result: blocked
+
 ## Native Home — selected editorial option 2 — 2026-08-23
 
 **Scope and target**

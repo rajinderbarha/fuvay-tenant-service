@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useEffect } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Badge, Spinner } from "../../../../components/shared/ui";
@@ -57,7 +58,7 @@ export default function SelfLoginHistoryPage() {
         ) : (
           <Card padding={0}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Time", "Event", "IP Address", "Device", "Failure Reason"].map(h => (
@@ -89,7 +90,7 @@ export default function SelfLoginHistoryPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           </Card>
         )}

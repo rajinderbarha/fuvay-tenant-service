@@ -1,5 +1,7 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import { TableSurface } from "@serviceos/design-system";
+import React, { Suspense, useState, useCallback, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
 import { Card, PageHeader, Button, Modal, Select, Textarea, Spinner } from "@serviceos/design-system";
 import { Badge } from "../../../../components/shared/ui";
@@ -55,6 +57,7 @@ const ERASURE_TYPES = new Set([
 ]);
 
 type TabId = "overview" | "my-requests" | "staff-requests" | "customer-requests" | "consents" | "exports" | "help";
+const TAB_IDS = new Set<TabId>(["overview", "my-requests", "staff-requests", "customer-requests", "consents", "exports", "help"]);
 
 function SummaryCards({ summary }: { summary: ReturnType<typeof providerComplianceApi.getSummary> extends Promise<infer T> ? T : never }) {
   const cards = [
@@ -84,7 +87,7 @@ function RequestTable({ requests, emptyMsg }: { requests: TenantComplianceReques
   }
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)" }}>
             {["Request #", "Type", "Status", "SLA", "Submitted", "Due"].map(h => (
@@ -112,17 +115,27 @@ function RequestTable({ requests, emptyMsg }: { requests: TenantComplianceReques
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }
 
-export default function ProviderCompliancePage() {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+function ProviderComplianceContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab") as TabId | null;
+  const canonicalTab = requestedTab && TAB_IDS.has(requestedTab) ? requestedTab : "overview";
+  const [activeTab, setActiveTab] = useState<TabId>(canonicalTab);
   const [toast, setToast] = useState("");
 
+  useEffect(() => setActiveTab(canonicalTab), [canonicalTab]);
+  const selectTab = (tab: TabId) => {
+    setActiveTab(tab);
+    router.replace(`/provider/compliance?tab=${tab}`, { scroll: false });
+  };
+
   // Summary
-  const summary = useApi(useCallback(() => providerComplianceApi.getSummary(), []), []);
+  const summary = useApi(useCallback(() => providerComplianceApi.getSummary(), []), [], { enabled: activeTab === "overview" });
 
   // My requests
   const [reqTypeFilter, setReqTypeFilter] = useState("");
@@ -132,27 +145,32 @@ export default function ProviderCompliancePage() {
       request_type: reqTypeFilter || undefined,
       status: reqStatusFilter || undefined,
     }), [reqTypeFilter, reqStatusFilter]),
-    [reqTypeFilter, reqStatusFilter, activeTab]);
+    [reqTypeFilter, reqStatusFilter, activeTab],
+    { enabled: activeTab === "my-requests" });
 
   // Staff requests
   const staffRequests = useApi(
     useCallback(() => providerComplianceApi.listStaffRequests(), []),
-    [activeTab]);
+    [activeTab],
+    { enabled: activeTab === "staff-requests" });
 
   // Customer requests
   const customerRequests = useApi(
     useCallback(() => providerComplianceApi.listCustomerRequests(), []),
-    [activeTab]);
+    [activeTab],
+    { enabled: activeTab === "customer-requests" });
 
   // Consents
   const consents = useApi(
     useCallback(() => providerComplianceApi.listConsents(), []),
-    [activeTab]);
+    [activeTab],
+    { enabled: activeTab === "consents" });
 
   // Exports
   const exports = useApi(
     useCallback(() => providerComplianceApi.listExports(), []),
-    [activeTab]);
+    [activeTab],
+    { enabled: activeTab === "exports" });
 
   // Create request modal
   const [showCreate, setShowCreate] = useState(false);
@@ -244,7 +262,7 @@ export default function ProviderCompliancePage() {
         {TABS.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => selectTab(tab.id)}
             data-testid={`tab-${tab.id}`}
             style={{
               display: "flex", alignItems: "center", gap: 6,
@@ -350,7 +368,7 @@ export default function ProviderCompliancePage() {
           {!consents.loading && consents.data && (
             <div>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                       {["Consent Type", "Action", "Legal Basis", "Date", ""].map(h => (
@@ -384,7 +402,7 @@ export default function ProviderCompliancePage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
               {!consents.data.records?.length && (
                 <p style={{ textAlign: "center", padding: 24, color: "var(--text-tertiary)" }}>
@@ -409,7 +427,7 @@ export default function ProviderCompliancePage() {
                 </p>
               ) : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
                         {["Export ID", "Status", "Generated", "Expires", "Downloaded", "Action"].map(h => (
@@ -454,7 +472,7 @@ export default function ProviderCompliancePage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               )}
             </div>
@@ -561,4 +579,8 @@ export default function ProviderCompliancePage() {
       </Modal>
     </TenantLayout>
   );
+}
+
+export default function ProviderCompliancePage() {
+  return <Suspense fallback={<TenantLayout activeNav="compliance"><div style={{ padding: "var(--space-6)" }}><Spinner /></div></TenantLayout>}><ProviderComplianceContent /></Suspense>;
 }

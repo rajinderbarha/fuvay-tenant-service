@@ -46,7 +46,7 @@ def test_home_placement_contract_rejects_unsafe_or_unrenderable_content() -> Non
     with pytest.raises(ValidationError, match="cannot advertise a provider price"):
         valid_body(offer_text="From ₹599")
     with pytest.raises(ValidationError, match="Unsupported Home placement"):
-        valid_body(placement="home_recommendation", variant="editorial")
+        valid_body(placement="home_unknown", variant="editorial")
 
 
 def test_every_home_placement_has_bounded_native_variants() -> None:
@@ -59,6 +59,8 @@ def test_every_home_placement_has_bounded_native_variants() -> None:
         "home_collection",
         "home_notice",
         "home_trust",
+        "home_global",
+        "home_recommendation",
     }
     assert HOME_PLACEMENTS["home_trust"]["variants"] == ["promise"]
     assert HOME_PLACEMENTS["home_trust"]["max_active"] == 4
@@ -73,9 +75,9 @@ def test_every_native_section_has_a_safe_backend_layout_contract() -> None:
     assert {section["key"] for section in sections} >= {"hero", "spotlight", "master_services", "featured_problems", "trust_strip"}
     enabled = {section["key"] for section in sections if section["enabled"]}
     assert enabled == {
-        "hero", "service_groups", "recent_bookings", "featured_services",
-        "master_services", "banners", "collection", "spotlight",
-        "global_services", "trust_strip",
+        "hero", "service_groups", "master_services", "nearby_services",
+        "recent_bookings", "assistant", "trust_strip", "featured_problems",
+        "spotlight", "featured_services", "global_services",
     }
     assert all(section["spacing"] in {"compact", "standard", "generous"} for section in sections)
     assert all(section["surface"] in {"canvas", "subtle", "raised", "brand_tint"} for section in sections)

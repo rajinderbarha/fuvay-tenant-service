@@ -2,18 +2,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { adminAiApi, AISession } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 const ROLE_STYLE: Record<string, React.CSSProperties> = {
   user:      { background: "var(--info-bg)",        color: "var(--info-text)",    marginLeft: "auto" },
   assistant: { background: "var(--surface-sunken)", color: "var(--text-primary)" },
   system:    { background: "var(--warning-bg)",     color: "var(--warning-text)" },
   tool:      { background: "var(--surface)",        color: "var(--text-secondary)", border: "1px solid var(--border)" },
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, borderRadius:"var(--radius-md)", cursor: "pointer",
-  fontFamily: "inherit", border: "1px solid var(--border)",
-  background: "var(--surface)", color: "var(--text-primary)",
 };
 
 export default function AISessionDetailPage() {
@@ -47,22 +43,17 @@ export default function AISessionDetailPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>AI Session</h1>
-          <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-            {session.id}
-          </p>
-        </div>
-        {session.is_active && (
+      <PageHeader
+        title="AI Session"
+        description={`Session ID: ${session.id}`}
+        eyebrow="Intelligence"
+        actions={session.is_active ? (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handoff} style={{ ...btnStyle, borderColor: "var(--info-border)", color: "var(--info-text)" }}>
-              Handoff to Human
-            </button>
-            <button onClick={close} style={btnStyle}>Close Session</button>
+            <Btn variant="secondary" size="sm" onClick={handoff}>Handoff to Human</Btn>
+            <Btn variant="secondary" size="sm" onClick={close}>Close Session</Btn>
           </div>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
         {[

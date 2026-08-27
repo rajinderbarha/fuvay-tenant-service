@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { renderWithProviders } from "../../../testing/renderWithProviders";
@@ -49,7 +49,10 @@ describe("PhotosNotesTurn", () => {
       fileName: "ac-problem.jpg",
       mimeType: "image/jpeg",
     });
-    finishUpload?.();
+    await act(async () => {
+      finishUpload?.();
+      await upload;
+    });
     await waitFor(() => expect(screen.queryByLabelText("Photo uploading")).toBeNull());
   });
 });

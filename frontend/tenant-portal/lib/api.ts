@@ -57,7 +57,7 @@ export function isTenantOwnerRole(role: string | null | undefined): boolean {
 }
 export function clearSession() {
   ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
-   "serviceos_tenant_vertical","serviceos_tenant_plan","serviceos_tenant_health","serviceos_user_id",
+   "serviceos_tenant_vertical","serviceos_tenant_health","serviceos_user_id",
    "serviceos_force_pw_change"].forEach(k => localStorage.removeItem(k));
   window.location.href = "/login";
 }
@@ -874,33 +874,9 @@ export const financeApi = {
     return apiFetch<RefundList>(`/v1/payments/tenants/${tid}/refunds?limit=${limit}`);
   },
 
-  // Security deposit (refundable, separate from wallet)
-  getDeposit: () => {
-    const tid = getTenantId();
-    return apiFetch<SecurityDepositStatus>(`/v1/commerce/tenants/${tid}/deposit`);
-  },
-  initiateDeposit: () => {
-    const tid = getTenantId();
-    return apiFetch<PurchaseOrder>(`/v1/commerce/tenants/${tid}/deposit/initiate`,
-      { method:"POST", body:JSON.stringify({ gateway: "razorpay" }) });
-  },
-  confirmDeposit: (orderId: string, paymentId: string, signature: string) => {
-    const tid = getTenantId();
-    return apiFetch<DepositConfirmResult>(`/v1/commerce/tenants/${tid}/deposit/confirm`,
-      { method:"POST", body:JSON.stringify({
-          razorpay_order_id: orderId, razorpay_payment_id: paymentId,
-          razorpay_signature: signature }) });
-  },
-  depositTransactions: () => {
-    const tid = getTenantId();
-    return apiFetch<SecurityDepositTxnList>(`/v1/commerce/tenants/${tid}/deposit/transactions`);
-  },
-
-  // Subscription (legacy)
-  subscription: () => {
-    const tid = getTenantId();
-    return apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tid}`);
-  },
+  // The security deposit and its /v1/commerce/**/deposit endpoints were
+  // removed in migrations 317/318. Technician headcount is bought as seats
+  // with a top-up plan; nothing is held and nothing is refundable.
 
   // At-risk customers
   atRiskCustomers: (limit = 10) => {
@@ -1469,32 +1445,6 @@ export const tenantSelfApi = {
 };
 
 // ── Subscription ──────────────────────────────────────────────────────────────
-export const subscriptionApi = {
-  get: () => {
-    const tid = getTenantId();
-    return apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tid}`);
-  },
-  updatePlan: (newPlan: string, billingCycle = "monthly") => {
-    const tid = getTenantId();
-    return apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tid}/plan`,
-      { method:"PUT", body:JSON.stringify({ new_plan: newPlan, billing_cycle: billingCycle }) });
-  },
-  getPeriod: () => {
-    const tid = getTenantId();
-    return apiFetch<SubscriptionPeriod>(`/v1/subscriptions/tenants/${tid}/period`);
-  },
-  getHistory: (limit = 12, cursor?: string) => {
-    const tid = getTenantId();
-    const qs  = cursor ? `?limit=${limit}&cursor=${cursor}` : `?limit=${limit}`;
-    return apiFetch<SubscriptionHistoryList>(`/v1/subscriptions/tenants/${tid}/history${qs}`);
-  },
-  prorationPreview: (newPlan: string, billingCycle = "monthly") => {
-    const tid = getTenantId();
-    return apiFetch<ProrationPreview>(
-      `/v1/subscriptions/tenants/${tid}/proration-preview?new_plan=${newPlan}&billing_cycle=${billingCycle}`);
-  },
-};
-
 // ── Compliance (DPDP Act 2023 — consent, erasure, portability) ────────────────
 export const complianceApi = {
   recordConsent: (consentType: string, action: "granted"|"withdrawn", policyVersion = "1.0") => {
@@ -1787,90 +1737,7 @@ export interface InventoryExtractionResult {
 }
 
 // ── Public Registration (no auth) ─────────────────────────────────────────────
-export const publicRegApi = {
-  initiate: (businessName:string, ownerName:string, ownerEmail:string, ownerPhone:string,
-             vertical:string, city:string, country:string, zipcode:string, state:string|undefined, planType:string) =>
-    apiFetch<RegistrationInitResult>("/v1/public/register/initiate", { method:"POST", body:JSON.stringify({
-      business_name:businessName, owner_name:ownerName, owner_email:ownerEmail, owner_phone:ownerPhone,
-      vertical, city, country, zipcode, state, plan_type:planType }) }, true),
-  confirmPlan: (sessionId:string, planType:string) =>
-    apiFetch<RegistrationPlanResult>("/v1/public/register/confirm-plan", { method:"POST", body:JSON.stringify({
-      session_id:sessionId, plan_type:planType }) }, true),
-  verify: (sessionId:string, otp:string) =>
-    apiFetch<RegistrationOtpResult>("/v1/public/register/verify", { method:"POST", body:JSON.stringify({
-      session_id:sessionId, otp }) }, true),
-  paymentOrder: (sessionId:string, billingCycle = "monthly") =>
-    apiFetch<RegistrationPaymentOrder>("/v1/public/register/payment-order", { method:"POST", body:JSON.stringify({
-      session_id:sessionId, billing_cycle:billingCycle }) }, true),
-  complete: (sessionId:string, orderId:string, paymentId:string, signature:string, selectedPackageId?:string) =>
-    apiFetch<RegistrationCompleteResult>("/v1/public/register/complete", { method:"POST", body:JSON.stringify({
-      session_id:sessionId, razorpay_order_id:orderId, razorpay_payment_id:paymentId, razorpay_signature:signature,
-      ...(selectedPackageId ? { selected_package_id: selectedPackageId } : {}) }) }, true),
-};
-
 // ── Public Packages (signup — no auth) ───────────────────────────────────────
-export interface SignupPackageFeature {
-  feature_id: string;
-  feature_label: string;
-  feature_description: string | null;
-  feature_icon: string | null;
-  is_highlighted: boolean;
-  is_included: boolean;
-  display_order: number;
-}
-
-export interface SignupPackageLimit {
-  limit_id: string;
-  limit_key: string;
-  limit_label: string;
-  limit_value: number | null;
-  limit_unit: string | null;
-  is_unlimited: boolean;
-  display_order: number;
-}
-
-export interface SignupPackage {
-  package_id: string;
-  id: string;
-  name: string;
-  slug: string;
-  short_description: string | null;
-  description: string | null;
-  package_type: string;
-  plan_level: string | null;
-  package_price: number;
-  price: number;
-  security_deposit_amount: number;
-  included_credit_amount: number;
-  bonus_credits: number | null;
-  lead_credits: number | null;
-  validity_days: number | null;
-  trial_days: number | null;
-  features: Record<string, unknown>;
-  package_features: SignupPackageFeature[];
-  package_limits: SignupPackageLimit[];
-  is_active: boolean;
-  display_order: number;
-  vertical_type: string | null;
-  billing_cycle: string | null;
-  currency: string;
-  is_public_signup_visible: boolean;
-  is_popular: boolean;
-  is_featured: boolean;
-  is_recommended: boolean;
-  badge_label: string | null;
-  cta_label: string | null;
-  terms_summary: string | null;
-  created_at: string | null;
-}
-export const publicPackagesApi = {
-  list: (vertical_type?: string) =>
-    apiFetch<{ packages: SignupPackage[]; total: number }>(
-      `/v1/public/packages${vertical_type ? `?vertical_type=${encodeURIComponent(vertical_type)}` : ""}`,
-      {}, true,
-    ),
-};
-
 // ── AI Chat Engine ────────────────────────────────────────────────────────────
 export const aiChatApi = {
   chat: (message:string, history:AIChatMessage[] = []) =>
@@ -2001,7 +1868,6 @@ export interface PaymentRecord  { id:string; job_id?:string; amount:number; stat
 export interface PaymentListResponse { records:PaymentRecord[]; has_next:boolean; }
 export interface InvoiceRecord  { id:string; invoice_number:string; job_id?:string; amount:number; status:string; pdf_url?:string; created_at:string; }
 export interface InvoiceListResponse { invoices:InvoiceRecord[]; has_next:boolean; }
-export interface SubscriptionInfo { subscription_id?:string; plan_type:string; status:string; started_at?:string; ends_at?:string; jobs_used?:number; jobs_included?:number; leads_used?:number; leads_included?:number; next_billing_at?:string; }
 export interface PayoutRequest  { id:string; amount:number; status:string; created_at:string; }
 export interface Review         { id:string; review_id:string; job_id:string; composite_score:number; comment?:string; status:string; signals:Record<string,number>; has_reply:boolean; reply_text?:string; replied_at?:string; created_at:string; }
 export interface ReviewListResponse { reviews:Review[]; has_next:boolean; next_cursor?:string; }
@@ -2493,7 +2359,7 @@ export interface CreditPackageList { packages:CreditPackage[]; }
 export interface PurchaseOrder {
   order_id:string; amount:number; currency?:string; amount_paise?:number;
   gateway?:string; key?:string; package_id?:string; package_name?:string;
-  credits_to_receive?:number; deposit_replenishment?:number;
+  credits_to_receive?:number;
   status?:string; payment_url?:string; expires_at?:string;
 }
 export interface CommissionRate { rate:number; effective_from:string; plan_type:string; }
@@ -2502,17 +2368,6 @@ export interface Payout { payout_id:string; tenant_id:string; amount:number; sta
 export interface PayoutList { payouts:Payout[]; has_next:boolean; }
 export interface Refund { refund_id:string; payment_id:string; amount:number; status:string; reason:string; created_at:string; }
 export interface RefundList { refunds:Refund[]; has_next:boolean; }
-export interface SecurityDepositStatus {
-  tenant_id:string; status:string; required_amount:number; total_paid:number;
-  warranty_drawn:number; replenishment_total:number; current_balance:number;
-  is_unlocked:boolean; paid_at?:string;
-}
-export interface SecurityDepositTxn {
-  txn_id:string; txn_type:string; amount:number; balance_before:number;
-  balance_after:number; reference_id?:string; notes?:string; created_at:string;
-}
-export interface SecurityDepositTxnList { transactions:SecurityDepositTxn[]; current_balance:number; has_next:boolean; next_cursor?:string; }
-export interface DepositConfirmResult { status:string; amount_paid?:number; current_balance?:number; already_paid?:boolean; message?:string; }
 export interface CustomerAtRisk { customer_id:string; name:string; health_score:number; risk_flags:string[]; last_job_at?:string; }
 export interface CustomerAtRiskList { customers:CustomerAtRisk[]; total:number; }
 export interface WarrantyClaim { claim_id:string; job_id:string; tenant_id:string; customer_name?:string; issue_description:string; status:string; claimed_at:string; resolved_at?:string; notes?:string; }
@@ -2575,11 +2430,6 @@ export interface DocumentEventList { events:DocumentEvent[]; }
 export interface DocumentTemplate { doc_type:string; tenant_id:string; template_content?:string; required_variables:string[]; sample_variables?:Record<string,string>; }
 
 // ── Subscription engine types ─────────────────────────────────────────────────
-export interface SubscriptionPeriod { tenant_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; jobs_used:number; jobs_included?:number; leads_used?:number; leads_included?:number; amount_billed?:number; }
-export interface SubscriptionHistoryEntry { period_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; amount_billed?:number; }
-export interface SubscriptionHistoryList { history:SubscriptionHistoryEntry[]; has_next:boolean; next_cursor?:string; }
-export interface ProrationPreview { tenant_id:string; current_plan:string; new_plan:string; billing_cycle:string; days_remaining:number; credit_amount:number; debit_amount:number; net_amount:number; effective_date:string; }
-
 // ── Phase 9 — Appointment types ───────────────────────────────────────────────
 export interface Appointment {
   appointment_id:string; appointment_number:string; tenant_id:string;
@@ -2691,11 +2541,6 @@ export interface MatchedTenant {
 }
 
 // ── Phase 9 — Public Registration types ───────────────────────────────────────
-export interface RegistrationInitResult { session_id:string; message:string; dev_otp?:string; }
-export interface RegistrationPlanResult { plan_type:string; price_inr:number; }
-export interface RegistrationOtpResult { session_id:string; verified:boolean; business_name:string; plan_type:string; price_inr:number; }
-export interface RegistrationPaymentOrder { order_id:string; amount:number; amount_inr:number; currency:string; key_id:string; prefill:{name:string; email:string; contact:string}; }
-export interface RegistrationCompleteResult { tenant_id:string; business_name:string; plan_type:string; trial_days:number; owner_email:string; temp_password:string; message:string; }
 export interface RegistrationVerifyResult { tenant_id:string; business_name:string; plan_type:string; owner_email:string; temp_password:string; message:string; }
 
 // ── Phase 9 — AI Chat types ───────────────────────────────────────────────────
@@ -2715,18 +2560,17 @@ export interface TenantEffectiveEngine {
   engine_key:        string;
   name:              string;
   effective_enabled: boolean;
-  source:            "global" | "category" | "package_entitlement" | "tenant_override";
+  source:            "global" | "category" | "tenant_override";
   is_required:       boolean;
   health_status:     string;
   dependencies_met:  boolean;
-  dependencies:      string[];
+  missing_dependencies: string[];
   reason:            string | null;
   config:            Record<string, unknown>;
 }
 export interface TenantEffectiveEnginesResponse {
   tenant_id: string;
   category:  { id: string; name: string } | null;
-  package:   { id: string; name: string } | null;
   engines:   TenantEffectiveEngine[];
   summary:   { total: number; enabled: number; disabled: number };
 }
@@ -2783,43 +2627,90 @@ export const categoryDashboardApi = {
   getRealEstateSummary: () => apiFetch<Record<string, unknown>>("/v1/tenant/dashboard/real-estate/summary"),
 };
 
-// ── Sprint 5 — Provider Monetization Status ───────────────────────────────────
-
-export interface ProviderMonetizationStatus {
-  id: string;
-  tenant_id: string;
-  category_id: string | null;
-  monetization_model: string | null;
-  is_monetization_ready: boolean;
-  is_bookable: boolean;
-  is_visible: boolean;
-  subscription_status: string | null;
-  subscription_expires_at: string | null;
-  credit_balance: number;
-  credit_minimum_required: number;
-  deposit_paid: boolean;
-  last_synced_at: string | null;
-  override_is_bookable: boolean | null;
-  override_reason: string | null;
+export interface HomeServicesDashboardAttentionItem {
+  key: string;
+  label: string;
+  count: number;
+  severity: "info" | "warning" | "danger";
+  oldest_age_hours: number | null;
+  destination: string;
 }
 
-/** DEAD -- kept only so any future caller finds this note instead of the
- * endpoint. `/v1/tenant/monetization/status` reads
- * `provider_monetization_statuses`, a table that does NOT exist in this
- * schema; its handler swallows the failure and returns a hardcoded
- * `{is_monetization_ready: false, monetization_model: null}`, so it can only
- * ever report a fabricated "not ready" state. Its model taxonomy
- * (subscription/freemium/fixed_billing/credit_wallet_commission) is also not
- * what Home Services charging implements.
- *
- * For the commission a tenant is ACTUALLY charged, use
- * homeServicesFinanceApi.getCommissionRates() (lib/api-hs-finance-tenant.ts),
- * which mirrors execution/usage_credit_deduction.py's real resolution.
- * The dashboard widget that consumed this was replaced by
- * components/dashboard/CommissionRatesWidget.tsx. */
-export const providerMonetizationApi = {
-  getStatus: () => apiFetch<ProviderMonetizationStatus>("/v1/tenant/monetization/status"),
+export interface HomeServicesDashboardData {
+  generated_at: string;
+  tenant_id: string;
+  vertical: { key: "home_services" };
+  workspace: {
+    business_name: string;
+    tenant_code: string | null;
+    city: string | null;
+    state: string | null;
+    zipcode: string | null;
+    logo_url: string | null;
+  };
+  operational_summary: {
+    active_jobs: number;
+    jobs_today: number;
+    available_technicians: number;
+    attention_items: number;
+  };
+  attention_queue: HomeServicesDashboardAttentionItem[];
+  job_pipeline: Array<{ key: string; label: string; count: number }>;
+  todays_jobs: Array<{
+    job_id: string;
+    job_number: string;
+    customer_name: string;
+    service_name: string;
+    scheduled_time: string | null;
+    technician_name: string | null;
+    city: string | null;
+    status: string;
+    pipeline_group: string;
+  }>;
+  staff_capacity: {
+    ready: number;
+    assigned_now: number;
+    available_now: number;
+    total_active: number;
+  };
+  bookability: {
+    is_bookable: boolean;
+    blockers: Array<{ code?: string; message?: string }>;
+  };
+  service_bookability: Array<{
+    offering_id: string;
+    name: string;
+    bookable: boolean;
+    blocking_reason: string | null;
+  }>;
+  customers_quality: {
+    active_customers?: number;
+    repeat_customers?: number;
+    open_complaints?: number;
+    average_rating?: number | null;
+  };
+  finance_snapshot: {
+    direct_payments_pending?: number;
+    direct_payments_confirmed?: number;
+    usage_credit_balance?: number | null;
+    completion_deductions_today_count?: number;
+    completion_deductions_today_amount?: number;
+    entitled_seats?: number;
+  };
+  recent_activity: Array<{
+    event_type: string;
+    job_id: string | null;
+    occurred_at: string | null;
+  }>;
+  available_actions: string[];
+  failed_modules: string[];
+}
+
+export const homeServicesDashboardApi = {
+  get: () => apiFetch<HomeServicesDashboardData>("/v1/tenant/home-services/dashboard"),
 };
+
+// ── Sprint 5 — Provider Monetization Status ───────────────────────────────────
 
 // ── Sprint 6 — Provider Package API ──────────────────────────────────────────
 // MODULE-L5-30: this used to call /v1/provider/packages and /v1/provider/packages/purchase,
@@ -2828,82 +2719,6 @@ export const providerMonetizationApi = {
 // tested tenant_router.py endpoints backed by tenant_package_assignments —
 // the same table the admin-approval flow and status check below both use.
 
-export interface ProviderPackage {
-  id: string;
-  package_id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  package_type: string;
-  plan_level: string | null;
-  is_active: boolean;
-  price: number;
-  currency: string;
-  billing_cycle: string | null;
-  validity_days: number | null;
-  trial_days: number | null;
-  security_deposit_amount: number;
-  included_credit_amount: number;
-  lead_credits: number | null;
-  vertical_type: string | null;
-  is_featured: boolean;
-  is_recommended: boolean;
-  is_popular: boolean;
-  display_order: number;
-  features: Record<string, unknown>;
-}
-
-export interface TenantPackagePurchase {
-  id: string;
-  tenant_id: string;
-  package_id: string;
-  package_type: string;
-  status: string;
-  purchase_status: string;
-  package_name: string;
-  price_amount: string;
-  security_deposit_amount: string;
-  included_spendable_credits: string;
-  selected_at: string | null;
-  paid_at: string | null;
-  approved_at: string | null;
-  activated_at: string | null;
-  starts_at: string | null;
-  expires_at: string | null;
-}
-
-export interface ProviderPackageStatus {
-  has_active_package: boolean;
-  active_package: TenantPackagePurchase | null;
-  all_purchases: TenantPackagePurchase[];
-  total: number;
-}
-
-export interface PackageAssignmentSummary {
-  has_package: boolean;
-  status: string | null;
-  package_name: string | null;
-  package_type: string | null;
-  starts_at: string | null;
-  expires_at: string | null;
-  approved_at: string | null;
-  price_amount: number | null;
-  included_credits?: number; // present on GET /v1/provider/onboarding/package-summary
-  message: string;
-}
-
-export const providerPackageApi = {
-  browse: () =>
-    apiFetch<{ available_packages: ProviderPackage[]; total: number }>("/v1/tenant/packages/available"),
-  status: () => apiFetch<ProviderPackageStatus>("/v1/provider/packages/status"),
-  packageSummary: () => apiFetch<PackageAssignmentSummary>("/v1/provider/onboarding/package-summary"),
-  initiatePurchase: (packageId: string, paymentReference?: string) =>
-    apiFetch<TenantPackagePurchase>(
-      `/v1/tenant/packages/${packageId}/purchase`,
-      { method: "POST", body: JSON.stringify({ payment_reference: paymentReference }) }
-    ),
-};
-
 // ── Sprint 10 — Provider Onboarding Checklist API ─────────────────────────────
 
 export type OnboardingItemStatus =
@@ -2911,7 +2726,7 @@ export type OnboardingItemStatus =
 
 export type CompletionSource =
   | "provider_profile" | "provider_verification" | "provider_monetization"
-  | "provider_package" | "provider_enabled_offerings" | "provider_service_areas"
+  | "provider_enabled_offerings" | "provider_service_areas"
   | "provider_staff" | "provider_appointment_slots" | "provider_agents"
   | "provider_properties" | "provider_media" | "marketing_assets"
   | "admin_override" | "custom_rule";
@@ -3945,11 +3760,6 @@ export const providerWalletApi = {
 };
 
 // ── Sprint 23: Provider subscription API ─────────────────────────────────────
-export const providerSubscriptionApi = {
-  getStatus: () =>
-    apiFetch<Record<string, unknown>>("/v1/provider/subscription-status"),
-};
-
 // ── Sprint 23: Staff invoice API ──────────────────────────────────────────────
 export const staffInvoiceApi = {
   create:     (body: { job_id: string; source?: string; quote_id?: string; notes?: string }) =>
@@ -4665,14 +4475,8 @@ export const customerServiceDiagnosticsApi = {
 // ── Phase 6B: Tenant Setup / Provider Status APIs ─────────────────────────────
 export const tenantSetupApi = {
   getStatus:           () => apiFetch<Record<string, unknown>>("/v1/provider/status"),
-  getPackage:          () => apiFetch<Record<string, unknown>>("/v1/provider/subscription-status"),
   getWallet:           () => apiFetch<Record<string, unknown>>("/v1/provider/wallet"),
   getLedger:           (page = 1) => apiFetch<Record<string, unknown>>(`/v1/provider/wallet/ledger?page=${page}`),
-  // /v1/provider/pricing does NOT exist — use pricingApi instead (see tenantPricingApi below)
-  getPricingPreview:   () => apiFetch<Record<string, unknown>>("/v1/provider/pricing"),
-  getOverrideRequests: () => apiFetch<Record<string, unknown>>("/v1/provider/pricing/overrides"),
-  submitOverride:      (data: Record<string, unknown>) =>
-    apiFetch<Record<string, unknown>>("/v1/provider/pricing/overrides", { method: "POST", body: JSON.stringify(data) }),
   /** Real bug fixed here: this called `/v1/provider/activity`, which does
    * NOT exist in any engine -- the tenant's "Activity & Audit Log" page was
    * a permanent 404/error state. The real, already-mounted, tenant-scoped
@@ -4999,26 +4803,15 @@ export const homeServiceProviderJobsApi = {
 // TENANT_MY_STATUS_API_MAPPING_REPORT.md) and are NOT used here; the Setup
 // Readiness Checklist is instead computed client-side from the same real,
 // working data sources this app's own SetupWizardDrawer already uses
-// (provider status blockers + package summary + deposit + credit wallet +
+// (provider status blockers + onboarding summary + credit wallet +
 // service areas + team members + availability), extended with two additional
-// real, dedicated endpoints (security-deposit, credit-wallet) that give more
-// accurate detail than the wallet/subscription-status pair the drawer uses.
+// real, dedicated endpoints (credit-wallet) that give more
+// accurate detail than the legacy combined wallet status the drawer used.
 
 // NOTE: PackageAssignmentSummary is already declared above (Phase 9) with the
 // same shape our GET /v1/provider/onboarding/package-summary response uses —
-// reused as-is. SecurityDepositStatus/CreditWalletDetail below are prefixed
+// reused as-is. CreditWalletDetail below is prefixed
 // Tenant* to avoid colliding with the differently-shaped, admin-facing
-// SecurityDepositStatus interface declared earlier in this file.
-
-export interface TenantSecurityDepositStatus {
-  tenant_id: string;
-  status: string; // not_initialized | unpaid | paid | refunded | forfeited
-  required_amount: number;
-  paid_amount: number;
-  paid_at: string | null;
-  refunded_at?: string | null;
-  message?: string;
-}
 
 export interface TenantCreditWalletDetail {
   tenant_id: string;
@@ -5064,8 +4857,6 @@ export const myStatusApi = {
   getOfferingStatuses:   () => providerStatusApi.getOfferingStatuses(),
   refreshStatus:         () => providerStatusApi.refresh(),
   getEnabledOfferings:   () => providerOfferingsApi.listEnabled(),
-  getPackageSummary:     () => apiFetch<PackageAssignmentSummary>("/v1/provider/onboarding/package-summary"),
-  getSecurityDeposit:    () => apiFetch<TenantSecurityDepositStatus>("/v1/tenant/security-deposit"),
   getCreditWallet:       () => apiFetch<TenantCreditWalletDetail>("/v1/tenant/credit-wallet"),
   getServiceAreas:       () => providerServiceAreasApi.list(),
   getTeamMembers:        () => providerTeamMembersApi.list(),

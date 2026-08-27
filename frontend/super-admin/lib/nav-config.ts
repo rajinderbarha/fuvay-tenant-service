@@ -66,17 +66,11 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "packages",
-    label: "Packages & Plans",
-    items: [
-      { id: "packages", label: "Package & Plans", href: "/admin/packages", icon: "🎁", group: "packages" },
-    ],
-  },
-  {
     id: "finance",
     label: "Finance",
     items: [
       { id: "finance",            label: "Finance Hub",     href: "/admin/finance",             icon: "💰", group: "finance" },
+      { id: "topup-plans",        label: "Top-up Plans",    href: "/admin/topup-plans",         icon: "🎟️", group: "finance" },
       { id: "service-invoices",   label: "Invoices",        href: "/admin/service-invoices",    icon: "🧾", group: "finance" },
       { id: "commission-records", label: "Commissions",     href: "/admin/commission-records",  icon: "💹", group: "finance" },
       { id: "payments",           label: "Payments",        href: "/admin/payments",            icon: "💳", group: "finance" },
@@ -120,6 +114,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "security",    label: "Security",    href: "/admin/security",    icon: "🔒", group: "admin" },
       { id: "compliance",  label: "Compliance",  href: "/admin/compliance",  icon: "📜", group: "admin" },
+      { id: "legal",       label: "Legal Docs",  href: "/admin/legal",       icon: "⚖️", group: "admin" },
       { id: "audit-logs",  label: "Audit Logs",  href: "/admin/audit-logs",  icon: "📝", group: "admin" },
       { id: "media",       label: "Media",       href: "/admin/media",       icon: "🖼️", group: "admin" },
       { id: "settings",    label: "Settings",    href: "/admin/settings",    icon: "⚙️", group: "admin" },
@@ -153,6 +148,7 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   catalog:                "catalog",
   categories:             "categories",
   packages:               "packages",
+  "topup-plans":          "topup-plans",
   "checklist-templates":  "checklist-templates",
   "checklists":           "checklist-templates",
   "service-setup":        "service-setup",
@@ -187,6 +183,7 @@ export const ADMIN_PATH_TO_NAV_ID: Record<string, string> = {
   engines:                "engines",
   security:               "security",
   compliance:             "compliance",
+  legal:                  "legal",
   "audit-logs":           "audit-logs",
   "media":                "media",
   settings:               "settings",

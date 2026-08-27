@@ -4,6 +4,7 @@ import {
   FlatList,
   Image,
   ImageBackground,
+  ImageSourcePropType,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -17,7 +18,8 @@ import {
 import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 
-import { recordHomeCampaignEvent } from "../../api/home/customerHomeCampaignApi";
+import { recordHomeCampaignEvent, recordHomeCampaignEvents } from "../../api/home/customerHomeCampaignApi";
+import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
 import { useCustomerHomeQuery } from "../../api/home/useCustomerHomeQuery";
 import { MIN_QUERY_LENGTH, useCustomerSearchQuery } from "../../api/home/useCustomerSearchQuery";
 import { AppScreen, AppText, Icon } from "../../components";
@@ -56,6 +58,7 @@ import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { useServiceLocationPreference } from "../../hooks/useServiceLocationPreference";
 import type { CustomerTabsParamList } from "../../navigation/routeTypes";
 import { FuvayIcon } from "../../components/FuvayIcon";
+import { MyBookingCard } from "../../components/home/MyBookingCard";
 
 type Navigation = BottomTabNavigationProp<CustomerTabsParamList>;
 
@@ -77,11 +80,57 @@ function groupIcon(name: string): HomeGlyphName {
   return GROUP_ICON_RULES.find(([pattern]) => pattern.test(name))?.[1] ?? "tools";
 }
 
+const DEFAULT_HOME_PHOTOS: ImageSourcePropType[] = [
+  require("../../../assets/home-campaigns/fuvay-ac-care-hero-v1.png"),
+  require("../../../assets/home-campaigns/fuvay-complete-care-spotlight-v1.png"),
+  require("../../../assets/home-campaigns/fuvay-chimney-care-story-v1.png"),
+];
+
+const SERVICE_ARTWORK_2D = {
+  airConditioner: require("../../../assets/service-artwork-2d/air-conditioner-service-v1.png"),
+  chimney: require("../../../assets/service-artwork-2d/chimney-service-v1.png"),
+  refrigerator: require("../../../assets/service-artwork-2d/refrigerator-service-v1.png"),
+  washingMachine: require("../../../assets/service-artwork-2d/washing-machine-service-v1.png"),
+  waterHeater: require("../../../assets/service-artwork-2d/water-heater-service-v1.png"),
+  waterPurifier: require("../../../assets/service-artwork-2d/water-purifier-service-v1.png"),
+} as const;
+
+function serviceArtwork(service: HomeMasterService): ImageSourcePropType {
+  const searchableName = `${service.name} ${service.serviceGroupName}`;
+  if (/refriger|fridge/i.test(searchableName)) return SERVICE_ARTWORK_2D.refrigerator;
+  if (/washing/i.test(searchableName)) return SERVICE_ARTWORK_2D.washingMachine;
+  if (/chimney|hood/i.test(searchableName)) return SERVICE_ARTWORK_2D.chimney;
+  if (/purifier|\bro\b/i.test(searchableName)) return SERVICE_ARTWORK_2D.waterPurifier;
+  if (/geyser|water\s*heater|heater/i.test(searchableName)) return SERVICE_ARTWORK_2D.waterHeater;
+  return SERVICE_ARTWORK_2D.airConditioner;
+}
+
+function selectDiverseMasterServices(services: HomeMasterService[], limit: number): HomeMasterService[] {
+  const selected: HomeMasterService[] = [];
+  const deferred: HomeMasterService[] = [];
+  const selectedGroupIds = new Set<string>();
+
+  services.forEach(service => {
+    if (!selectedGroupIds.has(service.serviceGroupId) && selected.length < limit) {
+      selectedGroupIds.add(service.serviceGroupId);
+      selected.push(service);
+    } else {
+      deferred.push(service);
+    }
+  });
+
+  if (selected.length < limit) {
+    selected.push(...deferred.slice(0, limit - selected.length));
+  }
+  return selected;
+}
+
 export function HomeScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<Navigation>();
   const network = useNetworkStatus();
   const serviceLocation = useServiceLocationPreference();
+  const { data: customerProfile } = useCustomerProfileQuery();
   const [searchValue, setSearchValue] = useState("");
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [globalServiceRequestToken, setGlobalServiceRequestToken] = useState(0);
@@ -119,15 +168,18 @@ export function HomeScreen() {
   }, [selectedZipcode]);
 
   useEffect(() => {
-    for (const campaign of home?.campaigns ?? []) {
-      if (deliveredCampaigns.current.has(campaign.campaignId)) continue;
-      deliveredCampaigns.current.add(campaign.campaignId);
-      void recordHomeCampaignEvent({
+    const pending = (home?.campaigns ?? []).filter(
+      campaign => !deliveredCampaigns.current.has(campaign.campaignId),
+    );
+    if (pending.length === 0) return;
+    for (const campaign of pending) deliveredCampaigns.current.add(campaign.campaignId);
+    void recordHomeCampaignEvents(pending.map(campaign => ({
         campaignId: campaign.campaignId,
         eventType: "delivered",
         placement: campaign.placement,
-      }).catch(() => deliveredCampaigns.current.delete(campaign.campaignId));
-    }
+    }))).catch(() => {
+      for (const campaign of pending) deliveredCampaigns.current.delete(campaign.campaignId);
+    });
   }, [home?.campaigns]);
 
   if (homeQuery.isPending) {
@@ -204,6 +256,21 @@ export function HomeScreen() {
   const collections = home.campaigns.filter(campaign => campaign.placement === "home_collection").slice(0, 8);
   const notices = home.campaigns.filter(campaign => campaign.placement === "home_notice").slice(0, 2);
   const trustPromises = home.campaigns.filter(campaign => campaign.placement === "home_trust").slice(0, 4);
+  const globalCampaigns = home.campaigns.filter(campaign => campaign.placement === "home_global").slice(0, 5);
+  const recommendationCampaigns = home.campaigns.filter(campaign => campaign.placement === "home_recommendation").slice(0, 8);
+  const editorialPhotos: ImageSourcePropType[] = [
+    ...recommendationCampaigns,
+    ...stories,
+    ...spotlights,
+    ...banners,
+    ...mosaics,
+    ...collections,
+    ...heroes,
+  ]
+    .map(campaign => resolveMediaUrl(campaign.imageUrl))
+    .filter((url): url is string => !!url)
+    .map(uri => ({ uri }));
+  const homePhotos = editorialPhotos.length ? editorialPhotos : DEFAULT_HOME_PHOTOS;
   const activeBooking = home.activeBookings[0] ?? null;
   const issueSections = partitionHomeIssues(home.quickIssues);
 
@@ -314,31 +381,34 @@ export function HomeScreen() {
           , section.variant !== "edge_to_edge") : null;
       case "service_groups":
         return frame(<>
-            <SectionHeader title={title ?? "Services for your home"} actionLabel="View all" onAction={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />
+            <NearbyServicesHeader title={title ?? "Popular Services"} zipcode={zipcode} onAction={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />
+            <ServiceGroupRail groups={home!.bookableServiceGroups.slice(0, section.maxItems)} variant={section.variant} onPress={navigateToGroup} />
+          </>);
+      case "nearby_services":
+        return frame(<>
+            <NearbyServicesHeader title={title ?? "Services Nearby"} zipcode={zipcode} onAction={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />
             <ServiceGroupRail groups={home!.bookableServiceGroups.slice(0, section.maxItems)} variant={section.variant} onPress={navigateToGroup} />
           </>);
       case "live_booking":
         return activeBooking ? frame(<ActiveBookingTimeline title={title} booking={activeBooking} onPress={() => (navigation.getParent()?.navigate as ((name: string, params: object) => void) | undefined)?.("BookingDetails", { bookingId: activeBooking.bookingId })} />, true) : null;
       case "recent_bookings":
         return home!.activeBookings.length ? frame(<>
-            <SectionHeader title={title ?? "Recent bookings"} actionLabel="View all" onAction={() => navigation.navigate("Bookings")} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
-              {home!.activeBookings.slice(0, section.maxItems).map(booking => (
-                <View key={booking.bookingId} style={{ width: 286 }}>
-                  <CompactActiveBooking booking={booking} onPress={() => (navigation.getParent()?.navigate as ((name: string, params: object) => void) | undefined)?.("BookingDetails", { bookingId: booking.bookingId })} />
-                </View>
-              ))}
-            </ScrollView>
+            <SectionHeader title={title ?? "My Booking"} actionLabel="View All" onAction={() => navigation.navigate("Bookings")} />
+            <View style={{ paddingHorizontal: theme.spacing.base }}>
+              <MyBookingCard booking={home!.activeBookings[0]} onPress={() => (navigation.getParent()?.navigate as ((name: string, params: object) => void) | undefined)?.("BookingDetails", { bookingId: home!.activeBookings[0].bookingId })} />
+            </View>
           </>) : null;
       case "featured_services":
         return home!.bookableMasterServices.length ? frame(<>
             <SectionHeader title={title ?? "Featured services"} actionLabel="View all" onAction={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />
-            <FeaturedServiceRail services={home!.bookableMasterServices.slice(0, section.maxItems)} onPress={navigateToMasterService} />
+            {section.variant === "catalog_grid"
+              ? <MasterServiceGrid services={selectDiverseMasterServices(home!.bookableMasterServices, section.maxItems)} variant="catalog_grid" onPress={navigateToMasterService} />
+              : <FeaturedServiceRail services={home!.bookableMasterServices.slice(0, section.maxItems)} onPress={navigateToMasterService} />}
           </>) : null;
       case "master_services":
         return home!.bookableMasterServices.length ? frame(<>
             <SectionHeader title={title ?? "Recommended for you"} actionLabel="View all" onAction={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />
-            <MasterServiceGrid services={home!.bookableMasterServices.slice(0, section.maxItems)} variant={section.variant} onPress={navigateToMasterService} />
+            <MasterServiceGrid services={home!.bookableMasterServices.slice(0, section.maxItems)} variant={section.variant} photos={homePhotos} onPress={navigateToMasterService} />
           </>) : null;
       case "trust_strip":
         return trustPromises.length ? frame(<CustomerAssuranceStrip campaigns={trustPromises.slice(0, section.maxItems)} variant={section.variant} />, true) : null;
@@ -358,7 +428,7 @@ export function HomeScreen() {
             <CampaignMosaic campaigns={mosaics.slice(0, section.maxItems)} onPress={navigateToCampaign} />
           </>) : null;
       case "global_services":
-        return frame(<GlobalServicesSection title={title} variant={section.variant} defaultZipcode={null} openRequestToken={globalServiceRequestToken} />, true);
+        return frame(<GlobalServicesSection title={title ?? "Build with Fuvay"} campaigns={globalCampaigns} variant={section.variant} defaultZipcode={null} openRequestToken={globalServiceRequestToken} />, true);
       case "collection":
         return collections.length ? frame(<>
             <SectionHeader title={title ?? collections[0]?.sectionTitle ?? "Curated for you"} />
@@ -369,7 +439,7 @@ export function HomeScreen() {
       case "assistant":
         return frame(<AskFuvayStrip seasonLabel={home!.seasonLabel} onPress={() => navigation.navigate("Assistant", createAssistantCardEntryContext({ zipcode }))} />, true);
       case "featured_problems":
-        return issueSections.featured.length ? frame(<HomeSectionErrorBoundary sectionLabel="common problems">{section.variant === "compact_grid" ? <ProblemCircles issues={issueSections.featured.slice(0, section.maxItems)} title={title ?? "What needs fixing?"} variant="compact" onPressIssue={navigateToIssue} /> : <ProblemGrid issues={issueSections.featured.slice(0, section.maxItems)} title={title ?? "What needs fixing?"} onPressIssue={navigateToIssue} />}</HomeSectionErrorBoundary>, true) : null;
+        return issueSections.featured.length ? frame(<HomeSectionErrorBoundary sectionLabel="common problems">{section.variant === "photo_cards" ? <ProblemPhotoGrid issues={issueSections.featured.slice(0, section.maxItems)} title={title ?? "What Needs Fixing"} photos={homePhotos} onPressIssue={navigateToIssue} /> : section.variant === "compact_grid" ? <ProblemCircles issues={issueSections.featured.slice(0, section.maxItems)} title={title ?? "What needs fixing?"} variant="compact" onPressIssue={navigateToIssue} /> : <ProblemGrid issues={issueSections.featured.slice(0, section.maxItems)} title={title ?? "What needs fixing?"} onPressIssue={navigateToIssue} />}</HomeSectionErrorBoundary>, true) : null;
       case "active_bookings":
         return home!.activeBookings.length > 1 ? frame(<View style={{ gap: theme.spacing.sm }}>
             <SectionHeader title={title ?? "More active bookings"} inset={false} />
@@ -397,10 +467,11 @@ export function HomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={homeQuery.isRefetching} onRefresh={() => homeQuery.refetch()} tintColor={theme.colors.brandPrimary} />}
-        contentContainerStyle={{ paddingBottom: theme.spacing.xxl }}
+        contentContainerStyle={{ paddingBottom: 132 }}
       >
         <View style={{ paddingHorizontal: theme.spacing.base }}>
           <MarketplaceHeader
+            customerName={customerProfile?.displayName ?? customerProfile?.fullName ?? null}
             locationLabel={locationLabel}
             unreadCount={home.unreadNotificationCount}
             onLocation={() => setLocationPickerVisible(true)}
@@ -460,7 +531,8 @@ export function HomeScreen() {
   );
 }
 
-function MarketplaceHeader({ locationLabel, unreadCount, onLocation, onNotifications, onProfile }: {
+function MarketplaceHeader({ customerName, locationLabel, unreadCount, onLocation, onNotifications, onProfile }: {
+  customerName: string | null;
   locationLabel: string;
   unreadCount: number;
   onLocation: () => void;
@@ -468,26 +540,32 @@ function MarketplaceHeader({ locationLabel, unreadCount, onLocation, onNotificat
   onProfile: () => void;
 }) {
   const { theme } = useTheme();
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+  const firstName = customerName?.trim().split(/\s+/)[0] || "there";
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingTop: theme.spacing.xs }}>
+    <View style={{ flexDirection: "row", alignItems: "center", minHeight: 70, paddingTop: theme.spacing.xs }}>
       <Pressable
         onPress={onLocation}
         accessibilityRole="button"
         accessibilityLabel={`Change service location, currently ${locationLabel}`}
-        style={({ pressed }) => ({ flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, opacity: pressed ? 0.72 : 1 })}
+        style={({ pressed }) => ({ flex: 1, minWidth: 0, minHeight: 52, justifyContent: "center", opacity: pressed ? 0.72 : 1 })}
       >
-        <HomeGlyph name="map-marker-radius-outline" size="standard" color={theme.colors.statusSuccess} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <AppText variant="bodyStrong" numberOfLines={1}>{locationLabel}</AppText>
-          <AppText variant="caption" color="secondary" numberOfLines={1}>Services at your doorstep</AppText>
+        <View style={{ flexDirection: "row", alignItems: "baseline", minWidth: 0 }}>
+          <AppText variant="bodyStrong" numberOfLines={1}>{greeting} </AppText>
+          <AppText variant="bodyStrong" numberOfLines={1} style={{ color: theme.colors.brandPrimary }}>{firstName}</AppText>
         </View>
-        <HomeGlyph name="chevron-down" size="compact" color={theme.colors.textSecondary} />
+        <View style={{ marginTop: 3, flexDirection: "row", alignItems: "center", gap: 5 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.statusSuccess }} />
+          <AppText variant="caption" color="secondary" numberOfLines={1}>{locationLabel}</AppText>
+          <HomeGlyph name="chevron-down" size="compact" color={theme.colors.textSecondary} />
+        </View>
       </Pressable>
       <Pressable
         onPress={onNotifications}
         accessibilityRole="button"
         accessibilityLabel={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
-        style={{ width: theme.touchTargets.minimum, height: theme.touchTargets.minimum, alignItems: "center", justifyContent: "center" }}
+        style={{ width: 46, height: 46, borderRadius: 23, marginRight: theme.spacing.xs, backgroundColor: theme.colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}
       >
         <HomeGlyph name="bell-outline" size="standard" color={theme.colors.textPrimary} />
         {unreadCount > 0 ? (
@@ -496,8 +574,8 @@ function MarketplaceHeader({ locationLabel, unreadCount, onLocation, onNotificat
           </View>
         ) : null}
       </Pressable>
-      <Pressable onPress={onProfile} accessibilityRole="button" accessibilityLabel="Open profile" style={{ width: theme.touchTargets.minimum, height: theme.touchTargets.minimum, alignItems: "center", justifyContent: "center" }}>
-        <View style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: theme.colors.borderDefault, backgroundColor: theme.colors.surfaceDefault, alignItems: "center", justifyContent: "center" }}>
+      <Pressable onPress={onProfile} accessibilityRole="button" accessibilityLabel="Open profile" style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: theme.colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" }}>
           <HomeGlyph name="account-outline" size="compact" color={theme.colors.textPrimary} />
         </View>
       </Pressable>
@@ -512,7 +590,7 @@ function MarketplaceSearch({ value, onChangeText, onAssistant }: {
 }) {
   const { theme } = useTheme();
   return (
-    <View style={{ height: 48, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.colors.borderSubtle, borderRadius: theme.radiusUsage.input, backgroundColor: theme.colors.surfaceSecondary, paddingLeft: theme.spacing.md }}>
+    <View style={{ height: 50, flexDirection: "row", alignItems: "center", borderRadius: 25, backgroundColor: theme.colors.surfaceSecondary, paddingLeft: theme.spacing.md }}>
       <HomeGlyph name="magnify" color={theme.colors.textPrimary} />
       <TextInput
         value={value}
@@ -524,7 +602,9 @@ function MarketplaceSearch({ value, onChangeText, onAssistant }: {
         style={{ flex: 1, minWidth: 0, paddingHorizontal: theme.spacing.sm, color: theme.colors.textPrimary, ...theme.typography.body }}
       />
       <Pressable onPress={onAssistant} accessibilityRole="button" accessibilityLabel="Find the right service with Ask Fuvay" style={{ width: 48, height: 44, alignItems: "center", justifyContent: "center" }}>
-        <HomeGlyph name="tune-variant" color={theme.colors.textSecondary} />
+        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: theme.colors.borderSubtle, alignItems: "center", justifyContent: "center" }}>
+          <FuvayIcon size={21} accessibilityLabel="Fuvay assistant" />
+        </View>
       </Pressable>
     </View>
   );
@@ -610,25 +690,25 @@ function CampaignHero({ campaign, variant, onPress }: { campaign: HomeCampaign; 
   const edgeToEdge = variant === "edge_to_edge";
   const marketplace = variant === "marketplace";
   const endLabel = campaign.endsAt ? formatCampaignEnd(campaign.endsAt) : null;
-  const height = marketplace ? 198 : edgeToEdge ? 236 : 214;
+  const height = marketplace ? 186 : edgeToEdge ? 236 : 214;
   return (
     <ImageBackground
       source={{ uri: resolveMediaUrl(campaign.imageUrl)! }}
       resizeMode="cover"
-      style={{ height, overflow: "hidden", borderRadius: edgeToEdge ? 0 : marketplace ? theme.radius.radiusLarge : theme.radius.radiusSmall }}
+      style={{ height, overflow: "hidden", borderRadius: edgeToEdge ? 0 : marketplace ? 14 : theme.radius.radiusSmall }}
       accessibilityIgnoresInvertColors
     >
       <View style={{ height, padding: theme.spacing.base, backgroundColor: theme.colors.mediaScrim }}>
-        <View style={{ alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 3, backgroundColor: theme.colors.campaignAccent }}>
+        {!marketplace && campaign.badge ? <View style={{ alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 3, backgroundColor: theme.colors.campaignAccent }}>
           <AppText variant="caption" style={{ color: theme.colors.campaignBadgeForeground, fontWeight: "700" }}>{campaign.badge}</AppText>
-        </View>
-        <View style={{ width: "68%", gap: 3, marginTop: theme.spacing.sm }}>
+        </View> : null}
+        <View style={{ width: "59%", gap: 3, marginTop: marketplace ? 0 : theme.spacing.sm }}>
           <AppText variant="headingLarge" style={{ color: theme.colors.mediaForeground, fontFamily: marketplace ? undefined : "serif", fontSize: marketplace ? 26 : 29, lineHeight: marketplace ? 29 : 32 }}>{campaign.title}</AppText>
           {marketplace && campaign.subtitle ? <AppText variant="caption" numberOfLines={2} style={{ color: theme.colors.mediaForeground, opacity: 0.88 }}>{campaign.subtitle}</AppText> : null}
-          {campaign.offerText ? <AppText variant="title" style={{ color: theme.colors.campaignAccent, fontSize: 17, lineHeight: 21 }}>{campaign.offerText}</AppText> : null}
+          {!marketplace && campaign.offerText ? <AppText variant="title" style={{ color: theme.colors.campaignAccent, fontSize: 17, lineHeight: 21 }}>{campaign.offerText}</AppText> : null}
         </View>
         <View style={{ position: "absolute", left: theme.spacing.base, right: theme.spacing.base, bottom: theme.spacing.base, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          {endLabel ? (
+          {endLabel && !marketplace ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
               <Icon name="calendar-outline" size="compact" color={theme.colors.mediaForeground} decorative />
               <AppText variant="caption" style={{ color: theme.colors.mediaForeground }}>{endLabel}</AppText>
@@ -638,10 +718,10 @@ function CampaignHero({ campaign, variant, onPress }: { campaign: HomeCampaign; 
             onPress={onPress}
             accessibilityRole="button"
             accessibilityLabel={`${campaign.actionLabel}: ${campaign.title}`}
-            style={({ pressed }) => ({ minHeight: 40, minWidth: 104, paddingHorizontal: theme.spacing.md, flexDirection: "row", gap: theme.spacing.xs, alignItems: "center", justifyContent: "center", borderRadius: 4, backgroundColor: theme.colors.surfaceDefault, opacity: pressed ? 0.9 : 1 })}
+            style={({ pressed }) => ({ minHeight: 38, minWidth: 112, paddingHorizontal: theme.spacing.md, flexDirection: "row", gap: theme.spacing.xs, alignItems: "center", justifyContent: "center", borderRadius: 19, borderWidth: marketplace ? 1 : 0, borderColor: theme.colors.mediaForeground, backgroundColor: marketplace ? "transparent" : theme.colors.surfaceDefault, opacity: pressed ? 0.9 : 1 })}
           >
-            <AppText variant="button" color="link">{campaign.actionLabel}</AppText>
-            <Icon name="chevron-forward" size="compact" color={theme.colors.brandPrimary} decorative />
+            <AppText variant="button" style={{ color: marketplace ? theme.colors.mediaForeground : theme.colors.brandPrimary }}>{campaign.actionLabel}</AppText>
+            <Icon name="chevron-forward" size="compact" color={marketplace ? theme.colors.mediaForeground : theme.colors.brandPrimary} decorative />
           </Pressable>
         </View>
       </View>
@@ -777,30 +857,71 @@ function SectionHeader({ title, inset = true, actionLabel, onAction }: { title: 
   );
 }
 
+function NearbyServicesHeader({ title, zipcode, onAction }: { title: string; zipcode: string; onAction: () => void }) {
+  const { theme } = useTheme();
+  return (
+    <View style={{ paddingHorizontal: theme.spacing.base, marginBottom: theme.spacing.sm, flexDirection: "row", alignItems: "baseline" }}>
+      <AppText variant="headingSmall">{title}</AppText>
+      <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginLeft: theme.spacing.sm, flex: 1 }}>Based on {zipcode}</AppText>
+      <Pressable onPress={onAction} accessibilityRole="button" accessibilityLabel="See all services" style={{ minHeight: 36, justifyContent: "center" }}>
+        <AppText variant="bodySmall" style={{ color: theme.colors.brandPrimary, fontWeight: "800" }}>See All</AppText>
+      </Pressable>
+    </View>
+  );
+}
+
+function ServiceGroupIcon({ group, size }: { group: HomeServiceGroup; index: number; size: number }) {
+  const { theme } = useTheme();
+  const dark = theme.mode === "dark";
+  const iconUrl = resolveMediaUrl(group.iconUrl);
+  const iconColor = dark ? "#F7F7FA" : "#56575D";
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.3),
+        backgroundColor: dark ? "#1D1E22" : "#FAFAFC",
+        borderWidth: 1,
+        borderColor: dark ? "#292A2F" : "#FFFFFF",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        ...(dark ? {} : theme.shadow.sm),
+      }}
+    >
+      {iconUrl ? (
+        <Image source={{ uri: iconUrl }} resizeMode="contain" style={{ width: "60%", height: "60%", tintColor: iconColor }} accessibilityIgnoresInvertColors />
+      ) : (
+        <HomeGlyph name={groupIcon(group.name)} size={size >= 54 ? "navigation" : "standard"} color={iconColor} />
+      )}
+    </View>
+  );
+}
+
 function ServiceGroupRail({ groups, variant, onPress }: { groups: HomeServiceGroup[]; variant: string; onPress: (group: HomeServiceGroup) => void }) {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
+  const dark = theme.mode === "dark";
+  const cardBackground = dark ? theme.colors.backgroundSunken : theme.colors.surfaceDefault;
+  const cardBorder = dark ? theme.colors.borderDefault : theme.colors.borderSubtle;
   if (groups.length === 0) {
     return <View style={{ paddingHorizontal: theme.spacing.base }}><AppText variant="bodySmall" color="secondary">No services are available at this location yet.</AppText></View>;
   }
   if (variant === "compact_grid") {
-    const cardWidth = (Math.min(windowWidth, 560) - theme.spacing.base * 2 - theme.spacing.sm * 3) / 4;
+    const cardWidth = (Math.min(windowWidth, 560) - theme.spacing.base * 2 - theme.spacing.xs * 3) / 4;
     return (
-      <View style={{ paddingHorizontal: theme.spacing.base, flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
-        {groups.map(group => (
+      <View style={{ paddingHorizontal: theme.spacing.base, flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs }}>
+        {groups.map((group, index) => (
           <Pressable
             key={group.serviceGroupId}
             onPress={() => onPress(group)}
             accessibilityRole="button"
             accessibilityLabel={`Book ${group.name}`}
-            style={({ pressed }) => ({ width: cardWidth, minHeight: 102, alignItems: "center", opacity: pressed ? 0.7 : 1 })}
+            style={({ pressed }) => ({ width: cardWidth, minHeight: 94, paddingHorizontal: 3, paddingVertical: theme.spacing.xs, alignItems: "center", justifyContent: "center", borderRadius: 14, borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : cardBorder, backgroundColor: cardBackground, opacity: pressed ? 0.76 : 1, ...(dark ? {} : theme.shadow.sm) })}
           >
-            <View style={{ width: cardWidth, height: 68, borderRadius: theme.radius.radiusMedium, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: theme.colors.borderSubtle }}>
-              <View style={{ width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.statusSuccessSurface }}>
-                <HomeGlyph name={groupIcon(group.name)} size="standard" color={theme.colors.statusSuccess} />
-              </View>
-            </View>
-            <AppText variant="caption" align="center" numberOfLines={2} style={{ marginTop: 6, minHeight: 30, fontWeight: "700", lineHeight: 14 }}>{group.name}</AppText>
+            <ServiceGroupIcon group={group} index={index} size={44} />
+            <AppText variant="caption" align="center" numberOfLines={2} style={{ marginTop: 6, minHeight: 28, fontWeight: "700", lineHeight: 13 }}>{group.name}</AppText>
           </Pressable>
         ))}
       </View>
@@ -810,10 +931,10 @@ function ServiceGroupRail({ groups, variant, onPress }: { groups: HomeServiceGro
     const cardWidth = (Math.min(windowWidth, 560) - theme.spacing.base * 2 - theme.spacing.sm * 3) / 4;
     return (
       <View style={{ paddingHorizontal: theme.spacing.base, flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
-        {groups.map(group => (
+        {groups.map((group, index) => (
           <Pressable key={group.serviceGroupId} onPress={() => onPress(group)} accessibilityRole="button" accessibilityLabel={`Book ${group.name}`} style={({ pressed }) => ({ width: cardWidth, alignItems: "center", opacity: pressed ? .75 : 1 })}>
-            <View style={{ width: cardWidth, aspectRatio: 1, overflow: "hidden", backgroundColor: theme.colors.surfaceSecondary }}>
-              {group.iconUrl ? <Image source={{ uri: resolveMediaUrl(group.iconUrl)! }} resizeMode="contain" style={{ width: "100%", height: "100%" }} /> : <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><HomeGlyph name={groupIcon(group.name)} size="navigation" color={theme.colors.textPrimary} /></View>}
+            <View style={{ width: cardWidth, aspectRatio: 1, borderRadius: 16, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: cardBackground, borderWidth: 1, borderColor: cardBorder, ...(dark ? {} : theme.shadow.sm) }}>
+              <ServiceGroupIcon group={group} index={index} size={Math.min(62, cardWidth - 18)} />
             </View>
             <AppText variant="caption" align="center" numberOfLines={2} style={{ marginTop: 6, minHeight: 32, fontWeight: "700" }}>{group.name}</AppText>
           </Pressable>
@@ -823,7 +944,7 @@ function ServiceGroupRail({ groups, variant, onPress }: { groups: HomeServiceGro
   }
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
-      {groups.map(group => (
+      {groups.map((group, index) => (
         <Pressable
           key={group.serviceGroupId}
           onPress={() => onPress(group)}
@@ -834,27 +955,22 @@ function ServiceGroupRail({ groups, variant, onPress }: { groups: HomeServiceGro
             minHeight: 156,
             padding: theme.spacing.xs,
             borderRadius: theme.radius.radiusSmall,
-            backgroundColor: pressed ? theme.colors.surfaceRaised : theme.colors.surfaceDefault,
+            backgroundColor: pressed ? theme.colors.surfaceRaised : cardBackground,
             borderWidth: 1,
-            borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
+            borderColor: pressed ? theme.colors.brandPrimary : cardBorder,
             opacity: pressed ? 0.9 : 1,
+            ...(dark ? {} : theme.shadow.sm),
           })}
         >
           <View style={{
             height: 108,
             borderRadius: Math.max(8, theme.radius.radiusSmall - 4),
-            backgroundColor: theme.colors.surfaceSecondary,
+            backgroundColor: dark ? theme.colors.surfaceSecondary : theme.colors.backgroundSecondary,
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
           }}>
-            {group.iconUrl ? (
-              <Image source={{ uri: resolveMediaUrl(group.iconUrl)! }} resizeMode="contain" style={{ width: 98, height: 98 }} />
-            ) : (
-              <View style={{ width: 64, height: 64, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.surfaceRaised }}>
-                <HomeGlyph name={groupIcon(group.name)} size="navigation" color={theme.colors.textPrimary} />
-              </View>
-            )}
+            <ServiceGroupIcon group={group} index={index} size={68} />
           </View>
           <View style={{ minHeight: 39, paddingHorizontal: 4, paddingTop: theme.spacing.xs, justifyContent: "center" }}>
             <AppText variant="bodySmall" align="center" numberOfLines={2} style={{ fontWeight: "700", lineHeight: 17 }}>
@@ -894,9 +1010,10 @@ function FeaturedServiceRail({ services, onPress }: { services: HomeMasterServic
   );
 }
 
-function MasterServiceGrid({ services, variant, onPress }: {
+function MasterServiceGrid({ services, variant, photos = DEFAULT_HOME_PHOTOS, onPress }: {
   services: HomeMasterService[];
   variant: string;
+  photos?: ImageSourcePropType[];
   onPress: (service: HomeMasterService) => void;
 }) {
   const { theme } = useTheme();
@@ -904,64 +1021,10 @@ function MasterServiceGrid({ services, variant, onPress }: {
   const gridWidth = Math.min(520, windowWidth - theme.spacing.base * 2);
   const cardWidth = (gridWidth - theme.spacing.sm) / 2;
 
-  if (variant === "recommendation_cards") {
+  if (variant === "catalog_grid") {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
-        {services.map((service, index) => {
-          const accents = [theme.colors.statusSuccess, theme.colors.statusInfo, theme.colors.statusWarning, theme.colors.accentViolet];
-          return (
-            <Pressable
-              key={service.masterServiceId}
-              onPress={() => onPress(service)}
-              accessibilityRole="button"
-              accessibilityLabel={`Book ${service.name}`}
-              style={({ pressed }) => ({ width: 190, minHeight: 188, overflow: "hidden", borderRadius: theme.radius.radiusMedium, backgroundColor: "transparent", borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle, opacity: pressed ? 0.82 : 1 })}
-            >
-              <View style={{ height: 72, paddingHorizontal: theme.spacing.sm, alignItems: "flex-start", justifyContent: "center" }}>
-                <View style={{ width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surfaceDefault }}>
-                  <HomeGlyph name={groupIcon(service.serviceGroupName)} size="standard" color={accents[index % accents.length]} />
-                </View>
-              </View>
-              <View style={{ flex: 1, padding: theme.spacing.sm }}>
-                <AppText variant="caption" color="success" numberOfLines={1} style={{ fontWeight: "800" }}>AVAILABLE IN YOUR AREA</AppText>
-                <AppText variant="bodyStrong" numberOfLines={2} style={{ marginTop: 4 }}>{service.name}</AppText>
-                <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginTop: 2 }}>{service.serviceGroupName}</AppText>
-                <View style={{ marginTop: "auto", paddingTop: theme.spacing.sm, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <AppText variant="button" color="link">Book service</AppText>
-                  <HomeGlyph name="arrow-right" size="compact" color={theme.colors.brandPrimary} />
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    );
-  }
-
-  if (variant === "image_rail") {
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
-        {services.map((service, index) => {
-          const artwork = resolveMediaUrl(service.iconUrl);
-          const accents = [theme.colors.statusInfoSurface, theme.colors.statusSuccessSurface, theme.colors.statusWarningSurface, theme.colors.accentVioletSurface];
-          return (
-            <Pressable key={service.masterServiceId} onPress={() => onPress(service)} accessibilityRole="button" accessibilityLabel={`Book ${service.name}`} style={({ pressed }) => ({ width: 164, minHeight: 196, backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: theme.colors.borderSubtle, opacity: pressed ? .82 : 1 })}>
-              <View style={{ height: 126, backgroundColor: accents[index % accents.length], alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                {artwork ? <Image source={{ uri: artwork }} resizeMode="contain" style={{ width: 112, height: 112 }} /> : <HomeGlyph name={groupIcon(service.serviceGroupName)} size="navigation" color={theme.colors.textPrimary} />}
-              </View>
-              <View style={{ padding: theme.spacing.sm, gap: 3 }}><AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText><AppText variant="caption" color="secondary" numberOfLines={1}>{service.serviceGroupName}</AppText></View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    );
-  }
-  return (
-    <View style={{ width: gridWidth, alignSelf: "center", flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
-      {services.map((service, index) => {
-        const artwork = resolveMediaUrl(service.iconUrl);
-        const accents = [theme.colors.statusInfoSurface, theme.colors.statusSuccessSurface, theme.colors.statusWarningSurface, theme.colors.accentVioletSurface];
-        return (
+      <View style={{ width: gridWidth, alignSelf: "center", flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
+        {services.map(service => (
           <Pressable
             key={service.masterServiceId}
             onPress={() => onPress(service)}
@@ -969,29 +1032,134 @@ function MasterServiceGrid({ services, variant, onPress }: {
             accessibilityLabel={`Book ${service.name}`}
             style={({ pressed }) => ({
               width: cardWidth,
-              minHeight: 116,
-              padding: theme.spacing.sm,
-              borderRadius: theme.radius.radiusSmall,
+              minHeight: 234,
+              overflow: "hidden",
+              borderRadius: 12,
               borderWidth: 1,
               borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle,
-              backgroundColor: pressed ? theme.colors.surfaceRaised : theme.colors.surfaceDefault,
+              backgroundColor: theme.colors.surfaceDefault,
               opacity: pressed ? 0.86 : 1,
             })}
           >
-            <View style={{ width: 54, height: 54, alignItems: "center", justifyContent: "center", overflow: "hidden", borderRadius: 16, backgroundColor: accents[index % accents.length] }}>
-              {artwork ? (
-                <Image source={{ uri: artwork }} resizeMode="contain" style={{ width: 48, height: 48 }} />
-              ) : (
-                <HomeGlyph name={groupIcon(service.serviceGroupName)} size="navigation" color={theme.colors.textPrimary} />
-              )}
+            <View style={{ height: 136, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: theme.colors.surfaceRaised }}>
+              <Image source={serviceArtwork(service)} resizeMode="contain" style={{ width: "88%", height: "88%" }} accessibilityIgnoresInvertColors />
             </View>
-            <View style={{ flex: 1, minHeight: 42, paddingTop: theme.spacing.sm, justifyContent: "space-between" }}>
-              <AppText variant="bodySmall" numberOfLines={2} style={{ fontWeight: "800", lineHeight: 17 }}>{service.name}</AppText>
-              <AppText variant="caption" color="secondary" numberOfLines={1}>{service.serviceGroupName}</AppText>
+            <View style={{ flex: 1, minHeight: 96, paddingHorizontal: theme.spacing.sm, paddingVertical: 10, alignItems: "center" }}>
+              <AppText variant="bodySmall" numberOfLines={2} style={{ fontWeight: "800", lineHeight: 18, textAlign: "center" }}>{service.name}</AppText>
+              <AppText variant="caption" color="secondary" numberOfLines={2} style={{ marginTop: 4, lineHeight: 16, textAlign: "center" }}>
+                {service.description || `Professional ${service.serviceGroupName.toLowerCase()} care`}
+              </AppText>
+              <AppText variant="caption" color="link" style={{ marginTop: "auto", paddingTop: 6, fontWeight: "800" }}>Book service</AppText>
             </View>
           </Pressable>
-        );
-      })}
+        ))}
+      </View>
+    );
+  }
+
+  if (variant === "recommendation_cards") {
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
+        {services.map((service, index) => (
+          <Pressable
+            key={service.masterServiceId}
+            onPress={() => onPress(service)}
+            accessibilityRole="button"
+            accessibilityLabel={`Book ${service.name}`}
+            style={({ pressed }) => ({ width: 182, minHeight: 226, overflow: "hidden", borderRadius: 12, backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle, opacity: pressed ? 0.82 : 1 })}
+          >
+            <Image source={photos[index % photos.length]} resizeMode="cover" style={{ width: "100%", height: 120 }} accessibilityIgnoresInvertColors />
+            <View style={{ flex: 1, padding: theme.spacing.sm }}>
+              <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
+              <AppText variant="caption" color="secondary" numberOfLines={2} style={{ marginTop: 3 }}>{service.description || service.serviceGroupName}</AppText>
+              <View style={{ marginTop: "auto", paddingTop: theme.spacing.sm, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <AppText variant="caption" color="link" style={{ fontWeight: "800" }}>Book now</AppText>
+                <HomeGlyph name="arrow-right" size="compact" color={theme.colors.brandPrimary} />
+              </View>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    );
+  }
+
+  if (variant === "image_rail") {
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: theme.spacing.base, gap: theme.spacing.sm }}>
+        {services.map((service, index) => (
+          <Pressable key={service.masterServiceId} onPress={() => onPress(service)} accessibilityRole="button" accessibilityLabel={`Book ${service.name}`} style={({ pressed }) => ({ width: 270, minHeight: 118, overflow: "hidden", flexDirection: "row", borderRadius: 12, backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle, opacity: pressed ? .82 : 1 })}>
+            <Image source={photos[index % photos.length]} resizeMode="cover" style={{ width: 108, minHeight: 116 }} accessibilityIgnoresInvertColors />
+            <View style={{ flex: 1, minWidth: 0, padding: theme.spacing.sm }}>
+              <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
+              <AppText variant="caption" color="secondary" numberOfLines={2} style={{ marginTop: 4 }}>{service.description || service.serviceGroupName}</AppText>
+              <AppText variant="caption" color="link" style={{ marginTop: "auto", paddingTop: 6, fontWeight: "800" }}>Book now</AppText>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    );
+  }
+  return (
+    <View style={{ width: gridWidth, alignSelf: "center", flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
+      {services.map((service, index) => (
+          <Pressable key={service.masterServiceId} onPress={() => onPress(service)} accessibilityRole="button" accessibilityLabel={`Book ${service.name}`} style={({ pressed }) => ({ width: cardWidth, minHeight: 226, overflow: "hidden", borderRadius: 12, backgroundColor: theme.colors.surfaceDefault, borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle, opacity: pressed ? .82 : 1 })}>
+            <Image source={photos[index % photos.length]} resizeMode="cover" style={{ width: "100%", height: 120 }} accessibilityIgnoresInvertColors />
+            <View style={{ flex: 1, padding: theme.spacing.sm }}>
+              <AppText variant="bodyStrong" numberOfLines={2}>{service.name}</AppText>
+              <AppText variant="caption" color="secondary" numberOfLines={2} style={{ marginTop: 3 }}>{service.description || service.serviceGroupName}</AppText>
+              <AppText variant="caption" color="link" style={{ marginTop: "auto", paddingTop: 6, fontWeight: "800" }}>Book now</AppText>
+            </View>
+          </Pressable>
+        ))}
+    </View>
+  );
+}
+
+function ProblemPhotoGrid({ issues, title, photos, onPressIssue }: {
+  issues: readonly HomeQuickIssue[];
+  title: string;
+  photos: ImageSourcePropType[];
+  onPressIssue: (issue: HomeQuickIssue) => void;
+}) {
+  const { theme } = useTheme();
+  const tappable = issues.filter(issue => !!issue.categorySlug);
+  if (!tappable.length) return null;
+  const columns = [
+    tappable.filter((_, index) => index % 2 === 0),
+    tappable.filter((_, index) => index % 2 === 1),
+  ];
+  return (
+    <View>
+      <SectionHeader title={title} inset={false} />
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm }}>
+        {columns.map((column, columnIndex) => (
+          <View key={`problem-column-${columnIndex}`} style={{ flex: 1, gap: theme.spacing.sm }}>
+            {column.map((issue, columnItemIndex) => {
+              const originalIndex = columnItemIndex * 2 + columnIndex;
+              // Alternating portrait and compact crops create the staggered
+              // editorial rhythm in the approved Home reference. Content
+              // height remains intrinsic, so translated/long labels do not clip.
+              const imageHeight = originalIndex % 4 === 0 || originalIndex % 4 === 3 ? 176 : 142;
+              return (
+                <Pressable
+                  key={issue.issueId}
+                  onPress={() => onPressIssue(issue)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${issue.label}, ${issue.categoryName}`}
+                  style={({ pressed }) => ({ overflow: "hidden", borderRadius: 12, borderWidth: 1, borderColor: pressed ? theme.colors.brandPrimary : theme.colors.borderSubtle, backgroundColor: theme.colors.surfaceDefault, opacity: pressed ? .82 : 1 })}
+                >
+                  <Image source={photos[originalIndex % photos.length]} resizeMode="cover" style={{ width: "100%", height: imageHeight }} accessibilityIgnoresInvertColors />
+                  <View style={{ minHeight: 82, padding: theme.spacing.sm }}>
+                    <AppText variant="bodySmall" numberOfLines={2} style={{ fontWeight: "800", lineHeight: 17 }}>{issue.label}</AppText>
+                    <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginTop: 3 }}>{issue.categoryName}</AppText>
+                    <AppText variant="caption" color="link" style={{ marginTop: 6, fontWeight: "800" }}>Get help</AppText>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }

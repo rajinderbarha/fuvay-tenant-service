@@ -21,20 +21,17 @@ from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.invoice_payment.commission_service import ServiceCommissionService
 from app.engines.invoice_payment.wallet_service import ProviderCreditWalletService
-from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
 from app.engines.invoice_payment.models import FinancialEvent
 
 inv_svc = ServiceInvoiceService()
 pay_svc = ServicePaymentService()
 com_svc = ServiceCommissionService()
 wal_svc = ProviderCreditWalletService()
-sub_svc = ProviderSubscriptionStatusService()
 
 admin_invoice_router    = APIRouter(prefix="/v1/admin/service-invoices",     tags=["admin-invoices"])
 admin_payment_router    = APIRouter(prefix="/v1/admin/payments",             tags=["admin-payments"])
 admin_commission_router = APIRouter(prefix="/v1/admin/commission-records",   tags=["admin-commission"])
 admin_wallet_router     = APIRouter(prefix="/v1/admin/provider-wallets",     tags=["admin-wallets"])
-admin_sub_router        = APIRouter(prefix="/v1/admin/subscription-status",  tags=["admin-subscription"])
 admin_fin_events_router = APIRouter(prefix="/v1/admin/financial-events",     tags=["admin-financial-events"])
 
 
@@ -190,13 +187,6 @@ async def admin_credit_wallet(
 
 # ── Admin: subscription status ─────────────────────────────────────────────────
 
-@admin_sub_router.get("")
-async def admin_subscription_status(
-    limit: int = 200, offset: int = 0, r: Request = None,
-    user=Depends(require_super_admin), db: AsyncSession = Depends(get_db),
-):
-    data = await sub_svc.list_all_subscription_statuses(db, limit=limit, offset=offset)
-    return ok(data, _rid(r), "admin_subscription_status")
 
 
 # ── Admin: financial events ────────────────────────────────────────────────────

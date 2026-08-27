@@ -191,6 +191,26 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
     "ACCOUNT_LOCKED":          {"status": 423, "title": "Account Locked"},
     # Permission
     "PERMISSION_DENIED":       {"status": 403, "title": "Permission Denied"},
+    # Top-up plans & seat/capacity enforcement
+    "TOPUP_PLAN_NOT_FOUND":         {"status": 404, "title": "Top-up Plan Not Found"},
+    "TOPUP_PLAN_NAME_EXISTS":       {"status": 409, "title": "Top-up Plan Name Already Exists"},
+    "TOPUP_PLAN_IN_USE":            {"status": 409, "title": "Top-up Plan In Use"},
+    "TOPUP_PLAN_INVALID":           {"status": 422, "title": "Invalid Top-up Plan"},
+    "TECHNICIAN_SEAT_LIMIT_REACHED":{"status": 409, "title": "Technician Seat Limit Reached"},
+    "TECHNICIAN_CAPACITY_REACHED":  {"status": 409, "title": "Technician Capacity Reached"},
+    "NO_TECHNICIANS_AVAILABLE":     {"status": 409, "title": "No Technicians Available"},
+    "CREDIT_BELOW_BOOKING_FLOOR":   {"status": 409, "title": "Credit Below Booking Floor"},
+    # Legal documents
+    "LEGAL_DOC_TYPE_UNKNOWN":     {"status": 404, "title": "Unknown Legal Document Type"},
+    "LEGAL_DOC_NOT_PUBLISHED":    {"status": 404, "title": "Legal Document Not Published"},
+    "LEGAL_DOC_VERSION_NOT_FOUND":{"status": 404, "title": "Legal Document Version Not Found"},
+    "LEGAL_DOC_VERSION_EXISTS":   {"status": 409, "title": "Legal Document Version Already Exists"},
+    "LEGAL_DOC_NOT_EDITABLE":     {"status": 409, "title": "Legal Document Not Editable"},
+    "LEGAL_DOC_ALREADY_PUBLISHED":{"status": 409, "title": "Legal Document Already Published"},
+    "LEGAL_DOC_ARCHIVED":         {"status": 409, "title": "Legal Document Archived"},
+    "LEGAL_DOC_BODY_EMPTY":       {"status": 422, "title": "Legal Document Body Empty"},
+    "LEGAL_AUDIENCE_UNKNOWN":     {"status": 422, "title": "Unknown Legal Document Audience"},
+    "LEGAL_STATUS_UNKNOWN":       {"status": 422, "title": "Unknown Legal Document Status"},
     # Tenant — core
     "TENANT_NOT_FOUND":              {"status": 404, "title": "Tenant Not Found"},
     "TENANT_SUSPENDED":              {"status": 403, "title": "Tenant Account Suspended"},

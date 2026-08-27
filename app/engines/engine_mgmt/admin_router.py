@@ -275,18 +275,6 @@ async def mark_category_engine_optional(
         _rid(r), "engine_management")
 
 
-@router.get("/category-matrix/{category_id}/engines/{engine_key}/packages")
-async def category_engine_package_usage(
-    r: Request,
-    category_id: uuid.UUID,
-    engine_key: str,
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    return ok(await _svc(db, u).get_category_engine_package_usage(category_id, engine_key),
-              _rid(r), "engine_management")
-
-
 @router.get("/category-matrix/{category_id}/engines/{engine_key}/tenant-impact")
 async def category_engine_tenant_impact(
     r: Request,
@@ -343,74 +331,6 @@ async def list_all_dependencies(
               _rid(r), "engine_management")
 
 
-# ── Package Entitlements (static — before /{engine_key}) ─────────────────────
-
-@router.get("/package-entitlements")
-async def get_package_entitlements_all(
-    r: Request,
-    package_id: Optional[uuid.UUID] = Query(None),
-    page: int = Query(1, ge=1),
-    limit: int = Query(200, ge=1, le=500),
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    return ok(await _svc(db, u).get_package_entitlements(
-        package_id=package_id, page=page, limit=limit), _rid(r), "engine_management")
-
-
-@router.get("/package-entitlements/{package_id}")
-async def get_package_entitlements(
-    r: Request,
-    package_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    return ok(await _svc(db, u).get_package_entitlements(
-        package_id=package_id), _rid(r), "engine_management")
-
-
-@router.post("/package-entitlements/{package_id}/engines/{engine_key}/include")
-async def include_package_engine(
-    r: Request,
-    package_id: uuid.UUID,
-    engine_key: str,
-    body: dict = {},
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    return ok(await _svc(db, u).set_package_engine(
-        package_id, engine_key, included=True,
-        limits=body.get("limits"), feature_flags=body.get("feature_flags"),
-        reason=body.get("reason", "")), _rid(r), "engine_management")
-
-
-@router.post("/package-entitlements/{package_id}/engines/{engine_key}/remove")
-async def remove_package_engine(
-    r: Request,
-    package_id: uuid.UUID,
-    engine_key: str,
-    body: dict = {},
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    return ok(await _svc(db, u).set_package_engine(
-        package_id, engine_key, included=False,
-        reason=body.get("reason", "")), _rid(r), "engine_management")
-
-
-@router.post("/package-entitlements/{package_id}/preview-impact")
-async def package_entitlement_impact(
-    r: Request,
-    package_id: uuid.UUID,
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-    u=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    engine_key = body.get("engine_key", "")
-    preview = await _svc(db, u).get_impact_preview(engine_key, body.get("action", "disable"))
-    return ok({**preview, "package_id": str(package_id)}, _rid(r), "engine_management")
-
-
 # ── Tenant Overrides (static — before /{engine_key}) ─────────────────────────
 
 @router.get("/tenant-overrides")
@@ -438,6 +358,17 @@ async def get_tenant_overrides(
 ) -> ApiResponse[dict]:
     return ok(await _svc(db, u).list_tenant_overrides(
         tenant_id=tenant_id, status=status), _rid(r), "engine_management")
+
+
+@router.get("/tenants/{tenant_id}/effective")
+async def get_tenant_effective_engines(
+    r: Request,
+    tenant_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    u=Depends(require_super_admin),
+) -> ApiResponse[dict]:
+    return ok(await _svc(db, u).get_tenant_effective_engines(tenant_id),
+              _rid(r), "engine_management")
 
 
 @router.post("/tenant-overrides/{tenant_id}")
@@ -559,9 +490,8 @@ async def resolve_access_preview(
     engine_key = body.get("engine_key", "")
     tenant_id = uuid.UUID(str(body["tenant_id"])) if body.get("tenant_id") else None
     category_id = uuid.UUID(str(body["category_id"])) if body.get("category_id") else None
-    package_id = uuid.UUID(str(body["package_id"])) if body.get("package_id") else None
     result = await _svc(db, u).resolve_access(
-        engine_key, tenant_id=tenant_id, category_id=category_id, package_id=package_id)
+        engine_key, tenant_id=tenant_id, category_id=category_id)
     return ok(result, _rid(r), "engine_management")
 
 

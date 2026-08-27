@@ -1,11 +1,12 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { bulkWizardApi, BulkRunItem } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
-import { Btn } from "../../../../components/shared/ui";
-import { Breadcrumbs } from "../../../../components/layout/Breadcrumbs";
+import { Btn, Pagination } from "../../../../components/shared/ui";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; color: string }> = {
@@ -46,28 +47,17 @@ export default function BulkRunsPage() {
   const total = (runsData as { items: BulkRunItem[]; total: number } | null)?.total ?? 0;
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <Breadcrumbs crumbs={[
-        { label: "Service Setup", href: "/admin/service-setup" },
-        { label: "Bulk Wizard", href: "/admin/service-setup/bulk-wizard" },
-        { label: "Runs" },
-      ]} />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-            Bulk Setup Runs
-          </h1>
-          <p style={{ color: "var(--text-secondary)", margin: "0.25rem 0 0", fontSize: 13 }}>
-            History of all bulk setup execution runs
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+    <PageShell>
+      <PageHeader
+        title="Bulk setup runs"
+        description="Execution history and rollback controls for catalog bulk setup."
+        actions={<div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" size="sm" onClick={() => router.push("/admin/service-setup/bulk-wizard")}>
             Back to Wizard
           </Btn>
           <Btn variant="ghost" size="sm" onClick={() => refetch()}>Refresh</Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       {loading ? (
         <div style={{ color: "var(--text-secondary)", padding: 24 }}>Loading runs...</div>
@@ -89,7 +79,7 @@ export default function BulkRunsPage() {
       ) : (
         <>
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {["Run Code", "Vertical", "Status", "Total", "Created", "Skipped", "Failed", "Dry Run", "Started At", "Actions"].map(h => (
@@ -131,18 +121,11 @@ export default function BulkRunsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, fontSize: 12, color: "var(--text-tertiary)" }}>
-            <span>{total} total runs</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-              <span style={{ padding: "0 8px", lineHeight: "28px" }}>Page {page}</span>
-              <Btn size="xs" variant="ghost" disabled={runs.length < 25} onClick={() => setPage(p => p + 1)}>Next</Btn>
-            </div>
-          </div>
+          <Pagination page={page} pageSize={25} total={total} onPage={setPage} itemLabel="runs" alwaysShow />
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

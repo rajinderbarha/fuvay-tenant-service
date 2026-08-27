@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
@@ -16,7 +17,7 @@ import {
   CustomerSummary,
 } from "@/lib/api";
 import { useApi, useAction } from "@/hooks/useApi";
-import { Btn } from "@/components/shared/ui";
+import { Btn, Skeleton, SummaryCard, SectionHeader } from "@/components/shared/ui";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,40 +41,6 @@ const daysAgo = (n: number) => {
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label, value, helpText, href, loading,
-}: {
-  label: string;
-  value: string | number;
-  helpText?: string;
-  href?: string;
-  loading: boolean;
-}) {
-  const inner = (
-    <div style={{
-      ...cardStyle,
-      cursor: href ? "pointer" : "default",
-      transition: "box-shadow 0.15s",
-    }}>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-      </div>
-      {loading ? (
-        <div className="skeleton" style={{ height: 32, width: 80, borderRadius: 6 }} />
-      ) : (
-        <div style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>
-          {value}
-        </div>
-      )}
-      {helpText && !loading && (
-        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{helpText}</div>
-      )}
-    </div>
-  );
-  if (href) return <Link href={href} style={{ textDecoration: "none" }}>{inner}</Link>;
-  return inner;
-}
 
 function TrendChart({
   title, data, color, loading,
@@ -140,6 +107,7 @@ function HealthBand({ band }: { band: string }) {
     healthy: "var(--success-text)",
     warning: "var(--warning-text)",
     at_risk: "var(--danger-text)",
+    not_enough_data: "var(--text-secondary)",
   };
   return <span style={{ color: map[band] ?? "var(--text-secondary)", fontWeight: 600, fontSize: 12 }}>{band.replace("_", " ")}</span>;
 }
@@ -251,18 +219,12 @@ export default function PlatformAnalyticsDashboard() {
     <div style={{ display: "flex", flexDirection: "column", gap: 28, paddingBottom: 48 }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Platform Analytics</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Enterprise intelligence across all tenants, verticals, and operations</p>
-        </div>
-        {tab === "dashboard" && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn size="sm" variant="secondary" onClick={() => platformAnalyticsApi.exportReport("platform_summary", { date_from: dateFrom, date_to: dateTo })}>Export Report</Btn>
+      <SectionHeader eyebrow="Intelligence" title="Platform Analytics"
+        description="Enterprise intelligence across all tenants, verticals, and operations"
+        actions={tab === "dashboard" ? <>
+            <Btn size="sm" variant="secondary" onClick={() => setTab("reports")}>Open Reports</Btn>
             <Btn size="sm" variant="primary" onClick={() => window.location.reload()}>Refresh</Btn>
-          </div>
-        )}
-      </div>
+          </> : undefined} />
 
       {/* Tabs -- Reports folded in here 2026-08-05 (was a separate
           /admin/reports page/nav item) at explicit user request. */}
@@ -308,18 +270,17 @@ export default function PlatformAnalyticsDashboard() {
 
       {/* KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-        <KpiCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/home-services/providers?status=active" loading={sumLoading} />
-        <KpiCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/bookings-jobs" loading={sumLoading} />
-        <KpiCard label="Platform Revenue" value={fmtMoney(s.platform_revenue)} helpText="Top-ups + packages" loading={sumLoading} />
-        <KpiCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/finance?tab=provider-charges" loading={sumLoading} />
-        <KpiCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} helpText="Paid directly to provider" loading={sumLoading} />
-        <KpiCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
-        <KpiCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />
-        <KpiCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/home-services/providers?tab=onboarding" loading={sumLoading} />
-        <KpiCard label="New Providers" value={fmt(s.new_providers)} loading={sumLoading} />
-        <KpiCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-credits" loading={sumLoading} />
-        <KpiCard label="Security Deposit Held" value={fmtMoney(s.security_deposit_held)} loading={sumLoading} />
-        <KpiCard label="Active Customers" value={fmt(s.active_customers)} loading={sumLoading} />
+        <SummaryCard label="Active Tenants" value={fmt(s.active_tenants)} href="/admin/home-services/providers?status=active" loading={sumLoading} />
+        <SummaryCard label="Total Jobs" value={fmt(s.total_jobs)} href="/admin/home-services/bookings-jobs" loading={sumLoading} />
+        <SummaryCard label="Platform Top-up Receipts" value={fmtMoney(s.platform_revenue)} sub="Net usage-credit top-up receipts" loading={sumLoading} />
+        <SummaryCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/finance?tab=provider-charges" loading={sumLoading} />
+        <SummaryCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} sub="Paid directly to provider" loading={sumLoading} />
+        <SummaryCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
+        <SummaryCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />
+        <SummaryCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/home-services/providers?tab=onboarding" loading={sumLoading} />
+        <SummaryCard label="New Providers" value={fmt(s.new_providers)} loading={sumLoading} />
+        <SummaryCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-credits" loading={sumLoading} />
+        <SummaryCard label="Active Customers" value={fmt(s.active_customers)} loading={sumLoading} />
       </div>
 
       {/* Trend Charts */}
@@ -348,7 +309,7 @@ export default function PlatformAnalyticsDashboard() {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Alert</th>
@@ -376,7 +337,7 @@ export default function PlatformAnalyticsDashboard() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </div>
@@ -390,7 +351,7 @@ export default function PlatformAnalyticsDashboard() {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Vertical / Category</th>
@@ -415,7 +376,7 @@ export default function PlatformAnalyticsDashboard() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </div>
@@ -441,7 +402,7 @@ export default function PlatformAnalyticsDashboard() {
           <div style={{ textAlign: "center", padding: "28px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No provider data for this period.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Provider</th>
@@ -470,7 +431,7 @@ export default function PlatformAnalyticsDashboard() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </div>
@@ -479,12 +440,11 @@ export default function PlatformAnalyticsDashboard() {
       <div>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Finance Summary</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-          <KpiCard label="Platform Revenue" value={fmtMoney(fin.platform_revenue)} helpText="Top-ups + packages" loading={finLoading} />
-          <KpiCard label="Package Revenue" value={fmtMoney(fin.package_revenue)} loading={finLoading} />
-          <KpiCard label="Usage Credit Top-ups" value={fmtMoney(fin.usage_credit_topups)} loading={finLoading} />
-          <KpiCard label="Completed Job Deductions" value={fmtMoney(fin.completed_job_deductions)} loading={finLoading} />
-          <KpiCard label="Customer Service Credits Issued" value={fmtMoney(fin.customer_service_credits_issued)} loading={finLoading} />
-          <KpiCard label="Security Deposits Held" value={fmtMoney(fin.security_deposits_held)} loading={finLoading} />
+          <SummaryCard label="Platform Top-up Receipts" value={fmtMoney(fin.platform_revenue)} sub="Net usage-credit top-ups; provider job payments are excluded" loading={finLoading} />
+          <SummaryCard label="Provider Direct Service Value" value={fmtMoney(fin.provider_direct_service_value)} sub="Customer-to-provider service value; not platform revenue" loading={finLoading} />
+          <SummaryCard label="Usage Credit Top-ups" value={fmtMoney(fin.usage_credit_topups)} loading={finLoading} />
+          <SummaryCard label="Completed Job Deductions" value={fmtMoney(fin.completed_job_deductions)} loading={finLoading} />
+          <SummaryCard label="Customer Service Credits Issued" value={fmtMoney(fin.customer_service_credits_issued)} loading={finLoading} />
         </div>
       </div>
 
@@ -537,7 +497,7 @@ export default function PlatformAnalyticsDashboard() {
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-tertiary)", fontSize: 13 }}>No geographic data available.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={thStyle}>City</th>
@@ -558,7 +518,7 @@ export default function PlatformAnalyticsDashboard() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </div>
@@ -567,10 +527,10 @@ export default function PlatformAnalyticsDashboard() {
       <div>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 14px" }}>Customer Analytics</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-          <KpiCard label="Active Customers" value={fmt(cust.active_customers)} loading={custLoading} />
-          <KpiCard label="New Customers" value={fmt(cust.new_customers)} loading={custLoading} />
-          <KpiCard label="Bookings / Customer" value={(cust.bookings_per_customer ?? 0).toFixed(1)} loading={custLoading} />
-          <KpiCard label="Customer Credits Used" value={fmtMoney(cust.customer_service_credits_used)} loading={custLoading} />
+          <SummaryCard label="Active Customers" value={fmt(cust.active_customers)} loading={custLoading} />
+          <SummaryCard label="New Customers" value={fmt(cust.new_customers)} loading={custLoading} />
+          <SummaryCard label="Bookings / Customer" value={(cust.bookings_per_customer ?? 0).toFixed(1)} loading={custLoading} />
+          <SummaryCard label="Customer Credits Used" value={fmtMoney(cust.customer_service_credits_used)} loading={custLoading} />
         </div>
       </div>
       </>}

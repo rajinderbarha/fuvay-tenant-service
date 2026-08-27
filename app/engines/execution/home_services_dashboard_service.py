@@ -19,18 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Presentation-group mapping over the real execution.constants job-status
 # machine -- never a second set of database statuses.
-_PIPELINE_GROUPS = [
-    ("new", "New", {"pending_assignment"}),
-    ("awaiting_assignment", "Awaiting assignment", {"pending_assignment"}),  # placeholder, replaced below
-    ("scheduled", "Scheduled", {"assigned", "accepted", "scheduled"}),
-    ("on_the_way", "On the way", {"on_the_way"}),
-    ("inspection", "Inspection", {"reached_site", "inspection_started", "inspection_done"}),
-    ("estimate_approval", "Estimate approval", {"quote_required"}),
-    ("in_progress", "In progress", {"service_started"}),
-    ("work_done", "Work done", {"work_done"}),
-    ("completed", "Completed", {"completed"}),
-    ("cancelled", "Cancelled", {"cancelled", "failed", "closed_estimate_declined"}),
-]
 # "New" and "Awaiting assignment" both map from the same raw status
 # (pending_assignment) in this codebase's execution model -- there is no
 # separate "just created, not yet due for assignment" status, so a single
@@ -58,7 +46,11 @@ async def _safe(coro, module_key: str, errors: list[str]) -> dict | list | None:
         return None
 
 
-async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
+async def _attention_queue(
+    db: AsyncSession,
+    tid: uuid.UUID,
+    service_coverage: list[dict] | None = None,
+) -> list[dict]:
     items: list[dict] = []
 
     unassigned = (await db.execute(text(
@@ -69,7 +61,7 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
         items.append({
             "key": "UNASSIGNED_JOBS", "label": "Unassigned jobs", "count": int(unassigned[0]),
             "severity": "warning", "oldest_age_hours": _age_hours(unassigned[1]),
-            "destination": "/jobs?status=pending_assignment",
+            "destination": "/home-services/bookings-jobs?stage=new&assignment=unassigned",
         })
 
     quote_pending = (await db.execute(text(
@@ -81,7 +73,7 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
             "key": "ESTIMATES_AWAITING_APPROVAL", "label": "Estimates awaiting approval",
             "count": int(quote_pending[0]), "severity": "warning",
             "oldest_age_hours": _age_hours(quote_pending[1]),
-            "destination": "/jobs?status=quote_required",
+            "destination": "/home-services/bookings-jobs?stage=estimate_approval",
         })
 
     pending_invoices = (await db.execute(text(
@@ -93,7 +85,7 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
             "key": "PAYMENT_CONFIRMATIONS_PENDING", "label": "Payment confirmations pending",
             "count": int(pending_invoices[0]), "severity": "info",
             "oldest_age_hours": _age_hours(pending_invoices[1]),
-            "destination": "/finance?tab=direct-payments",
+            "destination": "/home-services/direct-payments",
         })
 
     # SLA at risk: a job assigned to a technician who hasn't accepted it
@@ -114,7 +106,7 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
         items.append({
             "key": "SLA_AT_RISK", "label": "SLA at risk", "count": int(sla_at_risk[0]),
             "severity": "danger", "oldest_age_hours": _age_hours(sla_at_risk[1]),
-            "destination": "/jobs?status=assigned",
+            "destination": "/home-services/bookings-jobs?sla=AT_RISK",
         })
 
     open_complaints = (await db.execute(text(
@@ -125,17 +117,18 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
         items.append({
             "key": "OPEN_COMPLAINTS", "label": "Open complaints", "count": int(open_complaints[0]),
             "severity": "danger", "oldest_age_hours": _age_hours(open_complaints[1]),
-            "destination": "/reviews?tab=complaints&status=open",
+            "destination": "/home-services/complaints?status=open",
         })
 
-    from app.engines.home_service_assignment.team_readiness_service import compute_service_coverage
-    coverage = await compute_service_coverage(db, tid)
-    gap_count = sum(1 for c in coverage if c["ready_technician_count"] == 0)
+    if service_coverage is None:
+        from app.engines.home_service_assignment.team_readiness_service import compute_service_coverage
+        service_coverage = await compute_service_coverage(db, tid)
+    gap_count = sum(1 for c in service_coverage if c["ready_technician_count"] == 0)
     if gap_count:
         items.append({
             "key": "SERVICE_COVERAGE_GAPS", "label": "Services with no eligible technician",
             "count": gap_count, "severity": "warning", "oldest_age_hours": None,
-            "destination": "/provider/staff",
+            "destination": "/home-services/team",
         })
 
     from app.engines.usage_credits.constants import DEFAULT_LOW_USAGE_CREDIT_THRESHOLD
@@ -146,7 +139,8 @@ async def _attention_queue(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
             and float(billing.credit_balance) < float(DEFAULT_LOW_USAGE_CREDIT_THRESHOLD):
         items.append({
             "key": "LOW_USAGE_CREDIT", "label": "Low usage-credit balance", "count": 1,
-            "severity": "warning", "oldest_age_hours": None, "destination": "/finance/usage-credit-ledger",
+            "severity": "warning", "oldest_age_hours": None,
+            "destination": "/home-services/finance?tab=usage-credits",
         })
 
     return items
@@ -364,7 +358,7 @@ async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
     ), {"tid": str(tid)})).fetchall()
     inv_counts = {r[0]: int(r[1]) for r in invoices}
     billing = (await db.execute(text(
-        "SELECT credit_balance, security_deposit_paid, security_deposit_amount FROM tenant_billing WHERE tenant_id=:tid"
+        "SELECT credit_balance, entitled_seats FROM tenant_billing WHERE tenant_id=:tid"
     ), {"tid": str(tid)})).fetchone()
     deduction = (await db.execute(text(
         "SELECT count(*), COALESCE(sum(abs(credit_delta)), 0) FROM usage_credit_ledger "
@@ -376,8 +370,9 @@ async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
         "usage_credit_balance": float(billing.credit_balance) if billing and billing.credit_balance is not None else None,
         "completion_deductions_today_count": int(deduction[0]) if deduction else 0,
         "completion_deductions_today_amount": float(deduction[1]) if deduction and deduction[1] is not None else 0.0,
-        "security_deposit_status": "paid" if (billing and billing.security_deposit_paid) else
-                                    ("required" if (billing and billing.security_deposit_amount) else "not_required"),
+        # The security deposit was replaced by purchased technician seats in
+        # migration 317 — headcount is bought, not collateralised.
+        "entitled_seats": int(billing.entitled_seats) if billing and billing.entitled_seats else 0,
     }
 
 
@@ -422,13 +417,13 @@ def _bookability_row(coverage_row: dict, tenant_bookable: dict | None) -> dict:
 async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
     errors: list[str] = []
 
-    attention = await _safe(_attention_queue(db, tid), "attention_queue", errors) or []
-    pipeline = await _safe(_job_pipeline(db, tid), "job_pipeline", errors) or []
-    todays_jobs = await _safe(_todays_jobs(db, tid), "todays_jobs", errors) or []
-
     from app.engines.home_service_assignment.team_readiness_service import compute_team_summary, compute_service_coverage
     team_summary = await _safe(compute_team_summary(db, tid), "staff_capacity", errors) or {"counts": {}, "per_member": {}}
-    coverage = await _safe(compute_service_coverage(db, tid), "service_bookability", errors) or []
+    coverage = await _safe(compute_service_coverage(db, tid, team_summary), "service_bookability", errors) or []
+
+    attention = await _safe(_attention_queue(db, tid, coverage), "attention_queue", errors) or []
+    pipeline = await _safe(_job_pipeline(db, tid), "job_pipeline", errors) or []
+    todays_jobs = await _safe(_todays_jobs(db, tid), "todays_jobs", errors) or []
 
     customers_quality = await _safe(_customers_quality(db, tid), "customers_quality", errors) or {}
     finance = await _safe(_finance_snapshot(db, tid), "finance_snapshot", errors) or {}
@@ -445,10 +440,38 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
         "AND assigned_staff_id IS NOT NULL AND status NOT IN ('completed','cancelled','failed','closed_estimate_declined')"
     ), {"tid": str(tid)})).scalar() or 0
 
+    tenant = (await db.execute(text(
+        "SELECT COALESCE(business_name, tenant_name) AS business_name, "
+        "tenant_code, city, state, zipcode, logo_url "
+        "FROM tenants WHERE id=:tid"
+    ), {"tid": str(tid)})).fetchone()
+    today_total = (await db.execute(text(
+        "SELECT count(*) FROM service_jobs WHERE tenant_id=:tid "
+        "AND scheduled_date=CURRENT_DATE"
+    ), {"tid": str(tid)})).scalar() or 0
+    active_jobs = sum(
+        int(item["count"]) for item in pipeline
+        if item["key"] not in {"completed", "cancelled"}
+    )
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "tenant_id": str(tid),
         "vertical": {"key": "home_services"},
+        "workspace": {
+            "business_name": tenant.business_name if tenant else "Your business",
+            "tenant_code": tenant.tenant_code if tenant else None,
+            "city": tenant.city if tenant else None,
+            "state": tenant.state if tenant else None,
+            "zipcode": tenant.zipcode if tenant else None,
+            "logo_url": tenant.logo_url if tenant else None,
+        },
+        "operational_summary": {
+            "active_jobs": active_jobs,
+            "jobs_today": int(today_total),
+            "available_technicians": max(ready - int(assigned_now), 0),
+            "attention_items": sum(int(item.get("count", 0)) for item in attention),
+        },
         "attention_queue": attention,
         "job_pipeline": pipeline,
         "todays_jobs": todays_jobs,
@@ -456,10 +479,11 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
             "ready": ready, "assigned_now": int(assigned_now),
             "available_now": max(ready - int(assigned_now), 0), "total_active": int(active_members),
         },
+        "bookability": tenant_bookable or {"is_bookable": False, "blockers": []},
         "service_bookability": [_bookability_row(c, tenant_bookable) for c in coverage],
         "customers_quality": customers_quality,
         "finance_snapshot": finance,
         "recent_activity": activity,
-        "available_actions": ["VIEW_ALL_JOBS", "REFRESH"],
+        "available_actions": ["VIEW_ALL_JOBS", "OPEN_DISPATCH", "REFRESH"],
         "failed_modules": errors,
     }

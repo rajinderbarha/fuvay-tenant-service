@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminAnalyticsApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   COMPLETED: { background: "var(--success-bg)",     color: "var(--success-text)" },
@@ -62,10 +63,7 @@ export default function AdminReportsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Admin Reports</h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Run and export platform reports. Sync export for up to 5,000 rows.</p>
-      </div>
+      <PageHeader eyebrow="Intelligence" title="Admin Reports" description="Run and export platform reports. Sync export for up to 5,000 rows." />
 
       {message && (
         <div style={{ background: "var(--info-bg)", border: "1px solid var(--info-border)", borderRadius: 10,

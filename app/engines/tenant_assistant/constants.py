@@ -70,7 +70,7 @@ PORTAL_ROUTES = {
     "team":          ("/home-services/team",               "Team"),
     "documents":     ("/business/verification-documents",  "Verification documents"),
     "finance":       ("/home-services/finance",            "Finance"),
-    "package":       ("/finance/package",                  "Plan & package"),
+    "package":       ("/home-services/finance",            "Finance & credits"),
     "credits":       ("/finance/usage-credit-ledger",      "Usage credits"),
     "reviews":       ("/home-services/reviews",            "Reviews"),
     "complaints":    ("/home-services/complaints",         "Complaints"),

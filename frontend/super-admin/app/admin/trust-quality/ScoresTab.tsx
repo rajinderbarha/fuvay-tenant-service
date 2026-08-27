@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * The health engine's OUTPUT.
  *
@@ -102,7 +103,7 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "10px 16px" }}>Target</th>
                   <th style={{ padding: "10px 16px" }}>Formula</th>
@@ -163,7 +164,7 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
                     </React.Fragment>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
             <Pagination page={page} total={scores.data?.total ?? 0}
               pageSize={PAGE_SIZE} onPage={setPage} alwaysShow />
@@ -212,7 +213,7 @@ function Breakdown({ row }: { row: HealthScoreRow }) {
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.05em", color: "var(--text-tertiary)", marginBottom: 6 }}>Components</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead><tr style={{ textAlign: "left", color: "var(--text-tertiary)" }}>
               <th style={{ padding: "4px 8px 4px 0" }}>Metric</th>
               <th style={{ padding: "4px 8px" }}>Raw</th>
@@ -231,7 +232,7 @@ function Breakdown({ row }: { row: HealthScoreRow }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 12 }}>

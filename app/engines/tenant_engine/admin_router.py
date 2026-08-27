@@ -60,11 +60,6 @@ async def get_tenants_summary(
     from sqlalchemy import text
     rid = _rid(request)
     row = (await db.execute(text("""
-        WITH pkg_latest AS (
-            SELECT DISTINCT ON (tenant_id) tenant_id, status AS pkg_status
-            FROM tenant_package_assignments WHERE deleted_at IS NULL
-            ORDER BY tenant_id, created_at DESC
-        )
         SELECT
             COUNT(*)                                                         AS total,
             SUM(CASE WHEN t.status='active' AND t.verification_status IN ('approved','verified') THEN 1 ELSE 0 END) AS active,
@@ -72,17 +67,15 @@ async def get_tenants_summary(
             SUM(CASE WHEN t.verification_status='not_started' AND t.status NOT IN ('suspended','rejected') THEN 1 ELSE 0 END) AS pending_setup,
             SUM(CASE WHEN t.verification_status IN ('pending','under_review') THEN 1 ELSE 0 END) AS pending_review,
             SUM(CASE WHEN t.verification_status='changes_requested'       THEN 1 ELSE 0 END) AS changes_requested,
-            SUM(CASE WHEN t.verification_status='rejected' OR t.status='rejected' THEN 1 ELSE 0 END) AS rejected,
-            SUM(CASE WHEN lp.pkg_status IN ('selected','paid_pending_approval') THEN 1 ELSE 0 END) AS package_pending_approval
+            SUM(CASE WHEN t.verification_status='rejected' OR t.status='rejected' THEN 1 ELSE 0 END) AS rejected
         FROM tenants t
-        LEFT JOIN pkg_latest lp ON lp.tenant_id = t.id
         WHERE t.terminated_at IS NULL AND t.archived_at IS NULL
     """))).fetchone()
     return ok({
         "total": int(row[0] or 0), "active": int(row[1] or 0),
         "suspended": int(row[2] or 0), "pending_setup": int(row[3] or 0),
         "pending_review": int(row[4] or 0), "changes_requested": int(row[5] or 0),
-        "rejected": int(row[6] or 0), "package_pending_approval": int(row[7] or 0),
+        "rejected": int(row[6] or 0),
     }, rid)
 
 
@@ -92,7 +85,7 @@ async def get_tenants_insights(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> ApiResponse[dict]:
-    """All insight panels: verification overview, plan distribution, top locations, health, finance, activity."""
+    """Verification, location, finance, health, and activity insights."""
     svc = _svc(db, request, user)
     return ok(await svc.get_insights(), _rid(request))
 
@@ -102,7 +95,6 @@ async def export_tenants(
     request: Request,
     status: str | None = Query(None),
     verification_status: str | None = Query(None),
-    plan_type: str | None = Query(None),
     state: str | None = Query(None),
     city: str | None = Query(None),
     search: str | None = Query(None),
@@ -114,7 +106,7 @@ async def export_tenants(
     csv_text = await svc.export_tenants_csv({
         k: v for k, v in {
             "status": status, "verification_status": verification_status,
-            "plan_type": plan_type, "state": state, "city": city, "search": search,
+            "state": state, "city": city, "search": search,
         }.items() if v is not None
     })
     return StreamingResponse(
@@ -152,7 +144,6 @@ async def list_tenants(
     # Status filters
     status: str | None = Query(None),
     verification_status: str | None = Query(None),
-    plan_type: str | None = Query(None),
     # Location filters
     state: str | None = Query(None, description="State name (partial match)"),
     district: str | None = Query(None, description="District name (partial match)"),
@@ -175,7 +166,7 @@ async def list_tenants(
         "page": page, "page_size": page_size,
         "sort_by": sort_by, "sort_direction": sort_direction,
         "search": search, "status": status,
-        "verification_status": verification_status, "plan_type": plan_type,
+        "verification_status": verification_status,
         "state": state, "district": district, "city": city,
         "city_tier": city_tier, "zipcode": zipcode,
         "category_id": category_id,
@@ -440,24 +431,6 @@ async def get_usage_credit_ledger(
     entries = [e.to_dict() for e in res.scalars().all()]
     return ok({"tenant_id": str(tenant_id), "job_id": str(job_id) if job_id else None,
                "entries": entries, "count": len(entries)}, _rid(request))
-
-
-@router.post("/{tenant_id}/change-plan")
-async def change_plan(
-    tenant_id: uuid.UUID,
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user=Depends(require_super_admin),
-) -> ApiResponse[dict]:
-    new_plan = str(payload.get("plan", "")).strip()
-    reason = str(payload.get("reason", "")).strip()
-    if not new_plan:
-        raise HTTPException(status_code=422, detail="plan is required")
-    if not reason:
-        raise HTTPException(status_code=422, detail="reason is required")
-    svc = _svc(db, request, user)
-    return ok(await svc.change_plan(tenant_id, new_plan, reason), _rid(request))
 
 
 @router.post("/{tenant_id}/send-notification")

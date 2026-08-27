@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -10,6 +11,7 @@ import {
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { Btn, Modal, SummaryCard,} from "../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 
 // ── Vertical / Module constants ───────────────────────────────────────────────
 
@@ -545,7 +547,7 @@ function WizardModal({
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {["Module", "Name", "Code", "Action"].map(h => (
@@ -563,7 +565,7 @@ function WizardModal({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </div>
@@ -819,21 +821,13 @@ export default function BulkWizardPage() {
   }
 
   return (
-    <div style={{ padding: "1.5rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
       {/* Header */}
-      <div style={{ marginBottom: 8, fontSize: 12, color: "var(--text-tertiary)" }}>
-        Service Setup / Bulk Wizard
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-            Bulk Setup Wizard
-          </h1>
-          <p style={{ color: "var(--text-secondary)", margin: "0.25rem 0 0", fontSize: 13 }}>
-            Launch complete service verticals with guided multi-step configuration
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+      <PageHeader
+        title="Bulk Setup Wizard"
+        description="Launch complete service verticals with guided multi-step configuration."
+        eyebrow="Service Setup"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap" }}>
           <Btn variant="ghost" size="sm" onClick={() => router.push("/admin/service-setup/bulk-runs")}>
             View Runs
           </Btn>
@@ -842,8 +836,8 @@ export default function BulkWizardPage() {
           </Btn>
           <Btn variant="ghost" size="sm" onClick={() => refetchDrafts()}>Refresh</Btn>
           <Btn variant="primary" size="sm" onClick={() => openWizard()}>+ New Bulk Setup</Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Summary cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
@@ -896,7 +890,7 @@ export default function BulkWizardPage() {
           </div>
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {["Name / Code", "Vertical", "Template", "Status", "Step", "Updated", "Actions"].map(h => (
@@ -937,7 +931,7 @@ export default function BulkWizardPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )
       )}
@@ -952,7 +946,7 @@ export default function BulkWizardPage() {
           </div>
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {["Run Code", "Vertical", "Status", "Created", "Skipped", "Failed", "Dry Run", "Started At"].map(h => (
@@ -978,7 +972,7 @@ export default function BulkWizardPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )
       )}

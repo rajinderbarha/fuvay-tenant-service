@@ -43,7 +43,7 @@ from app.engines.invoice_payment.models import (
     SvcCommissionRecord, ServicePaymentRecord,
 )
 from app.engines.finance_hub.models import CreditTopupOrder
-from app.engines.platform_commerce.models import SecurityDeposit, WarrantyClaim
+from app.engines.platform_commerce.models import WarrantyClaim
 from app.engines.complaints.models import RefundRequest
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -791,7 +791,6 @@ class HomeServicesFinanceService:
     async def get_overview(self, date_from: str | None = None, date_to: str | None = None) -> dict:
         payments = await self.get_direct_payments_summary(date_from, date_to)
         charges = await self.get_summary(date_from, date_to)
-        deposits = await self.get_hs_deposits_summary()
         warranty = await self.get_hs_warranty_claims_summary()
         events_summary = await self.get_financial_events_summary(date_from, date_to)
 
@@ -844,12 +843,12 @@ class HomeServicesFinanceService:
                     "ledger": "usage_credit_ledger",
                 },
                 "active_usage_credit_balance": str(total_credit_balance),
-                "security_deposits_held": deposits.get("total_held", "0"),
+                "security_deposits_held": "0",  # deposits retired (migration 318)
             },
             "secondary": {
                 "low_credit_providers": low_balance_tenants,
                 "failed_charge_recoveries": charges["missing_charges"],
-                "deposit_return_requests": deposits.get("refund_pending", 0),
+                "deposit_return_requests": 0,  # deposits retired (migration 318)
                 "warranty_financial_exposure": warranty.get("open_exposure", "0"),
                 "finance_exceptions": payments["disputed"] + charges["missing_charges"],
             },
@@ -1064,46 +1063,9 @@ class HomeServicesFinanceService:
             raise NotFoundException("CreditTopupOrder", topup_id)
         return {**order.to_dict(), "tenant_name": tenant.business_name}
 
-    # ── Security Deposits (HS-scoped view over the canonical deposits engine) ─
-    # FinanceHubService.list_deposits/get_deposit_detail remain the one
-    # implementation; this only pins vertical="home_services" and, for
-    # detail, verifies ownership rather than re-querying.
-
-    async def list_hs_deposits(self, *, status: str | None = None, q: str | None = None,
-                                page: int = 1, page_size: int = 50,
-                                sort_by: str = "created_at", sort_dir: str = "desc") -> dict:
-        return await self._fh.list_deposits(
-            status=status, vertical=HOME_SERVICES_VERTICAL, q=q,
-            page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir,
-        )
-
-    async def get_hs_deposits_summary(self) -> dict:
-        row = (await self.db.execute(select(
-            func.count(SecurityDeposit.id),
-            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "paid"),
-            func.count(SecurityDeposit.id).filter(SecurityDeposit.status.in_(("unpaid", "partially_paid", "pending_verification"))),
-            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "refund_requested"),
-            func.count(SecurityDeposit.id).filter(SecurityDeposit.status == "refunded"),
-            func.count(SecurityDeposit.id).filter(SecurityDeposit.status.in_(("blocked", "forfeited"))),
-            func.coalesce(func.sum(SecurityDeposit.total_paid + SecurityDeposit.replenishment_total - SecurityDeposit.warranty_drawn), 0),
-        ).join(Tenant, Tenant.id == SecurityDeposit.tenant_id)
-         .where(Tenant.vertical == HOME_SERVICES_VERTICAL))).one()
-        return {
-            "total_deposit_accounts": row[0], "active_held_deposits": row[1],
-            "pending_deposits": row[2], "refund_pending": row[3], "refunded": row[4],
-            "deposit_risk_cases": row[5], "total_held": str(row[6]),
-        }
-
-    async def get_hs_deposit_detail(self, deposit_id: uuid.UUID) -> dict:
-        detail = await self._fh.get_deposit_detail(deposit_id)
-        # FinanceHubService returns the deposit beneath a `deposit` key so it
-        # can include its ledger and audit log alongside it.  Checking the
-        # envelope itself made every valid Home Services row fail ownership
-        # verification after it had already been loaded successfully.
-        deposit = detail.get("deposit") or {}
-        if deposit.get("vertical") != HOME_SERVICES_VERTICAL:
-            raise NotFoundException("SecurityDeposit", str(deposit_id))
-        return detail
+    # The HS security-deposit view was removed with the deposit itself
+    # (migration 318). Tenants hold spendable credit, not a returnable
+    # deposit, so there is no held balance to list or administer.
 
     # ── Warranty Claims (HS-scoped) ──────────────────────────────────────────
     # list_claims/get_claim_detail on FinanceHubService have no vertical

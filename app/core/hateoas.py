@@ -91,7 +91,6 @@ def tenant_allowed_actions(tenant_id: str, status: str, plan_type: str) -> list[
     actions = []
     if status == "active":
         actions.append(AllowedAction("suspend", f"/v1/tenants/{tenant_id}/suspend", "POST", "Suspend tenant", True, {"reason": "string"}))
-        actions.append(AllowedAction("change_plan", f"/v1/tenants/{tenant_id}/plan", "PUT", "Change plan", True, {"plan_type": "starter|growth|enterprise"}))
     elif status == "suspended":
         actions.append(AllowedAction("reinstate", f"/v1/tenants/{tenant_id}/reinstate", "POST", "Reinstate tenant"))
     if status not in ("terminated",):

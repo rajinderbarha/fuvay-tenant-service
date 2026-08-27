@@ -45,93 +45,10 @@ async def finance_overview(r: Request, s: FinanceHubService = Depends(_svc), u: 
 # SECURITY DEPOSITS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/deposits", response_model=ApiResponse[dict], summary="List security deposits")
-async def list_deposits(r: Request,
-                         status: str | None = Query(None),
-                         vertical: str | None = Query(None),
-                         state: str | None = Query(None),
-                         city: str | None = Query(None),
-                         q: str | None = Query(None),
-                         page: int = Query(1, ge=1),
-                         page_size: int = Query(50, ge=1, le=500),
-                         sort_by: str = Query("created_at"),
-                         sort_dir: str = Query("desc"),
-                         u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_READ)),
-                         s: FinanceHubService = Depends(_svc)):
-    return ok(await s.list_deposits(status, vertical, state, city, q, page, page_size, sort_by, sort_dir), _rid(r), ENGINE_ID)
+# The security deposit was removed in migration 317/318. These endpoints
+# went with it: a provider now buys a top-up plan whose credit is spent
+# down as commission, so there is no held balance to administer.
 
-
-@router.get("/deposits/summary", response_model=ApiResponse[dict], summary="Security deposits summary cards")
-async def deposits_summary(r: Request,
-                            u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_READ)),
-                            s: FinanceHubService = Depends(_svc)):
-    return ok(await s.get_deposits_summary(), _rid(r), ENGINE_ID)
-
-
-@router.get("/deposits/export", response_model=ApiResponse[dict], summary="Export security deposits")
-async def export_deposits(r: Request,
-                           status: str | None = Query(None), vertical: str | None = Query(None),
-                           # FINAL-L5-05O: was gated by the read permission
-                           # (FINANCE_DEPOSITS_READ) -- read must not imply
-                           # export (rule 9). Now requires the distinct
-                           # export-shaped permission.
-                           u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
-                           s: FinanceHubService = Depends(_svc)):
-    rows = await s.export_deposits(status=status, vertical=vertical)
-    return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
-
-
-@router.get("/deposits/{deposit_id}", response_model=ApiResponse[dict], summary="Get security deposit detail")
-async def get_deposit(deposit_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_READ)),
-                       s: FinanceHubService = Depends(_svc)):
-    return ok(await s.get_deposit_detail(deposit_id), _rid(r), ENGINE_ID)
-
-
-@router.post("/deposits/{deposit_id}/approve", response_model=ApiResponse[dict], summary="Approve security deposit")
-async def approve_deposit(deposit_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_APPROVE)),
-                           s: FinanceHubService = Depends(_svc)):
-    body = await r.json() if await r.body() else {}
-    return ok(await s.approve_deposit(deposit_id, body.get("notes")), _rid(r), ENGINE_ID)
-
-
-@router.post("/deposits/{deposit_id}/reject", response_model=ApiResponse[dict], summary="Reject security deposit")
-async def reject_deposit(deposit_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_APPROVE)),
-                          s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.reject_deposit(deposit_id, body["reason"]), _rid(r), ENGINE_ID)
-
-
-@router.post("/deposits/{deposit_id}/record-offline", response_model=ApiResponse[dict], summary="Record an offline deposit payment")
-async def record_offline_deposit(deposit_id: uuid.UUID, r: Request,
-                                  u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_UPDATE)),
-                                  s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.record_offline_deposit(
-        deposit_id, Decimal(str(body["amount"])), body.get("reference"), body.get("notes")), _rid(r), ENGINE_ID)
-
-
-@router.post("/deposits/{deposit_id}/refund", response_model=ApiResponse[dict], summary="Refund security deposit")
-async def refund_deposit(deposit_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_REFUND)),
-                          s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.refund_deposit(deposit_id, Decimal(str(body["amount"])), body["reason"]), _rid(r), ENGINE_ID)
-
-
-@router.post("/deposits/{deposit_id}/adjust", response_model=ApiResponse[dict], summary="Adjust / forfeit security deposit")
-async def adjust_deposit(deposit_id: uuid.UUID, r: Request,
-                          u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_UPDATE)),
-                          s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.adjust_deposit(deposit_id, Decimal(str(body["amount"])), body["reason"], body.get("category", "manual")), _rid(r), ENGINE_ID)
-
-
-# ═══════════════════════════════════════════════════════════════
-# CREDIT TOP-UPS
-# ═══════════════════════════════════════════════════════════════
 
 @router.get("/topups", response_model=ApiResponse[dict], summary="List credit top-ups")
 async def list_topups(r: Request,

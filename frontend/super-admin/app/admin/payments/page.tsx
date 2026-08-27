@@ -83,7 +83,7 @@ export default function AdminPaymentsPage() {
 
   return (
     <AdminLayout>
-      <div style={{ padding: "24px 32px", maxWidth: 1280, margin: "0 auto" }}>
+      <div>
       <EnterpriseDataGrid
         resourceKey="admin_payments"
         fetchFn={fetchFn}

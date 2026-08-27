@@ -26,7 +26,7 @@ import {
   hsReviewsApi, ServiceOSError,
   type HsReviewListItem, type HsReviewDetail, type HsReviewsListResponse,
 } from "../../../../lib/api";
-import { Skeleton, Btn, Badge } from "../../../../components/shared/ui";
+import { Skeleton, Btn, Badge, KpiGrid, SummaryCard, Pagination } from "../../../../components/shared/ui";
 
 const MODERATION_REASONS = [
   { value: "abusive_language", label: "Abusive language" },
@@ -220,11 +220,11 @@ function ReviewsQualityPageInner() {
 
       {/* ── KPI tiles ─────────────────────────────────────────────────── */}
       {loading && !data ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 20 }}>
+        <KpiGrid minCardWidth={160} style={{ marginBottom: 20 }}>
           {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} height={80}/>)}
-        </div>
+        </KpiGrid>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 20 }}>
+        <KpiGrid minCardWidth={160} style={{ marginBottom: 20 }}>
           <KpiTile icon={<MessageSquare size={18}/>} label="Reviews" value={kpis?.reviews ?? "—"} color="var(--text-primary)"
             onClick={() => setTab("all")} active={tab === "all"}/>
           <KpiTile icon={<Star size={18}/>} label="Average rating" value={kpis?.average_rating ?? "—"} color="var(--warning-text)"/>
@@ -237,7 +237,7 @@ function ReviewsQualityPageInner() {
               click through to. It now drives the same moderation tab. */}
           <KpiTile icon={<Flag size={18}/>} label="Flagged" value={kpis?.flagged ?? "—"} color="var(--danger-text)"
             onClick={() => setTab(tab === "flagged" ? "all" : "flagged")} active={tab === "flagged"}/>
-        </div>
+        </KpiGrid>
       )}
 
       {/* ── Analytics band ────────────────────────────────────────────── */}
@@ -447,18 +447,8 @@ function ReviewsQualityPageInner() {
 
               {/* Pagination — the queue was previously capped at the first 10
                   rows with no way to reach anything past them. */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", gap: 10, flexWrap: "wrap" }}>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-                  Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} reviews
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Btn variant="secondary" size="sm" icon={<ChevronLeft size={13}/>} disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>Previous</Btn>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page + 1} of {pages}</span>
-                  <Btn variant="secondary" size="sm" disabled={page + 1 >= pages} onClick={() => setPage(p => p + 1)}>
-                    Next <ChevronRight size={13} style={{ marginLeft: 4 }}/>
-                  </Btn>
-                </div>
-              </div>
+              <Pagination page={page + 1} pageSize={PAGE_SIZE} total={total} pageCount={pages}
+                onPage={target => setPage(target - 1)} itemLabel="reviews" alwaysShow />
             </div>
           )}
         </div>
@@ -517,20 +507,8 @@ function PublicationBadge({ status }: { status: string }) {
 }
 
 function KpiTile({ icon, label, value, color, onClick, active }: { icon: React.ReactNode; label: string; value: string | number; color: string; onClick?: () => void; active?: boolean }) {
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "14px 16px",
-      background: "var(--surface)", border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
-      borderRadius: 14, cursor: onClick ? "pointer" : "default", fontFamily: "inherit", width: "100%", boxSizing: "border-box",
-    }}>
-      <span style={{ color }}>{icon}</span>
-      <div>
-        <p style={{ fontSize: 20, fontWeight: 800, color, margin: 0, lineHeight: 1.1 }}>{value}</p>
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{label}</p>
-      </div>
-    </Tag>
-  );
+  return <SummaryCard label={label} value={value} icon={icon} accent={color}
+    onClick={onClick} active={active}/>;
 }
 
 function QualitySignalRow({ label, value, invert }: { label: string; value: number | null; invert?: boolean }) {

@@ -124,7 +124,7 @@ export default function MatchingDiagnosticsPage() {
               <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>No eligible provider found</p>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
                 {result.candidate_provider_count} candidate(s) found in the area, all excluded by eligibility
-                gates (bookable, coverage, technician, availability, pricing, package, credits, or deposit).
+                gates (bookable, coverage, technician, availability, pricing, package, credits, or seats).
               </p>
             </Card>
           ) : (

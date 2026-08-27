@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { AdminLayout } from '../../../../../components/layout/AdminLayout'
-import { Badge, Btn } from '../../../../../components/shared/ui'
+import { Badge, Btn, SummaryCard, EmptyState } from '../../../../../components/shared/ui'
+import { PageHeader } from '@serviceos/design-system'
 import { kbApi } from '../../../../../lib/api'
 import { useApi, useAction } from '../../../../../hooks/useApi'
 
@@ -34,24 +35,6 @@ const safeVal = (v: unknown, suffix = ''): string => {
 const fmt = (v: unknown): string => {
   if (!v) return '—'
   try { return new Date(String(v)).toLocaleString('en-IN') } catch { return String(v) }
-}
-
-function MetricCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px' }}>
-      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{sub}</div>}
-    </div>
-  )
-}
-
-function EmptyState({ msg }: { msg: string }) {
-  return (
-    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-      {msg}
-    </div>
-  )
 }
 
 function TableHead({ cols }: { cols: string[] }) {
@@ -193,7 +176,7 @@ export default function KBDetailPage() {
 
   return (
     <AdminLayout>
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 24px' }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'var(--layout-page-gap)' }}>
         {toast && (
           <div style={{ padding: '8px 14px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius:"var(--radius-md)", color: 'var(--success-text)', fontSize: 12, marginBottom: 14 }}>
             ✓ {toast}
@@ -201,38 +184,25 @@ export default function KBDetailPage() {
         )}
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-          <button
-            onClick={() => router.push('/admin/intelligence')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand)', fontSize: 13, padding: 0, marginTop: 4 }}
-          >
-            ← Intelligence
-          </button>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {String(getField('name') ?? 'Knowledge Base')}
-              </h1>
-              {getField('kb_code') && (
-                <span style={{ fontFamily: 'monospace', fontSize: 12, padding: '2px 8px', background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-tertiary)' }}>
-                  {String(getField('kb_code'))}
-                </span>
-              )}
+        <PageHeader
+          eyebrow="Intelligence"
+          context="Knowledge base"
+          title={String(getField('name') ?? 'Knowledge Base')}
+          description={getField('description') ? String(getField('description')) : 'Manage retrieval content, access, indexing, quality, and safety controls.'}
+          actions={(
+            <>
+              <Btn size="sm" variant="secondary" onClick={() => router.push('/admin/intelligence')}>← Intelligence</Btn>
+              {getField('kb_code') && <Badge variant="info" size="sm">{String(getField('kb_code'))}</Badge>}
               <Badge variant={status === 'active' ? 'success' : status === 'draft' ? 'muted' : 'warning'} size="sm">{status || '—'}</Badge>
               <Badge variant={indexingStatus === 'indexed' ? 'success' : 'muted'} size="sm">{indexingStatus || 'not_indexed'}</Badge>
-            </div>
-            {getField('description') && (
-              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>{String(getField('description'))}</p>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {status !== 'active' && <Btn size="sm" variant="primary" loading={activating} onClick={() => doActivate()}>Activate</Btn>}
-            {status === 'active' && <Btn size="sm" variant="ghost" onClick={() => doDisable()}>Disable</Btn>}
-          </div>
-        </div>
+              {status !== 'active' && <Btn size="sm" variant="primary" loading={activating} onClick={() => doActivate()}>Activate</Btn>}
+              {status === 'active' && <Btn size="sm" variant="ghost" onClick={() => doDisable()}>Disable</Btn>}
+            </>
+          )}
+        />
 
         {/* ── Tab Bar ────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: 20, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
           {TABS.map(t => (
             <button
               key={t.id}
@@ -257,12 +227,12 @@ export default function KBDetailPage() {
         {activeTab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-              <MetricCard label="Documents" value={0} />
-              <MetricCard label="Chunks" value={0} />
-              <MetricCard label="Total Queries" value={0} />
-              <MetricCard label="Avg Latency" value="— ms" />
-              <MetricCard label="Last Indexed" value={fmt(getField('last_indexed_at_kb'))} />
-              <MetricCard label="Status" value={status || '—'} />
+              <SummaryCard label="Documents" value={0} />
+              <SummaryCard label="Chunks" value={0} />
+              <SummaryCard label="Total Queries" value={0} />
+              <SummaryCard label="Avg Latency" value="— ms" />
+              <SummaryCard label="Last Indexed" value={fmt(getField('last_indexed_at_kb'))} />
+              <SummaryCard label="Status" value={status || '—'} />
             </div>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 14px' }}>Settings Summary</h3>
@@ -363,7 +333,7 @@ export default function KBDetailPage() {
               {docsLoading ? (
                 <div style={{ padding: 16 }}><div className="skeleton" style={{ height: 120, borderRadius: 6 }} /></div>
               ) : !((docsRaw as { data?: unknown[] } | unknown[] | null)) || (Array.isArray(docsRaw) ? docsRaw.length === 0 : !((docsRaw as { data?: unknown[] })?.data?.length)) ? (
-                <EmptyState msg="No documents uploaded yet. Upload or link documents to start indexing." />
+                <EmptyState title="No documents uploaded" description="Upload or link documents to start indexing." />
               ) : (
                 <>
                   <TableHead cols={['Document Name', 'Source', 'File Type', 'Chunks', 'Indexing Status', 'Created', 'Actions']} />
@@ -457,7 +427,7 @@ export default function KBDetailPage() {
               ) : (
                 (() => {
                   const arts = Array.isArray(articlesRaw) ? articlesRaw : ((articlesRaw as { data?: Record<string, unknown>[] })?.data ?? [])
-                  if (!arts.length) return <EmptyState msg="No articles yet. Create a manual article to add knowledge." />
+                  if (!arts.length) return <EmptyState title="No articles yet" description="Create a manual article to add knowledge." />
                   return <>
                     <TableHead cols={['Title', 'Slug', 'Status', 'Visibility', 'Created', 'Published At', 'Actions']} />
                     {(arts as Record<string, unknown>[]).map(a => (
@@ -494,7 +464,7 @@ export default function KBDetailPage() {
               ) : (
                 (() => {
                   const jobs = Array.isArray(jobsRaw) ? jobsRaw : ((jobsRaw as { data?: Record<string, unknown>[] })?.data ?? [])
-                  if (!jobs.length) return <EmptyState msg="No indexing jobs yet." />
+                  if (!jobs.length) return <EmptyState title="No indexing jobs yet" description="Indexing runs will appear here." />
                   return <>
                     <TableHead cols={['Job Type', 'Status', 'Docs', 'Chunks', 'Failed', 'Started', 'Completed']} />
                     {(jobs as Record<string, unknown>[]).map(j => (
@@ -524,7 +494,7 @@ export default function KBDetailPage() {
                 (() => {
                   const items = (chunksRaw as { data?: { items?: Record<string, unknown>[] }; items?: Record<string, unknown>[] } | null)
                   const chunks = items?.data?.items ?? items?.items ?? []
-                  if (!chunks.length) return <EmptyState msg="No chunks yet. Trigger indexing to generate chunks from documents." />
+                  if (!chunks.length) return <EmptyState title="No chunks yet" description="Trigger indexing to generate chunks from documents." />
                   return <>
                     <TableHead cols={['Index', 'Source', 'Preview', 'Tokens', 'Status']} />
                     {chunks.map((c: Record<string, unknown>) => (
@@ -590,7 +560,7 @@ export default function KBDetailPage() {
                 (() => {
                   const logs = (logsRaw as { data?: { items?: Record<string, unknown>[] }; items?: Record<string, unknown>[] } | null)
                   const items = logs?.data?.items ?? logs?.items ?? []
-                  if (!items.length) return <EmptyState msg="No queries yet. Run test queries to see logs." />
+                  if (!items.length) return <EmptyState title="No queries yet" description="Run test queries to see logs." />
                   return <>
                     <TableHead cols={['Time', 'App', 'Query', 'Retrieved', 'Latency', 'Status']} />
                     {items.map((log: Record<string, unknown>) => (
@@ -617,15 +587,15 @@ export default function KBDetailPage() {
             const qd: Record<string, unknown> = (q && 'data' in (q as Record<string, unknown>) ? (q as Record<string, unknown>).data : q) as Record<string, unknown> ?? {}
             const total = Number(qd.total_queries ?? 0)
             if (!qualityLoading && total === 0) {
-              return <EmptyState msg="No query data yet. Run test queries to see quality metrics." />
+              return <EmptyState title="No query data yet" description="Run test queries to see quality metrics." />
             }
             return (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-                <MetricCard label="Total Queries" value={total} />
-                <MetricCard label="Helpful Rate" value={qd.helpful_rate != null ? `${(qd.helpful_rate as number).toFixed(1)}%` : '—'} />
-                <MetricCard label="No Answer Rate" value={qd.no_answer_rate != null ? `${(qd.no_answer_rate as number).toFixed(1)}%` : '—'} />
-                <MetricCard label="Avg Latency" value={qd.avg_latency_ms != null ? `${(qd.avg_latency_ms as number).toFixed(0)}ms` : '—'} />
-                <MetricCard label="Flagged" value={String(qd.flagged_count ?? 0)} />
+                <SummaryCard label="Total Queries" value={total} />
+                <SummaryCard label="Helpful Rate" value={qd.helpful_rate != null ? `${(qd.helpful_rate as number).toFixed(1)}%` : '—'} />
+                <SummaryCard label="No Answer Rate" value={qd.no_answer_rate != null ? `${(qd.no_answer_rate as number).toFixed(1)}%` : '—'} />
+                <SummaryCard label="Avg Latency" value={qd.avg_latency_ms != null ? `${(qd.avg_latency_ms as number).toFixed(0)}ms` : '—'} />
+                <SummaryCard label="Flagged" value={String(qd.flagged_count ?? 0)} />
               </div>
             )
           })()
@@ -800,7 +770,7 @@ export default function KBDetailPage() {
                   'AI cannot create booking by itself',
                   'AI cannot apply ServiceOS credit',
                   'AI cannot approve tenant',
-                  'AI cannot change security deposit',
+                  'AI cannot change credit balance',
                   'AI cannot expose internal risk score to customer',
                   'AI cannot expose tenant private documents to other tenants',
                 ].map(g => (
@@ -819,7 +789,7 @@ export default function KBDetailPage() {
             ) : (
               (() => {
                 const logs = Array.isArray(auditRaw) ? auditRaw : ((auditRaw as { data?: Record<string, unknown>[] })?.data ?? [])
-                if (!logs.length) return <EmptyState msg="No audit logs yet." />
+                if (!logs.length) return <EmptyState title="No audit logs yet" description="Recorded changes will appear here." />
                 return <>
                   <TableHead cols={['Time', 'Action', 'Actor', 'Details']} />
                   {(logs as Record<string, unknown>[]).map(log => (

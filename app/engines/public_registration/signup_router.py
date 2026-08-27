@@ -12,10 +12,8 @@ signup path (`/v1/tenants/onboarding/signup`, an admin-mediated lead queue
 with no login until admin approval) was used instead, which is why a real
 signup got stuck with no way to log in and no way to reach the setup wizard.
 
-Routes are namespaced under `/v1/public/signup/*` to avoid colliding with
-the existing (paid, Razorpay) flow's `/v1/public/register/*` routes in
-router.py -- the two are genuinely different products, not two versions of
-one endpoint.
+Routes are namespaced under `/v1/public/signup/*`; this is the sole public
+provider-registration flow and intentionally does not collect payment.
 """
 from __future__ import annotations
 

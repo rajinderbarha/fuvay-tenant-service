@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 // SUPER-ADMIN TENANT SUPPORT QUEUE.
 // The backend (app/engines/support/admin_router.py) was fully built and
 // live-proven, but there was NO Super Admin page for it at all -- every admin
@@ -142,7 +143,7 @@ export default function AdminSupportQueuePage() {
                   description="Tenants raise these from their Help & Support workspace." /></Card>
               ) : (
                 <Card padding={0} style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", textAlign: "left" }}>
                         {["Request", "Tenant", "Category", "Priority", "Status", "SLA", "Assignee", "Updated"].map(h => (
@@ -188,7 +189,7 @@ export default function AdminSupportQueuePage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </Card>
               )}
             {data && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
@@ -304,7 +305,7 @@ function StatusPanel() {
           : incidents.length === 0 ? <div style={{ padding: 16, fontSize: 13, color: "var(--text-tertiary)" }}>
               No platform incidents recorded.</div>
           : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <tbody>
                 {incidents.map(i => (
                   <tr key={i.id} style={{ borderBottom: "1px solid var(--border)" }}>
@@ -336,7 +337,7 @@ function StatusPanel() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           )}
       </Card>
     </div>

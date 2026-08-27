@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../layout/AdminLayout";
 import { Card, Badge, Btn } from "../shared/ui";
@@ -155,7 +156,7 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                         {["Staff", "Designation", "Verification", "Availability", "Status", "Updated"].map(h => (
@@ -177,7 +178,7 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               )}
             </Card>

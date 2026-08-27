@@ -35,6 +35,7 @@ import {
   Textarea,
 } from "@/components/shared/ui";
 import { IconPicker } from "@/components/shared/IconPicker";
+import { PageHeader } from "@serviceos/design-system";
 
 type FormState = {
   title: string;
@@ -247,21 +248,16 @@ export default function CustomerHomeControlPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--accent)", fontSize: 11, fontWeight: 800, letterSpacing: ".09em", textTransform: "uppercase" }}>
-            <Smartphone size={14} /> Customer experience
-          </div>
-          <h1 style={{ margin: "7px 0 4px", fontSize: 26, lineHeight: 1.2, color: "var(--text-primary)" }}>Customer Home studio</h1>
-          <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13, maxWidth: 760 }}>
-            Operate banners, offers and creative collections from one safe content system. The native app owns accessibility and layout; you control content, targeting, priority and schedule.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Customer Home Studio"
+        description="Operate banners, offers, and creative collections from one content system while the native app owns accessible layout."
+        eyebrow="Customer Experience"
+        icon={<Smartphone />}
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <Btn variant="secondary" onClick={refetch} icon={<RefreshCw size={14} />}>Refresh</Btn>
           <Btn onClick={openCreate} icon={<Plus size={14} />}>New Home content</Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
         {[
@@ -287,7 +283,7 @@ export default function CustomerHomeControlPage() {
         <div style={{ padding: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, borderBottom: "1px solid var(--border)" }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 15, color: "var(--text-primary)" }}>Native section composition</h2>
-            <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>Order, title, density and visibility are remotely controlled. Components remain app-certified and cannot execute arbitrary markup.</p>
+            <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>Order, title, layout, density and visibility are remotely controlled. Icon treatment stays app-certified, so switching between editorial grid and image rail changes structure only.</p>
           </div>
           <Badge variant="success" dot>{sections.filter(section => section.enabled).length} sections live</Badge>
         </div>

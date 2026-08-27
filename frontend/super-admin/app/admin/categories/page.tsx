@@ -1,9 +1,11 @@
 "use client";
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import { TableSurface } from "@serviceos/design-system";
+import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { AdminLayout, useAdminMenuRefresh } from "../../../components/layout/AdminLayout";
-import { Card, SectionHeader, Badge, Btn, Modal, Input, Select, Skeleton } from "../../../components/shared/ui";
+import { Card, SectionHeader, Badge, Btn, Modal, Input, Select, Skeleton, SummaryCard, Pagination } from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import { ActionMenu } from "../../../components/shared/layout";
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
@@ -13,12 +15,11 @@ import {
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
-  Layers, Plus, Pencil, ExternalLink, Power, PowerOff, Search, Filter,
+  Layers, Plus, ExternalLink, Search, Filter,
   X, Download, RefreshCw, CheckSquare, Square, ChevronDown, Eye,
   Settings2, Zap, DollarSign, Package, AlertCircle, CheckCircle,
-  Clock, MinusCircle, XCircle, MoreVertical,
+  Clock, MinusCircle,
   FileText, TrendingUp, Users, ArrowUpDown, ChevronLeft, ChevronRight,
-  Trash2,
 } from "lucide-react";
 
 // ── Label Maps ────────────────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ const VERTICAL_LABELS: Record<string, string> = {
 };
 
 const FINANCE_LABELS: Record<string, string> = {
-  security_deposit_plus_credit_wallet: "Deposit + Credit Wallet",
+  security_deposit_plus_credit_wallet: "Credit Wallet + Seats",  // backend enum key, unchanged
   monthly_subscription: "Monthly Subscription",
   lead_credit: "Lead Credit",
   commission_wallet: "Commission + Wallet",
@@ -129,30 +130,6 @@ const DEFAULT_CATEGORY_COLUMNS: ColumnDef[] = [
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function SummaryCard({
-  label, value, icon, color, active, onClick,
-}: {
-  label: string; value: number | string; icon: React.ReactNode;
-  color?: string; active?: boolean; onClick?: () => void;
-}) {
-  const accent = color ?? "var(--brand-primary)";
-  return (
-    <div onClick={onClick}
-      style={{
-        flex: "1 1 140px", padding: "16px 20px", borderRadius:"var(--radius-lg)",
-        background: active ? `${accent}12` : "var(--surface)",
-        border: `1px solid ${active ? accent : "var(--border)"}`,
-        cursor: onClick ? "pointer" : "default",
-        transition: "border-color 0.15s, background 0.15s",
-        display: "flex", flexDirection: "column", gap: 6,
-      }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: accent }}>{icon}</div>
-      <p style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", margin: 0, lineHeight: 1 }}>{value}</p>
-      <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, fontWeight: 500 }}>{label}</p>
-    </div>
-  );
-}
-
 function ReadinessBadge({ status }: { status: string }) {
   const label = READINESS_LABELS[status] ?? status;
   const variant = (READINESS_COLOR[status] ?? "muted") as "success" | "warning" | "muted" | "danger" | "info";
@@ -182,75 +159,6 @@ function LinkedCountsBadges({ counts }: { counts: EnterpriseCategory["linked_cou
           {item.value} {item.label}
         </span>
       ))}
-    </div>
-  );
-}
-
-function ActionMenu({ cat, onEdit, onActivate, onDeactivate, onDelete, onHardDelete }: {
-  cat: EnterpriseCategory;
-  onEdit: () => void;
-  onActivate: () => void;
-  onDeactivate: () => void;
-  onDelete: () => void;
-  onHardDelete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const menuItem = (label: string, icon: React.ReactNode, onClick: () => void, danger = false) => (
-    <button key={label}
-      onClick={() => { onClick(); setOpen(false); }}
-      style={{
-        display: "flex", alignItems: "center", gap: 8, width: "100%",
-        padding: "9px 14px", background: "none", border: "none",
-        cursor: "pointer", fontSize: 13, textAlign: "left",
-        color: danger ? "var(--danger-text)" : "var(--text-primary)",
-        borderRadius: 6,
-      }}
-      onMouseEnter={e => (e.currentTarget.style.background = danger ? "var(--danger-bg)" : "var(--surface-sunken)")}
-      onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-      <span style={{ color: danger ? "var(--danger-text)" : "var(--text-tertiary)" }}>{icon}</span>
-      {label}
-    </button>
-  );
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <Btn size="xs" variant="ghost" onClick={() => setOpen(o => !o)}>
-        <MoreVertical size={13}/>
-      </Btn>
-      {open && (
-        <div style={{
-          position: "fixed", zIndex: 9999,
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-          minWidth: 200, padding: "6px",
-          top: ref.current ? ref.current.getBoundingClientRect().bottom + 4 : 0,
-          right: typeof window !== "undefined" ? window.innerWidth - (ref.current?.getBoundingClientRect().right ?? 0) : 0,
-        }}>
-          {menuItem("View Details", <Eye size={13}/>, () => window.location.assign(`/admin/categories/${cat.category_id}`))}
-          {menuItem("Edit Category", <Pencil size={13}/>, onEdit)}
-          {menuItem("Runtime Preview", <Zap size={13}/>, () => window.location.assign(`/admin/categories/${cat.category_id}`))}
-          <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }}/>
-          {cat.is_active
-            ? menuItem("Deactivate", <PowerOff size={13}/>, onDeactivate, true)
-            : menuItem("Activate", <Power size={13}/>, onActivate)
-          }
-          {menuItem("Delete", <XCircle size={13}/>, onDelete, true)}
-          {cat.linked_counts.services === 0 && (
-            menuItem("Delete Permanently", <Trash2 size={13}/>, onHardDelete, true)
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -443,7 +351,7 @@ function CategoryForm({
   };
 
   const verticalHint: Record<string, string> = {
-    home_services: "Recommended: Deposit + Credit Wallet · Service Booking",
+    home_services: "Recommended: Credit Wallet + Seats · Service Booking",
     coaching: "Recommended: Monthly Subscription · Appointment Booking",
     real_estate: "Recommended: Lead Credit · Lead Capture",
   };
@@ -702,22 +610,22 @@ export default function CategoriesPage() {
         </div>
       ) : sum ? (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <SummaryCard label="Total Categories" value={sum.total} icon={<Layers size={16}/>} color="#6366f1"/>
-          <SummaryCard label="Active" value={sum.active} icon={<CheckCircle size={16}/>} color="var(--success)"
+          <SummaryCard label="Total Categories" value={sum.total} icon={<Layers size={16}/>} accent="#6366f1"/>
+          <SummaryCard label="Active" value={sum.active} icon={<CheckCircle size={16}/>} accent="var(--success)"
             active={activeCard === "active"}
             onClick={() => handleCardClick("active", "status", "active")}/>
-          <SummaryCard label="Inactive" value={sum.inactive} icon={<MinusCircle size={16}/>} color="#94a3b8"
+          <SummaryCard label="Inactive" value={sum.inactive} icon={<MinusCircle size={16}/>} accent="#94a3b8"
             active={activeCard === "inactive"}
             onClick={() => handleCardClick("inactive", "status", "inactive")}/>
-          <SummaryCard label="Customer Visible" value={sum.customer_visible} icon={<Eye size={16}/>} color="#0891b2"/>
-          <SummaryCard label="Tenant Selectable" value={sum.tenant_selectable} icon={<Users size={16}/>} color="var(--accent)"/>
-          <SummaryCard label="Runtime Ready" value={sum.runtime_ready} icon={<Zap size={16}/>} color="var(--success)"
+          <SummaryCard label="Customer Visible" value={sum.customer_visible} icon={<Eye size={16}/>} accent="#0891b2"/>
+          <SummaryCard label="Tenant Selectable" value={sum.tenant_selectable} icon={<Users size={16}/>} accent="var(--accent)"/>
+          <SummaryCard label="Runtime Ready" value={sum.runtime_ready} icon={<Zap size={16}/>} accent="var(--success)"
             active={activeCard === "ready"}
             onClick={() => handleCardClick("ready", "readiness_status", "ready")}/>
-          <SummaryCard label="Missing Setup" value={sum.missing_required_setup} icon={<AlertCircle size={16}/>} color="var(--danger)"
+          <SummaryCard label="Missing Setup" value={sum.missing_required_setup} icon={<AlertCircle size={16}/>} accent="var(--danger)"
             active={activeCard === "missing"}
             onClick={() => handleCardClick("missing", "readiness_status", "missing_flow_config")}/>
-          <SummaryCard label="With Services" value={sum.with_services} icon={<TrendingUp size={16}/>} color="var(--warning)"/>
+          <SummaryCard label="With Services" value={sum.with_services} icon={<TrendingUp size={16}/>} accent="var(--warning)"/>
         </div>
       ) : null}
 
@@ -853,7 +761,7 @@ export default function CategoriesPage() {
         ) : (
           <div style={{ overflowX: "auto" }}>
             <style>{columns.filter(column => !column.visible).map(column => `.catalog-categories-table .cat-col-${column.key}{display:none}`).join("\n")}</style>
-            <table className="catalog-categories-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface className="catalog-categories-table" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "10px 14px", width: 32 }}>
@@ -962,39 +870,29 @@ export default function CategoriesPage() {
                           <Btn size="xs" variant="ghost"><Eye size={11}/> View</Btn>
                         </Link>
                         <ActionMenu
-                          cat={cat}
-                          onEdit={() => openEdit(cat)}
-                          onActivate={() => activateAction.execute(cat.category_id)}
-                          onDeactivate={() => deactivateAction.execute(cat.category_id)}
-                          onDelete={() => setDeleteId(cat.category_id)}
-                          onHardDelete={() => setHardDeleteId(cat.category_id)}
+                          size="xs"
+                          items={[
+                            { label: "View Details", onClick: () => window.location.assign(`/admin/categories/${cat.category_id}`) },
+                            { label: "Edit Category", onClick: () => openEdit(cat) },
+                            { label: "Runtime Preview", onClick: () => window.location.assign(`/admin/categories/${cat.category_id}`) },
+                            cat.is_active
+                              ? { label: "Deactivate", onClick: () => deactivateAction.execute(cat.category_id), variant: "danger", divider: true }
+                              : { label: "Activate", onClick: () => activateAction.execute(cat.category_id), divider: true },
+                            { label: "Delete", onClick: () => setDeleteId(cat.category_id), variant: "danger" },
+                            cat.linked_counts.services === 0 && { label: "Delete Permanently", onClick: () => setHardDeleteId(cat.category_id), variant: "danger" },
+                          ]}
                         />
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              Page {page} of {totalPages} · {total} total
-            </span>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                <ChevronLeft size={12}/>
-              </Btn>
-              <Btn size="xs" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                <ChevronRight size={12}/>
-              </Btn>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} pageCount={totalPages} onPage={setPage} itemLabel="categories" />
       </Card>
 
       </div>{/* end flex column */}

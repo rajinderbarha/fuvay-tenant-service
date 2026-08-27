@@ -15,7 +15,7 @@
 import React, { useCallback, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { RefreshCw, Search, SlidersHorizontal, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
-import { Skeleton, Btn } from "../../../../components/shared/ui";
+import { Skeleton, Btn, Pagination } from "../../../../components/shared/ui";
 import { ComplaintKpis } from "../../../../components/complaints/ComplaintKpis";
 import { ComplaintQueueList } from "../../../../components/complaints/ComplaintQueueList";
 import { ComplaintCaseDetail, type ComplaintTab } from "../../../../components/complaints/ComplaintCaseDetail";
@@ -274,20 +274,8 @@ function ComplaintsPageInner() {
               />
               {/* Pagination — the queue was capped at the first 20 cases with
                   no way to reach anything past them. */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", gap: 10, flexWrap: "wrap", borderTop: "1px solid var(--border)" }}>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-                  Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} cases
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Btn variant="secondary" size="sm" icon={<ChevronLeft size={13}/>} disabled={page === 0}
-                    onClick={() => updateParams({ page: String(Math.max(0, page - 1)) })}>Previous</Btn>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page + 1} of {pages}</span>
-                  <Btn variant="secondary" size="sm" disabled={page + 1 >= pages}
-                    onClick={() => updateParams({ page: String(page + 1) })}>
-                    Next <ChevronRight size={13} style={{ marginLeft: 4 }}/>
-                  </Btn>
-                </div>
-              </div>
+              <Pagination page={page + 1} pageSize={PAGE_SIZE} total={total} pageCount={pages}
+                onPage={target => updateParams({ page: String(target - 1) })} itemLabel="cases" alwaysShow />
             </>
           )}
         </div>

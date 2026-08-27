@@ -220,8 +220,7 @@ class DashboardCommandCenterService:
             WHERE sj.status = 'completed' AND sj.updated_at BETWEEN :f AND :t AND ucl.id IS NULL
         """, p)
         return {
-            "platform_revenue": float(topups or 0), "package_revenue": 0.0,
-            "subscription_revenue": 0.0, "usage_credit_topups": float(topups or 0),
+            "platform_revenue": float(topups or 0), "usage_credit_topups": float(topups or 0),
             "completed_job_deductions": float(deductions or 0),
             "customer_service_credits_issued": float(credits_issued or 0),
             "security_deposits_held": float(deposits or 0),
@@ -250,7 +249,6 @@ class DashboardCommandCenterService:
             "new_tenant_requests": new_requests, "pending_review": pending_review,
             "changes_requested": changes_requested, "approved_this_week": approved_week,
             "suspended": suspended, "bookable_tenants": bookable, "non_bookable_tenants": non_bookable,
-            "package_pending_approval": 0,
         }
 
     # ── Part G: Operations Snapshot / Live Operations ────────────────────────
@@ -600,7 +598,7 @@ class DashboardCommandCenterService:
                 "status": "healthy" if monetization_policies > 0 else "warning",
                 "active_rules": monetization_policies,
             },
-            "tenant_service_area_health": {
+            "provider_coverage_health": {
                 "status": _health(hs_providers - tenants_without_areas, hs_providers),
                 "active_areas": active_service_areas,
                 "tenants_without_areas": tenants_without_areas,

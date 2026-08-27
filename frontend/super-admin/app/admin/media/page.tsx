@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
-  Card, CardHeader, SectionHeader, StatCard, Badge, Btn, Modal, DataTable,
+  Card, CardHeader, SectionHeader, StatCard, KpiGrid, Badge, Btn, Modal, DataTable,
 } from "../../../components/shared/ui";
 import {
   Search, RefreshCw, Image, FileText, Video, File, Trash2, AlertCircle,
@@ -100,12 +100,12 @@ type ActiveModal =
 
 function SummaryCards({ s, onOpenTab }: { s: MediaSummary; onOpenTab: (tab: TabKey) => void }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginBottom: 20 }}>
-      <button onClick={() => onOpenTab("all")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Managed assets" value={s.total.toLocaleString()} change={`${s.active.toLocaleString()} active`} trend="neutral" icon={<HardDrive />} accent="var(--brand)" /></button>
-      <button onClick={() => onOpenTab("all")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Active storage" value={fmtBytes(s.active_size_bytes)} change={`${s.public_count.toLocaleString()} public · ${s.private_count.toLocaleString()} private`} trend="neutral" icon={<BarChart2 />} accent="var(--success)" /></button>
-      <button onClick={() => onOpenTab("flagged")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Moderation queue" value={(s.flagged + s.quarantined).toLocaleString()} change={s.flagged + s.quarantined ? "Requires administrator review" : "Queue clear"} trend={s.flagged + s.quarantined ? "down" : "neutral"} icon={<Shield />} alert={s.flagged + s.quarantined > 0} /></button>
-      <button onClick={() => onOpenTab("recent")} style={{ all: "unset", cursor: "pointer" }}><StatCard label="Uploaded in 7 days" value={s.recent_count.toLocaleString()} change={`${s.images_count.toLocaleString()} images · ${s.documents_count.toLocaleString()} documents`} trend="neutral" icon={<Clock />} accent="#8b5cf6" /></button>
-    </div>
+    <KpiGrid minCardWidth={210} style={{ marginBottom: 20 }}>
+      <StatCard onClick={() => onOpenTab("all")} label="Managed assets" value={s.total.toLocaleString()} change={`${s.active.toLocaleString()} active`} trend="neutral" icon={<HardDrive />} accent="var(--brand)" />
+      <StatCard onClick={() => onOpenTab("all")} label="Active storage" value={fmtBytes(s.active_size_bytes)} change={`${s.public_count.toLocaleString()} public · ${s.private_count.toLocaleString()} private`} trend="neutral" icon={<BarChart2 />} accent="var(--success)" />
+      <StatCard onClick={() => onOpenTab("flagged")} label="Moderation queue" value={(s.flagged + s.quarantined).toLocaleString()} change={s.flagged + s.quarantined ? "Requires administrator review" : "Queue clear"} trend={s.flagged + s.quarantined ? "down" : "neutral"} icon={<Shield />} alert={s.flagged + s.quarantined > 0} />
+      <StatCard onClick={() => onOpenTab("recent")} label="Uploaded in 7 days" value={s.recent_count.toLocaleString()} change={`${s.images_count.toLocaleString()} images · ${s.documents_count.toLocaleString()} documents`} trend="neutral" icon={<Clock />} accent="#8b5cf6" />
+    </KpiGrid>
   );
 }
 interface MediaFilterOptions {

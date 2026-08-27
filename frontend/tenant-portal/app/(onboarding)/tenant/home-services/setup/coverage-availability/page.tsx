@@ -1,6 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Plus, Trash2, RefreshCw, Info, MapPin, Scale } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
@@ -32,8 +32,10 @@ function CoverageShell({ mode, children }: { mode: "onboarding" | "workspace"; c
     : <OnboardingShell activeNav="coverage-availability">{children}</OnboardingShell>;
 }
 
-export function CoverageAvailabilityWorkspace({ mode = "onboarding" }: { mode?: "onboarding" | "workspace" }) {
+function CoverageAvailabilityWorkspace() {
   const router = useRouter();
+  const pathname = usePathname();
+  const mode: "onboarding" | "workspace" = pathname.startsWith("/business/coverage-hours") ? "workspace" : "onboarding";
   const workspace = mode === "workspace";
   const [areas, setAreas] = useState<ProviderServiceArea[] | null>(null);
   const [rules, setRules] = useState<ProviderAvailabilityRule[] | null>(null);

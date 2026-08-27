@@ -17,7 +17,7 @@ export default function MarketingOverviewPage() {
   const cards = [
     { label: "Visibility Status",  href: "/marketing/visibility",       desc: "See your current bookable/visible state and boost expiry" },
     { label: "Campaign Impact",    href: "/marketing/campaign-impact",  desc: "Events from platform campaigns that targeted your profile" },
-    { label: "Attributed Leads",   href: "/marketing/leads-attributed", desc: "Bookings and leads converted via marketing campaigns" },
+    { label: "Attributed Leads",   href: "/marketing/campaign-impact?tab=leads", desc: "Bookings and leads converted via marketing campaigns" },
   ];
 
   const statusVal = (ok: boolean | undefined) => (

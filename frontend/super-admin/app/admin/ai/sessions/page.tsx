@@ -1,7 +1,9 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { adminAiApi, AISession } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   active:     { background: "var(--success-bg)",      color: "var(--success-text)" },
@@ -47,12 +49,8 @@ export default function AISessionsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>AI Sessions</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>All customer AI conversation sessions</p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <PageHeader eyebrow="Intelligence" context="AI" title="AI Sessions"
+        description="All customer AI conversation sessions" actions={<>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selStyle}>
             <option value="">All Statuses</option>
             <option value="active">Active</option>
@@ -70,8 +68,7 @@ export default function AISessionsPage() {
           <button onClick={load} disabled={loading} style={btnStyle}>
             {loading ? "Loading…" : "Refresh"}
           </button>
-        </div>
-      </div>
+        </>} />
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Link href="/admin/ai/failed-actions" style={{ fontSize: 13, color: "var(--danger-text)", textDecoration: "none" }}>Failed Actions →</Link>
@@ -84,7 +81,7 @@ export default function AISessionsPage() {
         ) : sessions.length === 0 ? (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No sessions found</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                 <th style={th}>Session</th>
@@ -126,7 +123,7 @@ export default function AISessionsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </div>
     </div>

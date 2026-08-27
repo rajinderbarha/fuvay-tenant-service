@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { adminMarketingApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 
 const card: React.CSSProperties = {
   background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 24,
@@ -36,10 +37,11 @@ export default function SegmentBuilderPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Segment Builder</h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Preview your campaign audience before running</p>
-      </div>
+      <PageHeader
+        title="Segment Builder"
+        description="Preview your campaign audience before running a campaign."
+        eyebrow="Marketing"
+      />
 
       <div style={card}>
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 16px" }}>Define Audience</h2>

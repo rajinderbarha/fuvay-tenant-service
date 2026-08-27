@@ -1,13 +1,22 @@
-import { LegalDocument } from "../../components/legal/LegalDocument";
+import { LegalDocument, LegalDocumentUnavailable } from "../../components/legal/LegalDocument";
+import { fetchLegalDocument } from "../../lib/api-legal";
 
-export default function PrivacyPage() {
-  return <LegalDocument title="Privacy Notice" updated="11 August 2026"
-    intro="This notice explains how ServiceOS handles information provided during signup and business operations."
-    sections={[
-      { heading: "Information we collect", paragraphs: ["We collect owner contact details, verification data, business identity information, documents, service configuration, and operational records needed to provide the workspace."] },
-      { heading: "How we use information", paragraphs: ["We use information to create and secure accounts, verify businesses, operate requested services, prevent fraud, provide support, and meet legal obligations."] },
-      { heading: "Consent", paragraphs: ["Required authorization and terms consent are recorded when you create the workspace. Optional marketing consent is recorded separately and can be withdrawn."] },
-      { heading: "Sharing and retention", paragraphs: ["Information is shared only with authorized processors, service providers, or authorities where necessary. Records are retained according to security, operational, and legal requirements."] },
-      { heading: "Your choices", paragraphs: ["You may request access, correction, or other applicable privacy rights through ServiceOS support. Some records must be retained for legal or security reasons."] },
-    ]}/>;
+export const metadata = { title: "Privacy Notice — ServiceOS" };
+
+/** See app/terms/page.tsx — same pattern, same reason. */
+export default async function PrivacyPage() {
+  const doc = await fetchLegalDocument("privacy_policy", { audience: "tenant" });
+  if (!doc) return <LegalDocumentUnavailable title="Privacy Notice" />;
+
+  return (
+    <LegalDocument
+      title={doc.title}
+      intro={doc.summary}
+      version={doc.version}
+      updated={new Date(doc.effective_at ?? doc.published_at ?? Date.now()).toLocaleDateString("en-GB", {
+        day: "numeric", month: "long", year: "numeric",
+      })}
+      body={doc.body}
+    />
+  );
 }

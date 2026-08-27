@@ -33,6 +33,10 @@ ENV PATH="/venv/bin:$PATH"
 # Copy source
 COPY . .
 
+# Precompile the large router graph during image creation so every worker does
+# not pay source parsing cost during a deployment rollout.
+RUN python -m compileall -q app
+
 # Non-root user for security
 RUN addgroup --system serviceos && \
     adduser --system --group serviceos && \
@@ -41,7 +45,7 @@ RUN addgroup --system serviceos && \
 USER serviceos
 
 # Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 EXPOSE 8000

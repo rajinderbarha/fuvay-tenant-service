@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Btn, Modal, SectionHeader } from "../../../components/shared/ui";
+import { Card, Btn, Modal, SectionHeader, Pagination } from "../../../components/shared/ui";
 import { sprint27AdminApi, type NotificationOutboxRecord } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 
@@ -85,7 +86,7 @@ export default function NotificationOutboxPage() {
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   {["Recipient", "Channel", "Template", "Status", "Provider", "Retries", "Created", "Actions"].map(h => (
@@ -140,18 +141,10 @@ export default function NotificationOutboxPage() {
                   </tr>
                 )}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-            {page * LIMIT + 1}–{Math.min((page + 1) * LIMIT, total)} of {total}
-          </span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Prev</Btn>
-            <Btn size="sm" variant="ghost" disabled={(page + 1) * LIMIT >= total} onClick={() => setPage(p => p + 1)}>Next →</Btn>
-          </div>
-        </div>
+        <Pagination page={page + 1} pageSize={LIMIT} total={total} onPage={target => setPage(target - 1)} itemLabel="notifications" />
       </Card>
 
       {detail && (

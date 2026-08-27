@@ -1,9 +1,11 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, KpiGrid, SummaryCard } from "../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import {
   verticalCatalogApi, type VerticalDetail, type VerticalCapabilityRegistry,
   type VerticalDependencyHealth, type VerticalAuditEntry,
@@ -93,27 +95,19 @@ export default function VerticalDetailPage() {
   return (
     <AdminLayout activeNav="verticals">
       <div style={{ padding: "0 4px" }}>
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>
-          Platform / Business Verticals / {v?.label ?? key}
-        </p>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>{v?.label ?? key}</h1>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-              Review vertical capabilities, deployed policies and runtime dependencies.
-            </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <PageHeader
+          title={v?.label ?? key}
+          description="Review vertical capabilities, deployed policies, and runtime dependencies."
+          eyebrow="Business Verticals"
+          context="Platform"
+          actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap", alignItems: "center" }}>
               <Badge variant={v?.is_enabled ? "success" : "muted"} size="sm">{v?.is_enabled ? "Active" : "Disabled"}</Badge>
-              <Badge variant="info" size="sm">{v?.label ?? key}</Badge>
               <Badge variant="muted" size="sm">Policy-controlled</Badge>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn variant="ghost" size="sm" onClick={() => setTabParam("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
             <Btn variant="ghost" size="sm" onClick={() => { healthApi.refetch(); }}><ShieldCheck size={14} style={{ marginRight: 4 }}/>Refresh Dependency Health</Btn>
             <Btn variant="primary" size="sm" onClick={() => setTabParam("impact")}><Sparkles size={14} style={{ marginRight: 4 }}/>Manage Availability</Btn>
-          </div>
-        </div>
+          </div>}
+        />
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid var(--border)", overflowX: "auto" }} role="tablist">
           {TABS.map(t => (
@@ -128,26 +122,26 @@ export default function VerticalDetailPage() {
 
         {tab === "overview" && (
           <Card style={{ padding: 20 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
-              <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
-              <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-              <Metric icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
-              <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
-              <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
-            </div>
+            <KpiGrid>
+              <SummaryCard icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
+              <SummaryCard icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
+              <SummaryCard icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
+              <SummaryCard icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
+              <SummaryCard icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
+            </KpiGrid>
           </Card>
         )}
 
         {tab === "capabilities" && (
           <>
             <Card style={{ padding: 20, marginBottom: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
-                <Metric icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
-                <Metric icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
-                <Metric icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
-                <Metric icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
-                <Metric icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
-              </div>
+              <KpiGrid>
+                <SummaryCard icon={<Users size={16}/>} value={(impact?.active_tenant_enrollments as number) ?? "—"} label="Active tenants"/>
+                <SummaryCard icon={<Briefcase size={16}/>} value={(impact?.active_jobs as number) ?? "—"} label="Active jobs"/>
+                <SummaryCard icon={<Package size={16}/>} value={`${enabledModules} / ${currentModules.length}`} label="Admin pages enabled"/>
+                <SummaryCard icon={<ShieldCheck size={16}/>} value={health ? `${health.healthy_count} / ${health.total_count}` : "—"} label="Dependencies healthy"/>
+                <SummaryCard icon={<AlertTriangle size={16}/>} value={configurationErrors ?? "—"} label="Required checks unresolved"/>
+              </KpiGrid>
             </Card>
 
             <Card style={{ padding: 0, marginBottom: 14 }}>
@@ -211,7 +205,7 @@ export default function VerticalDetailPage() {
                     <div key={g.name}>
                       <div style={{ padding: "8px 16px", background: "var(--surface-sunken)", fontSize: 11, fontWeight: 700,
                         color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{g.name}</div>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <tbody>
                           {g.capabilities.map(c => (
                             <tr key={c.name} style={{ borderBottom: "1px solid var(--border)" }}>
@@ -232,7 +226,7 @@ export default function VerticalDetailPage() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </TableSurface>
                     </div>
                   ))}
                 </div>
@@ -341,7 +335,7 @@ export default function VerticalDetailPage() {
             ) : ((auditApi.data as { items: VerticalAuditEntry[] } | null)?.items ?? []).length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No vertical or navigation changes recorded yet.</div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                     {["Action", "Notes", "When"].map(h => (
@@ -360,7 +354,7 @@ export default function VerticalDetailPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             )}
           </Card>
         )}
@@ -393,16 +387,6 @@ export default function VerticalDetailPage() {
         </div>
       )}
     </AdminLayout>
-  );
-}
-
-function Metric({ icon, value, label }: { icon: React.ReactNode; value: React.ReactNode; label: string }) {
-  return (
-    <div style={{ padding: "12px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
-      <div style={{ color: "var(--text-tertiary)", marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</div>
-    </div>
   );
 }
 

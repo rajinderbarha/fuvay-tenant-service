@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Admin User Security Detail Page
  * Route: /admin/users/[id]
@@ -301,7 +302,7 @@ export default function UserSecurityPage() {
             </p>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Device", "IP", "Last Active", "Created", ""].map(h => (
@@ -340,7 +341,7 @@ export default function UserSecurityPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           )}
         </Card>
@@ -356,7 +357,7 @@ export default function UserSecurityPage() {
             </p>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Time", "Event", "IP Address", "Device", "Failure Reason"].map(h => (
@@ -392,7 +393,7 @@ export default function UserSecurityPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           )}
         </Card>

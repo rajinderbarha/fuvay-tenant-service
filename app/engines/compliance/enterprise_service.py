@@ -27,6 +27,7 @@ from app.engines.compliance.models import (
     ComplianceRequestItem,
     ConsentRecord,
     DataRetentionPolicy,
+    DPDPPolicyVersion,
 )
 from app.engines.compliance.service import ComplianceService
 from app.exceptions import NotFoundException, ServiceOSException
@@ -710,36 +711,169 @@ class ComplianceEnterpriseService:
                 ComplianceRequest.verification_status == "failed"))
         failed_verify = r.scalar_one_or_none() or 0
 
-        deductions = 0
-        top_risks: list[str] = []
-        if summary["sla_breached"] > 0:
-            deductions += min(30, summary["sla_breached"] * 8)
-            top_risks.append(f"{summary['sla_breached']} SLA-breached request(s)")
-        if summary["sla_at_risk"] > 0:
-            deductions += min(15, summary["sla_at_risk"] * 3)
-            top_risks.append(f"{summary['sla_at_risk']} request(s) at risk of SLA breach")
-        if summary["pending_verification"] > 0:
-            deductions += min(15, summary["pending_verification"] * 2)
-            top_risks.append(f"{summary['pending_verification']} request(s) awaiting identity verification")
-        if failed_verify > 0:
-            deductions += min(10, failed_verify * 5)
-            top_risks.append(f"{failed_verify} failed verification(s)")
+        now = utcnow()
+        policy_result = await self.db.execute(
+            select(DPDPPolicyVersion)
+            .where(DPDPPolicyVersion.is_active.is_(True))
+            .order_by(DPDPPolicyVersion.effective_date.desc())
+            .limit(1)
+        )
+        active_policy = policy_result.scalar_one_or_none()
 
-        score = max(0, 100 - deductions)
-        band = ("compliant" if score >= 90 else "attention_needed" if score >= 75
-                else "at_risk" if score >= 50 else "non_compliant")
+        retention_result = await self.db.execute(
+            select(
+                func.count(DataRetentionPolicy.id),
+                func.count(DataRetentionPolicy.id).filter(
+                    DataRetentionPolicy.legal_basis.is_(None),
+                    DataRetentionPolicy.is_exempt.is_(False),
+                ),
+            )
+        )
+        retention_total, retention_without_basis = retention_result.one()
+        retention_total = int(retention_total or 0)
+        retention_without_basis = int(retention_without_basis or 0)
+
+        consent_result = await self.db.execute(
+            select(
+                func.count(ConsentRecord.id),
+                func.count(ConsentRecord.id).filter(ConsentRecord.policy_version == ""),
+            )
+        )
+        consent_total, unversioned_consents = consent_result.one()
+        consent_total = int(consent_total or 0)
+        unversioned_consents = int(unversioned_consents or 0)
+
+        audit_result = await self.db.execute(select(func.count(ComplianceAuditLog.id)))
+        audit_count = int(audit_result.scalar_one_or_none() or 0)
+
+        def control(key: str, label: str, evaluated: bool, passed: bool,
+                    evidence: str, action: str) -> dict:
+            status = (
+                "passed" if evaluated and passed else
+                "failed" if evaluated else
+                "without_evidence"
+            )
+            return {
+                "key": key,
+                "label": label,
+                "status": status,
+                "evaluated": evaluated,
+                "passed": evaluated and passed,
+                "evidence": evidence,
+                "recommended_action": action if status != "passed" else None,
+            }
+
+        policy_is_effective = bool(
+            active_policy and active_policy.effective_date <= now
+        )
+        controls = [
+            control(
+                "active_policy", "Active DPDP policy", bool(active_policy),
+                policy_is_effective,
+                (f"Policy {active_policy.policy_version} effective "
+                 f"{active_policy.effective_date.isoformat()}" if active_policy else
+                 "No active policy version is published."),
+                "Publish an approved DPDP policy version with an effective date.",
+            ),
+            control(
+                "policy_evidence", "Policy evidence requirements", bool(active_policy),
+                bool(active_policy and active_policy.evidence_requirements),
+                ("Evidence requirements are configured."
+                 if active_policy and active_policy.evidence_requirements else
+                 "The active policy has no evidence requirements."),
+                "Define the evidence required to prove every policy control.",
+            ),
+            control(
+                "retention_governance", "Retention governance", retention_total > 0,
+                retention_total > 0 and retention_without_basis == 0,
+                (f"{retention_total} retention policies; "
+                 f"{retention_without_basis} without a legal basis."
+                 if retention_total else "No retention policies are configured."),
+                "Configure retention policies and a legal basis or exemption for every governed table.",
+            ),
+            control(
+                "request_sla", "Data-rights request SLA", True,
+                summary["sla_breached"] == 0,
+                f"{summary['sla_breached']} breached and {summary['sla_at_risk']} at-risk request(s).",
+                "Resolve breached requests and triage requests at risk of breaching SLA.",
+            ),
+            control(
+                "identity_verification", "Request identity verification", True,
+                failed_verify == 0,
+                f"{failed_verify} failed and {summary['pending_verification']} pending verification(s).",
+                "Resolve failed identity checks before processing subject data.",
+            ),
+            control(
+                "consent_versioning", "Versioned consent evidence", consent_total > 0,
+                consent_total > 0 and unversioned_consents == 0,
+                (f"{consent_total} consent event(s); "
+                 f"{unversioned_consents} without a policy version."
+                 if consent_total else "No consent evidence has been captured."),
+                "Capture immutable, policy-versioned consent evidence.",
+            ),
+            control(
+                "audit_evidence", "Compliance audit evidence", audit_count > 0,
+                audit_count > 0,
+                (f"{audit_count} append-only compliance audit event(s)."
+                 if audit_count else "No compliance audit evidence has been recorded."),
+                "Verify compliance actions write to the append-only audit ledger.",
+            ),
+        ]
+
+        controls_total = len(controls)
+        controls_evaluated = sum(1 for item in controls if item["evaluated"])
+        controls_failed = sum(1 for item in controls if item["status"] == "failed")
+        controls_without_evidence = sum(
+            1 for item in controls if item["status"] == "without_evidence"
+        )
+        controls_passed = sum(1 for item in controls if item["status"] == "passed")
+        score = round((controls_passed / controls_total) * 100)
+        is_compliant = (
+            controls_evaluated == controls_total
+            and controls_failed == 0
+            and controls_without_evidence == 0
+        )
+        band = (
+            "compliant" if is_compliant else
+            "attention_needed" if score >= 75 else
+            "at_risk" if score >= 50 else
+            "non_compliant"
+        )
+        state = (
+            "verified_compliant" if is_compliant else
+            "evidence_incomplete" if controls_without_evidence else
+            "controls_failed"
+        )
+        top_risks = [
+            item["evidence"] for item in controls if item["status"] != "passed"
+        ]
+        recommended_actions = [
+            item["recommended_action"] for item in controls
+            if item["recommended_action"]
+        ]
 
         return {
             "score": score,
             "band": band,
             "status": band.replace("_", " ").title(),
+            "state": state,
+            "is_compliant": is_compliant,
+            "controls_total": controls_total,
+            "controls_evaluated": controls_evaluated,
+            "controls_passed": controls_passed,
+            "controls_failed": controls_failed,
+            "controls_without_evidence": controls_without_evidence,
+            "controls": controls,
+            "calculation_method": "fixed_control_checklist_v1",
+            "policy_version": active_policy.policy_version if active_policy else None,
             "top_risks": top_risks,
             "recommended_actions": (
-                ["Resolve breached and at-risk SLA requests first."] if deductions else
-                ["No action required — compliance posture is healthy."]),
+                recommended_actions if recommended_actions else
+                ["No action required - every fixed control has current evidence."]
+            ),
             "last_sla_job_run": None,
             "last_retention_job_run": None,
-            "generated_at": utcnow().isoformat(),
+            "generated_at": now.isoformat(),
         }
 
     # ─────────────────────────────────────────────────────────────────────────

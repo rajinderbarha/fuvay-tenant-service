@@ -11,7 +11,7 @@ Reuses canonical sources instead of inventing a new settings store:
   existing /v1/provider/availability endpoints already own; editing stays
   on that canonical endpoint rather than being duplicated here.
 - Controlled policy section: real, already-documented constants
-  (activation_deposit_policy.SECURITY_DEPOSIT_PER_TECHNICIAN) and honest
+  and honest
   static descriptions of scattered-but-real backend behavior (matching
   policy, workflow gate, direct-payment model) -- never fabricated numbers.
 """
@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import record_platform_audit
 from app.dependencies.auth import UserContext
 from app.engines.tenant_engine.models import Tenant, TenantSettings
-from app.engines.vertical_catalog.activation_deposit_policy import SECURITY_DEPOSIT_PER_TECHNICIAN
 from app.exceptions import NotFoundException, ServiceOSException
 
 DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -147,10 +146,12 @@ class WorkspaceSettingsService:
                 "policy_version": None, "effective_date": None, "link": "/finance",
             },
             {
-                "key": "security_deposit", "label": "Security deposit", "ownership": "ADMIN_POLICY",
-                "effective_value": f"₹{SECURITY_DEPOSIT_PER_TECHNICIAN:,.0f} per qualifying active technician",
-                "explanation": "Fixed platform policy, scaled to your active technician count.",
-                "policy_version": "v1", "effective_date": None, "link": "/finance/security-deposit",
+                # Replaced the security deposit in migration 317: headcount is
+                # bought as seats rather than collateralised.
+                "key": "technician_seats", "label": "Technician seats", "ownership": "ADMIN_POLICY",
+                "effective_value": "Purchased with a top-up plan",
+                "explanation": "Each seat lets you add one technician, and one more job can be booked per slot.",
+                "policy_version": "v1", "effective_date": None, "link": "/finance/topups",
             },
         ]
 

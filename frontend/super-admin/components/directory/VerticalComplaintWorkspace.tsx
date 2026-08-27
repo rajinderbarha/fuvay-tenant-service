@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../layout/AdminLayout";
-import { Card, Badge, Btn } from "../shared/ui";
+import { Card, Badge, Btn, SummaryCard, KpiGrid } from "../shared/ui";
 import { verticalDirectoryApi } from "../../lib/api";
 import { useApi, useAction } from "../../hooks/useApi";
 import { Lock, Download, RefreshCw, Search } from "lucide-react";
@@ -104,7 +105,7 @@ export function VerticalComplaintWorkspace({ vertical, verticalLabel }: { vertic
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 16 }}>
+        <KpiGrid minCardWidth={150} style={{ marginBottom: 16 }}>
           {KPIS.map(([label, key]) => {
             const statusMap: Record<string, string | undefined> = {
               open: undefined, new: "open", in_investigation: "under_admin_review",
@@ -112,17 +113,17 @@ export function VerticalComplaintWorkspace({ vertical, verticalLabel }: { vertic
               escalated: "resolution_proposed", resolved: "resolved",
             };
             return (
-              <div key={key} onClick={() => key in statusMap && setStatus(statusMap[key])}
-                style={{ padding: "10px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
-                  background: "var(--surface)", cursor: key in statusMap ? "pointer" : "default" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
-                  {summaryApi.error ? "—" : (s?.[key] ?? (summaryApi.loading ? "…" : 0))}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</div>
-              </div>
+              <SummaryCard
+                key={key}
+                label={label}
+                value={summaryApi.error ? "—" : (s?.[key] ?? 0)}
+                loading={summaryApi.loading}
+                active={key in statusMap && statusMap[key] === status}
+                onClick={key in statusMap ? () => setStatus(statusMap[key]) : undefined}
+              />
             );
           })}
-        </div>
+        </KpiGrid>
         {summaryApi.error && (
           <p style={{ fontSize: 11, color: "var(--warning-text)", margin: "-10px 0 16px" }}>
             Summary metrics are temporarily unavailable ({summaryApi.error}) — the queue below is unaffected.
@@ -165,7 +166,7 @@ export function VerticalComplaintWorkspace({ vertical, verticalLabel }: { vertic
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                         {["Complaint", "Severity", "Type", "Status", "SLA", "Created"].map(h => (
@@ -187,7 +188,7 @@ export function VerticalComplaintWorkspace({ vertical, verticalLabel }: { vertic
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               )}
             </Card>

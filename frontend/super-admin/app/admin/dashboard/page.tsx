@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 /**
  * Fuvay platform command center. All values come from dashboardApi; there is
@@ -22,7 +23,8 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Badge, Btn, Card, Skeleton } from "../../../components/shared/ui";
+import { Badge, Btn, Card, Skeleton, SummaryCard } from "../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import { dashboardApi, type DashboardActionItem, type DashboardTrendPoint } from "../../../lib/api";
 import { useAction, useApi } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -66,16 +68,27 @@ function chooseInitialTab(): Tab {
   return candidate && TABS.some(tab => tab.id === candidate) ? candidate : "overview";
 }
 
+/** The dashboard used to render its own CSS-module KPI card, which is why its
+ *  tiles never matched the rest of the admin. It is now an adapter onto the
+ *  single canonical card: `note` is the shared `sub`, `href` navigates through
+ *  the card itself (a real <a>, so middle-click still works), and "default"
+ *  maps to no tone rather than a fourth colour. */
 function Kpi({ label, value, note, icon, tone = "default", href, id }: {
   label: string; value: React.ReactNode; note: string; icon: React.ReactNode;
   tone?: "default" | "success" | "warning" | "danger"; href?: string; id?: string;
 }) {
-  const body = <div id={id} className={`${styles.kpi} ${styles[tone]}`}>
-    <div className={styles.kpiTop}><span>{label}</span><span className={styles.kpiIcon}>{icon}</span></div>
-    <div className={styles.kpiValue}>{value}</div>
-    <div className={styles.kpiNote}>{note}</div>
-  </div>;
-  return href ? <Link href={href} className={styles.cardLink}>{body}</Link> : body;
+  return (
+    <div id={id} style={{ minWidth: 0 }}>
+      <SummaryCard
+        label={label}
+        value={value}
+        sub={note}
+        icon={icon}
+        tone={tone === "default" ? undefined : tone}
+        href={href}
+      />
+    </div>
+  );
 }
 
 function SectionTitle({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
@@ -100,7 +113,7 @@ function MetricRows({ rows }: { rows: Array<{ label: string; value: React.ReactN
 }
 
 function DataTable({ headers, children, empty }: { headers: string[]; children: React.ReactNode; empty?: boolean }) {
-  return <div className={styles.tableWrap}><table><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{empty ? <tr><td colSpan={headers.length} className={styles.tableEmpty}>No records match this workspace.</td></tr> : children}</tbody></table></div>;
+  return <div className={styles.tableWrap}><TableSurface><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{empty ? <tr><td colSpan={headers.length} className={styles.tableEmpty}>No records match this workspace.</td></tr> : children}</tbody></TableSurface></div>;
 }
 
 function Chart({ data, kind = "area", color = "var(--text-link)", currency = false }: { data: DashboardTrendPoint[]; kind?: "area" | "line"; color?: string; currency?: boolean }) {
@@ -181,7 +194,13 @@ export default function PlatformCommandCenterPage() {
   const restrictedTab = (tab === "finance" && !permissions.loading && !financeAllowed) || (tab === "operations" && !permissions.loading && !opsAllowed);
 
   return <AdminLayout activeNav="dashboard"><main className={styles.page}>
-    <header className={styles.hero}><div><div className={styles.eyebrow}><span>Platform command center</span><span>Home Services</span></div><h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, Super Admin</h1><p>One operational view of provider readiness, native bookings, completion charges, customer trust, and platform controls.</p></div><div className={styles.heroActions}><Btn variant="secondary" size="sm" loading={refreshAction.loading} onClick={refresh}><RefreshCw size={14}/>Refresh</Btn>{exportAllowed && <Btn variant="secondary" size="sm" loading={exportAction.loading} onClick={exportSnapshot}><Download size={14}/>Export Snapshot</Btn>}<Link href="/admin/analytics?tab=reports"><Btn size="sm"><FileBarChart size={14}/>Reports</Btn></Link></div></header>
+    <PageHeader
+      eyebrow="Platform command center"
+      context="Home Services"
+      title={`Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, Super Admin`}
+      description="One operational view of provider readiness, native bookings, completion charges, customer trust, and platform controls."
+      actions={<div className={styles.heroActions}><Btn variant="secondary" size="sm" loading={refreshAction.loading} onClick={refresh}><RefreshCw size={14}/>Refresh</Btn>{exportAllowed && <Btn variant="secondary" size="sm" loading={exportAction.loading} onClick={exportSnapshot}><Download size={14}/>Export Snapshot</Btn>}<Link href="/admin/analytics?tab=reports"><Btn size="sm"><FileBarChart size={14}/>Reports</Btn></Link></div>}
+    />
     <div className={styles.contextBar}><div><span className={`${styles.liveDot} ${h?.status === "healthy" ? styles.live : ""}`}/><strong>{h?.status === "healthy" ? "All core controls operational" : `${h?.status || "Checking"} platform state`}</strong><span>{h?.reasons?.[0] || "Verifying live controls"}</span></div><div><CalendarClock size={14}/><span>{notice || "Live data · refreshed on demand"}</span></div></div>
     <nav className={styles.tabs} aria-label="Dashboard workspaces" role="tablist">{TABS.map(item => <button type="button" role="tab" id={`dashboard-tab-${item.id}`} aria-controls="dashboard-active-panel" aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} key={item.id} onClick={() => selectTab(item.id)} onKeyDown={event => moveTab(event, item.id)} className={tab === item.id ? styles.activeTab : ""}>{item.icon}{item.label}{item.id === "operations" && (s?.pending_admin_actions.count ?? 0) > 0 && <span>{s?.pending_admin_actions.count}</span>}</button>)}</nav>
 
@@ -213,7 +232,7 @@ function OverviewTab({ range, setRange, home, trends, actions, activity, resolve
     <Card><SectionTitle title="Native activity trend" description="Jobs created by the customer app and fulfilled through the staff app." action={<RangeControl value={range} onChange={setRange}/>}/>{trends.error ? <SectionError title="Trend unavailable" error={trends.error} requestId={trends.requestId} onRetry={trends.refetch}/> : trends.loading ? <Skeleton height={245}/> : <Chart data={trends.data?.jobs_trend ?? []}/>}</Card>
   </div><div className={styles.secondaryColumn}>
     <Card><SectionTitle title="Home Services Summary" description="Live production gates from tenant setup, bookability, finance, and trust controls."/>{home.error ? <SectionError title="Readiness unavailable" error={home.error} requestId={home.requestId} onRetry={home.refetch}/> : home.loading ? <Skeleton height={270}/> : <div className={styles.readinessList}>{[
-      ["Service Catalog", home.data?.service_catalog_health.status, "/admin/catalog-workspace"], ["Finance Rules", home.data?.pricing_rule_health.status, "/admin/home-services/finance?tab=monetization"], ["Tenant Service Areas", home.data?.tenant_service_area_health.status, "/admin/home-services/providers"], ["Bookability & Trust Gates", home.data?.provider_bookability_health.status, "/admin/bookability/providers"], ["Completion Deductions", home.data?.completed_job_deduction_health, "/admin/home-services/finance?tab=provider-charges"],
+      ["Service Catalog", home.data?.service_catalog_health.status, "/admin/catalog-workspace"], ["Finance Rules", home.data?.pricing_rule_health.status, "/admin/home-services/finance?tab=monetization"], ["Provider Coverage Readiness", home.data?.provider_coverage_health.status, "/admin/home-services/providers"], ["Bookability & Trust Gates", home.data?.provider_bookability_health.status, "/admin/bookability/providers"], ["Completion Deductions", home.data?.completed_job_deduction_health, "/admin/home-services/finance?tab=provider-charges"],
     ].map(([label, status, href]) => <Link href={String(href)} key={String(label)} className={styles.readinessItem}><span className={status === "healthy" ? styles.stateGood : status === "warning" ? styles.stateWarn : styles.stateBad}>{status === "healthy" ? <CheckCircle2 size={15}/> : <AlertTriangle size={15}/>}</span><span><strong>{label}</strong><small>{String(status || "not configured").replaceAll("_", " ")}</small></span><ArrowRight size={13}/></Link>)}</div>}</Card>
     <Card><SectionTitle title="Recent Activity" description="Latest audited administrator and system events."/>{activity.loading ? <Skeleton height={180}/> : !(activity.data?.items.length) ? <p className={styles.muted}>No activity yet.</p> : <div className={styles.timeline}>{activity.data.items.slice(0, 7).map((event: any) => <div key={event.id}><span/><div><strong>{event.action.replace(/[._]/g, " ")}</strong><small>{event.actor_role?.replaceAll("_", " ") || "system"} · {event.time ? new Date(event.time).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</small></div></div>)}</div>}<Link href="/admin/audit-logs" className={styles.footerLink}>Open complete audit trail <ExternalLink size={12}/></Link></Card>
   </div></div>;
@@ -232,7 +251,7 @@ function ProvidersTab({ lifecycle, risk }: { lifecycle: ApiState; risk: ApiState
 
 function FinanceTab({ range, setRange, finance, trends }: { range: Range; setRange: (r: Range) => void; finance: ApiState; trends: ApiState }) {
   return <div className={styles.workspaceSingle}><SectionTitle title="Home Services finance" description="Top-up revenue, direct provider service value, and completion-credit deductions remain separate." action={<div className={styles.inlineActions}><RangeControl value={range} onChange={setRange}/><Link href="/admin/home-services/finance"><Btn size="sm">Finance workspace <ArrowRight size={13}/></Btn></Link></div>}/>
-    {finance.error ? <SectionError title="Finance snapshot unavailable" error={finance.error} requestId={finance.requestId} onRetry={finance.refetch}/> : <><div className={styles.fourGrid}><Kpi label="Platform Revenue" value={formatCurrency(finance.data?.platform_revenue ?? 0)} note="Net credited top-up receipts" icon={<Banknote size={18}/>} tone="success"/><Kpi label="Provider Direct Service Value" value={formatCurrency(finance.data?.provider_direct_service_value ?? 0)} note="Paid service invoice value" icon={<Building2 size={18}/>}/><Kpi label="Completed Job Deductions" value={formatCurrency(finance.data?.completed_job_deductions ?? 0)} note="Provider + customer charge credits" icon={<ClipboardCheck size={18}/>}/><Kpi label="Security Deposits Held" value={formatCurrency(finance.data?.security_deposits_held ?? 0)} note="Available after warranty draws" icon={<ShieldCheck size={18}/>}/></div><Card><SectionTitle title="Finance controls" description="Canonical sources used by this dashboard."/><MetricRows rows={[{ label: "Usage credit top-ups", value: formatCurrency(finance.data?.usage_credit_topups ?? 0), href: "/admin/home-services/finance?tab=credits" }, { label: "Customer service credits issued", value: formatCurrency(finance.data?.customer_service_credits_issued ?? 0), href: "/admin/home-services/finance?tab=refunds" }, { label: "Missing completion deductions", value: finance.data?.failed_deductions ?? 0, danger: (finance.data?.failed_deductions ?? 0) > 0, href: "/admin/home-services/finance?tab=provider-charges" }]}/></Card></>}
+    {finance.error ? <SectionError title="Finance snapshot unavailable" error={finance.error} requestId={finance.requestId} onRetry={finance.refetch}/> : <><div className={styles.fourGrid}><Kpi label="Platform Revenue" value={formatCurrency(finance.data?.platform_revenue ?? 0)} note="Net credited top-up receipts" icon={<Banknote size={18}/>} tone="success"/><Kpi label="Provider Direct Service Value" value={formatCurrency(finance.data?.provider_direct_service_value ?? 0)} note="Paid service invoice value" icon={<Building2 size={18}/>}/><Kpi label="Completed Job Deductions" value={formatCurrency(finance.data?.completed_job_deductions ?? 0)} note="Provider + customer charge credits" icon={<ClipboardCheck size={18}/>}/></div><Card><SectionTitle title="Finance controls" description="Canonical sources used by this dashboard."/><MetricRows rows={[{ label: "Usage credit top-ups", value: formatCurrency(finance.data?.usage_credit_topups ?? 0), href: "/admin/home-services/finance?tab=credits" }, { label: "Customer service credits issued", value: formatCurrency(finance.data?.customer_service_credits_issued ?? 0), href: "/admin/home-services/finance?tab=refunds" }, { label: "Missing completion deductions", value: finance.data?.failed_deductions ?? 0, danger: (finance.data?.failed_deductions ?? 0) > 0, href: "/admin/home-services/finance?tab=provider-charges" }]}/></Card></>}
     <div className={styles.twoGrid}>{trends.error ? <SectionError title="Revenue trend unavailable" error={trends.error} requestId={trends.requestId} onRetry={trends.refetch}/> : <><Card><SectionTitle title="Top-up revenue trend" description="Net successful credit purchases."/>{finance.loading || trends.loading ? <Skeleton height={245}/> : <Chart data={trends.data?.revenue_trend ?? []} currency/>}</Card><Card><SectionTitle title="Completion deductions trend" description="Append-only usage-credit ledger."/>{trends.loading ? <Skeleton height={245}/> : <Chart data={trends.data?.completed_job_deductions_trend ?? []} kind="line" color="var(--success)" currency/>}</Card></>}</div></div>;
 }
 

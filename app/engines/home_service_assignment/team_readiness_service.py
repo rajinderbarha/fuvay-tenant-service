@@ -170,7 +170,11 @@ async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     return {"counts": counts, "per_member": per_member}
 
 
-async def compute_service_coverage(db: AsyncSession, tenant_id: uuid.UUID) -> list[dict]:
+async def compute_service_coverage(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    team_summary: dict | None = None,
+) -> list[dict]:
     """One row per enabled tenant offering whose job type requires a
     technician, with the count of READY technicians who can perform it."""
     # NOTE: job_types has no "technician_required" column -- there is no
@@ -191,7 +195,10 @@ async def compute_service_coverage(db: AsyncSession, tenant_id: uuid.UUID) -> li
         "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL AND status='active'"
     ), {"tid": str(tenant_id)})).fetchall()
     members = [dict(r._mapping) for r in members_rows]
-    readiness_by_member = (await compute_team_summary(db, tenant_id))["per_member"]
+    # Dashboard/setup callers often need both the roster summary and coverage.
+    # Reuse their already-computed readiness map instead of scanning and
+    # evaluating the complete team a second time.
+    readiness_by_member = (team_summary or await compute_team_summary(db, tenant_id))["per_member"]
 
     coverage = []
     for o in offerings:

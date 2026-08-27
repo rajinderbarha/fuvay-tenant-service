@@ -23,24 +23,20 @@ const TAB_ICON: Record<Exclude<CustomerTabName, "Assistant">, IconProps["name"]>
   Profile: "person-outline",
 };
 
-/** The assistant is a first-class Fuvay product, so it uses the real brand
- * mark rather than a generic sparkle glyph. The compact fixed treatment keeps
- * the label fully visible on narrow phones and avoids perpetual decorative
- * motion in primary navigation. */
 function AssistantTabIcon({ focused }: { focused: boolean }) {
   const { theme } = useTheme();
   return (
     <View
       style={{
-        width: 48, height: 48, borderRadius: 16,
+        width: 52, height: 52, borderRadius: 26,
         backgroundColor: "#FFFFFF",
-        borderWidth: focused ? 2 : 1,
-        borderColor: focused ? theme.colors.brandPrimary : theme.colors.surfaceDefault,
-        alignItems: "center", justifyContent: "center", marginTop: -14,
+        borderWidth: focused ? 3 : 2,
+        borderColor: focused ? theme.colors.brandPrimary : theme.colors.borderStrong,
+        alignItems: "center", justifyContent: "center", marginTop: -18,
         ...theme.shadow.md,
       }}
     >
-      <FuvayIcon size={34} accessibilityLabel="Ask Fuvay" />
+      <FuvayIcon size={30} accessibilityLabel="Fuvay assistant" />
     </View>
   );
 }
@@ -62,13 +58,18 @@ export function CustomerTabs() {
         tabBarInactiveTintColor: theme.colors.iconDefault,
         tabBarStyle: {
           backgroundColor: theme.colors.bottomNavigation,
-          borderTopColor: theme.colors.borderSubtle,
-          borderTopWidth: 1,
-          height: 76 + bottomInset,
+          borderColor: theme.colors.borderSubtle,
+          borderWidth: 1,
+          height: 66 + bottomInset,
           paddingTop: 8,
           paddingBottom: bottomInset,
+          position: "absolute",
+          left: 12,
+          right: 12,
+          bottom: 8,
+          borderRadius: 28,
           overflow: "visible",
-          ...theme.shadow.sm,
+          ...theme.shadow.md,
         },
         tabBarItemStyle: { minHeight: 60, overflow: "visible" },
         tabBarLabelStyle: { fontSize: 10.5, lineHeight: 14, fontWeight: "600", marginTop: 1 },

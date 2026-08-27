@@ -35,12 +35,10 @@ async def get_platform_summary(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     vertical: str | None = Query(None),
-    category_id: str | None = Query(None),
-    tenant_id: str | None = Query(None),
 ):
     data = await _svc.get_platform_summary(
         db, date_from=date_from, date_to=date_to,
-        vertical=vertical, category_id=category_id, tenant_id=tenant_id,
+        vertical=vertical,
     )
     return ok(data, _rid(request))
 
@@ -126,11 +124,8 @@ async def get_provider_performance(
 ):
     data = await _svc.get_provider_performance(
         db, date_from=date_from, date_to=date_to,
-        vertical=vertical, sort_by=sort_by, limit=limit,
+        vertical=vertical, sort_by=sort_by, health_band=health_band, limit=limit,
     )
-    # optional filter by health_band
-    if health_band and data.get("items"):
-        data["items"] = [i for i in data["items"] if i.get("health_band") == health_band]
     return ok(data, _rid(request))
 
 
@@ -199,8 +194,11 @@ async def get_complaints_breakdown(
     db: AsyncSession = Depends(get_db),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    vertical: str | None = Query(None),
 ):
-    data = await _svc.get_complaints_breakdown(db, date_from=date_from, date_to=date_to)
+    data = await _svc.get_complaints_breakdown(
+        db, date_from=date_from, date_to=date_to, vertical=vertical,
+    )
     return ok(data, _rid(request))
 
 
@@ -218,6 +216,7 @@ async def get_geography_summary(
 ):
     data = await _svc.get_geography_summary(
         db, date_from=date_from, date_to=date_to, vertical=vertical,
+        city=city, state=state,
     )
     return ok(data, _rid(request))
 
@@ -230,29 +229,10 @@ async def get_customer_summary(
     db: AsyncSession = Depends(get_db),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    vertical: str | None = Query(None),
 ):
-    data = await _svc.get_customer_summary(db, date_from=date_from, date_to=date_to)
+    data = await _svc.get_customer_summary(
+        db, date_from=date_from, date_to=date_to, vertical=vertical,
+    )
     return ok(data, _rid(request))
 
-
-# ── Reports / Export ──────────────────────────────────────────────────────────
-
-@platform_analytics_router.post("/reports/export")
-async def export_report(
-    payload: dict,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    from app.dependencies.auth import get_current_user
-    # extract user from token; skip if unavailable
-    try:
-        from app.dependencies.auth import get_current_user
-        from fastapi import HTTPException
-        user = await get_current_user(request, db)
-        user_id = str(user.id)
-    except Exception:
-        user_id = "system"
-
-    report_type = payload.pop("report_type", "platform_summary")
-    data = await _svc.export_report(db, report_type, payload, user_id)
-    return ok(data, _rid(request))

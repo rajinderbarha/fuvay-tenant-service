@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, SummaryCard } from "../../../../components/shared/ui";
 import {
   verticalMonetizationApi, type MonetizationPolicyRow, type MonetizationPolicy, type MonetizationImpact,
 } from "../../../../lib/api";
@@ -11,6 +12,7 @@ import {
   FileText, Sparkles, AlertTriangle, Building2, CheckCircle2, Calendar,
   Clock, ShieldCheck, Search, ArrowUpRight,
 } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 // Home Services has its own category-specific monetization workspace at
 // /admin/home-services/finance?tab=monetization (reusing this same engine,
@@ -55,21 +57,18 @@ export default function VerticalMonetizationPage() {
   return (
     <AdminLayout activeNav="vertical-monetization">
       <div style={{ padding: "0 4px" }}>
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Business Categories / Category Rates</p>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Category Rates</h1>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-              Configure platform monetization by business vertical. Tenant service prices remain tenant-owned.
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+        <PageHeader
+          title="Category Rates"
+          description="Configure platform monetization by business vertical. Tenant service prices remain tenant-owned."
+          eyebrow="Finance"
+          context="Business Categories"
+          actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
             <Btn variant="ghost" size="sm" onClick={() => setTab("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
             <Btn variant="primary" size="sm" onClick={() => { setTab("policies"); setSelectedKey(rows.find(r => !r.has_draft)?.vertical_key ?? selectedKey); }}>
               <Sparkles size={14} style={{ marginRight: 4 }}/>Create Draft Policy
             </Btn>
-          </div>
-        </div>
+          </div>}
+        />
 
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderRadius: "var(--radius-lg)",
           background: "var(--info-bg, rgba(59,130,246,0.08))", border: "1px solid var(--info-border, rgba(59,130,246,0.3))", marginBottom: 16 }}>
@@ -125,7 +124,7 @@ export default function VerticalMonetizationPage() {
                   <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No verticals match this filter.</div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                           {["Vertical", "Revenue Model", "Provider Charge", "Customer Fee", "Policy Source", "Status", ""].map(h => (
@@ -162,7 +161,7 @@ export default function VerticalMonetizationPage() {
                           );
                         })}
                       </tbody>
-                    </table>
+                    </TableSurface>
                   </div>
                 )}
                 <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>Showing 1 to {filtered.length} of {rows.length} verticals</div>
@@ -185,13 +184,7 @@ export default function VerticalMonetizationPage() {
 }
 
 function Metric({ icon, value, label }: { icon: React.ReactNode; value: number | undefined; label: string }) {
-  return (
-    <div style={{ padding: "12px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
-      <div style={{ color: "var(--text-tertiary)", marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{value ?? "—"}</div>
-      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</div>
-    </div>
-  );
+  return <SummaryCard label={label} value={value ?? "—"} icon={icon} />;
 }
 
 function PolicyDetailPanel({ row, onChanged }: { row: MonetizationPolicyRow; onChanged: () => void }) {
@@ -415,7 +408,7 @@ function ChangeHistoryTab({ verticalKey }: { verticalKey?: string }) {
       {items.length === 0 ? (
         <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No policy versions yet for this vertical.</div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Version", "Status", "Provider Model", "Customer Fee Model", "Published", ""].map(h => (
@@ -435,7 +428,7 @@ function ChangeHistoryTab({ verticalKey }: { verticalKey?: string }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       )}
     </Card>
   );
@@ -449,7 +442,7 @@ function AuditTab({ verticalKey }: { verticalKey?: string }) {
       {items.length === 0 ? (
         <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No monetization policy changes recorded yet.</div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Action", "Notes", "When"].map(h => (
@@ -466,7 +459,7 @@ function AuditTab({ verticalKey }: { verticalKey?: string }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       )}
     </Card>
   );

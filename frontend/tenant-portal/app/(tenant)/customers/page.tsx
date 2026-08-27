@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -212,7 +213,7 @@ function CustomersWorkspace() {
 }
 
 function CustomerTable({ rows, onOpen }: { rows: HsCustomerListItem[]; onOpen: (id: string) => void }) {
-  return <div className="customer-table-wrap"><table className="customer-table"><thead><tr><th>Customer</th><th>Activity</th><th>Completed</th><th>Services</th><th>Relationship</th><th>Payment history</th><th>Complaints</th><th aria-label="Actions" /></tr></thead><tbody>
+  return <div className="customer-table-wrap"><TableSurface className="customer-table"><thead><tr><th>Customer</th><th>Activity</th><th>Completed</th><th>Services</th><th>Relationship</th><th>Payment history</th><th>Complaints</th><th aria-label="Actions" /></tr></thead><tbody>
     {rows.map(row => {
       const type = customerType(row.repeat_status);
       const payment = paymentState(row.payment_reliability);
@@ -228,5 +229,5 @@ function CustomerTable({ rows, onOpen }: { rows: HsCustomerListItem[]; onOpen: (
         <td><span className="customer-open">Open <ChevronRight size={13} /></span></td>
       </tr>;
     })}
-  </tbody></table></div>;
+  </tbody></TableSurface></div>;
 }

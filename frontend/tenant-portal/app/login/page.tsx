@@ -162,7 +162,6 @@ export default function LoginPage() {
       // succeeded and the backend had supplied the destination.
       const tenant = res.tenant;
       localStorage.setItem("serviceos_tenant_vertical", tenant?.vertical ?? "");
-      localStorage.setItem("serviceos_tenant_plan",     tenant?.plan_type ?? "");
       localStorage.setItem("serviceos_tenant_health",   String(tenant?.health_score ?? 0));
       if (tenant?.name) localStorage.setItem("serviceos_tenant_name", tenant.name);
 

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import {
   adminMarketingApi,
@@ -11,9 +12,11 @@ import {
   Modal,
   Input,
   Skeleton,
+  Pagination,
 } from "@/components/shared/ui";
 import { useApi, useAction } from "@/hooks/useApi";
 import { CheckCircle2, XCircle, AlertCircle, Send, Globe } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -89,13 +92,12 @@ export default function AdminMarketingAssetsPage() {
         surface instead.
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>Marketing Assets</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>Review and approve provider marketing assets.</p>
-        </div>
-        <Btn onClick={() => { window.location.href = "/admin/marketing"; }}>Open Marketing Workspace</Btn>
-      </div>
+      <PageHeader
+        title="Marketing Assets"
+        description="Review and approve provider marketing assets."
+        eyebrow="Marketing"
+        actions={<Btn onClick={() => { window.location.href = "/admin/marketing"; }}>Open Marketing Workspace</Btn>}
+      />
 
       <Card>
         <div style={{ padding: "12px 16px" }}>
@@ -114,7 +116,7 @@ export default function AdminMarketingAssetsPage() {
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-tertiary)" }}>No assets found.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   {["Type", "Channel", "Language", "Status", "Preview", "Actions"].map(h => (
@@ -163,18 +165,11 @@ export default function AdminMarketingAssetsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
-        {!loading && assets.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text-tertiary)" }}>
-            <span>Page {page}</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="sm" variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Btn>
-              <Btn size="sm" variant="ghost" onClick={() => setPage(p => p + 1)} disabled={assets.length < 20}>Next</Btn>
-            </div>
-          </div>
-        )}
+        {!loading && assets.length > 0 && <Pagination page={page} pageSize={20} pageCount={page + (assets.length === 20 ? 1 : 0)}
+          hasPrevious={page > 1} hasNext={assets.length === 20} navigationMode="adjacent" onPage={setPage} alwaysShow />}
       </Card>
 
       <Modal open={rejectModal.open} onClose={() => setRejectModal({ open: false, assetId: null, reason: "" })} title="Reject Asset">

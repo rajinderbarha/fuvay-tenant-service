@@ -81,7 +81,7 @@ def test_home_services_summary_section_exists():
 def test_home_services_summary_shown_separately_not_merged():
     assert 'SectionTitle title="Home Services Summary"' in PAGE
     for label in ["Service Catalog", "Finance Rules",
-                  "Tenant Service Areas", "Bookability & Trust Gates", "Completion Deductions"]:
+                  "Provider Coverage Readiness", "Bookability & Trust Gates", "Completion Deductions"]:
         assert label in PAGE
     assert "Auto Price Options" not in PAGE
 
@@ -110,7 +110,8 @@ def test_backend_home_services_summary_endpoint_real():
     # real SQL, not mock data
     assert "SELECT COUNT(*) FROM tenants WHERE vertical = 'home_services'" in DASHBOARD_SERVICE
     assert "provider_visibility_statuses" in DASHBOARD_SERVICE
-    assert "tenant_service_area_health" in DASHBOARD_SERVICE
+    assert "provider_coverage_health" in DASHBOARD_SERVICE
+    assert "tenant_service_area_health" not in DASHBOARD_SERVICE
     assert "provider_bookability_health" in DASHBOARD_SERVICE
     assert "provider_matching_health" not in DASHBOARD_SERVICE
 

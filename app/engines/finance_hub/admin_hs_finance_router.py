@@ -248,26 +248,9 @@ async def hs_topup_detail(topup_id: uuid.UUID, r: Request, s: HomeServicesFinanc
     return ok(await s.get_topup_detail(str(topup_id)), _rid(r), ENGINE_ID)
 
 
-@canonical_router.get("/deposits", response_model=ApiResponse[dict])
-async def hs_deposits(
-    r: Request, status: str | None = Query(None), q: str | None = Query(None),
-    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-    sort_by: str = Query("created_at"), sort_dir: str = Query("desc"),
-    s: HomeServicesFinanceService = Depends(_svc),
-):
-    return ok(await s.list_hs_deposits(
-        status=status, q=q, page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir,
-    ), _rid(r), ENGINE_ID)
-
-
-@canonical_router.get("/deposits/summary", response_model=ApiResponse[dict])
-async def hs_deposits_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_deposits_summary(), _rid(r), ENGINE_ID)
-
-
-@canonical_router.get("/deposits/{deposit_id}", response_model=ApiResponse[dict])
-async def hs_deposit_detail(deposit_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_deposit_detail(deposit_id), _rid(r), ENGINE_ID)
+# The security deposit was removed in migration 317/318. These endpoints
+# went with it: a provider now buys a top-up plan whose credit is spent
+# down as commission, so there is no held balance to administer.
 
 
 @canonical_router.get("/warranty-claims", response_model=ApiResponse[dict])

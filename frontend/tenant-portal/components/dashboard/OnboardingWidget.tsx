@@ -57,7 +57,7 @@ export function OnboardingWidget() {
               </p>
             </div>
           </div>
-          <Btn size="xs" variant="ghost" onClick={() => router.push("/onboarding-status")}>
+          <Btn size="xs" variant="ghost" onClick={() => router.push("/tenant/home-services/setup")}>
             View Checklist <ChevronRight size={11}/>
           </Btn>
         </div>
@@ -117,7 +117,7 @@ export function OnboardingWidget() {
 
         {/* Footer */}
         <div style={{ display: "flex", gap: 8, paddingTop: 2 }}>
-          <Btn size="xs" variant="ghost" onClick={() => router.push("/onboarding-status")}>
+          <Btn size="xs" variant="ghost" onClick={() => router.push("/tenant/home-services/setup")}>
             View Full Checklist
           </Btn>
         </div>

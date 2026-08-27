@@ -1,10 +1,13 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import ReactDOM from "react-dom";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import EnterpriseFilterBar, { FilterDef } from "./EnterpriseFilterBar";
 import EnterprisePagination from "./EnterprisePagination";
 import EnterpriseColumnManager, { ColumnDef } from "./EnterpriseColumnManager";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "../shared/ui";
 
 export interface GridColumn {
   key:      string;
@@ -155,6 +158,7 @@ function RowActionsMenu({ actions, row }: { actions: RowAction[]; row: Record<st
               }
               return (
                 <button
+                  type="button"
                   key={i}
                   onClick={() => { a.onClick(row); setOpen(false); }}
                   style={{
@@ -180,6 +184,7 @@ function RowActionsMenu({ actions, row }: { actions: RowAction[]; row: Record<st
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
       <button
+        type="button"
         ref={btnRef}
         onClick={handleToggle}
         aria-label="Row actions"
@@ -438,26 +443,9 @@ function EnterpriseDataGridInner({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Page header (outside card) */}
-      {(title || headerSlot) && (
-        <div style={{
-          display: "flex", alignItems: "flex-start",
-          justifyContent: "space-between", marginBottom: 20,
-        }}>
-          <div>
-            {title && (
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
-                {title}
-              </h1>
-            )}
-            {description && (
-              <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-                {description}
-              </p>
-            )}
-          </div>
-          {headerSlot}
-        </div>
-      )}
+      {(title || headerSlot) && <div style={{ marginBottom: "var(--layout-page-gap)" }}>
+        <PageHeader eyebrow="Platform operations" title={title ?? "Data workspace"} description={description} actions={headerSlot} />
+      </div>}
 
       {/* Card: toolbar + table + pagination */}
       <div style={{
@@ -487,24 +475,21 @@ function EnterpriseDataGridInner({
                   />
                 )}
                 {enableExport && (
-                  <button
+                  <Btn
+                    size="sm"
+                    variant="secondary"
                     onClick={() => onExport?.(buildParams())}
                     title="Export"
-                    style={{
-                      height: 34, padding: "0 12px", fontSize: 12, borderRadius: 8,
-                      border: "1px solid var(--border)", background: "var(--surface)",
-                      color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
-                      display: "inline-flex", alignItems: "center", gap: 5,
-                    }}
                   >
                     <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round"
                         d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                     Export
-                  </button>
+                  </Btn>
                 )}
                 <button
+                  type="button"
                   onClick={load}
                   title="Refresh"
                   style={{
@@ -538,7 +523,7 @@ function EnterpriseDataGridInner({
         {/* Loading */}
         {loading && (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {visibleColumns.map(c => (
@@ -556,7 +541,7 @@ function EnterpriseDataGridInner({
               <tbody>
                 <SkeletonRows cols={visibleColumns.length + (rowActions ? 1 : 0)} />
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
 
@@ -572,6 +557,7 @@ function EnterpriseDataGridInner({
             </p>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>{error}</p>
             <button
+              type="button"
               onClick={load}
               style={{
                 marginTop: 4, fontSize: 13, color: "var(--brand, #2563eb)",
@@ -587,7 +573,7 @@ function EnterpriseDataGridInner({
         {!loading && !error && data && (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <TableSurface style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
                     {visibleColumns.map(c => (
@@ -649,7 +635,7 @@ function EnterpriseDataGridInner({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
 
             {data.pagination && (

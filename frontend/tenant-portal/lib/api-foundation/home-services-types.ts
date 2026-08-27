@@ -13,8 +13,6 @@ export type {
   ProviderStatusResult,
   OfferingBookableStatus as BookabilityStatus,
   EnabledOffering as TenantService,
-  PackageAssignmentSummary,
-  TenantSecurityDepositStatus,
   TenantCreditWalletDetail as UsageCreditBalance,
   ProviderServiceArea as ServiceArea,
   ProviderTeamMember as Technician,

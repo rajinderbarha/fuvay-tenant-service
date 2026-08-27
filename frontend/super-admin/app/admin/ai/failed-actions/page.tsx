@@ -1,15 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminAiApi, AIActionLog } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   blocked: { background: "var(--danger-bg)",  color: "var(--danger-text)" },
   failed:  { background: "var(--warning-bg)", color: "var(--warning-text)" },
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
-  background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 
 export default function AIFailedActionsPage() {
@@ -30,15 +27,12 @@ export default function AIFailedActionsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Failed AI Actions</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Blocked and failed backend action requests from AI</p>
-        </div>
-        <button onClick={load} disabled={loading} style={btnStyle}>
-          {loading ? "Loading…" : "Refresh"}
-        </button>
-      </div>
+      <PageHeader
+        title="Failed AI Actions"
+        description="Blocked and failed backend action requests from AI."
+        eyebrow="Intelligence"
+        actions={<Btn variant="secondary" size="sm" onClick={load} loading={loading}>Refresh</Btn>}
+      />
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "32px 0", color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</div>
@@ -77,10 +71,10 @@ export default function AIFailedActionsPage() {
                     </div>
                   )}
                 </div>
-                <button onClick={() => setExpanded(expanded === log.id ? null : log.id)}
-                  style={{ ...btnStyle, flexShrink: 0 }}>
+                <Btn variant="secondary" size="sm" onClick={() => setExpanded(expanded === log.id ? null : log.id)}
+                  style={{ flexShrink: 0 }}>
                   {expanded === log.id ? "Hide" : "Payload"}
-                </button>
+                </Btn>
               </div>
               {expanded === log.id && log.request_payload && (
                 <pre style={{

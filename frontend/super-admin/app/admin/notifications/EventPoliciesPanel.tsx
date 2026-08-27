@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import {
-  Card, Badge, Btn, Select, Input, Pagination, EmptyState,
+  Card, Badge, Btn, Select, Input, Pagination, EmptyState, SummaryCard,
 } from "../../../components/shared/ui";
 import {
   notificationPolicyApi,
@@ -98,7 +99,7 @@ export function EventPoliciesPanel() {
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No events match this filter.</div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                       {["Event", "Vertical", "Severity", "Channels", "Status", "Version", ""].map(h => (
@@ -131,7 +132,7 @@ export function EventPoliciesPanel() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
             <Pagination page={page} total={listApi.data?.total ?? 0} pageSize={25} onPage={setPage}/>
@@ -149,13 +150,7 @@ export function EventPoliciesPanel() {
 }
 
 function Metric({ icon, value, label }: { icon: React.ReactNode; value: React.ReactNode; label: string }) {
-  return (
-    <div style={{ padding: "12px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
-      <div style={{ color: "var(--text-tertiary)", marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{value ?? "—"}</div>
-      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</div>
-    </div>
-  );
+  return <SummaryCard label={label} value={value ?? "—"} icon={icon} />;
 }
 
 function PolicyInspector({ row, onChanged }: { row: NotificationPolicyListItem; onChanged: () => void }) {

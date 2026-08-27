@@ -562,7 +562,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
       {/* â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         <TopNav theme={theme} onToggleTheme={toggle} onLogout={handleLogout}/>
-        <main id="admin-main-content" className="admin-main" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "28px 32px", position: "relative",
+        <main id="admin-main-content" className="admin-main" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "var(--layout-content-padding-block) var(--layout-content-padding-inline)", position: "relative",
           background: "var(--bg-gradient)", outline: "none" }}>
           <div className="admin-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>

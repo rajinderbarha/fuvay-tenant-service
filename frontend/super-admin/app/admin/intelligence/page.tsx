@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,7 +9,8 @@ import {
   RefreshCw, Search, ServerCog, Sparkles, TriangleAlert, UsersRound,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Badge, Btn, Input, Modal, Pagination, Select } from "../../../components/shared/ui";
+import { Badge, Btn, Input, Modal, Pagination, Select, SummaryCard } from "../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import { useAction, useApi } from "../../../hooks/useApi";
 import {
   intelligenceCmdApi, kbApi,
@@ -64,10 +66,8 @@ function Status({ value }: { value: string }) {
 function Metric({ label, value, help, icon: Icon, tone = "var(--brand)" }: {
   label: string; value: React.ReactNode; help: string; icon: IconType; tone?: string;
 }) {
-  return <div className={styles.metricCard} style={{ "--metric-tone": tone } as React.CSSProperties}>
-    <div className={styles.metricTop}><span>{label}</span><span className={styles.metricIcon}><Icon size={15} /></span></div>
-    <div className={styles.metricValue}>{value}</div><div className={styles.metricHelp}>{help}</div>
-  </div>;
+  const semanticTone = tone.includes("danger") ? "danger" : tone.includes("warning") ? "warning" : tone.includes("success") ? "success" : tone.includes("info") ? "info" : undefined;
+  return <SummaryCard label={label} value={value} sub={help} icon={<Icon />} tone={semanticTone} />;
 }
 
 function SectionHeader({ title: heading, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {
@@ -87,7 +87,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 }
 
 function Table({ headers, children, minWidth = 820 }: { headers: string[]; children: React.ReactNode; minWidth?: number }) {
-  return <div className={styles.tableScroll}><table className={styles.table} style={{ minWidth }}><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+  return <div className={styles.tableScroll}><TableSurface className={styles.table} style={{ minWidth }}><thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{children}</tbody></TableSurface></div>;
 }
 
 function Pager({ page, total, onPage }: { page: number; total: number; onPage: (page: number) => void }) {
@@ -189,7 +189,7 @@ export default function IntelligencePage() {
     {toast && <div className={styles.toast}><CheckCircle2 size={16} />{toast}</div>}
     {errors.length > 0 && <div className={styles.notice}><AlertTriangle size={17} /><span>{String(errors[0])}</span></div>}
 
-    <header className={styles.header}><div><div className={styles.eyebrow}><BrainCircuit size={14} />Intelligence control plane / {activeLabel}</div><h1 className={styles.title}>Intelligence & analytics</h1><p className={styles.subtitle}>Operate Home Services risk scoring, event integrity, knowledge retrieval, anomaly response and AI governance from one auditable workspace.</p></div><div className={styles.headerActions}><span className={styles.freshness}><i className={styles.freshnessDot} />Live data · {lastUpdated}</span><Btn variant="secondary" size="sm" loading={predictionRunning} onClick={() => runPredictions()}><Play size={14} /> Run risk scoring</Btn><Btn variant="secondary" size="sm" loading={scanRunning} onClick={() => runScan()}><TriangleAlert size={14} /> Scan anomalies</Btn><Btn variant="ghost" size="sm" onClick={refreshSummary}><RefreshCw size={14} /> Refresh</Btn></div></header>
+    <PageHeader eyebrow="Intelligence control plane" context={activeLabel} title="Intelligence & analytics" description="Operate Home Services risk scoring, event integrity, knowledge retrieval, anomaly response and AI governance from one auditable workspace." actions={<div className={styles.headerActions}><span className={styles.freshness}><i className={styles.freshnessDot} />Live data · {lastUpdated}</span><Btn variant="secondary" size="sm" loading={predictionRunning} onClick={() => runPredictions()}><Play size={14} /> Run risk scoring</Btn><Btn variant="secondary" size="sm" loading={scanRunning} onClick={() => runScan()}><TriangleAlert size={14} /> Scan anomalies</Btn><Btn variant="ghost" size="sm" onClick={refreshSummary}><RefreshCw size={14} /> Refresh</Btn></div>} />
 
     <section className={styles.primaryMetrics} aria-label="Intelligence overview metrics">
       <Metric label="Providers at risk" value={number(s?.tenants_at_risk)} help="High and critical Home Services providers" icon={UsersRound} tone="var(--warning)" />

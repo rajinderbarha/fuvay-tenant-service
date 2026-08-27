@@ -2,5 +2,5 @@
 import { redirect } from "next/navigation";
 
 export default function LegacyProviderStatusRedirect() {
-  redirect("/onboarding-status");
+  redirect("/tenant/home-services/setup");
 }

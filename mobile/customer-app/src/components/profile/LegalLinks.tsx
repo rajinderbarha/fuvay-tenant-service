@@ -1,47 +1,62 @@
 import React from "react";
-import { Linking, Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { ProfileRow } from "./ProfileRow";
+import { IconProps } from "../Icon";
+import { useLegalDocumentIndexQuery } from "../../api/legalDocuments/useLegalDocumentQueries";
 
 export interface LegalLinksProps {
-  privacyPolicyUrl: string | null;
-  termsOfServiceUrl: string | null;
   appVersion: string;
 }
 
-const ALLOWED_HOSTS_SUFFIX = ".fuvay.com";
+/**
+ * Privacy / Terms rows in the profile's "Privacy & legal" section.
+ *
+ * These used to take `privacyPolicyUrl` / `termsOfServiceUrl` and open them
+ * externally, subject to an `*.fuvay.com` allowlist. ProfileScreen passed
+ * `null` for both and the component omits unconfigured rows, so in practice
+ * neither row had ever rendered — the section showed only "About Fuvay".
+ *
+ * Rows are now driven by /v1/public/legal, which lists exactly the documents
+ * that have a published version. A document type with nothing published is
+ * still omitted, so a row can never lead to an empty screen — but now that is
+ * a real check against the store, not a hardcoded `null`.
+ */
 
-/** Only ever opens a configured HTTPS URL on an allowed host -- never an
- * arbitrary string from anywhere else (spec section 11). Rows for
- * unconfigured URLs are omitted entirely, not shown disabled. */
-function isAllowedLegalUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" && parsed.hostname.endsWith(ALLOWED_HOSTS_SUFFIX);
-  } catch {
-    return false;
-  }
-}
+const ICON_BY_DOC_TYPE: Record<string, IconProps["name"]> = {
+  privacy_policy: "shield-checkmark-outline",
+  terms_of_service: "document-text-outline",
+  refund_policy: "cash-outline",
+  cookie_policy: "settings-outline",
+  acceptable_use: "alert-circle-outline",
+};
 
-async function openExternal(url: string) {
-  if (!isAllowedLegalUrl(url)) return;
-  const supported = await Linking.canOpenURL(url);
-  if (supported) {
-    await Linking.openURL(url);
-  } else {
-    Alert.alert("Couldn't open link", "Please try again later.");
-  }
-}
+export function LegalLinks({ appVersion }: LegalLinksProps) {
+  const navigation = useNavigation<{
+    navigate: (screen: string, params: { docType: string; title: string }) => void;
+  }>();
+  const index = useLegalDocumentIndexQuery();
 
-export function LegalLinks({ privacyPolicyUrl, termsOfServiceUrl, appVersion }: LegalLinksProps) {
+  const documents = index.data?.documents ?? [];
+
   return (
     <>
-      {privacyPolicyUrl ? (
-        <ProfileRow icon="shield-checkmark-outline" label="Privacy policy" external onPress={() => openExternal(privacyPolicyUrl)} />
-      ) : null}
-      {termsOfServiceUrl ? (
-        <ProfileRow icon="document-text-outline" label="Terms of service" external onPress={() => openExternal(termsOfServiceUrl)} />
-      ) : null}
-      <ProfileRow icon="information-circle-outline" label="About Fuvay" subtitle={`Version ${appVersion}`} bordered={false} />
+      {documents.map(doc => (
+        <ProfileRow
+          key={doc.doc_type}
+          icon={ICON_BY_DOC_TYPE[doc.doc_type] ?? "document-outline"}
+          label={doc.title}
+          onPress={() => navigation.navigate("LegalDocument", {
+            docType: doc.doc_type,
+            title: doc.title,
+          })}
+        />
+      ))}
+      <ProfileRow
+        icon="information-circle-outline"
+        label="About Fuvay"
+        subtitle={`Version ${appVersion}`}
+        bordered={false}
+      />
     </>
   );
 }

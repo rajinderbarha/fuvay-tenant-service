@@ -1,9 +1,10 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState, useEffect, useRef } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { complaintsApi, adminComplaintPolicyApi, ComplaintPolicyRecord } from "../../../lib/api";
-import { Btn, SectionHeader } from "../../../components/shared/ui";
+import { Btn, Pagination, SectionHeader, SummaryCard, KpiGrid } from "../../../components/shared/ui";
 import { AlertOctagon, Download, RefreshCw, Radio } from "lucide-react";
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
@@ -103,28 +104,6 @@ function fmtDate(s: string | null) {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
-function SummaryCard({
-  label, value, active, onClick,
-}: { label: string; value: number; active?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={Boolean(active)}
-      aria-label={`${label}: ${value}`}
-      style={{
-        background: active ? "var(--brand)" : "var(--surface)",
-        border: `1.5px solid ${active ? "var(--brand)" : "var(--border)"}`,
-        borderRadius: 10, padding: "14px 18px",
-        cursor: "pointer", textAlign: "left", transition: "all .15s",
-        flex: "1 1 140px", minWidth: 130, fontFamily: "inherit",
-      }}
-    >
-      <div style={{ fontSize: 24, fontWeight: 700, color: active ? "var(--text-on-brand)" : "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
-      <div style={{ fontSize: 12, color: active ? "rgba(255,255,255,.75)" : "var(--text-tertiary)", marginTop: 2 }}>{label}</div>
-    </button>
-  );
-}
-
 function Chip({ label, active, onClick }: {
   label: string; active?: boolean; onClick?: () => void;
 }) {
@@ -417,6 +396,8 @@ export default function AdminComplaintsPage() {
     <AdminLayout activeNav="complaints">
       <div className="operations-admin-page">
         <SectionHeader
+          eyebrow="Operations control plane"
+          context="Complaints"
           title="Complaints & Disputes"
           subtitle="Platform-wide complaint monitoring, SLA response and governed settlement."
           icon={<AlertOctagon size={18} />}
@@ -461,7 +442,7 @@ export default function AdminComplaintsPage() {
         </div>
         {/* Summary Cards */}
         {Object.keys(summary).length > 0 && (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+          <KpiGrid minCardWidth={150} style={{ marginBottom: "var(--layout-section-gap)" }}>
             <SummaryCard label="Total" value={summary.total ?? 0}
               active={!cardFilter && !status && !slaFilter && !priority && !newToday}
               onClick={() => { setCardFilter(""); setStatus(""); setSla(""); setPriority(""); setNewToday(false); setPage(1); }} />
@@ -481,7 +462,7 @@ export default function AdminComplaintsPage() {
               onClick={() => { setNewToday(v => !v); setCardFilter(""); setPage(1); }} />
             <SummaryCard label="Settled" value={summary.settled ?? 0}
               active={cardFilter === "settled"} onClick={() => { setCardFilter("settled"); setPage(1); }} />
-          </div>
+          </KpiGrid>
         )}
 
         {/* Quick filters */}
@@ -583,7 +564,7 @@ export default function AdminComplaintsPage() {
 
         {/* Table */}
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "auto" }}>
-          <table className="admin-complaints-grid" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface className="admin-complaints-grid" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr>
                 <SortTh col="created_at" label="Complaint #" />
@@ -613,25 +594,13 @@ export default function AdminComplaintsPage() {
                 />
               ))}
             </tbody>
-          </table>
+          </TableSurface>
           {complaintColumnCss && <style>{complaintColumnCss}</style>}
         </div>
 
         {/* Pagination */}
-        {(meta.total ?? 0) > pageSize && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
-            <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-              {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, meta.total ?? 0)} of {meta.total ?? 0} complaints
-            </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p: number) => p - 1)}>Prev</Btn>
-              <span style={{ padding: "0 8px", fontSize: 13, color: "var(--text-secondary)" }}>
-                Page {page} / {meta.total_pages ?? 1}
-              </span>
-              <Btn size="sm" variant="secondary" disabled={!meta.has_next} onClick={() => setPage((p: number) => p + 1)}>Next</Btn>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} pageSize={pageSize} total={meta.total ?? 0} pageCount={meta.total_pages}
+          hasNext={meta.has_next} onPage={setPage} itemLabel="complaints" />
         </>}
       </div>
     </AdminLayout>
@@ -763,7 +732,7 @@ function ComplaintPoliciesPanel() {
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               The AI takes over automatically once the provider has failed to solve the complaint.
               It never pays money &mdash; compensation is credit points, funded from the provider&apos;s
-              credits and then their security deposit. A case worth more than the cap goes to admin
+              credits, which may go negative and pause new bookings. A case worth more than the cap goes to admin
               manual review.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -891,7 +860,7 @@ function ComplaintPoliciesPanel() {
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
                   Refunds and every other cash remedy are deliberately absent: the platform never
                   settles a dispute with real money. Compensation is paid in credit points, deducted
-                  from the provider&apos;s credits and then their security deposit.
+                  from the provider&apos;s credits, which may go negative and pause new bookings.
                 </p>
               </div>
             </div>

@@ -225,8 +225,8 @@ export function OnboardingHelpCard() {
     <Card>
       <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px", color: "var(--text-primary)" }}>Need help getting started?</h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <Btn variant="secondary" fullWidth icon={<BookOpen size={14}/>} onClick={() => router.push("/help/setup-guide")}>View setup guide</Btn>
-        <Btn variant="secondary" fullWidth icon={<Headphones size={14}/>} onClick={() => router.push("/help/contact?context=onboarding")}>Contact support</Btn>
+        <Btn variant="secondary" fullWidth icon={<BookOpen size={14}/>} onClick={() => router.push("/tenant/home-services/setup/overview")}>View setup guide</Btn>
+        <Btn variant="secondary" fullWidth icon={<Headphones size={14}/>} onClick={() => router.push("/help")}>Contact support</Btn>
       </div>
     </Card>
   );
@@ -241,7 +241,7 @@ export function OnboardingPolicyBanner() {
       <AlertCircle size={16} style={{ color: "var(--info-text)", flexShrink: 0 }}/>
       <p style={{ fontSize: 13, color: "var(--info-text)", margin: 0 }}>
         No package or payment is required during signup. Service pricing remains fully controlled by your business.
-        A security deposit may be required after admin approval, and usage credits may be needed to receive bookings.
+        A top-up plan is required after admin approval — it grants the usage credits you spend on jobs and the technician seats you need to receive bookings.
       </p>
     </div>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Workspace Settings -- General tab. Dirty-field-tracked draft form over the
  * real composed read (workspaceSettingsApi.getGeneral) with explicit
@@ -162,7 +163,7 @@ export function GeneralTab({ onDirtyChange, saveRef }: {
           <Clock3 size={14}/> Business hours
         </p>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr>
                 {data.business_hours.map(d => (
@@ -179,7 +180,7 @@ export function GeneralTab({ onDirtyChange, saveRef }: {
                 ))}
               </tr>
             </tbody>
-          </table>
+          </TableSurface>
         </div>
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>{data.business_hours_note}</p>
         <a href="/provider/availability" style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)" }}>Edit business hours in Availability →</a>

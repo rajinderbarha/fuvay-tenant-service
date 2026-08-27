@@ -4,6 +4,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { autoPriceOptionsApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 import { ChevronRight, RefreshCw, XCircle, Copy, CheckCircle2 } from "lucide-react";
+import { Btn, SectionHeader } from "../../../../components/shared/ui";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -45,18 +46,10 @@ export default function AdminHomeServicesSettingsPage() {
   return (
     <AdminLayout activeNav="hs-settings">
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
-        <span>Admin</span><ChevronRight size={12}/><span>Home Services</span><ChevronRight size={12}/>
-        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>Home Services Settings</span>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px" }}>Home Services Settings</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Platform-level feature flags controlling how pricing and matching work for the Home Services vertical.
-          </p>
-        </div>
-        <button onClick={configApi.refetch} style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><RefreshCw size={12}/> Refresh</button>
+      <div style={{ marginBottom: "var(--layout-page-gap)" }}>
+        <SectionHeader eyebrow="Platform controls" context="Home Services" title="Home Services Settings"
+          description="Platform-level feature flags controlling how pricing and matching work for the Home Services vertical."
+          actions={<Btn variant="secondary" onClick={configApi.refetch}><RefreshCw size={12}/> Refresh</Btn>} />
       </div>
 
       {configApi.error ? (

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -14,6 +15,7 @@ import {
   ArrowLeft, CheckCircle2, XCircle, RefreshCw,
   ToggleLeft, ToggleRight, Lock,
 } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 function StatusBadge({ status }: { status: string }) {
   const v = status === "enabled" ? "success" : status === "disabled" ? "danger" : "warning";
@@ -108,24 +110,17 @@ export default function EngineDetailPage() {
       {!engine.loading && eng && (
         <>
           {/* Header */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{eng.display_name}</h1>
+          <PageHeader
+            title={eng.display_name}
+            description={eng.description || `Engine key: ${eng.engine_key}`}
+            eyebrow="Engine Management"
+            actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap", alignItems: "center" }}>
                 <StatusBadge status={eng.global_status} />
                 {eng.is_core && <Badge variant="default">Core</Badge>}
                 {eng.is_locked && (
                   <Badge variant="muted"><Lock size={10} style={{ marginRight: 3 }} />Locked</Badge>
                 )}
-              </div>
-              <code style={{ fontSize: 13, color: "var(--text-secondary)" }}>{eng.engine_key}</code>
-              {eng.description && (
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "6px 0 0" }}>{eng.description}</p>
-              )}
-            </div>
-            {!eng.is_locked && (
-              <div style={{ display: "flex", gap: 8 }}>
-                {eng.global_status !== "enabled" ? (
+                {!eng.is_locked && (eng.global_status !== "enabled" ? (
                   <Btn variant="success" onClick={() => openImpact("enable")} disabled={impactLoading}>
                     <ToggleRight size={14} style={{ marginRight: 4 }} />
                     Enable Engine
@@ -135,10 +130,9 @@ export default function EngineDetailPage() {
                     <ToggleLeft size={14} style={{ marginRight: 4 }} />
                     Disable Engine
                   </Btn>
-                )}
-              </div>
-            )}
-          </div>
+                ))}
+            </div>}
+          />
 
           {/* Details grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
@@ -167,7 +161,6 @@ export default function EngineDetailPage() {
             <Card>
               <SectionHeader title="Usage Summary" />
               <DetailRow label="Category Mappings" value={<strong>{eng.category_usage_count ?? 0}</strong>} />
-              <DetailRow label="Package Entitlements" value={<strong>{eng.package_usage_count ?? 0}</strong>} />
               <DetailRow label="Active Tenant Overrides" value={<strong>{eng.active_overrides ?? 0}</strong>} />
               <DetailRow
                 label="Latest Health"
@@ -209,7 +202,7 @@ export default function EngineDetailPage() {
             </div>
             {health.loading && <SkeletonRows n={4} />}
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr>
                     {["Status", "Type", "Latency", "Error", "Checked At"].map((h, i) => (
@@ -240,7 +233,7 @@ export default function EngineDetailPage() {
                     <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--text-tertiary)" }}>No health checks yet.</td></tr>
                   )}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           </Card>
 
@@ -249,7 +242,7 @@ export default function EngineDetailPage() {
             <SectionHeader title="Engine Permissions" subtitle={`${perms.data?.meta?.total ?? 0} permissions`} />
             {perms.loading && <SkeletonRows n={4} />}
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr>
                     {["Permission Key", "Label", "Scope", "Sensitive", "Description"].map((h, i) => (
@@ -273,7 +266,7 @@ export default function EngineDetailPage() {
                     <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--text-tertiary)" }}>No permissions defined.</td></tr>
                   )}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           </Card>
         </>
@@ -304,8 +297,7 @@ export default function EngineDetailPage() {
               </div>
             )}
             <p style={{ fontSize: 13, marginBottom: 10 }}>
-              Affects <strong>{impactPreview.categories_affected}</strong> category entries and{" "}
-              <strong>{impactPreview.packages_affected}</strong> package(s).{" "}
+              Affects <strong>{impactPreview.categories_affected}</strong> category entries.{" "}
               Risk: <Badge variant={impactPreview.risk_level === "high" ? "danger" : impactPreview.risk_level === "medium" ? "warning" : "default"}>{impactPreview.risk_level}</Badge>
             </p>
             <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>

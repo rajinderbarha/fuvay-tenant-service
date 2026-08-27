@@ -31,7 +31,7 @@
  */
 import React, { Suspense, useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Skeleton, Btn, Card } from "../../../../components/shared/ui";
+import { Skeleton, Btn, Card, Pagination } from "../../../../components/shared/ui";
 import { apiFetch } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
@@ -741,19 +741,8 @@ function AvailabilityCapacityPlannerContent() {
         </div>
       )}
 
-      {planner.data && planner.data.pagination.total > pageSize && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-          marginTop: 16, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 12,
-          background: "var(--surface)" }}>
-          <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
-            Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, planner.data.pagination.total)} of {planner.data.pagination.total} technicians
-          </span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</Btn>
-            <Btn variant="secondary" size="sm" disabled={!planner.data.pagination.has_next} onClick={() => setPage(value => value + 1)}>Next</Btn>
-          </div>
-        </div>
-      )}
+      {planner.data && <Pagination page={page} pageSize={pageSize} total={planner.data.pagination.total}
+        hasNext={planner.data.pagination.has_next} onPage={setPage} itemLabel="technicians" />}
 
       {editingStaffId && (() => {
         const staff = technicians.find(t => t.id === editingStaffId);

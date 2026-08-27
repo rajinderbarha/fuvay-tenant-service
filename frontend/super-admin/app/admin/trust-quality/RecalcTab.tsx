@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Recalculation: queue a sweep, watch it run, cancel it, read the history.
  *
@@ -146,7 +147,7 @@ export function RecalcTab() {
         {jobs.loading && rows.length === 0 ? <Spinner /> : (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "8px 16px" }}>Type</th>
                   <th style={{ padding: "8px 16px" }}>Scope</th>
@@ -190,7 +191,7 @@ export function RecalcTab() {
                     </td></tr>
                   )}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
             <Pagination page={page} total={jobs.data?.total ?? 0}
               pageSize={PAGE_SIZE} onPage={setPage} alwaysShow />

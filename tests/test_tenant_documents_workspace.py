@@ -8,6 +8,7 @@ test_tenant_verification_documents.py.
 """
 import os
 import pathlib
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
@@ -269,34 +270,35 @@ class TestWorkspaceRouterStructure:
 
 class TestAdminVerifyEndpointStructure:
     def _read(self) -> str:
-        with open(os.path.join(BASE, "app/engines/vertical_catalog/admin_router.py"), encoding="utf-8") as f:
+        with open(os.path.join(BASE, "app/engines/provider_portal/admin_router.py"), encoding="utf-8") as f:
             return f.read()
 
     def test_decision_supports_all_three_outcomes(self):
         c = self._read()
-        assert '"verified", "rejected", "changes_requested"' in c
+        assert '"verified", "changes_requested", "rejected"' in c
 
     def test_reviewed_by_is_written(self):
         c = self._read()
-        assert "doc.reviewed_by = reviewer_id" in c
+        assert "document.reviewed_by = actor_id" in c
 
     def test_audit_log_written_on_decision(self):
         c = self._read()
         assert "TenantAuditLog(" in c
-        assert 'action_type=f"document.{decision}"' in c
+        assert 'action_type=f"business_document.{decision}"' in c
 
     def test_notification_fired_on_decision(self):
         c = self._read()
-        assert 'fire_event(\n            db, f"document.{decision}"' in c or "fire_event(" in c
+        assert 'f"document.{decision}"' in c
+        assert "NotificationService().fire_event(" in c
 
 
 class TestTenantDocumentModelExtension:
     def test_model_has_staff_scoping_and_review_fields(self):
         with open(os.path.join(BASE, "app/engines/tenant_engine/models.py"), encoding="utf-8") as f:
             c = f.read()
-        assert "staff_member_id: Mapped[uuid.UUID | None]" in c
-        assert "reviewed_by: Mapped[uuid.UUID | None]" in c
-        assert "review_notes: Mapped[str | None]" in c
+        assert re.search(r"staff_member_id:\s+Mapped\[uuid\.UUID \| None\]", c)
+        assert re.search(r"reviewed_by:\s+Mapped\[uuid\.UUID \| None\]", c)
+        assert re.search(r"review_notes:\s+Mapped\[str \| None\]", c)
 
 
 class TestDocumentPermissions:
@@ -336,12 +338,12 @@ class TestBookabilityDocumentGate:
         with open(os.path.join(BASE, "app/engines/provider_portal/router.py"), encoding="utf-8") as f:
             c = f.read()
         assert "REQUIRED_DOCUMENT_ACTION_NEEDED" in c
-        assert "documents_satisfied" in c
-        assert "and documents_satisfied" in c
+        assert "required_document_types" in c
+        assert "and not document_blockers" in c
 
     def test_blocking_statuses_match_activation_impact_policy(self):
         with open(os.path.join(BASE, "app/engines/provider_portal/router.py"), encoding="utf-8") as f:
             c = f.read()
         # Must match _activation_impact's blocks_new_jobs set exactly --
         # pending_review/changes_requested are a grace period, not a block.
-        assert '"not_uploaded", "rejected", "expired"' in c
+        assert 'document.status == "rejected" or expired' in c

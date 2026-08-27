@@ -108,10 +108,6 @@ class TestModels:
         src = _read(MODELS)
         assert "class CategoryEngineMatrix" in src
 
-    def test_package_engine_entitlement_model(self):
-        src = _read(MODELS)
-        assert "class PackageEngineEntitlement" in src
-
     def test_tenant_engine_override_model(self):
         src = _read(MODELS)
         assert "class TenantEngineOverride" in src
@@ -168,10 +164,6 @@ class TestService:
     def test_set_category_engine(self):
         src = _read(SERVICE)
         assert "set_category_engine" in src
-
-    def test_set_package_engine(self):
-        src = _read(SERVICE)
-        assert "set_package_engine" in src
 
     def test_create_tenant_override(self):
         src = _read(SERVICE)
@@ -265,10 +257,6 @@ class TestAdminRouter:
     def test_dependencies_endpoint(self):
         src = _read(ROUTER)
         assert "/dependencies" in src
-
-    def test_package_entitlements_endpoint(self):
-        src = _read(ROUTER)
-        assert "package-entitlements" in src
 
     def test_tenant_overrides_endpoint(self):
         src = _read(ROUTER)
@@ -380,10 +368,6 @@ class TestFrontendApi:
         src = _read(API_TS)
         assert "interface EnterpriseCategoryEngineEntry" in src
 
-    def test_enterprise_package_entitlement_interface(self):
-        src = _read(API_TS)
-        assert "interface EnterprisePackageEntitlement" in src
-
     def test_enterprise_tenant_override_interface(self):
         src = _read(API_TS)
         assert "interface EnterpriseTenantOverride" in src
@@ -417,10 +401,6 @@ class TestFrontendApi:
     def test_enginemgmtapi_dependency_graph(self):
         src = _read(API_TS)
         assert "getDependencyGraph" in src
-
-    def test_enginemgmtapi_package_entitlements(self):
-        src = _read(API_TS)
-        assert "getPackageEntitlements" in src
 
     def test_enginemgmtapi_tenant_overrides(self):
         src = _read(API_TS)

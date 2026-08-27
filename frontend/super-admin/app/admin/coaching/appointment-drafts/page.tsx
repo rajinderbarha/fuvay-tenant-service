@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -8,6 +9,8 @@ import {
   CoachingAppointmentSlotHold,
   ServiceOSError,
 } from "@/lib/api";
+import { PageHeader, Pagination } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   draft:                  { background: "var(--surface-sunken)", color: "var(--text-tertiary)" },
@@ -267,19 +270,12 @@ export default function CoachingAppointmentDraftsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
-            Coaching Appointment Drafts
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Sprint 17 — Read-only admin view of coaching/IELTS appointment pre-flow.
-          </p>
-        </div>
-        <button onClick={() => tab === "drafts" ? void loadDrafts() : void loadHolds()} style={btnPageStyle}>
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Coaching Appointment Drafts"
+        description="Read-only administrator view of the coaching and IELTS appointment pre-flow."
+        eyebrow="Coaching"
+        actions={<Btn variant="secondary" size="sm" onClick={() => tab === "drafts" ? void loadDrafts() : void loadHolds()}>Refresh</Btn>}
+      />
 
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
         {(["drafts", "holds"] as Tab[]).map((t) => (
@@ -323,7 +319,7 @@ export default function CoachingAppointmentDraftsPage() {
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                     {["Draft ID","Student","Exam","Mode","City","Date","Status","Slot","Fee","Created",""].map((h) => (
@@ -370,19 +366,10 @@ export default function CoachingAppointmentDraftsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
-              <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}
-                style={{ ...btnPageStyle, opacity: page === 1 ? 0.4 : 1, cursor: page === 1 ? "not-allowed" : "pointer" }}>
-                Previous
-              </button>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Page {page}</span>
-              <button disabled={drafts.length < 25} onClick={() => setPage((p) => p + 1)}
-                style={{ ...btnPageStyle, opacity: drafts.length < 25 ? 0.4 : 1, cursor: drafts.length < 25 ? "not-allowed" : "pointer" }}>
-                Next
-              </button>
-            </div>
+            <Pagination page={page} pageSize={25} pageCount={page + (drafts.length === 25 ? 1 : 0)}
+              hasPrevious={page > 1} hasNext={drafts.length === 25} navigationMode="adjacent" onPage={setPage} alwaysShow />
           </div>
         )
       )}
@@ -397,7 +384,7 @@ export default function CoachingAppointmentDraftsPage() {
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                     {["Hold ID","Draft ID","Slot Date","Time","Status","Expires At","Created"].map((h) => (
@@ -423,19 +410,10 @@ export default function CoachingAppointmentDraftsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
-              <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}
-                style={{ ...btnPageStyle, opacity: page === 1 ? 0.4 : 1, cursor: page === 1 ? "not-allowed" : "pointer" }}>
-                Previous
-              </button>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Page {page}</span>
-              <button disabled={holds.length < 25} onClick={() => setPage((p) => p + 1)}
-                style={{ ...btnPageStyle, opacity: holds.length < 25 ? 0.4 : 1, cursor: holds.length < 25 ? "not-allowed" : "pointer" }}>
-                Next
-              </button>
-            </div>
+            <Pagination page={page} pageSize={25} pageCount={page + (holds.length === 25 ? 1 : 0)}
+              hasPrevious={page > 1} hasNext={holds.length === 25} navigationMode="adjacent" onPage={setPage} alwaysShow />
           </div>
         )
       )}

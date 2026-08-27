@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { adminMarketingApi, MarketingTemplate } from "@/lib/api";
 import {
@@ -6,6 +7,7 @@ import {
 } from "@/components/shared/ui";
 import { useApi, useAction } from "@/hooks/useApi";
 import { Plus, Edit, ToggleLeft, ToggleRight } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 const TEMPLATE_TYPE_OPTIONS = [
   { value: "launch_banner", label: "Launch Banner" },
@@ -108,20 +110,19 @@ export default function AdminMarketingTemplatesPage() {
         endpoint for this exact shape remains.
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Marketing Templates</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Category-aware templates for campaign asset generation.</p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Marketing Templates"
+        description="Category-aware templates for campaign asset generation."
+        eyebrow="Marketing"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <Btn variant="ghost" onClick={() => setIncludeInactive(v => !v)}>
             {includeInactive ? "Hide Inactive" : "Show Inactive"}
           </Btn>
           <Btn onClick={() => { setForm(BLANK_FORM); setCreateModal(true); }} disabled>
             <Plus size={14} /> New Template
           </Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       <Card>
         {loading ? (
@@ -131,7 +132,7 @@ export default function AdminMarketingTemplatesPage() {
         ) : templates.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No templates found.</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                 {["Name", "Type", "Channel", "Language", "AI Enabled", "Requires Approval", "Active", ""].map(h => (
@@ -168,7 +169,7 @@ export default function AdminMarketingTemplatesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </Card>
 

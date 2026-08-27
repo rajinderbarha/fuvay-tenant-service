@@ -3,11 +3,11 @@ import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "../../design-system/theme";
-import { AppScreen, AppText, AppButton } from "../../components";
-import { FuvayMark } from "../../components/FuvayMark";
+import { AppButton } from "../../components";
+import { Icon } from "../../components/Icon";
 import { PhoneNumberField } from "../../components/auth/PhoneNumberField";
-import { LoginMethodSegmentedControl, LoginMethod } from "../../components/auth/LoginMethodSegmentedControl";
-import { LegalLinksFooter } from "../../components/auth/LegalLinksFooter";
+import { LoginMethod } from "../../components/auth/LoginMethodSegmentedControl";
+import { LoginExperienceShell } from "../../components/auth/LoginExperienceShell";
 import { AuthErrorBanner } from "../../components/auth/AuthErrorBanner";
 import { copyForAuthError } from "../../components/auth/authErrorCopy";
 import { DEFAULT_COUNTRY_CODE, isValidNationalNumber, toE164, CountryCode } from "../../domain/phone";
@@ -47,11 +47,6 @@ export function LoginMethodScreen() {
     setScreenError(undefined);
     if (next === "password") {
       navigation.navigate("PasswordLogin");
-      // Reset back to 'otp' for when the customer returns via back
-      // navigation -- the segmented control on THIS screen must not carry
-      // over a stale 'password' selection once PasswordLogin is its own
-      // route (spec section 12: preserve only safe input, no sensitive
-      // carry-over between methods).
       setMethod("otp");
     }
   }
@@ -82,38 +77,12 @@ export function LoginMethodScreen() {
   }
 
   return (
-    /**
-     * Composed as one centred column with the legal note pinned below it, rather than
-     * a stack starting at the top: at this length the old layout left the whole lower
-     * half of the screen empty, so the form read as the top fragment of a page that
-     * had failed to finish loading.
-     *
-     * `scroll` stays for small devices and for when the keyboard is up; AppScreen
-     * already grows its scroll content to fill the viewport, which is what lets the
-     * column below centre when there is room to spare and scroll when there is not.
-     */
-    <AppScreen scroll>
-      <View style={{ flex: 1, justifyContent: "center", paddingVertical: theme.spacing.xl }}>
-        <View style={{ alignItems: "center", marginBottom: theme.spacing.xl }}>
-          <FuvayMark />
-        </View>
-
-        <AppText variant="headingLarge" accessibilityRole="header" align="center">
-          Welcome to Fuvay
-        </AppText>
-        <AppText
-          variant="body"
-          color="secondary"
-          align="center"
-          style={{ marginTop: theme.spacing.xxs, marginBottom: theme.spacing.xl }}
-        >
-          Book trusted services near you.
-        </AppText>
-
-        <LoginMethodSegmentedControl value={method} onChange={handleMethodChange} />
-
-        {/* The banner sits between the control and the field, where it explains the
-            thing directly under it, and takes no space when there is no error. */}
+    <LoginExperienceShell
+      method={method}
+      onMethodChange={handleMethodChange}
+      securityMessage="We'll send a secure verification code to your mobile number."
+      onSignup={() => navigation.navigate("Signup")}
+    >
         {screenError ? (
           <View style={{ marginTop: theme.spacing.base }}>
             <AuthErrorBanner message={screenError} />
@@ -128,30 +97,21 @@ export function LoginMethodScreen() {
             onNationalNumberChange={value => { setNationalNumber(value); setFieldError(undefined); }}
             error={fieldError}
             disabled={submitting}
+            showLabel={false}
+            placeholder="Enter mobile number"
           />
         </View>
 
         <View style={{ marginTop: theme.spacing.lg }}>
-          <AppButton label="Continue" onPress={handleContinue} loading={submitting} fullWidth />
+          <AppButton
+            label="Continue"
+            onPress={handleContinue}
+            loading={submitting}
+            trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
+            style={{ minHeight: 54 }}
+            fullWidth
+          />
         </View>
-
-        {/* A new number cannot sign itself in here, so the way in has to be visible. */}
-        <View style={{ marginTop: theme.spacing.base, alignItems: "center" }}>
-          <AppText
-            variant="bodySmall"
-            color="link"
-            accessibilityRole="link"
-            accessibilityLabel="New to Fuvay? Create an account"
-            onPress={() => navigation.navigate("Signup")}
-          >
-            New to Fuvay? Create an account
-          </AppText>
-        </View>
-      </View>
-
-      <View style={{ alignItems: "center", paddingBottom: theme.spacing.base }}>
-        <LegalLinksFooter />
-      </View>
-    </AppScreen>
+    </LoginExperienceShell>
   );
 }

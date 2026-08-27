@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.auth.models import User
 from app.engines.platform_commerce.models import (
-    SecurityDeposit, TenantWallet, WalletTransaction,
+    TenantWallet, WalletTransaction,
 )
 from app.engines.serviceability.models import TenantServiceArea
 from app.engines.tenant_engine.models import (
@@ -111,7 +111,7 @@ class AdminTenantService:
             before_state=before, after_state=after, ip_address=self.ip_address, notes=notes,
         ))
         # Also write to the platform-wide audit trail so admin tenant actions
-        # (suspend/approve/add-credits/change-plan/etc.) appear in the
+        # (suspend/approve/add-credits and other lifecycle actions) appear in the
         # Platform Command Center's Recent Activity feed — previously only
         # written to the tenant-scoped TenantAuditLog, invisible platform-wide.
         from app.core.audit import record_platform_audit
@@ -263,12 +263,12 @@ class AdminTenantService:
         self.db.add(ts)
 
         # ── 4. Tenant billing record ───────────────────────────────────────────
-        security_deposit_required = commercial.get("security_deposit_required", True)
+        # Seats start at zero: headcount is bought with a top-up plan rather
+        # than unlocked by a deposit (migration 317).
         billing = TenantBilling(
             tenant_id=tenant.id,
             billing_email=owner_email,
-            security_deposit_paid=False,
-            security_deposit_amount=5000.0,  # default; updated by package
+            entitled_seats=0,
         )
         self.db.add(billing)
 
@@ -279,16 +279,6 @@ class AdminTenantService:
         )
         self.db.add(wallet)
         await self.db.flush()
-
-        # ── 6. Security deposit record ────────────────────────────────────────
-        if security_deposit_required:
-            deposit = SecurityDeposit(
-                tenant_id=tenant.id,
-                required_amount=Decimal("5000.00"),
-                total_paid=Decimal("0.00"),
-                status="unpaid",
-            )
-            self.db.add(deposit)
 
         # ── 7. Branding stub ──────────────────────────────────────────────────
         self.db.add(TenantBranding(tenant_id=tenant.id))
@@ -314,7 +304,7 @@ class AdminTenantService:
             "slug": slug,
             "tenant_code": tenant.tenant_code,
             "category_id": str(tenant.category_id) if tenant.category_id else None,
-            "security_deposit_status": "unpaid" if security_deposit_required else "not_required",
+            "entitled_seats": 0,
             "credit_wallet_balance": 0,
             "status": "pending_verification",
             "verification_status": "not_started",
@@ -358,8 +348,6 @@ class AdminTenantService:
             conditions.append(Tenant.city_tier == filters["city_tier"])
         if filters.get("zipcode"):
             conditions.append(Tenant.zipcode == filters["zipcode"])
-        if filters.get("plan_type"):
-            conditions.append(Tenant.plan_type == filters["plan_type"])
         if filters.get("is_discoverable") is not None:
             conditions.append(Tenant.is_discoverable == bool(filters["is_discoverable"]))
         if filters.get("search"):
@@ -381,7 +369,7 @@ class AdminTenantService:
         ALLOWED_SORT_FIELDS = {
             "created_at", "updated_at", "tenant_name", "business_name",
             "status", "verification_status", "city", "state", "district",
-            "city_tier", "plan_type", "health_score", "rating_average",
+            "city_tier", "health_score", "rating_average",
         }
         sort_by = filters.get("sort_by", "created_at")
         sort_dir = filters.get("sort_direction", "desc")
@@ -418,8 +406,7 @@ class AdminTenantService:
                 SELECT
                     t.id::text                                                          AS tenant_id,
                     COALESCE(tb.credit_balance, 0)                                     AS usage_credit_balance,
-                    COALESCE(tb.security_deposit_paid, FALSE)                          AS security_deposit_paid,
-                    COALESCE(tb.security_deposit_amount, 0)                            AS security_deposit_amount,
+                    COALESCE(tb.entitled_seats, 0)                                     AS entitled_seats,
                     COALESCE(tb.billing_cycle, 'monthly')                              AS billing_cycle,
                     COALESCE((SELECT COUNT(*) FROM jobs j
                                WHERE j.tenant_id = t.id
@@ -441,8 +428,7 @@ class AdminTenantService:
             for row in enrich_r.fetchall():
                 enrichment[row.tenant_id] = {
                     "usage_credit_balance":    float(row.usage_credit_balance or 0),
-                    "security_deposit_paid":   bool(row.security_deposit_paid),
-                    "security_deposit_amount": float(row.security_deposit_amount or 0),
+                    "entitled_seats": int(row.entitled_seats or 0),
                     "billing_cycle":           row.billing_cycle or "monthly",
                     "active_jobs":             int(row.active_jobs or 0),
                     "completed_jobs":          int(row.completed_jobs or 0),
@@ -457,8 +443,7 @@ class AdminTenantService:
             d.update({
                 "owner_name":              ex.get("owner_name"),
                 "usage_credit_balance":    ex.get("usage_credit_balance", 0.0),
-                "security_deposit_paid":   ex.get("security_deposit_paid", False),
-                "security_deposit_amount": ex.get("security_deposit_amount", 0.0),
+                "entitled_seats": ex.get("entitled_seats", 0),
                 "billing_cycle":           ex.get("billing_cycle", "monthly"),
                 "active_jobs":             ex.get("active_jobs", 0),
                 "completed_jobs":          ex.get("completed_jobs", 0),
@@ -499,8 +484,7 @@ class AdminTenantService:
         if billing:
             result["billing"] = {
                 "credit_balance": float(billing.credit_balance),
-                "security_deposit_paid": billing.security_deposit_paid,
-                "security_deposit_amount": float(billing.security_deposit_amount),
+                "entitled_seats": int(billing.entitled_seats or 0),
             }
         return result
 
@@ -799,22 +783,6 @@ class AdminTenantService:
         t.activated_at = t.activated_at or now
         await self._audit(tenant_id, "admin_verify_tenant")
 
-        # P1 — Activate tenant's package assignment after approval
-        # Package starts only after admin approval; credits added here.
-        try:
-            from app.engines.package_commerce.service import PackageCommerceService
-            pkg_svc = PackageCommerceService(
-                db=self.db,
-                request_id=getattr(self, "request_id", "—"),
-                actor_id=self.actor_id,
-                actor_role=self.actor_role,
-            )
-            await pkg_svc.activate_tenant_package_assignment(tenant_id)
-        except Exception as exc:
-            # Package activation failure must NOT block tenant approval
-            logger.warning("verify_tenant.package_activation_failed",
-                           tenant_id=str(tenant_id), error=str(exc))
-
         return self._tenant_dict(t)
 
     async def reject_verification(self, tenant_id: uuid.UUID, reason: str) -> dict:
@@ -826,20 +794,6 @@ class AdminTenantService:
         t.status = "rejected"
         t.suspension_reason = reason
         await self._audit(tenant_id, "admin_reject_verification", notes=reason)
-
-        # P1 — Mark package assignment as rejected
-        try:
-            from app.engines.package_commerce.service import PackageCommerceService
-            pkg_svc = PackageCommerceService(
-                db=self.db,
-                request_id=getattr(self, "request_id", "—"),
-                actor_id=self.actor_id,
-                actor_role=self.actor_role,
-            )
-            await pkg_svc.reject_tenant_package_assignment(tenant_id, reason=reason)
-        except Exception as exc:
-            logger.warning("reject_verification.package_rejection_failed",
-                           tenant_id=str(tenant_id), error=str(exc))
 
         # BUG FIX: rejection reason was saved (suspension_reason/audit) but
         # never told to the provider -- they had no way to know what to fix.
@@ -1331,11 +1285,6 @@ class AdminTenantService:
                 COUNT(*) AS total
             FROM tenants t {base_where}
         """)
-        p_sql = sqlt(f"""
-            SELECT t.plan_type, COUNT(*) AS cnt
-            FROM tenants t {base_where}
-            GROUP BY t.plan_type ORDER BY cnt DESC
-        """)
         loc_sql = sqlt(f"""
             SELECT t.city, t.state, COUNT(*) AS cnt
             FROM tenants t {base_where} AND t.city IS NOT NULL
@@ -1366,9 +1315,8 @@ class AdminTenantService:
             ORDER BY tal.created_at DESC LIMIT 10
         """)
 
-        vr, pr, lr, fr, hr, ar = await self.db.execute(v_sql), None, None, None, None, None
+        vr, lr, fr, hr, ar = await self.db.execute(v_sql), None, None, None, None
         vrow = vr.fetchone()
-        pr = (await self.db.execute(p_sql)).fetchall()
         lr = (await self.db.execute(loc_sql)).fetchall()
         fr_row = (await self.db.execute(fin_sql)).fetchone()
         hr_row = (await self.db.execute(health_sql)).fetchone()
@@ -1384,9 +1332,6 @@ class AdminTenantService:
                 "rejected":          int(vrow.rejected or 0),
                 "total":             total_v,
             },
-            "plan_distribution": [
-                {"plan": r.plan_type or "unknown", "count": int(r.cnt)} for r in pr
-            ],
             "top_locations": [
                 {"city": r.city, "state": r.state, "count": int(r.cnt)} for r in lr
             ],
@@ -1441,24 +1386,6 @@ class AdminTenantService:
             "new_balance": float(billing.credit_balance),
             "reason": reason,
         }
-
-    async def change_plan(self, tenant_id: uuid.UUID, new_plan: str, reason: str) -> dict:
-        """Change tenant plan. Requires reason and creates audit log."""
-        VALID_PLANS = {"free", "starter", "growth", "professional", "enterprise"}
-        if new_plan not in VALID_PLANS:
-            raise ServiceOSException("INVALID_PLAN", f"Plan '{new_plan}' is not valid.")
-        if not reason or not reason.strip():
-            raise ServiceOSException("REASON_REQUIRED", "Reason is required for changing plan.")
-        t = await self._get_tenant(tenant_id)
-        old_plan = t.plan_type
-        t.plan_type = new_plan
-        await self._audit(
-            tenant_id, "admin_change_plan",
-            before={"plan_type": old_plan},
-            after={"plan_type": new_plan},
-            notes=reason,
-        )
-        return {"tenant_id": str(tenant_id), "old_plan": old_plan, "new_plan": new_plan, "reason": reason}
 
     async def reactivate_tenant(self, tenant_id: uuid.UUID, reason: str = "") -> dict:
         """Reactivate a suspended or rejected tenant."""
@@ -1528,8 +1455,6 @@ class AdminTenantService:
             conditions.append(Tenant.status == filters["status"])
         if filters.get("verification_status"):
             conditions.append(Tenant.verification_status == filters["verification_status"])
-        if filters.get("plan_type"):
-            conditions.append(Tenant.plan_type == filters["plan_type"])
         if filters.get("state"):
             conditions.append(Tenant.state.ilike(f"%{filters['state']}%"))
         if filters.get("city"):
@@ -1550,12 +1475,12 @@ class AdminTenantService:
         out = io.StringIO()
         w = csv.writer(out)
         w.writerow(["tenant_id","tenant_name","business_name","email","phone",
-                    "status","verification_status","plan_type","vertical",
+                    "status","verification_status","vertical",
                     "city","state","health_score","health_band","created_at"])
         for t in tenants:
             w.writerow([
                 str(t.id), t.tenant_name, t.business_name or "", t.email or "", t.phone or "",
-                t.status, t.verification_status, t.plan_type, t.vertical,
+                t.status, t.verification_status, t.vertical,
                 t.city or "", t.state or "", float(t.health_score), t.health_band,
                 t.created_at.isoformat(),
             ])
@@ -1580,7 +1505,6 @@ class AdminTenantService:
             ("phone", t.phone or ""),
             ("status", t.status),
             ("verification_status", t.verification_status),
-            ("plan_type", t.plan_type),
             ("vertical", t.vertical),
             ("city", t.city or ""),
             ("state", t.state or ""),

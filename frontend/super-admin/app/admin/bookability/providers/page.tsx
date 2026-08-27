@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Select, Skeleton } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Select, Skeleton, KpiGrid, SummaryCard, Pagination } from "../../../../components/shared/ui";
 import { RefreshCw, AlertCircle, CheckCircle2, XCircle, ChevronRight, Zap, Eye, EyeOff } from "lucide-react";
 import {
   adminBookabilityApi, categoryRuntimeApi,
@@ -11,6 +12,7 @@ import { useApi } from "../../../../hooks/useApi";
 import { useAction } from "../../../../hooks/useApi";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import Link from "next/link";
+import { PageHeader } from "@serviceos/design-system";
 
 const PAGE_SIZE = 25;
 
@@ -88,16 +90,11 @@ export default function BookabilityProvidersPage() {
     <AdminLayout>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-              Provider Bookability
-            </h1>
-            <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-              Monitor and manage provider visibility and bookability status
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+        <PageHeader
+          title="Provider Bookability"
+          description="Monitor and manage provider visibility and bookability status."
+          eyebrow="Operations"
+          actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap" }}>
             <Btn size="sm" variant="secondary" onClick={() => providers.refetch()}>
               <RefreshCw size={13} /> Refresh
             </Btn>
@@ -114,25 +111,22 @@ export default function BookabilityProvidersPage() {
                 {bulkRefreshAction.loading ? "Re-evaluating…" : "Bulk Re-evaluate"}
               </Btn>
             )}
-          </div>
-        </div>
+          </div>}
+        />
 
         {/* Summary stats */}
         {sum && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <KpiGrid>
             {[
-              { label: "Total", value: sum.total_providers, color: "var(--text-primary)" },
-              { label: "Bookable", value: sum.bookable, color: "var(--success)" },
-              { label: "Not Bookable", value: sum.not_bookable, color: "var(--danger)" },
-              { label: "Visible", value: sum.visible, color: "var(--brand)" },
-              { label: "With Overrides", value: sum.with_overrides, color: "var(--warning)" },
+              { label: "Total", value: sum.total_providers },
+              { label: "Bookable", value: sum.bookable, tone: "success" as const },
+              { label: "Not Bookable", value: sum.not_bookable, tone: "danger" as const },
+              { label: "Visible", value: sum.visible, tone: "info" as const },
+              { label: "With Overrides", value: sum.with_overrides, tone: "warning" as const },
             ].map(s => (
-              <Card key={s.label} padding={16}>
-                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</p>
-                <p style={{ fontSize: 24, fontWeight: 700, color: s.color, margin: 0 }}>{s.value}</p>
-              </Card>
+              <SummaryCard key={s.label} label={s.label} value={s.value} tone={s.tone} />
             ))}
-          </div>
+          </KpiGrid>
         )}
 
         {/* Filters */}
@@ -175,7 +169,7 @@ export default function BookabilityProvidersPage() {
           ) : (
             <>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                       {["Provider", "City", "Visible", "Bookable", "Visibility Blockers", "Bookability Blockers", "Last Evaluated", ""].map(h => (
@@ -252,21 +246,11 @@ export default function BookabilityProvidersPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
 
-              {totalPages > 1 && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-                  <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                    Page {page} of {totalPages} · {total} total
-                  </span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
-                    <Btn size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Btn>
-                  </div>
-                </div>
-              )}
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} pageCount={totalPages}
+                onPage={setPage} itemLabel="providers" />
             </>
           )}
         </Card>

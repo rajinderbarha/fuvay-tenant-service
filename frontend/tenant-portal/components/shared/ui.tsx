@@ -28,7 +28,7 @@ export {
   KpiGrid,
   PkSectionHeader as SectionHeader,
   SimpleTable as DataTable,
-  PkEmptyState as EmptyState,
+  EmptyState,
   JobStatusBadge,
   HealthMeter,
   StarRating,

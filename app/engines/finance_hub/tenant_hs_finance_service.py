@@ -9,7 +9,7 @@ REUSE POLICY (this module deliberately owns almost no business logic):
                                               (.get_direct_payments_summary, tenant-scoped)
   * Credit top-up order storage            -> app.engines.finance_hub.models.CreditTopupOrder
   * Gateway order creation + signature     -> app.integrations.razorpay_client
-The only genuinely new domain object is HsDepositRefundRequest.
+Serves the tenant-facing Home Services finance console.
 
 LEDGER SEPARATION (spec section 6) is structural here, not cosmetic: the
 transactions projection tags every row with exactly one of
@@ -35,12 +35,6 @@ from app.integrations import razorpay_client
 from app.engines.tenant_engine.models import TenantBilling, UsageCreditLedger, Tenant
 from app.engines.invoice_payment.models import FinancialEvent
 from app.engines.finance_hub.models import CreditTopupOrder
-from app.engines.finance_hub.deposit_refund_models import (
-    HsDepositRefundRequest, STATUS_DRAFT, STATUS_SUBMITTED, STATUS_ELIGIBILITY_REVIEW,
-    STATUS_LIABILITY_REVIEW, STATUS_ADMIN_DECISION, STATUS_INFO_REQUESTED,
-    STATUS_PROCESSING, STATUS_REFUNDED, STATUS_REJECTED, STATUS_WITHDRAWN,
-    TERMINAL_STATUSES, STATUS_LABELS,
-)
 from app.engines.usage_credits.service import (
     UsageCreditService, EVENT_TOPUP_CREDIT_GRANTED, EVENT_TOPUP_CREDIT_REFUNDED,
     EVENT_COMPLETED_JOB_DEDUCTION,
@@ -195,6 +189,19 @@ class TenantHomeServicesFinanceService:
 
     # ── Usage-credit wallet (ledger A) ──────────────────────────────────────
 
+    async def get_entitled_seats(self) -> int:
+        """Technician seats this tenant has bought.
+
+        Denormalised onto tenant_billing at capture time by the top-up
+        service; read here rather than recomputed so the finance console and
+        the activation gate can never disagree about headroom.
+        """
+        row = (await self.db.execute(
+            select(TenantBilling.entitled_seats).where(
+                TenantBilling.tenant_id == self.tenant_id)
+        )).scalar()
+        return int(row or 0)
+
     async def get_usage_credits(self) -> dict:
         policy, policy_err = await self._policy_or_none()
         billing = await self._billing()
@@ -338,100 +345,8 @@ class TenantHomeServicesFinanceService:
 
     # ── Security deposit (ledger B) ─────────────────────────────────────────
 
-    async def get_security_deposit(self) -> dict:
-        policy, policy_err = await self._policy_or_none()
-        billing = await self._billing()
-        qualifying = await resolve_qualifying_technician_count(self.db, self.tenant_id)
-
-        per_tech = _d(policy.deposit_amount_per_technician) if policy else None
-        minimum = _d(policy.minimum_deposit) if policy else None
-        required = None
-        if policy and policy.deposit_required:
-            required = max(minimum, per_tech * Decimal(max(1, qualifying))).quantize(Decimal("0.01"))
-
-        held = _d(billing.security_deposit_amount) if billing else Decimal("0")
-        deposit_paid_flag = bool(billing and billing.security_deposit_paid)
-
-        # Refunds already completed reduce the effective held balance. Never
-        # mutate the historical held ledger — derive.
-        refunded_total = _d((await self.db.execute(
-            select(func.coalesce(func.sum(HsDepositRefundRequest.approved_amount), 0)).where(
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-                HsDepositRefundRequest.status == STATUS_REFUNDED,
-            )
-        )).scalar())
-        held_effective = (held - refunded_total).quantize(Decimal("0.01"))
-
-        pending_deposit = Decimal("0")
-        pending_rows = (await self.db.execute(
-            select(ActivationPaymentOrder).where(
-                ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
-                ActivationPaymentOrder.status == "created",
-            )
-        )).scalars().all()
-        pending_deposit = sum((_d(r.to_dict()["deposit_amount"]) for r in pending_rows), Decimal("0"))
-
-        top_up_due = Decimal("0")
-        if required is not None and held_effective < required:
-            top_up_due = (required - held_effective).quantize(Decimal("0.01"))
-
-        # Liability holds — real, queried obligations, not decorative.
-        holds = await self.get_liability_holds()
-        holds_total = sum((_d(h["amount"]) for h in holds if h.get("amount")), Decimal("0"))
-
-        refundable_excess = Decimal("0")
-        if required is not None and held_effective > required:
-            refundable_excess = (held_effective - required).quantize(Decimal("0.01"))
-        # Liability holds reduce what can actually be requested.
-        eligible_refund_amount = max(Decimal("0"), refundable_excess - holds_total).quantize(Decimal("0.01"))
-
-        last_txn = (await self.db.execute(
-            select(ActivationPaymentOrder).where(
-                ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
-            ).order_by(ActivationPaymentOrder.created_at.desc()).limit(1)
-        )).scalar_one_or_none()
-
-        if required is None:
-            status = "not_required"
-        elif held_effective <= 0:
-            status = "not_paid"
-        elif top_up_due > 0:
-            status = "top_up_due"
-        elif refundable_excess > 0:
-            status = "excess_held"
-        else:
-            status = "fully_funded"
-
-        open_request = await self._open_refund_request()
-
-        return {
-            "currency": "INR",
-            "qualifying_technician_count": qualifying,
-            "technician_count_policy": (policy.technician_count_policy if policy else None),
-            "amount_per_technician": str(per_tech) if per_tech is not None else None,
-            "minimum_deposit": str(minimum) if minimum is not None else None,
-            "deposit_required": str(required) if required is not None else None,
-            "deposit_held": str(held_effective),
-            "deposit_held_gross": str(held),
-            "deposit_refunded_total": str(refunded_total),
-            "deposit_pending": str(pending_deposit),
-            "top_up_due": str(top_up_due),
-            "refundable_excess": str(refundable_excess),
-            "eligible_refund_amount": str(eligible_refund_amount),
-            "liability_holds": holds,
-            "liability_holds_total": str(holds_total),
-            "deposit_paid_flag": deposit_paid_flag,
-            "status": status,
-            "policy_version": (policy.version_number if policy else None),
-            "policy_error": policy_err,
-            "last_transaction": last_txn.to_dict() if last_txn else None,
-            "open_refund_request": open_request.to_dict() if open_request else None,
-            # Never blended with the wallet. Two independent balances.
-            "separate_from_usage_credits": True,
-            "source": "tenant_billing.security_deposit_amount + activation_payment_orders",
-        }
+    # get_security_deposit() was removed with the deposit itself
+    # (migration 317). Wallet state is served by get_wallet().
 
     async def get_liability_holds(self) -> list[dict]:
         """Real obligations that block/reduce a deposit refund."""
@@ -684,8 +599,10 @@ class TenantHomeServicesFinanceService:
                 "ledger": LEDGER_SECURITY_DEPOSIT,
                 "ledger_label": LEDGER_LABELS[LEDGER_SECURITY_DEPOSIT],
                 "event_type": "security_deposit_payment",
-                "event_label": "Security deposit payment",
-                "description": f"Security deposit payment ({r.status})",
+                # Historical only. The deposit was retired in migration 317;
+                # these rows remain so a past payment stays auditable.
+                "event_label": "Security deposit payment (retired)",
+                "description": f"Security deposit payment ({r.status}) — deposit since retired",
                 "debit": None,
                 "credit": str(deposit_amount) if captured else None,
                 # NEVER a usage-credit balance on a deposit row — UI renders "—".
@@ -697,30 +614,6 @@ class TenantHomeServicesFinanceService:
                 "reversible": False,
             })
 
-        refund_rows = (await self.db.execute(
-            select(HsDepositRefundRequest).where(HsDepositRefundRequest.tenant_id == self.tenant_id)
-            .order_by(HsDepositRefundRequest.created_at.desc())
-        )).scalars().all()
-        for r in refund_rows:
-            rows.append({
-                "row_id": f"drr:{r.id}",
-                "occurred_at": (r.refunded_at or r.submitted_at or r.created_at).isoformat()
-                                if (r.refunded_at or r.submitted_at or r.created_at) else None,
-                "reference": r.request_ref,
-                "ledger": LEDGER_SECURITY_DEPOSIT,
-                "ledger_label": LEDGER_LABELS[LEDGER_SECURITY_DEPOSIT],
-                "event_type": "security_deposit_refund_request",
-                "event_label": f"Deposit refund request — {STATUS_LABELS.get(r.status, r.status)}",
-                "description": r.reason or "Security deposit refund request",
-                "debit": str(_d(r.approved_amount)) if r.status == STATUS_REFUNDED and r.approved_amount else None,
-                "credit": None,
-                "usage_credit_balance_after": None,
-                "status": r.status,
-                "related_job_id": None,
-                "related_transaction_ref": r.payout_reference,
-                "receipt_available": False,
-                "reversible": False,
-            })
 
         # ── (C) Cash / tax transaction ledger ──────────────────────────────
         topup_rows = (await self.db.execute(
@@ -868,7 +761,6 @@ class TenantHomeServicesFinanceService:
 
     async def get_readiness(self) -> dict:
         wallet = await self.get_usage_credits()
-        deposit = await self.get_security_deposit()
         policy, policy_err = await self._policy_or_none()
 
         blockers: list[dict] = []
@@ -921,25 +813,34 @@ class TenantHomeServicesFinanceService:
             checks.append({"code": "USAGE_CREDIT_BALANCE", "label": "Usable credit balance",
                            "state": "complete", "detail": f"₹{wallet['available_credits']} available"})
 
-        # 4. Security deposit
-        if deposit["deposit_required"] is None:
-            checks.append({"code": "SECURITY_DEPOSIT", "label": "Security deposit funded",
-                           "state": "not_applicable", "detail": "No deposit required by policy"})
-        elif _d(deposit["top_up_due"]) > 0:
-            state = "blocked" if _d(deposit["deposit_held"]) <= 0 else "action_required"
-            checks.append({"code": "SECURITY_DEPOSIT", "label": "Security deposit funded",
-                           "state": state,
-                           "detail": f"₹{deposit['deposit_held']} held of ₹{deposit['deposit_required']} required"})
-            entry = {"code": "SECURITY_DEPOSIT_TOP_UP_DUE",
-                     "message": f"Security deposit short by ₹{deposit['top_up_due']} for "
-                                f"{deposit['qualifying_technician_count']} qualifying technician(s).",
-                     "resolution": "Pay the outstanding security deposit."}
-            (blockers if state == "blocked" else warnings).append(entry)
-            actions.append({"code": "FUND_DEPOSIT", "label": "Fund security deposit", "tab": "security-deposit"})
-        else:
-            checks.append({"code": "SECURITY_DEPOSIT", "label": "Security deposit funded",
-                           "state": "complete",
-                           "detail": f"₹{deposit['deposit_held']} held (required ₹{deposit['deposit_required']})"})
+        # 4. Credit floor — what replaced the security deposit
+        # A deposit was collateral. Credit is spent, so instead of holding a
+        # pot the policy sets a floor: below it, new bookings stop. That keeps
+        # a balance available to deduct a penalty or settlement against.
+        if policy is not None:
+            _floor = _d(policy.credit_booking_floor)
+            _warn = _d(policy.credit_warning_threshold)
+            _avail = _d(wallet["available_credits"])
+            if _avail < _floor:
+                checks.append({"code": "CREDIT_FLOOR", "label": "Credit above booking floor",
+                               "state": "blocked",
+                               "detail": f"₹{_avail} available, floor is ₹{_floor}"})
+                blockers.append({"code": "CREDIT_BELOW_FLOOR",
+                                 "message": f"Credit balance ₹{_avail} is below the ₹{_floor} booking floor.",
+                                 "resolution": "Buy a top-up plan to resume taking new bookings."})
+                actions.append({"code": "BUY_TOPUP", "label": "Buy a top-up plan", "tab": "topups"})
+            elif _avail < _warn:
+                checks.append({"code": "CREDIT_FLOOR", "label": "Credit above booking floor",
+                               "state": "action_required",
+                               "detail": f"₹{_avail} available, warning at ₹{_warn}"})
+                warnings.append({"code": "CREDIT_LOW",
+                                 "message": f"Credit balance ₹{_avail} is approaching the ₹{_floor} booking floor.",
+                                 "resolution": "Top up before new bookings are blocked."})
+                actions.append({"code": "BUY_TOPUP", "label": "Buy a top-up plan", "tab": "topups"})
+            else:
+                checks.append({"code": "CREDIT_FLOOR", "label": "Credit above booking floor",
+                               "state": "complete",
+                               "detail": f"₹{_avail} available (floor ₹{_floor})"})
 
         # 5. Failed top-ups
         if wallet["failed_topups"]:
@@ -977,21 +878,10 @@ class TenantHomeServicesFinanceService:
 
     async def get_action_queue(self) -> list[dict]:
         wallet = await self.get_usage_credits()
-        deposit = await self.get_security_deposit()
-
-        pending_refunds = (await self.db.execute(
-            select(func.count(HsDepositRefundRequest.id)).where(
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-                HsDepositRefundRequest.status.notin_(TERMINAL_STATUSES),
-            )
-        )).scalar() or 0
-
-        info_requested = (await self.db.execute(
-            select(func.count(HsDepositRefundRequest.id)).where(
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-                HsDepositRefundRequest.status == STATUS_INFO_REQUESTED,
-            )
-        )).scalar() or 0
+        # No deposit and no refund queue any more (migration 317): the tenant
+        # holds credit, which is spent rather than returned.
+        pending_refunds = 0
+        info_requested = 0
 
         reversals = (await self.db.execute(
             select(func.count(UsageCreditLedger.id)).where(
@@ -1020,7 +910,7 @@ class TenantHomeServicesFinanceService:
             {"code": "PENDING_TOPUPS", "label": "Pending gateway confirmation", "count": wallet["pending_topups"],
              "tab": "topups", "filter": {"status": "initiated"}, "severity": "warning"},
             {"code": "DEPOSIT_TOP_UP_DUE", "label": "Deposit top-up due",
-             "count": 1 if _d(deposit["top_up_due"]) > 0 else 0,
+             "count": 0,
              "tab": "security-deposit", "filter": {"focus": "top_up"}, "severity": "danger"},
             {"code": "PENDING_REFUND_REQUESTS", "label": "Pending refund requests", "count": pending_refunds,
              "tab": "security-deposit", "filter": {"focus": "refunds"}, "severity": "info"},
@@ -1038,7 +928,6 @@ class TenantHomeServicesFinanceService:
 
     async def get_overview(self) -> dict:
         wallet = await self.get_usage_credits()
-        deposit = await self.get_security_deposit()
         policy = await self.get_policy()
         readiness = await self.get_readiness()
         queue = await self.get_action_queue()
@@ -1058,8 +947,7 @@ class TenantHomeServicesFinanceService:
             "kpis": {
                 "usable_credits": wallet["available_credits"],
                 "credits_used_this_month": wallet["credits_used_this_month"],
-                "deposit_held": deposit["deposit_held"],
-                "deposit_required": deposit["deposit_required"],
+                "entitled_seats": await self.get_entitled_seats(),
                 "action_items": action_items,
                 "finance_status": readiness["status"],
                 "finance_status_label": readiness["status_label"],
@@ -1067,7 +955,6 @@ class TenantHomeServicesFinanceService:
             "readiness": readiness,
             "recent_activity": recent,
             "usage_credits": wallet,
-            "security_deposit": deposit,
             "policy": policy,
             "direct_payments": direct,
             "action_queue": queue,
@@ -1343,214 +1230,10 @@ class TenantHomeServicesFinanceService:
 
     # ── Deposit refund requests (section 12) ───────────────────────────────
 
-    async def _open_refund_request(self) -> HsDepositRefundRequest | None:
-        return (await self.db.execute(
-            select(HsDepositRefundRequest).where(
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-                HsDepositRefundRequest.status.notin_(TERMINAL_STATUSES),
-            ).order_by(HsDepositRefundRequest.created_at.desc()).limit(1)
-        )).scalar_one_or_none()
-
-    async def create_refund_request(self, *, requested_amount: Decimal, reason: str,
-                                    bank_account_name: str | None = None,
-                                    bank_account_number: str | None = None,
-                                    bank_ifsc: str | None = None,
-                                    submit: bool = True) -> dict:
-        policy = await self._policy_required()
-        deposit = await self.get_security_deposit()
-
-        existing = await self._open_refund_request()
-        if existing:
-            raise ServiceOSException(
-                "DEPOSIT_REFUND_REQUEST_ALREADY_OPEN",
-                f"An open refund request ({existing.request_ref}) is already in progress "
-                f"({STATUS_LABELS.get(existing.status, existing.status)}).",
-                status_code=409, context={"refund_request_id": str(existing.id)})
-
-        eligible = _d(deposit["eligible_refund_amount"])
-        if requested_amount <= 0:
-            raise ServiceOSException("DEPOSIT_REFUND_INVALID_AMOUNT",
-                                     "Requested amount must be positive.", status_code=422)
-        if requested_amount > eligible:
-            raise ServiceOSException(
-                "DEPOSIT_REFUND_EXCEEDS_ELIGIBLE",
-                # NOTE: no "₹" in raised-exception text. structlog's console
-                # renderer writes exception detail to a cp1252 Windows stdout,
-                # where U+20B9 raises UnicodeEncodeError *inside the logger* and
-                # turns a correct 422 into a 500. Reproduced live. Response
-                # bodies (JSON) are unaffected and keep the symbol.
-                f"Requested INR {requested_amount} exceeds the currently refundable amount "
-                f"INR {eligible}. Your deposit must stay at or above the INR {deposit['deposit_required']} "
-                f"required for {deposit['qualifying_technician_count']} qualifying technician(s), "
-                f"and open liabilities are held back.",
-                status_code=422,
-                context={"eligible_refund_amount": str(eligible),
-                         "refundable_excess": str(deposit["refundable_excess"]),
-                         "liability_holds_total": str(deposit["liability_holds_total"])})
-
-        holds = deposit["liability_holds"]
-        checks = {
-            "minimum_required_deposit_preserved": True,
-            "qualifying_technicians": deposit["qualifying_technician_count"],
-            "refundable_excess": deposit["refundable_excess"],
-            "liability_holds_total": deposit["liability_holds_total"],
-            "active_jobs_clear": not any(h["code"] == "ACTIVE_JOBS" for h in holds),
-            "complaints_clear": not any(h["code"] == "OPEN_COMPLAINTS" for h in holds),
-            "rework_warranty_clear": not any(h["code"] in ("OPEN_REWORK", "WARRANTY_CLAIMS") for h in holds),
-            "payment_disputes_clear": not any(h["code"] == "CUSTOMER_REFUND_DISPUTES" for h in holds),
-            "credit_liabilities_clear": not any(h["code"] == "NEGATIVE_CREDIT_LIABILITY" for h in holds),
-            # No legal/compliance-hold or fraud-investigation mechanism exists
-            # in this codebase to query — recorded honestly as not-evaluated
-            # rather than asserted "clear".
-            "legal_compliance_hold_evaluated": False,
-            "fraud_investigation_evaluated": False,
-        }
-
-        rec = HsDepositRefundRequest(
-            tenant_id=self.tenant_id,
-            vertical_id=await self._vertical_id(),
-            vertical_key=HOME_SERVICES_VERTICAL_KEY,
-            request_ref=f"DRR-{str(self.tenant_id)[:6].upper()}-{uuid.uuid4().hex[:6].upper()}",
-            status=STATUS_SUBMITTED if submit else STATUS_DRAFT,
-            requested_amount=requested_amount.quantize(Decimal("0.01")),
-            eligible_amount_snapshot=eligible,
-            deposit_held_snapshot=_d(deposit["deposit_held"]),
-            deposit_required_snapshot=_d(deposit["deposit_required"] or 0),
-            qualifying_technicians_snapshot=deposit["qualifying_technician_count"],
-            policy_version=policy.version_number,
-            reason=reason,
-            bank_account_name=bank_account_name,
-            bank_account_number_masked=_mask_account(bank_account_number),
-            bank_ifsc=bank_ifsc,
-            eligibility_checks=checks,
-            blockers=[h for h in holds if h.get("blocking")],
-            submitted_at=utcnow() if submit else None,
-            created_by_user_id=self.actor_id,
-        )
-        self.db.add(rec)
-        await self.db.flush()
-        await self._audit("hs_finance.deposit_refund_requested", "hs_deposit_refund_request",
-                          str(rec.id), after=rec.to_dict())
-        await self.db.commit()
-        return rec.to_dict()
-
-    async def list_refund_requests(self, *, status: str | None = None,
-                                   page: int = 1, page_size: int = 25) -> dict:
-        clauses = [HsDepositRefundRequest.tenant_id == self.tenant_id]
-        if status:
-            clauses.append(HsDepositRefundRequest.status == status)
-        stmt = select(HsDepositRefundRequest).where(*clauses).order_by(
-            HsDepositRefundRequest.created_at.desc())
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        rows = (await self.db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).scalars().all()
-        return {"items": [r.to_dict() for r in rows], "total": total,
-                "page": page, "page_size": page_size,
-                "tenant_can_approve": False,
-                "approval_note": "Refund approval is an Admin-only action (finance:deposits:refund). "
-                                 "Your business cannot approve or process its own deposit refund."}
-
-    async def respond_to_info_request(self, request_id: uuid.UUID, response: str) -> dict:
-        rec = (await self.db.execute(
-            select(HsDepositRefundRequest).where(
-                HsDepositRefundRequest.id == request_id,
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-            )
-        )).scalar_one_or_none()
-        if not rec:
-            raise NotFoundException("HsDepositRefundRequest", str(request_id))
-        if rec.status != STATUS_INFO_REQUESTED:
-            raise ServiceOSException("DEPOSIT_REFUND_NOT_AWAITING_INFO",
-                                     "This request is not awaiting information from you.",
-                                     status_code=409)
-        rec.tenant_response = response
-        rec.status = STATUS_ADMIN_DECISION
-        await self._audit("hs_finance.deposit_refund_info_provided", "hs_deposit_refund_request",
-                          str(rec.id), after={"tenant_response": response})
-        await self.db.commit()
-        return rec.to_dict()
-
-    async def withdraw_refund_request(self, request_id: uuid.UUID) -> dict:
-        rec = (await self.db.execute(
-            select(HsDepositRefundRequest).where(
-                HsDepositRefundRequest.id == request_id,
-                HsDepositRefundRequest.tenant_id == self.tenant_id,
-            )
-        )).scalar_one_or_none()
-        if not rec:
-            raise NotFoundException("HsDepositRefundRequest", str(request_id))
-        if rec.status in TERMINAL_STATUSES:
-            raise ServiceOSException("DEPOSIT_REFUND_ALREADY_CLOSED",
-                                     "This request is already closed.", status_code=409)
-        if rec.status == STATUS_PROCESSING:
-            raise ServiceOSException("DEPOSIT_REFUND_IN_PROCESSING",
-                                     "This request is already being processed and cannot be withdrawn.",
-                                     status_code=409)
-        rec.status = STATUS_WITHDRAWN
-        await self._audit("hs_finance.deposit_refund_withdrawn", "hs_deposit_refund_request", str(rec.id))
-        await self.db.commit()
-        return rec.to_dict()
-
-    # ── Admin-only refund decision (never reachable by a tenant role) ──────
-
-    async def admin_decide_refund_request(self, request_id: uuid.UUID, *, action: str,
-                                          approved_amount: Decimal | None = None,
-                                          note: str | None = None) -> dict:
-        """Called ONLY from the admin router behind P.FINANCE_DEPOSITS_REFUND."""
-        rec = (await self.db.execute(
-            select(HsDepositRefundRequest).where(HsDepositRefundRequest.id == request_id)
-        )).scalar_one_or_none()
-        if not rec:
-            raise NotFoundException("HsDepositRefundRequest", str(request_id))
-        if rec.status in TERMINAL_STATUSES:
-            raise ServiceOSException("DEPOSIT_REFUND_ALREADY_CLOSED",
-                                     "This request is already closed.", status_code=409)
-        before = rec.to_dict()
-        now = utcnow()
-        if action == "advance_eligibility":
-            rec.status = STATUS_ELIGIBILITY_REVIEW
-        elif action == "advance_liability":
-            rec.status = STATUS_LIABILITY_REVIEW
-        elif action == "advance_decision":
-            rec.status = STATUS_ADMIN_DECISION
-        elif action == "request_info":
-            rec.status = STATUS_INFO_REQUESTED
-            rec.info_requested_note = note
-        elif action == "approve":
-            amount = approved_amount if approved_amount is not None else _d(rec.requested_amount)
-            if amount <= 0 or amount > _d(rec.requested_amount):
-                raise ServiceOSException("DEPOSIT_REFUND_INVALID_APPROVAL",
-                                         "Approved amount must be > 0 and <= requested amount.",
-                                         status_code=422)
-            rec.approved_amount = amount.quantize(Decimal("0.01"))
-            rec.status = STATUS_PROCESSING
-            rec.processing_started_at = now
-        elif action == "mark_refunded":
-            if rec.status != STATUS_PROCESSING:
-                raise ServiceOSException("DEPOSIT_REFUND_NOT_PROCESSING",
-                                         "Only a processing request can be marked refunded.",
-                                         status_code=409)
-            rec.status = STATUS_REFUNDED
-            rec.refunded_at = now
-            rec.payout_reference = note
-        elif action == "reject":
-            rec.status = STATUS_REJECTED
-        else:
-            raise ServiceOSException("DEPOSIT_REFUND_INVALID_ACTION",
-                                     f"Unknown action '{action}'.", status_code=422)
-        rec.decision_by_user_id = self.actor_id
-        rec.decision_at = now
-        if note and action != "request_info":
-            rec.decision_note = note
-        await record_platform_audit(
-            self.db, operation=f"hs_finance.deposit_refund_{action}", engine_id=ENGINE_ID,
-            entity_type="hs_deposit_refund_request", entity_id=str(rec.id),
-            tenant_id=rec.tenant_id, actor_id=self.actor_id, actor_role=self.actor_role,
-            request_id=self.request_id, before=before, after=rec.to_dict(),
-        )
-        await self.db.commit()
-        return rec.to_dict()
-
-    # ── Export (section 22) ────────────────────────────────────────────────
+    # The deposit refund request workflow (create/list/withdraw/respond/
+    # admin_decide) was removed with the deposit in migration 317. A
+    # top-up is spent down as commission, not held and returned, so there
+    # is nothing to refund.
 
     async def export_transactions(self, *, date_from: str | None = None, date_to: str | None = None,
                                   ledger: str | None = None, status: str | None = None,

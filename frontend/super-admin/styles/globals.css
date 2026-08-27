@@ -247,21 +247,7 @@
 }
 [data-theme="light"] .ds-metric-card,
 [data-theme="light"] .ds-summary-card {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(145deg, #FFFFFF 0%, #F8FAFE 100%) !important;
-}
-[data-theme="light"] .ds-metric-card::after,
-[data-theme="light"] .ds-summary-card::after {
-  content: "";
-  position: absolute;
-  width: 84px;
-  height: 84px;
-  top: -44px;
-  right: -34px;
-  border-radius: 50%;
-  background: rgba(61, 115, 223, 0.07);
-  pointer-events: none;
+  background: var(--surface) !important;
 }
 [data-theme="light"] .ds-section-header h1 {
   color: #101D33 !important;
@@ -732,9 +718,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 [data-theme="light"] .operations-admin-page .ds-summary-card {
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.045) !important;
-  background: linear-gradient(145deg, #ffffff 0%, #fbfdff 100%) !important;
+  background: var(--surface) !important;
 }
 
 [data-theme="light"] .operations-admin-page table {
@@ -1033,9 +1017,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 [data-theme="light"] .catalog-admin-page .ds-summary-card {
-  border-color: rgba(148, 163, 184, 0.28) !important;
-  background: linear-gradient(145deg, #ffffff 0%, #fbfdff 100%) !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035), 0 10px 24px rgba(15, 23, 42, 0.045) !important;
+  background: var(--surface) !important;
 }
 
 [data-theme="light"] .catalog-admin-page table {
@@ -1067,4 +1049,137 @@ a { color: inherit; text-decoration: none; }
   .catalog-admin-page { max-width: none; }
   .catalog-admin-page th,
   .catalog-admin-page td { white-space: normal; }
+}
+
+/* Authenticated shell spacing is owned here so every admin page starts on
+   the same grid, including pages built with the shared PageShell. */
+.admin-content {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  isolation: isolate;
+}
+
+/* Cross-route UI safety net. Legacy pages still compose their own domain
+   content, but they must inherit the same sizing, focus, media and overflow
+   behavior as pages already migrated to the design system. */
+.admin-content *,
+.admin-content *::before,
+.admin-content *::after {
+  box-sizing: border-box;
+}
+
+.admin-content > *,
+.admin-content .ds-kpi-grid > *,
+.admin-content .ds-section-header > * {
+  min-width: 0;
+}
+
+.admin-content img,
+.admin-content video,
+.admin-content canvas {
+  max-width: 100%;
+}
+
+.admin-content button,
+.admin-content input,
+.admin-content select,
+.admin-content textarea {
+  font: inherit;
+}
+
+.admin-content button:disabled,
+.admin-content input:disabled,
+.admin-content select:disabled,
+.admin-content textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.admin-content :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.admin-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  max-width: 100%;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.admin-content .ds-summary-card {
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-content [role="tablist"],
+.admin-content nav[aria-label$="sections"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+/* Legacy pages may still own their surrounding markup, but page-title
+   typography is a shell concern. This keeps those headings visually aligned
+   with PageHeader/SectionHeader while they are migrated component-by-component. */
+.admin-content h1 {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-size: 22px !important;
+  line-height: 1.2 !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.admin-content [aria-label="Breadcrumb"] a {
+  border-radius: 5px;
+  outline: none;
+}
+
+.admin-content [aria-label="Breadcrumb"] a:hover {
+  color: var(--text-primary) !important;
+}
+
+.admin-content [aria-label="Breadcrumb"] a:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-muted), 0 0 0 3px var(--accent);
+}
+
+@media (max-width: 1280px) {
+  .admin-main {
+    --layout-content-padding-block: var(--space-6);
+    --layout-content-padding-inline: var(--space-6);
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-main {
+    --layout-content-padding-block: var(--space-5);
+    --layout-content-padding-inline: var(--space-4);
+  }
+  .admin-topbar {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .admin-content .ds-section-header {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .admin-content .ds-section-header > :nth-child(2) {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .admin-content .ds-section-header > :nth-child(2) > * {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-content .ds-kpi-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }

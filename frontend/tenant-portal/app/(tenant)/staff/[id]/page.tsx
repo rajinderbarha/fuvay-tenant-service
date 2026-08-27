@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Staff Detail — full 360° staff member view.
  * PROVEN: staffApi.get() + staffApi.getPerformance() + serviceJobsApi.list() connected.
@@ -425,7 +426,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                 </p>
               </div>
               <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                <TableSurface style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)" }}>
                       {["Time","Event","IP","Failure"].map(h=>(
@@ -452,7 +453,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             </Card>
           )}

@@ -31,7 +31,6 @@ from sqlalchemy import select, func, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.tenant_engine.models import Tenant, TenantBilling
-from app.engines.platform_commerce.models import SecurityDeposit
 from app.engines.final_records.models import ServiceJob
 from app.exceptions import NotFoundException
 
@@ -129,21 +128,17 @@ class HomeServicesProviderDirectoryService:
         tenants = (await self.db.execute(stmt)).scalars().all()
 
         tenant_ids = [t.id for t in tenants]
-        billing_by_tenant, deposit_by_tenant = {}, {}
+        billing_by_tenant = {}
         if tenant_ids:
             billing_rows = (await self.db.execute(
                 select(TenantBilling).where(TenantBilling.tenant_id.in_(tenant_ids))
             )).scalars().all()
             billing_by_tenant = {b.tenant_id: b for b in billing_rows}
-            deposit_rows = (await self.db.execute(
-                select(SecurityDeposit).where(SecurityDeposit.tenant_id.in_(tenant_ids))
-            )).scalars().all()
-            deposit_by_tenant = {d.tenant_id: d for d in deposit_rows}
 
-        items = [self._provider_row(t, billing_by_tenant.get(t.id), deposit_by_tenant.get(t.id)) for t in tenants]
+        items = [self._provider_row(t, billing_by_tenant.get(t.id)) for t in tenants]
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
-    def _provider_row(self, t: Tenant, billing: TenantBilling | None, deposit: SecurityDeposit | None) -> dict:
+    def _provider_row(self, t: Tenant, billing: TenantBilling | None) -> dict:
         credit_balance = Decimal(str(billing.credit_balance)) if billing else Decimal("0")
         return {
             "provider_id": str(t.id),
@@ -174,10 +169,6 @@ class HomeServicesProviderDirectoryService:
         billing = (await self.db.execute(
             select(TenantBilling).where(TenantBilling.tenant_id == provider_id)
         )).scalar_one_or_none()
-        deposit = (await self.db.execute(
-            select(SecurityDeposit).where(SecurityDeposit.tenant_id == provider_id)
-        )).scalar_one_or_none()
-
         owner = None
         if tenant.owner_user_id:
             from app.engines.auth.models import User
@@ -203,10 +194,10 @@ class HomeServicesProviderDirectoryService:
             "suspended_at": tenant.suspended_at.isoformat() if tenant.suspended_at else None,
             "suspension_reason": tenant.suspension_reason,
             # Finance readiness -- contextual only; full finance operations
-            # (adjustments, deposit returns) remain in Home Services Finance,
+            # (adjustments, top-ups) remain in Home Services Finance,
             # never duplicated here.
             "finance_readiness": {
-                "security_deposit_status": deposit.status if deposit else "not_required",
+                "entitled_seats": int(billing.entitled_seats or 0) if billing else 0,
                 "available_credits": str(billing.credit_balance) if billing else "0",
                 "low_balance": (Decimal(str(billing.credit_balance)) if billing else Decimal("0")) < LOW_BALANCE_THRESHOLD,
             },
@@ -216,7 +207,7 @@ class HomeServicesProviderDirectoryService:
             # left absent (not fabricated as "ready") rather than guessed.
             "readiness": {
                 "business_verification_complete": tenant.verification_status == "approved",
-                "security_deposit_active": bool(deposit and deposit.status == "paid"),
+                "seats_purchased": bool(billing and (billing.entitled_seats or 0) > 0),
                 "credit_account_healthy": bool(billing) and Decimal(str(billing.credit_balance if billing else 0)) >= LOW_BALANCE_THRESHOLD,
                 "admin_hold_active": tenant.status == "suspended",
             },
@@ -246,9 +237,6 @@ class HomeServicesProviderDirectoryService:
         billing = (await self.db.execute(
             select(TenantBilling).where(TenantBilling.tenant_id == provider_id)
         )).scalar_one_or_none()
-        deposit = (await self.db.execute(
-            select(SecurityDeposit).where(SecurityDeposit.tenant_id == provider_id)
-        )).scalar_one_or_none()
         readiness = (await self.db.execute(
             select(TenantFinanceReadiness).where(TenantFinanceReadiness.tenant_id == provider_id)
         )).scalar_one_or_none()
@@ -261,11 +249,9 @@ class HomeServicesProviderDirectoryService:
                 "balance": str(billing.credit_balance) if billing else "0",
                 "low_balance": (Decimal(str(billing.credit_balance)) if billing else Decimal("0")) < LOW_BALANCE_THRESHOLD,
             },
-            "security_deposit": {
-                "status": deposit.status if deposit else "not_required",
-                "required_amount": str(deposit.required_amount) if deposit else "0",
-                "current_balance": str(deposit.current_balance) if deposit else "0",
-            } if deposit else {"status": "not_required", "required_amount": "0", "current_balance": "0"},
+            "technician_seats": {
+                "entitled": int(billing.entitled_seats or 0) if billing else 0,
+            },
             "provider_charges": charges["items"],
             "topup_history": topups["items"],
             # Customer pays the provider directly -- ServiceOS never collects

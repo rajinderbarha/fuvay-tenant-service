@@ -1,8 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader } from "../../../../components/shared/ui";
-import { SummaryCardsRow } from "../../../../components/pricing/SummaryCard";
+import { Card, Badge, Btn, SectionHeader, SummaryCardsRow, Pagination } from "../../../../components/shared/ui";
 import { financeApi, TenantPenalty, TenantPenaltySummary } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -26,7 +26,7 @@ export default function TenantPenaltiesPage() {
     <AdminLayout activeNav="finance">
       <SectionHeader
         title="Tenant Penalties"
-        subtitle="Amounts deducted from tenant wallet or security deposit due to dispute settlements."
+        subtitle="Amounts deducted from the tenant's credit balance due to dispute settlements."
         actions={<Btn variant="ghost" onClick={() => { summary.refetch(); list.refetch(); }}>Refresh</Btn>}
       />
 
@@ -37,7 +37,6 @@ export default function TenantPenaltiesPage() {
           { label: "Pending", value: s.pending_penalties },
           { label: "Reversed", value: s.reversed_penalties },
           { label: "Wallet Deducted", value: fmt(s.wallet_deducted) },
-          { label: "Deposit Deducted", value: fmt(s.deposit_deducted) },
         ]} />
       )}
 
@@ -59,7 +58,7 @@ export default function TenantPenaltiesPage() {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle, var(--bg))" }}>
                 {["Penalty #","Status","Type","Source","Amount","Reason","Date"].map(h => (
@@ -94,16 +93,11 @@ export default function TenantPenaltiesPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
 
-        {(list.data?.meta.total_pages ?? 1) > 1 && (
-          <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-            <span style={{ fontSize: 13, padding: "6px 0" }}>Page {page} / {list.data?.meta.total_pages}</span>
-            <Btn size="sm" variant="ghost" disabled={page >= (list.data?.meta.total_pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
-          </div>
-        )}
+        {list.data?.meta && <Pagination page={page} pageSize={50} total={list.data.meta.total}
+          pageCount={list.data.meta.total_pages} onPage={setPage} itemLabel="penalties" />}
       </Card>
     </AdminLayout>
   );

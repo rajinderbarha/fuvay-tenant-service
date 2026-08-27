@@ -265,7 +265,7 @@ def test_all_phases_1_to_14_certified(client):
         "/v1/geo/meta",         "/v1/dispatch/meta",    "/v1/jobs/meta",
         "/v1/bookings/meta",    "/v1/appointments/meta",
         "/v1/payments/meta",    "/v1/inventory/meta",
-        "/v1/subscriptions/meta", "/v1/documents/meta",
+        "/v1/documents/meta",
         "/v1/reviews/meta",     "/v1/chat/meta",
         "/v1/webhooks/meta",    "/v1/security/meta",
         "/v1/compliance/meta",  "/v1/billing/meta",

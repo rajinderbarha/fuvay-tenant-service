@@ -576,55 +576,6 @@ class TenantService:
                     resolution="Upgrade your plan to increase this limit.")
         return {"allowed": True, "limit_type": limit_type}
 
-    async def upgrade_plan(self, tenant_id: uuid.UUID, target_plan: str, reason: str) -> dict:
-        tenant = await self._get_tenant(tenant_id)
-        plan_order = {"starter": 1, "growth": 2, "enterprise": 3}
-        if plan_order.get(target_plan, 0) <= plan_order.get(tenant.plan_type, 0):
-            raise ServiceOSException("CONFLICT",
-                "Target plan must be a higher tier. Use /plan/downgrade for downgrades.")
-        before = {"plan_type": tenant.plan_type}
-        tenant.plan_type = target_plan
-        new_limits = PLAN_LIMITS[target_plan]
-        lim = await self._get_limits(tenant_id)
-        if lim:
-            for k, v in new_limits.items():
-                if hasattr(lim, k):
-                    setattr(lim, k, v)
-        await self._invalidate_cache(tenant_id)
-        await self._audit(tenant_id, "plan.upgraded", before=before, after={"plan_type": target_plan}, notes=reason)
-        await self._publish("tenant.plan_upgraded", str(tenant_id), str(tenant_id),
-                            {"from": before["plan_type"], "to": target_plan})
-        return {"tenant_id": str(tenant_id), "plan_type": target_plan, "new_limits": new_limits}
-
-    async def downgrade_plan(self, tenant_id: uuid.UUID, target_plan: str) -> dict:
-        tenant = await self._get_tenant(tenant_id)
-        target_limits = PLAN_LIMITS.get(target_plan, {})
-        lim = await self._get_limits(tenant_id)
-        if lim:
-            blockers = []
-            if lim.current_staff_count > target_limits.get("max_staff", 0):
-                blockers.append(f"staff_count {lim.current_staff_count} > target {target_limits['max_staff']}")
-            if blockers:
-                raise ServiceOSException("DOWNGRADE_BLOCKED",
-                    "Usage exceeds target plan limits.", context={"blockers": blockers},
-                    resolution="Reduce usage or choose a higher plan.")
-        before = {"plan_type": tenant.plan_type}
-        tenant.plan_type = target_plan
-        await self._invalidate_cache(tenant_id)
-        await self._audit(tenant_id, "plan.downgraded", before=before, after={"plan_type": target_plan})
-        return {"tenant_id": str(tenant_id), "plan_type": target_plan,
-                "message": "Takes effect at next billing cycle."}
-
-    async def convert_trial(self, tenant_id: uuid.UUID) -> dict:
-        tenant = await self._get_tenant(tenant_id)
-        if tenant.status != "trial":
-            raise ServiceOSException("CONFLICT", "Tenant is not on a trial.")
-        tenant.status = "active"
-        tenant.trial_expires_at = None
-        await self._invalidate_cache(tenant_id)
-        await self._audit(tenant_id, "trial.converted", after={"status": "active"})
-        return {"tenant_id": str(tenant_id), "status": "active"}
-
     # ── 24-30: Engine Management ─────────────────────────────────────────────
     async def list_engines(self, tenant_id: uuid.UUID) -> dict:
         r = await self.db.execute(
@@ -833,14 +784,6 @@ class TenantService:
         await self._audit(tenant_id, "billing.payment_method_updated",
                           after={"gateway": gateway})
         return {"tenant_id": str(tenant_id), "gateway": gateway, "updated": True}
-
-    async def list_invoices(self, tenant_id: uuid.UUID, limit: int) -> dict:
-        return {"invoices": [], "total": 0,
-                "_note": "Invoice list populated by Payment Engine in Phase 7."}
-
-    async def trigger_dunning(self, tenant_id: uuid.UUID) -> dict:
-        return {"tenant_id": str(tenant_id), "dunning_triggered": True,
-                "_note": "Full dunning flow implemented in Phase 7 with Payment Engine."}
 
     # ── 39-41: Data Management ───────────────────────────────────────────────
     async def request_data_export(self, tenant_id: uuid.UUID) -> dict:

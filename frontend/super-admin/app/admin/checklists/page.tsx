@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
-import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard,} from "../../../components/shared/ui";
+import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard, Pagination,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   checklistCatalogApi, catalogApi, catalogWorkspaceApi,
@@ -244,18 +244,8 @@ export default function ChecklistLibraryPage() {
 }
 
 function DirectoryPager({ page, pages, total, pageSize, onPageSize, onPage }: { page: number; pages: number; total: number; pageSize: number; onPageSize: (size: number) => void; onPage: (page: number) => void }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
-      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Page {page} of {pages} · {total} records</span>
-      <div style={{ display: "flex", gap: 8 }}>
-        <select value={pageSize} onChange={event => onPageSize(Number(event.target.value))} style={{ ...selectStyle, width: 110 }}>
-          {[25, 50, 100].map(value => <option key={value} value={value}>{value} / page</option>)}
-        </select>
-        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
-        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
-      </div>
-    </div>
-  );
+  return <Pagination page={page} pageSize={pageSize} total={total} pageCount={pages} onPage={onPage}
+    pageSizes={[25, 50, 100]} onPageSize={size => { onPageSize(size); onPage(1); }} alwaysShow />;
 }
 
 

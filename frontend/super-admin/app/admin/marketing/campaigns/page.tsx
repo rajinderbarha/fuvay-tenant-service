@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import {
   adminMarketingApi,
@@ -11,10 +12,12 @@ import {
   Input,
   Select,
   Skeleton,
+  Pagination,
 } from "@/components/shared/ui";
 import { useApi } from "@/hooks/useApi";
 import { RefreshCw, Eye, Smartphone } from "lucide-react";
 import Link from "next/link";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -56,18 +59,15 @@ export default function AdminMarketingCampaignsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Marketing Campaigns</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Provider launch campaigns and their review status.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Marketing Campaigns"
+        description="Provider launch campaigns and their review status."
+        eyebrow="Marketing"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <Link href="/admin/marketing/home"><Btn variant="secondary"><Smartphone size={14} /> Customer Home</Btn></Link>
           <Btn onClick={() => refetch()}><RefreshCw size={14} /> Refresh</Btn>
-        </div>
-      </div>
+        </div>}
+      />
 
       <Card>
         <div style={{ padding: "12px 16px", display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -92,7 +92,7 @@ export default function AdminMarketingCampaignsPage() {
         ) : campaigns.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No campaigns found.</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                 {["Campaign Name", "Type", "Status", "Marketing Ready", "Provider Review", "Admin Review", "Created", ""].map(h => (
@@ -134,19 +134,10 @@ export default function AdminMarketingCampaignsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
-        {!loading && campaigns.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--surface-sunken)",
-            fontSize: 13, color: "var(--text-tertiary)" }}>
-            <span>Page {page}</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="sm" variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Btn>
-              <Btn size="sm" variant="ghost" onClick={() => setPage(p => p + 1)} disabled={campaigns.length < 20}>Next</Btn>
-            </div>
-          </div>
-        )}
+        {!loading && campaigns.length > 0 && <Pagination page={page} pageSize={20} pageCount={page + (campaigns.length === 20 ? 1 : 0)}
+          hasPrevious={page > 1} hasNext={campaigns.length === 20} navigationMode="adjacent" onPage={setPage} alwaysShow />}
       </Card>
     </div>
   );

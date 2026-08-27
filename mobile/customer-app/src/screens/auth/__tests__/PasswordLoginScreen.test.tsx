@@ -70,7 +70,7 @@ describe("PasswordLoginScreen: the other two ways in", () => {
 
   it("offers create-account, because this is where someone finds out they have none", async () => {
     const screen = render();
-    fireEvent.press(screen.getByLabelText("New to Fuvay? Create an account"));
+    fireEvent.press(screen.getByLabelText("Sign Up"));
     await waitFor(() => expect(screen.getByText("signup-screen")).toBeTruthy());
   });
 

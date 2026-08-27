@@ -1,10 +1,12 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { providerAnalyticsApi, ServiceOSError } from "../../../lib/api";
 import {
   Download, Play, FileText, Filter, X, RefreshCw, AlertCircle, ChevronRight,
 } from "lucide-react";
+import { Pagination } from "@serviceos/design-system";
 
 /**
  * Reports.
@@ -388,7 +390,7 @@ export default function ProviderReportsPage() {
               First {result.preview.length} of {result.row_count} rows. Export for the full set.
             </p>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+              <TableSurface style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
                 <thead>
                   <tr>
                     {Object.keys(result.preview[0]).map(c => (
@@ -411,7 +413,7 @@ export default function ProviderReportsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           </section>
         )}
@@ -478,22 +480,8 @@ export default function ProviderReportsPage() {
                   );
                 })}
               </div>
-              {runsTotal > RUNS_PAGE && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-                  <button style={{ ...btnBase, opacity: runsPage === 0 ? 0.5 : 1 }}
-                    disabled={runsPage === 0} onClick={() => setRunsPage(p => Math.max(0, p - 1))}>
-                    Previous
-                  </button>
-                  <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                    {runsPage * RUNS_PAGE + 1}–{Math.min((runsPage + 1) * RUNS_PAGE, runsTotal)} of {runsTotal}
-                  </span>
-                  <button style={{ ...btnBase, opacity: (runsPage + 1) * RUNS_PAGE >= runsTotal ? 0.5 : 1 }}
-                    disabled={(runsPage + 1) * RUNS_PAGE >= runsTotal}
-                    onClick={() => setRunsPage(p => p + 1)}>
-                    Next <ChevronRight size={13} />
-                  </button>
-                </div>
-              )}
+              <Pagination page={runsPage + 1} pageSize={RUNS_PAGE} total={runsTotal}
+                onPage={target => setRunsPage(target - 1)} itemLabel="report runs" />
             </>
           )}
         </section>

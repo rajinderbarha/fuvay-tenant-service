@@ -19,7 +19,6 @@ from app.engines.marketing_automation.constants import (
     TRIGGER_ABANDONED_APPOINTMENT_DRAFT,
     TRIGGER_ABANDONED_REAL_ESTATE_DRAFT,
     TRIGGER_WALLET_LOW_BALANCE,
-    TRIGGER_SUBSCRIPTION_EXPIRING,
     TRIGGER_REVIEW_REQUEST,
     TRIGGER_COMPLAINT_FOLLOWUP,
     TRIGGER_PROVIDER_INACTIVE,
@@ -65,7 +64,6 @@ class AutomationTriggerService:
         TRIGGER_ABANDONED_APPOINTMENT_DRAFT: "Student started but didn't complete a coaching appointment draft",
         TRIGGER_ABANDONED_REAL_ESTATE_DRAFT: "Customer started but didn't complete a real estate lead draft",
         TRIGGER_WALLET_LOW_BALANCE:          "Provider wallet balance is below threshold",
-        TRIGGER_SUBSCRIPTION_EXPIRING:       "Provider subscription expires within 7 days",
         TRIGGER_REVIEW_REQUEST:              "Request review after job/appointment completion",
         TRIGGER_COMPLAINT_FOLLOWUP:          "Follow up after complaint resolution",
         TRIGGER_PROVIDER_INACTIVE:           "Provider has not received a booking in 30 days",
@@ -139,26 +137,6 @@ class AutomationTriggerService:
         return await self._target_users(
             db, TRIGGER_WALLET_LOW_BALANCE, user_ids,
             "Your wallet balance is low"
-        )
-
-    # ── Subscription expiring ─────────────────────────────────────────────────
-
-    async def _run_subscription_expiring(
-        self, db: AsyncSession, params: dict
-    ) -> dict[str, Any]:
-        days_ahead = params.get("days_ahead", 7)
-        result = await db.execute(text("""
-            SELECT DISTINCT t.owner_user_id
-            FROM tenants t
-            WHERE t.subscription_expires_at BETWEEN NOW() AND NOW() + INTERVAL ':days days'
-              AND t.status = 'active'
-              AND t.owner_user_id IS NOT NULL
-            LIMIT 500
-        """), {"days": days_ahead})
-        user_ids = [row[0] for row in result.fetchall() if row[0]]
-        return await self._target_users(
-            db, TRIGGER_SUBSCRIPTION_EXPIRING, user_ids,
-            "Your subscription is expiring soon"
         )
 
     # ── Review request after completion ──────────────────────────────────────

@@ -1,9 +1,12 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { recommendationApi, RecommendationRule, SimulateResult } from "../../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Badge, Btn } from "../../../../../components/shared/ui";
 
 const RULE_TYPES = [
   "brand", "service_option", "issue_type", "document_requirement",
@@ -11,9 +14,6 @@ const RULE_TYPES = [
   "workflow_template", "provider_default", "customer_next_step",
 ];
 const SCOPES = ["platform", "vertical", "category", "service", "tenant", "location", "customer_flow"];
-const STATUS_COLORS: Record<string, string> = {
-  active: "#dcfce7", draft: "#f3f4f6", inactive: "#fef9c3", archived: "#fef2f2",
-};
 
 export default function RecommendationRuleDetailPage() {
   const { ruleId } = useParams<{ ruleId: string }>();
@@ -112,41 +112,25 @@ export default function RecommendationRuleDetailPage() {
   if (!rule) return <div style={{ padding: "2rem" }}>Rule not found.</div>;
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "900px" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <Link href="/admin/automation/recommendation-rules" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
-          ← Back to Recommendation Rules
-        </Link>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: "0.5rem" }}>
-          <div>
-            <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: 0 }}>{rule.name}</h1>
-            <code style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{rule.code}</code>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "9999px", background: STATUS_COLORS[rule.status] ?? "#f3f4f6" }}>
-              {rule.status}
-            </span>
+    <div style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title={rule.name}
+        description={`Rule code: ${rule.code}`}
+        eyebrow="Recommendation Rule"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap" }}>
+            <Link href="/admin/automation/recommendation-rules"><Btn variant="ghost" size="sm">Back</Btn></Link>
+            <Badge variant={rule.status === "active" ? "success" : rule.status === "archived" ? "muted" : "warning"}>{rule.status}</Badge>
             {rule.status !== "active" && rule.status !== "archived" && (
-              <button onClick={() => handleLifecycle("activate")}
-                style={{ fontSize: "0.75rem", background: "var(--success)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
-                Activate
-              </button>
+              <Btn variant="success" size="sm" onClick={() => handleLifecycle("activate")}>Activate</Btn>
             )}
             {rule.status === "active" && (
-              <button onClick={() => handleLifecycle("deactivate")}
-                style={{ fontSize: "0.75rem", background: "var(--warning)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
-                Deactivate
-              </button>
+              <Btn variant="warning" size="sm" onClick={() => handleLifecycle("deactivate")}>Deactivate</Btn>
             )}
             {rule.status !== "archived" && (
-              <button onClick={() => handleLifecycle("archive")}
-                style={{ fontSize: "0.75rem", background: "var(--danger)", color: "#fff", border: "none", padding: "0.3rem 0.7rem", borderRadius: "0.25rem", cursor: "pointer" }}>
-                Archive
-              </button>
+              <Btn variant="danger" size="sm" onClick={() => handleLifecycle("archive")}>Archive</Btn>
             )}
-          </div>
-        </div>
-      </div>
+          </div>}
+      />
 
       {saveError && <div style={{ background: "#fef2f2", color: "var(--danger)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>{saveError}</div>}
       {saveOk && <div style={{ background: "#f0fdf4", color: "var(--success)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem", marginBottom: "1rem", fontSize: "0.85rem" }}>Saved successfully</div>}
@@ -242,7 +226,7 @@ export default function RecommendationRuleDetailPage() {
                 <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.5rem" }}>
                   Recommendations ({simResult.data.recommendations.length})
                 </div>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#f9fafb" }}>
                       {["Type", "Name", "Confidence", "Explanation"].map(h => (
@@ -260,7 +244,7 @@ export default function RecommendationRuleDetailPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
 

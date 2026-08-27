@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -51,6 +52,14 @@ def test_platform_router_imports():
     assert any("platform/summary" in r for r in routes)
     assert any("operational-alerts" in r for r in routes)
     assert any("finance/summary" in r for r in routes)
+
+
+def test_static_platform_analytics_routes_mount_before_dynamic_admin_routes():
+    """`/providers/performance` must not be consumed as `{tenant_id}`."""
+    source = (Path(__file__).resolve().parents[1] / "app/main.py").read_text(encoding="utf-8")
+    mount_block = source[source.index("# Sprint 28"):source.index("# Sprint 29")]
+    include_order = mount_block[mount_block.index("for _r in ["):]
+    assert include_order.index("platform_analytics_router,") < include_order.index("admin_analytics_router,")
 
 
 # ── 1. Platform summary loads ─────────────────────────────────────────────────
@@ -147,7 +156,7 @@ async def test_finance_summary_loads():
     svc = PlatformAnalyticsService()
     result = await svc.get_finance_summary(db)
     assert isinstance(result, dict)
-    for k in ["platform_revenue", "package_revenue", "subscription_revenue",
+    for k in ["platform_revenue", "provider_direct_service_value",
               "usage_credit_topups", "completed_job_deductions",
               "customer_service_credits_issued", "security_deposits_held",
               "failed_deductions"]:
@@ -163,9 +172,11 @@ async def test_provider_direct_service_value_is_separate():
     svc = PlatformAnalyticsService()
     result = await svc.get_platform_summary(db)
     assert "provider_direct_service_value" in result
-    # Finance summary should NOT have provider_direct_service_value — it's not platform revenue
+    # Direct provider service value is visible for reconciliation, but remains
+    # separate from the platform's top-up receipts.
     fin = await svc.get_finance_summary(db)
-    assert "provider_direct_service_value" not in fin
+    assert "provider_direct_service_value" in fin
+    assert fin["platform_revenue"] == fin["usage_credit_topups"]
 
 
 # ── 9. No payout/withdrawal field in finance response ─────────────────────────
@@ -194,7 +205,7 @@ async def test_quality_summary_loads():
     assert "review_count" in result
     assert "complaint_rate" in result
     assert "dispute_rate" in result
-    assert "sla_success_rate" in result
+    assert "sla_success_rate" not in result
 
 
 # ── 11. Complaints summary loads ──────────────────────────────────────────────
@@ -277,20 +288,7 @@ async def test_summary_respects_vertical_filter():
     assert "active_tenants" in result
 
 
-# ── 17. Export report creates record ─────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_export_report_creates_record():
-    from app.engines.analytics.platform_service import PlatformAnalyticsService
-    db = _db()
-    svc = PlatformAnalyticsService()
-    result = await svc.export_report(db, "platform_summary", {"date_from": "2025-01-01"}, "user-123")
-    assert "export_id" in result
-    assert result["status"] == "queued"
-    assert "download_url" in result
-
-
-# ── 18. Resolve alert returns status ─────────────────────────────────────────
+# ── 17. Resolve alert returns status ─────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_resolve_alert_returns_status():

@@ -6,8 +6,12 @@
  * Import from shared/ui for atomic UI elements (Btn, Badge, Modal, etc.)
  */
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { ActionMenu, type ActionMenuItem } from "@serviceos/design-system";
+
+export { ActionMenu };
+export type { ActionMenuItem };
 
 // ── Design-token shorthand ────────────────────────────────────────────────────
 const T = {
@@ -41,21 +45,6 @@ const T = {
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface ActionMenuItem {
-  label: string;
-  icon?: React.ReactNode;
-  onClick?: () => void;
-  href?: string;
-  variant?: "default" | "danger";
-  disabled?: boolean;
-  divider?: boolean;
-}
-
-export interface BreadcrumbItem {
-  label: string;
-  href?: string;
-}
-
 export interface FilterOption {
   label: string;
   value: string;
@@ -69,113 +58,6 @@ export interface FilterDef {
   placeholder?: string;
 }
 
-// ── PageShell ─────────────────────────────────────────────────────────────────
-/**
- * Top-level page container. Provides consistent max-width, padding, and
- * vertical gap between sections. Wrap entire page content in this.
- */
-export function PageShell({
-  children,
-  maxWidth = 1200,
-  gap = 24,
-  style,
-}: {
-  children: React.ReactNode;
-  maxWidth?: number;
-  gap?: number;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      gap,
-      maxWidth,
-      width: "100%",
-      ...style,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-// ── PageHeader ────────────────────────────────────────────────────────────────
-/**
- * Standard page header: breadcrumb (optional) + title + description +
- * primary action + secondary actions in ActionMenu.
- *
- * Replaces ad-hoc header divs and SectionHeader usage.
- */
-export function PageHeader({
-  title,
-  description,
-  breadcrumbs,
-  primaryAction,
-  secondaryActions,
-  statusBadge,
-  style,
-}: {
-  title: string;
-  description?: string;
-  breadcrumbs?: BreadcrumbItem[];
-  primaryAction?: React.ReactNode;
-  secondaryActions?: ActionMenuItem[];
-  statusBadge?: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, ...style }}>
-      {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {breadcrumbs.map((b, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && (
-                <span style={{ fontSize: 12, color: T.textTer }}>›</span>
-              )}
-              {b.href ? (
-                <Link href={b.href} style={{
-                  fontSize: 12, color: T.textLink, textDecoration: "none",
-                  fontWeight: 500,
-                }}>{b.label}</Link>
-              ) : (
-                <span style={{ fontSize: 12, color: T.textTer }}>{b.label}</span>
-              )}
-            </React.Fragment>
-          ))}
-        </nav>
-      )}
-      <div style={{
-        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-        gap: 16, flexWrap: "wrap",
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <h1 style={{
-              fontSize: 22, fontWeight: 700, color: T.textPri, margin: 0,
-              lineHeight: 1.2,
-            }}>{title}</h1>
-            {statusBadge}
-          </div>
-          {description && (
-            <p style={{
-              fontSize: 13, color: T.textSec, margin: "4px 0 0",
-              lineHeight: 1.5, maxWidth: 640,
-            }}>{description}</p>
-          )}
-        </div>
-        {(primaryAction || (secondaryActions && secondaryActions.length > 0)) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {secondaryActions && secondaryActions.length > 0 && (
-              <ActionMenu items={secondaryActions} />
-            )}
-            {primaryAction}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── PageIntro ─────────────────────────────────────────────────────────────────
 /** Descriptive paragraph below PageHeader when description alone isn't enough. */
 export function PageIntro({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -184,126 +66,6 @@ export function PageIntro({ children, style }: { children: React.ReactNode; styl
       fontSize: 13, color: T.textSec, margin: 0, lineHeight: 1.6,
       maxWidth: 680, ...style,
     }}>{children}</p>
-  );
-}
-
-// ── ActionMenu ────────────────────────────────────────────────────────────────
-/**
- * Kebab/overflow dropdown menu for secondary and advanced actions.
- * Keeps the primary action clean and reduces button clutter.
- */
-export function ActionMenu({
-  items,
-  label = "Actions",
-  icon,
-  align = "right",
-  size = "sm",
-}: {
-  items: ActionMenuItem[];
-  label?: string;
-  icon?: React.ReactNode;
-  align?: "left" | "right";
-  size?: "xs" | "sm" | "md";
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const pad = size === "xs" ? "5px 10px" : size === "sm" ? "7px 14px" : "9px 18px";
-  const fontSize = size === "xs" ? 11 : size === "sm" ? 13 : 14;
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        onClick={() => setOpen(p => !p)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: pad, fontSize, fontWeight: 500,
-          background: T.surface, border: `1px solid ${T.border}`,
-          borderRadius: 8, cursor: "pointer", color: T.textSec,
-          fontFamily: "inherit", transition: "all 0.15s",
-          boxShadow: T.shadowSm,
-        }}
-        onMouseEnter={e => { (e.target as HTMLButtonElement).style.borderColor = T.borderStr; (e.target as HTMLButtonElement).style.color = T.textPri; }}
-        onMouseLeave={e => { (e.target as HTMLButtonElement).style.borderColor = T.border; (e.target as HTMLButtonElement).style.color = T.textSec; }}
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup="menu"
-      >
-        {icon ?? <span style={{ fontSize: 16, lineHeight: 1 }}>⋯</span>}
-        {label !== "Actions" || !icon ? label : null}
-        {!icon && (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        )}
-      </button>
-
-      {open && (
-        <div role="menu" style={{
-          position: "absolute",
-          [align === "right" ? "right" : "left"]: 0,
-          top: "calc(100% + 6px)",
-          minWidth: 200, maxWidth: 280,
-          background: T.elevated,
-          border: `1px solid ${T.border}`,
-          borderRadius: 10,
-          boxShadow: T.shadowMd,
-          zIndex: 100,
-          overflow: "hidden",
-          padding: "4px 0",
-        }}>
-          {items.map((item, i) => (
-            <React.Fragment key={i}>
-              {item.divider && i > 0 && (
-                <div style={{ height: 1, background: T.border, margin: "4px 0" }} />
-              )}
-              <button
-                role="menuitem"
-                disabled={item.disabled}
-                onClick={() => {
-                  if (item.disabled) return;
-                  setOpen(false);
-                  if (item.href) window.location.href = item.href;
-                  else item.onClick?.();
-                }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "9px 14px",
-                  fontSize: 13, fontWeight: 500, textAlign: "left",
-                  background: "transparent",
-                  border: "none", cursor: item.disabled ? "not-allowed" : "pointer",
-                  color: item.variant === "danger" ? T.dangerTxt : T.textPri,
-                  opacity: item.disabled ? 0.5 : 1,
-                  fontFamily: "inherit", transition: "background 0.1s",
-                }}
-                onMouseEnter={e => {
-                  if (!item.disabled)
-                    (e.currentTarget as HTMLButtonElement).style.background = T.sunken;
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                }}
-              >
-                {item.icon && (
-                  <span style={{ opacity: 0.75, display: "flex", alignItems: "center" }}>
-                    {item.icon}
-                  </span>
-                )}
-                {item.label}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -471,60 +233,6 @@ export function AdvancedFiltersDrawer({
         </div>
       </div>
     </>
-  );
-}
-
-// ── ListPageShell ─────────────────────────────────────────────────────────────
-/**
- * Standard wrapper for list/table pages.
- * Composes: PageHeader + search bar + essential filters + content area.
- *
- * Advanced filters go into AdvancedFiltersDrawer; pass a toggle trigger as
- * part of essentialFilters or secondaryActions.
- */
-export function ListPageShell({
-  title,
-  description,
-  breadcrumbs,
-  primaryAction,
-  secondaryActions,
-  search,
-  essentialFilters,
-  summary,
-  children,
-  style,
-}: {
-  title: string;
-  description?: string;
-  breadcrumbs?: BreadcrumbItem[];
-  primaryAction?: React.ReactNode;
-  secondaryActions?: ActionMenuItem[];
-  search?: React.ReactNode;
-  essentialFilters?: React.ReactNode;
-  summary?: React.ReactNode;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <PageShell style={style}>
-      <PageHeader
-        title={title}
-        description={description}
-        breadcrumbs={breadcrumbs}
-        primaryAction={primaryAction}
-        secondaryActions={secondaryActions}
-      />
-      {summary && <div>{summary}</div>}
-      {(search || essentialFilters) && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-        }}>
-          {search}
-          {essentialFilters}
-        </div>
-      )}
-      <div>{children}</div>
-    </PageShell>
   );
 }
 

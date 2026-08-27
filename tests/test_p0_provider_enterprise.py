@@ -26,15 +26,12 @@ ADMIN_PASS  = "Password123!"
 PROVIDER_ROUTER_PATH = os.path.join(
     os.path.dirname(__file__), "..", "app", "engines", "provider_portal", "admin_router.py"
 )
-PACKAGE_ROUTER_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "app", "engines", "package_commerce", "admin_router.py"
-)
 API_TS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "frontend", "super-admin", "lib", "api.ts"
 )
 NEW_REQUESTS_PAGE = os.path.join(
     os.path.dirname(__file__), "..", "frontend", "super-admin",
-    "app", "admin", "tenants", "onboarding", "page.tsx"
+    "app", "admin", "home-services", "providers", "page.tsx"
 )
 PROVIDERS_PAGE = os.path.join(
     os.path.dirname(__file__), "..", "frontend", "super-admin",
@@ -42,11 +39,7 @@ PROVIDERS_PAGE = os.path.join(
 )
 ONBOARDING_PAGE = os.path.join(
     os.path.dirname(__file__), "..", "frontend", "super-admin",
-    "app", "admin", "onboarding", "providers", "page.tsx"
-)
-PACKAGES_PAGE = os.path.join(
-    os.path.dirname(__file__), "..", "frontend", "super-admin",
-    "app", "admin", "packages", "page.tsx"
+    "app", "admin", "home-services", "providers", "page.tsx"
 )
 
 
@@ -118,10 +111,6 @@ class TestProviderRouterFile:
         src = _read(PROVIDER_ROUTER_PATH)
         assert '"pending_review"' in src
 
-    def test_providers_summary_has_package_pending_approval(self):
-        src = _read(PROVIDER_ROUTER_PATH)
-        assert '"package_pending_approval"' in src
-
     def test_new_requests_cte_filters_not_started(self):
         src = _read(PROVIDER_ROUTER_PATH)
         assert "not_started" in src
@@ -130,29 +119,6 @@ class TestProviderRouterFile:
 # ═════════════════════════════════════════════════════════════════════════════
 # 2. BACKEND FILE CHECKS — Package Router
 # ═════════════════════════════════════════════════════════════════════════════
-
-class TestPackageRouterFile:
-    def test_file_exists(self):
-        assert os.path.isfile(PACKAGE_ROUTER_PATH)
-
-    def test_has_packages_summary_route(self):
-        src = _read(PACKAGE_ROUTER_PATH)
-        assert '"/v1/admin/packages/summary"' in src
-
-    def test_summary_before_package_id_route(self):
-        src = _read(PACKAGE_ROUTER_PATH)
-        summary_pos = src.index("/v1/admin/packages/summary")
-        id_pos = src.index("/v1/admin/packages/{package_id}")
-        assert summary_pos < id_pos
-
-    def test_summary_has_active_assignments(self):
-        src = _read(PACKAGE_ROUTER_PATH)
-        assert "active_assignments" in src
-
-    def test_summary_has_featured(self):
-        src = _read(PACKAGE_ROUTER_PATH)
-        assert "featured" in src
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 3. API TS FILE CHECKS
@@ -164,7 +130,7 @@ class TestApiTsFile:
 
     def test_has_providers_admin_api(self):
         src = _read(API_TS_PATH)
-        assert "providersAdminApi" in src
+        assert "adminOnboardingProvidersApi" in src
 
     def test_providers_admin_api_has_summary(self):
         src = _read(API_TS_PATH)
@@ -190,14 +156,6 @@ class TestApiTsFile:
         src = _read(API_TS_PATH)
         assert "NewRequestsProvider" in src
 
-    def test_package_api_has_summary(self):
-        src = _read(API_TS_PATH)
-        assert "/v1/admin/packages/summary" in src
-
-    def test_package_summary_interface_exists(self):
-        src = _read(API_TS_PATH)
-        assert "PackageSummary" in src
-
     def test_send_reminder_in_onboarding_api(self):
         src = _read(API_TS_PATH)
         assert "sendReminder" in src
@@ -213,7 +171,7 @@ class TestFrontendPages:
 
     def test_new_requests_page_uses_new_api(self):
         src = _read(NEW_REQUESTS_PAGE)
-        assert "providersAdminApi" in src
+        assert "adminOnboardingProvidersApi" in src
 
     def test_new_requests_page_has_summary_cards(self):
         src = _read(NEW_REQUESTS_PAGE)
@@ -228,11 +186,11 @@ class TestFrontendPages:
         assert "sendReminder" in src or "send-reminder" in src or "Bell" in src
 
     def test_new_requests_page_links_to_onboarding(self):
-        # NOTE: provider onboarding review was consolidated from a standalone
-        # /admin/onboarding/providers/{id} route into an "onboarding" tab on
-        # the tenant-detail page.
+        # Provider onboarding is consolidated into the canonical Home
+        # Services provider workspace and selected through its tab state.
         src = _read(NEW_REQUESTS_PAGE)
-        assert "tab=onboarding" in src and "/admin/tenants/" in src
+        assert 'key: "onboarding"' in src
+        assert "router.replace(`/admin/home-services/providers?tab=${t}`)" in src
 
     def test_new_requests_page_has_pagination(self):
         src = _read(NEW_REQUESTS_PAGE)
@@ -254,18 +212,6 @@ class TestFrontendPages:
         src = _read(ONBOARDING_PAGE)
         assert "profileComplete" in src or "profile_completion_percentage" in src
 
-    def test_packages_page_has_summary_data(self):
-        src = _read(PACKAGES_PAGE)
-        assert "packageApi.summary" in src or "summary()" in src
-
-    def test_packages_page_has_summary_cards(self):
-        src = _read(PACKAGES_PAGE)
-        assert "summaryData" in src or "PackageSummary" in src
-
-    def test_packages_page_imports_package_summary(self):
-        src = _read(PACKAGES_PAGE)
-        assert "PackageSummary" in src
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 5. LIVE API — Providers Summary
@@ -280,7 +226,7 @@ class TestProvidersSummaryEndpoint:
         r = await client.get("/v1/admin/providers/summary")
         data = r.json()["data"]
         for key in ("total", "active", "suspended", "pending_setup", "pending_review",
-                    "changes_requested", "rejected", "package_pending_approval"):
+                    "changes_requested", "rejected"):
             assert key in data, f"Missing key: {key}"
 
     async def test_all_values_are_integers(self, client):
@@ -312,7 +258,7 @@ class TestNewRequestsEndpoints:
     async def test_summary_has_required_keys(self, client):
         r = await client.get("/v1/admin/providers/new-requests/summary")
         data = r.json()["data"]
-        for key in ("total", "with_package", "without_package", "package_selected", "profile_near_complete"):
+        for key in ("total", "profile_near_complete"):
             assert key in data, f"Missing key: {key}"
 
     async def test_list_returns_200(self, client):
@@ -331,14 +277,6 @@ class TestNewRequestsEndpoints:
         for p in providers:
             assert "profile_completion_percentage" in p
             assert isinstance(p["profile_completion_percentage"], int)
-
-    async def test_has_package_filter_true(self, client):
-        r = await client.get("/v1/admin/providers/new-requests", params={"has_package": "true"})
-        assert r.status_code == 200
-
-    async def test_has_package_filter_false(self, client):
-        r = await client.get("/v1/admin/providers/new-requests", params={"has_package": "false"})
-        assert r.status_code == 200
 
     async def test_vertical_filter(self, client):
         r = await client.get("/v1/admin/providers/new-requests", params={"vertical_type": "home_services"})
@@ -386,39 +324,6 @@ class TestSendReminder:
 # ═════════════════════════════════════════════════════════════════════════════
 # 8. LIVE API — Packages Summary
 # ═════════════════════════════════════════════════════════════════════════════
-
-class TestPackagesSummaryEndpoint:
-    async def test_returns_200(self, client):
-        r = await client.get("/v1/admin/packages/summary")
-        assert r.status_code == 200, r.text
-
-    async def test_has_required_keys(self, client):
-        r = await client.get("/v1/admin/packages/summary")
-        data = r.json()["data"]
-        for key in ("total", "active", "inactive", "onboarding", "subscription",
-                    "lead_credit", "deposit", "featured", "active_assignments"):
-            assert key in data, f"Missing key: {key}"
-
-    async def test_all_values_are_integers(self, client):
-        r = await client.get("/v1/admin/packages/summary")
-        data = r.json()["data"]
-        for key, val in data.items():
-            assert isinstance(val, int), f"{key} should be int, got {type(val)}"
-
-    async def test_total_gte_active_plus_inactive(self, client):
-        r = await client.get("/v1/admin/packages/summary")
-        data = r.json()["data"]
-        assert data["total"] >= data["active"] + data["inactive"]
-
-    async def test_active_assignments_gte_zero(self, client):
-        r = await client.get("/v1/admin/packages/summary")
-        assert r.json()["data"]["active_assignments"] >= 0
-
-    async def test_no_auth_returns_4xx(self):
-        async with AsyncClient(base_url=BASE, timeout=30) as c:
-            r = await c.get("/v1/admin/packages/summary")
-        assert r.status_code in (401, 403)
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 9. PROFILE COMPLETION GATE ON APPROVE

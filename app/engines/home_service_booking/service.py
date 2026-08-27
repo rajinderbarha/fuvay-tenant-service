@@ -1683,6 +1683,17 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        # Credit floor: a provider whose balance has fallen below the policy
+        # floor stops receiving NEW work. Checked here at confirmation rather
+        # than at match time for the same reason entitlement is -- the balance
+        # can cross the floor in the window between being matched and
+        # confirming, and taking the booking anyway would leave the platform
+        # with nothing to deduct the commission from. Jobs already accepted are
+        # untouched and run to completion.
+        if draft.selected_tenant_id:
+            from app.engines.vertical_catalog.seat_enforcement import assert_booking_allowed
+            await assert_booking_allowed(self.db, draft.selected_tenant_id)
+
         # FINAL-L5-04C — re-validate the selected provider's entitlement at
         # confirmation time, not just at match time (Part 6). Entitlement
         # could have been disabled by an admin in the window between the

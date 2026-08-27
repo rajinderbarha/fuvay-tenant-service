@@ -39,7 +39,7 @@ def _clear_override():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-# All 19 tenant_engine.router mutation endpoints newly guarded by
+# All 16 tenant_engine.router mutation endpoints guarded by
 # require_tenant_mutation_permission this slice (Workstream 1/3/4). Each
 # tuple is (method, path_template, needs_json_body).
 GUARDED_MUTATION_ENDPOINTS = [
@@ -48,9 +48,6 @@ GUARDED_MUTATION_ENDPOINTS = [
     ("POST", "/v1/tenants/{tid}/reinstate", True),
     ("POST", "/v1/tenants/{tid}/terminate/begin", True),
     ("POST", "/v1/tenants/{tid}/terminate/confirm", True),
-    ("POST", "/v1/tenants/{tid}/plan/upgrade", True),
-    ("POST", "/v1/tenants/{tid}/plan/downgrade", True),
-    ("POST", "/v1/tenants/{tid}/trial/convert", True),
     ("POST", "/v1/tenants/{tid}/engines/engine-x/enable", False),
     ("POST", "/v1/tenants/{tid}/engines/engine-x/disable", False),
     ("POST", "/v1/tenants/{tid}/engines/bulk-enable", True),
@@ -64,7 +61,7 @@ GUARDED_MUTATION_ENDPOINTS = [
     ("POST", "/v1/tenants/{tid}/data/delete-request", True),
 ]
 
-assert len(GUARDED_MUTATION_ENDPOINTS) == 19
+assert len(GUARDED_MUTATION_ENDPOINTS) == 16
 
 
 async def _request(client, method, path, needs_json):
@@ -231,15 +228,12 @@ class TestFullNineteenEndpointAuthorizationMatrix:
         ("POST", "/v1/tenants/{tid}/reinstate", {"reason": "test"}),
         ("POST", "/v1/tenants/{tid}/terminate/begin", {"reason": "test"}),
         ("POST", "/v1/tenants/{tid}/terminate/confirm", None),
-        ("POST", "/v1/tenants/{tid}/plan/upgrade", {"target_plan": "growth", "reason": "test"}),
-        ("POST", "/v1/tenants/{tid}/plan/downgrade", {"target_plan": "starter"}),
-        ("POST", "/v1/tenants/{tid}/trial/convert", None),
         ("POST", "/v1/tenants/{tid}/data/delete-request", {"reason": "test"}),
     ]
 
     assert len(OWNER_ACCESSIBLE) == 11
-    assert len(PLATFORM_ONLY_VIA_PERMISSION_GAP) == 8
-    assert len(OWNER_ACCESSIBLE) + len(PLATFORM_ONLY_VIA_PERMISSION_GAP) == 19
+    assert len(PLATFORM_ONLY_VIA_PERMISSION_GAP) == 5
+    assert len(OWNER_ACCESSIBLE) + len(PLATFORM_ONLY_VIA_PERMISSION_GAP) == 16
 
     async def _call(self, client, method, path, body):
         kwargs = {"headers": {"Authorization": "Bearer x"}}
@@ -343,8 +337,7 @@ class TestPlatformAdminAndPublicEndpointsUnaffected:
         import inspect
         from app.engines.tenant_engine import router as r
         for fn_name in ("activate_tenant", "update_checklist", "preflight_check",
-                        "reject_onboarding", "request_documents", "start_review",
-                        "trigger_dunning"):
+                        "reject_onboarding", "request_documents", "start_review"):
             src = inspect.getsource(getattr(r, fn_name))
             assert "require_super_admin" in src, f"{fn_name} must remain require_super_admin-gated"
             assert "require_tenant_mutation_permission" not in src, (
@@ -363,9 +356,9 @@ class TestPlatformAdminAndPublicEndpointsUnaffected:
 
 class TestNoTenantPortalExposureForPlatformOnlyActions:
     """Phase 2A Slice 2F-1A, Workstream 5: regression guard against
-    accidental tenant-facing exposure of the 8 PLATFORM_ADMIN_ONLY endpoints
-    (suspend, reinstate, terminate/begin, terminate/confirm, plan/upgrade,
-    plan/downgrade, trial/convert, data/delete-request). The frontend-
+    accidental tenant-facing exposure of the 5 platform-only tenant lifecycle
+    endpoints (suspend, reinstate, terminate/begin, terminate/confirm, and
+    data/delete-request). The frontend-
     exposure audit (frontend-exposure-audit.md) found these are called ONLY
     from frontend/super-admin/lib/api.ts, never from
     frontend/tenant-portal -- this test fails loudly if a future change adds
@@ -373,7 +366,7 @@ class TestNoTenantPortalExposureForPlatformOnlyActions:
 
     PLATFORM_ONLY_PATH_FRAGMENTS = [
         "/suspend", "/reinstate", "/terminate/begin", "/terminate/confirm",
-        "/plan/upgrade", "/plan/downgrade", "/trial/convert", "/data/delete-request",
+        "/data/delete-request",
     ]
 
     def test_tenant_portal_api_client_has_no_caller_for_platform_only_actions(self):
@@ -384,16 +377,16 @@ class TestNoTenantPortalExposureForPlatformOnlyActions:
         found = [frag for frag in self.PLATFORM_ONLY_PATH_FRAGMENTS if frag in text]
         assert found == [], (
             f"frontend/tenant-portal/lib/api.ts now references platform-only tenant_engine "
-            f"action path(s) {found} -- these 8 endpoints are PLATFORM_ADMIN_ONLY per "
+            f"action path(s) {found} -- these endpoints are platform-only per "
             f"docs/workflow-rearchitecture/phase-02a-slice-02f1a/sensitive-capability-policy.md; "
             f"adding a tenant-portal caller requires a separate, explicit product-policy decision, "
             f"not just an API client change"
         )
 
-    def test_super_admin_api_client_still_has_all_eight_callers(self):
+    def test_super_admin_api_client_still_has_all_platform_callers(self):
         """Confirms the frontend-exposure audit's positive finding stays
         true: the super-admin app is the sole, legitimate, existing caller
-        of these 8 endpoints -- if this count drops, the audit's evidence
+        of these endpoints -- if this count drops, the audit's evidence
         base has gone stale."""
         from pathlib import Path
         root = Path(__file__).parent.parent
@@ -401,7 +394,7 @@ class TestNoTenantPortalExposureForPlatformOnlyActions:
         text = api_client.read_text(encoding="utf-8")
         found = [frag for frag in self.PLATFORM_ONLY_PATH_FRAGMENTS if frag in text]
         assert len(found) == len(self.PLATFORM_ONLY_PATH_FRAGMENTS), (
-            f"expected all 8 platform-only path fragments referenced in "
+            f"expected all platform-only path fragments referenced in "
             f"frontend/super-admin/lib/api.ts, found {found}"
         )
 

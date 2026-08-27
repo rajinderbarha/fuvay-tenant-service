@@ -1,8 +1,11 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { recommendationApi, RecommendationResult } from "../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "../../../../components/shared/ui";
 
 const STATUS_COLORS: Record<string, string> = {
   shown:        "#f3f4f6",
@@ -53,19 +56,13 @@ export default function RecommendationResultsPage() {
   };
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Recommendation Results</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            Track recommendations shown, accepted, and rejected across all contexts ({total} total)
-          </p>
-        </div>
-        <Link href="/admin/automation/recommendation-rules"
-          style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
-          ← Back to Rules
-        </Link>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title="Recommendation Results"
+        description={`Track recommendations shown, accepted, and rejected across all contexts (${total} total).`}
+        eyebrow="Automation"
+        actions={<Link href="/admin/automation/recommendation-rules"><Btn variant="secondary" size="sm">Back to Rules</Btn></Link>}
+      />
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
@@ -89,7 +86,7 @@ export default function RecommendationResultsPage() {
         </p>
       ) : (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
                 {["Context", "Entity Type", "Name / ID", "Confidence", "Explanation", "Status", "Created", "Actions"].map(h => (
@@ -135,7 +132,7 @@ export default function RecommendationResultsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
     </div>

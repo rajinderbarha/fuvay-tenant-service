@@ -161,7 +161,7 @@ export default function JobDetailPage({ params }:{ params: Promise<{ id:string }
                 <Field label="Collected Amount" value={j.completion_data.collected_amount != null ? `₹${j.completion_data.collected_amount}` : "—"}/>
                 <Field label="Payment Mode" value="Customer Pays Provider Directly"/>
               </div>
-              <Link href="/packages"
+              <Link href="/home-services/finance?tab=usage-credits"
                 style={{ display:"inline-block", marginTop:12, fontSize:12, fontWeight:600, color:"var(--text-link)" }}>
                 View Usage Credit Deduction (Completed Job Deduction) for this job →
               </Link>

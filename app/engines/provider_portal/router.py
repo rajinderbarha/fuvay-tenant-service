@@ -9,7 +9,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -265,6 +265,18 @@ async def create_team_member(
     def _arr(key: str) -> str:
         v = payload.get(key) or []
         return json.dumps(v if isinstance(v, list) else [])
+
+    # Seat gate. Technician headcount is bought with a top-up plan rather than
+    # unlocked by a deposit (migration 317), and each seat is also one more job
+    # bookable per slot -- so this is the capacity limit, not just a billing
+    # one. Checked only for technician-type members: an owner or dispatcher
+    # occupies no seat because they take no job.
+    from app.engines.vertical_catalog.seat_enforcement import assert_seat_available
+    from app.engines.home_service_assignment.constants import ELIGIBLE_DESIGNATIONS
+
+    _desig = (payload.get("designation") or "").strip().lower()
+    if _desig in ELIGIBLE_DESIGNATIONS:
+        await assert_seat_available(db, tenant_id)
 
     new_id = str(uuid.uuid4())
     # profile_photo_url / max_concurrent_jobs / reports_to_* were previously
@@ -1655,7 +1667,8 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
     """
     tenant_row = (await db.execute(
         text("SELECT status, verification_status, suspended_at, business_name, "
-             "address_line1, city FROM tenants WHERE id=:tid"),
+             "address_line1, city, vertical, business_type, country "
+             "FROM tenants WHERE id=:tid"),
         {"tid": str(tid)},
     )).fetchone()
 
@@ -1683,6 +1696,53 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "code": "BUSINESS_PROFILE_INCOMPLETE",
             "message": "Complete your business profile (name, address, city).",
             "severity": "critical", "route": "/profile"})
+
+    # Required business-document state is part of the same bookability
+    # decision as pricing, coverage, capacity, credits, and deposit.  The
+    # previous implementation omitted it, so a provider could remain
+    # customer-bookable after a required document was rejected or expired.
+    # A replacement that is under review (or has changes requested) keeps
+    # the previous valid version's grace period and therefore does not block.
+    from app.engines.tenant_engine.models import TenantDocument
+    from app.engines.vertical_catalog.document_requirements import resolve_requirements
+
+    required_document_types = {
+        item["key"] for item in resolve_requirements(
+            vertical=(tenant_row.vertical if tenant_row else "home_services"),
+            business_type=(tenant_row.business_type if tenant_row else None),
+            country=(tenant_row.country if tenant_row else "India"),
+        ) if item["required"]
+    }
+    current_documents = (await db.execute(
+        select(TenantDocument).where(
+            TenantDocument.tenant_id == tid,
+            TenantDocument.staff_member_id.is_(None),
+            TenantDocument.is_current.is_(True),
+            TenantDocument.doc_type.in_(required_document_types),
+        )
+    )).scalars().all()
+    documents_by_type = {document.doc_type: document for document in current_documents}
+    document_blockers: list[str] = []
+    now = datetime.now(timezone.utc)
+    for document_type in sorted(required_document_types):
+        document = documents_by_type.get(document_type)
+        if document is None:
+            document_blockers.append(document_type)
+            continue
+        expired = bool(document.expiry_date and document.expiry_date < now)
+        if document.status == "rejected" or expired:
+            document_blockers.append(document_type)
+
+    if not document_blockers:
+        passed.append("required_documents_current")
+    else:
+        bookability_blockers.append({
+            "code": "REQUIRED_DOCUMENT_ACTION_NEEDED",
+            "message": "Upload or replace every required business document before receiving new bookings.",
+            "severity": "critical",
+            "route": "/business/verification-documents",
+            "document_types": document_blockers,
+        })
 
     published_count = (await db.execute(
         text("SELECT count(*) FROM tenant_services WHERE tenant_id=:tid "
@@ -1736,7 +1796,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         bookability_blockers.append({
             "code": "SERVICE_AREA_MISSING",
             "message": "Add at least one active service area before receiving bookings.",
-            "severity": "critical", "route": "/tenant/setup/service-areas"})
+            "severity": "critical", "route": "/business/coverage-hours"})
 
     availability_count = (await db.execute(
         text("SELECT count(*) FROM provider_availability_rules WHERE tenant_id=:tid AND is_active=true"),
@@ -1748,7 +1808,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         bookability_blockers.append({
             "code": "AVAILABILITY_MISSING",
             "message": "Set at least one open availability slot to receive bookings.",
-            "severity": "critical", "route": "/tenant/setup/availability"})
+            "severity": "critical", "route": "/home-services/availability"})
 
     billing_row = (await db.execute(
         text("SELECT credit_balance, security_deposit_paid, security_deposit_amount "
@@ -1762,7 +1822,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         bookability_blockers.append({
             "code": "USAGE_CREDITS_INSUFFICIENT",
             "message": "Add usage credits to your account to receive bookings.",
-            "severity": "critical", "route": "/finance/usage-credit-ledger"})
+            "severity": "critical", "route": "/home-services/finance?tab=usage-credits"})
 
     deposit_required = bool(billing_row) and billing_row.security_deposit_amount and float(billing_row.security_deposit_amount) > 0
     deposit_satisfied = (not deposit_required) or bool(billing_row and billing_row.security_deposit_paid)
@@ -1772,11 +1832,12 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         bookability_blockers.append({
             "code": "SECURITY_DEPOSIT_REQUIRED",
             "message": "Pay the required security deposit to become bookable.",
-            "severity": "critical", "route": "/finance/security-deposit"})
+            "severity": "critical", "route": "/home-services/finance?tab=security-deposit"})
 
     is_visible = tenant_active and profile_complete and published_count > 0
     is_bookable = is_visible and priced_count > 0 and active_areas > 0 \
-        and availability_count > 0 and credit_balance > 0 and deposit_satisfied
+        and availability_count > 0 and credit_balance > 0 and deposit_satisfied \
+        and not document_blockers
 
     status_label = "bookable" if is_bookable else ("visible_not_bookable" if is_visible else "not_visible")
 
@@ -2081,42 +2142,6 @@ async def refresh_onboarding(
 
 
 # ── Packages Status (Sprint 9) ────────────────────────────────────────────────
-
-@router.get("/packages/status")
-async def get_packages_status(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-):
-    tid = _tid(user)
-    rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    # MODULE-L5-02: rewired from the phantom `provider_package_purchases` table
-    # to the CANONICAL `tenant_package_assignments` (the real package table,
-    # Sprint P1). `status` is aliased as `purchase_status` to preserve the
-    # frontend contract. Safety net retained.
-    try:
-        result = await db.execute(text("""
-            SELECT tpa.*, tpa.status as purchase_status,
-                   sp.name as package_name, sp.package_type as pkg_type,
-                   sp.plan_level, sp.features
-            FROM tenant_package_assignments tpa
-            LEFT JOIN service_packages sp ON sp.id = tpa.package_id
-            WHERE tpa.tenant_id = :tid AND tpa.status != 'cancelled'
-                  AND tpa.deleted_at IS NULL
-            ORDER BY tpa.created_at DESC
-        """), {"tid": str(tid)})
-        rows = [dict(r._mapping) for r in result.fetchall()]
-    except Exception:
-        await db.rollback()
-        rows = []
-    active = [r for r in rows if r.get("purchase_status") in ("active", "activated")]
-    return ok({
-        "has_active_package": len(active) > 0,
-        "active_package": active[0] if active else None,
-        "all_purchases": rows,
-        "total": len(rows),
-    }, request_id=rid)
-
 
 # ── HS9 — Usage Credits (tenant-facing) ───────────────────────────────────────
 

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -58,7 +59,7 @@ export default function WalletLedgerPage() {
               {d.ledger.length === 0 ? (
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>No ledger entries yet.</p>
               ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                       {["Type", "Amount", "Balance After", "Reference", "Description", "Date"].map(h => (
@@ -78,7 +79,7 @@ export default function WalletLedgerPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               )}
             </Section>
           </>

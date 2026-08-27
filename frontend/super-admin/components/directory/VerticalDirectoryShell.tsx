@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState } from "react";
 import { AdminLayout } from "../layout/AdminLayout";
 import { Card, Badge, Btn } from "../shared/ui";
@@ -59,7 +60,7 @@ export function VerticalDirectoryShell<T extends { [k: string]: unknown }>({
               <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No records match this view.</div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                       {columns.map(c => (
@@ -75,7 +76,7 @@ export function VerticalDirectoryShell<T extends { [k: string]: unknown }>({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
           </Card>

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { StaffLayout } from "../../../../components/layout/StaffLayout";
@@ -72,7 +73,7 @@ export default function StaffHomeServiceJobsPage() {
           <EmptyState icon={<ClipboardList/>} title="No jobs in this category yet."
             description="New assigned jobs will appear here."/>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {["Job #", "City", "Status", "Scheduled", ""].map(h => (
@@ -93,7 +94,7 @@ export default function StaffHomeServiceJobsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </Card>
     </StaffLayout>

@@ -28,7 +28,7 @@ export default function ChangePasswordRequiredPage() {
 
   function logout() {
     ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
-     "serviceos_tenant_vertical","serviceos_tenant_plan","serviceos_tenant_health","serviceos_user_id",
+     "serviceos_tenant_vertical","serviceos_tenant_health","serviceos_user_id",
      "serviceos_force_pw_change"].forEach(k => localStorage.removeItem(k));
     window.location.href = "/login";
   }

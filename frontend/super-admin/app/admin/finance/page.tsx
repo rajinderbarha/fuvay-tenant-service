@@ -6,8 +6,7 @@ import {
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Badge, Btn } from "../../../components/shared/ui";
-import { Card, PageHeader, PageShell } from "@serviceos/design-system";
-import { SummaryCardsRow } from "../../../components/pricing/SummaryCard";
+import { Card, PageHeader, PageShell, SummaryCardsRow } from "@serviceos/design-system";
 import { financeApi } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
 
@@ -24,7 +23,6 @@ const HEALTH_BAND_VARIANT: Record<string, "success" | "info" | "warning" | "dang
 
 const ACTIVITY_LABELS: Record<string, string> = {
   wallet_transaction: "Wallet",
-  deposit_transaction: "Deposit",
   warranty_claim: "Warranty Claim",
   payout: "Payout",
 };
@@ -61,7 +59,7 @@ export default function FinanceHubPage() {
       <PageShell>
       <PageHeader
         title="Finance Hub"
-        description="Monitor wallets, deposits, top-ups, claims, payouts, and platform earnings."
+        description="Monitor wallets, top-ups, claims, payouts, and platform earnings."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="secondary" size="sm" icon={<RefreshCw size={13}/>} onClick={refetchAll}>Refresh</Btn>
@@ -82,12 +80,9 @@ export default function FinanceHubPage() {
               { label: "Commission Earned", value: fmt(s.commission_earned) },
             ]}/>
             <SummaryCardsRow cards={[
-              { label: "Deposit Held", value: fmt(s.deposit_held) },
-              { label: "Deposit Pending", value: s.deposit_pending },
               { label: "Pending Warranty Claims", value: s.pending_warranty_claims, onClick: () => router.push("/admin/finance/claims") },
               { label: "Pending Payouts", value: s.pending_payouts, onClick: () => router.push("/admin/finance/payouts") },
               { label: "At-Risk Tenants", value: s.at_risk_tenants, accent: s.at_risk_tenants > 0 },
-              { label: "Recovered/Refunded Deposits", value: s.recovered_refunded_deposits },
             ]}/>
           </>
         )}
@@ -118,19 +113,6 @@ export default function FinanceHubPage() {
                     <Badge variant={HEALTH_BAND_VARIANT[t.health_band] ?? "muted"} size="sm">{HEALTH_BAND_LABELS[t.health_band] ?? t.health_band}</Badge>
                     <strong>{fmt(t.wallet_balance)}</strong>
                   </span>
-                </div>
-              ))}
-            </div>
-          </InsightCard>
-
-          <InsightCard title="Deposit Status Breakdown" icon={<Shield size={16} color="var(--brand)"/>}
-            isEmpty={!o || Object.keys(o.deposit_status_breakdown).length === 0}
-            emptyText="No security deposits recorded yet.">
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {o && Object.entries(o.deposit_status_breakdown).map(([status, count]) => (
-                <div key={status} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                  <span style={{ textTransform: "capitalize" }}>{status.replace(/_/g, " ")}</span>
-                  <strong>{count}</strong>
                 </div>
               ))}
             </div>
@@ -170,7 +152,6 @@ export default function FinanceHubPage() {
           {o && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
-                { label: "Deposit Verification Pending", value: o.pending_actions_queue.deposit_verification_pending, href: "/admin/finance/deposits?status=pending_verification" },
                 { label: "Payout Pending Approval", value: o.pending_actions_queue.payout_pending_approval, href: "/admin/finance/payouts?status=pending" },
                 { label: "Warranty Claim Pending Review", value: o.pending_actions_queue.warranty_claim_pending_review, href: "/admin/finance/claims?status=pending" },
                 { label: "Failed Top-up Payments", value: o.pending_actions_queue.failed_topup_payment, href: "/admin/finance/topups?payment_status=failed" },

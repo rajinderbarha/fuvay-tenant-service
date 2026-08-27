@@ -10,14 +10,12 @@ import { PageHeader, Card, Button, Skeleton, Alert } from "@serviceos/design-sys
 const SOURCE_LABEL: Record<string, string> = {
   global:              "Platform Default",
   category:            "Your Category",
-  package_entitlement: "Your Package",
   tenant_override:     "Admin Override",
 };
 
 const SOURCE_COLOR: Record<string, string> = {
   global:              "var(--text-tertiary)",
   category:            "var(--accent)",
-  package_entitlement: "var(--info-text)",
   tenant_override:     "var(--warning)",
 };
 
@@ -49,7 +47,7 @@ export default function EnginesPage() {
         <div style={{ marginBottom: 24 }}>
           <PageHeader
             title="My Engine Access"
-            description="Platform capabilities available to your account. Engine access is determined by your category, package, and platform configuration."
+            description="Platform capabilities available to your account. Access is determined by category policy and explicit administrator overrides."
           />
         </div>
 
@@ -91,21 +89,13 @@ export default function EnginesPage() {
               ))}
             </div>
 
-            {/* Category + Package context */}
-            {(data.category || data.package) && (
+            {/* Category context */}
+            {data.category && (
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:20 }}>
-                {data.category && (
-                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid var(--border)",
-                    background:"var(--surface-sunken)", fontSize:12, color:"var(--text-secondary)" }}>
-                    Category: <strong>{data.category.name}</strong>
-                  </div>
-                )}
-                {data.package && (
-                  <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid var(--info-border)",
-                    background:"var(--info-bg)", fontSize:12, color:"var(--info-text)" }}>
-                    Package: <strong>{data.package.name}</strong>
-                  </div>
-                )}
+                <div style={{ padding:"4px 12px", borderRadius:20, border:"1px solid var(--border)",
+                  background:"var(--surface-sunken)", fontSize:12, color:"var(--text-secondary)" }}>
+                  Category: <strong>{data.category.name}</strong>
+                </div>
               </div>
             )}
 

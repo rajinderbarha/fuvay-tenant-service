@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { Card, Badge, Btn, SectionHeader } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, Pagination } from "../../../../components/shared/ui";
 import { customerCreditsApi, MyServiceCredit, MyCreditSummary } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 
@@ -96,13 +96,8 @@ export default function MyCreditsPage() {
           </div>
         ))}
 
-        {(list.data?.meta?.total_pages ?? 1) > 1 && (
-          <div style={{ padding: "12px 14px", display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-            <span style={{ fontSize: 13, padding: "6px 0" }}>Page {page} / {list.data?.meta?.total_pages}</span>
-            <Btn size="sm" variant="ghost" disabled={page >= (list.data?.meta?.total_pages ?? 1)} onClick={() => setPage(p => p + 1)}>Next</Btn>
-          </div>
-        )}
+        {list.data?.meta && <Pagination page={page} pageSize={20} total={list.data.meta.total}
+          pageCount={list.data.meta.total_pages} onPage={setPage} itemLabel="credits" />}
       </Card>
 
       <Card padding={16} style={{ marginTop: 16, background: "var(--bg-info, var(--bg-subtle, #f0f7ff))" }}>

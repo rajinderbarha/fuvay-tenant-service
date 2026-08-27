@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 // REVIEW-CONSOLIDATION: Home Services Review Moderation -- an exception-
 // only queue over the SAME canonical customer_reviews engine (flagged,
 // hidden, rejected, deleted reviews for Home Services only). Normal
@@ -9,6 +10,7 @@ import { Card, Badge, Btn, Modal, SummaryCard,} from "../../../../../components/
 import { hsReviewApi } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { ExternalLink } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 const VERTICAL = "home-services";
 
@@ -26,12 +28,12 @@ export default function HomeServicesReviewModerationPage() {
   return (
     <AdminLayout>
       <div style={{ padding: "0 4px" }}>
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 4px" }}>Home Services / Reviews Moderation</p>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Review Moderation</h1>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 16px" }}>
-          Exception queue only — flagged, reported, hidden or removed Home Services reviews. Normal published
-          reviews live on each job&apos;s Review &amp; Feedback tab, not here.
-        </p>
+        <PageHeader
+          title="Review Moderation"
+          description="Exception queue for flagged, reported, hidden, or removed reviews. Published reviews remain on each job's Review & Feedback tab."
+          eyebrow="Home Services"
+          context="Trust & Quality"
+        />
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 16 }}>
           <SummaryCard label="Pending Review" value={s?.pending_review ?? (summary.error ? "—" : 0)} />
@@ -63,7 +65,7 @@ export default function HomeServicesReviewModerationPage() {
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                     {["Rating", "Excerpt", "Provider", "Status", "Reports", "Created", ""].map(h => (
@@ -90,7 +92,7 @@ export default function HomeServicesReviewModerationPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           )}
         </Card>

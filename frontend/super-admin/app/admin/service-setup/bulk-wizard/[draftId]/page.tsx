@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
@@ -7,6 +8,8 @@ import {
   bulkSetupApi, BulkSetupDraft, BulkNewService,
   BulkPreviewItem, BulkBlocker, BulkPreviewSummary,
 } from "../../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "../../../../../components/shared/ui";
 
 const STEPS = [
   "Choose Category", "Select Services", "Apply Templates",
@@ -147,17 +150,14 @@ export default function BulkWizardDetailPage() {
   if (!draft) return <div style={{ padding: "2rem" }}>Draft not found.</div>;
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "960px" }}>
+    <div style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
       {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <Link href="/admin/service-setup/bulk-wizard" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
-          ← Back to Wizards
-        </Link>
-        <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: "0.5rem 0 0" }}>
-          Bulk Setup — {draft.target_vertical_type ?? "New Setup"}
-        </h1>
-        <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>Draft: {draft.id}</div>
-      </div>
+      <PageHeader
+        title={`Bulk Setup — ${draft.target_vertical_type ?? "New Setup"}`}
+        description={`Draft ID: ${draft.id}`}
+        eyebrow="Service Setup"
+        actions={<Link href="/admin/service-setup/bulk-wizard"><Btn variant="secondary" size="sm">Back to Wizards</Btn></Link>}
+      />
 
       {/* Progress bar */}
       <div style={{ display: "flex", gap: "0.25rem", marginBottom: "1.75rem" }}>
@@ -340,7 +340,7 @@ export default function BulkWizardDetailPage() {
               </div>
 
               <div style={{ maxHeight: "350px", overflow: "auto", border: "1px solid #e5e7eb", borderRadius: "0.5rem" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#f9fafb" }}>
                       {["Type", "Name", "Action", "Reason"].map(h => (
@@ -366,7 +366,7 @@ export default function BulkWizardDetailPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
 
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.25rem" }}>

@@ -77,13 +77,12 @@ class TestAdminNavConfig(unittest.TestCase):
 
     def test_finance_items(self):
         self.assertIn("service-invoices", self.src)
-        self.assertIn("provider-wallets", self.src)
-        self.assertIn("commission-records", self.src)
+        self.assertIn("payments", self.src)
+        self.assertIn("financial-events", self.src)
 
     def test_catalog_items(self):
-        self.assertIn("service-options", self.src)
-        self.assertIn("issue-types", self.src)
         self.assertIn("checklist-templates", self.src)
+        self.assertIn("service-setup", self.src)
         self.assertIn("customer-flow", self.src)
 
     def test_review_group_items(self):
@@ -274,7 +273,7 @@ class TestTenantPageRegistry(unittest.TestCase):
         self.assertIn('"/jobs"', self.src)
 
     def test_provider_entries(self):
-        self.assertIn('"/provider/status"', self.src)
+        self.assertIn('"/profile"', self.src)
         self.assertIn('"/provider/offerings"', self.src)
 
     def test_finance_entry(self):

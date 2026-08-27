@@ -3,16 +3,6 @@
  * Shows the provider commission actually charged on this tenant's completed
  * jobs, per category.
  *
- * Replaces MonetizationStatusWidget, which read
- * `provider_monetization_statuses` -- a table that does NOT exist in this
- * schema. Its endpoint (`/v1/tenant/monetization/status`) wraps the query in
- * a bare try/except and returns a hardcoded
- * `{is_monetization_ready: false, monetization_model: null}` fallback, so
- * every tenant on every dashboard was shown a fabricated "not ready"
- * status with no relationship to what they are actually charged. It also
- * used a model taxonomy (subscription/freemium/fixed_billing) that the
- * Home Services charging path does not implement.
- *
  * This widget instead reads /commission-rates, which resolves the rate the
  * same way execution/usage_credit_deduction.py::resolve_commission_credits
  * does at job completion -- category rate first, vertical policy default as

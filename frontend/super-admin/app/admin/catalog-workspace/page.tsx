@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
@@ -15,6 +16,7 @@ import {
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { WorkflowStepBuilder } from "./WorkflowStepBuilder";
+import { Btn, Pagination, SectionHeader } from "../../../components/shared/ui";
 import {
   ChevronRight, RefreshCw, XCircle, CheckCircle2, Layers, Lock, Plus,
   CircleDot, ListChecks, SlidersHorizontal, HelpCircle, Search, ClipboardList,
@@ -202,24 +204,12 @@ export default function AdminCatalogWorkspacePage() {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
-        <span>Admin</span><ChevronRight size={12}/>
-        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>Catalog Workspace</span>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.01em" }}>
-            Catalog Workspace
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-            Configure platform-owned service behavior, customer questions, options, checklists, and tenant setup rules. Price amounts remain tenant-owned.
-          </p>
-        </div>
-        <button onClick={() => { listApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}
-          style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-          <RefreshCw size={12}/> Refresh
-        </button>
+      <div style={{ marginBottom: "var(--layout-page-gap)" }}>
+        <SectionHeader eyebrow="Catalog" context="Home Services" title="Catalog Workspace"
+          description="Configure platform-owned service behavior, customer questions, options, checklists, and tenant setup rules. Price amounts remain tenant-owned."
+          actions={<Btn variant="secondary" onClick={() => { listApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}>
+            <RefreshCw size={12}/> Refresh
+          </Btn>} />
       </div>
 
       <HomeServicesCatalogNav active="workspace" />
@@ -263,17 +253,9 @@ export default function AdminCatalogWorkspacePage() {
               {services.length === 0 && <p style={{ fontSize: 12, color: "var(--text-tertiary)", padding: 8 }}>No services configured yet.</p>}
             </>
           )}
-          {(listApi.data?.total ?? 0) > 0 && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--border)" }}>
-              <button disabled={servicePage <= 1} onClick={() => setServicePage(p => p - 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage <= 1 ? "default" : "pointer" }}>Previous</button>
-              <select aria-label="Services per page" value={servicePageSize} onChange={event => { setServicePageSize(Number(event.target.value)); setServicePage(1); }}
-                style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 6px", background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 10 }}>
-                {[25, 50, 100].map(size => <option key={size} value={size}>{size} / page</option>)}
-              </select>
-              <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{servicePage} / {Math.max(1, Math.ceil((listApi.data?.total ?? 0) / servicePageSize))}</span>
-              <button disabled={servicePage * servicePageSize >= (listApi.data?.total ?? 0)} onClick={() => setServicePage(p => p + 1)} style={{ border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", background: "var(--surface-sunken)", color: "var(--text-secondary)", cursor: servicePage * servicePageSize >= (listApi.data?.total ?? 0) ? "default" : "pointer" }}>Next</button>
-            </div>
-          )}
+          <Pagination page={servicePage} pageSize={servicePageSize} total={listApi.data?.total ?? 0}
+            navigationMode="adjacent" onPage={setServicePage} pageSizes={[25, 50, 100]}
+            onPageSize={size => { setServicePageSize(size); setServicePage(1); }} itemLabel="services" />
         </div>
 
         {/* ── Column 2: Service Workspace ──────────────────────────────────── */}
@@ -754,7 +736,7 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
           onError={(msg) => notify(msg, "error")}/>
       )}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Dimension", "Values", "Enabled", "Required", "Ask Customer", "Affects Price", ""].map(h => (
@@ -796,7 +778,7 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
               <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", fontSize: 12, color: "var(--text-tertiary)" }}>No dimensions defined yet.</td></tr>
             )}
           </tbody>
-        </table>
+        </TableSurface>
       </div>
     </div>
   );

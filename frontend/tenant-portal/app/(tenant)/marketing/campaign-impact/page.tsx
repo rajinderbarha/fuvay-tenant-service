@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useEffect, useState } from "react";
 import { providerMarketingApi, CampaignImpactItem, AttributedLead } from "../../../../lib/api";
 
@@ -44,7 +45,10 @@ export default function CampaignImpactPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "leads") setTab("leads");
+    load();
+  }, []);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -93,7 +97,7 @@ export default function CampaignImpactPage() {
           </div>
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   <th style={th}>Event</th>
@@ -122,7 +126,7 @@ export default function CampaignImpactPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )
       ) : (
@@ -132,7 +136,7 @@ export default function CampaignImpactPage() {
           </div>
         ) : (
           <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   <th style={th}>Lead ID</th>
@@ -159,7 +163,7 @@ export default function CampaignImpactPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )
       )}

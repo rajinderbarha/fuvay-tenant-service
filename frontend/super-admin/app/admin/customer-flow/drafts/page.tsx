@@ -1,8 +1,11 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { customerFlowApi, CustomerBookingDraft } from "../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "../../../../components/shared/ui";
 
 const STATUS_COLORS: Record<string, string> = {
   draft:     "#f3f4f6",
@@ -39,19 +42,13 @@ export default function CustomerDraftsPage() {
   useEffect(() => { load(); }, [statusFilter, flowFilter]);
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0 }}>Customer Booking Drafts</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            All customer booking drafts across all flow types ({total} total)
-          </p>
-        </div>
-        <Link href="/admin/customer-flow"
-          style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", borderRadius: "0.375rem", color: "#4b5563", textDecoration: "none", fontSize: "0.875rem" }}>
-          ← Flow Configs
-        </Link>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title="Customer Booking Drafts"
+        description={`All customer booking drafts across every configured flow (${total} total).`}
+        eyebrow="Customer Flow"
+        actions={<Link href="/admin/customer-flow"><Btn variant="secondary" size="sm">Flow Configs</Btn></Link>}
+      />
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
@@ -73,7 +70,7 @@ export default function CustomerDraftsPage() {
         <p style={{ color: "#9ca3af", textAlign: "center", padding: "3rem" }}>No booking drafts found.</p>
       ) : (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
                 {["Draft ID", "Flow", "Customer", "Service", "City", "Estimate", "Status", "Created", "Actions"].map(h => (
@@ -116,7 +113,7 @@ export default function CustomerDraftsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
     </div>

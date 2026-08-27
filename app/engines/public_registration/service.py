@@ -380,6 +380,24 @@ class RegistrationService:
         )).scalars().first()
         policy_version = policy.policy_version if policy else "unversioned"
 
+        # `policy_version` above is the DPDP PROCESS policy (SLA phases,
+        # request types) — not the Terms or Privacy Notice this person just
+        # read and ticked. Those live in `legal_document_versions`. Record
+        # exactly which versions were in force at this moment so the consent
+        # ledger can answer "what text did they agree to?"; without it the row
+        # proves only that a box was ticked against unknown wording.
+        #
+        # Left as `meta` rather than overwriting `policy_version`: that column
+        # already means the DPDP version everywhere else it is read, and
+        # silently changing its meaning would break existing interpretations.
+        from app.engines.legal_documents import constants as legal_c
+        from app.engines.legal_documents import service as legal_svc
+
+        legal_refs = await legal_svc.consent_references(
+            self.db, audience=legal_c.AUDIENCE_TENANT,
+        )
+        consent_meta = {"legal_documents": legal_refs, "dpdp_policy_version": policy_version}
+
         try:
             business_name = pending.business_name or pending.legal_name
             tenant = Tenant(
@@ -470,11 +488,13 @@ class RegistrationService:
                 user_id=owner.id, tenant_id=tenant.id, consent_type="authorization_declaration",
                 action="granted", policy_version=policy_version, granted_at=granted_at,
                 ip_address=self.ip_address, user_agent=self.user_agent, source="tenant_signup",
+                meta=consent_meta,
             ))
             self.db.add(ConsentRecord(
                 user_id=owner.id, tenant_id=tenant.id, consent_type="tos_privacy",
                 action="granted", policy_version=policy_version, granted_at=granted_at,
                 ip_address=self.ip_address, user_agent=self.user_agent, source="tenant_signup",
+                meta=consent_meta,
             ))
             if marketing_consent:
                 # Marketing consent is always its own separate record — never

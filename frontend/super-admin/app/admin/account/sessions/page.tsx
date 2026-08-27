@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useEffect, useCallback } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, SectionHeader, Btn, Badge, Spinner } from "../../../../components/shared/ui";
@@ -79,7 +80,7 @@ export default function SelfSessionsPage() {
           </Card>
         ) : (
           <Card padding={0}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "var(--surface-sunken)" }}>
                   {["Device", "Type", "IP Address", "Last Active", "Created", "Status"].map(h => (
@@ -117,7 +118,7 @@ export default function SelfSessionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </Card>
         )}
       </div>

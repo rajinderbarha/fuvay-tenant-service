@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState, useEffect } from "react";
 import Link from "next/link";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
@@ -10,7 +11,7 @@ import {
 import { useApi, useAction } from "../../../../hooks/useApi";
 import {
   PageHeader, Card, Button, Modal, Drawer, Input, Skeleton,
-  StatusBadge as DsStatusBadge, Alert, EmptyState, pushToast,
+  StatusBadge as DsStatusBadge, Alert, EmptyState, pushToast, KpiGrid, SummaryCard,
 } from "@serviceos/design-system";
 import {
   MapPin, Plus, RefreshCw, ChevronRight, AlertTriangle,
@@ -99,34 +100,8 @@ function KpiCard({ label, value, sub, variant, icon }: {
   variant?: "success" | "warning" | "danger" | "neutral"; icon: React.ReactNode;
 }) {
   const v = variant ?? "neutral";
-  const colors = {
-    success: { bg: "var(--success-bg)", text: "var(--success-text)", border: "var(--success-border)" },
-    warning: { bg: "var(--warning-bg)", text: "var(--warning-text)", border: "var(--warning-border)" },
-    danger:  { bg: "var(--danger-bg)",  text: "var(--danger-text)",  border: "var(--danger-border)"  },
-    neutral: { bg: "var(--surface-sunken)", text: "var(--text-secondary)", border: "var(--border)"   },
-  }[v];
-  return (
-    <Card padding="md">
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
-            textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: colors.bg,
-            border: `1px solid ${colors.border}`, display: "flex", alignItems: "center",
-            justifyContent: "center", color: colors.text, flexShrink: 0 }}>
-            {icon}
-          </div>
-        </div>
-        <div>
-          <p style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, lineHeight: 1.15,
-            wordBreak: "break-word" }}>
-            {value}
-          </p>
-          {sub && <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "4px 0 0" }}>{sub}</p>}
-        </div>
-      </div>
-    </Card>
-  );
+  return <SummaryCard label={label} value={value} sub={sub} icon={icon}
+    tone={v === "neutral" ? undefined : v}/>;
 }
 
 // ── Slots-used circular progress ──────────────────────────────────────────────
@@ -992,7 +967,7 @@ export default function ProviderServiceAreasPage() {
         <Alert tone="info">{coverageStatus.banner}</Alert>
 
         {/* KPI Cards */}
-        <div className="kpi-grid">
+        <KpiGrid minCardWidth={190}>
           <KpiCard label="Total Areas" value={list.length}
             sub={`${maxAreas} slot${maxAreas === 1 ? "" : "s"} on your plan`}
             icon={<MapPin size={15}/>} variant="neutral"/>
@@ -1005,7 +980,7 @@ export default function ProviderServiceAreasPage() {
           <KpiCard label="Validation Issues" value={issues.length}
             sub={issues.length === 0 ? "No action required" : "Resolve in Action Required panel"}
             icon={<AlertTriangle size={15}/>} variant={issues.length > 0 ? "warning" : "success"}/>
-        </div>
+        </KpiGrid>
 
         {/* Action Required Panel */}
         {issues.length > 0 ? (
@@ -1103,7 +1078,7 @@ export default function ProviderServiceAreasPage() {
                   </p>
                 </div>
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                         {["Area Name","State","District","City","Pincode","Zone/Tier","Primary","Status","Updated","Actions"].map(h => (
@@ -1181,7 +1156,7 @@ export default function ProviderServiceAreasPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
                 <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)",
                   fontSize: 11, color: "var(--text-tertiary)", display: "flex", justifyContent: "space-between" }}>

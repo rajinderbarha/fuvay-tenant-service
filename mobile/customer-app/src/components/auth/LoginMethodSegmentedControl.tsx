@@ -2,6 +2,7 @@ import React from "react";
 import { View, Pressable } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
+import { Icon, IconProps } from "../Icon";
 
 export type LoginMethod = "otp" | "password";
 
@@ -16,9 +17,9 @@ export interface LoginMethodSegmentedControlProps {
  * distinct background + bold weight). */
 export function LoginMethodSegmentedControl({ value, onChange }: LoginMethodSegmentedControlProps) {
   const { theme } = useTheme();
-  const options: { key: LoginMethod; label: string }[] = [
-    { key: "otp", label: "Phone OTP" },
-    { key: "password", label: "Password" },
+  const options: { key: LoginMethod; label: string; icon: IconProps["name"] }[] = [
+    { key: "otp", label: "Phone OTP", icon: "phone-portrait-outline" },
+    { key: "password", label: "Password", icon: "lock-closed-outline" },
   ];
 
   return (
@@ -26,7 +27,9 @@ export function LoginMethodSegmentedControl({ value, onChange }: LoginMethodSegm
       accessibilityRole="tablist"
       style={{
         flexDirection: "row",
-        backgroundColor: theme.colors.surfaceInteractive,
+        backgroundColor: theme.colors.surfaceDefault,
+        borderWidth: 1,
+        borderColor: theme.colors.borderSubtle,
         borderRadius: theme.radiusUsage.input,
         padding: theme.spacing.xxs,
         gap: theme.spacing.xxs,
@@ -42,15 +45,19 @@ export function LoginMethodSegmentedControl({ value, onChange }: LoginMethodSegm
             accessibilityState={{ selected }}
             style={{
               flex: 1,
-              minHeight: theme.touchTargets.minimum - theme.spacing.sm,
+              minHeight: theme.touchTargets.minimum,
+              flexDirection: "row",
+              gap: theme.spacing.sm,
               alignItems: "center",
               justifyContent: "center",
               borderRadius: theme.radiusUsage.input,
-              backgroundColor: selected ? theme.colors.surfaceDefault : "transparent",
-              ...(selected ? theme.shadow.sm : null),
+              backgroundColor: selected ? theme.colors.brandPrimaryMuted : "transparent",
+              borderBottomWidth: selected ? 2 : 0,
+              borderBottomColor: theme.colors.brandPrimary,
             }}
           >
-            <AppText variant={selected ? "bodyStrong" : "body"} color={selected ? "primary" : "secondary"}>
+            <Icon name={opt.icon} size="compact" color={selected ? theme.colors.brandPrimaryStrong : theme.colors.iconDefault} decorative />
+            <AppText variant={selected ? "bodyStrong" : "body"} color={selected ? "link" : "secondary"}>
               {opt.label}
             </AppText>
           </Pressable>

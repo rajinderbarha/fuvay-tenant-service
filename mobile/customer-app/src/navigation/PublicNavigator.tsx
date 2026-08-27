@@ -10,6 +10,7 @@ import { RecoveryCodeChallengeScreen } from "../screens/auth/RecoveryCodeChallen
 import { ForgotPasswordRequestScreen } from "../screens/auth/ForgotPasswordRequestScreen";
 import { ResetPasswordConfirmScreen } from "../screens/auth/ResetPasswordConfirmScreen";
 import { WelcomeScreen } from "../screens/auth/WelcomeScreen";
+import { LegalDocumentScreen } from "../screens/legal/LegalDocumentScreen";
 
 const Stack = createNativeStackNavigator<PublicStackParamList>();
 
@@ -33,6 +34,7 @@ export function PublicNavigator() {
       <Stack.Screen name="RecoveryCodeChallenge" component={RecoveryCodeChallengeScreen} />
       <Stack.Screen name="ForgotPasswordRequest" component={ForgotPasswordRequestScreen} />
       <Stack.Screen name="ResetPasswordConfirm" component={ResetPasswordConfirmScreen} />
+      <Stack.Screen name="LegalDocument" component={LegalDocumentScreen} />
     </Stack.Navigator>
   );
 }

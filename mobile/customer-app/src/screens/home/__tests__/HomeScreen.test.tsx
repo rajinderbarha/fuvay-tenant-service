@@ -9,11 +9,12 @@ import * as homeQueryModule from "../../../api/home/useCustomerHomeQuery";
 import { DEFAULT_HOME_SECTIONS, type CustomerHome, type HomeCampaign, type HomeQuickIssue } from "../../../domain/customerHome";
 import { asAddressId, asCategoryId, asServiceBookingId, asVerticalId } from "../../../domain/ids";
 import { parseServerTimestamp } from "../../../domain/dates";
-import { recordHomeCampaignEvent } from "../../../api/home/customerHomeCampaignApi";
+import { recordHomeCampaignEvent, recordHomeCampaignEvents } from "../../../api/home/customerHomeCampaignApi";
 import { useGlobalServicesQuery } from "../../../api/globalServices/useGlobalServicesQuery";
 
 jest.mock("../../../api/home/customerHomeCampaignApi", () => ({
   recordHomeCampaignEvent: jest.fn().mockResolvedValue({ recorded: true }),
+  recordHomeCampaignEvents: jest.fn().mockResolvedValue({ recorded: 1 }),
 }));
 jest.mock("../../../api/home/useCustomerHomeQuery", () => ({
   useCustomerHomeQuery: jest.fn(),
@@ -162,7 +163,7 @@ describe("HomeScreen selected editorial marketplace", () => {
     const view = renderHome();
     expect(view.getByText("Where do you need service?")).toBeTruthy();
     expect(view.getByText("Set your location")).toBeTruthy();
-    expect(view.getByText("Web & mobile development")).toBeTruthy();
+    expect(view.getByText("Build with Fuvay")).toBeTruthy();
   });
 
   it("keeps the unserviceable location state", () => {
@@ -170,7 +171,7 @@ describe("HomeScreen selected editorial marketplace", () => {
     const view = renderHome();
     expect(view.getByText(/Not available in your area yet/)).toBeTruthy();
     expect(view.getByText(/999999/)).toBeTruthy();
-    expect(view.getByText("Web & mobile development")).toBeTruthy();
+    expect(view.getByText("Build with Fuvay")).toBeTruthy();
   });
 
   it("renders the selected branded viewport using only live aggregate fields", async () => {
@@ -181,26 +182,27 @@ describe("HomeScreen selected editorial marketplace", () => {
     expect(view.getByLabelText(/Ludhiana, 141001/)).toBeTruthy();
     expect(view.getByLabelText("Notifications, 3 unread")).toBeTruthy();
     expect(view.getByText("Monsoon Home Care")).toBeTruthy();
-    expect(view.getByText("Popular services")).toBeTruthy();
-    expect(view.getByText("AC & HVAC")).toBeTruthy();
-    expect(view.getByText("Plumbing")).toBeTruthy();
-    expect(view.getByText("Verified providers")).toBeTruthy();
-    expect(view.getByText("Clear estimates")).toBeTruthy();
+    expect(view.getByText("Services Nearby")).toBeTruthy();
+    expect(view.getAllByText("AC & HVAC").length).toBeGreaterThan(0);
+    expect(view.getAllByText("Plumbing").length).toBeGreaterThan(0);
+    expect(view.queryByText("Web Dev Services")).toBeNull();
+    expect(view.queryByText("Coaching")).toBeNull();
+    expect(view.getByLabelText("Fuvay assistant")).toBeTruthy();
     expect(view.queryByText("Ideas and offers")).toBeNull();
     expect(view.queryByText("Fuvay Digital Studio")).toBeNull();
-    expect(view.getByText("View all")).toBeTruthy();
+    expect(view.getAllByText("See All").length).toBeGreaterThan(0);
 
-    await waitFor(() => expect(recordHomeCampaignEvent).toHaveBeenCalledWith({
+    await waitFor(() => expect(recordHomeCampaignEvents).toHaveBeenCalledWith(expect.arrayContaining([{
       campaignId: "campaign-hero",
       eventType: "delivered",
       placement: "home_hero",
-    }));
+    }])));
   });
 
   it("opens a service group through its real parent booking category", () => {
     mockHomeQuery({ data: baseHome() });
     const view = renderHome();
-    fireEvent.press(view.getByText("AC & HVAC"));
+    fireEvent.press(view.getAllByText("AC & HVAC")[0]);
     expect(lastAssistantParams).toEqual({
       source: "service_card",
       categoryId: "cat-1",
@@ -239,12 +241,12 @@ describe("HomeScreen selected editorial marketplace", () => {
     mockHomeQuery({ data: baseHome({ activeBooking: booking, activeBookings: [booking], activeBookingTotal: 1 }) });
     const view = renderHome();
     expect(view.getAllByText("AC Repair").length).toBeGreaterThan(0);
-    expect(view.getAllByText("Rakesh Kumar").length).toBeGreaterThan(0);
-    expect(view.getAllByLabelText(/track booking/).length).toBeGreaterThan(0);
+    expect(view.getAllByText("Guramrit").length).toBeGreaterThan(0);
+    expect(view.getByLabelText(/AC Repair.*provider Guramrit/)).toBeTruthy();
     expect(view.queryByText(/arriving|\d+ min/i)).toBeNull();
   });
 
-  it("shows eligible master services separately from the service-group rail", () => {
+  it("shows master-service discovery without inventing Home pricing", () => {
     mockHomeQuery({ data: baseHome({
       bookableMasterServices: [{
         masterServiceId: "service-ac-repair", name: "AC Repair", slug: "ac-repair",
@@ -255,14 +257,13 @@ describe("HomeScreen selected editorial marketplace", () => {
     }) });
     const view = renderHome();
     expect(view.getByText("Recommended for you")).toBeTruthy();
-    expect(view.getAllByText("AC Repair").length).toBeGreaterThan(0);
-    expect(view.getByText("AVAILABLE IN YOUR AREA")).toBeTruthy();
-    expect(view.getByLabelText("Book AC & HVAC")).toBeTruthy();
-    expect(view.getByLabelText("Book Plumbing")).toBeTruthy();
-    fireEvent.press(view.getAllByLabelText("Book AC Repair")[0]);
+    expect(view.queryByText("AVAILABLE IN YOUR AREA")).toBeNull();
+    expect(view.getAllByLabelText("Book AC & HVAC").length).toBeGreaterThan(0);
+    expect(view.getAllByLabelText("Book Plumbing").length).toBeGreaterThan(0);
+    fireEvent.press(view.getAllByLabelText("Book AC & HVAC")[0]);
     expect(lastAssistantParams).toMatchObject({
       serviceGroupSlug: "ac-hvac",
-      masterServiceId: "service-ac-repair",
+      masterServiceId: null,
     });
   });
 
@@ -280,11 +281,14 @@ describe("HomeScreen selected editorial marketplace", () => {
     }) });
     const view = renderHome();
 
-    expect(view.getByText("What needs fixing?")).toBeTruthy();
+    expect(view.getByText("What Needs Fixing")).toBeTruthy();
     expect(view.getByText("Repairs you can book now")).toBeTruthy();
     expect(view.getByText("Get an expert opinion")).toBeTruthy();
     expect(view.getByText("More ways we can help")).toBeTruthy();
-    for (const item of quickIssues) expect(view.getAllByText(item.label)).toHaveLength(1);
+    for (const item of [...quickIssues.slice(0, 4), ...quickIssues.slice(8)]) {
+      expect(view.getAllByText(item.label)).toHaveLength(1);
+    }
+    for (const item of quickIssues.slice(4, 8)) expect(view.queryByText(item.label)).toBeNull();
 
     fireEvent.press(view.getByLabelText("Problem 10, Home Services"));
     expect(lastAssistantParams).toMatchObject({

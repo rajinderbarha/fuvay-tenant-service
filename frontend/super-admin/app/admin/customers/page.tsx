@@ -3,8 +3,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   Card, Badge, Btn, Input, Select, SectionHeader, DataTable, Modal,
+  SummaryCard, KpiGrid, Pagination,
 } from "../../../components/shared/ui";
-import { ActionMenu } from "../../../components/pricing/ActionMenu";
+import { ActionMenu } from "../../../components/shared/layout";
 import {
   adminCustomersApi,
   AdminCustomer,
@@ -152,31 +153,6 @@ function SearchDropdown({
   );
 }
 
-// ── Summary card ──────────────────────────────────────────────────────────────
-function SummaryCard({
-  label, value, color, onClick, active,
-}: { label: string; value: string | number; color?: string; onClick?: () => void; active?: boolean }) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: active ? "var(--primary)" : "var(--card-bg)",
-        border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
-        borderRadius:"var(--radius-md)", padding: "14px 18px", flex: 1, minWidth: 110,
-        cursor: onClick ? "pointer" : "default",
-        transition: "background .15s, border-color .15s",
-      }}
-    >
-      <div style={{ fontSize: 20, fontWeight: 700, color: active ? "#fff" : (color ?? "var(--text)") }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 11, color: active ? "rgba(255,255,255,.8)" : "var(--muted-text)", marginTop: 3 }}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
 // ── Filter chip ───────────────────────────────────────────────────────────────
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
@@ -198,7 +174,12 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 export default function AdminCustomersPage() {
   return (
     <AdminLayout activeNav="customers">
-      <SectionHeader title="Customers" subtitle="Platform-wide customer management and engagement monitoring." />
+      <SectionHeader
+        eyebrow="Operations control plane"
+        context="Customers"
+        title="Customers"
+        subtitle="Platform-wide customer management and engagement monitoring."
+      />
       <CustomersContent />
     </AdminLayout>
   );
@@ -488,36 +469,36 @@ function CustomersContent() {
     <div className="operations-admin-page" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Summary cards */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <KpiGrid minCardWidth={150}>
         {summaryFetch.loading ? (
           <div style={{ color: "var(--muted-text)", fontSize: 13 }}>Loading summary…</div>
         ) : summary ? (
           <>
             <SummaryCard label="Total" value={summary.total.toLocaleString()} />
             <SummaryCard label="Today" value={summary.today} />
-            <SummaryCard label="Active" value={summary.active} color="var(--primary)" onClick={() => {
+            <SummaryCard label="Active" value={summary.active} accent="var(--primary)" onClick={() => {
               const next = applied.engagementStatus === "active" ? "" : "active";
               setEngagementStatus(next); setHealthBand(""); applySummaryFilter({ engagementStatus: next, healthBand: "" });
             }} active={applied.engagementStatus === "active"} />
-            <SummaryCard label="New" value={summary.new_customers} color="var(--success-text,var(--success))" onClick={() => applyHealthBand("new")} active={applied.healthBand === "new"} />
+            <SummaryCard label="New" value={summary.new_customers} accent="var(--success-text,var(--success))" onClick={() => applyHealthBand("new")} active={applied.healthBand === "new"} />
             <SummaryCard label="Repeat Customers" value={summary.repeat_customers} onClick={() => {
               const next = applied.bookingCountMin === "2" ? "" : "2";
               setBookingCountMin(next); applySummaryFilter({ bookingCountMin: next });
             }} active={applied.bookingCountMin === "2"} />
-            <SummaryCard label="At Risk" value={summary.at_risk} color="var(--warning-text,#b45309)" onClick={() => applyHealthBand("at_risk")} active={applied.healthBand === "at_risk"} />
-            <SummaryCard label="Dormant" value={summary.dormant} color="var(--muted-text)" onClick={() => applyHealthBand("dormant")} active={applied.healthBand === "dormant"} />
-            <SummaryCard label="Open Complaints" value={summary.has_complaints} color="var(--danger-text,#b91c1c)" onClick={() => {
+            <SummaryCard label="At Risk" value={summary.at_risk} accent="var(--warning-text,#b45309)" onClick={() => applyHealthBand("at_risk")} active={applied.healthBand === "at_risk"} />
+            <SummaryCard label="Dormant" value={summary.dormant} accent="var(--muted-text)" onClick={() => applyHealthBand("dormant")} active={applied.healthBand === "dormant"} />
+            <SummaryCard label="Open Complaints" value={summary.has_complaints} accent="var(--danger-text,#b91c1c)" onClick={() => {
               const next = applied.hasComplaints === "yes" ? "" : "yes";
               setHasComplaints(next); applySummaryFilter({ hasComplaints: next });
             }} active={applied.hasComplaints === "yes"} />
-            <SummaryCard label="Blocked" value={summary.blocked} color="var(--danger-text,#b91c1c)" onClick={() => applyHealthBand("blocked")} active={applied.healthBand === "blocked"} />
+            <SummaryCard label="Blocked" value={summary.blocked} accent="var(--danger-text,#b91c1c)" onClick={() => applyHealthBand("blocked")} active={applied.healthBand === "blocked"} />
             {summary.avg_rating != null && (
               <SummaryCard label="Avg Rating" value={`★ ${summary.avg_rating.toFixed(1)}`} />
             )}
             <SummaryCard label="Bkgs/Customer" value={summary.bookings_per_customer} />
           </>
         ) : null}
-      </div>
+      </KpiGrid>
 
       {/* Toolbar */}
       <OperationsDirectoryControls
@@ -644,13 +625,6 @@ function CustomersContent() {
               ? "Loading…"
               : `${(meta?.total ?? 0).toLocaleString()} customer${(meta?.total ?? 0) !== 1 ? "s" : ""}${hasFilters ? " (filtered)" : ""}`}
           </span>
-          {meta && meta.total_pages > 1 && (
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <Btn variant="ghost" size="sm" disabled={meta.page <= 1} onClick={() => goToPage(meta.page - 1)}>‹</Btn>
-              <span style={{ fontSize: 12, color: "var(--muted-text)" }}>Page {meta.page} / {meta.total_pages}</span>
-              <Btn variant="ghost" size="sm" disabled={meta.page >= meta.total_pages} onClick={() => goToPage(meta.page + 1)}>›</Btn>
-            </div>
-          )}
         </div>
         {listFetch.error ? (
           <div style={{ padding: "40px 20px", textAlign: "center" }}>
@@ -677,6 +651,7 @@ function CustomersContent() {
             }
           />
         )}
+        {meta && <Pagination page={meta.page} pageSize={25} total={meta.total} pageCount={meta.total_pages} onPage={goToPage} />}
       </Card>
 
       <Modal open={!!actionModal} onClose={() => setActionModal(null)} title={

@@ -11,9 +11,14 @@ export interface ApiState<T> { data:T|null; loading:boolean; error:string|null; 
 // Fixing it safely means auditing every call site, which is its own change. Until then,
 // pass `deps` explicitly whenever the fetch depends on state -- see the availability
 // planner page, which does.
-export function useApi<T>(fetcher:()=>Promise<T>, deps:unknown[]=[]):ApiState<T> {
+export function useApi<T>(
+  fetcher:()=>Promise<T>,
+  deps:unknown[]=[],
+  options?: { enabled?: boolean },
+):ApiState<T> {
+  const enabled = options?.enabled ?? true;
   const [data,setData]=useState<T|null>(null);
-  const [loading,setLoading]=useState(true);
+  const [loading,setLoading]=useState(enabled);
   const [error,setError]=useState<string|null>(null);
   const [requestId,setRequestId]=useState<string|null>(null);
   const r=useRef(0);
@@ -33,7 +38,10 @@ export function useApi<T>(fetcher:()=>Promise<T>, deps:unknown[]=[]):ApiState<T>
     finally{if(id===r.current)setLoading(false);}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },deps);
-  useEffect(()=>{run();},[run]);
+  useEffect(()=>{
+    if (enabled) run();
+    else setLoading(false);
+  },[run, enabled]);
   return {data,loading,error,requestId,refetch:run};
 }
 export function useAction<T,A extends unknown[]>(

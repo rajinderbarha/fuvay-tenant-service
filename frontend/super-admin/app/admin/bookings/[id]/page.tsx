@@ -14,6 +14,7 @@ import { Card, Badge, Btn, Modal, Skeleton } from "../../../../components/shared
 import { adminBookingsApi } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { ArrowLeft, AlertTriangle, RotateCcw } from "lucide-react";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_VARIANT: Record<string, "default" | "success" | "warning" | "danger" | "info" | "muted"> = {
   pending_confirmation: "warning",
@@ -160,15 +161,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
           {/* Header */}
-          <Card padding={24}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-              gap: 16, flexWrap: "wrap" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)",
-                    margin: 0, fontFamily: "monospace" }}>
-                    {b.booking_number as string}
-                  </h1>
+          <PageHeader
+            title={b.booking_number as string}
+            description={`${b.service_name as string} · ${b.category_name as string} · Scheduled ${fmtDate(b.scheduled_at as string)} · Booked ${fmtDate(b.created_at as string)}`}
+            eyebrow="Booking Detail"
+            actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap", alignItems: "center" }}>
                   <Badge variant={STATUS_VARIANT[b.status as string] ?? "muted"}>
                     {(b.status as string).replace(/_/g, " ")}
                   </Badge>
@@ -178,15 +175,6 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   {b.sla_breached && (
                     <Badge variant="danger">SLA Breached</Badge>
                   )}
-                </div>
-                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 3px" }}>
-                  {b.service_name as string} · {b.category_name as string}
-                </p>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-                  Scheduled {fmtDate(b.scheduled_at as string)} · Booked {fmtDate(b.created_at as string)}
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {(["pending_confirmation", "confirmed"] as string[]).includes(b.status as string) && (
                   <Btn variant="danger" size="sm" onClick={() => setCancelModal(true)}>Cancel</Btn>
                 )}
@@ -194,9 +182,8 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <Btn variant="danger" size="sm" onClick={() => setVoidModal(true)}>Void</Btn>
                 )}
                 <Btn variant="ghost" size="sm" onClick={refetchAll}>↻ Refresh</Btn>
-              </div>
-            </div>
-          </Card>
+            </div>}
+          />
 
           {/* Two-column details */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>

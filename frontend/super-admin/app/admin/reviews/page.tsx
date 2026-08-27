@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { AdminLayout }  from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Select, SectionHeader, Input, Skeleton, Modal } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Select, SectionHeader, Input, Skeleton, Modal, SummaryCard, Pagination } from "../../../components/shared/ui";
 import { Search, Star, MessageSquare, Flag, AlertTriangle,
          ThumbsUp, ThumbsDown, Minus, RefreshCw, Download, Filter, X } from "lucide-react";
 import { adminReviewApi } from "../../../lib/api";
@@ -63,32 +64,6 @@ function StatusBadge({ s }: { s: string }) {
       background:bg, color, textTransform:"capitalize" }}>
       {s.replace(/_/g," ")}
     </span>
-  );
-}
-
-function SummaryCard({ label, value, icon: Icon, color, active, onClick }: {
-  label: string; value: number | string | undefined; icon: React.ElementType;
-  color: string; active?: boolean; onClick?: () => void;
-}) {
-  return (
-    <div onClick={onClick} style={{
-      background:"var(--surface)", border:`1.5px solid ${active ? color : "var(--border)"}`,
-      borderRadius:"var(--radius-lg)", padding:"14px 18px", cursor:onClick ? "pointer":"default",
-      display:"flex", alignItems:"center", gap:12, transition:"all 0.12s", flex:1, minWidth:130,
-      boxShadow: active ? `0 0 0 3px ${color}22` : "none",
-    }}>
-      <div style={{ width:38, height:38, borderRadius:9, background:`${color}18`,
-        display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-        <Icon size={16} color={color}/>
-      </div>
-      <div>
-        <div style={{ fontSize:20, fontWeight:700, color:"var(--text-primary)", lineHeight:1 }}>
-          {value ?? "—"}
-        </div>
-        <div style={{ fontSize:11, color:"var(--text-tertiary)", marginTop:3,
-          fontWeight:500, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
-      </div>
-    </div>
   );
 }
 
@@ -214,16 +189,16 @@ export default function AdminReviewsPage() {
         </div>
       ) : (
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
-          <SummaryCard label="Total Reviews" value={sum?.total} icon={Star} color="#6366f1"/>
+          <SummaryCard label="Total Reviews" value={sum?.total} icon={<Star />} accent="#6366f1"/>
           <SummaryCard label="Avg Rating" value={sum?.avg_rating ? `${sum.avg_rating} ★` : "—"}
-            icon={Star} color="var(--success)"/>
-          <SummaryCard label="Low Rating (1–2★)" value={sum?.low_rating} icon={ThumbsDown} color="#ef4444"
+            icon={<Star />} accent="var(--success)"/>
+          <SummaryCard label="Low Rating (1–2★)" value={sum?.low_rating} icon={<ThumbsDown />} accent="#ef4444"
             active={filters.rating === "2"} onClick={() => setF("rating", filters.rating === "2" ? "" : "2")}/>
-          <SummaryCard label="Unreplied" value={sum?.unreplied} icon={MessageSquare} color="var(--warning)"
+          <SummaryCard label="Unreplied" value={sum?.unreplied} icon={<MessageSquare />} accent="var(--warning)"
             active={filters.has_reply === "false"} onClick={() => setF("has_reply", filters.has_reply === "false" ? "" : "false")}/>
-          <SummaryCard label="Flagged" value={sum?.flagged} icon={Flag} color="var(--danger)"
+          <SummaryCard label="Flagged" value={sum?.flagged} icon={<Flag />} accent="var(--danger)"
             active={filters.status === "flagged"} onClick={() => setF("status", filters.status === "flagged" ? "" : "flagged")}/>
-          <SummaryCard label="Pending" value={sum?.pending_moderation} icon={AlertTriangle} color="var(--warning)"
+          <SummaryCard label="Pending" value={sum?.pending_moderation} icon={<AlertTriangle />} accent="var(--warning)"
             active={filters.status === "pending"} onClick={() => setF("status", filters.status === "pending" ? "" : "pending")}/>
         </div>
       )}
@@ -319,7 +294,7 @@ export default function AdminReviewsPage() {
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <Card padding={0} style={{ overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:1000 }}>
+          <TableSurface style={{ width:"100%", borderCollapse:"collapse", minWidth:1000 }}>
             <thead>
               <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                 {["Rating","Review","Customer","Tenant","Type","Status","Sentiment","Reply","Created",""].map(h => (
@@ -353,25 +328,13 @@ export default function AdminReviewsPage() {
                   onModerate={(action) => { setModerateRow(rv); setModerateAction(action); setModerateReason(""); }}/>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
 
         {/* Pagination */}
-        {!reviews.loading && meta && (
-          <div style={{ padding:"12px 16px", borderTop:"1px solid var(--border)",
-            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <span style={{ fontSize:12, color:"var(--text-tertiary)" }}>
-              {meta.total.toLocaleString()} total · showing page {meta.page} of {meta.total_pages}
-            </span>
-            <div style={{ display:"flex", gap:8 }}>
-              <Btn variant="secondary" size="sm" disabled={!meta.has_previous} onClick={() => setPage(p=>p-1)}>← Prev</Btn>
-              <span style={{ fontSize:12, color:"var(--text-secondary)", padding:"0 8px", display:"flex", alignItems:"center" }}>
-                {page}
-              </span>
-              <Btn variant="secondary" size="sm" disabled={!meta.has_next} onClick={() => setPage(p=>p+1)}>Next →</Btn>
-            </div>
-          </div>
-        )}
+        {!reviews.loading && meta && <Pagination page={meta.page} pageSize={meta.page_size} total={meta.total}
+          pageCount={meta.total_pages} hasNext={meta.has_next} hasPrevious={meta.has_previous}
+          onPage={setPage} itemLabel="reviews" alwaysShow />}
       </Card>
 
       {/* ── Moderation Modal ──────────────────────────────────────────────── */}

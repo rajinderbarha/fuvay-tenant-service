@@ -2,7 +2,7 @@
 P0 Category Engine Matrix Completion Sprint — backend + frontend tests.
 Migration 082 | category_engine_matrix governance fields | 14 new endpoints |
 categories/options dropdown | seed templates | enable/disable preview + workflow |
-package usage + tenant impact | audit logging.
+tenant impact + runtime policy | audit logging.
 """
 from pathlib import Path
 
@@ -133,9 +133,8 @@ class TestCategoryMatrixService:
     def test_disable_category_engine(self):
         assert "async def disable_category_engine" in _read(SERVICE)
 
-    def test_disable_blocks_required_with_packages_or_tenants(self):
+    def test_disable_blocks_required_engine_with_active_tenants(self):
         src = _read(SERVICE)
-        assert "is_required and pkg_count > 0" in src
         assert "is_required and tenant_count > 0" in src
 
     def test_mark_category_engine_required(self):
@@ -143,9 +142,6 @@ class TestCategoryMatrixService:
 
     def test_mark_category_engine_optional(self):
         assert "mark_category_engine_optional" in _read(SERVICE)
-
-    def test_package_usage_method(self):
-        assert "get_category_engine_package_usage" in _read(SERVICE)
 
     def test_tenant_impact_method(self):
         assert "get_category_engine_tenant_impact" in _read(SERVICE)
@@ -202,9 +198,6 @@ class TestCategoryMatrixRouter:
 
     def test_mark_optional_route(self):
         assert "mark-optional" in _read(ROUTER)
-
-    def test_package_usage_route(self):
-        assert '"/category-matrix/{category_id}/engines/{engine_key}/packages"' in _read(ROUTER)
 
     def test_tenant_impact_route(self):
         assert '"/category-matrix/{category_id}/engines/{engine_key}/tenant-impact"' in _read(ROUTER)

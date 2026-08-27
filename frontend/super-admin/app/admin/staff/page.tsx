@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, SectionHeader, DataTable, SummaryCard,} from "../../../components/shared/ui";
+import { Card, Badge, Btn, SectionHeader, DataTable, SummaryCard, KpiGrid, Pagination } from "../../../components/shared/ui";
 import { adminStaffApi, AdminStaffMember, AdminStaffSummary, AdminStaffFilterOptions } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
 import { Users, ChevronDown, X, Filter, Download, RefreshCw, Search } from "lucide-react";
@@ -313,7 +313,7 @@ function StaffContent() {
   return (
     <div className="operations-admin-page" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Summary cards */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <KpiGrid minCardWidth={160}>
         {summary ? (
           <>
             <SummaryCard label="Total Staff" value={summary.total} />
@@ -342,7 +342,7 @@ function StaffContent() {
             <div key={i} style={{ flex: 1, minWidth: 110, height: 72, background: "var(--border)", borderRadius: 10, opacity: 0.5 }} />
           ))
         )}
-      </div>
+      </KpiGrid>
 
       {/* Toolbar */}
       <OperationsDirectoryControls resourceKey="admin_staff" filters={enterpriseFilters}
@@ -458,17 +458,7 @@ function StaffContent() {
         />
 
         {/* Pagination */}
-        {meta && meta.total_pages > 1 && (
-          <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, color: "var(--muted-text)" }}>
-              {meta.total} total · page {meta.page} of {meta.total_pages}
-            </span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn variant="ghost" size="sm" onClick={() => goToPage(page - 1)} disabled={page <= 1}>← Prev</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => goToPage(page + 1)} disabled={page >= meta.total_pages}>Next →</Btn>
-            </div>
-          </div>
-        )}
+        {meta && <Pagination page={meta.page} pageSize={25} total={meta.total} pageCount={meta.total_pages} onPage={goToPage} />}
       </Card>
     </div>
   );
@@ -478,6 +468,8 @@ export default function AdminStaffPage() {
   return (
     <AdminLayout activeNav="staff">
       <SectionHeader
+        eyebrow="Operations control plane"
+        context="Staff"
         title="Staff Management"
         subtitle="Platform-wide team availability, workload, verification and provider assignment."
         icon={<Users size={18} />}

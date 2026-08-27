@@ -1,6 +1,6 @@
 """Finance Hub Engine — FinanceHubService.
 
-Composes platform_commerce (wallets/deposits/warranty) and payment (payouts)
+Composes platform_commerce (wallets/warranty) and payment (payouts)
 engines into one enterprise admin surface, rather than duplicating their
 business logic. Only credit-top-up order tracking is genuinely new.
 """
@@ -15,10 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record_platform_audit
 from app.engines.finance_hub.models import CreditTopupOrder
-from app.engines.platform_commerce.constants import DepositTxnType
-from app.engines.platform_commerce.ledger import credit_deposit, debit_deposit
+
 from app.engines.platform_commerce.models import (
-    TenantWallet, WalletTransaction, SecurityDeposit, SecurityDepositTransaction,
+    TenantWallet, WalletTransaction,
     WarrantyClaim, CommissionRecord, CreditPackage,
 )
 from app.engines.platform_commerce.service import CommerceService
@@ -33,7 +32,6 @@ utcnow = lambda: datetime.now(timezone.utc)
 
 LOW_BALANCE_DEFAULT_THRESHOLD = Decimal("500.00")
 
-DEPOSIT_ACTIVE_STATUSES = ("paid", "partially_paid")
 CLAIM_OPEN_STATUSES = ("provider_action_required", "provider_in_progress", "admin_review")
 PAYOUT_OPEN_STATUSES = ("pending", "approved", "processing")
 
@@ -96,10 +94,6 @@ class FinanceHubService:
             select(func.coalesce(func.sum(CommissionRecord.commission_amount), 0))
             .where(CommissionRecord.status == "deducted")
         )).scalar_one()
-        deposits = (await self.db.execute(select(SecurityDeposit))).scalars().all()
-        deposit_held = sum((d.current_balance for d in deposits if d.status in DEPOSIT_ACTIVE_STATUSES), Decimal("0"))
-        deposit_pending = sum(1 for d in deposits if d.status in ("unpaid", "partially_paid", "pending_verification"))
-        recovered_refunded = sum(1 for d in deposits if d.status == "refunded")
         pending_claims = (await self.db.execute(
             select(func.count()).select_from(WarrantyClaim).where(WarrantyClaim.status.in_(CLAIM_OPEN_STATUSES))
         )).scalar_one()
@@ -109,20 +103,15 @@ class FinanceHubService:
         at_risk = (await self.db.execute(
             select(func.count()).select_from(Tenant).where(Tenant.health_band.in_(["at_risk", "critical"]), Tenant.status == "active")
         )).scalar_one()
-        pending_deposit_actions = sum(1 for d in deposits if d.status in ("pending_verification", "refund_requested"))
 
         return {
             "active_wallets": active_wallets,
             "low_balance_wallets": low_balance_wallets,
             "credits_issued": float(credits_issued),
             "commission_earned": float(commission_earned),
-            "deposit_held": float(deposit_held),
-            "deposit_pending": deposit_pending,
             "pending_warranty_claims": pending_claims,
             "pending_payouts": pending_payouts,
             "at_risk_tenants": at_risk,
-            "recovered_refunded_deposits": recovered_refunded,
-            "pending_deposit_actions": pending_deposit_actions,
         }
 
     async def get_finance_overview(self) -> dict:
@@ -140,9 +129,6 @@ class FinanceHubService:
             "wallet_balance": float(w.credit_balance), "health_band": t.health_band,
         } for w, t in low_bal_result.all()]
 
-        # Deposit status breakdown
-        dep_result = await self.db.execute(select(SecurityDeposit.status, func.count()).group_by(SecurityDeposit.status))
-        deposit_status_breakdown = {status: cnt for status, cnt in dep_result.all()}
 
         # Top commission contributors
         comm_result = await self.db.execute(
@@ -164,10 +150,6 @@ class FinanceHubService:
         for t in wt_result.scalars().all():
             activity.append({"type": "wallet_transaction", "label": f"{t.txn_type} — ₹{t.amount}",
                               "tenant_id": str(t.tenant_id), "created_at": t.created_at.isoformat()})
-        sdt_result = await self.db.execute(select(SecurityDepositTransaction).order_by(SecurityDepositTransaction.created_at.desc()).limit(10))
-        for t in sdt_result.scalars().all():
-            activity.append({"type": "deposit_transaction", "label": f"{t.txn_type} — ₹{t.amount}",
-                              "tenant_id": str(t.tenant_id), "created_at": t.created_at.isoformat()})
         claims_result = await self.db.execute(select(WarrantyClaim).order_by(WarrantyClaim.updated_at.desc()).limit(10))
         for c in claims_result.scalars().all():
             activity.append({"type": "warranty_claim", "label": f"Claim {c.status} — ₹{c.amount_requested}",
@@ -183,9 +165,6 @@ class FinanceHubService:
         failed_topups = (await self.db.execute(
             select(func.count()).select_from(CreditTopupOrder).where(CreditTopupOrder.payment_status == "failed")
         )).scalar_one()
-        deposit_verification_pending = (await self.db.execute(
-            select(func.count()).select_from(SecurityDeposit).where(SecurityDeposit.status == "pending_verification")
-        )).scalar_one()
         payout_pending_approval = (await self.db.execute(
             select(func.count()).select_from(PayoutRecord).where(PayoutRecord.status == "pending")
         )).scalar_one()
@@ -198,11 +177,9 @@ class FinanceHubService:
         return {
             "wallet_health_distribution": wallet_health_distribution,
             "top_low_balance_tenants": top_low_balance,
-            "deposit_status_breakdown": deposit_status_breakdown,
             "top_commission_contributors": top_commission_contributors,
             "recent_finance_activity": recent_activity,
             "pending_actions_queue": {
-                "deposit_verification_pending": deposit_verification_pending,
                 "payout_pending_approval": payout_pending_approval,
                 "warranty_claim_pending_review": claim_pending_review,
                 "failed_topup_payment": failed_topups,
@@ -214,200 +191,10 @@ class FinanceHubService:
     # DEPOSITS
     # ═══════════════════════════════════════════════════════════════
 
-    def _deposit_dict(self, d: SecurityDeposit, tenant: Tenant | None = None) -> dict:
-        return {
-            "deposit_id": str(d.id), "tenant_id": str(d.tenant_id),
-            "tenant_name": tenant.tenant_name if tenant else None,
-            "vertical": tenant.vertical if tenant else None,
-            "city": tenant.city if tenant else None, "state": tenant.state if tenant else None,
-            "required_amount": float(d.required_amount), "received_amount": float(d.total_paid),
-            "pending_amount": max(float(d.required_amount - d.total_paid), 0.0),
-            "status": d.status, "hold_state": d.hold_state,
-            "adjusted_amount": float(d.replenishment_total), "refunded_amount": float(d.warranty_drawn),
-            "current_balance": float(d.current_balance),
-            "package_purchase_id": str(d.package_purchase_id) if d.package_purchase_id else None,
-            "rejection_reason": d.rejection_reason, "clarification_notes": d.clarification_notes,
-            "approved_by": str(d.approved_by) if d.approved_by else None,
-            "approved_at": d.approved_at.isoformat() if d.approved_at else None,
-            "paid_at": d.paid_at.isoformat() if d.paid_at else None,
-            "refunded_at": d.refunded_at.isoformat() if d.refunded_at else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
-        }
-
-    async def list_deposits(self, status: str | None = None, vertical: str | None = None,
-                             state: str | None = None, city: str | None = None, q: str | None = None,
-                             page: int = 1, page_size: int = 50,
-                             sort_by: str = "created_at", sort_dir: str = "desc") -> dict:
-        stmt = select(SecurityDeposit, Tenant).join(Tenant, Tenant.id == SecurityDeposit.tenant_id)
-        if status: stmt = stmt.where(SecurityDeposit.status == status)
-        if vertical: stmt = stmt.where(Tenant.vertical == vertical)
-        if state: stmt = stmt.where(func.lower(Tenant.state) == state.lower())
-        if city: stmt = stmt.where(func.lower(Tenant.city) == city.lower())
-        if q:
-            like = f"%{q.lower()}%"
-            stmt = stmt.where(func.lower(Tenant.tenant_name).like(like) | func.lower(Tenant.business_name).like(like))
-
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = (await self.db.execute(count_stmt)).scalar_one()
-
-        sort_col = SecurityDeposit.created_at if sort_by != "required_amount" else SecurityDeposit.required_amount
-        stmt = stmt.order_by(sort_col.desc() if sort_dir == "desc" else sort_col.asc())
-        stmt = stmt.limit(page_size).offset((page - 1) * page_size)
-
-        result = await self.db.execute(stmt)
-        rows = result.all()
-        items = [self._deposit_dict(d, t) for d, t in rows]
-        return {"items": items, "pagination": {"page": page, "page_size": page_size, "total": total,
-                "total_pages": max(1, (total + page_size - 1) // page_size)}}
-
-    async def get_deposits_summary(self) -> dict:
-        deposits = (await self.db.execute(select(SecurityDeposit))).scalars().all()
-        return {
-            "total_deposit_accounts": len(deposits),
-            "active_held_deposits": sum(1 for d in deposits if d.status == "paid"),
-            "pending_deposits": sum(1 for d in deposits if d.status in ("unpaid", "partially_paid", "pending_verification")),
-            "refund_pending": sum(1 for d in deposits if d.status == "refund_requested"),
-            "refunded": sum(1 for d in deposits if d.status == "refunded"),
-            "deposit_risk_cases": sum(1 for d in deposits if d.status in ("blocked", "forfeited")),
-        }
-
-    async def _load_deposit(self, deposit_id: uuid.UUID) -> SecurityDeposit:
-        r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.id == deposit_id))
-        d = r.scalar_one_or_none()
-        if not d: raise NotFoundException("SecurityDeposit", str(deposit_id))
-        return d
-
-    async def get_deposit_detail(self, deposit_id: uuid.UUID) -> dict:
-        d = await self._load_deposit(deposit_id)
-        tr = await self.db.execute(select(Tenant).where(Tenant.id == d.tenant_id))
-        tenant = tr.scalar_one_or_none()
-        ledger_r = await self.db.execute(
-            select(SecurityDepositTransaction).where(SecurityDepositTransaction.deposit_id == deposit_id)
-            .order_by(SecurityDepositTransaction.created_at.desc()))
-        ledger = [{
-            "txn_id": str(t.id), "txn_type": t.txn_type, "amount": float(t.amount),
-            "balance_before": float(t.balance_before), "balance_after": float(t.balance_after),
-            "notes": t.notes, "created_at": t.created_at.isoformat(),
-        } for t in ledger_r.scalars().all()]
-        audit = await self.list_audit_logs("security_deposit", str(deposit_id))
-        return {"deposit": self._deposit_dict(d, tenant), "ledger": ledger, "audit_log": audit["audit_log"]}
-
-    async def approve_deposit(self, deposit_id: uuid.UUID, notes: str | None = None) -> dict:
-        d = await self._load_deposit(deposit_id)
-        # Slice 2F-5B: approve_deposit had no final-state check at all, unlike
-        # every other terminal-state mutation in this file (payouts use
-        # _require_status; refund_deposit already blocks re-refunding a
-        # 'refunded' deposit). Without this guard, approving an already-
-        # refunded deposit would reset status back to 'paid' and hold_state
-        # back to 'held' -- illegitimately reversing a refund that already
-        # returned money to the tenant. Mirrors refund_deposit's own guard.
-        if d.status == "refunded":
-            raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
-                "This security deposit has already been refunded and cannot be approved.", status_code=409)
-        if d.status not in ("pending", "pending_verification"):
-            raise ServiceOSException("DEPOSIT_INVALID_STATE",
-                f"A deposit in '{d.status}' state cannot be approved.", status_code=409)
-        before = self._deposit_dict(d)
-        d.status = "paid"; d.hold_state = "held"; d.approved_by = self.actor_id; d.approved_at = utcnow()
-        if not d.paid_at: d.paid_at = utcnow()
-        await self.db.flush()
-        await self._audit("deposit.approve", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
-        return self._deposit_dict(d)
-
-    async def reject_deposit(self, deposit_id: uuid.UUID, reason: str) -> dict:
-        d = await self._load_deposit(deposit_id)
-        if d.status not in ("pending", "pending_verification"):
-            raise ServiceOSException("DEPOSIT_INVALID_STATE",
-                f"A deposit in '{d.status}' state cannot be rejected.", status_code=409)
-        before = self._deposit_dict(d)
-        d.rejection_reason = reason
-        d.status = "rejected"
-        d.hold_state = "released"
-        await self.db.flush()
-        await self._audit("deposit.reject", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
-        return self._deposit_dict(d)
-
-    async def record_offline_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reference: str | None, notes: str | None) -> dict:
-        d = await self._load_deposit(deposit_id)
-        amount = Decimal(str(amount))
-        # MODULE-L5-10: money IN. A negative amount would run total_paid +=
-        # negative and REDUCE the deposit; and recording the same bank reference
-        # twice would double-credit it (confirm_deposit already dedupes on the
-        # reference — this offline path did not). Validate + dedupe on reference.
-        if amount <= Decimal("0"):
-            raise ServiceOSException("VALIDATION_ERROR",
-                "Deposit amount must be positive.", status_code=422)
-        if d.status not in ("unpaid", "partially_paid"):
-            raise ServiceOSException("DEPOSIT_INVALID_STATE",
-                f"Offline payment cannot be recorded for a deposit in '{d.status}' state.", status_code=409)
-        if reference:
-            dup = await self.db.execute(
-                select(SecurityDepositTransaction).where(
-                    SecurityDepositTransaction.deposit_id == d.id,
-                    SecurityDepositTransaction.reference_id == reference,
-                )
-            )
-            if dup.scalars().first() is not None:
-                return {**self._deposit_dict(d), "idempotent": True}
-        before = self._deposit_dict(d)
-        await credit_deposit(self.db, d, amount, DepositTxnType.INITIAL_PAYMENT,
-                              reference, notes or "Offline deposit recorded by admin", self.actor_id)
-        if d.total_paid >= d.required_amount:
-            d.status = "paid"; d.hold_state = "held"
-            if not d.paid_at: d.paid_at = utcnow()
-        else:
-            d.status = "partially_paid"
-        await self._audit("deposit.record_offline", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
-        return self._deposit_dict(d)
-
-    async def refund_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
-        d = await self._load_deposit(deposit_id)
-        amount = Decimal(str(amount))
-        # MODULE-L5-10: guard the refund path (money OUT to the tenant).
-        #  - amount must be positive: a negative amount would run
-        #    warranty_drawn += negative and INFLATE the deposit balance.
-        #  - a deposit already 'refunded' must not be refunded again. A *partial*
-        #    refund leaves status='refunded' with balance still > 0, so without
-        #    this guard a second call would draw more money to the tenant (a full
-        #    prior refund is only incidentally blocked by the balance check).
-        if amount <= Decimal("0"):
-            raise ServiceOSException("VALIDATION_ERROR",
-                "Refund amount must be positive.", status_code=422)
-        if d.status == "refunded":
-            raise ServiceOSException("DEPOSIT_ALREADY_REFUNDED",
-                "This security deposit has already been refunded.", status_code=409)
-        if d.status not in ("paid", "refund_requested", "partially_adjusted"):
-            raise ServiceOSException("DEPOSIT_INVALID_STATE",
-                f"A deposit in '{d.status}' state cannot be refunded.", status_code=409)
-        before = self._deposit_dict(d)
-        await debit_deposit(self.db, d, amount, "refund", None, reason, self.actor_id)
-        d.status = "refunded"; d.hold_state = "released"; d.refunded_at = utcnow()
-        await self._audit("deposit.refund", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
-        return self._deposit_dict(d)
-
-    async def adjust_deposit(self, deposit_id: uuid.UUID, amount: Decimal, reason: str, category: str = "manual") -> dict:
-        d = await self._load_deposit(deposit_id)
-        amount = Decimal(str(amount))
-        if amount == Decimal("0"):
-            raise ServiceOSException("VALIDATION_ERROR", "Adjustment amount cannot be zero.", status_code=422)
-        if d.status == "refunded":
-            raise ServiceOSException("DEPOSIT_INVALID_STATE",
-                "A refunded deposit cannot be adjusted.", status_code=409)
-        before = self._deposit_dict(d)
-        await self._commerce.admin_adjust_deposit(d.tenant_id, amount, reason, category)
-        if d.status == "paid" and d.current_balance < d.required_amount:
-            d.status = "partially_adjusted"
-        await self._audit("deposit.adjust", "security_deposit", str(deposit_id), d.tenant_id, before, self._deposit_dict(d))
-        return self._deposit_dict(d)
-
-    async def export_deposits(self, **filters) -> list[dict]:
-        filters.setdefault("page", 1); filters["page_size"] = 5000
-        data = await self.list_deposits(**filters)
-        return data["items"]
-
-    # ═══════════════════════════════════════════════════════════════
-    # CREDIT TOP-UPS
-    # ═══════════════════════════════════════════════════════════════
+    # The platform deposit console (list/detail/approve/reject/record-offline/
+    # refund/adjust/export) was removed with the deposit itself in migration
+    # 318. A tenant now buys a top-up plan whose credit is spent down as
+    # commission, so there is no held balance for an admin to administer.
 
     async def list_topups(self, tenant_id: uuid.UUID | None = None, payment_status: str | None = None,
                            q: str | None = None, page: int = 1, page_size: int = 50,
@@ -629,7 +416,6 @@ class FinanceHubService:
                 and c.provider_response_due_at <= utcnow()
             ),
             "provider_credit_deducted": float(c.provider_credit_deducted or 0),
-            "security_deposit_deducted": float(c.security_deposit_deducted or 0),
             "customer_credit_id": str(c.customer_credit_id) if c.customer_credit_id else None,
             "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
             "created_at": c.created_at.isoformat() if c.created_at else None,

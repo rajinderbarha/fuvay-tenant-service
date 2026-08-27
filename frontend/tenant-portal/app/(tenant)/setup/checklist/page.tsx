@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 export default function SetupChecklistPage() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/onboarding-status");
+    router.replace("/tenant/home-services/setup");
   }, [router]);
 
   return (

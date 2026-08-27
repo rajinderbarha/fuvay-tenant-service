@@ -26,6 +26,8 @@ import { PrivacyRequestListScreen } from "../screens/privacy/PrivacyRequestListS
 import { PrivacyRequestDetailScreen } from "../screens/privacy/PrivacyRequestDetailScreen";
 import { VoluntaryDataExportScreen } from "../screens/privacy/VoluntaryDataExportScreen";
 import { AccountClosureRequestScreen } from "../screens/privacy/AccountClosureRequestScreen";
+import { LegalDocumentsScreen } from "../screens/legal/LegalDocumentsScreen";
+import { LegalDocumentDetailScreen } from "../screens/legal/LegalDocumentDetailScreen";
 import { HelpAndSupportScreen } from "../screens/support/HelpAndSupportScreen";
 import { HelpSearchScreen } from "../screens/support/HelpSearchScreen";
 import { HelpCategoryScreen } from "../screens/support/HelpCategoryScreen";
@@ -71,6 +73,8 @@ export function ProfileNavigator() {
       <Stack.Screen name="PrivacyRequestDetail" component={PrivacyRequestDetailScreen} />
       <Stack.Screen name="VoluntaryDataExport" component={VoluntaryDataExportScreen} />
       <Stack.Screen name="AccountClosureRequest" component={AccountClosureRequestScreen} />
+      <Stack.Screen name="LegalDocuments" component={LegalDocumentsScreen} />
+      <Stack.Screen name="LegalDocumentDetail" component={LegalDocumentDetailScreen} />
       <Stack.Screen name="HelpAndSupport" component={HelpAndSupportScreen} />
       <Stack.Screen name="HelpSearch" component={HelpSearchScreen} />
       <Stack.Screen name="HelpCategory" component={HelpCategoryScreen} />

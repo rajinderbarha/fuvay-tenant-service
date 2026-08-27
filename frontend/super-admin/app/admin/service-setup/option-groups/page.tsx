@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useEffect, useState } from "react";
 import { serviceOptionApi, ServiceOptionGroup34E } from "../../../../lib/api";
-import { PageHeader } from "../../../../components/shared/layout";
+import { PageHeader } from "@serviceos/design-system";
 import { Btn } from "../../../../components/shared/ui";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -49,7 +50,7 @@ export default function OptionGroupsPage() {
       <PageHeader
         title="Option Groups"
         description="Logical groupings for service options (e.g. AC Type, Washer Type)"
-        primaryAction={<Btn onClick={() => setShowCreate(true)}>+ New Group</Btn>}
+        actions={<Btn onClick={() => setShowCreate(true)}>+ New Group</Btn>}
       />
 
       {loading ? (
@@ -58,7 +59,7 @@ export default function OptionGroupsPage() {
         <p className="body-text text-muted">No option groups yet.</p>
       ) : (
         <div className="card">
-          <table className="data-table">
+          <TableSurface className="data-table">
             <thead>
               <tr>
                 <th>Code</th>
@@ -83,7 +84,7 @@ export default function OptionGroupsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
 

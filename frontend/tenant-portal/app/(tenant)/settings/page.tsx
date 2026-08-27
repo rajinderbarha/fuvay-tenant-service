@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import { TableSurface } from "@serviceos/design-system";
+import React, { useState, useCallback, useEffect } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import {
   PageHeader, Card, Button, Modal, Input, Skeleton,
@@ -35,6 +36,13 @@ const API_KEYS_ENABLED = false;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<"workspace"|"team"|"activity"|"general"|"webhooks"|"deliveries"|"privacy"|"security">("workspace");
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (["workspace", "team", "activity", "general", "webhooks", "deliveries", "privacy", "security"].includes(requested ?? "")) {
+      setTab(requested as typeof tab);
+    }
+  }, []);
 
   // Workspace settings (real: identity, regional prefs, business hours,
   // controlled policy -- see workspace_settings_service.py)
@@ -297,7 +305,7 @@ export default function SettingsPage() {
                   <p style={{ fontWeight:700, margin:"0 0 4px" }}>Business hours</p>
                   <p style={{ fontSize:11.5, color:"var(--text-tertiary)", margin:"0 0 12px" }}>{workspaceGeneral.data.business_hours_note}</p>
                   <div style={{ overflowX:"auto" }}>
-                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                    <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                       <thead>
                         <tr>
                           {(workspaceGeneral.data.business_hours ?? []).map((d: { day: string }) => (
@@ -314,7 +322,7 @@ export default function SettingsPage() {
                           ))}
                         </tr>
                       </tbody>
-                    </table>
+                    </TableSurface>
                   </div>
                   <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"10px 0 0" }}>
                     Edited from Availability, not here — see <code>/home-services/availability</code>.
@@ -431,7 +439,7 @@ export default function SettingsPage() {
           ) : (
             <Card padding="none">
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                       {["Setting Key","Value","Source",""].map(h => (
@@ -475,7 +483,7 @@ export default function SettingsPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             </Card>
           )

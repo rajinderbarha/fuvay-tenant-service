@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Badges held by a specific target — and the admin actions on them.
  *
@@ -141,7 +142,7 @@ export function EarnedTab({ badges, BadgeIcon }: {
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)", color: "var(--text-tertiary)" }}>
                     <th style={{ padding: "10px 16px" }}>Holder</th>
@@ -198,7 +199,7 @@ export function EarnedTab({ badges, BadgeIcon }: {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
             <Pagination page={page} total={directory.data?.total ?? 0}
               pageSize={PAGE_SIZE} onPage={setPage} alwaysShow />

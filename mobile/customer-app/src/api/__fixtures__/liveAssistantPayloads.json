@@ -5,52 +5,82 @@
       {
         "key": "active_booking",
         "order": 10,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "compact",
+        "max_items": 3
       },
       {
         "key": "quick_problems",
         "order": 20,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "grid",
+        "max_items": 8
       },
       {
         "key": "campaign_top",
         "order": 30,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "carousel",
+        "max_items": 5
       },
       {
         "key": "service_grid",
         "order": 40,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "grid",
+        "max_items": 8
       },
       {
         "key": "campaign_after_services",
         "order": 50,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "carousel",
+        "max_items": 5
       },
       {
         "key": "assistant_entry",
         "order": 60,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "compact",
+        "max_items": 1
       },
       {
         "key": "campaign_mid",
         "order": 70,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "carousel",
+        "max_items": 5
       },
       {
         "key": "problem_circles",
         "order": 75,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "rail",
+        "max_items": 8
       },
       {
         "key": "campaign_after_circles",
         "order": 78,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "carousel",
+        "max_items": 5
       },
       {
         "key": "campaign_bottom",
         "order": 110,
-        "title": null
+        "title": null,
+        "enabled": true,
+        "variant": "carousel",
+        "max_items": 5
       }
     ],
     "season": "monsoon",

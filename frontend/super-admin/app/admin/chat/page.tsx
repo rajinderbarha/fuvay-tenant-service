@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Btn, Modal, SectionHeader } from "../../../components/shared/ui";
@@ -75,7 +76,7 @@ export default function AdminChatPage() {
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                   {["Thread #", "Record Type", "Record ID", "Status", "Last Message", "Created", "Actions"].map(h => (
@@ -125,7 +126,7 @@ export default function AdminChatPage() {
                   </tr>
                 )}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </Card>

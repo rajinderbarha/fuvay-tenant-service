@@ -25,6 +25,12 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "core",
     breadcrumbs: [{ label: "Users" }],
   },
+  "/admin/tenants": {
+    title: "Tenants",
+    section: "core",
+    breadcrumbs: [{ label: "Tenants" }],
+    description: "Provider businesses, onboarding, credits, coverage, and operational health",
+  },
   "/admin/customers": {
     title: "Customers",
     section: "core",
@@ -50,7 +56,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Finance" },
     ],
   },
@@ -59,7 +65,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Bookings & Jobs" },
     ],
   },
@@ -68,8 +74,26 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Providers" },
+    ],
+  },
+  "/admin/home-services/complaints": {
+    title: "Complaints",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Complaints" },
+    ],
+  },
+  "/admin/home-services/settings": {
+    title: "Home Services Settings",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Settings" },
     ],
   },
   "/admin/home-services/customers": {
@@ -77,7 +101,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Customers" },
     ],
   },
@@ -86,7 +110,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services" },
+      { label: "Home Services" },
       { label: "Dashboard" },
     ],
   },
@@ -94,6 +118,11 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Catalog Workspace",
     section: "operations",
     breadcrumbs: [{ label: "Catalog", href: "/admin/categories" }, { label: "Workspace" }],
+  },
+  "/admin/verticals": {
+    title: "Verticals",
+    section: "catalog",
+    breadcrumbs: [{ label: "Catalog" }, { label: "Verticals" }],
   },
   "/admin/real-estate": {
     title: "Real Estate",
@@ -110,6 +139,15 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [{ label: "Bookability" }],
   },
+  "/admin/bookability/providers": {
+    title: "Provider Bookability",
+    section: "operations",
+    breadcrumbs: [
+      { label: "Operations" },
+      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Provider Bookability" },
+    ],
+  },
   "/admin/onboarding": {
     title: "Onboarding",
     section: "operations",
@@ -125,11 +163,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Categories",
     section: "catalog",
     breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Categories" }],
-  },
-  "/admin/packages": {
-    title: "Packages",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/admin/catalog" }, { label: "Packages" }],
   },
   "/admin/checklists": {
     title: "Checklist Library",
@@ -222,6 +255,14 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Marketing" }],
   },
+  "/admin/marketing/home": {
+    title: "Customer Home",
+    section: "engagement",
+    breadcrumbs: [
+      { label: "Marketing", href: "/admin/marketing" },
+      { label: "Customer Home" },
+    ],
+  },
   "/admin/notifications": {
     title: "Notifications",
     section: "engagement",
@@ -267,10 +308,42 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "admin",
     breadcrumbs: [{ label: "Compliance" }],
   },
+  "/admin/trust-quality": {
+    title: "Trust & Quality",
+    section: "admin",
+    breadcrumbs: [{ label: "Trust & Quality" }],
+  },
+  "/admin/topup-plans": {
+    title: "Top-up Plans",
+    section: "finance",
+    breadcrumbs: [{ label: "Top-up Plans" }],
+    description: "Credit and technician seats a Home Services provider buys to operate",
+  },
+  "/admin/legal": {
+    title: "Legal Documents",
+    section: "admin",
+    breadcrumbs: [{ label: "Legal Documents" }],
+    description: "Author and publish the Terms, Privacy Notice and related policies",
+  },
   "/admin/audit-logs": {
     title: "Audit Logs",
     section: "admin",
     breadcrumbs: [{ label: "Audit Logs" }],
+  },
+  "/admin/roles": {
+    title: "Roles",
+    section: "admin",
+    breadcrumbs: [{ label: "Access Control" }, { label: "Roles" }],
+  },
+  "/admin/permissions": {
+    title: "Permissions",
+    section: "admin",
+    breadcrumbs: [{ label: "Access Control" }, { label: "Permissions" }],
+  },
+  "/admin/media": {
+    title: "Media Library",
+    section: "admin",
+    breadcrumbs: [{ label: "Media Library" }],
   },
   "/admin/settings": {
     title: "Settings",
@@ -283,6 +356,59 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     breadcrumbs: [{ label: "Profile" }],
   },
 };
+
+const ROUTE_LABELS: Record<string, string> = {
+  ai: "AI Configuration",
+  "ai-chat": "AI Chat",
+  "audit-logs": "Audit Logs",
+  "bookings-jobs": "Bookings & Jobs",
+  "bulk-runs": "Bulk Runs",
+  "bulk-wizard": "Bulk Wizard",
+  "catalog-workspace": "Catalog Workspace",
+  "customer-credits": "Customer Credits",
+  "customer-flow": "Customer Flow",
+  "direct-payments": "Direct Payments",
+  "financial-events": "Financial Events",
+  "home-services": "Home Services",
+  "knowledge-bases": "Knowledge Bases",
+  "master-services": "Master Services",
+  "notification-outbox": "Delivery Outbox",
+  "notification-templates": "Notification Templates",
+  "provider-wallets": "Provider Wallets",
+  "service-area-requests": "Service Area Requests",
+  "service-groups": "Service Groups",
+  "service-invoices": "Service Invoices",
+  "service-setup": "Service Setup",
+  "tenant-assistant": "Tenant Assistant",
+  "trust-quality": "Trust & Quality",
+  "types-brands": "Types & Brands",
+  "workflow-templates": "Workflow Templates",
+};
+
+const humanizeRoute = (segment: string) => ROUTE_LABELS[segment]
+  ?? segment.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const isOpaqueId = (segment: string) => /^\d+$/.test(segment)
+  || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment)
+  || segment.length > 28;
+const detailTitle = (title: string) => title === "Categories"
+  ? "Category details"
+  : `${title.replace(/ies$/, "y").replace(/s$/, "")} details`;
+
+function childBreadcrumbs(parent: PageMeta | null, baseParts: string[], remaining: string[]): PageMeta {
+  const breadcrumbs = parent ? [...parent.breadcrumbs] : [];
+  let lastTitle = parent?.title ?? "Admin";
+  remaining.forEach((segment, index) => {
+    const isLast = index === remaining.length - 1;
+    const label = isOpaqueId(segment) ? detailTitle(lastTitle) : humanizeRoute(segment);
+    lastTitle = label.replace(/ details$/, "");
+    const candidate = "/" + [...baseParts, ...remaining.slice(0, index + 1)].join("/");
+    breadcrumbs.push({
+      label,
+      href: !isLast && ADMIN_PAGE_REGISTRY[candidate] ? candidate : undefined,
+    });
+  });
+  return { title: lastTitle, section: parent?.section ?? "admin", breadcrumbs };
+}
 
 /**
  * Resolve page metadata for a pathname.
@@ -298,8 +424,11 @@ export function resolvePageMeta(pathname: string): PageMeta | null {
   for (let len = parts.length - 1; len >= 2; len--) {
     const candidate = "/" + parts.slice(0, len).join("/");
     if (ADMIN_PAGE_REGISTRY[candidate]) {
-      return ADMIN_PAGE_REGISTRY[candidate];
+      const parent = ADMIN_PAGE_REGISTRY[candidate];
+      return childBreadcrumbs(parent, parts.slice(0, len), parts.slice(len));
     }
   }
-  return null;
+  const routeParts = parts[0] === "admin" ? parts.slice(1) : parts;
+  if (!routeParts.length) return null;
+  return childBreadcrumbs(null, ["admin"], routeParts);
 }

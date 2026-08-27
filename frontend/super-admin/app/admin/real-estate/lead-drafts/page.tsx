@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { useEffect, useState, useCallback } from "react";
 import {
@@ -301,7 +302,7 @@ function RoutingRulesTab() {
         <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No routing rules configured.</p>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--surface-sunken)" }}>
                 {["Rule Key","Name","Intent","Match Scope","Priority","Max Providers","Status","Actions"].map(h => (
@@ -344,7 +345,7 @@ function RoutingRulesTab() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
 
@@ -509,7 +510,7 @@ export default function RealEstateLeadDraftsPage() {
               </p>
               <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)" }}>
                         {["Draft ID","Intent","Property Type","Location","Budget / Rent","Customer","Score","Status","Fallback","Created","Actions"].map(h => (
@@ -579,7 +580,7 @@ export default function RealEstateLeadDraftsPage() {
                         );
                       })}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               </div>
 

@@ -14,6 +14,7 @@ import { MfaManageScreen } from "../screens/security/MfaManageScreen";
 import { ManageSessionsScreen } from "../screens/security/ManageSessionsScreen";
 import { LoginActivityScreen } from "../screens/security/LoginActivityScreen";
 import { PrivacyDataScreen } from "../screens/profile/PrivacyDataScreen";
+import { LegalDocumentScreen } from "../screens/legal/LegalDocumentScreen";
 import { PrivacyRequestsScreen } from "../screens/profile/PrivacyRequestsScreen";
 import { PrivacyRequestSubmittedScreen } from "../screens/profile/PrivacyRequestSubmittedScreen";
 import { PrivacyConsentScreen } from "../screens/profile/PrivacyConsentScreen";
@@ -57,6 +58,7 @@ export function CustomerAppNavigator() {
       <Stack.Screen name="PrivacyRequests" component={PrivacyRequestsScreen} />
       <Stack.Screen name="PrivacyRequestSubmitted" component={PrivacyRequestSubmittedScreen} />
       <Stack.Screen name="PrivacyConsent" component={PrivacyConsentScreen} />
+      <Stack.Screen name="LegalDocument" component={LegalDocumentScreen} />
       <Stack.Screen name="AssistantDataInfo" component={AssistantDataInfoScreen} />
       <Stack.Screen name="AccountDeletionRequest" component={AccountDeletionRequestScreen} />
       <Stack.Screen name="DeleteAccountFinalConfirmation" component={DeleteAccountFinalConfirmationScreen} />

@@ -1,6 +1,8 @@
 """LEVEL-5 REMEDIATION (2026-08-01, Phase 10) — Customer Home aggregation endpoint."""
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,14 @@ class CampaignEventBody(BaseModel):
     event_type: str = Field(pattern="^(delivered|opened|clicked)$")
     placement: str | None = Field(default=None, max_length=80)
     session_id: str | None = Field(default=None, max_length=120)
+
+
+class CampaignEventBatchItem(CampaignEventBody):
+    campaign_id: uuid.UUID
+
+
+class CampaignEventBatchBody(BaseModel):
+    events: list[CampaignEventBatchItem] = Field(min_length=1, max_length=50)
 
 
 def _rid(r: Request) -> str:
@@ -48,7 +58,7 @@ async def get_home(
     summary="Record a customer Home campaign delivery or interaction",
 )
 async def record_campaign_event(
-    campaign_id: str,
+    campaign_id: uuid.UUID,
     body: CampaignEventBody,
     r: Request,
     u: UserContext = Depends(get_current_user),
@@ -60,7 +70,6 @@ async def record_campaign_event(
     not accept arbitrary conversion records; conversions remain tied to the
     existing booking/payment attribution workflow.
     """
-    import uuid as _uuid
     from sqlalchemy import select
     from app.engines.marketing_automation.constants import (
         AUDIENCE_CUSTOMERS,
@@ -72,7 +81,6 @@ async def record_campaign_event(
         MarketingCampaignMessage,
     )
 
-    cid = _uuid.UUID(campaign_id)
     eligible = (await db.execute(
         select(MarketingCampaign.id)
         .join(
@@ -80,7 +88,7 @@ async def record_campaign_event(
             MarketingCampaignMessage.campaign_id == MarketingCampaign.id,
         )
         .where(
-            MarketingCampaign.id == cid,
+            MarketingCampaign.id == campaign_id,
             MarketingCampaign.target_audience == AUDIENCE_CUSTOMERS,
             MarketingCampaignMessage.channel == CHANNEL_IN_APP,
             MarketingCampaignMessage.is_active.is_(True),
@@ -92,8 +100,8 @@ async def record_campaign_event(
         raise HTTPException(status_code=404, detail="Campaign is not available.")
 
     db.add(MarketingCampaignEvent(
-        campaign_id=cid,
-        recipient_user_id=_uuid.UUID(u.user_id),
+        campaign_id=campaign_id,
+        recipient_user_id=uuid.UUID(u.user_id),
         event_type=body.event_type,
         camp_metadata={
             "surface": "customer_home",
@@ -103,3 +111,70 @@ async def record_campaign_event(
     ))
     await db.commit()
     return ok({"recorded": True}, _rid(r), ENGINE_ID)
+
+
+@router.post(
+    "/campaigns/events/batch",
+    response_model=ApiResponse[dict],
+    summary="Record a bounded batch of customer Home campaign events",
+)
+async def record_campaign_events_batch(
+    body: CampaignEventBatchBody,
+    r: Request,
+    u: UserContext = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Records Home delivery events in one transaction.
+
+    A composed Home response can contain several placements. Requiring one
+    request and commit per campaign creates avoidable load at marketplace
+    scale, so the native client uses this bounded endpoint for deliveries.
+    Every campaign is still checked against the same customer/in-app rules as
+    the single-event endpoint; the batch is atomic and rejects duplicates.
+    """
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from app.engines.marketing_automation.constants import AUDIENCE_CUSTOMERS, CHANNEL_IN_APP
+    from app.engines.marketing_automation.models import (
+        MarketingCampaign,
+        MarketingCampaignEvent,
+        MarketingCampaignMessage,
+    )
+
+    campaign_ids = [event.campaign_id for event in body.events]
+    if len(set(campaign_ids)) != len(campaign_ids):
+        raise HTTPException(status_code=422, detail="Duplicate campaign events are not allowed.")
+
+    eligible_ids = set((await db.execute(
+        select(MarketingCampaign.id)
+        .join(
+            MarketingCampaignMessage,
+            MarketingCampaignMessage.campaign_id == MarketingCampaign.id,
+        )
+        .where(
+            MarketingCampaign.id.in_(campaign_ids),
+            MarketingCampaign.target_audience == AUDIENCE_CUSTOMERS,
+            MarketingCampaignMessage.channel == CHANNEL_IN_APP,
+            MarketingCampaignMessage.is_active.is_(True),
+        )
+        .distinct()
+    )).scalars().all())
+    if eligible_ids != set(campaign_ids):
+        raise HTTPException(status_code=404, detail="One or more campaigns are not available.")
+
+    recipient_user_id = uuid.UUID(u.user_id)
+    db.add_all([
+        MarketingCampaignEvent(
+            campaign_id=event.campaign_id,
+            recipient_user_id=recipient_user_id,
+            event_type=event.event_type,
+            camp_metadata={
+                "surface": "customer_home",
+                "placement": event.placement,
+                "session_id": event.session_id,
+            },
+        )
+        for event in body.events
+    ])
+    await db.commit()
+    return ok({"recorded": len(body.events)}, _rid(r), ENGINE_ID)

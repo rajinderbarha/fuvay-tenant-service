@@ -93,7 +93,6 @@ function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
   return (
     <TenantLayout activeNav="customers">
       <PageShell>
-        <div className="customer-breadcrumbs"><Link href="/customers">Customers</Link><span>/</span><span>{customer?.alias ?? "Customer relationship"}</span></div>
         <PageHeader
           title={customer?.alias ?? "Customer relationship"}
           description="Tenant-scoped service history with privacy controls applied at the API boundary."
@@ -118,8 +117,6 @@ function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
       </PageShell>
 
       <style jsx global>{`
-        .customer-breadcrumbs { display: flex; gap: 8px; align-items: center; color: var(--text-tertiary); font-size: 12px; }
-        .customer-breadcrumbs a { color: var(--brand); text-decoration: none; font-weight: 650; }
         .relationship-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px; }
         .relationship-person { display: flex; align-items: center; gap: 14px; min-width: 0; }
         .relationship-avatar { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; color: var(--brand); background: var(--accent-muted); font-size: 15px; font-weight: 850; }

@@ -1,7 +1,8 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Select, Input, Modal, SectionHeader } from "../../../components/shared/ui";
+import { Card, Badge, Btn, Select, Input, Modal, SectionHeader, SummaryCard } from "../../../components/shared/ui";
 import {
   configurationApi, settingsAdminApi,
   type ConfigurationListItem, type ConfigurationDetail, type ConfigurationValueVersion,
@@ -125,7 +126,7 @@ function ConfigurationRegistryTab() {
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No settings match this filter.</div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                       {["Setting", "Owner", "Scope", "Current Value", "Risk", "Status", "Version", ""].map(h => (
@@ -155,7 +156,7 @@ function ConfigurationRegistryTab() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               </div>
             )}
             <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>Showing 1 to {rows.length} of {summary?.registered_settings ?? rows.length} settings</div>
@@ -173,13 +174,7 @@ function ConfigurationRegistryTab() {
 }
 
 function Metric({ icon, value, label }: { icon: React.ReactNode; value: React.ReactNode; label: string }) {
-  return (
-    <div style={{ padding: "12px 14px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
-      <div style={{ color: "var(--text-tertiary)", marginBottom: 6 }}>{icon}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{value ?? "—"}</div>
-      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</div>
-    </div>
-  );
+  return <SummaryCard label={label} value={value ?? "—"} icon={icon} />;
 }
 
 function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onChanged: () => void }) {
@@ -362,7 +357,7 @@ function FeatureFlagsTab() {
       ) : flags.length === 0 ? (
         <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No feature flags registered.</div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Flag", "Owner", "Status", "Rollout"].map(h => (
@@ -380,7 +375,7 @@ function FeatureFlagsTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       )}
     </Card>
   );
@@ -424,7 +419,7 @@ function ChangeRequestsTab() {
         ) : items.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No open change requests.</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
                 {["Setting", "Scope", "New Value", "Status", "Reason", "Created", "Actions"].map(h => (
@@ -455,7 +450,7 @@ function ChangeRequestsTab() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </Card>
 
@@ -486,7 +481,7 @@ function VersionHistoryTab() {
       ) : items.length === 0 ? (
         <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No configuration versions recorded yet.</div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Setting", "Version", "Status", "Value", "Effective From", "Created"].map(h => (
@@ -506,7 +501,7 @@ function VersionHistoryTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       )}
     </Card>
   );
@@ -523,7 +518,7 @@ function AuditTab() {
       ) : items.length === 0 ? (
         <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No configuration changes recorded yet.</div>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
               {["Key", "Action", "Old Value", "New Value", "Reason", "When"].map(h => (
@@ -543,7 +538,7 @@ function AuditTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </TableSurface>
       )}
     </Card>
   );

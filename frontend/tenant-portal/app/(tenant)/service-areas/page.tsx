@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import {
@@ -88,7 +89,7 @@ export default function ServiceAreasPage() {
       ) : (
         <Card padding="none">
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
                   {["Zone Name","Type","Coverage","Surcharge","Status","Actions"].map(h => (
@@ -130,7 +131,7 @@ export default function ServiceAreasPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         </Card>
       )}

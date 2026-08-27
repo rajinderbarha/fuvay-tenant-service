@@ -6,8 +6,9 @@ import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCata
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable,} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard, KpiGrid, Pagination,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import { ActionMenu } from "../../../components/shared/layout";
 import {
   catalogApi,
   type MasterServiceEnriched, type ServiceCategory, type ServiceGroup,
@@ -126,7 +127,7 @@ function LinkedCounts({ lc }: { lc: MasterServiceEnriched["linked_counts"] }) {
 }
 
 // ── Action menu ────────────────────────────────────────────────────────────────
-function ServiceActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onView }: {
+function ServiceActions({ row, onEdit, onActivate, onDeactivate, onArchive, onView }: {
   row: MasterServiceEnriched;
   onEdit: () => void;
   onActivate: () => void;
@@ -134,44 +135,17 @@ function ServiceActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, o
   onArchive: () => void;
   onView: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const items = [
-    { label: "View Details", action: onView },
-    { label: "Edit Service", action: onEdit },
-    null,
-    !row.is_active ? { label: "Activate", action: onActivate } : null,
-    row.is_active ? { label: "Deactivate", action: onDeactivate } : null,
-    { label: "Retire", action: onArchive, danger: true },
-  ];
   return (
-    <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-      <Btn variant="ghost" size="xs" onClick={() => setOpen(o => !o)}>Actions ▾</Btn>
-      {open && (
-        <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 1000 }} onClick={() => setOpen(false)} />
-          <div style={{
-            position: "absolute", right: 0, top: "100%", zIndex: 1001, marginTop: 4,
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,.12)",
-            overflow: "hidden",
-          }}>
-            {items.map((item, i) =>
-              item === null ? (
-                <hr key={i} style={{ margin: 0, border: "none", borderTop: "1px solid var(--border)" }} />
-              ) : item ? (
-                <button key={i} onClick={() => { setOpen(false); item.action(); }} style={{
-                  display: "block", width: "100%", textAlign: "left",
-                  padding: "9px 16px", fontSize: 13, background: "none", border: "none",
-                  cursor: "pointer", color: item.danger ? "var(--danger-text, #e53e3e)" : "var(--text-primary)",
-                }}>
-                  {item.label}
-                </button>
-              ) : null
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <ActionMenu
+      size="xs"
+      items={[
+        { label: "View details", onClick: onView },
+        { label: "Edit service", onClick: onEdit },
+        !row.is_active && { label: "Activate", onClick: onActivate, divider: true },
+        row.is_active && { label: "Deactivate", onClick: onDeactivate, divider: true },
+        { label: "Retire", onClick: onArchive, variant: "danger" },
+      ]}
+    />
   );
 }
 
@@ -543,7 +517,7 @@ export default function MasterServicesPage() {
     {
       key: "id", label: "", width: 120,
       render: (_: unknown, row: MasterServiceEnriched) => (
-        <ServiceActionMenu
+        <ServiceActions
           row={row}
           onView={() => router.push(`/admin/master-services/${row.id}`)}
           onEdit={() => openEdit(row)}
@@ -560,21 +534,19 @@ export default function MasterServicesPage() {
   return (
     <AdminLayout activeNav="master-services">
       <div className={`${styles.page} catalog-admin-page`}>
-      <header className={styles.pageHeader}>
-        <div className={styles.headerCopy}>
-          <div className={styles.eyebrow}><Layers3 size={14} /> Catalog governance</div>
-          <h1>Master Services</h1>
-          <p>Own the canonical service hierarchy, runtime readiness and provider adoption from one governed directory. Job-type behavior stays in Catalog Workspace; providers own their price amounts.</p>
-        </div>
-        <div className={styles.headerActions}>
+      <SectionHeader
+        title="Master Services"
+        subtitle="Own the canonical service hierarchy, runtime readiness and provider adoption from one governed directory. Job-type behavior stays in Catalog Workspace; providers own their price amounts."
+        icon={<Layers3 />}
+        actions={<>
           <Btn variant="secondary" size="sm" onClick={() => { services.refetch(); summary.refetch(); }}>
             <RefreshCw size={14} /> Refresh
           </Btn>
           <Btn variant="primary" size="sm" onClick={openCreate}>
             <Plus size={14} /> New service
           </Btn>
-        </div>
-      </header>
+        </>}
+      />
       <HomeServicesCatalogNav active="services" />
 
       <div className={styles.directoryControlShell}>
@@ -609,28 +581,17 @@ export default function MasterServicesPage() {
 
       {/* Summary cards */}
       {s && (
-        <div className={styles.metricGrid}>
+        <KpiGrid minCardWidth={210}>
           {[
             { label: "Catalog services", value: s.total, note: `${s.active} active · ${s.inactive} inactive`, tone: "neutral", icon: <Layers3 size={18} /> },
             { label: "Runtime ready", value: s.blueprint_ready, note: "publishable blueprints", tone: "success", icon: <CheckCircle2 size={18} /> },
             { label: "Needs attention", value: s.blueprint_attention, note: "blueprint gaps to resolve", tone: "danger", icon: <AlertCircle size={18} /> },
             { label: "Provider adoption", value: s.provider_enabled, note: "enabled by providers", tone: "info", icon: <Store size={18} /> },
-          ].map(metric => (
-            <div className={`${styles.metricCard} ${styles[`metric_${metric.tone}`]}`} key={metric.label}>
-              <div className={styles.metricIcon}>{metric.icon}</div>
-              <div className={styles.metricContent}>
-                <span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.note}</small>
-              </div>
-            </div>
-          ))}
-        </div>
+          ].map(metric => <SummaryCard key={metric.label} label={metric.label} value={metric.value} sub={metric.note} icon={metric.icon} tone={metric.tone === "neutral" ? undefined : metric.tone as "success" | "danger" | "info"} />)}
+        </KpiGrid>
       )}
       {summary.loading && (
-        <div className={styles.metricGrid}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className={`${styles.metricSkeleton} skeleton`} />
-          ))}
-        </div>
+        <KpiGrid minCardWidth={210}>{[...Array(4)].map((_, i) => <SummaryCard key={i} label="Loading metric" loading />)}</KpiGrid>
       )}
       {/* A failed summary used to render nothing at all — not the cards, not the
           skeleton, not an error — so the KPI row silently disappeared and looked
@@ -887,23 +848,6 @@ export default function MasterServicesPage() {
 }
 
 function MasterServicesPagination({ page, pageSize, total, onPage, onPageSize }: { page: number; pageSize: number; total: number; onPage: (page: number) => void; onPageSize: (pageSize: number) => void }) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
-      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-        {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 records"}
-      </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Select
-          label=""
-          value={String(pageSize)}
-          onChange={value => onPageSize(Number(value))}
-          options={[25, 50, 100].map(value => ({ value: String(value), label: `${value} / page` }))}
-        />
-        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
-        <Badge variant="muted">Page {page} of {pages}</Badge>
-        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
-      </div>
-    </div>
-  );
+  return <Pagination page={page} pageSize={pageSize} total={total} onPage={onPage}
+    pageSizes={[25, 50, 100]} onPageSize={size => { onPageSize(size); onPage(1); }} alwaysShow />;
 }

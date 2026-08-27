@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -283,7 +284,7 @@ export default function ServiceJobQuotesPage() {
                   No items yet. Add line items to build the quote.
                 </div>
               ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "#f9fafb" }}>
                       <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>Item</th>
@@ -318,7 +319,7 @@ export default function ServiceJobQuotesPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </TableSurface>
               )}
             </div>
           </div>

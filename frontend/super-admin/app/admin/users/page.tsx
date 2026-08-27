@@ -1,8 +1,10 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useState, useCallback, useEffect } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
-import { Card, Btn, Badge, Skeleton, Input, Modal, StatCard } from "../../../components/shared/ui";
-import { PageShell, PageHeader, SearchBar, ActionMenu } from "../../../components/shared/layout";
+import { Card, Btn, Badge, Skeleton, Input, Modal, StatCard, Pagination } from "../../../components/shared/ui";
+import { SearchBar, ActionMenu } from "../../../components/shared/layout";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import {
   Mail, Users, CheckCircle2, Lock, Star, ShieldAlert, Clock, UserX, RefreshCw,
 } from "lucide-react";
@@ -295,7 +297,7 @@ function UserDetailDrawer({
               <div style={{ overflowX: "auto" }}>
                 {sessions.loading && <Skeleton height={80} />}
                 {!sessions.loading && (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead><tr>{["Device", "IP Hint", "Trusted", "Last Seen", "Created"].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
                     <tbody>
                       {(sessions.data?.sessions ?? []).map(s => (
@@ -309,7 +311,7 @@ function UserDetailDrawer({
                       ))}
                       {(sessions.data?.sessions ?? []).length === 0 && <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: "var(--text-tertiary)" }}>No active sessions.</td></tr>}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 )}
               </div>
             )}
@@ -318,7 +320,7 @@ function UserDetailDrawer({
               <div style={{ overflowX: "auto" }}>
                 {history.loading && <Skeleton height={80} />}
                 {!history.loading && (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead><tr>{["Time", "Result", "IP Hint", "Failure Reason"].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
                     <tbody>
                       {(history.data?.events ?? []).map(e => (
@@ -331,7 +333,7 @@ function UserDetailDrawer({
                       ))}
                       {(history.data?.events ?? []).length === 0 && <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "var(--text-tertiary)" }}>No login history.</td></tr>}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 )}
               </div>
             )}
@@ -367,7 +369,7 @@ function UserDetailDrawer({
               <div style={{ overflowX: "auto" }}>
                 {audit.loading && <Skeleton height={80} />}
                 {!audit.loading && (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead><tr>{["Time", "Action", "Reason", "IP Hint"].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
                     <tbody>
                       {(audit.data?.logs ?? []).map((l: PlatformUserAuditEntry) => (
@@ -380,7 +382,7 @@ function UserDetailDrawer({
                       ))}
                       {(audit.data?.logs ?? []).length === 0 && <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "var(--text-tertiary)" }}>No audit history yet.</td></tr>}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 )}
               </div>
             )}
@@ -528,8 +530,7 @@ export default function PlatformUsersPage() {
         <PageHeader
           title="Platform Users"
           description="Manage platform administrator accounts, roles, MFA, sessions, security, and platform-level access."
-          primaryAction={<Btn size="sm" onClick={() => setInviteModal(true)} icon={<Mail size={14} />}>Invite User</Btn>}
-          secondaryActions={[
+          actions={<><ActionMenu items={[
             { label: "View Invitations", onClick: () => setInvitesModal(true) },
             { label: "Export Filtered Users", onClick: async () => {
                 const res = await platformUsersApi.export({
@@ -543,7 +544,7 @@ export default function PlatformUsersPage() {
                 });
                 notify(`Exported ${res.count} users.`);
               } },
-          ]}
+          ]}/><Btn size="sm" onClick={() => setInviteModal(true)} icon={<Mail size={14} />}>Invite User</Btn></>}
         />
 
         {toast && (
@@ -595,9 +596,6 @@ export default function PlatformUsersPage() {
               <option value="">All Access Scopes</option>
               {ACCESS_SCOPES.map(s2 => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
             </select>
-            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value) || 50)} style={{ height: 38, borderRadius:"var(--radius-md)", border: "1px solid var(--border)", padding: "0 10px", fontSize: 13 }}>
-              {[25, 50, 100, 200].map(size => <option key={size} value={size}>{size} / page</option>)}
-            </select>
             <Btn size="sm" variant="secondary" onClick={() => { users.refetch(); summary.refetch(); }}><RefreshCw size={13} style={{ marginRight: 4 }} />Refresh</Btn>
             <Btn size="sm" variant="ghost" onClick={clearFilters}>Clear Filters</Btn>
           </div>
@@ -633,7 +631,7 @@ export default function PlatformUsersPage() {
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
                     <th style={{ ...TH, width: 32 }}><input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} /></th>
@@ -680,19 +678,9 @@ export default function PlatformUsersPage() {
                     </td></tr>
                   )}
                 </tbody>
-              </table>
-              <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  Showing {rows.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, totalUsers)} of {totalUsers} users
-                </span>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Btn size="xs" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 80, textAlign: "center" }}>
-                    Page {page} of {totalPages}
-                  </span>
-                  <Btn size="xs" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Btn>
-                </div>
-              </div>
+              </TableSurface>
+              <Pagination page={page} pageSize={pageSize} total={totalUsers} pageCount={totalPages} onPage={setPage}
+                pageSizes={[25, 50, 100, 200]} onPageSize={size => { setPageSize(size); setPage(1); }} itemLabel="users" alwaysShow />
             </div>
           )}
         </Card>
@@ -743,7 +731,7 @@ export default function PlatformUsersPage() {
         {invites.loading && <Skeleton height={100} />}
         {!invites.loading && (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>{["Email", "Role", "Access Scope", "Status", "Expires", "Actions"].map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
               <tbody>
                 {(invites.data?.invites ?? []).map((inv2: PlatformUserInvite) => (
@@ -763,7 +751,7 @@ export default function PlatformUsersPage() {
                 ))}
                 {(invites.data?.invites ?? []).length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>No pending invitations.</td></tr>}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
         )}
       </Modal>

@@ -356,7 +356,7 @@ class TestAdminRouter:
 
 class TestApiTs:
     def _src(self):
-        return API_TS.read_text()
+        return API_TS.read_text(encoding="utf-8")
 
     def test_enterprise_summary_type(self):
         assert "ComplianceEnterpriseSummary" in self._src()

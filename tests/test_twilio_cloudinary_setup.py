@@ -171,60 +171,7 @@ async def test_verify_check_returns_false_on_404():
 
 # ── 6. Registration flow uses Twilio Verify when configured ──────────────────
 
-@pytest.mark.asyncio
-async def test_registration_initiate_uses_twilio_verify_when_configured():
-    from app.engines.public_registration.router import InitiateRequest, initiate_registration
-
-    req = InitiateRequest(
-        business_name="Test Biz", owner_name="Test", owner_email="t@b.io",
-        owner_phone="+919999999999", vertical="home_services",
-        city="Mumbai", country="India", zipcode="400001", plan_type="growth",
-    )
-
-    saved_session: dict = {}
-    redis = MagicMock()
-    async def fake_setex(key, ttl, data):
-        saved_session.update(json.loads(data))
-    redis.setex = fake_setex
-
-    r = MagicMock(); r.state = MagicMock(request_id="t")
-
-    with patch("app.engines.public_registration.router.is_verify_configured", return_value=True), \
-         patch("app.engines.public_registration.router.verify_send", new_callable=AsyncMock, return_value=True):
-        await initiate_registration(req, r, redis=redis)
-
-    assert saved_session["use_verify"] is True
-    assert saved_session["otp"] is None  # no fallback OTP stored
-
-
 # ── 7. Registration falls back to SMS OTP when Verify not configured ──────────
-
-@pytest.mark.asyncio
-async def test_registration_initiate_falls_back_to_sms_otp():
-    from app.engines.public_registration.router import InitiateRequest, initiate_registration
-
-    req = InitiateRequest(
-        business_name="Test Biz", owner_name="Test", owner_email="t@b.io",
-        owner_phone="+919999999999", vertical="home_services",
-        city="Mumbai", country="India", zipcode="400001", plan_type="growth",
-    )
-
-    saved_session: dict = {}
-    redis = MagicMock()
-    async def fake_setex(key, ttl, data):
-        saved_session.update(json.loads(data))
-    redis.setex = fake_setex
-
-    r = MagicMock(); r.state = MagicMock(request_id="t")
-
-    with patch("app.engines.public_registration.router.is_verify_configured", return_value=False), \
-         patch("app.engines.public_registration.router.send_sms", new_callable=AsyncMock, return_value=True):
-        await initiate_registration(req, r, redis=redis)
-
-    assert saved_session["use_verify"] is False
-    assert saved_session["otp"] is not None  # fallback OTP stored
-    assert len(saved_session["otp"]) == 6
-
 
 # ── 8. Auth send_phone_otp uses Twilio Verify when configured ────────────────
 

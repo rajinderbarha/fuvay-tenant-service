@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -239,7 +240,7 @@ export default function ServiceCoveragePage() {
                   </span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
-                  <table className="sc-tbl">
+                  <TableSurface className="sc-tbl">
                     <thead>
                       <tr>
                         <th>Service</th>
@@ -271,7 +272,7 @@ export default function ServiceCoveragePage() {
                         );
                       })}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
                 {services.length > 5 && (
                   <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", textAlign: "center" }}>

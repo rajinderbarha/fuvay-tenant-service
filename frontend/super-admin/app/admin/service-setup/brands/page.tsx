@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from "react";
 import { Tag, Plus, Search, CheckCircle, XCircle, Archive, GitMerge, ChevronRight } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Pagination } from "../../../../components/shared/ui";
 import { catalogApi, type Brand34D, type BrandDuplicateWarning } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
@@ -168,13 +168,7 @@ export default function AdminBrandsPage() {
         </Card>
 
         {/* Pagination */}
-        {total > 50 && (
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-            <Btn size="sm" variant="secondary" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</Btn>
-            <span style={{ fontSize: 13, padding: "6px 12px" }}>Page {page}</span>
-            <Btn size="sm" variant="secondary" disabled={brands.length < 50} onClick={() => setPage(p => p + 1)}>Next</Btn>
-          </div>
-        )}
+        <Pagination page={page} pageSize={50} total={total} onPage={setPage} itemLabel="brands" />
 
         {/* Create Brand Modal */}
         <Modal open={showCreate} onClose={() => { setShowCreate(false); setDuplicateWarning(null); }} title="New Brand">

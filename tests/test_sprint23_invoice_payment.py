@@ -154,21 +154,6 @@ def _mock_wallet(balance="500.00"):
     return w
 
 
-def _mock_subscription(status="active", period_end=None):
-    from app.engines.subscription.models import Subscription
-    s = MagicMock(spec=Subscription)
-    s.tenant_id          = TENANT_ID
-    s.status             = status
-    s.plan_type          = "standard"
-    s.billing_cycle      = "monthly"
-    s.amount             = Decimal("999.00")
-    s.currency           = "INR"
-    s.current_period_start = datetime(2026, 6, 1, tzinfo=timezone.utc)
-    s.current_period_end   = period_end
-    s.created_at           = None
-    return s
-
-
 def _scalars_result(items):
     r = MagicMock()
     r.scalars.return_value.all.return_value = items
@@ -673,67 +658,6 @@ class TestWalletService:
         with patch('app.engines.invoice_payment.wallet_service.credit_wallet', AsyncMock(return_value=txn)):
             result = await svc.admin_credit(db, str(TENANT_ID), 500.0, "Top-up", str(USER_ID))
         assert result["txn_type"] == "admin_adjustment"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Subscription service (5 tests)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestSubscriptionService:
-    @pytest.mark.asyncio
-    async def test_active_subscription(self):
-        from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
-        from datetime import timedelta
-        svc = ProviderSubscriptionStatusService()
-        future = datetime.now(timezone.utc).replace(tzinfo=timezone.utc) + timedelta(days=30)
-        sub = _mock_subscription(status="active", period_end=future)
-        db = _mock_db(_scalars_result([sub]))
-        result = await svc.get_provider_subscription_status(db, str(TENANT_ID))
-        assert result["is_active"] is True
-        assert result["status"] == "active"
-
-    @pytest.mark.asyncio
-    async def test_no_subscription_returns_no_subscription_status(self):
-        from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
-        svc = ProviderSubscriptionStatusService()
-        db = _mock_db(_scalars_result([]))
-        result = await svc.get_provider_subscription_status(db, str(TENANT_ID))
-        assert result["status"] == "no_subscription"
-        assert result["is_active"] is False
-
-    @pytest.mark.asyncio
-    async def test_expired_subscription_is_not_active(self):
-        from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
-        from datetime import timedelta
-        svc = ProviderSubscriptionStatusService()
-        past = datetime.now(timezone.utc) - timedelta(days=10)
-        sub = _mock_subscription(status="active", period_end=past)
-        db = _mock_db(_scalars_result([sub]))
-        result = await svc.get_provider_subscription_status(db, str(TENANT_ID))
-        assert result["is_active"] is False
-
-    @pytest.mark.asyncio
-    async def test_expiring_soon_flag(self):
-        from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
-        from datetime import timedelta
-        svc = ProviderSubscriptionStatusService()
-        soon = datetime.now(timezone.utc) + timedelta(days=3)
-        sub = _mock_subscription(status="active", period_end=soon)
-        db = _mock_db(_scalars_result([sub]))
-        result = await svc.get_provider_subscription_status(db, str(TENANT_ID))
-        assert result["expiring_soon"] is True
-        assert result["renewal_required"] is True
-
-    @pytest.mark.asyncio
-    async def test_validate_subscription_active_returns_bool(self):
-        from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
-        from datetime import timedelta
-        svc = ProviderSubscriptionStatusService()
-        future = datetime.now(timezone.utc) + timedelta(days=30)
-        sub = _mock_subscription(status="active", period_end=future)
-        db = _mock_db(_scalars_result([sub]))
-        result = await svc.validate_subscription_active(db, str(TENANT_ID))
-        assert result is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

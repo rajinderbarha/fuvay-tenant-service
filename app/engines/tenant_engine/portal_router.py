@@ -605,42 +605,28 @@ async def get_tenant_effective_engines(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ):
-    from app.engine_registry.registry import registry
-    from app.engine_registry.models import TenantEngine
+    from app.engines.engine_mgmt.service import EngineMgmtService
 
     tid = _tenant_id(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-
-    rows = (await db.execute(
-        select(TenantEngine).where(TenantEngine.tenant_id == tid, TenantEngine.is_enabled == True)  # noqa: E712
-    )).scalars().all()
-    enabled_ids = {r.engine_id for r in rows}
-
-    summary = registry.summary()
-    summary["tenant_id"] = str(tid)
-    for e in summary["engines"]:
-        # Core engines are always active; plugin engines reflect this
-        # tenant's real enabled_engines state. Aliased as engine_key /
-        # effective_enabled to match the tenant-portal frontend's contract
-        # (e.g. the Inventory Document Extraction upload gate).
-        e["engine_key"] = e["engine_id"]
-        e["effective_enabled"] = e["type"] == "core" or e["engine_id"] in enabled_ids
-    return ok(summary, rid, "tenant_portal")
-
-
-@router.get("/monetization/status", summary="Tenant monetization readiness status")
-async def get_monetization_status(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-):
-    from sqlalchemy import text
-    tid = _tenant_id(user)
-    rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    try:
-        row = await db.execute(text("SELECT * FROM provider_monetization_statuses WHERE tenant_id=:tid LIMIT 1"), {"tid": tid})
-        r = row.fetchone()
-        data = dict(r._mapping) if r else {"tenant_id": str(tid), "is_monetization_ready": False, "monetization_model": None}
-    except Exception:
-        data = {"tenant_id": str(tid), "is_monetization_ready": False, "monetization_model": None}
+    data = await EngineMgmtService(db).get_tenant_effective_engines(tid)
+    # Keep the tenant contract intentionally smaller than the administrator
+    # governance record while using the exact same canonical resolution.
+    data["engines"] = [{
+        "engine_key": row["engine_key"],
+        "name": row["display_name"],
+        "effective_enabled": row["effective_enabled"],
+        "source": row["source"],
+        "is_required": row["is_required"],
+        "health_status": "unknown",
+        "dependencies_met": row["dependencies_met"],
+        "missing_dependencies": row["missing_dependencies"],
+        "reason": row["reason"],
+        "config": {},
+    } for row in data["engines"] if row.get("is_tenant_visible", True)]
+    data["summary"] = {
+        "total": len(data["engines"]),
+        "enabled": sum(1 for row in data["engines"] if row["effective_enabled"]),
+        "disabled": sum(1 for row in data["engines"] if not row["effective_enabled"]),
+    }
     return ok(data, rid, "tenant_portal")

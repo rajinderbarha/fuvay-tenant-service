@@ -225,7 +225,6 @@ class TestBurnedCorporaStableFields:
                      ("PUT", "/v1/pricing/tenants/{tenant_id}/rules/{rule_id}"),
                      ("POST", "/v1/commerce/tenants/{tenant_id}/wallet/purchase/initiate"),
                      ("POST", "/v1/payments/tenants/{tenant_id}/payout"),
-                     ("PUT", "/v1/subscriptions/tenants/{tenant_id}/plan"),
                      ("POST", "/v1/compliance/deletion-requests"),
                      ("POST", "/v1/compliance/portability-requests"),
                      # Slice 2F-39A2 fixed security.router::create_api_key,

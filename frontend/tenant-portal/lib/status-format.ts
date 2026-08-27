@@ -77,7 +77,6 @@ const STATUS_LABELS: Record<string, string> = {
   active: "Active",
   inactive: "Inactive",
   no_subscription: "No active package",
-  deposit_pending: "Deposit pending",
   received: "Received",
   waived: "Waived",
   paid: "Received",
@@ -119,26 +118,27 @@ export interface RequiredAction {
 
 const BLOCKER_TYPE_META: Record<string, { title: string; cta: string; route: string; ruleKey: string; severity: Severity }> = {
   business_profile_incomplete: { title: "Business Profile Incomplete", cta: "Complete Business Profile", route: "/profile", ruleKey: "business_profile_complete", severity: "warning" },
-  package_inactive:            { title: "Package Not Active", cta: "View Package", route: "/packages", ruleKey: "package_active", severity: "critical" },
-  usage_credits_missing:       { title: "No Usage Credits Available", cta: "View Usage Credit Ledger", route: "/packages", ruleKey: "usage_credits_available", severity: "critical" },
-  security_deposit_pending:    { title: "Security Deposit Pending", cta: "View Security Deposit", route: "/packages", ruleKey: "security_deposit_received_or_waived", severity: "critical" },
-  service_area_missing:        { title: "No Service Area Configured", cta: "Add Service Area", route: "/provider/service-areas", ruleKey: "service_area_active", severity: "critical" },
-  service_missing:             { title: "No Service Offering Enabled", cta: "Enable an Offering", route: "/provider/offerings", ruleKey: "offering_active", severity: "critical" },
-  coverage_missing:            { title: "Service Coverage Not Configured", cta: "Configure Coverage", route: "/provider/service-coverage", ruleKey: "coverage_configured", severity: "warning" },
-  active_technician_missing:   { title: "No Active Technician", cta: "Add Technician", route: "/provider/staff", ruleKey: "active_technician_present", severity: "critical" },
-  availability_missing:        { title: "Availability Not Configured", cta: "Set Availability", route: "/provider/availability", ruleKey: "availability_configured", severity: "warning" },
+  package_inactive:            { title: "Finance Setup Incomplete", cta: "Open Finance", route: "/home-services/finance", ruleKey: "finance_ready", severity: "critical" },
+  usage_credits_missing:       { title: "No Usage Credits Available", cta: "Buy Usage Credits", route: "/home-services/finance?tab=usage-credits", ruleKey: "usage_credits_available", severity: "critical" },
+  technician_seats_pending:    { title: "Technician Seats Needed", cta: "Buy a top-up plan", route: "/home-services/finance", ruleKey: "topup_plan.seat_entitlement", severity: "critical" },
+  service_area_missing:        { title: "No Coverage Pincode Configured", cta: "Configure Coverage", route: "/business/coverage-hours", ruleKey: "service_area_active", severity: "critical" },
+  service_missing:             { title: "No Service Offering Enabled", cta: "Enable an Offering", route: "/home-services/services", ruleKey: "offering_active", severity: "critical" },
+  coverage_missing:            { title: "Service Coverage Not Configured", cta: "Configure Services", route: "/home-services/services", ruleKey: "coverage_configured", severity: "warning" },
+  active_technician_missing:   { title: "No Active Technician", cta: "Add Technician", route: "/home-services/team", ruleKey: "active_technician_present", severity: "critical" },
+  availability_missing:        { title: "Availability Not Configured", cta: "Set Availability", route: "/home-services/availability", ruleKey: "availability_configured", severity: "warning" },
   documents_pending:           { title: "Documents Pending", cta: "View Documents", route: "/documents", ruleKey: "documents_verified", severity: "warning" },
-  pricing_setup_missing:       { title: "Pricing Not Configured", cta: "Manage Pricing", route: "/provider/pricing", ruleKey: "pricing_valid", severity: "warning" },
+  pricing_setup_missing:       { title: "Pricing Not Configured", cta: "Manage Pricing", route: "/home-services/services", ruleKey: "pricing_valid", severity: "warning" },
   tenant_not_approved:         { title: "Tenant Not Yet Approved", cta: "View Business Profile", route: "/profile", ruleKey: "tenant_approved", severity: "critical" },
   tenant_suspended:            { title: "Tenant Suspended", cta: "Contact Support", route: "/profile", ruleKey: "tenant_not_suspended", severity: "critical" },
 };
 
 export function blockerMeta(code: string) {
-  return BLOCKER_TYPE_META[code] ?? {
+  const normalizedCode = code.trim().toLowerCase();
+  return BLOCKER_TYPE_META[normalizedCode] ?? {
     title: code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
     cta: "Review",
     route: "/profile",
-    ruleKey: code,
+    ruleKey: normalizedCode,
     severity: "warning" as Severity,
   };
 }

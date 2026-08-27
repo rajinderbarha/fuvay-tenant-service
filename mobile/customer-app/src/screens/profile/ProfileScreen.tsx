@@ -149,7 +149,7 @@ export function ProfileScreen() {
             onPress={() => (navigation as { navigate: (n: string) => void }).navigate("PrivacyData")}
             bordered={false}
           />
-          <LegalLinks privacyPolicyUrl={null} termsOfServiceUrl={null} appVersion={appVersion} />
+          <LegalLinks appVersion={appVersion} />
         </ProfileSection>
 
         <SignOutCard onSignOut={handleSignOut} signingOut={signingOut} />

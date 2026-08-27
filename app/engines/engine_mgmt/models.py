@@ -124,38 +124,6 @@ class CategoryEngineMatrix(Base):
         }
 
 
-class PackageEngineEntitlement(Base):
-    __tablename__ = "package_engine_entitlements"
-    __table_args__ = (
-        UniqueConstraint("package_id", "engine_id", name="uq_pkg_engine"),
-        Index("ix_pee_package", "package_id"),
-        Index("ix_pee_engine", "engine_id"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    package_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    engine_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    engine_key: Mapped[str] = mapped_column(String(80), nullable=False)
-    is_included: Mapped[bool] = mapped_column(Boolean, default=True)
-    limits_json: Mapped[dict] = mapped_column(JSONB, default=dict)
-    feature_flags_json: Mapped[dict] = mapped_column(JSONB, default=dict)
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    added_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-    def to_dict(self) -> dict:
-        return {
-            "id": str(self.id),
-            "package_id": str(self.package_id),
-            "engine_key": self.engine_key,
-            "is_included": self.is_included,
-            "status": self.status,
-            "limits": self.limits_json,
-            "feature_flags": self.feature_flags_json,
-        }
-
-
 class TenantEngineOverride(Base):
     __tablename__ = "tenant_engine_overrides"
     __table_args__ = (

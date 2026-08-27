@@ -10,17 +10,14 @@ from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.invoice_payment.commission_service import ServiceCommissionService
 from app.engines.invoice_payment.wallet_service import ProviderCreditWalletService
-from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService
 
 inv_svc  = ServiceInvoiceService()
 pay_svc  = ServicePaymentService()
 com_svc  = ServiceCommissionService()
 wal_svc  = ProviderCreditWalletService()
-sub_svc  = ProviderSubscriptionStatusService()
 
 provider_invoice_router = APIRouter(prefix="/v1/provider/service-invoices", tags=["provider-service-invoices"])
 provider_wallet_router  = APIRouter(prefix="/v1/provider/wallet",           tags=["provider-wallet"])
-provider_sub_router     = APIRouter(prefix="/v1/provider/subscription-status", tags=["provider-subscription"])
 staff_invoice_router    = APIRouter(prefix="/v1/staff/service-invoices",    tags=["staff-service-invoices"])
 
 
@@ -248,10 +245,3 @@ async def provider_commission_records(
 
 # ── Provider: subscription status ─────────────────────────────────────────────
 
-@provider_sub_router.get("")
-async def provider_subscription_status(
-    r: Request = None,
-    user=Depends(get_current_user), db: AsyncSession = Depends(get_db),
-):
-    data = await sub_svc.get_provider_subscription_status(db, str(user.tenant_id))
-    return ok(data, _rid(r), "provider_subscription_status")

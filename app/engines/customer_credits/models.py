@@ -17,7 +17,6 @@ class FinanceVerticalConfig(Base):
     tenant_payouts_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     customer_service_credits_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     tenant_wallet_deduction_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    security_deposit_adjustment_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     manual_customer_refund_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     config_notes: Mapped[str | None] = mapped_column(Text)
     updated_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -31,7 +30,6 @@ class FinanceVerticalConfig(Base):
             "tenant_payouts_enabled": self.tenant_payouts_enabled,
             "customer_service_credits_enabled": self.customer_service_credits_enabled,
             "tenant_wallet_deduction_enabled": self.tenant_wallet_deduction_enabled,
-            "security_deposit_adjustment_enabled": self.security_deposit_adjustment_enabled,
             "manual_customer_refund_enabled": self.manual_customer_refund_enabled,
             "config_notes": self.config_notes,
         }
@@ -159,7 +157,6 @@ class DisputeSettlement(Base):
     currency: Mapped[str] = mapped_column(String(10), default="INR")
     deduction_source: Mapped[str] = mapped_column(String(50), default="tenant_wallet")
     tenant_wallet_deduction_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
-    security_deposit_deduction_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     platform_goodwill_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     customer_credit_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     tenant_penalty_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -190,7 +187,6 @@ class DisputeSettlement(Base):
             "currency": self.currency,
             "deduction_source": self.deduction_source,
             "tenant_wallet_deduction_amount": float(self.tenant_wallet_deduction_amount),
-            "security_deposit_deduction_amount": float(self.security_deposit_deduction_amount),
             "platform_goodwill_amount": float(self.platform_goodwill_amount),
             "customer_credit_id": str(self.customer_credit_id) if self.customer_credit_id else None,
             "tenant_penalty_id": str(self.tenant_penalty_id) if self.tenant_penalty_id else None,
@@ -250,43 +246,11 @@ class TenantPenalty(Base):
         }
 
 
-class SecurityDepositAdjustment(Base):
-    __tablename__ = "security_deposit_adjustments"
-    __table_args__ = (
-        Index("ix_sda_tenant", "tenant_id"),
-        Index("ix_sda_settlement", "settlement_id"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    settlement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    dispute_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    adjustment_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(10), default="INR")
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(30), default="pending_approval")
-    approved_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    def to_dict(self) -> dict:
-        return {
-            "id": str(self.id),
-            "tenant_id": str(self.tenant_id),
-            "settlement_id": str(self.settlement_id) if self.settlement_id else None,
-            "dispute_id": str(self.dispute_id) if self.dispute_id else None,
-            "adjustment_type": self.adjustment_type,
-            "amount": float(self.amount),
-            "currency": self.currency,
-            "reason": self.reason,
-            "status": self.status,
-            "approved_by_admin_id": str(self.approved_by_admin_id) if self.approved_by_admin_id else None,
-            "created_at": self.created_at.isoformat(),
-            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
-            "executed_at": self.executed_at.isoformat() if self.executed_at else None,
-        }
+# SecurityDepositAdjustment was removed in migration 318 along with the
+# deposit it adjusted. A dispute settlement now draws from
+# tenant_billing.credit_balance alone -- and is allowed to take it
+# negative, which recovers the full amount instead of stopping at
+# whatever collateral happened to be held.
 
 
 class FinanceAuditLog(Base):

@@ -486,14 +486,6 @@ export const tenantApi = {
   confirmTerminate:(id: string) =>
     apiFetch<void>(`/v1/tenants/${id}/terminate/confirm`, { method: "POST" }),
 
-  // Plan management
-  upgradePlan:   (id: string, plan_type: string, reason: string) =>
-    apiFetch<Tenant>(`/v1/tenants/${id}/plan/upgrade`, { method: "POST", body: JSON.stringify({ target_plan: plan_type, reason }) }),
-  downgradePlan: (id: string, plan_type: string, reason: string) =>
-    apiFetch<Tenant>(`/v1/tenants/${id}/plan/downgrade`, { method: "POST", body: JSON.stringify({ target_plan: plan_type, reason }) }),
-  convertTrial:  (id: string, plan_type: string) =>
-    apiFetch<Tenant>(`/v1/tenants/${id}/trial/convert`, { method: "POST", body: JSON.stringify({ plan_type }) }),
-
   // Engines
   getEngines:           (id: string) => apiFetch<TenantEngineList>(`/v1/tenants/${id}/engines`),
   enableEngine:         (id: string, engineId: string) =>
@@ -527,10 +519,6 @@ export const tenantApi = {
   updatePaymentMethod: (id: string, data: Record<string,unknown>) =>
     apiFetch<TenantBillingInfo>(`/v1/tenants/${id}/billing/payment-method`,
       { method: "PUT", body: JSON.stringify(data) }),
-  getBillingInvoices:  (id: string, limit = 20) =>
-    apiFetch<InvoiceListResponse>(`/v1/tenants/${id}/billing/invoices?limit=${limit}`),
-  triggerDunning:      (id: string) =>
-    apiFetch<void>(`/v1/tenants/${id}/billing/dunning`, { method: "POST" }),
 
   // Data & GDPR
   requestDataExport: (id: string) =>
@@ -585,20 +573,8 @@ export const commerceApi = {
     apiFetch<WalletBalance>(`/v1/commerce/tenants/${tenantId}/wallet/deduct`,
       { method: "POST", body: JSON.stringify({ amount, reason }) }),
 
-  // Security deposit (per-tenant, separate from wallet)
-  getDeposit:         (tenantId: string) =>
-    apiFetch<Deposit>(`/v1/commerce/tenants/${tenantId}/deposit`),
-  initiateDeposit:    (tenantId: string, amount: number) =>
-    apiFetch<PurchaseOrder>(`/v1/commerce/tenants/${tenantId}/deposit/initiate`,
-      { method: "POST", body: JSON.stringify({ amount }) }),
-  confirmDeposit:     (tenantId: string, paymentRef: string) =>
-    apiFetch<Deposit>(`/v1/commerce/tenants/${tenantId}/deposit/confirm`,
-      { method: "POST", body: JSON.stringify({ payment_reference: paymentRef }) }),
-  depositTransactions:(tenantId: string) =>
-    apiFetch<WalletTransactionList>(`/v1/commerce/tenants/${tenantId}/deposit/transactions`),
-  adminAdjustDeposit: (tenantId: string, amount: number, reason: string, category: "goodwill"|"dispute"|"correction"|"refund") =>
-    apiFetch<Deposit>(`/v1/commerce/tenants/${tenantId}/deposit/admin-adjust`,
-      { method: "POST", body: JSON.stringify({ amount, reason, category }) }),
+  // The /v1/commerce/**/deposit endpoints were removed with the security
+  // deposit itself (migrations 317/318).
 
   // Wallet purchase flow (admin-initiated)
   initiatePurchase: (tenantId: string, packageId: string) =>
@@ -2131,6 +2107,24 @@ export const complianceApi = {
 
 export interface DpdpHealth {
   score: number; band: string; status: string;
+  state: "verified_compliant" | "evidence_incomplete" | "controls_failed";
+  is_compliant: boolean;
+  controls_total: number;
+  controls_evaluated: number;
+  controls_passed: number;
+  controls_failed: number;
+  controls_without_evidence: number;
+  calculation_method: "fixed_control_checklist_v1";
+  policy_version: string | null;
+  controls: Array<{
+    key: string;
+    label: string;
+    status: "passed" | "failed" | "without_evidence";
+    evaluated: boolean;
+    passed: boolean;
+    evidence: string;
+    recommended_action: string | null;
+  }>;
   top_risks: string[]; recommended_actions: string[];
   last_sla_job_run: string | null; last_retention_job_run: string | null;
   generated_at: string;
@@ -2420,8 +2414,6 @@ export interface WalletProjection { projected_days_remaining: number; avg_daily_
 export interface PurchaseOrder { order_id: string; amount: number; status: string; payment_url?: string; expires_at: string; }
 export interface CommissionRate { rate: number; effective_from: string; plan_type: string; }
 export interface CommissionProjection { projected_monthly: number; based_on_jobs: number; period_days: number; }
-export interface Deposit { tenant_id: string; status: string; required_amount: number; total_paid: number; warranty_drawn: number; replenishment_total: number; current_balance: number; }
-export interface DepositList { deposits: Deposit[]; has_next: boolean; }
 // Matches the real backend shape (CommerceService._pkg_dict) -- was
 // previously `{id, credits, bonus_credits}`, which never matched what
 // `/v1/commerce/packages` actually returns (`package_id`, `credits_amount`,
@@ -2572,33 +2564,6 @@ export const documentsApi = {
 };
 
 // â”€â”€ Subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const subscriptionApi = {
-  create: (tenantId: string, planType: string, billingCycle = "monthly", trialDays = 14) =>
-    apiFetch<SubscriptionInfo>("/v1/subscriptions",
-      { method:"POST", body:JSON.stringify({ tenant_id: tenantId, plan_type: planType,
-        billing_cycle: billingCycle, trial_days: trialDays }) }),
-  get:    (tenantId: string) => apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tenantId}`),
-  updatePlan: (tenantId: string, newPlan: string, billingCycle = "monthly") =>
-    apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tenantId}/plan`,
-      { method:"PUT", body:JSON.stringify({ new_plan: newPlan, billing_cycle: billingCycle }) }),
-  cancel: (tenantId: string, reason = "") =>
-    apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tenantId}/cancel`,
-      { method:"POST", body:JSON.stringify({ reason }) }),
-  pause:  (tenantId: string) =>
-    apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tenantId}/pause`, { method:"POST" }),
-  resume: (tenantId: string) =>
-    apiFetch<SubscriptionInfo>(`/v1/subscriptions/tenants/${tenantId}/resume`, { method:"POST" }),
-  getPeriod: (tenantId: string) =>
-    apiFetch<SubscriptionPeriod>(`/v1/subscriptions/tenants/${tenantId}/period`),
-  getHistory: (tenantId: string, limit = 12, cursor?: string) => {
-    const qs = cursor ? `?limit=${limit}&cursor=${cursor}` : `?limit=${limit}`;
-    return apiFetch<SubscriptionHistoryList>(`/v1/subscriptions/tenants/${tenantId}/history${qs}`);
-  },
-  prorationPreview: (tenantId: string, newPlan: string, billingCycle = "monthly") =>
-    apiFetch<ProrationPreview>(
-      `/v1/subscriptions/tenants/${tenantId}/proration-preview?new_plan=${newPlan}&billing_cycle=${billingCycle}`),
-};
-
 // â”€â”€ Staff (platform-wide) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const staffApi = {
   listByTenant: (tenantId: string, limit = 50) =>
@@ -3392,12 +3357,6 @@ export interface DocumentEventList { events:DocumentEvent[]; }
 export interface DocumentTemplate { doc_type:string; tenant_id:string; template_content?:string; required_variables:string[]; sample_variables?:Record<string,string>; }
 
 // â”€â”€ Subscription engine types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export interface SubscriptionInfo { subscription_id?:string; plan_type:string; status:string; billing_cycle?:string; started_at?:string; ends_at?:string; jobs_used?:number; jobs_included?:number; leads_used?:number; leads_included?:number; next_billing_at?:string; }
-export interface SubscriptionPeriod { tenant_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; jobs_used:number; jobs_included?:number; leads_used?:number; leads_included?:number; amount_billed?:number; }
-export interface SubscriptionHistoryEntry { period_id:string; period_start:string; period_end:string; plan_type:string; billing_cycle:string; amount_billed?:number; }
-export interface SubscriptionHistoryList { history:SubscriptionHistoryEntry[]; has_next:boolean; next_cursor?:string; }
-export interface ProrationPreview { tenant_id:string; current_plan:string; new_plan:string; billing_cycle:string; days_remaining:number; credit_amount:number; debit_amount:number; net_amount:number; effective_date:string; }
-
 // â”€â”€ Billing router extended types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface BillingProfileHistoryList { tenant_id:string; profiles:BillingProfile[]; note:string; }
 export interface BillingRouteResult { billing_mode:string; operation:string; engine:string; [k:string]:unknown; }
@@ -3743,62 +3702,6 @@ export const adminCustomerFlowApi = {
 
 // â”€â”€ Sprint 5 â€” Monetization types & API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export interface MonetizationConfig {
-  id: string; category_id: string; monetization_model: string;
-  subscription_plan_type: string | null; subscription_billing_cycle: string | null;
-  subscription_amount_inr: number | null; trial_days: number;
-  credit_minimum_balance: number; credit_per_lead: number | null;
-  commission_rate: number; leads_per_billing_cycle: number | null;
-  is_active: boolean; notes: string | null; set_by: string | null;
-  created_at: string | null; updated_at: string | null;
-}
-
-export interface ProviderMonetizationStatus {
-  id: string; tenant_id: string; category_id: string | null;
-  monetization_model: string | null;
-  is_monetization_ready: boolean; is_bookable: boolean; is_visible: boolean;
-  subscription_status: string | null; subscription_expires_at: string | null;
-  credit_balance: number; credit_minimum_required: number; deposit_paid: boolean;
-  last_synced_at: string | null;
-  override_is_bookable: boolean | null; override_reason: string | null;
-  overridden_by: string | null; overridden_at: string | null;
-  created_at: string | null; updated_at: string | null;
-}
-
-export interface MonetizationAuditLog {
-  id: string; tenant_id: string; category_id: string | null;
-  event_type: string; monetization_model: string | null;
-  payload: Record<string, unknown>;
-  actor_id: string | null; actor_type: string | null; notes: string | null;
-  created_at: string | null;
-}
-
-export const monetizationApi = {
-  listConfigs: (isActive?: boolean) => {
-    const qs = isActive !== undefined ? `?is_active=${isActive}` : "";
-    return apiFetch<{ configs: MonetizationConfig[]; total: number }>(`/v1/admin/monetization/configs${qs}`);
-  },
-  listProviderStatuses: (params?: { category_id?: string; is_bookable?: boolean; is_ready?: boolean; limit?: number }) => {
-    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
-      Object.entries(params).filter(([,v]) => v !== undefined).map(([k,v]) => [k, String(v)])
-    ))}` : "";
-    return apiFetch<{ statuses: ProviderMonetizationStatus[]; total: number }>(`/v1/admin/monetization/providers${qs}`);
-  },
-  getProviderStatus: (tenantId: string) =>
-    apiFetch<ProviderMonetizationStatus>(`/v1/admin/monetization/providers/${tenantId}`),
-  syncProviderStatus: (tenantId: string) =>
-    apiFetch<ProviderMonetizationStatus>(`/v1/admin/monetization/providers/${tenantId}/sync`, { method: "POST" }),
-  overrideProviderBookable: (tenantId: string, override_is_bookable: boolean, reason: string) =>
-    apiFetch<ProviderMonetizationStatus>(`/v1/admin/monetization/providers/${tenantId}/override`, {
-      method: "POST", body: JSON.stringify({ override_is_bookable, reason }),
-    }),
-  listAuditLogs: (params?: { tenant_id?: string; category_id?: string; event_type?: string; limit?: number }) => {
-    const qs = params ? `?${new URLSearchParams(Object.fromEntries(
-      Object.entries(params).filter(([,v]) => v !== undefined).map(([k,v]) => [k, String(v)])
-    ))}` : "";
-    return apiFetch<{ logs: MonetizationAuditLog[]; total: number }>(`/v1/admin/monetization/audit-logs${qs}`);
-  },
-};
 export interface MasterService {
   service_id:string; category_id:string; service_name:string; name?:string; slug:string; description?:string|null;
   job_type:string; pricing_model:"fixed"|"range"|"post_assessment"|"hourly";
@@ -4014,7 +3917,6 @@ export interface PlatformEngine {
   dependent_engines?: string[];
   latest_health?: EngineHealthCheckItem | null;
   category_usage_count?: number;
-  package_usage_count?: number;
   active_overrides?: number;
   created_at: string;
   updated_at: string;
@@ -4026,7 +3928,6 @@ export interface EngineSummary {
   core_locked: number;
   beta_engines: number;
   category_mapped: number;
-  package_entitled: number;
   tenant_overrides_active: number;
   degraded_or_down: number;
 }
@@ -4038,7 +3939,6 @@ export interface EngineImpactPreview {
   is_locked: boolean;
   is_core: boolean;
   categories_affected: number;
-  packages_affected: number;
   active_tenant_overrides: number;
   blockers: string[];
   warnings: string[];
@@ -4105,7 +4005,6 @@ export interface CategoryMatrixRow {
   missing_dependencies: string[];
   runtime_risk: "low" | "medium" | "high" | "blocked";
   status: string;
-  package_usage_count: number;
   tenant_impact_count: number;
   created_at: string | null; updated_at: string | null;
 }
@@ -4121,7 +4020,7 @@ export interface CategoryMatrixSummary {
   category: CategoryMatrixDetail["category"];
   total_engines: number; enabled_engines: number;
   required_engines: number; optional_engines: number;
-  missing_dependencies: number; used_by_packages: number;
+  missing_dependencies: number;
   used_by_tenants: number; blocked_actions: number;
 }
 export interface CategorySeedPreview {
@@ -4134,23 +4033,14 @@ export interface CategoryMatrixTemplateOption {
 }
 export interface CategoryEngineActionPreview {
   category_id: string; engine_key: string; action: string;
-  affected_packages: number; affected_tenants: number;
+  affected_tenants: number;
   missing_dependencies: string[]; risk_level: string;
   blocked: boolean; blockers: string[]; warnings: string[];
   recommendation: string;
 }
-export interface CategoryEnginePackageUsageRow {
-  package_id: string; package_name: string; package_type: string;
-  status: string; tenant_count: number; engine_included: boolean; required: boolean;
-}
 export interface CategoryEngineTenantImpactRow {
   tenant_id: string; tenant_name: string; status: string; plan_type: string;
   runtime_access: boolean | null; override: string | null; risk: string;
-}
-export interface EnterprisePackageEntitlement {
-  id: string; package_id: string; engine_key: string;
-  is_included: boolean; status: string;
-  limits: Record<string, unknown>; feature_flags: Record<string, unknown>;
 }
 export interface EnterpriseTenantOverride {
   id: string; tenant_id: string; engine_key: string;
@@ -4266,18 +4156,6 @@ export interface CategoryEngineItem {
 }
 export interface CategoryEngineList { engines: CategoryEngineItem[]; total: number; }
 
-export interface PackageEntitlementItem {
-  id:          string;
-  package_id:  string;
-  engine_id:   string;
-  engine_key:  string;
-  engine_name: string;
-  is_enabled:  boolean;
-  usage_limit: Record<string, unknown> | null;
-  config:      Record<string, unknown>;
-}
-export interface PackageEntitlementList { engines: PackageEntitlementItem[]; total: number; }
-
 export interface TenantEngineOverride {
   id:                  string;
   tenant_id:           string;
@@ -4297,7 +4175,7 @@ export interface EffectiveEngineItem {
   engine_key:         string;
   name:               string;
   effective_enabled:  boolean;
-  source:             "global" | "category" | "package_entitlement" | "tenant_override";
+  source:             "global" | "category" | "tenant_override";
   is_required:        boolean;
   health_status:      string;
   dependencies_met:   boolean;
@@ -4308,7 +4186,6 @@ export interface EffectiveEngineItem {
 export interface EffectiveEnginesResponse {
   tenant_id: string;
   category:  { id: string; name: string } | null;
-  package:   { id: string; name: string } | null;
   engines:   EffectiveEngineItem[];
   summary:   { total: number; enabled: number; disabled: number };
 }
@@ -4421,9 +4298,6 @@ export const engineMgmtApi = {
     apiFetch<EnterpriseCategoryEngineEntry>(`/v1/admin/engines/category-matrix/${categoryId}/engines/${engineKey}/mark-optional`, {
       method: "POST", body: JSON.stringify({ reason }),
     }),
-  getCategoryEnginePackageUsage: (categoryId: string, engineKey: string) =>
-    apiFetch<{ packages: CategoryEnginePackageUsageRow[]; total: number }>(
-      `/v1/admin/engines/category-matrix/${categoryId}/engines/${engineKey}/packages`),
   getCategoryEngineTenantImpact: (categoryId: string, engineKey: string) =>
     apiFetch<{ tenants: CategoryEngineTenantImpactRow[]; total: number }>(
       `/v1/admin/engines/category-matrix/${categoryId}/engines/${engineKey}/tenant-impact`),
@@ -4440,23 +4314,6 @@ export const engineMgmtApi = {
   validateDependencies: (engineKey: string, action: string) =>
     apiFetch<{ valid: boolean; blockers: string[]; warnings: string[] }>("/v1/admin/engines/dependencies/validate", {
       method: "POST", body: JSON.stringify({ engine_key: engineKey, action }),
-    }),
-
-  // Package Entitlements
-  getPackageEntitlements: (packageId?: string) => {
-    const qs = new URLSearchParams();
-    if (packageId) qs.set("package_id", packageId);
-    return apiFetch<{ entitlements: EnterprisePackageEntitlement[]; meta: { total: number } }>(`/v1/admin/engines/package-entitlements?${qs}`);
-  },
-  getPackageEntitlementsById: (packageId: string) =>
-    apiFetch<{ entitlements: EnterprisePackageEntitlement[]; meta: { total: number } }>(`/v1/admin/engines/package-entitlements/${packageId}`),
-  includePackageEngine: (packageId: string, engineKey: string, data?: { limits?: object; feature_flags?: object; reason?: string }) =>
-    apiFetch<EnterprisePackageEntitlement>(`/v1/admin/engines/package-entitlements/${packageId}/engines/${engineKey}/include`, {
-      method: "POST", body: JSON.stringify(data ?? {}),
-    }),
-  removePackageEngine: (packageId: string, engineKey: string, reason = "") =>
-    apiFetch<EnterprisePackageEntitlement>(`/v1/admin/engines/package-entitlements/${packageId}/engines/${engineKey}/remove`, {
-      method: "POST", body: JSON.stringify({ reason }),
     }),
 
   // Tenant Overrides
@@ -4515,19 +4372,18 @@ export const engineMgmtApi = {
   },
 
   // Runtime Resolver
-  resolveAccess: (data: { engine_key: string; tenant_id?: string; category_id?: string; package_id?: string }) =>
+  resolveAccess: (data: { engine_key: string; tenant_id?: string; category_id?: string }) =>
     apiFetch<EngineAccessResolution>("/v1/admin/engines/resolve-access-preview", {
       method: "POST", body: JSON.stringify(data),
     }),
 
-  // Backward-compat: effective engines for a tenant (returns overrides list + optional category/package context)
+  // Effective engines resolved through global, category and tenant override policy.
   getEffectiveEngines: (tenantId: string) =>
     apiFetch<{
       engines: (PlatformEngine & { effective_enabled: boolean; source: string })[];
       summary: { total: number; enabled: number; disabled: number };
       category?: { name: string } | null;
-      package?: { name: string } | null;
-    }>(`/v1/admin/engines/tenant-overrides/${tenantId}`),
+    }>(`/v1/admin/engines/tenants/${tenantId}/effective`),
 };
 
 // â”€â”€ Sprint 4: Admin Tenant CRUD + Tenant 360 sub-resources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4595,12 +4451,8 @@ export const adminTenantApi = {
     apiFetch<AdminTenantServiceArea>(`/v1/admin/tenants/${tenantId}/service-areas`, { method:"POST", body:JSON.stringify(data) }),
 
   // Finance
-  // FINAL-L5-05U: getSecurityDeposit/markDepositPaid removed -- dead client
-  // code (zero callers anywhere in this app) targeting the now-blocked
-  // (410) package_commerce security-deposit routes. The canonical Security
-  // Deposit admin surface is commerceApi.getDeposit/adminAdjustDeposit
-  // (/v1/commerce/tenants/{id}/deposit*) and financeApi.listDeposits/etc.
-  // (/v1/admin/finance/deposits*).
+  // The security deposit and every client for it were removed in migrations
+  // 317/318. Providers hold spendable credit and purchased technician seats.
   getWallet:          (tenantId: string) => apiFetch<AdminWalletDetail>(`/v1/admin/tenants/${tenantId}/wallet`),
   getWalletLedger:    (tenantId: string, limit=50) => apiFetch<{ transactions: AdminWalletTxn[] }>(`/v1/admin/tenants/${tenantId}/wallet/ledger?limit=${limit}`),
   walletTopup:        (tenantId: string, amount: number, notes: string) =>
@@ -4610,12 +4462,12 @@ export const adminTenantApi = {
 export interface AdminTenantOnboardPayload {
   business: { business_name:string; city:string; state:string; vertical?:string; category_id?:string; email?:string; phone?:string; address_line1?:string; zipcode?:string; gst_number?:string };
   owner: { name:string; email:string; phone:string; password?:string };
-  commercial?: { commission_rate?:number; security_deposit_required?:boolean };
+  commercial?: { commission_rate?:number };
   settings?: { timezone?:string; currency?:string; language?:string };
 }
 export interface AdminTenantOnboardResult {
   tenant_id:string; tenant_name:string; owner_user_id:string; slug:string; tenant_code:string;
-  category_id:string|null; security_deposit_status:string; credit_wallet_balance:number;
+  category_id:string|null; entitled_seats:number; credit_wallet_balance:number;
   status:string; verification_status:string; owner_temp_password?:string; message:string;
 }
 export interface AdminTenantRow {
@@ -4647,133 +4499,8 @@ export interface AdminWalletTxn {
 }
 
 // â”€â”€ Sprint 6 â€” Package types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export interface PackageFeature {
-  feature_id: string;
-  package_id: string;
-  feature_key: string | null;
-  feature_label: string;
-  feature_description: string | null;
-  feature_icon: string | null;
-  is_highlighted: boolean;
-  is_included: boolean;
-  display_order: number;
-  status: string;
-  created_at: string | null;
-}
-
-export interface PackageLimit {
-  limit_id: string;
-  package_id: string;
-  limit_key: string;
-  limit_label: string;
-  limit_value: number | null;
-  limit_unit: string | null;
-  is_unlimited: boolean;
-  display_order: number;
-  status: string;
-  created_at: string | null;
-}
-
-export interface AdminPackage {
-  id: string;
-  package_id: string;
-  package_type: string;
-  plan_level: string | null;
-  name: string;
-  slug: string;
-  short_description: string | null;
-  description: string | null;
-  // pricing
-  price: number;
-  package_price: number;
-  currency: string;
-  billing_cycle: string | null;
-  validity_days: number | null;
-  trial_days: number | null;
-  security_deposit_amount: number;
-  included_credit_amount: number;
-  bonus_credits: number | null;
-  lead_credits: number | null;
-  setup_fee_amount: number | null;
-  renewal_price_amount: number | null;
-  storage_quota_gb: number | null;
-  commission_rate: number | null;
-  // signup display
-  vertical_type: string | null;
-  is_public_signup_visible: boolean;
-  is_popular: boolean;
-  is_featured: boolean;
-  is_recommended: boolean;
-  badge_label: string | null;
-  cta_label: string | null;
-  display_order: number;
-  // terms
-  terms_summary: string | null;
-  terms_content_json: Record<string, unknown> | null;
-  refund_policy: string | null;
-  // legacy
-  features: Record<string, unknown>;
-  // child rows
-  package_features: PackageFeature[];
-  package_limits: PackageLimit[];
-  is_active: boolean;
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-export interface AdminPackagePurchase {
-  id: string;
-  tenant_id: string;
-  category_id: string;
-  package_id: string;
-  monetization_model: string;
-  package_type: string;
-  purchase_status: string;
-  payment_status: string;
-  amount_paid: string;
-  currency: string;
-  payment_method: string | null;
-  payment_reference: string | null;
-  starts_at: string | null;
-  expires_at: string | null;
-  paid_at: string | null;
-  cancelled_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PackageAuditLog {
-  id: string;
-  package_id: string | null;
-  tenant_id: string | null;
-  package_purchase_id: string | null;
-  actor_user_id: string | null;
-  actor_role: string | null;
-  action: string;
-  action_type: string;
-  target_type: string | null;
-  target_id: string | null;
-  old_value_json: Record<string, unknown> | null;
-  new_value_json: Record<string, unknown> | null;
-  reason: string | null;
-  request_id: string | null;
-  created_at: string;
-}
-
 // â”€â”€ packageApi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Package Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export interface PackageSummary {
-  total: number;
-  active: number;
-  inactive: number;
-  onboarding: number;
-  subscription: number;
-  lead_credit: number;
-  deposit: number;
-  featured: number;
-  active_assignments: number;
-}
 
 // â”€â”€ Provider Directory / New Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -4785,14 +4512,10 @@ export interface ProviderDirectorySummary {
   pending_review: number;
   changes_requested: number;
   rejected: number;
-  package_pending_approval: number;
 }
 
 export interface NewRequestsSummary {
   total: number;
-  with_package: number;
-  without_package: number;
-  package_selected: number;
   profile_near_complete: number;
 }
 
@@ -4809,8 +4532,6 @@ export interface NewRequestsProvider {
   state: string | null;
   verification_status: string;
   tenant_status: string;
-  package_name: string | null;
-  package_status: string | null;
   profile_completion_percentage: number;
   review_status: string;
   onboarding_status: string;
@@ -4823,14 +4544,13 @@ export const providersAdminApi = {
   newRequestsSummary: () => apiFetch<NewRequestsSummary>("/v1/admin/providers/new-requests/summary"),
   newRequests: (params?: {
     q?: string; vertical_type?: string; city?: string;
-    has_package?: boolean; page?: number; page_size?: number;
+    page?: number; page_size?: number;
     sort_by?: string; sort_dir?: string;
   }) => {
     const qs = new URLSearchParams();
     if (params?.q)                  qs.set("q",            params.q);
     if (params?.vertical_type)      qs.set("vertical_type",params.vertical_type);
     if (params?.city)               qs.set("city",         params.city);
-    if (params?.has_package !== undefined) qs.set("has_package", String(params.has_package));
     if (params?.page)               qs.set("page",         String(params.page));
     if (params?.page_size)          qs.set("page_size",    String(params.page_size));
     if (params?.sort_by)            qs.set("sort_by",      params.sort_by);
@@ -4858,7 +4578,6 @@ export interface TenantListItem {
   logo_url: string | null;
   status: string;
   verification_status: string;
-  plan_type: string;
   vertical: string;
   city: string | null;
   state: string | null;
@@ -4866,7 +4585,7 @@ export interface TenantListItem {
   health_score: number;
   health_band: string;
   usage_credit_balance: number;
-  security_deposit_paid: boolean;
+  entitled_seats: number;
   billing_cycle: string;
   active_jobs: number;
   completed_jobs: number;
@@ -4884,7 +4603,6 @@ export interface TenantsSummary {
   pending_review: number;
   changes_requested: number;
   rejected: number;
-  package_pending_approval: number;
 }
 
 export interface TenantsInsights {
@@ -4892,11 +4610,9 @@ export interface TenantsInsights {
     not_started: number; in_progress: number; completed: number;
     changes_requested: number; rejected: number; total: number;
   };
-  plan_distribution: { plan: string; count: number }[];
   top_locations: { city: string; state: string; count: number }[];
   financial_summary: {
     total_usage_credits: number;
-    total_security_deposits: number;
     low_credit_tenants: number;
   };
   health_summary: {
@@ -4917,7 +4633,7 @@ export const adminTenantsApi = {
     apiFetch<TenantsInsights>("/v1/admin/tenants/insights"),
 
   list: (params: {
-    q?: string; status?: string; verification_status?: string; plan_type?: string;
+    q?: string; status?: string; verification_status?: string;
     city_tier?: string; state?: string; district?: string; city?: string;
     created_from?: string; created_to?: string;
     page?: number; page_size?: number; sort_by?: string; sort_direction?: string;
@@ -4929,7 +4645,7 @@ export const adminTenantsApi = {
     );
   },
 
-  exportCsv: async (params: { status?: string; verification_status?: string; plan_type?: string; state?: string; city?: string; search?: string }): Promise<Blob> => {
+  exportCsv: async (params: { status?: string; verification_status?: string; state?: string; city?: string; search?: string }): Promise<Blob> => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
     const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -4944,11 +4660,6 @@ export const adminTenantsApi = {
   addUsageCredits: (tenantId: string, amount: number, reason: string) =>
     apiFetch<{ data: { new_balance: number } }>(`/v1/admin/tenants/${tenantId}/add-usage-credits`, {
       method: "POST", body: JSON.stringify({ amount, reason }),
-    }),
-
-  changePlan: (tenantId: string, plan: string, reason: string) =>
-    apiFetch<{ data: { new_plan: string } }>(`/v1/admin/tenants/${tenantId}/change-plan`, {
-      method: "POST", body: JSON.stringify({ plan, reason }),
     }),
 
   suspend: (tenantId: string, reason: string) =>
@@ -4984,84 +4695,6 @@ export const adminTenantsApi = {
     });
     if (!res.ok) throw new Error("Export failed");
     return res.blob();
-  },
-};
-
-export const packageApi = {
-  // Admin package CRUD
-  summary: () => apiFetch<PackageSummary>("/v1/admin/packages/summary"),
-  list: (params?: {
-    package_type?: string; vertical_type?: string;
-    is_active?: boolean; limit?: number; offset?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.package_type)          qs.set("package_type",  params.package_type);
-    if (params?.vertical_type)         qs.set("vertical_type", params.vertical_type);
-    if (params?.is_active !== undefined) qs.set("is_active",   String(params.is_active));
-    if (params?.limit)                 qs.set("limit",         String(params.limit));
-    if (params?.offset)                qs.set("offset",        String(params.offset));
-    return apiFetch<{ packages: AdminPackage[]; total: number }>(`/v1/admin/packages?${qs}`);
-  },
-  get: (packageId: string) => apiFetch<AdminPackage>(`/v1/admin/packages/${packageId}`),
-  create: (data: Record<string, unknown>) =>
-    apiFetch<AdminPackage>("/v1/admin/packages", { method: "POST", body: JSON.stringify(data) }),
-  update: (packageId: string, data: Record<string, unknown>) =>
-    apiFetch<AdminPackage>(`/v1/admin/packages/${packageId}`, { method: "PUT", body: JSON.stringify(data) }),
-  activate: (packageId: string) =>
-    apiFetch<AdminPackage>(`/v1/admin/packages/${packageId}/activate`, { method: "POST" }),
-  deactivate: (packageId: string) =>
-    apiFetch<AdminPackage>(`/v1/admin/packages/${packageId}/deactivate`, { method: "POST" }),
-  clone: (packageId: string) =>
-    apiFetch<AdminPackage>(`/v1/admin/packages/${packageId}/clone`, { method: "POST" }),
-  delete: (packageId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/packages/${packageId}`, { method: "DELETE" }),
-
-  // Features
-  listFeatures: (packageId: string) =>
-    apiFetch<{ features: PackageFeature[]; total: number }>(`/v1/admin/packages/${packageId}/features`),
-  createFeature: (packageId: string, data: Partial<PackageFeature> & { feature_label: string }) =>
-    apiFetch<PackageFeature>(`/v1/admin/packages/${packageId}/features`,
-      { method: "POST", body: JSON.stringify(data) }),
-  updateFeature: (packageId: string, featureId: string, data: Partial<PackageFeature>) =>
-    apiFetch<PackageFeature>(`/v1/admin/packages/${packageId}/features/${featureId}`,
-      { method: "PUT", body: JSON.stringify(data) }),
-  deleteFeature: (packageId: string, featureId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/packages/${packageId}/features/${featureId}`,
-      { method: "DELETE" }),
-
-  // Limits
-  listLimits: (packageId: string) =>
-    apiFetch<{ limits: PackageLimit[]; total: number }>(`/v1/admin/packages/${packageId}/limits`),
-  createLimit: (packageId: string, data: Partial<PackageLimit> & { limit_key: string; limit_label: string }) =>
-    apiFetch<PackageLimit>(`/v1/admin/packages/${packageId}/limits`,
-      { method: "POST", body: JSON.stringify(data) }),
-  updateLimit: (packageId: string, limitId: string, data: Partial<PackageLimit>) =>
-    apiFetch<PackageLimit>(`/v1/admin/packages/${packageId}/limits/${limitId}`,
-      { method: "PUT", body: JSON.stringify(data) }),
-  deleteLimit: (packageId: string, limitId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/admin/packages/${packageId}/limits/${limitId}`,
-      { method: "DELETE" }),
-
-  // Tenant purchases (existing system)
-  listPurchases: (params?: {
-    tenant_id?: string; payment_status?: string; limit?: number; offset?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.tenant_id)      qs.set("tenant_id",      params.tenant_id);
-    if (params?.payment_status) qs.set("payment_status", params.payment_status);
-    if (params?.limit)          qs.set("limit",          String(params.limit));
-    if (params?.offset)         qs.set("offset",         String(params.offset));
-    return apiFetch<{ purchases: AdminPackagePurchase[]; total: number }>(`/v1/admin/packages/purchases?${qs}`);
-  },
-
-  // Audit logs
-  auditLogs: (params?: { package_id?: string; tenant_id?: string; action?: string; limit?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.package_id) qs.set("package_id", params.package_id);
-    if (params?.tenant_id)  qs.set("tenant_id",  params.tenant_id);
-    if (params?.action)     qs.set("action",      params.action);
-    if (params?.limit)      qs.set("limit",       String(params.limit));
-    return apiFetch<{ items: PackageAuditLog[]; total: number }>(`/v1/admin/packages/audit-logs?${qs}`);
   },
 };
 
@@ -5122,8 +4755,6 @@ export interface AdminProviderOnboarding {
   tenant_status: string | null;
   created_at: string | null;
   updated_at: string | null;
-  selected_package_name: string | null;
-  package_status: string | null;
   profile_completion_percentage: number;
   review_status: string;
   onboarding_status: string;
@@ -5151,8 +4782,6 @@ export interface AdminOnboardingProviderListItem {
   readiness_status: string;
   bookable_status: string;
   profile_completion_percentage: number;
-  selected_package_name: string | null;
-  package_status: string | null;
   created_at: string | null;
   updated_at: string | null;
   documents?: AdminOnboardingDocument[];
@@ -6758,7 +6387,7 @@ export interface ComplaintPolicyRecord {
   // AI settlement takes over automatically once the PROVIDER has failed to solve
   // the complaint; it may offer at most `ai_settlement_max_pct` of the job value,
   // in CREDIT POINTS only (never money), funded from the provider's credit wallet
-  // and then their security deposit. A case warranting more than the cap is
+  // and then their credit balance. A case warranting more than the cap is
   // escalated to admin manual review instead of being settled.
   ai_settlement_enabled?: boolean;
   ai_auto_start_on_provider_failure?: boolean;
@@ -8741,35 +8370,19 @@ export const complaintsApi = {
 // â”€â”€ Finance Hub (P0 Enterprise Finance Upgrade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface FinanceSummary {
   active_wallets: number; low_balance_wallets: number; credits_issued: number;
-  commission_earned: number; deposit_held: number; deposit_pending: number;
+  commission_earned: number;
   pending_warranty_claims: number; pending_payouts: number; at_risk_tenants: number;
-  recovered_refunded_deposits: number; pending_deposit_actions: number;
 }
 export interface FinanceOverview {
   wallet_health_distribution: Record<string, number>;
   top_low_balance_tenants: { tenant_id: string; tenant_name: string; wallet_balance: number; health_band: string }[];
-  deposit_status_breakdown: Record<string, number>;
   top_commission_contributors: { tenant_id: string; tenant_name: string; commission_total: number }[];
   recent_finance_activity: { type: string; label: string; tenant_id: string; created_at: string }[];
   pending_actions_queue: {
-    deposit_verification_pending: number; payout_pending_approval: number;
+    payout_pending_approval: number;
     warranty_claim_pending_review: number; failed_topup_payment: number;
   };
   at_risk_tenants: { tenant_id: string; tenant_name: string; health_band: string; health_score: number }[];
-}
-export interface FinanceDeposit {
-  deposit_id: string; tenant_id: string; tenant_name?: string | null;
-  vertical?: string | null; city?: string | null; state?: string | null;
-  required_amount: number; received_amount: number; pending_amount: number;
-  status: string; hold_state?: string | null; adjusted_amount: number; refunded_amount: number;
-  current_balance: number; package_purchase_id?: string | null;
-  rejection_reason?: string | null; clarification_notes?: string | null;
-  approved_by?: string | null; approved_at?: string | null;
-  paid_at?: string | null; refunded_at?: string | null; created_at?: string | null;
-}
-export interface FinanceDepositsSummary {
-  total_deposit_accounts: number; active_held_deposits: number; pending_deposits: number;
-  refund_pending: number; refunded: number; deposit_risk_cases: number;
 }
 export interface FinanceTopup {
   topup_id: string; tenant_id: string; tenant_name?: string | null;
@@ -8827,7 +8440,7 @@ export interface DisputeSettlement {
   booking_id?: string | null; customer_id: string; tenant_id: string;
   settlement_type: string; settlement_status: string; settlement_amount: number;
   currency: string; deduction_source: string;
-  tenant_wallet_deduction_amount: number; security_deposit_deduction_amount: number;
+  tenant_wallet_deduction_amount: number;
   platform_goodwill_amount: number; customer_credit_id?: string | null;
   tenant_penalty_id?: string | null; admin_decision_reason: string;
   customer_message?: string | null; tenant_message?: string | null;
@@ -8837,12 +8450,11 @@ export interface DisputeSettlement {
 export interface DisputeSettlementSummary {
   total_settlements: number; pending_approval: number; executed_settlements: number;
   failed_cancelled: number; customer_credits_issued: number;
-  tenant_wallet_deducted: number; security_deposit_deducted: number;
+  tenant_wallet_deducted: number;
 }
 export interface DeductionPreview {
   tenant_id: string; settlement_amount: number; strategy: string;
   wallet_balance: number; wallet_deduction: number; wallet_balance_after: number;
-  deposit_available: number; deposit_deduction: number; deposit_remaining: number;
   platform_goodwill_amount: number; uncovered_amount: number; can_fully_cover: boolean;
 }
 export interface CustomerServiceCredit {
@@ -8873,12 +8485,12 @@ export interface TenantPenalty {
 }
 export interface TenantPenaltySummary {
   total_penalties: number; applied_penalties: number; pending_penalties: number;
-  reversed_penalties: number; wallet_deducted: number; deposit_deducted: number;
+  reversed_penalties: number; wallet_deducted: number;
 }
 export interface FinanceVerticalConfig {
   id?: string; vertical_type: string; payment_collection_enabled: boolean;
   tenant_payouts_enabled: boolean; customer_service_credits_enabled: boolean;
-  tenant_wallet_deduction_enabled: boolean; security_deposit_adjustment_enabled: boolean;
+  tenant_wallet_deduction_enabled: boolean;
   manual_customer_refund_enabled: boolean; config_notes?: string | null;
 }
 
@@ -8952,48 +8564,8 @@ export const financeApi = {
   getSummary: () => apiFetch<FinanceSummary>("/v1/admin/finance/summary"),
   getOverview: () => apiFetch<FinanceOverview>("/v1/admin/finance/overview"),
 
-  // Deposits
-  listDeposits: (params?: {
-    status?: string; vertical?: string; state?: string; city?: string; q?: string;
-    page?: number; pageSize?: number; sortBy?: string; sortDir?: string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set("status", params.status);
-    if (params?.vertical) qs.set("vertical", params.vertical);
-    if (params?.state) qs.set("state", params.state);
-    if (params?.city) qs.set("city", params.city);
-    if (params?.q) qs.set("q", params.q);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    qs.set("sort_by", params?.sortBy ?? "created_at");
-    qs.set("sort_dir", params?.sortDir ?? "desc");
-    return apiFetch<{ items: FinanceDeposit[]; pagination: GridPagination }>(`/v1/admin/finance/deposits?${qs.toString()}`);
-  },
-  getDepositsSummary: () => apiFetch<FinanceDepositsSummary>("/v1/admin/finance/deposits/summary"),
-  exportDeposits: (filters?: { status?: string; vertical?: string }) => {
-    const qs = new URLSearchParams();
-    if (filters?.status) qs.set("status", filters.status);
-    if (filters?.vertical) qs.set("vertical", filters.vertical);
-    return apiFetch<{ rows: FinanceDeposit[]; count: number }>(`/v1/admin/finance/deposits/export?${qs.toString()}`);
-  },
-  getDepositDetail: (depositId: string) =>
-    apiFetch<{ deposit: FinanceDeposit; ledger: Record<string, unknown>[]; audit_log: FinanceAuditEntry[] }>(
-      `/v1/admin/finance/deposits/${depositId}`),
-  approveDeposit: (depositId: string, notes?: string) =>
-    apiFetch<FinanceDeposit>(`/v1/admin/finance/deposits/${depositId}/approve`,
-      { method: "POST", body: JSON.stringify({ notes }) }),
-  rejectDeposit: (depositId: string, reason: string) =>
-    apiFetch<FinanceDeposit>(`/v1/admin/finance/deposits/${depositId}/reject`,
-      { method: "POST", body: JSON.stringify({ reason }) }),
-  recordOfflineDeposit: (depositId: string, amount: number, reference?: string, notes?: string) =>
-    apiFetch<FinanceDeposit>(`/v1/admin/finance/deposits/${depositId}/record-offline`,
-      { method: "POST", body: JSON.stringify({ amount, reference, notes }) }),
-  refundDeposit: (depositId: string, amount: number, reason: string) =>
-    apiFetch<FinanceDeposit>(`/v1/admin/finance/deposits/${depositId}/refund`,
-      { method: "POST", body: JSON.stringify({ amount, reason }) }),
-  adjustDeposit: (depositId: string, amount: number, reason: string, category = "manual") =>
-    apiFetch<FinanceDeposit>(`/v1/admin/finance/deposits/${depositId}/adjust`,
-      { method: "POST", body: JSON.stringify({ amount, reason, category }) }),
+  // The Deposits client went with the deposit itself (migrations 317/318):
+  // every /v1/admin/finance/deposits* route was removed server-side.
 
   // Top-ups
   listTopups: (params?: {
@@ -9499,7 +9071,6 @@ export interface EffectiveMenu {
     orders: boolean;
     leads_crm: boolean;
     appointments: boolean;
-    security_deposit: boolean;
     usage_credits: boolean;
   };
 }
@@ -9654,14 +9225,6 @@ export interface FeatureFlag {
   tenant_scope: string | null; start_date: string | null; end_date: string | null;
   owner_module: string | null; created_at: string | null; updated_at: string | null;
 }
-export interface PlanSettingRow {
-  id: string; name: string; package_type: string; plan_level: string | null;
-  billing_cycle: string | null; currency: string;
-  included_credit_amount: number | null; storage_quota_gb: number | null;
-  commission_rate: number | null; security_deposit_amount: number | null;
-  validity_days: number | null; is_active: boolean; vertical_type: string | null;
-  limits?: { limit_key: string; limit_label: string; limit_value: number | null }[];
-}
 export interface CategorySettingRow {
   id: string; name: string; slug: string; vertical_type: string | null;
   finance_model: string | null; provider_business_model: string | null;
@@ -9745,13 +9308,6 @@ export const settingsAdminApi = {
   resolveEffectiveValue: (key: string, tenantId?: string, planType?: string) =>
     apiFetch<EffectiveValueResult>("/v1/admin/settings/resolve-effective-value", {
       method: "POST", body: JSON.stringify({ key, tenant_id: tenantId, plan_type: planType }),
-    }),
-
-  listPlans: () => apiFetch<{ packages: PlanSettingRow[] }>("/v1/admin/settings/plans"),
-  getPlan: (packageId: string) => apiFetch<PlanSettingRow>(`/v1/admin/settings/plans/${packageId}`),
-  updatePlan: (packageId: string, data: Partial<PlanSettingRow> & { reason?: string }) =>
-    apiFetch<PlanSettingRow>(`/v1/admin/settings/plans/${packageId}`, {
-      method: "PUT", body: JSON.stringify(data),
     }),
 
   listCategories: () => apiFetch<{ categories: CategorySettingRow[] }>("/v1/admin/settings/categories"),
@@ -10219,7 +9775,7 @@ export interface PlatformSummary {
   completed_job_deductions: number; provider_direct_service_value: number;
   avg_job_rating: number; complaint_rate: number; pending_approvals: number;
   new_providers: number; customer_service_credits_issued: number;
-  security_deposit_held: number; active_customers: number;
+  active_customers: number;
 }
 export interface TrendPoint { date: string; value: number; }
 export interface PlatformTrends {
@@ -10239,17 +9795,17 @@ export interface CategoryPerformanceItem {
 export interface ProviderPerformanceItem {
   tenant_id: string; tenant_name: string; vertical: string; city: string | null;
   completed_jobs: number; direct_service_value: number; platform_deductions: number;
-  avg_rating: number; complaint_rate: number; health_band: string;
+  avg_rating: number; review_count: number; complaint_rate: number; health_band: string;
 }
 export interface FinanceSummary {
-  platform_revenue: number; package_revenue: number; subscription_revenue: number;
+  platform_revenue: number; provider_direct_service_value: number;
   usage_credit_topups: number; completed_job_deductions: number;
-  customer_service_credits_issued: number; security_deposits_held: number;
+  customer_service_credits_issued: number;
   failed_deductions: number;
 }
 export interface QualitySummary {
   avg_rating: number; review_count: number; complaint_rate: number;
-  dispute_rate: number; sla_success_rate: number;
+  dispute_rate: number;
 }
 export interface ComplaintsSummary {
   total_complaints: number; open_complaints: number; resolved_complaints: number;
@@ -10266,8 +9822,7 @@ export interface CustomerSummary {
 
 type PlatformAnalyticsParams = {
   date_from?: string; date_to?: string; vertical?: string;
-  category_id?: string; tenant_id?: string; city?: string;
-  health_band?: string; page?: number; page_size?: number; sort_by?: string; limit?: number;
+  city?: string; state?: string; health_band?: string; sort_by?: string; limit?: number;
 };
 
 function platformAnalyticsQs(params: PlatformAnalyticsParams): string {
@@ -10291,7 +9846,6 @@ export const platformAnalyticsApi = {
   getComplaintsBreakdown: (p: PlatformAnalyticsParams = {}) => apiFetch<{items: unknown[]}>(`/v1/admin/analytics/complaints/breakdown?${platformAnalyticsQs(p)}`),
   getGeographySummary: (p: PlatformAnalyticsParams = {}) => apiFetch<GeographySummary>(`/v1/admin/analytics/geography/summary?${platformAnalyticsQs(p)}`),
   getCustomerSummary: (p: PlatformAnalyticsParams = {}) => apiFetch<CustomerSummary>(`/v1/admin/analytics/customers/summary?${platformAnalyticsQs(p)}`),
-  exportReport: (report_type: string, params: PlatformAnalyticsParams) => apiFetch<{export_id: string; status: string}>(`/v1/admin/analytics/reports/export`, {method: 'POST', body: JSON.stringify({report_type, ...params})}),
 };
 
 // â”€â”€ Intelligence Command Center â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -10398,16 +9952,16 @@ export interface DashboardPlatformHealth {
 }
 
 export interface DashboardFinanceSnapshot {
-  platform_revenue: number; package_revenue: number; subscription_revenue: number;
+  platform_revenue: number;
   usage_credit_topups: number; completed_job_deductions: number;
-  customer_service_credits_issued: number; security_deposits_held: number;
+  customer_service_credits_issued: number;
   failed_deductions: number; provider_direct_service_value: number;
 }
 
 export interface DashboardTenantLifecycle {
   new_tenant_requests: number; pending_review: number; changes_requested: number;
   approved_this_week: number; suspended: number; bookable_tenants: number;
-  non_bookable_tenants: number; package_pending_approval: number;
+  non_bookable_tenants: number;
 }
 
 export interface DashboardOperationsSnapshot {
@@ -10467,7 +10021,7 @@ export interface DashboardHomeServicesSummary {
   home_services_providers: number; bookable_providers: number; not_bookable_providers: number;
   service_catalog_health: { status: string; active_services: number };
   pricing_rule_health: { status: string; active_rules: number };
-  tenant_service_area_health: { status: string; active_areas: number; tenants_without_areas: number };
+  provider_coverage_health: { status: string; active_areas: number; tenants_without_areas: number };
   provider_bookability_health: { status: string; bookable_providers: number; not_bookable_providers: number };
   auto_price_options_health: string;
   completed_job_deduction_health: string;

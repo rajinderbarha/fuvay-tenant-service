@@ -13,8 +13,8 @@ import { useCallback, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AdminLayout } from "../../../../../components/layout/AdminLayout";
-import { Breadcrumbs } from "../../../../../components/layout/Breadcrumbs";
-import { Card, Badge, Btn, Skeleton, DataTable } from "../../../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, DataTable, SummaryCard, KpiGrid } from "../../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import { hsCustomerDirectoryApi } from "../../../../../lib/api";
 import { useApi } from "../../../../../hooks/useApi";
 
@@ -77,33 +77,18 @@ function CustomerDetailWorkspace() {
 
   return (
     <AdminLayout activeNav="home_services-customers">
-      <Breadcrumbs crumbs={[
-        { label: "Operations", href: "/admin/operations" },
-        { label: "Home Services", href: "/admin/home-services" },
-        { label: "Customers", href: "/admin/home-services/customers" },
-        { label: String(d.name ?? customerId.slice(0, 8)) },
-      ]} />
-      <button onClick={back}
-        style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--text-tertiary)", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}>
-        <ArrowLeft size={13} /> Back to Customers
-      </button>
-
-      <Card padding={20} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>{String(d.name ?? "Unnamed customer")}</h1>
+      <PageHeader
+        title={String(d.name ?? "Unnamed customer")}
+        description={`Customer ID: ${customerId.slice(0, 8)} · ${String(d.email ?? "—")} · ${String(d.phone ?? "—")} · First booking ${dt(d.first_booking_at as string)}`}
+        eyebrow="Customer 360"
+        context="Home Services"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap" }}>
+            <Btn variant="ghost" size="sm" icon={<ArrowLeft size={13} />} onClick={back}>Back to Customers</Btn>
             <Badge variant="info">Home Services</Badge>
             <Badge variant={d.is_active ? "success" : "default"}>{d.is_active ? "Active" : "Inactive"}</Badge>
             <Badge variant={d.repeat_status === "repeat" ? "success" : "default"}>{String(d.repeat_status).replace(/_/g, " ")}</Badge>
-          </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap" }}>
-            <span>Customer ID: {customerId.slice(0, 8)}</span>
-            <span>{String(d.email ?? "—")}</span>
-            <span>{String(d.phone ?? "—")}</span>
-            <span>First booking {dt(d.first_booking_at as string)}</span>
-          </div>
-        </div>
-      </Card>
+        </div>}
+      />
 
       <Card padding={12} style={{ marginTop: 12, background: "var(--surface-sunken)" }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
@@ -136,29 +121,20 @@ function CustomerDetailWorkspace() {
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <Card padding={14}>
-      <div style={{ fontSize: 18, fontWeight: 800 }}>{value}</div>
-      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>{label}{sub ? ` · ${sub}` : ""}</div>
-    </Card>
-  );
-}
-
 function OverviewTab({ d }: { d: Record<string, unknown> }) {
   const reliability = String(d.payment_reliability ?? "insufficient_data");
   const reliabilityLabel = reliability === "reliable"
     ? "Reliable"
     : reliability === "needs_review" ? "Needs Review" : "Insufficient Data";
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-      <StatCard label="Completed Jobs" value={String(d.completed_jobs ?? 0)} />
-      <StatCard label="Cancelled Jobs" value={String(d.cancelled_jobs ?? 0)} />
-      <StatCard label="Confirmed Job Value" value={money(d.confirmed_job_value as string)} sub="Not platform collection" />
-      <StatCard label="Open Complaints" value={String(d.open_complaints ?? 0)} />
-      <StatCard label="Payment Reliability" value={reliabilityLabel}
+    <KpiGrid minCardWidth={170}>
+      <SummaryCard label="Completed Jobs" value={String(d.completed_jobs ?? 0)} />
+      <SummaryCard label="Cancelled Jobs" value={String(d.cancelled_jobs ?? 0)} />
+      <SummaryCard label="Confirmed Job Value" value={money(d.confirmed_job_value as string)} sub="Not platform collection" />
+      <SummaryCard label="Open Complaints" value={String(d.open_complaints ?? 0)} />
+      <SummaryCard label="Payment Reliability" value={reliabilityLabel}
         sub={`${Number(d.payment_decisions ?? 0)} customer decisions`} />
-    </div>
+    </KpiGrid>
   );
 }
 

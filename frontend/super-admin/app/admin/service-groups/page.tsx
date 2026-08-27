@@ -6,8 +6,9 @@ import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCata
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
 import {
-  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard,} from "../../../components/shared/ui";
+  Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, SummaryCard, Pagination,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import { ActionMenu } from "../../../components/shared/layout";
 import {
   catalogApi,
   type ServiceGroupEnriched, type ServiceCategory,
@@ -55,7 +56,7 @@ const DEFAULT_COLUMNS: ColumnDef[] = [
 ];
 
 // ── Action menu ────────────────────────────────────────────────────────────────
-function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onView }: {
+function GroupActions({ row, onEdit, onActivate, onDeactivate, onArchive, onView }: {
   row: ServiceGroupEnriched;
   onEdit: () => void;
   onActivate: () => void;
@@ -63,43 +64,17 @@ function GroupActionMenu({ row, onEdit, onActivate, onDeactivate, onArchive, onV
   onArchive: () => void;
   onView: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-      <Btn variant="ghost" size="xs" onClick={() => setOpen(o => !o)}>Actions ▾</Btn>
-      {open && (
-        <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 1000 }} onClick={() => setOpen(false)} />
-          <div style={{
-            position: "absolute", right: 0, top: "100%", zIndex: 1001, marginTop: 4,
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, minWidth: 180, boxShadow: "0 8px 24px rgba(0,0,0,.12)",
-            overflow: "hidden",
-          }}>
-            {[
-              { label: "View Details", action: onView },
-              { label: "Edit Group", action: onEdit },
-              null,
-              row.status !== "active" ? { label: "Activate", action: onActivate } : null,
-              row.status === "active" ? { label: "Deactivate", action: onDeactivate } : null,
-              { label: "Retire", action: onArchive, danger: true },
-            ].map((item, i) =>
-              item === null ? (
-                <hr key={i} style={{ margin: 0, border: "none", borderTop: "1px solid var(--border)" }} />
-              ) : item ? (
-                <button key={i} onClick={() => { setOpen(false); item.action(); }} style={{
-                  display: "block", width: "100%", textAlign: "left",
-                  padding: "9px 16px", fontSize: 13, background: "none", border: "none",
-                  cursor: "pointer", color: item.danger ? "var(--danger-text, #e53e3e)" : "var(--text-primary)",
-                }}>
-                  {item.label}
-                </button>
-              ) : null
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <ActionMenu
+      size="xs"
+      items={[
+        { label: "View details", onClick: onView },
+        { label: "Edit group", onClick: onEdit },
+        row.status !== "active" && { label: "Activate", onClick: onActivate, divider: true },
+        row.status === "active" && { label: "Deactivate", onClick: onDeactivate, divider: true },
+        { label: "Retire", onClick: onArchive, variant: "danger" },
+      ]}
+    />
   );
 }
 
@@ -277,7 +252,7 @@ export default function ServiceGroupsPage() {
       render: (_: unknown, row: ServiceGroupEnriched) => row.deleted_at ? (
         <Btn variant="ghost" size="xs" onClick={() => router.push(`/admin/service-groups/${row.id}`)}>View / restore</Btn>
       ) : (
-        <GroupActionMenu
+        <GroupActions
           row={row}
           onView={() => router.push(`/admin/service-groups/${row.id}`)}
           onEdit={() => openEdit(row)}
@@ -521,23 +496,6 @@ function DirectoryPagination({
   onPage: (page: number) => void;
   onPageSize: (pageSize: number) => void;
 }) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 14 }}>
-      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-        {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 records"}
-      </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Select
-          label=""
-          value={String(pageSize)}
-          onChange={(value) => onPageSize(Number(value))}
-          options={[25, 50, 100].map(value => ({ value: String(value), label: `${value} / page` }))}
-        />
-        <Btn size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Btn>
-        <Badge variant="muted">Page {page} of {pages}</Badge>
-        <Btn size="sm" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next</Btn>
-      </div>
-    </div>
-  );
+  return <Pagination page={page} pageSize={pageSize} total={total} onPage={onPage}
+    pageSizes={[25, 50, 100]} onPageSize={size => { onPageSize(size); onPage(1); }} alwaysShow />;
 }

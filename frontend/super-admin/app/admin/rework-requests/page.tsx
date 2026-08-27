@@ -3,6 +3,7 @@ import { useApi } from "../../../hooks/useApi";
 import { useAction } from "../../../hooks/useApi";
 import { adminReworkApi, ReworkRecord } from "../../../lib/api";
 import { useState, useCallback } from "react";
+import { PageHeader } from "@serviceos/design-system";
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
   requested:   { background: "var(--warning-bg)",      color: "var(--warning-text)" },
@@ -37,15 +38,14 @@ export default function AdminReworkRequestsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Rework Requests (Admin)</h1>
-        <select style={selStyle} value={status} onChange={e => setStatus(e.target.value)}>
+      <PageHeader eyebrow="Trust & quality" title="Rework Requests"
+        description="Review and resolve service rework requests across providers."
+        actions={<select aria-label="Filter rework requests by status" style={selStyle} value={status} onChange={e => setStatus(e.target.value)}>
           <option value="">All</option>
           {["requested","approved","assigned","scheduled","in_progress","completed","rejected","cancelled"].map(s => (
             <option key={s} value={s}>{s.replace(/_/g," ")}</option>
           ))}
-        </select>
-      </div>
+        </select>} />
 
       {loading && <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Loading…</p>}
       {error   && <p style={{ fontSize: 13, color: "var(--danger-text)" }}>{error}</p>}

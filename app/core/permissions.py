@@ -31,8 +31,6 @@ class P:
     ENGINES_CATEGORY_UPDATE   = "engines:category_matrix:update"
     ENGINES_DEPS_READ         = "engines:dependencies:read"
     ENGINES_DEPS_UPDATE       = "engines:dependencies:update"
-    ENGINES_PKG_READ          = "engines:package_entitlements:read"
-    ENGINES_PKG_UPDATE        = "engines:package_entitlements:update"
     ENGINES_OVERRIDE_READ     = "engines:tenant_overrides:read"
     ENGINES_OVERRIDE_CREATE   = "engines:tenant_overrides:create"
     ENGINES_OVERRIDE_REVOKE   = "engines:tenant_overrides:revoke"
@@ -42,7 +40,6 @@ class P:
     ENGINES_PERMS_UPDATE      = "engines:permissions:update"
     ENGINES_AUDIT_READ        = "engines:audit:read"
     ENGINES_AUDIT_EXPORT      = "engines:audit:export"
-    PLATFORM_PLANS_MANAGE   = "platform:plans:manage"
     PLATFORM_AUDIT_READ     = "platform:audit:read"
 
     # ── Tenant management ─────────────────────────────────────────────────────
@@ -216,6 +213,21 @@ class P:
     ASSISTANT_ADMIN_VIEW       = "assistant:admin:view"
     ASSISTANT_ADMIN_CONFIGURE  = "assistant:admin:configure"
 
+    # ── Home Services top-up plans ────────────────────────────────────────────
+    # What an admin sells: a price and the technician seats it grants. Tenants
+    # read the catalogue through their own router, which needs no permission —
+    # they must be able to see what they can buy.
+    TOPUP_PLAN_VIEW   = "topup_plan:view"
+    TOPUP_PLAN_MANAGE = "topup_plan:manage"
+
+    # ── Legal Documents ───────────────────────────────────────────────────────
+    # Platform-side only. The Terms and Privacy Notice govern every workspace,
+    # so no tenant role gets these — a tenant cannot rewrite the terms it is
+    # bound by. Reading the published text needs no permission at all; it is
+    # served unauthenticated from /v1/public/legal/*.
+    LEGAL_ADMIN_VIEW        = "legal:admin:view"
+    LEGAL_ADMIN_MANAGE      = "legal:admin:manage"
+
     # ── Settings ──────────────────────────────────────────────────────────────
     SETTINGS_READ           = "settings:read"
     SETTINGS_WRITE          = "settings:write"
@@ -231,8 +243,6 @@ class P:
     SETTINGS_SEED_DEFAULTS         = "settings:seed_defaults"
     SETTINGS_IMPORT                = "settings:import"
     SETTINGS_EXPORT                = "settings:export"
-    SETTINGS_PLAN_READ             = "settings:plan:read"
-    SETTINGS_PLAN_UPDATE           = "settings:plan:update"
     SETTINGS_CATEGORY_READ         = "settings:category:read"
     SETTINGS_CATEGORY_UPDATE       = "settings:category:update"
     SETTINGS_TENANT_OVERRIDES_READ   = "settings:tenant_overrides:read"
@@ -456,14 +466,6 @@ class P:
     FINANCE_PENALTIES_READ      = "finance:penalties:read"
 
     # ── Packages / Plans (Phase 4) ────────────────────────────────────────────
-    PACKAGES_READ        = "packages.read"
-    PACKAGES_CREATE      = "packages.create"
-    PACKAGES_UPDATE      = "packages.update"
-    PACKAGES_ARCHIVE     = "packages.archive"
-    PACKAGES_ACTIVATE    = "packages.activate"
-    PACKAGES_DEACTIVATE  = "packages.deactivate"
-    PACKAGES_CLONE       = "packages.clone"
-    PACKAGES_AUDIT_READ  = "packages.audit.read"
 
     # ── Provider Usage Credits / Security Deposits (Phase 4) ──────────────────
     FINANCE_USAGE_CREDITS_READ         = "finance.usage_credits.read"
@@ -796,6 +798,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 
     "admin_finance": [
+        # Pricing what tenants buy is a finance decision.
+        P.TOPUP_PLAN_VIEW, P.TOPUP_PLAN_MANAGE,
         P.FINANCE_READ, P.FINANCE_USAGE_CREDITS_READ, P.FINANCE_USAGE_CREDITS_TOP_UP,
         P.FINANCE_USAGE_CREDITS_ADJUST, P.FINANCE_USAGE_CREDITS_LEDGER_READ,
         P.FINANCE_HOME_SERVICES_CREDITS_VIEW, P.FINANCE_HOME_SERVICES_CREDITS_EXPORT,
@@ -816,7 +820,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # the full removal rationale).
         P.FINANCE_DEPOSITS_READ, P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE,
         P.FINANCE_DEPOSITS_REFUND,
-        P.FINANCE_SETTINGS_READ, P.FINANCE_AUDIT_READ, P.PACKAGES_AUDIT_READ, P.FINANCE_EXPORT,
+        P.FINANCE_SETTINGS_READ, P.FINANCE_AUDIT_READ, P.FINANCE_EXPORT,
         P.TENANT_READ, P.TENANT_BILLING_READ, P.TENANT_HEALTH_READ,
         # FINAL-L5-05O: base dashboard read (Finance Admin already had the
         # domain-specific DASHBOARD_FINANCE_READ below).
@@ -831,6 +835,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 
     "admin_security": [
+        # Legal document authoring sits with Security/Compliance rather than
+        # Operations: publishing a new Terms version changes what every user
+        # is bound by, which is a compliance act, not an operational one.
+        P.LEGAL_ADMIN_VIEW, P.LEGAL_ADMIN_MANAGE,
         P.SECURITY_READ, P.SECURITY_THREATS_READ, P.SECURITY_THREATS_UPDATE,
         P.SECURITY_THREATS_RESOLVE, P.SECURITY_THREATS_BLOCK_IP,
         P.SECURITY_SESSIONS_READ, P.SECURITY_SESSIONS_REVOKE,
@@ -857,6 +865,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
 
     "admin_readonly": [
         P.ASSISTANT_ADMIN_VIEW,
+        P.LEGAL_ADMIN_VIEW,
+        P.TOPUP_PLAN_VIEW,
         P.ADMIN_JOBS_READ, P.FIELD_OPS_JOBS_READ,
         P.TENANT_READ, P.TENANT_HEALTH_READ,
         P.STAFF_READ,

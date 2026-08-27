@@ -20,9 +20,7 @@ const ADMIN_ROUTES = [
 
 const TENANT_ROUTES = [
   '/dashboard',
-  // Was /provider/status, which doesn't exist; real route is
-  // /provider/subscription-status (app/(tenant)/provider/subscription-status).
-  '/provider/subscription-status',
+  '/provider/status',
   '/tenant/home-services/setup/services-pricing',
   '/provider/service-coverage',
   '/provider/service-areas',

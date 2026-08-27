@@ -1,7 +1,7 @@
 """Phase 10 — Payment + Inventory + Subscription + Document — Proven Level 5 Tests (60 tests)."""
 import hashlib, uuid, secrets
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 import pytest
 
 from app.engines.payment.constants import (
@@ -11,9 +11,6 @@ from app.engines.payment.constants import (
 )
 from app.engines.inventory.constants import (
     StockTxnType, ReservationStatus, RESERVATION_TTL_HOURS,
-)
-from app.engines.subscription.constants import (
-    SubStatus, BillingCycle, GRACE_PERIOD_DAYS, PRORATION_PRECISION,
 )
 from app.engines.document.constants import (
     DocType, DocStatus, DocEventType, TERMINAL_DOC_STATUSES,
@@ -130,61 +127,6 @@ def test_ledger_reconciliation_formula():
     assert ledger_sum == cached_balance
 
 
-# ── 4. Subscription proration — proven from immutable periods ────────────────
-def test_proration_uses_immutable_period():
-    from app.engines.subscription.models import SubscriptionPeriod
-    from sqlalchemy.inspection import inspect
-    cols = {c.key for c in inspect(SubscriptionPeriod).columns}
-    # Proof: started_at and ends_at stored — proration always replayable
-    assert "started_at" in cols
-    assert "ends_at" in cols
-    assert "amount" in cols
-
-def test_proration_calculation():
-    total_days = 30
-    remaining_days = 15
-    period_amount = Decimal("999.00")
-    proration = (period_amount * Decimal(str(remaining_days)) / Decimal(str(total_days)))
-    proration = proration.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    assert proration == Decimal("499.50")
-
-def test_proration_zero_at_end_of_period():
-    total_days = 30
-    remaining_days = 0
-    period_amount = Decimal("999.00")
-    proration = Decimal("0.00") if remaining_days <= 0 else                 (period_amount * Decimal(str(remaining_days)) / Decimal(str(total_days)))
-    assert proration == Decimal("0.00")
-
-def test_proration_full_at_start():
-    total_days = 30
-    remaining_days = 30
-    period_amount = Decimal("999.00")
-    proration = (period_amount * Decimal(str(remaining_days)) / Decimal(str(total_days)))
-    proration = proration.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    assert proration == period_amount
-
-def test_subscription_event_append_only():
-    from app.engines.subscription.models import SubscriptionEvent
-    from sqlalchemy.inspection import inspect
-    cols = {c.key for c in inspect(SubscriptionEvent).columns}
-    assert "event_type" in cols and "from_plan" in cols and "to_plan" in cols
-
-def test_subscription_unique_per_tenant():
-    from app.engines.subscription.models import Subscription
-    from sqlalchemy.inspection import inspect
-    constraints = {c.name for c in inspect(Subscription).mapper.persist_selectable.constraints}
-    assert "uq_sub_tenant" in constraints
-
-def test_grace_period_days():
-    assert GRACE_PERIOD_DAYS == 3
-
-def test_plan_prices_hierarchy():
-    from app.engines.subscription.service import PLAN_PRICES
-    assert PLAN_PRICES[("starter","monthly")] < PLAN_PRICES[("growth","monthly")]
-    assert PLAN_PRICES[("growth","monthly")] < PLAN_PRICES[("enterprise","monthly")]
-    assert PLAN_PRICES[("starter","monthly")] < PLAN_PRICES[("starter","annual")]
-
-
 # ── 5. Document frozen pattern — proven ──────────────────────────────────────
 def test_document_has_is_frozen_field():
     from app.engines.document.models import Document
@@ -265,14 +207,6 @@ def test_inventory_meta(client):
     assert "select_for_update" in d["capabilities"]
     assert "ledger_reconciliation" in d["capabilities"]
 
-def test_subscription_meta(client):
-    r = client.get("/v1/subscriptions/meta")
-    assert r.status_code == 200
-    d = r.json()
-    assert d["engine_id"] == "subscription"
-    assert "immutable_period_proration" in d["capabilities"]
-    assert "canonical_usage_source" in d["capabilities"]
-
 def test_document_meta(client):
     r = client.get("/v1/documents/meta")
     assert r.status_code == 200
@@ -293,13 +227,6 @@ def test_payment_list_requires_auth(client):
 def test_inventory_balance_requires_auth(client):
     iid = uuid.uuid4(); lid = uuid.uuid4()
     assert client.get(f"/v1/inventory/items/{iid}/locations/{lid}/balance").status_code == 401
-
-def test_subscription_create_requires_admin(client):
-    assert client.post("/v1/subscriptions", json={}).status_code == 401
-
-def test_subscription_plan_update_requires_auth(client):
-    tid = uuid.uuid4()
-    assert client.put(f"/v1/subscriptions/tenants/{tid}/plan", json={}).status_code == 401
 
 def test_document_generate_requires_auth(client):
     assert client.post("/v1/documents", json={}).status_code == 401
@@ -326,7 +253,7 @@ def test_all_phases_1_to_10_certified(client):
         "/v1/geo/meta", "/v1/dispatch/meta", "/v1/jobs/meta",
         "/v1/bookings/meta", "/v1/appointments/meta",
         "/v1/payments/meta", "/v1/inventory/meta",
-        "/v1/subscriptions/meta", "/v1/documents/meta",
+        "/v1/documents/meta",
     ]
     for path in metas:
         r = client.get(path)

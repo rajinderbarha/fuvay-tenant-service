@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Bookings & Jobs — unified provider pipeline.
  *
@@ -24,7 +25,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
-import { PageHeader, Card, Button, Modal, Textarea } from "@serviceos/design-system";
+import { PageHeader, Card, Button, Modal, Pagination, Textarea } from "@serviceos/design-system";
 import { Badge, Select, Input, SummaryCard,} from "../../../components/shared/ui";
 import { bookingsApi, serviceJobsApi, staffApi, customersApi, catalogApi, providerOfferingsApi, getUserRole } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
@@ -384,7 +385,7 @@ export default function BookingsAndJobsPage() {
       ) : (
         <>
           <div className="ds-datatable-scroll" style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "var(--surface-sunken)" }}>
                   {["ID", "Customer", "Service", "Location", "Schedule", "Staff", "Timeline", "Actions"].map(h => (
@@ -406,20 +407,11 @@ export default function BookingsAndJobsPage() {
                   />
                 ))}
               </tbody>
-            </table>
+            </TableSurface>
           </div>
 
           {/* Pagination */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page} of {pageCount}</span>
-              <Button variant="ghost" size="sm" disabled={page >= pageCount} onClick={() => setPage(p => Math.min(pageCount, p + 1))}>Next</Button>
-            </div>
-          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} pageCount={pageCount} onPage={setPage} itemLabel="jobs" />
         </>
       )}
 

@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Phase 1B — Admin Permissions page.
  * Renders live permission constants from app/core/permissions.py::class P,
@@ -6,7 +7,7 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Card, Badge, Btn, StatCard, SectionHeader, Skeleton, EmptyState, Input, Select } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, StatCard, SectionHeader, Skeleton, EmptyState, Input, Select, Pagination } from "../../../../components/shared/ui";
 import { Key, Shield, Users, AlertTriangle } from "lucide-react";
 import { rolesPermissionsApi, PermissionListItem } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
@@ -115,14 +116,6 @@ export default function PermissionsPage() {
           options={[{ value: "admin", label: "Admin" }, { value: "tenant", label: "Tenant" }, { value: "customer", label: "Customer" }]}/>
         <Select value={riskFilter} onChange={setRiskFilter} placeholder="All Risk Levels"
           options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]}/>
-        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
-          style={{ padding: "8px 10px", borderRadius:"var(--radius-md)",
-            border: "1px solid var(--border)", background: "var(--surface-raised)",
-            color: "var(--text-primary)", fontSize: 12 }}>
-          {[25, 50, 100, 200].map(size => (
-            <option key={size} value={size}>{size} / page</option>
-          ))}
-        </select>
       </div>
 
       {perms.error ? (
@@ -135,7 +128,7 @@ export default function PermissionsPage() {
         <EmptyState icon={<Key/>} title="No permissions match these filters."/>
       ) : (
         <Card style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--surface-sunken)" }}>
                 {["Permission Key", "Module", "Scope", "Risk", "Assigned Roles", "Status"].map(h => (
@@ -157,23 +150,9 @@ export default function PermissionsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-          <div style={{
-            padding: "10px 16px", borderTop: "1px solid var(--border)",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            gap: 12, flexWrap: "wrap", fontSize: 12, color: "var(--text-tertiary)",
-          }}>
-            <span>Showing {start}-{end} of {total.toLocaleString()} permissions</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Btn size="xs" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                Previous
-              </Btn>
-              <span>Page {page} of {totalPages}</span>
-              <Btn size="xs" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                Next
-              </Btn>
-            </div>
-          </div>
+          </TableSurface>
+          <Pagination page={page} pageSize={pageSize} total={total} pageCount={totalPages} onPage={setPage}
+            pageSizes={[25, 50, 100, 200]} onPageSize={size => { setPageSize(size); setPage(1); }} itemLabel="permissions" alwaysShow />
         </Card>
       )}
       </RequirePermission>

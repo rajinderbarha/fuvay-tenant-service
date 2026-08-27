@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -8,13 +9,8 @@ import {
   type SetupTemplateDetail,
 } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
-import { Btn } from "../../../../../components/shared/ui";
-
-const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
-  draft:     { bg: "var(--warning-bg)", color: "var(--warning-text)" },
-  published: { bg: "var(--success-bg)", color: "var(--success-text)" },
-  archived:  { bg: "var(--surface-sunken)", color: "var(--text-tertiary)" },
-};
+import { Badge, Btn } from "../../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 
 export default function TemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
@@ -63,36 +59,21 @@ export default function TemplateDetailPage() {
 
   if (!template) return <div style={{ padding: "2rem", color: "var(--text-secondary)" }}>Template not found.</div>;
 
-  const statusStyle = STATUS_STYLES[template.status] ?? STATUS_STYLES.draft;
   const itemsByModule: Record<string, typeof template.items> = {};
   for (const item of template.items ?? []) {
     (itemsByModule[item.module_key] ??= []).push(item);
   }
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: 900 }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <Link href="/admin/service-setup/templates" style={{ color: "var(--text-tertiary)", fontSize: 13, textDecoration: "none" }}>
-          ← Back to Templates
-        </Link>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 8, flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{template.name}</h1>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-tertiary)" }}>{template.code}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 9999, textTransform: "uppercase", ...statusStyle }}>
-                {template.status}
-              </span>
-              {template.is_system && (
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 9999, background: "var(--accent-muted)", color: "var(--accent)" }}>
-                  System
-                </span>
-              )}
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{template.vertical_key} · {template.template_type} · v{template.version}</span>
-            </div>
-            {template.description && <p style={{ color: "var(--text-secondary)", marginTop: 8, fontSize: 14 }}>{template.description}</p>}
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title={template.name}
+        description={template.description || `${template.code} · ${template.vertical_key} · ${template.template_type} · v${template.version}`}
+        eyebrow="Service Setup Template"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)", flexWrap: "wrap", alignItems: "center" }}>
+            <Link href="/admin/service-setup/templates"><Btn variant="ghost" size="sm">Back</Btn></Link>
+            <Badge variant={template.status === "published" ? "success" : template.status === "archived" ? "muted" : "warning"}>{template.status}</Badge>
+            {template.is_system && <Badge variant="info">System</Badge>}
             <Btn variant="ghost" size="sm" onClick={handleValidate} loading={validateAction.loading}>Validate</Btn>
             {template.status === "draft" && (
               <Btn variant="success" size="sm" onClick={handlePublish} loading={publishAction.loading}>Publish</Btn>
@@ -104,9 +85,8 @@ export default function TemplateDetailPage() {
             {template.status === "draft" && (
               <Btn variant="danger" size="sm" onClick={handleDelete} loading={deleteAction.loading}>Delete</Btn>
             )}
-          </div>
-        </div>
-      </div>
+        </div>}
+      />
 
       {validateResult && (
         <div style={{
@@ -170,7 +150,7 @@ export default function TemplateDetailPage() {
               <div style={{ padding: "8px 14px", background: "var(--surface-sunken)", fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
                 {moduleKey.replace(/_/g, " ")} <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>({moduleItems.length})</span>
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <tbody>
                   {moduleItems.map(item => (
                     <tr key={item.id} style={{ borderTop: "1px solid var(--border)" }}>
@@ -179,7 +159,7 @@ export default function TemplateDetailPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           ))
         )}

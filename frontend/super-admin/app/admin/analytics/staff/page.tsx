@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminAnalyticsApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
 import {
   AnalyticsKpiCard,
   AnalyticsDateFilter,
@@ -32,13 +33,12 @@ export default function StaffPerformancePage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Staff Performance</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Cross-tenant staff/technician performance overview</p>
-        </div>
-        <AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />
-      </div>
+      <PageHeader
+        title="Staff Performance"
+        description="Cross-tenant staff and technician performance overview."
+        eyebrow="Analytics"
+        actions={<AnalyticsDateFilter dateFrom={df} dateTo={dt} onChange={(f, t) => { setDf(f); setDt(t); }} loading={loading} />}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
         <AnalyticsKpiCard label="Total Staff"        value={s.total_staff}        loading={loading} />

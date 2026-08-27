@@ -1,16 +1,19 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { bulkSetupApi, BulkSetupRun, BulkSetupRunItem } from "../../../../../lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn, KpiGrid, SummaryCard } from "../../../../../components/shared/ui";
 
 const ACTION_COLORS: Record<string, string> = {
-  created: "#dcfce7",
-  reused:  "#dbeafe",
-  mapped:  "#ede9fe",
-  skipped: "#f3f4f6",
-  failed:  "#fef2f2",
+  created: "var(--success-bg)",
+  reused:  "var(--info-bg)",
+  mapped:  "var(--accent-muted)",
+  skipped: "var(--surface-sunken)",
+  failed:  "var(--danger-bg)",
 };
 
 export default function BulkRunDetailPage() {
@@ -24,8 +27,8 @@ export default function BulkRunDetailPage() {
       .finally(() => setLoading(false));
   }, [runId]);
 
-  if (loading) return <div style={{ padding: "2rem" }}>Loading...</div>;
-  if (!run) return <div style={{ padding: "2rem" }}>Run not found.</div>;
+  if (loading) return <div style={{ padding: "var(--space-8)", color: "var(--text-secondary)" }}>Loading...</div>;
+  if (!run) return <div style={{ padding: "var(--space-8)", color: "var(--text-secondary)" }}>Run not found.</div>;
 
   const items = run.items ?? [];
   const byAction: Record<string, BulkSetupRunItem[]> = {};
@@ -34,72 +37,65 @@ export default function BulkRunDetailPage() {
   }
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "900px" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <Link href="/admin/service-setup/bulk-runs" style={{ color: "#6b7280", fontSize: "0.85rem", textDecoration: "none" }}>
-          ← Back to Runs
-        </Link>
-        <h1 style={{ fontSize: "1.4rem", fontWeight: 700, margin: "0.5rem 0 0" }}>Bulk Setup Run</h1>
-        <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{run.id}</div>
-      </div>
+    <div style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
+      <PageHeader
+        title="Bulk Setup Run"
+        description={`Run ID: ${run.id}`}
+        eyebrow="Service Setup"
+        actions={<Link href="/admin/service-setup/bulk-runs"><Btn variant="secondary" size="sm">Back to Runs</Btn></Link>}
+      />
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.75rem", marginBottom: "1.5rem" }}>
+      <KpiGrid>
         {Object.entries(run.summary_json ?? {}).map(([k, v]) => (
-          <div key={k} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "0.5rem", padding: "0.85rem", textAlign: "center" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#1e3a5f" }}>{v}</div>
-            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{k}</div>
-          </div>
+          <SummaryCard key={k} label={k.replace(/_/g, " ")} value={v} />
         ))}
-        <div style={{ background: run.status === "completed" ? "#f0fdf4" : "#fef2f2", border: `1px solid ${run.status === "completed" ? "#bbf7d0" : "#fecaca"}`, borderRadius: "0.5rem", padding: "0.85rem", textAlign: "center" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, color: run.status === "completed" ? "var(--success)" : "var(--danger)" }}>{run.status}</div>
-          <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>status</div>
-        </div>
-      </div>
+        <SummaryCard label="Status" value={run.status} tone={run.status === "completed" ? "success" : "danger"} />
+      </KpiGrid>
 
       {run.error_json && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "0.5rem", padding: "1rem", marginBottom: "1.25rem" }}>
-          <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: "0.25rem" }}>Error</div>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: "var(--radius-lg)", padding: "var(--space-4)" }}>
+          <div style={{ fontWeight: 700, color: "var(--danger-text)", marginBottom: "var(--space-1)" }}>Error</div>
           <pre style={{ fontSize: "0.75rem", margin: 0 }}>{JSON.stringify(run.error_json, null, 2)}</pre>
         </div>
       )}
 
       {/* Items by action */}
       {items.length === 0 ? (
-        <p style={{ color: "#9ca3af" }}>No item records for this run.</p>
+        <p style={{ color: "var(--text-tertiary)" }}>No item records for this run.</p>
       ) : (
         <div>
           {Object.entries(byAction).map(([action, actionItems]) => (
             <div key={action} style={{ marginBottom: "1.25rem" }}>
-              <h3 style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#4b5563" }}>
+              <h3 style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: "var(--space-2)", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>
                 {action} ({actionItems.length})
               </h3>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ background: "#f9fafb" }}>
+                  <tr style={{ background: "var(--surface-sunken)" }}>
                     {["Entity Type", "Code / ID", "Message"].map(h => (
-                      <th key={h} style={{ textAlign: "left", padding: "0.4rem 0.75rem", fontSize: "0.7rem", color: "#6b7280", fontWeight: 600, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                      <th key={h} scope="col" style={{ textAlign: "left", padding: "0.4rem 0.75rem", fontSize: "0.7rem", color: "var(--text-tertiary)", fontWeight: 600, borderBottom: "1px solid var(--border)" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {actionItems.map(item => (
-                    <tr key={item.id} style={{ borderBottom: "1px solid #f3f4f6", background: ACTION_COLORS[item.action] ?? "transparent" }}>
+                    <tr key={item.id} style={{ borderBottom: "1px solid var(--border)", background: ACTION_COLORS[item.action] ?? "transparent" }}>
                       <td style={{ padding: "0.4rem 0.75rem", fontSize: "0.78rem", fontFamily: "monospace" }}>{item.entity_type}</td>
-                      <td style={{ padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "#6b7280", fontFamily: "monospace" }}>
+                      <td style={{ padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "var(--text-tertiary)", fontFamily: "monospace" }}>
                         {item.entity_code ?? item.entity_id?.slice(0, 8) ?? "—"}
                       </td>
-                      <td style={{ padding: "0.4rem 0.75rem", fontSize: "0.78rem", color: "#4b5563" }}>{item.message ?? "—"}</td>
+                      <td style={{ padding: "0.4rem 0.75rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>{item.message ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableSurface>
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ marginTop: "1.5rem", fontSize: "0.75rem", color: "#9ca3af" }}>
+      <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
         Draft: {run.draft_id} | Applied by: {run.applied_by_user_id ?? "—"} | Completed: {run.completed_at ? new Date(run.completed_at).toLocaleString() : "—"}
       </div>
     </div>

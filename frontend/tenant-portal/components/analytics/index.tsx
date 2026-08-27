@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Sprint 28 — Provider Analytics Shared Components (design-token edition)
  * All className removed — uses inline CSS with design token variables.
@@ -108,7 +109,7 @@ export function SimpleTable({ rows, columns, loading, emptyText = "No data" }: T
   );
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
             {columns.map(c => (
@@ -131,7 +132,7 @@ export function SimpleTable({ rows, columns, loading, emptyText = "No data" }: T
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }

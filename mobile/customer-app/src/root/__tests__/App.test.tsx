@@ -7,6 +7,6 @@ describe("App entry", () => {
     const { getByLabelText } = render(<App />);
     // Bootstrap resolves once session restoration completes (Phase F);
     // with no stored session, this always lands on the interactive welcome screen.
-    await waitFor(() => expect(getByLabelText("Get started with Fuvay")).toBeTruthy());
+    await waitFor(() => expect(getByLabelText("Continue to Fuvay sign in")).toBeTruthy());
   });
 });

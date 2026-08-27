@@ -1,4 +1,5 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 
 import React, { useCallback, useState } from "react";
 import Link from "next/link";
@@ -10,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
-import { Badge, Btn, Card, SectionHeader, Skeleton } from "../../../../components/shared/ui";
+import { Badge, Btn, Card, SectionHeader, Skeleton, SummaryCard, Pagination } from "../../../../components/shared/ui";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import {
   adminCustomerFlowApi, catalogApi, categoryRuntimeApi,
@@ -268,10 +269,7 @@ function FinancePolicyTab({ categoryId }: { categoryId: string }) {
 }
 
 function Metric({ label, value, good }: { label: string; value: string | number; good?: boolean }) {
-  return <div style={{ padding: "15px 17px", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
-    <div style={{ fontSize: 19, fontWeight: 750, textTransform: label === "Published model" ? "capitalize" : undefined, color: good ? "var(--success)" : "var(--text-primary)" }}>{value}</div>
-    <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-tertiary)" }}>{label}</div>
-  </div>;
+  return <SummaryCard label={label} value={value} tone={good ? "success" : undefined} />;
 }
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -427,7 +425,7 @@ function TechnicianSkillsTab({ categoryId }: { categoryId: string }) {
       {(save.error || lifecycle.error || skills.error) && <Notice tone="danger">{save.error || lifecycle.error || skills.error}</Notice>}
       {skills.loading ? <Skeleton height={260} /> : rows.length === 0 ? (
         <div style={{ padding: 36, textAlign: "center", color: "var(--text-secondary)", fontSize: 13 }}>No skills match these filters.</div>
-      ) : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+      ) : <div style={{ overflowX: "auto" }}><TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead><tr style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em" }}>
           {['Skill', 'Service group', 'Verification', 'Assignments', 'Status', 'Actions'].map((label, index) => <th key={label} style={{ padding: "9px 10px", textAlign: index > 2 ? "right" : "left", borderBottom: "1px solid var(--border)" }}>{label}</th>)}
         </tr></thead>
@@ -439,10 +437,9 @@ function TechnicianSkillsTab({ categoryId }: { categoryId: string }) {
           <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border)", textAlign: "right" }}><Badge variant={skill.status === "active" ? "success" : "muted"}>{skill.status}</Badge></td>
           <td style={{ padding: "12px 10px", borderBottom: "1px solid var(--border)", textAlign: "right", whiteSpace: "nowrap" }}><Btn size="xs" variant="ghost" onClick={() => openEdit(skill)}><Pencil size={12} /> Edit</Btn><Btn size="xs" variant="ghost" loading={lifecycle.loading} onClick={() => lifecycle.execute(skill)}>{skill.status === "active" ? <Archive size={12} /> : <RotateCcw size={12} />}{skill.status === "active" ? "Retire" : "Restore"}</Btn></td>
         </tr>)}</tbody>
-      </table></div>}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, fontSize: 12, color: "var(--text-tertiary)" }}>
-        <span>{data?.total ?? 0} total skills</span><div style={{ display: "flex", gap: 8, alignItems: "center" }}><Btn size="xs" variant="secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</Btn><span>Page {data?.page ?? page} of {data?.pages ?? 1}</span><Btn size="xs" variant="secondary" disabled={page >= (data?.pages ?? 1)} onClick={() => setPage(value => value + 1)}>Next</Btn></div>
-      </div>
+      </TableSurface></div>}
+      <Pagination page={data?.page ?? page} pageSize={20} total={data?.total ?? 0} pageCount={data?.pages}
+        onPage={setPage} itemLabel="skills" alwaysShow />
     </Card>
     {editing !== undefined && <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><div><h3 style={{ margin: 0, fontSize: 15 }}>{editing ? "Edit technician skill" : "Add technician skill"}</h3><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>Provider choices update immediately after saving.</p></div><Btn variant="ghost" size="sm" onClick={() => setEditing(undefined)}><X size={13} /> Close</Btn></div>
@@ -581,7 +578,7 @@ function ModulesTab({ runtime }: { runtime: CategoryRuntime }) {
         <Notice tone="info">No modules match the current filters.</Notice>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ color: "var(--text-tertiary)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 <th style={{ textAlign: "left", padding: "9px 10px", borderBottom: "1px solid var(--border)" }}>Module</th>
@@ -616,7 +613,7 @@ function ModulesTab({ runtime }: { runtime: CategoryRuntime }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         </div>
       )}
       </Card>

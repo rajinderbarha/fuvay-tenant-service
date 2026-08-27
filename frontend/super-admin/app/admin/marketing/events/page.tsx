@@ -1,6 +1,9 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 import { useEffect, useState } from "react";
 import { adminMarketingApi } from "@/lib/api";
+import { PageHeader } from "@serviceos/design-system";
+import { Btn } from "@/components/shared/ui";
 
 const EVENT_COLOR: Record<string, string> = {
   targeted:  "var(--text-secondary)",
@@ -16,10 +19,6 @@ const EVENT_COLOR: Record<string, string> = {
 const selStyle: React.CSSProperties = {
   height: 34, padding: "0 10px", fontSize: 13, border: "1px solid var(--border)",
   borderRadius:"var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit",
-};
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: 13, border: "1px solid var(--border)", borderRadius:"var(--radius-md)",
-  background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit",
 };
 const th: React.CSSProperties = {
   padding: "8px 14px", fontSize: 11, fontWeight: 700, textTransform: "uppercase",
@@ -47,23 +46,20 @@ export default function MarketingEventsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Campaign Events</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Delivery and conversion event stream</p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Campaign Events"
+        description="Delivery and conversion event stream."
+        eyebrow="Marketing"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <select value={eventFilter} onChange={e => setEventFilter(e.target.value)} style={selStyle}>
             <option value="">All Events</option>
             {["targeted","sent","delivered","opened","clicked","converted","failed","skipped"].map(t => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
-          <button onClick={load} disabled={loading} style={btnStyle}>
-            {loading ? "Loading…" : "Refresh"}
-          </button>
-        </div>
-      </div>
+          <Btn variant="secondary" size="sm" onClick={load} loading={loading}>Refresh</Btn>
+        </div>}
+      />
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", overflow: "hidden" }}>
         {loading ? (
@@ -71,7 +67,7 @@ export default function MarketingEventsPage() {
         ) : events.length === 0 ? (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No events found</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
                 <th style={th}>Event</th>
@@ -106,7 +102,7 @@ export default function MarketingEventsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </TableSurface>
         )}
       </div>
     </div>

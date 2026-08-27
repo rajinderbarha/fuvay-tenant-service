@@ -1,16 +1,17 @@
 "use client";
+import { TableSurface } from "@serviceos/design-system";
 /**
  * Home Services Finance Hub — TENANT-HS-FINANCE-HUB-01.
  *
  * Category-scoped consolidation of: finance readiness, usage-credit wallet,
  * credit purchase/top-ups, completed-job deductions, credit reversals,
- * security deposit, deposit refund requests, published finance policy,
+ * technician seats, published finance policy,
  * financial activity and the reconciliation queue.
  *
  * Renders ONLY server-computed projections from
  * /v1/tenant/home-services/finance/* (app/engines/finance_hub/
  * tenant_hs_finance_router.py). This page never derives a balance, never
- * sums the usage-credit and security-deposit ledgers into one figure, and
+ * sums separate ledgers into one figure, and
  * never turns a failed fetch into a fake zero — a failed projection shows a
  * real error state instead.
  *
@@ -27,11 +28,11 @@ import {
   CheckCircle2, RefreshCw, Download, Eye, CreditCard, TrendingDown,
   ArrowUpRight, Clock, XCircle, Info, ExternalLink, ListChecks, Ban,
 } from "lucide-react";
-import { Card, Badge, Btn, Skeleton, KpiGrid, SummaryCard } from "../../../../components/shared/ui";
+import { Card, Badge, Btn, Skeleton, KpiGrid, SummaryCard, Pagination } from "../../../../components/shared/ui";
 import {
   homeServicesFinanceApi, ServiceOSError,
   type HsFinanceOverview, type HsFinanceTxnRow, type HsFinanceTxnPage,
-  type HsCreditPackage, type HsTopupOrder, type HsRefundRequest,
+  type HsCreditPackage, type HsTopupOrder,
   type HsFinanceReadinessCheck, type HsLiabilityHold, type HsCommissionRates,
 } from "../../../../lib/api";
 import { useRazorpayCheckout } from "../../../../hooks/useRazorpayCheckout";
@@ -41,7 +42,6 @@ import { useRazorpayCheckout } from "../../../../hooks/useRazorpayCheckout";
 const TABS = [
   { key: "overview",         label: "Overview",              icon: LayoutDashboard },
   { key: "usage-credits",    label: "Usage Credits",         icon: Wallet },
-  { key: "security-deposit", label: "Security Deposit",      icon: Shield },
   { key: "topups",           label: "Top-ups & Transactions",icon: Receipt },
   { key: "policy",           label: "Policy & Audit",        icon: FileText },
 ] as const;
@@ -257,7 +257,7 @@ function ActivityTable({ page, compact, onReceipt }: {
        "Usage-credit balance", "Status", "Related", "Actions"];
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: compact ? 720 : 1180 }}>
+      <TableSurface style={{ width: "100%", borderCollapse: "collapse", minWidth: compact ? 720 : 1180 }}>
         <thead>
           <tr>
             {cols.map(c => (
@@ -321,7 +321,7 @@ function ActivityTable({ page, compact, onReceipt }: {
             </tr>
           ))}
         </tbody>
-      </table>
+      </TableSurface>
     </div>
   );
 }
@@ -335,7 +335,7 @@ function td(): React.CSSProperties {
 function HoldsList({ holds }: { holds: HsLiabilityHold[] }) {
   if (holds.length === 0) {
     return <p style={{ fontSize: 12.5, color: "var(--success-text)", margin: 0 }}>
-      No liability holds against your deposit.
+      No liability holds against your account.
     </p>;
   }
   return (
@@ -354,141 +354,9 @@ function HoldsList({ holds }: { holds: HsLiabilityHold[] }) {
   );
 }
 
-/* ── refund request card ─────────────────────────────────────────────────── */
-
-function RefundRequestCard({ rr, onChanged }: { rr: HsRefundRequest; onChanged: () => void }) {
-  const idx = rr.workflow_stages.indexOf(rr.status);
-  const [replying, setReplying] = React.useState(false);
-  const [reply, setReply] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [err, setErr] = React.useState<string | null>(null);
-
-  const awaitingInfo = rr.status === "info_requested";
-  // Mirrors the server guard exactly: withdraw is legal from any state that is
-  // neither terminal nor already being processed.
-  const canWithdraw = !["refunded", "rejected", "withdrawn", "processing"].includes(rr.status);
-
-  async function submitReply() {
-    if (reply.trim().length < 2) return;
-    setBusy(true); setErr(null);
-    try {
-      await homeServicesFinanceApi.respondRefundRequest(rr.refund_request_id, reply.trim());
-      setReply(""); setReplying(false); onChanged();
-    } catch (e) {
-      setErr(e instanceof ServiceOSError ? e.message : "Your response could not be sent.");
-    } finally { setBusy(false); }
-  }
-
-  async function withdraw() {
-    setBusy(true); setErr(null);
-    try {
-      await homeServicesFinanceApi.withdrawRefundRequest(rr.refund_request_id);
-      onChanged();
-    } catch (e) {
-      setErr(e instanceof ServiceOSError ? e.message : "This request could not be withdrawn.");
-    } finally { setBusy(false); }
-  }
-  return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: 14, marginBottom: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>
-          {rr.request_ref}
-        </span>
-        <Badge variant={statusVariant(rr.status)} size="md" dot>{rr.status_label}</Badge>
-      </div>
-      {/* workflow tracker — the real state machine, not decorative */}
-      <div style={{ display: "flex", gap: 4, marginTop: 12, flexWrap: "wrap" }}>
-        {rr.workflow_stages.map((s, i) => (
-          <span key={s} style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: "0.03em", padding: "3px 8px", borderRadius: 999,
-            background: idx >= 0 && i <= idx ? "var(--accent-muted)" : "var(--surface-sunken)",
-            color: idx >= 0 && i <= idx ? "var(--accent)" : "var(--text-tertiary)",
-            border: "1px solid var(--border)",
-          }}>{humanStatus(s)}</span>
-        ))}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Row label="Requested" value={money(rr.requested_amount)} />
-        <Row label="Approved" value={rr.approved_amount ? money(rr.approved_amount) : "—"} />
-        <Row label="Eligible at submission" value={money(rr.eligible_amount_snapshot)} />
-        <Row label="Held / required at submission"
-          value={`${money(rr.deposit_held_snapshot)} / ${money(rr.deposit_required_snapshot)}`} />
-        <Row label="Qualifying technicians" value={rr.qualifying_technicians_snapshot} />
-        <Row label="Policy version" value={rr.policy_version ?? "—"} />
-        <Row label="Bank account" value={rr.bank_account_number_masked ?? "—"}
-          hint={rr.bank_ifsc ?? undefined} />
-        <Row label="Submitted" value={dt(rr.submitted_at)} />
-        {rr.payout_reference && <Row label="Payout reference" value={rr.payout_reference} />}
-      </div>
-      {rr.reason && (
-        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "10px 0 0" }}>
-          <strong style={{ color: "var(--text-primary)" }}>Reason: </strong>{rr.reason}
-        </p>
-      )}
-      {rr.info_requested_note && (
-        <div style={{ marginTop: 10, background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
-          borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--warning-text)" }}>
-          <strong>Admin requested information: </strong>{rr.info_requested_note}
-        </div>
-      )}
-      {rr.tenant_response && (
-        <div style={{ marginTop: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)",
-          borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--text-secondary)" }}>
-          <strong style={{ color: "var(--text-primary)" }}>Your response: </strong>{rr.tenant_response}
-        </div>
-      )}
-
-      {/* The admin's question used to be rendered with no way to answer it, so
-          a request parked in `info_requested` could never move again. Both of
-          these endpoints already existed; only the callers were missing. */}
-      {(awaitingInfo || canWithdraw) && (
-        <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-          {awaitingInfo && !replying && (
-            <Btn size="sm" variant="primary" onClick={() => setReplying(true)}>Respond to Admin</Btn>
-          )}
-          {awaitingInfo && replying && (
-            <div>
-              <label htmlFor={`rr-reply-${rr.refund_request_id}`}
-                style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Your response to Admin
-              </label>
-              <textarea
-                id={`rr-reply-${rr.refund_request_id}`} rows={3} value={reply}
-                onChange={e => setReply(e.target.value.slice(0, 2000))}
-                placeholder="Answer the question above so the review can continue…"
-                style={{ width: "100%", padding: 10, fontSize: 13, background: "var(--surface-sunken)",
-                  border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)",
-                  resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
-              />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <Btn size="sm" variant="primary" loading={busy} disabled={reply.trim().length < 2} onClick={submitReply}>
-                  Send response
-                </Btn>
-                <Btn size="sm" variant="secondary" onClick={() => { setReplying(false); setReply(""); }}>Cancel</Btn>
-              </div>
-            </div>
-          )}
-          {canWithdraw && !replying && (
-            <Btn size="sm" variant="secondary" loading={busy} onClick={withdraw}
-              style={{ marginLeft: awaitingInfo ? 8 : 0 }}>
-              Withdraw request
-            </Btn>
-          )}
-          {err && <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: "8px 0 0" }}>{err}</p>}
-        </div>
-      )}
-      {rr.blockers.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-            color: "var(--text-tertiary)", margin: "0 0 6px" }}>
-            Liabilities recorded at submission (reviewed by Admin before approval)
-          </p>
-          <HoldsList holds={rr.blockers} />
-        </div>
-      )}
-    </div>
-  );
-}
+/* The deposit refund-request card was removed with the deposit itself
+   (migrations 317/318): a top-up is spent down as commission, never held
+   and returned, so there is nothing to request back. */
 
 /* ── page ─────────────────────────────────────────────────────────────────── */
 
@@ -516,17 +384,6 @@ export default function HomeServicesFinancePage() {
   const [rates, setRates] = useState<HsCommissionRates | null>(null);
   const [ratesFailed, setRatesFailed] = useState(false);
   /**
-   * The overview carries only the single OPEN request, as
-   * `security_deposit.open_refund_request`. The Refund requests card was
-   * reading `security_deposit.refund_requests.items`, a field this endpoint
-   * has never returned, so the optional chain always fell through to the empty
-   * state and the card NEVER rendered a request -- which is also why the
-   * admin's information request and the actions on it were unreachable.
-   * `HsFinanceOverview` being `any` hid the mismatch from the compiler.
-   * History comes from the real paged list endpoint.
-   */
-  const [refundHistory, setRefundHistory] = useState<HsRefundRequest[] | null>(null);
-  /**
    * Top-ups were loaded once as `{ page_size: 25 }` with no page and no
    * status, so only the newest 25 orders were ever reachable and the endpoint's
    * `status`/`page` parameters had no controls. `total` was discarded too, so
@@ -549,14 +406,6 @@ export default function HomeServicesFinancePage() {
   const [buyBusy, setBuyBusy] = useState(false);
   const [buyResult, setBuyResult] = useState<string | null>(null);
 
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [refundAmount, setRefundAmount] = useState("");
-  const [refundReason, setRefundReason] = useState("");
-  const [refundBank, setRefundBank] = useState("");
-  const [refundAcct, setRefundAcct] = useState("");
-  const [refundIfsc, setRefundIfsc] = useState("");
-  const [refundBusy, setRefundBusy] = useState(false);
-  const [refundMsg, setRefundMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [policyOpen, setPolicyOpen] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
@@ -603,14 +452,6 @@ export default function HomeServicesFinancePage() {
   }, []);
 
   useEffect(load, [load]);
-
-  const loadRefundHistory = useCallback(() => {
-    homeServicesFinanceApi.listRefundRequests({ page_size: 25 })
-      .then(r => setRefundHistory(r.items))
-      .catch(() => setRefundHistory(null));
-  }, []);
-
-  useEffect(() => { loadRefundHistory(); }, [loadRefundHistory]);
 
   useEffect(() => {
     homeServicesFinanceApi.getCommissionRates()
@@ -697,19 +538,6 @@ export default function HomeServicesFinancePage() {
     }
   }, [buyQty, load, openCheckout]);
 
-  const submitRefund = useCallback(() => {
-    setRefundBusy(true); setRefundMsg(null);
-    homeServicesFinanceApi.createRefundRequest({
-      requested_amount: refundAmount, reason: refundReason,
-      bank_account_name: refundBank || undefined,
-      bank_account_number: refundAcct || undefined,
-      bank_ifsc: refundIfsc || undefined,
-    })
-      .then(rr => { setRefundMsg({ ok: true, text: `Refund request ${rr.request_ref} submitted for Admin review.` }); setRefundOpen(false); load(); })
-      .catch((e: unknown) => setRefundMsg({ ok: false, text: e instanceof ServiceOSError ? e.message : "Could not submit the refund request." }))
-      .finally(() => setRefundBusy(false));
-  }, [refundAmount, refundReason, refundBank, refundAcct, refundIfsc, load]);
-
   const doExport = useCallback(() => {
     setExportMsg("Preparing…");
     // Export previously ignored every filter except ledger, so a filtered
@@ -760,7 +588,7 @@ export default function HomeServicesFinancePage() {
             Home Services Finance
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, maxWidth: 720 }}>
-            Manage usage credits, security deposit and finance readiness for this Home Services workspace.
+            Manage usage credits, technician seats and finance readiness for this Home Services workspace.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -789,13 +617,11 @@ export default function HomeServicesFinancePage() {
           <KpiCard label="Credits used this month" value={moneyCompact(kpis.credits_used_this_month)}
             sub={`${data?.usage_credits.completed_job_deductions ?? 0} completed-job deduction(s) all-time`}
             icon={<TrendingDown size={17} />} variant="info" />
-          <KpiCard label="Deposit held" value={moneyCompact(kpis.deposit_held)}
-            sub="Held separately from usage credits"
+          {/* Seats replaced the security deposit: headcount is bought with a
+              top-up plan rather than collateralised. */}
+          <KpiCard label="Technician seats" value={kpis.entitled_seats ?? 0}
+            sub="Bought with a top-up plan — also jobs bookable per slot"
             icon={<Shield size={17} />} variant="default" />
-          <KpiCard label="Deposit required" value={moneyCompact(kpis.deposit_required)}
-            sub={`${data?.security_deposit.qualifying_technician_count ?? 0} qualifying technician(s)`}
-            icon={<Shield size={17} />}
-            variant={Number(data?.security_deposit.top_up_due ?? 0) > 0 ? "danger" : "default"} />
           <KpiCard label="Action items" value={kpis.action_items}
             sub="Open finance items needing you"
             icon={<ListChecks size={17} />} variant={kpis.action_items > 0 ? "warning" : "success"} />
@@ -853,7 +679,7 @@ export default function HomeServicesFinancePage() {
             <ActivityTable page={data.recent_activity} compact />
           </Card>
 
-          {/* 3 + 4. Wallet and deposit — visually SEPARATE cards, never summed */}
+          {/* 3 + 4. Wallet and seats */}
           <div className="fh-two">
             <Card>
               <SectionTitle icon={<Wallet size={16} />} title="Usage-credit wallet"
@@ -892,31 +718,19 @@ export default function HomeServicesFinancePage() {
             </Card>
 
             <Card>
-              <SectionTitle icon={<Shield size={16} />} title="Security deposit"
-                subtitle="Held separately — never combined with usage credits"
-                actions={<Badge variant={data.security_deposit.status === "fully_funded" ? "success"
-                  : data.security_deposit.status === "top_up_due" || data.security_deposit.status === "not_paid" ? "danger" : "info"}
-                  size="sm">{humanStatus(data.security_deposit.status)}</Badge>} />
+              <SectionTitle icon={<Shield size={16} />} title="Technician seats"
+                subtitle="Bought with a top-up plan — one seat is one technician, and one more job per slot" />
               <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", marginBottom: 12 }}>
-                {money(data.security_deposit.deposit_held)}
+                {data.kpis?.entitled_seats ?? 0}
               </div>
-              <Row label="Qualifying technicians" value={data.security_deposit.qualifying_technician_count}
-                hint={data.security_deposit.technician_count_policy ?? undefined} />
-              <Row label="Amount per technician" value={money(data.security_deposit.amount_per_technician)} />
-              <Row label="Minimum deposit" value={money(data.security_deposit.minimum_deposit)} />
-              <Row label="Required" value={money(data.security_deposit.deposit_required)} />
-              <Row label="Pending payment" value={money(data.security_deposit.deposit_pending)} />
-              <Row label="Top-up due" value={money(data.security_deposit.top_up_due)} />
-              <Row label="Potentially refundable excess" value={money(data.security_deposit.refundable_excess)} />
-              <Row label="Eligible to request now" value={money(data.security_deposit.eligible_refund_amount)} />
-              <Row label="Policy version" value={data.security_deposit.policy_version ?? "—"} />
-              <div style={{ marginTop: 12 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                  color: "var(--text-tertiary)", margin: "0 0 6px" }}>Liability holds</p>
-                <HoldsList holds={data.security_deposit.liability_holds} />
+              <Row label="Seats purchased" value={data.kpis?.entitled_seats ?? 0} />
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 10 }}>
+                The security deposit was retired. Your credit balance is what covers a
+                penalty or settlement, and bookings pause if it falls below the floor —
+                so keeping it topped up is what keeps work coming in.
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                <Btn size="sm" variant="secondary" onClick={() => goTab("security-deposit")}>Manage deposit</Btn>
+                <Btn size="sm" variant="primary" icon={<CreditCard size={13} />} onClick={openBuy}>Buy a top-up plan</Btn>
               </div>
             </Card>
           </div>
@@ -943,7 +757,7 @@ export default function HomeServicesFinancePage() {
                   <Row label="Completion deduction" value={data.policy.completion_deduction_rule ?? "—"} />
                 </div>
                 <div>
-                  <Row label="Deposit rule" value={data.policy.deposit_rule ?? "—"} />
+                  <Row label="Bookings pause below" value={money(data.policy.credit_booking_floor)} />
                   <Row label="GST / tax rule" value={data.policy.gst_tax_rule ?? "—"} />
                   <Row label="Low-balance policy" value={data.policy.low_balance_policy ?? "—"} />
                   <Row label="Effective from" value={dt(data.policy.effective_from)} />
@@ -1088,134 +902,6 @@ export default function HomeServicesFinancePage() {
         </div>
       )}
 
-      {/* ══ SECURITY DEPOSIT ══════════════════════════════════════════════ */}
-      {!loading && data && tab === "security-deposit" && (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div className="fh-two">
-            <Card>
-              <SectionTitle icon={<Shield size={16} />} title="Deposit position"
-                subtitle="Independent of the usage-credit wallet" />
-              <div style={{ fontSize: 34, fontWeight: 800, color: "var(--text-primary)" }}>
-                {money(data.security_deposit.deposit_held)}
-              </div>
-              <Row label="Gross paid to date" value={money(data.security_deposit.deposit_held_gross)} />
-              <Row label="Refunded to date" value={money(data.security_deposit.deposit_refunded_total)} />
-              <Row label="Required" value={money(data.security_deposit.deposit_required)}
-                hint={`${data.security_deposit.qualifying_technician_count} qualifying technician(s)`} />
-              <Row label="Per technician" value={money(data.security_deposit.amount_per_technician)} />
-              <Row label="Top-up due" value={money(data.security_deposit.top_up_due)} />
-              <Row label="Potentially refundable excess" value={money(data.security_deposit.refundable_excess)} />
-              <Row label="Eligible to request now" value={money(data.security_deposit.eligible_refund_amount)} />
-              <Row label="Last deposit transaction"
-                value={data.security_deposit.last_transaction
-                  ? String((data.security_deposit.last_transaction as Record<string, unknown>).gateway_order_id ?? "—")
-                  : "None"} />
-              {Number(data.security_deposit.top_up_due) > 0 && (
-                <div style={{ marginTop: 12, background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-                  borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: "var(--danger-text)" }}>
-                  Your technician headcount requires {money(data.security_deposit.deposit_required)}.
-                  A top-up of {money(data.security_deposit.top_up_due)} is outstanding — your held balance was
-                  not changed silently, and existing jobs are unaffected.
-                </div>
-              )}
-            </Card>
-            <Card>
-              <SectionTitle icon={<AlertTriangle size={16} />} title="Liability & hold review"
-                subtitle="Checked by Admin before any refund is approved" />
-              <HoldsList holds={data.security_deposit.liability_holds} />
-              <Row label="Holds with a quantified amount" value={money(data.security_deposit.liability_holds_total)} />
-              <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "12px 0 0" }}>
-                Reducing your technician count never triggers an automatic refund and never rewrites the
-                historical held ledger — it only makes an excess potentially refundable, which you must
-                request below.
-              </p>
-              <div style={{ marginTop: 14 }}>
-                <Btn size="sm" variant="primary" disabled={Number(data.security_deposit.eligible_refund_amount) <= 0}
-                  onClick={() => { setRefundOpen(true); setRefundAmount(data.security_deposit.eligible_refund_amount); setRefundMsg(null); }}>
-                  Request deposit refund
-                </Btn>
-                {Number(data.security_deposit.eligible_refund_amount) <= 0 && (
-                  <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0" }}>
-                    Nothing is refundable right now — your held deposit does not exceed the required amount.
-                  </p>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          {refundMsg && (
-            <div style={{ background: refundMsg.ok ? "var(--success-bg)" : "var(--danger-bg)",
-              border: `1px solid ${refundMsg.ok ? "var(--success-border)" : "var(--danger-border)"}`,
-              color: refundMsg.ok ? "var(--success-text)" : "var(--danger-text)",
-              borderRadius: 12, padding: "11px 13px", fontSize: 13 }}>{refundMsg.text}</div>
-          )}
-
-          {refundOpen && (
-            <Card>
-              <SectionTitle icon={<Shield size={16} />} title="New deposit refund request"
-                subtitle="Your business cannot approve or process its own refund — ServiceOS Admin decides" />
-              <div className="fh-two" style={{ gap: 12 }}>
-                <div>
-                  <label style={lbl()}>Amount to request (max {money(data.security_deposit.eligible_refund_amount)})</label>
-                  <input className="fh-input" value={refundAmount} onChange={e => setRefundAmount(e.target.value)} />
-                  <label style={lbl()}>Reason</label>
-                  <textarea className="fh-input" rows={3} value={refundReason}
-                    onChange={e => setRefundReason(e.target.value)}
-                    placeholder="Why is this deposit no longer required?" />
-                </div>
-                <div>
-                  <label style={lbl()}>Bank account name</label>
-                  <input className="fh-input" value={refundBank} onChange={e => setRefundBank(e.target.value)} />
-                  <label style={lbl()}>Account number</label>
-                  <input className="fh-input" value={refundAcct} onChange={e => setRefundAcct(e.target.value)} />
-                  <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-                    Only the last 4 digits are stored.
-                  </p>
-                  <label style={lbl()}>IFSC</label>
-                  <input className="fh-input" value={refundIfsc} onChange={e => setRefundIfsc(e.target.value)} />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <Btn size="sm" variant="primary" loading={refundBusy}
-                  disabled={!refundAmount || refundReason.trim().length < 5} onClick={submitRefund}>
-                  Submit request
-                </Btn>
-                <Btn size="sm" variant="ghost" onClick={() => setRefundOpen(false)}>Cancel</Btn>
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <SectionTitle icon={<ListChecks size={16} />} title="Refund requests"
-              subtitle="Approval is an Admin-only action." />
-            {(() => {
-              // Prefer the paged history; fall back to the overview's single
-              // open request if the list call failed, so an open request is
-              // never invisible.
-              const open = data.security_deposit.open_refund_request as HsRefundRequest | null | undefined;
-              const rows: HsRefundRequest[] = refundHistory ?? (open ? [open] : []);
-              if (rows.length === 0) {
-                return <EmptyRow text="You have not submitted any deposit refund requests." />;
-              }
-              return rows.map(rr => (
-                <RefundRequestCard key={rr.refund_request_id} rr={rr}
-                  onChanged={() => { load(); loadRefundHistory(); }} />
-              ));
-            })()}
-          </Card>
-
-          <Card padding={0}>
-            <div style={{ padding: "18px 18px 0" }}>
-              <SectionTitle icon={<Receipt size={16} />} title="Security-deposit ledger"
-                subtitle="Ledger B only — usage-credit balance intentionally shows — on every row" />
-            </div>
-            {data.security_deposit.ledger
-              ? <ActivityTable page={data.security_deposit.ledger} />
-              : <EmptyRow text="No deposit activity yet." />}
-          </Card>
-        </div>
-      )}
-
       {/* ══ TOP-UPS & TRANSACTIONS ════════════════════════════════════════ */}
       {!loading && data && tab === "topups" && (
         <div style={{ display: "grid", gap: 16 }}>
@@ -1241,7 +927,7 @@ export default function HomeServicesFinancePage() {
               ? <EmptyRow text="No credit top-up orders yet." />
               : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
                     <thead><tr>
                       {["Created", "Order ref", "Base credits", "GST", "Total payable", "Payment", "Wallet", "Gateway payment", "Receipt"].map(c =>
                         <th key={c} style={{ textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em",
@@ -1268,19 +954,8 @@ export default function HomeServicesFinancePage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 12, padding: "12px 2px 2px", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>
-                      Showing {(topupPage - 1) * 25 + 1}–{Math.min(topupPage * 25, topupTotal)} of {topupTotal} order(s)
-                    </span>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="xs" variant="secondary" disabled={topupPage <= 1}
-                        onClick={() => setTopupPage(p => Math.max(1, p - 1))}>Previous</Btn>
-                      <Btn size="xs" variant="secondary" disabled={topupPage * 25 >= topupTotal}
-                        onClick={() => setTopupPage(p => p + 1)}>Next</Btn>
-                    </div>
-                  </div>
+                  </TableSurface>
+                  <Pagination page={topupPage} pageSize={25} total={topupTotal} onPage={setTopupPage} itemLabel="top-up orders" />
                 </div>
               )}
           </Card>
@@ -1330,20 +1005,8 @@ export default function HomeServicesFinancePage() {
                     const id = topupIdFromRow(r);
                     if (id) openReceipt(id);
                   }} />
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 12, padding: "12px 18px", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11.5, color: "var(--text-tertiary)" }}>
-                      {txns.total} row(s) · page {txns.page}
-                      {" · "}
-                      {Object.entries(txns.ledger_totals as Record<string, { rows: number }>).map(([k, v]) => `${k}: ${v.rows}`).join("  ·  ")}
-                    </span>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="xs" variant="secondary" disabled={txns.page <= 1}
-                        onClick={() => { const p = txns.page - 1; setTxnPage(p); pushUrl({ page: p }); }}>Previous</Btn>
-                      <Btn size="xs" variant="secondary" disabled={txns.page * txns.page_size >= txns.total}
-                        onClick={() => { const p = txns.page + 1; setTxnPage(p); pushUrl({ page: p }); }}>Next</Btn>
-                    </div>
-                  </div>
+                  <Pagination page={txns.page} pageSize={txns.page_size} total={txns.total}
+                    onPage={p => { setTxnPage(p); pushUrl({ page: p }); }} itemLabel="transactions" />
                 </>
               : <EmptyRow text="Transactions could not be loaded. Please retry — no figures are shown rather than a misleading zero." />}
           </Card>
@@ -1450,11 +1113,12 @@ export default function HomeServicesFinancePage() {
                   <Row label="Initial purchase required" value={data.policy.initial_credit_purchase_required ? "Yes" : "No"} />
                 </div>
                 <div>
-                  <Row label="Deposit required" value={data.policy.deposit_required ? "Yes" : "No"} />
-                  <Row label="Deposit calculation" value={data.policy.deposit_calculation_mode ?? "—"} />
-                  <Row label="Per technician" value={money(data.policy.deposit_amount_per_technician)} />
-                  <Row label="Minimum deposit" value={money(data.policy.minimum_deposit)} />
-                  <Row label="Technician count policy" value={data.policy.technician_count_policy ?? "—"} />
+                  {/* The deposit rows here were retired with the deposit. What
+                      protects the platform now is the credit floor below. */}
+                  <Row label="Low-balance warning at" value={money(data.policy.credit_warning_threshold)} />
+                  <Row label="Bookings pause below" value={money(data.policy.credit_booking_floor)}
+                    hint="new bookings stop; work in flight finishes" />
+                  <Row label="Seat accrual" value={data.policy.seat_accrual_mode ?? "—"} />
                   <Row label="Completion deduction" value={data.policy.completion_deduction_rule ?? "—"} />
                   <Row label="Status" value={humanStatus(data.policy.status ?? "—")} />
                   <Row label="Published" value={dt(data.policy.published_at)}
@@ -1479,7 +1143,7 @@ export default function HomeServicesFinancePage() {
               ? <EmptyRow text="No finance audit events recorded yet." />
               : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+                  <TableSurface style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
                     <thead><tr>
                       {["When", "Operation", "Entity", "Entity id", "Actor role"].map(c =>
                         <th key={c} style={{ textAlign: "left", fontSize: 10.5, fontWeight: 700,
@@ -1498,7 +1162,7 @@ export default function HomeServicesFinancePage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableSurface>
                 </div>
               )}
           </Card>
