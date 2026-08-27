@@ -17,18 +17,17 @@ from app.config import get_settings
 from app.integrations import razorpay_client
 from app.engines.platform_commerce.constants import (
     COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT, SECURITY_DEPOSIT_AMOUNT,
-    DEPOSIT_REPLENISHMENT_PCT, CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
+    CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
     CUSTOMER_SIGNAL_WEIGHTS, CUSTOMER_DEFAULT_SIGNALS, RESERVATION_TTL_HOURS,
-    TxnType, DepositTxnType, BADGE_THRESHOLDS,
+    TxnType, BADGE_THRESHOLDS,
     REDIS_COMMISSION_RATE, REDIS_CUSTOMER_HEALTH,
 )
 from app.engines.platform_commerce.ledger import (
     get_wallet_locked, debit_wallet, credit_wallet,
-    debit_deposit, credit_deposit, reconcile_wallet,
+    reconcile_wallet,
 )
 from app.engines.platform_commerce.models import (
     CreditPackage, TenantWallet, WalletTransaction,
-    SecurityDeposit, SecurityDepositTransaction,
     CommissionRecord, CustomerHealthScore, CustomerCreditBalance,
     CustomerTransaction, CreditReservation, WarrantyClaim, TenantBadge,
 )
@@ -74,27 +73,6 @@ class CommerceService:
     # (self-service callers) -- admin/super_admin callers are unaffected
     # since they reach these via a different permission and are expected to
     # act across tenants.
-    def _assert_owns_tenant_deposit(self, tenant_id: uuid.UUID) -> None:
-        # MODULE-L5-04 hardening: confine every tenant-scoped actor, not just
-        # tenant_owner (defense-in-depth — deposit perms are currently platform-
-        # only, but this future-proofs against the tenant_owner-only anti-pattern
-        # that was an ACTIVE cross-tenant IDOR in serviceability + booking).
-        _PLATFORM = ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
-        if self.actor_role not in _PLATFORM:
-            if self.actor_tenant_id is None or self.actor_tenant_id != tenant_id:
-                raise NotFoundException("SecurityDeposit", str(tenant_id))
-
-    async def _get_or_create_deposit(self, tid):
-        r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tid))
-        d = r.scalar_one_or_none()
-        if not d:
-            t = await self._get_tenant(tid)
-            d = SecurityDeposit(tenant_id=tid,
-                required_amount=SECURITY_DEPOSIT_AMOUNT.get(t.plan_type, Decimal("5000.00")))
-            self.db.add(d)
-            await self.db.flush()
-        return d
-
     async def _get_eff_rate(self, tid):
         key = REDIS_COMMISSION_RATE.format(tenant_id=tid)
         try:
@@ -165,7 +143,6 @@ class CommerceService:
                 "warranty_expires_at": c.warranty_expires_at.isoformat() if c.warranty_expires_at else None,
                 "admin_attention_required": c.status == "admin_review" or overdue,
                 "provider_credit_deducted": float(c.provider_credit_deducted or 0),
-                "security_deposit_deducted": float(c.security_deposit_deducted or 0),
                 "customer_credit_id": str(c.customer_credit_id) if c.customer_credit_id else None,
                 "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
                 "created_at": c.created_at.isoformat()}
@@ -180,85 +157,11 @@ class CommerceService:
                 "deducted_at": r.deducted_at.isoformat()}
 
     # ── Deposit (5) ────────────────────────────────────────────────────────────
-    async def get_deposit_status(self, tid):
-        self._assert_owns_tenant_deposit(tid)
-        d = await self._get_or_create_deposit(tid)
-        return {"tenant_id": str(tid), "status": d.status,
-                "required_amount": float(d.required_amount), "total_paid": float(d.total_paid),
-                "warranty_drawn": float(d.warranty_drawn),
-                "replenishment_total": float(d.replenishment_total),
-                "current_balance": float(d.current_balance),
-                "is_unlocked": d.is_unlocked,
-                "paid_at": d.paid_at.isoformat() if d.paid_at else None}
+    # get/initiate/confirm/list-transactions/admin-adjust deposit were all
+    # removed with the security deposit in migration 318. Nothing is held
+    # any more: a top-up grants spendable credit, and the credit floor is
+    # what keeps a balance available to recover from.
 
-    async def initiate_deposit(self, tid, gateway):
-        self._assert_owns_tenant_deposit(tid)
-        d = await self._get_or_create_deposit(tid)
-        if d.is_unlocked:
-            raise ServiceOSException("CONFLICT", "Security deposit already paid.")
-        order = await razorpay_client.create_order(
-            d.required_amount, receipt=f"deposit_{tid}",
-            notes={"tenant_id": str(tid), "type": "security_deposit"})
-        d.razorpay_order_id = order["id"]
-        return {"order_id": order["id"], "amount": float(d.required_amount), "currency": "INR",
-                "amount_paise": int(d.required_amount * 100), "gateway": gateway,
-                "key": get_settings().RAZORPAY_KEY_ID}
-
-    async def confirm_deposit(self, tid, order_id, payment_id, signature):
-        d = await self._get_or_create_deposit(tid)
-        if d.is_unlocked:
-            return {"already_paid": True, "status": "paid"}
-        ex = await self.db.execute(select(SecurityDepositTransaction)
-            .where(SecurityDepositTransaction.reference_id == payment_id))
-        if ex.scalar_one_or_none():
-            return {"idempotent": True, "status": d.status}
-        if not razorpay_client.verify_payment_signature(order_id, payment_id, signature):
-            raise ServiceOSException("PAYMENT_VERIFICATION_FAILED",
-                "Razorpay payment signature verification failed.")
-        await credit_deposit(self.db, d, d.required_amount, DepositTxnType.INITIAL_PAYMENT,
-                              payment_id, "Initial security deposit", self.actor_id)
-        d.status = "paid"; d.paid_at = utcnow(); d.razorpay_payment_id = payment_id
-        await self._publish("security_deposit.paid", str(tid), str(d.id),
-                            {"amount": float(d.required_amount)})
-        return {"status": "paid", "amount_paid": float(d.required_amount),
-                "current_balance": float(d.current_balance),
-                "message": "Deposit confirmed. Credit packages now available."}
-
-    async def get_deposit_transactions(self, tid, limit, cursor):
-        self._assert_owns_tenant_deposit(tid)
-        d = await self._get_or_create_deposit(tid)
-        q = (select(SecurityDepositTransaction).where(SecurityDepositTransaction.deposit_id == d.id)
-             .order_by(SecurityDepositTransaction.created_at.desc()))
-        if cursor:
-            try:
-                c = decode_cursor(cursor)
-                q = q.where(SecurityDepositTransaction.created_at < datetime.fromisoformat(c["created_at"]))
-            except Exception: pass
-        q = q.limit(limit + 1)
-        r = await self.db.execute(q)
-        txns = r.scalars().all()
-        has_next = len(txns) > limit; txns = txns[:limit]
-        nc = encode_cursor({"created_at": txns[-1].created_at.isoformat()}) if has_next and txns else None
-        return {"transactions": [{"txn_id": str(t.id), "txn_type": t.txn_type,
-                "amount": float(t.amount), "balance_before": float(t.balance_before),
-                "balance_after": float(t.balance_after), "reference_id": t.reference_id,
-                "notes": t.notes, "created_at": t.created_at.isoformat()} for t in txns],
-                "current_balance": float(d.current_balance), "has_next": has_next, "next_cursor": nc}
-
-    async def admin_adjust_deposit(self, tid, amount, reason, category):
-        d = await self._get_or_create_deposit(tid)
-        if amount > 0:
-            await credit_deposit(self.db, d, amount, DepositTxnType.ADMIN_ADJUSTMENT,
-                                  None, f"[{category}] {reason}", self.actor_id)
-        else:
-            await debit_deposit(self.db, d, abs(amount), DepositTxnType.ADMIN_ADJUSTMENT,
-                                 None, f"[{category}] {reason}", self.actor_id)
-        await self._publish("security_deposit.admin_adjusted", str(tid), str(d.id),
-                            {"amount": float(amount), "reason": reason})
-        return {"tenant_id": str(tid), "amount": float(amount),
-                "new_balance": float(d.current_balance)}
-
-    # ── Packages (5) ───────────────────────────────────────────────────────────
     async def list_packages(self, tid=None):
         if tid:
             d_r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tid))
@@ -340,12 +243,8 @@ class CommerceService:
                 "reconciliation_ok": rec["matches"]}
 
     async def initiate_purchase(self, tid, pkg_id, gateway):
-        self._assert_owns_tenant_deposit(tid)
-        d = await self._get_or_create_deposit(tid)
-        if not d.is_unlocked:
-            raise ServiceOSException("SECURITY_DEPOSIT_REQUIRED",
-                "Pay your security deposit first.",
-                resolution=f"POST /v1/commerce/tenants/{tid}/deposit/initiate")
+        # The "pay your security deposit first" gate is gone with the deposit
+        # (migration 318). Buying credit is now the only prerequisite there is.
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.id == pkg_id, CreditPackage.is_active == True))
         p = r.scalar_one_or_none()
         if not p: raise NotFoundException("CreditPackage", str(pkg_id))
@@ -367,8 +266,7 @@ class CommerceService:
                 "credits_to_receive": total, "amount": float(p.price_inr), "currency": "INR",
                 "amount_paise": int(p.price_inr*100), "gateway": gateway,
                 "key": get_settings().RAZORPAY_KEY_ID,
-                "topup_order_id": str(topup.id),
-                "deposit_replenishment": float(p.price_inr * DEPOSIT_REPLENISHMENT_PCT)}
+                "topup_order_id": str(topup.id)}
 
     async def confirm_purchase(self, tid, pkg_id, order_id, payment_id, signature):
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.id == pkg_id))
@@ -390,11 +288,9 @@ class CommerceService:
         # again.
         if topup is not None and topup.wallet_credit_status == "credited":
             total = p.credits_amount * (1 + p.bonus_pct / Decimal("100"))
-            replen = (p.price_inr * DEPOSIT_REPLENISHMENT_PCT).quantize(Decimal("0.01"))
             return {"credits_added": float(total), "base_credits": float(p.credits_amount),
                     "bonus_credits": float(total - p.credits_amount),
-                    "deposit_replenished": float(replen), "payment_id": payment_id,
-                    "idempotent": True}
+                    "payment_id": payment_id, "idempotent": True}
 
         if not razorpay_client.verify_payment_signature(order_id, payment_id, signature):
             if topup:
@@ -404,12 +300,11 @@ class CommerceService:
             raise ServiceOSException("PAYMENT_VERIFICATION_FAILED",
                 "Razorpay payment signature verification failed.")
         total = p.credits_amount * (1 + p.bonus_pct / Decimal("100"))
-        replen = (p.price_inr * DEPOSIT_REPLENISHMENT_PCT).quantize(Decimal("0.01"))
 
         # FINAL-L5-05K: credit grant moved off ledger.credit_wallet
         # (TenantWallet) onto the canonical UsageCreditService
-        # (tenant_billing/usage_credit_ledger). Security Deposit
-        # replenishment below is untouched -- separate domain, unaffected.
+        # (tenant_billing/usage_credit_ledger). The 5% deposit replenishment
+        # that used to follow is gone with the deposit (migration 318).
         from app.engines.usage_credits.service import UsageCreditService
         uc_svc = UsageCreditService(self.db, actor_id=self.actor_id, actor_role=self.actor_role,
                                      request_id=self.request_id)
@@ -419,9 +314,6 @@ class CommerceService:
             reason=f"Credit top-up purchase: {p.name}",
         )
 
-        d = await self._get_or_create_deposit(tid)
-        await credit_deposit(self.db, d, replen, DepositTxnType.REPLENISHMENT,
-                              payment_id, f"5% from {p.name}", self.actor_id)
         p.purchase_count += 1; p.total_revenue += p.price_inr
         if topup:
             topup.payment_status = "credited"
@@ -432,7 +324,7 @@ class CommerceService:
                             {"amount": float(total), "package": p.name})
         return {"credits_added": float(total), "base_credits": float(p.credits_amount),
                 "bonus_credits": float(total - p.credits_amount),
-                "deposit_replenished": float(replen), "payment_id": payment_id}
+                "payment_id": payment_id}
 
     async def get_wallet_transactions(self, tid, txn_type, limit, cursor):
         q = (select(WalletTransaction).where(WalletTransaction.tenant_id == tid)
@@ -933,14 +825,15 @@ class CommerceService:
         c.status = "credit_issued"; c.amount_approved = Decimal(str(amount_approved))
         c.admin_notes = admin_notes.strip(); c.resolver_id = self.actor_id
         c.resolved_at = utcnow(); c.settled_at = utcnow(); c.settled_amount = amount_approved
+        # `security_deposit_deducted` is no longer written: the deposit was
+        # removed in migration 317/318 and the remedy no longer reports one.
+        # Reading it with [] raised KeyError here on EVERY settlement.
         c.provider_credit_deducted = remedy["provider_credit_deducted"]
-        c.security_deposit_deducted = remedy["security_deposit_deducted"]
         c.customer_credit_id = remedy["credit"].id
         await self._update_warranty_signal(c.tenant_id)
         await self._publish("warranty_claim.credit_issued", str(c.tenant_id), str(claim_id),
                             {"amount": float(amount_approved),
-                             "provider_credit_deducted": float(remedy["provider_credit_deducted"]),
-                             "security_deposit_deducted": float(remedy["security_deposit_deducted"])})
+                             "provider_credit_deducted": float(remedy["provider_credit_deducted"])})
         return self._claim_dict(c)
 
     async def reject_claim(self, claim_id, rejection_reason, admin_notes):

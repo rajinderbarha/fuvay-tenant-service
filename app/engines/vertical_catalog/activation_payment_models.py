@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Numeric, String, UniqueConstraint, Integer
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,6 +56,13 @@ class ActivationPaymentOrder(ServiceOSBase):
     # recorded as a separate FinancialEvent. Never blended.
     credited_amount:    Mapped[Numeric | None]  = mapped_column(Numeric(12, 2), nullable=True)
     tax_amount:         Mapped[Numeric | None]  = mapped_column(Numeric(12, 2), nullable=True)
+    # ── Top-up plan snapshot (migration 317) ─────────────────────────────
+    # What was bought, as priced at order time. Re-pricing or retiring the
+    # plan later must never change what this tenant actually paid for, so the
+    # seat count is frozen here rather than re-read from the plan at capture.
+    topup_plan_id:      Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    seats_granted:      Mapped[int | None]      = mapped_column(Integer, nullable=True)
+
     currency:           Mapped[str]             = mapped_column(String(3), nullable=False, default="INR")
     status:             Mapped[str]             = mapped_column(String(20), nullable=False, default=STATUS_CREATED)
     policy_version:     Mapped[int | None]      = mapped_column(nullable=True)
@@ -80,6 +87,8 @@ class ActivationPaymentOrder(ServiceOSBase):
             "credited_amount": float(self.credited_amount) if self.credited_amount is not None else None,
             "tax_amount": float(self.tax_amount) if self.tax_amount is not None else None,
             "deposit_amount": float(deposit_allocation),
+            "topup_plan_id": str(self.topup_plan_id) if self.topup_plan_id else None,
+            "seats_granted": self.seats_granted,
             "currency": self.currency, "status": self.status,
             "captured_at": self.captured_at.isoformat() if self.captured_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

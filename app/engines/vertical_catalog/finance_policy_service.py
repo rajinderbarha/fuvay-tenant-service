@@ -56,36 +56,26 @@ async def resolve_published_policy(db: AsyncSession, vertical_id: uuid.UUID) -> 
 
 
 async def resolve_qualifying_technician_count(db: AsyncSession, tenant_id: uuid.UUID) -> int:
-    """Qualifying technician = tenant member, Home-Services-assigned (this
-    table is already category/vertical-scoped per tenant), employment-active
-    (status='active', not deleted), and an actual technician role — NOT an
-    owner/manager/dispatcher.
+    """Technicians occupying a purchased seat.
 
-    BUG FIX: the previous gate query
-    (`SELECT count(*) FROM provider_team_members WHERE tenant_id=:tid AND
-    status='active' AND deleted_at IS NULL`) counted EVERY active team
-    member regardless of role — live-reproduced against tenant Guramrit
-    (244beeec-fedc-452e-8054-317e45557d4d): its one team member has
-    designation='' (blank, an owner-type placeholder row, not a
-    technician) and was still being counted as 1 qualifying technician.
-    Restricting to ELIGIBLE_DESIGNATIONS (the same technician-role set
-    home_service_assignment/service.py already uses to gate real job
-    assignment eligibility — reused, not reinvented) makes Guramrit's real
-    qualifying count 0, not 1.
+    Shares ONE predicate with slot capacity — see
+    `home_service_assignment.eligibility`. These were two separate queries
+    that disagreed: this one ignored `can_receive_assignment`, missed
+    `owner_technician`, and compared raw-lowercased designations against
+    snake_case keys (so "Senior Technician" never matched), while capacity
+    additionally demanded a supported offering and a per-staff weekday rule.
+    A provider could therefore buy 3 seats, pass the activation gate, and be
+    sold 1 booking per slot. Billing and capacity now count the same people.
     """
     from sqlalchemy import text as _text
-    rows = (await db.execute(
+    from app.engines.home_service_assignment.eligibility import active_technician_sql
+
+    count = (await db.execute(
         _text(
-            "SELECT designation, member_type FROM provider_team_members "
-            "WHERE tenant_id=:tid AND status='active' AND deleted_at IS NULL"
+            "SELECT count(*) FROM provider_team_members ptm "
+            "WHERE ptm.tenant_id = CAST(:tid AS uuid) AND "
+            + active_technician_sql("ptm")
         ),
         {"tid": str(tenant_id)},
-    )).fetchall()
-
-    count = 0
-    for r in rows:
-        designation = (r.designation or "").lower()
-        member_type = (r.member_type or "").lower()
-        if designation in ELIGIBLE_DESIGNATIONS or member_type == "technician":
-            count += 1
-    return count
+    )).scalar()
+    return int(count or 0)

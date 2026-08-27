@@ -356,8 +356,10 @@ class RefundRequestService:
         refund.recorded_amount = amount
         refund.resolution_method = "customer_service_credit"
         refund.customer_credit_id = remedy["credit"].id
+        # `security_deposit_deducted` is no longer written: the deposit was
+        # removed in migration 317/318 and the remedy no longer reports one.
+        # Reading it with [] raised KeyError here on EVERY settlement.
         refund.provider_credit_deducted = remedy["provider_credit_deducted"]
-        refund.security_deposit_deducted = remedy["security_deposit_deducted"]
         refund.approved_by_user_id = admin_user_id
         refund.verified_by_user_id = admin_user_id
         refund.approved_at = refund.approved_at or datetime.now(timezone.utc)
@@ -541,6 +543,9 @@ class RefundRequestService:
             "requested_amount": _money(r.requested_amount for r in needs_action),
             "approved_amount":  _money(r.approved_amount for r in approved),
             "recorded_amount":  _money(r.recorded_amount for r in settled),
+            # `security_deposit_deducted` is legacy: nothing writes it since the
+            # deposit was removed, but historical refunds settled against one and
+            # still carry the amount, so it stays in the exposure total.
             "provider_exposure": _money(
                 [r.provider_credit_deducted for r in rows]
                 + [r.security_deposit_deducted for r in rows]

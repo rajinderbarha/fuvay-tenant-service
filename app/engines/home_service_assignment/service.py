@@ -37,6 +37,10 @@ from app.engines.home_service_assignment.constants import (
 from app.engines.home_service_assignment.models import (
     ServiceJobAssignment, ServiceJobAssignmentEvent, TechnicianLiveLocation,
 )
+from app.engines.home_service_assignment.eligibility import (
+    is_technician_role,
+    normalise_designation,
+)
 
 _utcnow = lambda: datetime.now(timezone.utc)
 
@@ -45,15 +49,12 @@ _TERMINAL_JOB_STATUSES = {JOB_STATUS_CANCELLED, "failed", "completed"}
 
 
 def _normalise_designation(value: str | None) -> str:
-    """Fold a human-entered designation onto the ELIGIBLE_DESIGNATIONS keys.
+    """Back-compat alias for the shared normaliser.
 
-    Designations are stored as people type them ("Senior Technician", "Field
-    Engineer") while the eligibility set uses snake_case. Lowercasing alone left
-    every MULTI-WORD designation unmatched, so a "Senior Technician" was refused
-    with ROLE_NOT_ALLOWED while a plain "Technician" worked — which is exactly
-    why this went unnoticed. Confirmed live against a real team member.
+    The implementation moved to `home_service_assignment.eligibility` so
+    billing, slot capacity and assignment all fold designations identically.
     """
-    return "_".join((value or "").strip().lower().replace("-", " ").split())
+    return normalise_designation(value)
 
 
 class HomeServiceJobAssignmentService:
@@ -264,7 +265,18 @@ class HomeServiceJobAssignmentService:
                 blocked.append("cannot_receive_assignment")
             designation = _normalise_designation(staff.designation)
 
-        if designation and designation not in ELIGIBLE_DESIGNATIONS:
+        # `member_type` counts alongside the typed designation, so an
+        # owner_technician is not refused for having written something else in
+        # the free-text field. Mirrors list_eligible_staff_for_job exactly --
+        # a person shown as eligible must not then be refused on assign.
+        if is_user:
+            # The User-backed staff source is already restricted to field
+            # roles, and "staff" is not a designation key, so gating on the
+            # set here only produced false refusals.
+            role_ok = designation in ELIGIBLE_DESIGNATIONS or designation == "staff"
+        else:
+            role_ok = is_technician_role(staff.designation, staff.member_type)
+        if designation and not role_ok:
             blocked.append("role_not_allowed")
 
         # Basic account/role failures are definitive. Avoid workflow, skill,
@@ -396,57 +408,72 @@ class HomeServiceJobAssignmentService:
             all_staff = list(res2.scalars().all())
 
         provider_staff_ids = [s.id for s in all_staff if hasattr(s, "designation")]
+        # The roster row and the LOGIN are different records. A member can sit
+        # at status='active' while their user account is deactivated -- the
+        # assign path already refuses those, so listing them as eligible only
+        # sent the dispatcher to a dead end. Resolved in ONE query rather than
+        # per member.
+        deactivated_login_ids: set[str] = set()
+        _login_ids = [
+            getattr(s, "user_id", None) for s in all_staff if getattr(s, "user_id", None)
+        ]
+        if _login_ids:
+            from app.engines.auth.models import User
+            rows = (await self.db.execute(
+                select(User.id).where(and_(User.id.in_(_login_ids), User.is_active == False))
+            )).all()
+            deactivated_login_ids = {str(r[0]) for r in rows}
         technician_required = bool(provider_staff_ids) and await self._job_requires_technician(job)
         tenant_service_id = (
             await self._tenant_service_id_for_job(job)
             if technician_required else None
         )
-        configured_staff_ids: set[str] = set()
-        if technician_required and provider_staff_ids:
-            availability_rows = (await self.db.execute(text(
-                "SELECT DISTINCT scope_id FROM provider_availability_rules "
-                "WHERE tenant_id=:tid AND scope_type='staff_member' "
-                "AND scope_id = ANY(CAST(:staff_ids AS uuid[])) AND is_active=true"
-            ), {
-                "tid": tenant_id,
-                "staff_ids": provider_staff_ids,
-            })).all()
-            configured_staff_ids = {str(row[0]) for row in availability_rows}
-
+        # Skills are ADVISORY. A technician without the service in
+        # `supported_offering_ids` is still offered, carrying a warning the
+        # dispatcher can override. Blocking here would let the slot search
+        # sell capacity (which is pure headcount) that assignment then
+        # refuses, stranding a booking the customer already holds.
         eligible, blocked = [], []
         for s in all_staff:
             is_user = hasattr(s, "role") and not hasattr(s, "designation")
-            reasons = []
+            reasons: list[str] = []
+            warnings: list[str] = []
             if is_user:
                 if not getattr(s, "is_active", True):
                     reasons.append("staff_inactive")
-                designation = (s.role or "").lower()
+                # The User fallback query already restricts to field roles
+                # (technician/staff), so re-checking the role here only
+                # produced false blocks -- "staff" is not a designation key.
+                designation = normalise_designation(getattr(s, "role", None))
                 status = "active" if getattr(s, "is_active", True) else "inactive"
                 name = s.full_name
             else:
                 if s.status != "active":
                     reasons.append("staff_inactive")
+                elif str(getattr(s, "user_id", "") or "") in deactivated_login_ids:
+                    reasons.append("staff_inactive")
                 if not getattr(s, "can_receive_assignment", True):
                     reasons.append("cannot_receive_assignment")
-                designation = (s.designation or "").lower()
+                designation = normalise_designation(getattr(s, "designation", None))
                 status = s.status
                 name = s.full_name
-            if designation and designation not in ELIGIBLE_DESIGNATIONS:
-                reasons.append("role_not_allowed")
+                # Raw-lowercasing left every MULTI-WORD designation unmatched,
+                # so a real "Senior Technician" was refused with
+                # role_not_allowed while a plain "Technician" passed.
+                if designation and not is_technician_role(s.designation, s.member_type):
+                    reasons.append("role_not_allowed")
 
-            if technician_required and not is_user:
-                supported = {
-                    str(value)
-                    for value in (getattr(s, "supported_offering_ids", None) or [])
-                }
-                if tenant_service_id is None:
-                    reasons.append("service_not_configured")
-                elif str(tenant_service_id) not in supported:
-                    reasons.append("no_matching_service_skill")
-                if str(s.id) not in configured_staff_ids:
-                    reasons.append("no_availability_configured")
+                if technician_required:
+                    supported = {
+                        str(value)
+                        for value in (getattr(s, "supported_offering_ids", None) or [])
+                    }
+                    if tenant_service_id is None:
+                        warnings.append("service_not_configured")
+                    elif str(tenant_service_id) not in supported:
+                        warnings.append("no_matching_service_skill")
 
-            # Same availability question the assign path now asks, asked here too so the
+            # Same availability question the assign path asks, asked here too so the
             # dispatcher sees a technician on leave as blocked in the list instead of
             # picking them and being refused at the point of assignment.
             reasons.extend(await self._availability_block_reasons(job, s.id))
@@ -461,12 +488,14 @@ class HomeServiceJobAssignmentService:
                 eligible.append({
                     **base,
                     "eligibility_status": "eligible",
+                    "warnings":           warnings,
                     "match_reasons":      ["same_tenant", "active", designation or "staff"],
                 })
             else:
                 blocked.append({
                     **base,
                     "eligibility_status": "blocked",
+                    "warnings":           warnings,
                     "blocked_reasons":    reasons,
                 })
 
@@ -487,6 +516,14 @@ class HomeServiceJobAssignmentService:
         self._validate_job_assignable(job)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
+
+        # Work-in-progress gate: a tenant may hold at most one open job per
+        # technician. Blocking ASSIGNMENT rather than booking means the request
+        # waits in `pending_assignment` instead of being refused -- the
+        # customer never loses their slot, the provider just cannot hoard work
+        # its team cannot start.
+        from app.engines.vertical_catalog.seat_enforcement import assert_wip_capacity
+        await assert_wip_capacity(self.db, tenant_id)
 
         # Validate staff eligibility
         staff, blocked = await self.validate_staff_eligibility(job, staff_member_id)

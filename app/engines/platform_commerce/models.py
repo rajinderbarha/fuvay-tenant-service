@@ -79,58 +79,11 @@ class WalletTransaction(ServiceOSBase):
     meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
 
-class SecurityDeposit(ServiceOSBase):
-    """Per-tenant security deposit. Funds warranty claims. 5% of each credit purchase replenishes."""
-    __tablename__ = "security_deposits"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", name="uq_deposit_tenant"),
-        Index("ix_security_deposit_status_created_at", "status", "created_at"),
-    )
-
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
-    required_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    total_paid: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    warranty_drawn: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    replenishment_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    # status: unpaid | partially_paid | paid | refunded | forfeited
-    status: Mapped[str] = mapped_column(String(20), default="unpaid", nullable=False)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    razorpay_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    razorpay_payment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Sprint 5 additions
-    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    package_purchase_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    payment_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # Finance Hub enterprise upgrade (migration 078)
-    hold_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    clarification_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    @property
-    def current_balance(self) -> Decimal:
-        return self.total_paid + self.replenishment_total - self.warranty_drawn
-
-    @property
-    def is_unlocked(self) -> bool:
-        return self.status == "paid"
-
-
-class SecurityDepositTransaction(ServiceOSBase):
-    """APPEND-ONLY ledger for deposit movements."""
-    __tablename__ = "security_deposit_transactions"
-    __table_args__ = (Index("ix_sdtxn_deposit_id", "deposit_id"),)
-
-    deposit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    txn_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    balance_before: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    balance_after: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+# SecurityDeposit / SecurityDepositTransaction were removed in migration 318.
+# The per-tenant warranty deposit they modelled no longer exists: dispute
+# settlements now draw from tenant_billing.credit_balance alone, and the
+# credit floor on the finance policy is what keeps a balance available to
+# draw against. See alembic/versions/318_dispute_settlement_credit_only.py.
 
 
 class CommissionRecord(ServiceOSBase):
@@ -285,8 +238,10 @@ class WarrantyClaim(ServiceOSBase):
     escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     warranty_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     warranty_days_snapshot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A warranty claim is now recovered entirely from the provider's credit
+    # balance; `security_deposit_deducted` went with the deposit itself in
+    # migration 318, and its historical values were folded into this column.
     provider_credit_deducted: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
-    security_deposit_deducted: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     customer_credit_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 

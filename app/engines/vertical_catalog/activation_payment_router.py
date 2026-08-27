@@ -1,6 +1,6 @@
 """HOME-SERVICES-ACTIVATION-PAYMENT-01 — tenant-facing order creation +
 gateway webhook confirmation for the online Razorpay activation-gate
-payment path (security deposit + starter credit package). Sits alongside
+payment path (top-up plan: credit + technician seats). Sits alongside
 the existing ADMIN-ONLY offline `/verify-deposit` endpoint
 (vertical_catalog/admin_router.py) -- this is the path a tenant uses
 without needing an Admin to manually confirm anything.
@@ -25,7 +25,7 @@ from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.integrations import razorpay_client
 from app.engines.vertical_catalog.activation_payment_service import (
-    create_security_deposit_order, create_credit_package_order,
+    create_credit_package_order,
     create_activation_funding_order, resolve_activation_funding_quote,
     confirm_activation_checkout, reconcile_activation_order,
     confirm_activation_payment_webhook,
@@ -98,15 +98,9 @@ async def reconcile_funding_endpoint(
     return ok(data, _rid(request))
 
 
-@router.post("/security-deposit/order")
-async def create_deposit_order_endpoint(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_tenant_owner_mutation),
-):
-    tid = _tid(user)
-    data = await create_security_deposit_order(db, tid)
-    return ok(data, _rid(request))
+# POST /security-deposit/order was removed in migration 317: there is no
+# deposit to pay. The single activation checkout is the top-up plan, created
+# by POST /activation-funding/order.
 
 
 @router.post("/credit-package/order")

@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.platform_commerce.constants import TxnType, DepositTxnType
 from app.engines.platform_commerce.models import (
     TenantWallet, WalletTransaction,
-    SecurityDeposit, SecurityDepositTransaction,
     CustomerCreditBalance, CustomerTransaction,
 )
 from app.exceptions import ServiceOSException
@@ -172,92 +171,10 @@ async def credit_wallet(
     return txn
 
 
-async def debit_deposit(
-    db: AsyncSession,
-    deposit: SecurityDeposit,
-    amount: Decimal,
-    txn_type: str,
-    reference_id: str | None,
-    notes: str | None,
-    actor_id: uuid.UUID | None,
-) -> SecurityDepositTransaction:
-    """Draw from security deposit. Raises if insufficient balance."""
-    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
-    # a bad amount. A non-positive amount here would pass the balance check
-    # (balance < negative is False) and then run `balance -= negative`, i.e.
-    # INFLATE the balance. Reject it at the source so no caller — present or
-    # future — can invert a debit/credit.
-    if amount is None or amount <= Decimal("0"):
-        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
-            "Ledger amount must be a positive number.", status_code=422,
-            context={"amount": float(amount) if amount is not None else None})
-
-    current = deposit.current_balance
-    if current < amount:
-        raise ServiceOSException(
-            "SECURITY_DEPOSIT_REQUIRED",
-            f"Security deposit balance insufficient. Required: {amount}, Available: {current}",
-            context={"required": float(amount), "available": float(current)},
-        )
-    balance_before = current
-    deposit.warranty_drawn += amount
-
-    txn = SecurityDepositTransaction(
-        deposit_id=deposit.id,
-        tenant_id=deposit.tenant_id,
-        txn_type=txn_type,
-        amount=-amount,
-        balance_before=balance_before,
-        balance_after=deposit.current_balance,
-        reference_id=reference_id,
-        notes=notes,
-        actor_id=actor_id,
-    )
-    db.add(txn)
-    return txn
-
-
-async def credit_deposit(
-    db: AsyncSession,
-    deposit: SecurityDeposit,
-    amount: Decimal,
-    txn_type: str,
-    reference_id: str | None,
-    notes: str | None,
-    actor_id: uuid.UUID | None,
-) -> SecurityDepositTransaction:
-    """Credit security deposit (replenishment or admin adjustment)."""
-    # MODULE-L5-10: the ledger primitives must never move money the wrong way on
-    # a bad amount. A non-positive amount here would pass the balance check
-    # (balance < negative is False) and then run `balance -= negative`, i.e.
-    # INFLATE the balance. Reject it at the source so no caller — present or
-    # future — can invert a debit/credit.
-    if amount is None or amount <= Decimal("0"):
-        raise ServiceOSException("INVALID_LEDGER_AMOUNT",
-            "Ledger amount must be a positive number.", status_code=422,
-            context={"amount": float(amount) if amount is not None else None})
-
-    balance_before = deposit.current_balance
-    if txn_type == DepositTxnType.REPLENISHMENT:
-        deposit.replenishment_total += amount
-    elif txn_type == DepositTxnType.INITIAL_PAYMENT:
-        deposit.total_paid += amount
-    else:
-        deposit.replenishment_total += amount
-
-    txn = SecurityDepositTransaction(
-        deposit_id=deposit.id,
-        tenant_id=deposit.tenant_id,
-        txn_type=txn_type,
-        amount=amount,
-        balance_before=balance_before,
-        balance_after=deposit.current_balance,
-        reference_id=reference_id,
-        notes=notes,
-        actor_id=actor_id,
-    )
-    db.add(txn)
-    return txn
+# debit_deposit / credit_deposit were removed with the security deposit in
+# migration 318. Warranty claims and dispute settlements now draw from
+# tenant_billing.credit_balance via the usage-credit ledger, which is the
+# single balance the platform recovers from.
 
 
 async def reconcile_wallet(db: AsyncSession, tenant_id: uuid.UUID) -> dict:

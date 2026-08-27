@@ -174,13 +174,12 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
 
     # ── Finance Readiness ─────────────────────────────────────────────────
     billing_row = (await db.execute(
-        text("SELECT credit_balance, security_deposit_paid, security_deposit_amount "
+        text("SELECT credit_balance, entitled_seats "
              "FROM tenant_billing WHERE tenant_id=:tid"),
         {"tid": str(tenant_id)},
     )).fetchone()
-    deposit_amount = float(billing_row.security_deposit_amount) if billing_row and billing_row.security_deposit_amount else 0.0
-    deposit_paid = bool(billing_row and billing_row.security_deposit_paid)
-    # Deposit is only ever collected after admin approval -- its absence here
+    entitled_seats = int(billing_row.entitled_seats) if billing_row and billing_row.entitled_seats else 0
+    # Seats are only ever bought after admin approval -- their absence here
     # is never a blocker to submitting for review. Completion is instead the
     # tenant's own Finance Readiness step (direct payment methods + invoice
     # details) -- a tenant_billing row is created independently (activation/
@@ -250,9 +249,9 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          blocking_reasons=[] if staff_ready else
          [{"code": "NO_READY_STAFF", "message": "Published services need at least one active technician."}])
     _add("FINANCE_READINESS", True, finance_ready,
-         "Finance readiness", "Deposit, credits and payment policy",
-         extra={"security_deposit_amount": deposit_amount, "security_deposit_paid": deposit_paid,
-                "security_deposit_due_after_approval": deposit_amount > 0 and not deposit_paid},
+         "Finance readiness", "Top-up credit, technician seats and payment policy",
+         extra={"entitled_seats": entitled_seats,
+                "topup_due_after_approval": entitled_seats <= 0},
          blocking_reasons=[] if finance_ready else
          [{"code": "FINANCE_NOT_CONFIGURED", "message": "Finance readiness has not been configured yet."}])
 

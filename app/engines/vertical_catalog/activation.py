@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.vertical_catalog.seat_enforcement import FREE_STARTER_SEATS
 from app.engines.vertical_catalog.service import VerticalCatalogService
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.vertical_catalog.finance_policy_service import (
@@ -39,14 +40,13 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
     vertical_enabled = bool(vertical_row and vertical_row.is_enabled)
 
     billing_row = (await db.execute(
-        text("SELECT security_deposit_paid, security_deposit_amount, credit_balance "
+        text("SELECT credit_balance, entitled_seats "
              "FROM tenant_billing WHERE tenant_id=:tid"),
         {"tid": str(tenant_id)},
     )).fetchone()
 
-    configured_deposit_amount = float(billing_row.security_deposit_amount) if billing_row and billing_row.security_deposit_amount else 0.0
     credit_balance = float(billing_row.credit_balance) if billing_row and billing_row.credit_balance else 0.0
-    deposit_paid = bool(billing_row and billing_row.security_deposit_paid)
+    entitled_seats = int(billing_row.entitled_seats) if billing_row and billing_row.entitled_seats else 0
 
     published_count = (await db.execute(
         text("SELECT count(*) FROM tenant_services WHERE tenant_id=:tid "
@@ -123,10 +123,6 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
     finance_ready = policy is not None
 
     if policy is not None:
-        required_deposit_amount = float(max(
-            policy.minimum_deposit,
-            policy.deposit_amount_per_technician * max(1, qualifying_technician_count),
-        ))
         required_credit_amount = float(
             (policy.credit_package_base_amount * (1 + policy.credit_package_gst_percent / 100))
             .quantize(__import__("decimal").Decimal("0.01"))
@@ -134,10 +130,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
     else:
         # No published policy resolvable — fail closed: nothing can be
         # confirmed "paid enough" against an amount we can't compute.
-        required_deposit_amount = float("inf")
         required_credit_amount = float("inf")
-
-    deposit_paid_enough = deposit_paid and configured_deposit_amount >= required_deposit_amount
     # BUG FIX (HOME-SERVICES-ACTIVATION-PAYMENT-01): this compared the
     # tenant's usable credit_balance against required_credit_amount, which
     # is the GST-INCLUSIVE gross the tenant pays (e.g. Rs.1,180) -- but
@@ -167,34 +160,41 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
          blocking_reason=None if vertical_enabled else "Home Services is currently disabled platform-wide.",
          tenant_visible_message=None if vertical_enabled else "Home Services is temporarily unavailable. Contact support.")
 
-    _dep_per_tech = float(policy.deposit_amount_per_technician) if policy else None
-    _add("security_deposit", "Security deposit", True,
-         "ready" if deposit_paid_enough else "action_required",
-         "tenant", None if deposit_paid_enough else "PAY_SECURITY_DEPOSIT",
-         blocking_reason=None if deposit_paid_enough
-             else (f"Security deposit of Rs.{required_deposit_amount:,.2f} "
-                   f"({qualifying_technician_count or 1} qualifying technician(s) x Rs.{_dep_per_tech:,.2f}) not yet verified."
-                   if policy else "Cannot compute required deposit — no published finance policy."),
+    # The security deposit gate was removed in migration 317; the seat gate that
+    # replaced it no longer BLOCKS activation either. Buying capacity is an
+    # offer made during onboarding, not a toll on getting started: revenue is
+    # commission on completed work, so a provider who cannot reach their first
+    # job earns nothing for anyone. The gate stays in the list to advertise the
+    # plan (`action_type` still drives the onboarding offer) but reports
+    # `not_required`, which the readiness roll-up at the bottom of this file
+    # treats as satisfied.
+    _seats_covered = entitled_seats >= max(1, qualifying_technician_count)
+    _add("technician_seats", "Technician seats", False,
+         "ready" if _seats_covered else "not_required",
+         "tenant", None if _seats_covered else "PURCHASE_TOPUP_PLAN",
+         blocking_reason=None,
          retryable=False,
-         tenant_visible_message="Verified" if deposit_paid_enough
-             else (f"Required: Rs.{required_deposit_amount:,.2f} (Rs.{_dep_per_tech:,.2f} per qualifying technician)"
-                   if policy else "Unresolved — no published finance policy"),
-         evidence={"required_amount": required_deposit_amount if policy else None,
-                   "configured_amount": configured_deposit_amount,
-                   "paid": deposit_paid, "qualifying_technicians": qualifying_technician_count,
-                   "policy_version": policy.version_number if policy else None})
+         tenant_visible_message="Verified" if _seats_covered
+             else (f"{FREE_STARTER_SEATS} free seat(s) included — buy a top-up plan to add "
+                   f"more technicians or add credit"),
+         evidence={"entitled_seats": entitled_seats,
+                   "free_starter_seats": FREE_STARTER_SEATS,
+                   "qualifying_technicians": qualifying_technician_count})
 
     _credit_base = float(policy.credit_package_base_amount) if policy else None
     _credit_gst  = float(policy.credit_package_gst_percent) if policy else None
-    _add("category_wallet", "Usage credit wallet", True,
-         "ready" if credit_purchased else "action_required",
-         "tenant", None if credit_purchased else "PURCHASE_CREDIT_PACKAGE",
-         blocking_reason=None if credit_purchased
-             else (f"Mandatory starter credit package (Rs.{required_credit_amount:,.2f} incl. {_credit_gst:g}% GST) not yet purchased."
-                   if policy else "Cannot compute required credit package — no published finance policy."),
+    # Also an offer rather than a toll, for the same reason. The credit floor
+    # (`seat_enforcement.assert_booking_allowed`) is what actually protects the
+    # platform: it stops NEW bookings once the balance runs low, at the point
+    # where real money is at stake, instead of at the door.
+    _add("category_wallet", "Usage credit wallet", False,
+         "ready" if credit_purchased else "not_required",
+         "tenant", None if credit_purchased else "PURCHASE_TOPUP_PLAN",
+         blocking_reason=None,
          tenant_visible_message="Verified" if credit_purchased
-             else (f"Required: Rs.{required_credit_amount:,.2f} starter credit package (Rs.{_credit_base:,.2f} + {_credit_gst:g}% GST)"
-                   if policy else "Unresolved — no published finance policy"),
+             else (f"Optional: Rs.{required_credit_amount:,.2f} starter credit (Rs.{_credit_base:,.2f} + {_credit_gst:g}% GST) — "
+                   f"top up before your balance reaches the booking floor"
+                   if policy else "Optional — no published finance policy"),
          evidence={"required_amount": required_credit_amount if policy else None, "current_balance": credit_balance,
                    "policy_version": policy.version_number if policy else None})
 

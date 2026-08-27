@@ -47,62 +47,15 @@ def _svc_open(r: Request, db: AsyncSession = Depends(get_db)) -> CommerceService
 async def engine_meta() -> dict:
     return {"engine_id": ENGINE_ID, "name": "Platform Commerce Engine", "version": "3.0.0",
             "endpoint_count": 41, "status": "active",
-            "capabilities": ["security_deposit","credit_packages","tenant_wallet","commission",
+            "capabilities": ["credit_packages","tenant_wallet","commission",
                              "customer_health","credit_reservations","warranty_claims","badges","preflight"]}
 
 # ── SECURITY DEPOSIT (5) ──────────────────────────────────────────────────────
-@router.get("/tenants/{tenant_id}/deposit", summary="Get security deposit status", response_model=ApiResponse[dict])
-async def get_deposit(tenant_id: uuid.UUID, r: Request,
-                       u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_READ)),
-                       s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.get_deposit_status(tenant_id)
-    return ok(data, _meta(r).request_id, ENGINE_ID,
-              links=Links(actions=[Link(href=f"/v1/commerce/tenants/{tenant_id}/deposit/initiate",
-                                        method="POST", rel="initiate_payment")] if not data["is_unlocked"] else []))
+# The security deposit was removed in migration 317/318. These endpoints
+# went with it: a provider now buys a top-up plan whose credit is spent
+# down as commission, so there is no held balance to administer.
 
-@router.post("/tenants/{tenant_id}/deposit/initiate", summary="Initiate security deposit payment", response_model=ApiResponse[dict])
-async def initiate_deposit(tenant_id: uuid.UUID, body: DepositInitiateRequest, r: Request,
-                             u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_MANAGE)),
-                             s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    await rate_limiter.check_and_raise(f"deposit:{tenant_id}", "auth:password_reset", str(tenant_id))
-    data = await s.initiate_deposit(tenant_id, body.gateway)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/tenants/{tenant_id}/deposit/confirm", summary="Confirm security deposit payment (webhook+client)", response_model=ApiResponse[dict])
-async def confirm_deposit(tenant_id: uuid.UUID, body: DepositConfirmRequest, r: Request,
-                           s: CommerceService = Depends(_svc_open)) -> ApiResponse[dict]:
-    data = await s.confirm_deposit(tenant_id, body.razorpay_order_id,
-                                    body.razorpay_payment_id, body.razorpay_signature)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-@router.get("/tenants/{tenant_id}/deposit/transactions", summary="Deposit ledger (cursor-paginated)", response_model=ApiResponse[dict])
-async def get_deposit_transactions(tenant_id: uuid.UUID, r: Request,
-                                    limit: int = Query(50, ge=1, le=200), cursor: str | None = Query(None),
-                                    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_BILLING_READ)),
-                                    s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.get_deposit_transactions(tenant_id, limit, cursor)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-@router.post("/tenants/{tenant_id}/deposit/admin-adjust", summary="[Admin] Manual deposit adjustment", response_model=ApiResponse[dict])
-async def admin_adjust_deposit(tenant_id: uuid.UUID, body: DepositAdminAdjustRequest, r: Request,
-                                 # FINAL-L5-05U: this admin-only mutation (the
-                                 # only caller anywhere in the codebase is the
-                                 # super-admin app's Tenant Detail "Adjust
-                                 # Security Deposit" action) was gated by the
-                                 # coarse require_super_admin role check
-                                 # instead of a permission -- meaning Finance
-                                 # Admin, whose UI already renders this exact
-                                 # button, could never actually use it (a
-                                 # live, reproducible 403). Migrated to the
-                                 # canonical Security Deposit permission
-                                 # family (see
-                                 # docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md).
-                                 u: UserContext = Depends(require_permission(P.FINANCE_DEPOSITS_UPDATE)),
-                                 s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.admin_adjust_deposit(tenant_id, body.amount, body.reason, body.category)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-# ── CREDIT PACKAGES (5) ───────────────────────────────────────────────────────
 @router.get("/packages", summary="List credit packages (empty if deposit unpaid)", response_model=ApiResponse[dict])
 async def list_packages(r: Request, tenant_id: uuid.UUID | None = Query(None),
                          u: UserContext = Depends(get_current_user),

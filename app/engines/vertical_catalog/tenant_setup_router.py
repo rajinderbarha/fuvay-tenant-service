@@ -38,8 +38,15 @@ def _tid(user: UserContext) -> uuid.UUID:
 async def get_overview(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(require_vertical_not_active(HOME_SERVICES_VERTICAL_KEY)),
+    user: UserContext = Depends(get_current_user),
 ):
+    """Return the authoritative setup projection throughout the lifecycle.
+
+    The overview is read-only and remains useful after activation for the
+    dashboard checklist and profile/setup shortcuts.  Mutating setup routes
+    retain the vertical-not-active guard, so allowing this projection for an
+    active tenant does not reopen a submitted or approved setup.
+    """
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     data = await get_setup_overview(db, tid)

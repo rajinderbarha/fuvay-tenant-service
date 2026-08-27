@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, ArrowRight,
   CreditCard, Shield,
   Clock, Star, Truck, Wallet, ListChecks,
-  Image, UserCog, Lock, Building2,
+  Image, UserCog, Building2,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useTour } from "../../hooks/useTour";
@@ -25,7 +25,8 @@ import { TourGuide } from "../tour/TourGuide";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, clearSession, type InAppNotificationItem } from "../../lib/api";
-import { useSetupStatus } from "../../hooks/useSetupStatus";
+import { CreditPill } from "./CreditPill";
+import { useSetupStatus, type SetupStatus } from "../../hooks/useSetupStatus";
 import { AssistantLauncher } from "../assistant/AssistantPanel";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
@@ -146,8 +147,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "hs-finance",         href: "/home-services/finance",         label: "Finance & Credits", icon: <Wallet size={16}/> },
       { id: "hs-direct-payments", href: "/home-services/direct-payments", label: "Direct Payments", icon: <CreditCard size={16}/> },
-      // "Billing" (-> /packages) removed from nav 2026-08-04 (user: "no
-      // longer using") -- route still exists, just no longer linked here.
     ],
   },
   {
@@ -155,7 +154,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "media",        href: "/media",           label: "Media", icon: <Image size={16}/> },
       { id: "reports",      href: "/reports",         label: "Reports", icon: <BarChart2 size={16}/> },
-      { id: "privacy",      href: "/account/privacy", label: "Privacy & Data", icon: <Lock size={16}/> },
       { id: "activity",     href: "/activity",        label: "Activity", icon: <Activity size={16}/> },
       { id: "settings",     href: "/settings",        label: "Settings", icon: <Settings size={16}/> },
       { id: "help-support", href: "/help-support",    label: "Help & Support", icon: <HelpCircle size={16}/> },
@@ -164,8 +162,15 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // ── Setup Wizard Drawer ───────────────────────────────────────────────────────
-export function SetupWizardDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const setup = useSetupStatus();
+export function SetupWizardDrawer({
+  open,
+  onClose,
+  setup,
+}: {
+  open: boolean;
+  onClose: () => void;
+  setup: SetupStatus;
+}) {
   const { steps, doneCount, total, isBookable, loading } = setup;
   const statusApi = { error: setup.error, refetch: setup.refetch };
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
@@ -422,9 +427,8 @@ function TenantShellInner({ children, activeNav }: {
     };
   }, [bellOpen]);
 
-  // Profile dropdown — avatar click opens a small menu with profile, billing,
-  // settings, theme switch, current package, and logout (replaces the old
-  // bare avatar-link + standalone logout button).
+  // Profile dropdown keeps identity, finance access, theme, and session
+  // controls together without exposing retired subscription/package state.
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = React.useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -720,6 +724,7 @@ function TenantShellInner({ children, activeNav }: {
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
+          <CreditPill/>
           <AssistantLauncher path={pathname}/>
           <div ref={bellRef} style={{ position: "relative" }}>
             <button onClick={openBell}
@@ -822,7 +827,7 @@ function TenantShellInner({ children, activeNav }: {
               fontFamily: "inherit" }}>
               <div style={{ textAlign: "right" }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
-                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>{tenant.planType ?? "plan"}</p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</p>
               </div>
               <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={34}/>
             </button>
@@ -846,30 +851,18 @@ function TenantShellInner({ children, activeNav }: {
                   </div>
                 </div>
 
-                {/* Current package / plan */}
+                {/* Subscription packages and the security deposit were both
+                    retired. Credits and technician seats live in one hub. */}
                 <div style={{ margin: "12px 16px", padding: "10px 12px", borderRadius: "var(--radius-md)",
                   background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
-                  {tenant.planType ? (
-                    <>
-                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                        color: "var(--text-tertiary)", margin: "0 0 2px" }}>Current Plan</p>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "var(--brand)", margin: 0, textTransform: "capitalize" }}>
-                        {tenant.planType.replace(/_/g, " ")}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 6px" }}>No active package yet</p>
-                      <Link href="/packages" onClick={() => setProfileOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none" }}>
-                        Choose a plan →
-                      </Link>
-                    </>
-                  )}
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                    color: "var(--text-tertiary)", margin: "0 0 3px" }}>Home Services Finance</p>
+                  <Link href="/home-services/finance" onClick={() => setProfileOpen(false)} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--brand)", textDecoration: "none" }}>
+                    <Wallet size={13}/> Credits, seats and policy <ArrowRight size={12}/>
+                  </Link>
                 </div>
 
-                {/* Menu items -- Business Profile / Billing removed 2026-08-04
-                    (user: "no longer using"); routes still exist, just no
-                    longer linked from this menu. */}
+                {/* Secondary workspace navigation. */}
                 <div style={{ padding: "4px 8px" }}>
                   <Link href="/analytics" onClick={() => setProfileOpen(false)} style={profileMenuItemStyle}>
                     <BarChart2 size={15}/> Analytics
@@ -907,7 +900,11 @@ function TenantShellInner({ children, activeNav }: {
       </div>
 
       {/* Setup Wizard Drawer */}
-      <SetupWizardDrawer open={setupOpen} onClose={() => setSetupOpen(false)} />
+      <SetupWizardDrawer
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        setup={setupStatus}
+      />
 
       {tour.mounted && <TourGuide tour={tour}/>}
       <Toaster toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))}/>

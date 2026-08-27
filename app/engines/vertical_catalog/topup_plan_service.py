@@ -1,5 +1,7 @@
-"""HOME-SERVICES-TOPUP-PLAN: draft/publish workflow for the starter credit
-package (top-up plan) + security deposit amounts admins actually set.
+"""HOME-SERVICES-TOPUP-PLAN: draft/publish workflow for the activation finance
+policy — starter credit amount and the credit thresholds that replaced the
+security deposit. The purchasable PLANS themselves live in a separate
+catalogue (topup_plan_catalog_service.py).
 
 Until this file, `HomeServicesActivationFinancePolicy` (finance_policy_
 models.py) had a real, already-versioned table (draft/published/is_current,
@@ -8,7 +10,7 @@ same idiom as VerticalMonetizationPolicy) and a real resolver
 tenant_hs_finance_service.py's actual top-up pricing) -- but NO service
 method and NO router ever let an admin create, edit, or publish a version.
 Every tenant's top-up price (credit_package_base_amount/gst_percent) and
-security deposit (deposit_amount_per_technician) were fixed at whatever the
+credit thresholds were fixed at whatever the
 first auto-created row's column defaults happened to be, with no admin UI
 or write path at all.
 
@@ -29,9 +31,11 @@ from app.engines.vertical_catalog.finance_policy_models import HomeServicesActiv
 from app.exceptions import ServiceOSException
 
 _DRAFT_FIELDS = {
-    "deposit_required", "deposit_calculation_mode", "deposit_amount_per_technician", "minimum_deposit",
-    "technician_count_policy", "initial_credit_purchase_required", "credit_package_base_amount",
+    # Deposit fields were dropped in migration 317. What remains is the credit
+    # package plus the two thresholds that replaced the deposit's protection.
+    "initial_credit_purchase_required", "credit_package_base_amount",
     "credit_package_gst_percent", "credited_wallet_amount", "completion_deduction_policy",
+    "credit_warning_threshold", "credit_booking_floor", "seat_accrual_mode",
     "currency", "effective_from", "change_summary",
 }
 
@@ -55,9 +59,15 @@ class HomeServicesTopupPlanService:
         credited = payload.get("credited_wallet_amount")
         if credited is not None and float(credited) <= 0:
             errors.append("credited_wallet_amount must be greater than 0.")
-        deposit = payload.get("deposit_amount_per_technician")
-        if deposit is not None and float(deposit) < 0:
-            errors.append("deposit_amount_per_technician cannot be negative.")
+        floor = payload.get("credit_booking_floor")
+        if floor is not None and float(floor) < 0:
+            errors.append("credit_booking_floor cannot be negative.")
+        warn = payload.get("credit_warning_threshold")
+        if warn is not None and float(warn) < 0:
+            errors.append("credit_warning_threshold cannot be negative.")
+        if floor is not None and warn is not None and float(warn) < float(floor):
+            errors.append("credit_warning_threshold must be at or above credit_booking_floor "
+                          "— warning below the floor would fire only after bookings had stopped.")
         return errors
 
     async def get_current(self, db: AsyncSession, key: str) -> dict | None:

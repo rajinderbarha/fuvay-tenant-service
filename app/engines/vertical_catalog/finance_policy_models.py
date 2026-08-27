@@ -1,9 +1,8 @@
 """HOME-SERVICES-FINANCE-POLICY-01 — canonical, admin-configurable,
 versioned Home Services activation finance policy.
 
-Replaces the hardcoded constants in activation_deposit_policy.py
-(SECURITY_DEPOSIT_PER_TECHNICIAN / CREDIT_PACKAGE_BASE_AMOUNT /
-CREDIT_PACKAGE_GST_PERCENT) with a real DB-backed, draft/published/retired
+Replaces the hardcoded constants that used to live in
+activation_deposit_policy.py (deleted in migration 317) with a real DB-backed, draft/published/retired
 versioned record, vertical-scoped, following the exact same versioning
 idiom already proven in app.engines.vertical_monetization.models
 .VerticalMonetizationPolicy (version_number + status + is_current with a
@@ -11,8 +10,8 @@ unique partial index on is_current) rather than inventing a parallel
 scheme.
 
 Scope note (time-boxed pass): this table only covers the ACTIVATION finance
-policy (security deposit + starter credit package + completion-deduction
-policy reference) — NOT provider commission / customer fee models, which
+policy (top-up credit package + credit protection thresholds + completion-
+deduction policy reference) — NOT provider commission / customer fee models, which
 already live in VerticalMonetizationPolicy and are untouched here.
 """
 from __future__ import annotations
@@ -44,15 +43,26 @@ class HomeServicesActivationFinancePolicy(ServiceOSBase):
     status:         Mapped[str]       = mapped_column(String(20), default="draft", nullable=False)
     is_current:     Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False)
 
-    # ── Security deposit ──────────────────────────────────────────────────
-    deposit_required:              Mapped[bool]    = mapped_column(Boolean, default=True, nullable=False)
-    deposit_calculation_mode:      Mapped[str]     = mapped_column(String(30), default="per_technician", nullable=False)
-    deposit_amount_per_technician: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=2000, nullable=False)
-    minimum_deposit:               Mapped[Numeric] = mapped_column(Numeric(12, 2), default=2000, nullable=False)
-    # Who counts as a "qualifying technician" for deposit scaling —
-    # documented, not just implied by code. See resolve_qualifying_technician_count().
-    technician_count_policy:       Mapped[str]     = mapped_column(
-        String(50), default="home_services_active_technicians_only", nullable=False)
+    # ── Credit protection thresholds ──────────────────────────────────────
+    # These replace the security deposit (migration 317). A deposit was
+    # collateral — held, never spent, so it was still there when something
+    # went wrong. Credit is consumable: completed-job commission spends it.
+    # Rather than freezing a second pot the tenant paid for, two thresholds
+    # sit on the single balance:
+    #
+    #   warning  notify the tenant to top up
+    #   floor    below this, no NEW bookings are accepted; work already in
+    #            flight finishes normally
+    #
+    # Nothing is locked. The floor stops the hole being dug deeper, so there
+    # is always something left to deduct a penalty or settlement against.
+    credit_warning_threshold: Mapped[Numeric] = mapped_column(Numeric(12, 2), default=1000, nullable=False)
+    credit_booking_floor:     Mapped[Numeric] = mapped_column(Numeric(12, 2), default=500, nullable=False)
+
+    # How buying a second plan affects headcount.
+    #   cumulative   every purchase adds its seats (default)
+    #   highest_plan entitlement is the largest plan ever bought
+    seat_accrual_mode: Mapped[str] = mapped_column(String(20), default="cumulative", nullable=False)
 
     # ── Starter credit package ────────────────────────────────────────────
     initial_credit_purchase_required: Mapped[bool]    = mapped_column(Boolean, default=True, nullable=False)
@@ -80,11 +90,9 @@ class HomeServicesActivationFinancePolicy(ServiceOSBase):
         return {
             "id": str(self.id), "vertical_id": str(self.vertical_id),
             "version_number": self.version_number, "status": self.status, "is_current": self.is_current,
-            "deposit_required": self.deposit_required,
-            "deposit_calculation_mode": self.deposit_calculation_mode,
-            "deposit_amount_per_technician": float(self.deposit_amount_per_technician),
-            "minimum_deposit": float(self.minimum_deposit),
-            "technician_count_policy": self.technician_count_policy,
+            "credit_warning_threshold": float(self.credit_warning_threshold),
+            "credit_booking_floor": float(self.credit_booking_floor),
+            "seat_accrual_mode": self.seat_accrual_mode,
             "initial_credit_purchase_required": self.initial_credit_purchase_required,
             "credit_package_base_amount": float(self.credit_package_base_amount),
             "credit_package_gst_percent": float(self.credit_package_gst_percent),

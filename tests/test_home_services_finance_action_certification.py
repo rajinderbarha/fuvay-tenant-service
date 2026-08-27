@@ -21,7 +21,7 @@ from app.engines.complaints.refund_service import RefundRequestService
 from app.engines.finance_hub.models import CreditTopupOrder
 from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
 from app.engines.finance_hub.service import FinanceHubService
-from app.engines.platform_commerce.models import SecurityDeposit, WarrantyClaim
+from app.engines.platform_commerce.models import WarrantyClaim
 from app.engines.platform_commerce.service import CommerceService
 from app.engines.tenant_engine.models import Tenant, TenantBilling, UsageCreditLedger
 from app.engines.usage_credits.service import UsageCreditService
@@ -62,48 +62,10 @@ async def _tenant(db: AsyncSession, suffix: str) -> Tenant:
     return tenant
 
 
-async def test_security_deposit_complete_action_lifecycle(tx_db: AsyncSession):
-    svc = FinanceHubService(tx_db, request_id="finance-certification")
-
-    payment_tenant = await _tenant(tx_db, "deposit-payment")
-    deposit = SecurityDeposit(tenant_id=payment_tenant.id, required_amount=Decimal("100"))
-    tx_db.add(deposit)
-    await tx_db.flush()
-
-    partial = await svc.record_offline_deposit(deposit.id, Decimal("40"), "cert-ref-1", "partial")
-    assert partial["status"] == "partially_paid"
-    await tx_db.flush()
-    duplicate = await svc.record_offline_deposit(deposit.id, Decimal("40"), "cert-ref-1", "duplicate")
-    assert duplicate["idempotent"] is True
-    paid = await svc.record_offline_deposit(deposit.id, Decimal("60"), "cert-ref-2", "remainder")
-    assert paid["status"] == "paid" and paid["current_balance"] == 100
-
-    adjusted = await svc.adjust_deposit(deposit.id, Decimal("-10"), "approved forfeiture")
-    assert adjusted["status"] == "partially_adjusted" and adjusted["current_balance"] == 90
-    refunded = await svc.refund_deposit(deposit.id, Decimal("90"), "workspace closed")
-    assert refunded["status"] == "refunded" and refunded["current_balance"] == 0
-    with pytest.raises(ServiceOSException):
-        await svc.refund_deposit(deposit.id, Decimal("1"), "duplicate")
-
-    approval_tenant = await _tenant(tx_db, "deposit-approval")
-    pending = SecurityDeposit(
-        tenant_id=approval_tenant.id, required_amount=Decimal("100"),
-        total_paid=Decimal("100"), status="pending_verification",
-    )
-    tx_db.add(pending)
-    await tx_db.flush()
-    approved = await svc.approve_deposit(pending.id, "bank proof verified")
-    assert approved["status"] == "paid" and approved["hold_state"] == "held"
-
-    rejection_tenant = await _tenant(tx_db, "deposit-rejection")
-    rejected_row = SecurityDeposit(
-        tenant_id=rejection_tenant.id, required_amount=Decimal("100"),
-        total_paid=Decimal("100"), status="pending_verification",
-    )
-    tx_db.add(rejected_row)
-    await tx_db.flush()
-    rejected = await svc.reject_deposit(rejected_row.id, "unverifiable reference")
-    assert rejected["status"] == "rejected"
+# The security deposit lifecycle test was removed with the feature itself in
+# migration 317/318 (`SecurityDeposit` no longer exists). Its subject --
+# money held against a tenant -- is now the credit balance, whose floor and
+# warning thresholds are certified by the top-up and refund tests below.
 
 
 async def test_topup_retry_and_partial_to_full_refund_lifecycle(tx_db: AsyncSession):
@@ -209,10 +171,6 @@ async def test_topup_refund_blocks_when_purchased_credits_were_consumed(tx_db: A
 
 async def test_warranty_assign_documents_decide_and_settle_lifecycle(tx_db: AsyncSession):
     tenant = await _tenant(tx_db, "warranty")
-    deposit = SecurityDeposit(
-        tenant_id=tenant.id, required_amount=Decimal("500"),
-        total_paid=Decimal("500"), status="paid", hold_state="held",
-    )
     billing = TenantBilling(tenant_id=tenant.id, vertical_key="home_services", credit_balance=Decimal("200"))
     claim = WarrantyClaim(
         tenant_id=tenant.id, job_id=str(uuid.uuid4()), customer_id=uuid.uuid4(),
@@ -224,7 +182,7 @@ async def test_warranty_assign_documents_decide_and_settle_lifecycle(tx_db: Asyn
         claim_type="service_quality", description="Certification rejection",
         amount_requested=Decimal("50"), status="admin_review",
     )
-    tx_db.add_all([deposit, billing, claim, rejected_claim])
+    tx_db.add_all([billing, claim, rejected_claim])
     await tx_db.flush()
     svc = FinanceHubService(tx_db, request_id="finance-certification")
 
@@ -289,9 +247,10 @@ def test_finance_ui_reads_nested_action_status_and_exposes_review_states():
 
     src = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
     assert "const topup = (d?.topup ?? d)" in src
-    assert "const deposit = (d?.deposit ?? d)" in src
+    # The deposit card was removed with the feature in migration 317/318.
     assert 'status === "partially_refunded"' in src
     assert "const adminAttention = Boolean(refund.admin_attention_required)" in src
     assert "const decisionAllowed = Boolean(claim.admin_attention_required)" in src
     assert "Issue service points" in src
-    assert 'value: "pending_verification"' in src
+    # "pending_verification" was the deposit's bank-proof review state; its
+    # filter option went with the deposit card in migration 317/318.

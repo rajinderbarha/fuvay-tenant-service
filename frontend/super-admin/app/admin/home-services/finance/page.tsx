@@ -11,7 +11,7 @@
  * step and a separate provider completion charge (commission) exist as
  * distinct, never-merged records. No Payouts tab: confirmed structurally
  * absent for Home Services (vertical_catalog's own rules comment). A
- * provider deposit return lives entirely under Security Deposits and is
+ * provider credit recovery lives under Provider Charges and is
  * never a payout. The Monetization tab configures the Home-Services-only
  * platform charge policy (customer platform charge + provider completion
  * charge) via /v1/admin/home-services/finance/monetization/* -- it reuses
@@ -24,8 +24,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, Plus, Trash2 } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, Select, DataTable, Skeleton, Modal, Pagination, Toaster, type ToastItem, SummaryCard,} from "../../../../components/shared/ui";
+import { PageHeader } from "@serviceos/design-system";
 import { homeServicesFinanceApi, homeServicesFinanceMonetizationApi, homeServicesTopupPlanApi, commerceApi, catalogWorkspaceApi, type CatalogJobType, type MonetizationJobTypeRule, type MonetizationPolicy, type TopupPlan, type CreditPackage } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+// `TopupPlan` here is the finance POLICY type (versioned thresholds) already
+// imported from api-hs-finance. The catalogue item is a different record, so
+// it is aliased rather than shadowing it.
+import { topupPlanApi, type TopupPlan as TopupPlanCatalogItem,
+         type TopupPlanInput } from "../../../../lib/api-topup-plans";
 
 let _toastId = 0;
 function useToasts() {
@@ -39,8 +45,7 @@ function useToasts() {
 }
 
 type TabKey =
-  | "overview" | "monetization" | "provider-charges" | "credits" | "security-deposits"
-  | "deposit-refunds"
+  | "overview" | "monetization" | "provider-charges" | "credits"
   | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events" | "direct-payments";
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -48,10 +53,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "monetization", label: "Monetization" },
   { key: "provider-charges", label: "Provider Charges" },
   { key: "credits", label: "Credits & Top-ups" },
-  { key: "security-deposits", label: "Security Deposits" },
-  // Tenant-initiated deposit refund requests. Distinct from an admin
-  // refunding a deposit directly on the Security Deposits tab.
-  { key: "deposit-refunds", label: "Deposit Refund Requests" },
   { key: "direct-payments", label: "Direct Payments" },
   { key: "invoices", label: "Invoices" },
   { key: "customer-refunds", label: "Customer Refunds" },
@@ -110,19 +111,16 @@ function HomeServicesFinanceWorkspace() {
   return (
     <AdminLayout activeNav="hs-finance">
       <div className="hs-finance-shell">
-      <div className="hs-finance-hero">
-        <div>
-          <div className="hs-finance-eyebrow">Home Services · Financial Control</div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Home Services Finance</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-            Provider charges, usage credits, deposits and customer financial operations for Home Services.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <PageHeader
+        title="Home Services Finance"
+        description="Provider charges, usage credits, and customer financial operations for Home Services."
+        eyebrow="Financial Control"
+        context="Home Services"
+        actions={<div style={{ display: "flex", gap: "var(--layout-control-gap)" }}>
           <Btn variant="ghost" icon={<FileText size={14} />} onClick={() => setAuditOpen(true)}>View Audit</Btn>
           <ExportButton tab={tab} />
-        </div>
-      </div>
+        </div>}
+      />
 
       <StatusStrip />
 
@@ -139,8 +137,6 @@ function HomeServicesFinanceWorkspace() {
       {tab === "monetization" && <MonetizationTab />}
       {tab === "provider-charges" && <ProviderChargesTab />}
       {tab === "credits" && <CreditsTab params={params} />}
-      {tab === "security-deposits" && <SecurityDepositsTab />}
-      {tab === "deposit-refunds" && <DepositRefundRequestsTab />}
       {tab === "direct-payments" && <DirectPaymentsTab />}
       {tab === "invoices" && <InvoicesTab />}
       {tab === "customer-refunds" && <CustomerRefundsTab />}
@@ -176,7 +172,6 @@ function ExportButton({ tab }: { tab: TabKey }) {
     let rows: Record<string, unknown>[] = [];
     if (tab === "provider-charges") rows = (await homeServicesFinanceApi.listProviderCharges({ pageSize: 200 })).items;
     else if (tab === "credits") rows = (await homeServicesFinanceApi.listTopups({ pageSize: 200 })).items;
-    else if (tab === "security-deposits") rows = (await homeServicesFinanceApi.listDeposits({ pageSize: 200 })).items;
     else if (tab === "invoices") rows = (await homeServicesFinanceApi.listInvoices({ pageSize: 200 })).items;
     else if (tab === "customer-refunds") rows = (await homeServicesFinanceApi.listRefunds({ pageSize: 200 })).items;
     else if (tab === "warranty-claims") rows = (await homeServicesFinanceApi.listWarrantyClaims({ pageSize: 200 })).items;
@@ -244,10 +239,10 @@ type OverviewData = {
   group_b_serviceos_financial_position: {
     platform_charges_recovered: string | null; platform_charge_recovery_tracked: boolean;
     provider_completion_charges: { posted: number; total_credit_units: string; ledger: string };
-    active_usage_credit_balance: string; security_deposits_held: string;
+    active_usage_credit_balance: string;
   };
   secondary: {
-    low_credit_providers: number; failed_charge_recoveries: number; deposit_return_requests: number;
+    low_credit_providers: number; failed_charge_recoveries: number;
     warranty_financial_exposure: string; finance_exceptions: number;
   };
   audit_note: string;
@@ -292,14 +287,12 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
           <SummaryCard label="Provider-Charge Credits Deducted" value={units(b.provider_completion_charges.total_credit_units)} onClick={() => onNavigate("provider-charges")} />
           <SummaryCard label="Provider Charges Posted" value={b.provider_completion_charges.posted} onClick={() => onNavigate("provider-charges")} />
           <SummaryCard label="Available Usage Credits" value={units(b.active_usage_credit_balance)} onClick={() => onNavigate("credits")} />
-          <SummaryCard label="Security Deposits Held" value={money(b.security_deposits_held)} onClick={() => onNavigate("security-deposits")} />
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         <SummaryCard label="Low-Credit Providers" value={sec.low_credit_providers} tone={sec.low_credit_providers > 0 ? "warning" : undefined} onClick={() => onNavigate("credits")} />
         <SummaryCard label="Failed Charge Recoveries" value={sec.failed_charge_recoveries} tone={sec.failed_charge_recoveries > 0 ? "danger" : undefined} onClick={() => onNavigate("provider-charges")} />
-        <SummaryCard label="Deposit Return Requests" value={sec.deposit_return_requests} tone={sec.deposit_return_requests > 0 ? "warning" : undefined} onClick={() => onNavigate("security-deposits")} />
         <SummaryCard label="Warranty Financial Exposure" value={money(sec.warranty_financial_exposure)} onClick={() => onNavigate("warranty-claims")} />
         <SummaryCard label="Finance Exceptions" value={sec.finance_exceptions} tone={sec.finance_exceptions > 0 ? "danger" : undefined}
           onClick={() => onNavigate("financial-events")} />
@@ -865,8 +858,8 @@ function MonetizationTab() {
 // ── Provider Activation Requirement + Top-up Plans ──────────────────────────
 // Lives under Credits & Top-ups > "Top-up Plans" sub-tab. Two genuinely
 // separate things, both on HomeServicesActivationFinancePolicy (NOT
-// VerticalMonetizationPolicy): (1) the ONE-TIME deposit + optional starter
-// credit purchase a tenant must clear to activate as a provider (read by
+// VerticalMonetizationPolicy): (1) the ONE-TIME starter credit purchase a
+// tenant must clear to activate as a provider (read by
 // vertical_catalog/activation.py, activation_payment_service.py,
 // tenant_finance_readiness_router.py -- genuinely load-bearing, cannot be
 // removed), and (2) the REPEATABLE top-up plans a tenant can buy any time,
@@ -903,7 +896,7 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
   function startDraft() {
     setForm(draft ?? current ?? {
       credit_package_base_amount: 1000, credit_package_gst_percent: 18,
-      credited_wallet_amount: 1000, deposit_amount_per_technician: 2000, currency: "INR",
+      credited_wallet_amount: 5000, currency: "INR",
     });
     setErrors([]);
     setShowDrawer(true);
@@ -951,7 +944,7 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
   }
 
   const gstAmount = current ? Math.round((current.credit_package_base_amount * current.credit_package_gst_percent) / 100) : 0;
-  const nothingRequired = current && !current.deposit_required && !current.initial_credit_purchase_required;
+  const nothingRequired = current && !current.initial_credit_purchase_required;
 
   return (
     <Card padding={16}>
@@ -973,7 +966,7 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
 
       {nothingRequired ? (
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-          No deposit or starter purchase required — providers can activate immediately. Ongoing credit purchases
+          No starter purchase required — providers can activate immediately. Ongoing credit purchases
           are the Top-up Plans below.
         </p>
       ) : (
@@ -982,7 +975,6 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
             One-time requirement to activate as a provider — separate from the repeatable Top-up Plans below.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, fontSize: 12 }}>
-            <KV label="Security deposit / technician" value={current?.deposit_required ? money(current.deposit_amount_per_technician) : "Not required"} />
             {current?.initial_credit_purchase_required && (
               <>
                 <KV label="Starter purchase amount" value={money(current.credit_package_base_amount)} />
@@ -996,21 +988,6 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
 
       {showDrawer && (
         <Modal open onClose={() => setShowDrawer(false)} title="Edit Activation Requirement" size="md">
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Security deposit</label>
-          <div style={{ display: "flex", gap: 8, margin: "4px 0 10px" }}>
-            <Btn variant={form.deposit_required !== false ? "primary" : "ghost"}
-              onClick={() => setForm({ ...form, deposit_required: true })}>Required</Btn>
-            <Btn variant={form.deposit_required === false ? "primary" : "ghost"}
-              onClick={() => setForm({ ...form, deposit_required: false })}>Not required</Btn>
-          </div>
-          {form.deposit_required !== false && (
-            <>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Deposit per technician (₹)</label>
-              <Input value={String(form.deposit_amount_per_technician ?? "")}
-                onChange={v => setForm({ ...form, deposit_amount_per_technician: Number(v) })} />
-            </>
-          )}
-
           <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 16 }}>Starter credit purchase</label>
           <div style={{ display: "flex", gap: 8, margin: "4px 0 10px" }}>
             <Btn variant={form.initial_credit_purchase_required !== false ? "primary" : "ghost"}
@@ -1056,48 +1033,62 @@ function TopupPlanSection({ onToast }: { onToast: (msg: string, variant?: ToastI
 }
 
 // ── Top-up Plans (multiple named, purchasable price tiers) ─────────────────
-// What a tenant actually buys credits with, any time, any number of times.
-// Reuses the real, already-live CreditPackage admin CRUD (platform_commerce
-// engine, /v1/commerce/packages) rather than inventing a new table -- wired
-// into the real Home Services top-up flow via CreditTopupOrder.
-// credit_package_id (tenant_hs_finance_service.create_topup accepts
-// credit_package_id and credits the same TenantBilling/UsageCreditLedger
-// pipeline as everything else).
-const EMPTY_PKG_FORM = { name: "", description: "", credits_amount: "1000", price_inr: "1000", bonus_pct: "0" };
+// Backed by the CANONICAL catalogue (`hs_topup_plans`, migration 317/319) --
+// the same one /admin/topup-plans edits, the provider onboarding offer reads,
+// and the tenant header credit pill shows.
+//
+// This panel used to manage `credit_packages` (platform_commerce,
+// /v1/commerce/packages) instead: a second, parallel catalogue that had 0 rows
+// and no GST or seat fields, so a plan authored here priced nothing a provider
+// could actually buy and the create form had nowhere to put tax. Two price
+// authorities for one purchase is exactly the split this codebase has been
+// removing, so the tab now points at the real one.
+const EMPTY_PKG_FORM = {
+  name: "", description: "", base_amount: "1000", gst_percent: "18",
+  seats: "1", validity_days: "0",
+};
 
 function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: ToastItem["variant"]) => void }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_PKG_FORM);
 
-  const pkgsApi = useApi(useCallback(() => commerceApi.listPackages(), []), []);
-  const createAction = useAction((body: Record<string, unknown>) => commerceApi.createPackage(body as Parameters<typeof commerceApi.createPackage>[0]));
-  const updateAction = useAction((id: string, body: Record<string, unknown>) => commerceApi.updatePackage(id, body));
-  const archiveAction = useAction((id: string) => commerceApi.deletePackage(id));
-  const deleteAction = useAction((id: string) => commerceApi.deletePackagePermanently(id));
+  const pkgsApi = useApi(useCallback(() => topupPlanApi.list(), []), []);
+  const createAction = useAction((body: Record<string, unknown>) => topupPlanApi.create(body as unknown as TopupPlanInput));
+  const updateAction = useAction((id: string, body: Record<string, unknown>) => topupPlanApi.update(id, body as Partial<TopupPlanInput>));
+  const archiveAction = useAction((id: string) => topupPlanApi.update(id, { is_active: false }));
+  const deleteAction = useAction((id: string) => topupPlanApi.remove(id));
 
-  const packages = pkgsApi.data?.packages ?? [];
+  const packages = pkgsApi.data?.plans ?? [];
 
   function startCreate() {
     setEditingId(null);
     setForm(EMPTY_PKG_FORM);
     setShowForm(true);
   }
-  function startEdit(pkg: CreditPackage) {
-    setEditingId(pkg.package_id);
+  function startEdit(pkg: TopupPlanCatalogItem) {
+    setEditingId(pkg.id);
     setForm({
       name: pkg.name, description: pkg.description ?? "",
-      credits_amount: String(pkg.credits_amount), price_inr: String(pkg.price_inr), bonus_pct: String(pkg.bonus_pct),
+      base_amount: String(pkg.base_amount), gst_percent: String(pkg.gst_percent),
+      seats: String(pkg.seats), validity_days: String(pkg.validity_days ?? 0),
     });
     setShowForm(true);
   }
 
+  // Priced exactly the way the server prices it, so the admin sees the real
+  // total before saving rather than after.
+  const previewBase = Number(form.base_amount) || 0;
+  const previewGstPct = Number(form.gst_percent) || 0;
+  const previewGst = Math.round(previewBase * previewGstPct) / 100;
+  const previewTotal = previewBase + previewGst;
+
   async function submit() {
-    if (!form.name.trim() || !form.credits_amount.trim() || !form.price_inr.trim()) return;
+    if (!form.name.trim() || !form.base_amount.trim()) return;
     const body = {
       name: form.name.trim(), description: form.description.trim() || undefined,
-      credits_amount: Number(form.credits_amount), price_inr: Number(form.price_inr),
-      bonus_pct: Number(form.bonus_pct) || 0,
+      base_amount: Number(form.base_amount), gst_percent: Number(form.gst_percent) || 0,
+      seats: Number(form.seats) || 0, validity_days: Number(form.validity_days) || 0,
     };
     const result = editingId ? await updateAction.execute(editingId, body) : await createAction.execute(body);
     if (result) {
@@ -1108,22 +1099,27 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
     }
   }
 
-  async function archive(pkg: CreditPackage) {
-    if (!confirm(`Archive plan "${pkg.name}"? Tenants will no longer be able to buy it.`)) return;
-    const result = await archiveAction.execute(pkg.package_id);
-    if (result === null) onToast(archiveAction.error ?? "Failed to archive plan.", "danger");
-    else { pkgsApi.refetch(); onToast("Plan archived."); }
+  async function archive(pkg: TopupPlanCatalogItem) {
+    if (!confirm(`Retire plan "${pkg.name}"? Tenants will no longer be able to buy it.`)) return;
+    const result = await archiveAction.execute(pkg.id);
+    if (result === null) onToast(archiveAction.error ?? "Failed to retire plan.", "danger");
+    else { pkgsApi.refetch(); onToast("Plan retired."); }
   }
 
-  async function deletePermanently(pkg: CreditPackage) {
+  async function deletePermanently(pkg: TopupPlanCatalogItem) {
     if (!confirm(`Permanently delete plan "${pkg.name}"? This cannot be undone.`)) return;
-    const result = await deleteAction.execute(pkg.package_id);
+    const result = await deleteAction.execute(pkg.id);
+    // The API refuses to delete a plan any payment order references; it must be
+    // retired instead, so the tenant's receipt keeps resolving to a real plan.
     if (result === null) onToast(deleteAction.error ?? "Failed to delete plan.", "danger");
     else { pkgsApi.refetch(); onToast("Plan deleted."); }
   }
 
   const activePkgs = packages.filter(p => p.is_active);
   const archivedPkgs = packages.filter(p => !p.is_active);
+
+  const validityText = (p: TopupPlanCatalogItem) =>
+    p.validity_days > 0 ? `Valid ${p.validity_days} days` : "Never expires";
 
   return (
     <Card padding={16}>
@@ -1132,8 +1128,9 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
         <Btn variant="primary" icon={<Plus size={14} />} onClick={startCreate}>Create Plan</Btn>
       </div>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
-        This is what tenants actually buy — create as many plans as you want, at any price from low to high.
-        A tenant picks one and can buy it again any time (unlike the one-time activation requirement above).
+        What a provider buys to operate: wallet credit plus the technician seats that decide how many
+        jobs they can run in one slot. Offered during onboarding and from the provider&apos;s header —
+        never required to activate. Edited here or at <code>/admin/topup-plans</code>; both are the same catalogue.
       </p>
 
       {pkgsApi.loading ? (
@@ -1144,36 +1141,33 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
         <div style={{ padding: "28px 0", textAlign: "center" }}>
           <Wallet size={28} style={{ color: "var(--text-tertiary)", margin: "0 auto 10px", display: "block" }} />
           <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 4px" }}>No top-up plans created yet.</p>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Click &quot;Create Plan&quot; to add your first one — tenants can&apos;t buy credits until at least one plan exists.</p>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Click &quot;Create Plan&quot; to add your first one — providers can&apos;t buy credit or seats until at least one plan exists.</p>
         </div>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
             {activePkgs.map(pkg => (
-              <div key={pkg.package_id} style={{
+              <div key={pkg.id} style={{
                 display: "flex", flexDirection: "column", gap: 8, padding: 16, borderRadius: 12,
                 border: "1px solid var(--border)", background: "var(--surface-elevated, var(--surface))",
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{pkg.name}</span>
-                  {pkg.bonus_pct > 0 && <Badge variant="success">+{pkg.bonus_pct}% bonus</Badge>}
+                  {pkg.is_default && <Badge variant="success">Default</Badge>}
                 </div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: "var(--brand)" }}>{money(pkg.price_inr)}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: "var(--brand)" }}>{money(pkg.total_amount)}</div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {units(pkg.total_credits)} credited
-                  {pkg.bonus_pct > 0 && <span style={{ color: "var(--text-tertiary)" }}> ({units(pkg.credits_amount)} base)</span>}
+                  {money(pkg.base_amount)} + {pkg.gst_percent}% GST
+                  <span style={{ color: "var(--text-tertiary)" }}> ({money(pkg.credited_amount)} to wallet)</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <Badge>{pkg.seats} seat{pkg.seats === 1 ? "" : "s"}</Badge>
+                  <Badge variant={pkg.validity_days > 0 ? "warning" : undefined}>{validityText(pkg)}</Badge>
                 </div>
                 {pkg.description && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>{pkg.description}</p>}
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: "auto" }}>
-                  {pkg.purchase_count > 0 ? `Bought ${pkg.purchase_count}×` : "Never purchased"}
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 4, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 10, borderTop: "1px solid var(--border)" }}>
                   <Btn variant="ghost" size="sm" onClick={() => startEdit(pkg)} style={{ flex: 1, justifyContent: "center" }}>Edit</Btn>
-                  {pkg.purchase_count === 0 ? (
-                    <Btn variant="ghost" size="sm" onClick={() => deletePermanently(pkg)} style={{ flex: 1, justifyContent: "center", color: "var(--danger-text)" }}>Delete</Btn>
-                  ) : (
-                    <Btn variant="ghost" size="sm" onClick={() => archive(pkg)} style={{ flex: 1, justifyContent: "center", color: "var(--danger-text)" }}>Archive</Btn>
-                  )}
+                  <Btn variant="ghost" size="sm" onClick={() => archive(pkg)} style={{ flex: 1, justifyContent: "center", color: "var(--danger-text)" }}>Retire</Btn>
                 </div>
               </div>
             ))}
@@ -1182,18 +1176,16 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
           {archivedPkgs.length > 0 && (
             <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", color: "var(--text-tertiary)", margin: "0 0 8px" }}>
-                Archived
+                Retired
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {archivedPkgs.map(pkg => (
-                  <div key={pkg.package_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                  <div key={pkg.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "8px 12px", borderRadius: 8, background: "var(--surface-sunken)", opacity: 0.7 }}>
-                    <span style={{ fontSize: 12 }}>{pkg.name} — {money(pkg.price_inr)} for {units(pkg.total_credits)}</span>
+                    <span style={{ fontSize: 12 }}>{pkg.name} — {money(pkg.total_amount)} for {pkg.seats} seat{pkg.seats === 1 ? "" : "s"}</span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <Badge>Archived</Badge>
-                      {pkg.purchase_count === 0 && (
-                        <Btn variant="ghost" size="sm" onClick={() => deletePermanently(pkg)} style={{ color: "var(--danger-text)" }}>Delete</Btn>
-                      )}
+                      <Badge>Retired</Badge>
+                      <Btn variant="ghost" size="sm" onClick={() => deletePermanently(pkg)} style={{ color: "var(--danger-text)" }}>Delete</Btn>
                     </div>
                   </div>
                 ))}
@@ -1205,26 +1197,48 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editingId ? "Edit Plan" : "Create Plan"} size="sm">
         <label style={{ fontSize: 12, fontWeight: 600 }}>Plan name</label>
-        <Input value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="e.g. Starter, Pro, Bulk" />
+        <Input value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="e.g. Starter, Growth, Monthly" />
         <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 10 }}>Description (optional)</label>
         <Input value={form.description} onChange={v => setForm({ ...form, description: v })} />
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 12, fontWeight: 600 }}>Credits</label>
-            <Input value={form.credits_amount} onChange={v => setForm({ ...form, credits_amount: v })} disabled={!!editingId} />
+            <label style={{ fontSize: 12, fontWeight: 600 }}>Price before GST (₹)</label>
+            <Input value={form.base_amount} onChange={v => setForm({ ...form, base_amount: v })} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 12, fontWeight: 600 }}>Price (₹)</label>
-            <Input value={form.price_inr} onChange={v => setForm({ ...form, price_inr: v })} />
+            <label style={{ fontSize: 12, fontWeight: 600 }}>GST %</label>
+            <Input value={form.gst_percent} onChange={v => setForm({ ...form, gst_percent: v })} placeholder="18" />
           </div>
         </div>
-        {editingId && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>Credits can&apos;t change once this plan has ever been purchased.</p>}
-        <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 10 }}>Bonus %</label>
-        <Input value={form.bonus_pct} onChange={v => setForm({ ...form, bonus_pct: v })} placeholder="0" />
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>Technician seats</label>
+            <Input value={form.seats} onChange={v => setForm({ ...form, seats: v })} placeholder="1" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>Validity (days)</label>
+            <Input value={form.validity_days} onChange={v => setForm({ ...form, validity_days: v })} placeholder="0" />
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+          {Number(form.validity_days) > 0
+            ? `Seats and unspent credit lapse ${form.validity_days} days after purchase.`
+            : "0 = the purchase never lapses. Seats and credit stay until used."}
+        </p>
+
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "var(--surface-sunken)" }}>
+          <PreviewRow label="Price before GST" value={money(previewBase)} />
+          <PreviewRow label={`GST @ ${previewGstPct}%`} value={money(previewGst)} />
+          <PreviewRow label="Provider pays" value={money(previewTotal)} strong />
+          {/* GST is tax, never spendable balance -- the same split the capture
+              path enforces, shown here so the number is never a surprise. */}
+          <PreviewRow label="Reaches wallet" value={money(previewBase)} />
+        </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <Btn variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn>
           <Btn variant="primary" loading={createAction.loading || updateAction.loading}
-            disabled={!form.name.trim() || !form.credits_amount.trim() || !form.price_inr.trim()}
+            disabled={!form.name.trim() || !form.base_amount.trim()}
             onClick={submit}>
             {editingId ? "Save Changes" : "Create Plan"}
           </Btn>
@@ -1805,352 +1819,10 @@ function AdjustmentsView({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-// ── Security Deposits ────────────────────────────────────────────────────────
-
-
-/* ── Deposit refund requests ───────────────────────────────────────────────
- *
- * The console for the tenant-initiated security-deposit refund flow
- * (finance_hub/deposit_refund_models.py). Its router was written and
- * permission-guarded but NEVER MOUNTED in main.py, so every endpoint returned
- * 404 and no admin screen was ever built for it -- a tenant could file a
- * request that nobody could then act on. With the router mounted this is the
- * missing surface.
- *
- * Actions are exactly the seven the server accepts, offered only from the
- * states the server allows, so no button can produce a 409.
- */
-const DRR_STATUS_TONE: Record<string, "success" | "warning" | "danger" | "muted" | "info"> = {
-  draft: "muted",
-  submitted: "info",
-  eligibility_review: "info",
-  liability_review: "info",
-  admin_decision: "warning",
-  info_requested: "warning",
-  processing: "info",
-  refunded: "success",
-  rejected: "danger",
-  withdrawn: "muted",
-};
-
-/** Which decision actions are legal from a given status, mirroring
- *  TenantHomeServicesFinanceService.admin_decide_refund_request. */
-function drrActions(status: string): { action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean }[] {
-  if (["refunded", "rejected", "withdrawn"].includes(status)) return [];
-  const out: { action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean }[] = [];
-  if (status === "submitted") out.push({ action: "advance_eligibility", label: "Start eligibility review" });
-  if (status === "eligibility_review") out.push({ action: "advance_liability", label: "Start liability review" });
-  if (["eligibility_review", "liability_review", "info_requested"].includes(status)) {
-    out.push({ action: "advance_decision", label: "Move to decision" });
-  }
-  if (status !== "processing") {
-    out.push({ action: "request_info", label: "Request information", needsNote: true });
-    out.push({ action: "approve", label: "Approve refund", needsAmount: true, needsNote: true });
-    out.push({ action: "reject", label: "Reject", danger: true, needsNote: true });
-  }
-  if (status === "processing") out.push({ action: "mark_refunded", label: "Mark refunded", needsNote: true });
-  return out;
-}
-
-function DepositRefundRequestsTab() {
-  const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
-  const [pending, setPending] = useState<{ row: Record<string, unknown>; action: string; label: string; danger?: boolean; needsAmount?: boolean; needsNote?: boolean } | null>(null);
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const { toasts, push, remove } = useToasts();
-
-  const list = useApi(useCallback(
-    () => homeServicesFinanceApi.listDepositRefundRequests({ status: status || undefined, page, page_size: 20 }),
-    [status, page]), [status, page]);
-
-  const decide = useAction(useCallback(
-    (id: string, body: { action: string; approved_amount?: string; note?: string }) =>
-      homeServicesFinanceApi.decideDepositRefundRequest(id, body), []));
-
-  async function submit() {
-    if (!pending) return;
-    const body: { action: string; approved_amount?: string; note?: string } = { action: pending.action };
-    if (pending.needsAmount && amount.trim()) body.approved_amount = amount.trim();
-    if (note.trim()) body.note = note.trim();
-    const res = await decide.execute(String(pending.row.refund_request_id), body);
-    if (res) {
-      push(`${pending.label} applied.`);
-      setPending(null); setAmount(""); setNote("");
-      list.refetch();
-    }
-  }
-
-  const rows = (list.data?.items ?? []) as unknown as Record<string, unknown>[];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-          Refund requests providers have raised against their own held security deposit. The
-          eligible amount is recomputed server-side from the published policy, live qualifying
-          technician count and open liabilities — a provider can never approve its own request.
-        </p>
-      </Card>
-
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
-          { value: "submitted", label: "Submitted" },
-          { value: "eligibility_review", label: "Eligibility review" },
-          { value: "liability_review", label: "Liability review" },
-          { value: "admin_decision", label: "Admin decision" },
-          { value: "info_requested", label: "Information requested" },
-          { value: "processing", label: "Processing" },
-          { value: "refunded", label: "Refunded" },
-          { value: "rejected", label: "Rejected" },
-          { value: "withdrawn", label: "Withdrawn" },
-        ]} />
-      </div>
-
-      <QueryError message={list.error} onRetry={list.refetch} />
-      <DataTable
-        loading={list.loading}
-        rows={rows}
-        emptyText="No provider deposit refund requests."
-        columns={[
-          { key: "request_ref", label: "Request" },
-          { key: "status_label", label: "Status", render: (v, row) => (
-            <Badge variant={DRR_STATUS_TONE[String((row as Record<string, unknown>).status)] ?? "muted"}>
-              {String(v ?? "")}
-            </Badge>
-          ) },
-          { key: "requested_amount", label: "Requested", render: v => money(v as number) },
-          { key: "approved_amount", label: "Approved", render: v => (v ? money(v as number) : "—") },
-          { key: "eligible_amount_snapshot", label: "Eligible at submission", render: v => money(v as number) },
-          { key: "qualifying_technicians_snapshot", label: "Technicians" },
-          { key: "submitted_at", label: "Submitted", render: v => (v ? new Date(String(v)).toLocaleDateString() : "—") },
-          { key: "refund_request_id", label: "", render: (_v, row) => {
-            const r = row as Record<string, unknown>;
-            const acts = drrActions(String(r.status));
-            if (acts.length === 0) return <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Closed</span>;
-            return (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {acts.map(a => (
-                  <Btn key={a.action} size="xs" variant={a.danger ? "danger" : "secondary"}
-                    onClick={() => { setPending({ row: r, ...a }); setAmount(String(r.requested_amount ?? "")); setNote(""); }}>
-                    {a.label}
-                  </Btn>
-                ))}
-              </div>
-            );
-          } },
-        ]}
-      />
-      {list.data?.total != null && (
-        <Pagination page={page} pageSize={20} total={Number(list.data.total)} onPage={setPage} />
-      )}
-
-      <Modal open={!!pending} onClose={() => setPending(null)} title={pending?.label ?? ""} size="md">
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {pending?.row.reason ? (
-            <div>
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 3px" }}>Provider&apos;s reason</p>
-              <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{String(pending.row.reason)}</p>
-            </div>
-          ) : null}
-          {pending?.row.tenant_response ? (
-            <div>
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 3px" }}>Provider&apos;s response to your question</p>
-              <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0 }}>{String(pending.row.tenant_response)}</p>
-            </div>
-          ) : null}
-          {pending?.needsAmount && (
-            <Input label={`Approved amount (max ${money(Number(pending.row.requested_amount ?? 0))})`}
-              value={amount} onChange={setAmount} />
-          )}
-          {pending?.needsNote && (
-            <Input
-              label={
-                pending.action === "request_info" ? "What do you need from the provider?"
-                  : pending.action === "mark_refunded" ? "Payout reference"
-                    : "Note (optional)"
-              }
-              value={note} onChange={setNote}
-            />
-          )}
-          {decide.error && (
-            <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{decide.error}</p>
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setPending(null)}>Cancel</Btn>
-            <Btn variant={pending?.danger ? "danger" : "primary"} size="sm" loading={decide.loading}
-              disabled={Boolean(pending?.action === "request_info" && !note.trim())}
-              onClick={submit}>
-              Confirm
-            </Btn>
-          </div>
-        </div>
-      </Modal>
-      <Toaster toasts={toasts} onRemove={remove} />
-    </div>
-  );
-}
-
-function SecurityDepositsTab() {
-  const [q, setQ] = useState("");
-  const query = useDebouncedValue(q);
-  const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<string | null>(null);
-  const summary = useApi(useCallback(() => homeServicesFinanceApi.getDepositsSummary(), []));
-  const deposits = useApi(useCallback(
-    () => homeServicesFinanceApi.listDeposits({ q: query || undefined, status: status || undefined, page, pageSize: 20 }),
-    [query, status, page]), [query, status, page]);
-  const s = summary.data as Record<string, unknown> | undefined;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Total Held" value={money((s?.total_held as string) ?? 0)} />
-        <SummaryCard label="Active" value={(s?.active_held_deposits as number) ?? 0} />
-        <SummaryCard label="Pending" value={(s?.pending_deposits as number) ?? 0} />
-        <SummaryCard label="Return Requests" value={(s?.refund_pending as number) ?? 0} tone="warning" />
-        <SummaryCard label="Refunded" value={(s?.refunded as number) ?? 0} />
-        <SummaryCard label="Risk Cases" value={(s?.deposit_risk_cases as number) ?? 0} tone={(s?.deposit_risk_cases as number) > 0 ? "danger" : undefined} />
-      </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search tenant..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
-        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
-          { value: "unpaid", label: "Unpaid" }, { value: "partially_paid", label: "Partially paid" },
-          { value: "pending_verification", label: "Pending verification" }, { value: "paid", label: "Paid" },
-          { value: "refund_requested", label: "Return requested" }, { value: "refunded", label: "Refunded" },
-          { value: "rejected", label: "Rejected" }, { value: "forfeited", label: "Forfeited" },
-          { value: "partially_adjusted", label: "Partially adjusted" },
-        ]} />
-      </div>
-      <QueryError message={deposits.error} onRetry={deposits.refetch} />
-      <DataTable
-        loading={deposits.loading}
-        rows={(deposits.data?.items ?? []) as unknown as Record<string, unknown>[]}
-        emptyText="No security deposits found for Home Services."
-        onRowClick={row => setSelected(String((row as Record<string, unknown>).deposit_id))}
-        columns={[
-          { key: "tenant_name", label: "Provider" },
-          { key: "required_amount", label: "Required", render: v => money(v as number) },
-          { key: "current_balance", label: "Current Balance", render: v => money(v as number) },
-          { key: "status", label: "Status", render: v => <Badge variant={v === "paid" ? "success" : v === "refund_requested" ? "warning" : "default"}>{String(v)}</Badge> },
-          { key: "created_at", label: "Collected", render: v => dt(v as string) },
-        ]}
-      />
-      <Pagination page={page} total={deposits.data?.pagination?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Security Deposit Detail" size="lg">
-        {selected && <DepositDetail depositId={selected} onChanged={() => { deposits.refetch(); summary.refetch(); }} />}
-      </Modal>
-    </div>
-  );
-}
-type DepositActionKind = "approve" | "reject" | "record-offline" | "refund" | "adjust";
-
-function DepositDetail({ depositId, onChanged }: { depositId: string; onChanged: () => void }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getDepositDetail(depositId), [depositId]), [depositId]);
-  const [openAction, setOpenAction] = useState<DepositActionKind | null>(null);
-  const [amount, setAmount] = useState("");
-  const [reference, setReference] = useState("");
-  const [reason, setReason] = useState("");
-
-  const approveAction = useAction((id: string, notes?: string) => homeServicesFinanceApi.approveDeposit(id, notes));
-  const rejectAction = useAction((id: string, r: string) => homeServicesFinanceApi.rejectDeposit(id, r));
-  const recordOfflineAction = useAction((id: string, amt: number, ref?: string, notes?: string) =>
-    homeServicesFinanceApi.recordOfflineDeposit(id, amt, ref, notes));
-  const refundAction = useAction((id: string, amt: number, r: string) => homeServicesFinanceApi.refundDeposit(id, amt, r));
-  const adjustAction = useAction((id: string, amt: number, r: string) => homeServicesFinanceApi.adjustDeposit(id, amt, r));
-
-  const busy = approveAction.loading || rejectAction.loading || recordOfflineAction.loading || refundAction.loading || adjustAction.loading;
-  const error = approveAction.error || rejectAction.error || recordOfflineAction.error || refundAction.error || adjustAction.error;
-
-  function reset() { setOpenAction(null); setAmount(""); setReference(""); setReason(""); }
-  function afterSuccess() { reset(); detail.refetch(); onChanged(); }
-
-  if (detail.loading) return <Skeleton height={160} />;
-  const d = detail.data as Record<string, unknown> | undefined;
-  const deposit = (d?.deposit ?? d) as Record<string, unknown> | undefined;
-  const status = deposit?.status as string | undefined;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <KeyValueGrid data={detail.data} />
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        A deposit return is recorded here as a SECURITY_DEPOSIT_RETURN ledger entry — never a provider payout.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {(status === "pending" || status === "pending_verification") && (
-          <>
-            <Btn variant="primary" loading={approveAction.loading}
-              onClick={async () => { if (await approveAction.execute(depositId, undefined)) afterSuccess(); }}>Approve</Btn>
-            <Btn variant="ghost" onClick={() => setOpenAction("reject")}>Reject</Btn>
-          </>
-        )}
-        {(status === "unpaid" || status === "partially_paid") && (
-          <Btn variant="secondary" onClick={() => setOpenAction("record-offline")}>Record Offline Payment</Btn>
-        )}
-        {(status === "paid" || status === "refund_requested") && (
-          <Btn variant="ghost" onClick={() => setOpenAction("refund")}>Refund</Btn>
-        )}
-        {status !== "refunded" && status !== "rejected" && (
-          <Btn variant="ghost" onClick={() => setOpenAction("adjust")}>Adjust / Forfeit</Btn>
-        )}
-      </div>
-
-      {openAction === "reject" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8 }}>
-          <Input placeholder="Rejection reason" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={rejectAction.loading} disabled={!reason.trim()}
-              onClick={async () => { if (await rejectAction.execute(depositId, reason.trim())) afterSuccess(); }}>Confirm Reject</Btn>
-            <Btn variant="ghost" onClick={reset}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {openAction === "record-offline" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8 }}>
-          <Input placeholder="Amount received" value={amount} onChange={setAmount} />
-          <Input placeholder="Reference (e.g. bank transfer ref)" value={reference} onChange={setReference} />
-          <Input placeholder="Notes (optional)" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={recordOfflineAction.loading} disabled={!amount.trim()}
-              onClick={async () => { if (await recordOfflineAction.execute(depositId, Number(amount), reference, reason)) afterSuccess(); }}>
-              Confirm Payment
-            </Btn>
-            <Btn variant="ghost" onClick={reset}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {openAction === "refund" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8 }}>
-          <Input placeholder="Refund amount" value={amount} onChange={setAmount} />
-          <Input placeholder="Reason" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={refundAction.loading} disabled={!amount.trim() || !reason.trim()}
-              onClick={async () => { if (await refundAction.execute(depositId, Number(amount), reason.trim())) afterSuccess(); }}>
-              Confirm Refund
-            </Btn>
-            <Btn variant="ghost" onClick={reset}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {openAction === "adjust" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--surface-sunken)", borderRadius: 8 }}>
-          <Input placeholder="Signed amount: positive adds, negative forfeits" value={amount} onChange={setAmount} />
-          <Input placeholder="Reason" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={adjustAction.loading}
-              disabled={!Number.isFinite(Number(amount)) || Number(amount) === 0 || !reason.trim()}
-              onClick={async () => { if (await adjustAction.execute(depositId, Number(amount), reason.trim())) afterSuccess(); }}>
-              Confirm Adjustment
-            </Btn>
-            <Btn variant="ghost" onClick={reset}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {error && <p style={{ fontSize: 11, color: "var(--danger-text)", margin: 0 }}>{error}</p>}
-    </div>
-  );
-}
+// The Security Deposits and Deposit Refund Requests consoles were removed
+// with the deposit itself (migrations 317/318). Providers hold spendable
+// credit and purchased technician seats — nothing is held, nothing is
+// refundable, so there is no queue for an admin to work.
 
 // ── Invoices ──────────────────────────────────────────────────────────────────
 
@@ -2315,8 +1987,8 @@ function RefundDetail({ refundId }: { refundId: string }) {
       <KeyValueGrid data={detail.data} />
       <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
         The provider owns the refund and records any direct customer repayment. Admin intervenes only after
-        provider resolution fails, issuing reusable service points funded from provider usage credits first
-        and then the provider security deposit.
+        provider resolution fails, issuing reusable service points funded from provider usage credits — which
+        may take the balance negative, pausing new bookings until it is cleared.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {adminAttention && (

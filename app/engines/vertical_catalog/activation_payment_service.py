@@ -33,9 +33,6 @@ from app.engines.vertical_catalog.activation_payment_models import (
 )
 from app.engines.tenant_engine.models import TenantBilling
 from app.engines.invoice_payment.models import FinancialEvent
-from app.engines.platform_commerce.constants import DepositTxnType
-from app.engines.platform_commerce.ledger import credit_deposit
-from app.engines.platform_commerce.models import SecurityDeposit
 
 logger = structlog.get_logger("vertical_catalog.activation_payment")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -47,85 +44,9 @@ FEV_ACTIVATION_CREDIT_GST = "activation.credit_package_gst_collected"
 ERR_ORDER_ALREADY_SATISFIED = "ACTIVATION_GATE_ALREADY_SATISFIED"
 
 
-async def _post_security_deposit(
-    db: AsyncSession,
-    *,
-    billing: TenantBilling,
-    tenant_id: uuid.UUID,
-    amount: Decimal,
-    order_row: ActivationPaymentOrder,
-    gateway_order_id: str,
-    gateway_payment_id: str,
-) -> None:
-    """Post one deposit allocation to both compatibility projection and ledger.
-
-    `tenant_billing` remains the activation/read-model source used throughout
-    Home Services. `security_deposits` is the append-only operational ledger
-    used by warranty recovery and admin finance. Keeping both in the same DB
-    transaction prevents an activated provider from having an unusable deposit.
-    """
-    if amount <= 0:
-        return
-
-    held_before = _money(billing.security_deposit_amount)
-    held_after = (held_before + amount).quantize(Decimal("0.01"))
-    try:
-        _v, policy = await _resolve_vertical_and_policy(db, tenant_id)
-        qualifying = await resolve_qualifying_technician_count(db, tenant_id)
-        required = max(
-            _money(policy.minimum_deposit),
-            _money(policy.deposit_amount_per_technician) * Decimal(max(1, qualifying)),
-        ).quantize(Decimal("0.01")) if policy.deposit_required else Decimal("0.00")
-    except Exception:
-        # A captured payment must still be recorded if an administrator
-        # retires a policy between order creation and webhook delivery.
-        required = held_after
-
-    billing.security_deposit_amount = held_after
-    billing.security_deposit_paid = held_after >= required
-    billing.updated_at = utcnow()
-
-    deposit = (await db.execute(
-        select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id).with_for_update()
-    )).scalar_one_or_none()
-    if not deposit:
-        deposit = SecurityDeposit(
-            tenant_id=tenant_id,
-            required_amount=required,
-            total_paid=held_before,
-            status="paid" if held_before >= required else ("partially_paid" if held_before > 0 else "unpaid"),
-        )
-        db.add(deposit)
-        await db.flush()
-    else:
-        deposit.required_amount = required
-
-    await credit_deposit(
-        db,
-        deposit,
-        amount,
-        DepositTxnType.INITIAL_PAYMENT,
-        gateway_payment_id,
-        "Home Services activation security deposit",
-        None,
-    )
-    deposit.status = "paid" if deposit.current_balance >= required else "partially_paid"
-    deposit.paid_at = utcnow() if deposit.status == "paid" else deposit.paid_at
-    deposit.razorpay_order_id = gateway_order_id
-    deposit.razorpay_payment_id = gateway_payment_id
-    deposit.payment_reference = gateway_payment_id
-
-    db.add(FinancialEvent(
-        record_type="activation_payment", record_id=order_row.id, tenant_id=tenant_id,
-        actor_type="system", event_type=FEV_ACTIVATION_DEPOSIT_CAPTURED,
-        new_value={
-            "amount": float(amount),
-            "deposit_held_after": float(held_after),
-            "deposit_required": float(required),
-            "gateway_order_id": gateway_order_id,
-            "gateway_payment_id": gateway_payment_id,
-        },
-    ))
+# _post_security_deposit() went with the deposit in migration 317. A capture
+# now grants wallet credit and technician SEATS from the purchased top-up
+# plan -- see _grant_topup_plan() below.
 
 
 async def _resolve_vertical_and_policy(db: AsyncSession, tenant_id: uuid.UUID):
@@ -151,68 +72,80 @@ def _money(value: Decimal | float | int | str | None) -> Decimal:
 async def resolve_activation_funding_quote(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     """Return the one authoritative activation-funding quote.
 
-    The checkout may collect two allocations together, but the deposit and
-    spendable credits remain separate balances.  No amount is accepted from
-    the browser; every order re-runs this function against the current policy,
-    technician count and held balances.
+    Activation funding is now a single purchase: a TOP-UP PLAN. The plan
+    carries a price and a number of technician seats, and paying for it grants
+    both -- base amount to the wallet, seats to the entitlement. There is no
+    second deposit allocation any more (migration 317).
+
+    No amount is ever accepted from the browser: every order re-runs this
+    against the live plan catalogue and the tenant's current balances.
     """
-    _vertical, policy = await _resolve_vertical_and_policy(db, tenant_id)
+    from app.engines.vertical_catalog.topup_plan_models import HsTopupPlan
+
+    vertical, policy = await _resolve_vertical_and_policy(db, tenant_id)
     billing = await _get_billing_row(db, tenant_id)
     qualifying = await resolve_qualifying_technician_count(db, tenant_id)
 
-    deposit_per_technician = _money(policy.deposit_amount_per_technician)
-    minimum_deposit = _money(policy.minimum_deposit)
-    deposit_required = (
-        max(minimum_deposit, deposit_per_technician * Decimal(max(1, qualifying)))
-        if policy.deposit_required else Decimal("0.00")
-    ).quantize(Decimal("0.01"))
-    deposit_held = _money(billing.security_deposit_amount if billing else 0)
-    deposit_shortfall = max(Decimal("0.00"), deposit_required - deposit_held).quantize(Decimal("0.01"))
-
     credit_balance = _money(billing.credit_balance if billing else 0)
-    starter_credit = _money(policy.credit_package_base_amount)
-    gst_percent = _money(policy.credit_package_gst_percent)
-    credit_needed = credit_balance < starter_credit
-    credit_base = starter_credit if credit_needed else Decimal("0.00")
-    credit_tax = (credit_base * gst_percent / Decimal("100")).quantize(Decimal("0.01"))
-    credit_gross = credit_base + credit_tax
-    total_due = (deposit_shortfall + credit_gross).quantize(Decimal("0.01"))
+    entitled_seats = int(billing.entitled_seats) if billing and billing.entitled_seats else 0
 
-    if deposit_shortfall > 0 and credit_gross > 0:
-        checkout_mode = "deposit_and_credits"
-        checkout_label = "Fund deposit & starter credits"
-    elif deposit_shortfall > 0:
-        checkout_mode = "deposit_top_up"
-        checkout_label = "Complete security deposit"
-    elif credit_gross > 0:
-        checkout_mode = "credits_only"
-        checkout_label = "Buy starter credits"
+    # Offer the cheapest active plan that covers the technicians already
+    # configured; fall back to the default, then to the cheapest of any.
+    plans = (await db.execute(
+        select(HsTopupPlan)
+        .where(HsTopupPlan.vertical_id == vertical.id,
+               HsTopupPlan.is_active.is_(True),
+               HsTopupPlan.deleted_at.is_(None))
+        .order_by(HsTopupPlan.sort_order, HsTopupPlan.base_amount)
+    )).scalars().all()
+
+    seats_needed = max(0, max(1, qualifying) - entitled_seats)
+    suggested = None
+    if plans:
+        covering = [p for p in plans if p.seats >= seats_needed]
+        suggested = covering[0] if covering else next(
+            (p for p in plans if p.is_default), plans[0])
+
+    # Credit is "funded" once the balance clears the policy floor; seats are
+    # funded once entitlement covers the configured technicians.
+    floor = _money(policy.credit_booking_floor)
+    starter_credit = _money(policy.credit_package_base_amount)
+    credit_needed = credit_balance < starter_credit
+    seats_short = seats_needed > 0
+
+    plan_dict = suggested.to_dict() if suggested is not None else None
+    total_due = _money(plan_dict["total_amount"]) if plan_dict else Decimal("0.00")
+
+    if not plans:
+        checkout_mode, checkout_label = "unavailable", "No top-up plan published"
+    elif seats_short and credit_needed:
+        checkout_mode, checkout_label = "topup_plan", "Buy top-up plan"
+    elif seats_short:
+        checkout_mode, checkout_label = "seats_only", "Buy more technician seats"
+    elif credit_needed:
+        checkout_mode, checkout_label = "credits_only", "Top up credit"
     else:
-        checkout_mode = "funded"
-        checkout_label = "Activation funding complete"
+        checkout_mode, checkout_label = "funded", "Activation funding complete"
+        total_due = Decimal("0.00")
 
     return {
         "currency": "INR",
         "policy_version": policy.version_number,
         "qualifying_technician_count": qualifying,
-        "deposit_per_technician": float(deposit_per_technician),
-        "minimum_deposit": float(minimum_deposit),
-        "deposit_required": float(deposit_required),
-        "deposit_held": float(deposit_held),
-        "deposit_shortfall": float(deposit_shortfall),
-        "starter_credit_balance": float(credit_balance),
+        "entitled_seats": entitled_seats,
+        "seats_needed": seats_needed,
+        "credit_balance": float(credit_balance),
+        "credit_booking_floor": float(floor),
+        "credit_warning_threshold": float(policy.credit_warning_threshold),
         "starter_credit_base": float(starter_credit),
-        "credit_purchase_base": float(credit_base),
-        "credit_gst_percent": float(gst_percent),
-        "credit_tax": float(credit_tax),
-        "credit_gross": float(credit_gross),
+        "suggested_plan": plan_dict,
+        "available_plans": [p.to_dict() for p in plans],
         "total_due": float(total_due),
         "checkout_mode": checkout_mode,
         "checkout_label": checkout_label,
         "can_pay": total_due > 0,
-        "deposit_funded": deposit_shortfall <= 0,
+        "seats_funded": not seats_short,
         "credits_funded": not credit_needed,
-        "separate_ledger_allocations": True,
     }
 
 
@@ -220,11 +153,18 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
     """Create one checkout for the exact live shortfall and allocate it on capture."""
     vertical, policy = await _resolve_vertical_and_policy(db, tenant_id)
     quote = await resolve_activation_funding_quote(db, tenant_id)
+    if not quote.get("suggested_plan"):
+        raise ServiceOSException(
+            ERR_ORDER_ALREADY_SATISFIED,
+            "No active top-up plan is published for Home Services.",
+            status_code=409,
+            resolution="Publish a top-up plan in Admin -> Home Services -> Top-up Plans.",
+        )
     gross_amount = _money(quote["total_due"])
     if gross_amount <= 0:
         raise ServiceOSException(
             ERR_ORDER_ALREADY_SATISFIED,
-            "Security deposit and starter credits are already funded.",
+            "Technician seats and credit are already funded.",
             status_code=409,
         )
 
@@ -245,8 +185,8 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
             ActivationPaymentOrder.payment_kind == PAYMENT_KIND_FUNDING,
             ActivationPaymentOrder.status == STATUS_CREATED,
             ActivationPaymentOrder.amount == gross_amount,
-            ActivationPaymentOrder.credited_amount == _money(quote["credit_purchase_base"]),
-            ActivationPaymentOrder.tax_amount == _money(quote["credit_tax"]),
+            ActivationPaymentOrder.credited_amount == _money(quote["suggested_plan"]["credited_amount"]),
+            ActivationPaymentOrder.tax_amount == _money(quote["suggested_plan"]["gst_amount"]),
         ).order_by(ActivationPaymentOrder.created_at.desc()).limit(1)
     )).scalar_one_or_none()
 
@@ -274,9 +214,10 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
                 "tenant_id": str(tenant_id),
                 "payment_kind": PAYMENT_KIND_FUNDING,
                 "vertical_key": HOME_SERVICES_VERTICAL_KEY,
-                "deposit_amount": str(_money(quote["deposit_shortfall"])),
-                "credit_amount": str(_money(quote["credit_purchase_base"])),
-                "tax_amount": str(_money(quote["credit_tax"])),
+                "topup_plan_id": str(quote["suggested_plan"]["id"]),
+                "seats_granted": str(quote["suggested_plan"]["seats"]),
+                "credit_amount": str(_money(quote["suggested_plan"]["credited_amount"])),
+                "tax_amount": str(_money(quote["suggested_plan"]["gst_amount"])),
             },
         )
         pending = ActivationPaymentOrder(
@@ -286,8 +227,12 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
             gateway="razorpay",
             gateway_order_id=raw["id"],
             amount=gross_amount,
-            credited_amount=_money(quote["credit_purchase_base"]),
-            tax_amount=_money(quote["credit_tax"]),
+            credited_amount=_money(quote["suggested_plan"]["credited_amount"]),
+            tax_amount=_money(quote["suggested_plan"]["gst_amount"]),
+            # Snapshot the plan as priced right now: re-pricing it later must
+            # never change what this tenant bought.
+            topup_plan_id=uuid.UUID(quote["suggested_plan"]["id"]),
+            seats_granted=int(quote["suggested_plan"]["seats"]),
             currency="INR",
             status=STATUS_CREATED,
             policy_version=policy.version_number,
@@ -307,50 +252,18 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
         "key": get_settings().RAZORPAY_KEY_ID,
         "payment_kind": PAYMENT_KIND_FUNDING,
         "activation_payment_order_id": str(pending.id),
-        "deposit_amount": quote["deposit_shortfall"],
-        "credited_amount": quote["credit_purchase_base"],
-        "tax_amount": quote["credit_tax"],
+        "topup_plan": quote["suggested_plan"],
+        "seats_granted": quote["suggested_plan"]["seats"],
+        "credited_amount": quote["suggested_plan"]["credited_amount"],
+        "tax_amount": quote["suggested_plan"]["gst_amount"],
         "quote": quote,
         "reused": reused,
     }
 
 
-async def create_security_deposit_order(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
-    v, policy = await _resolve_vertical_and_policy(db, tenant_id)
-
-    billing = await _get_billing_row(db, tenant_id)
-    qualifying = await resolve_qualifying_technician_count(db, tenant_id)
-    required_amount = Decimal(str(max(
-        float(policy.minimum_deposit),
-        float(policy.deposit_amount_per_technician) * max(1, qualifying),
-    ))).quantize(Decimal("0.01"))
-    held_amount = _money(billing.security_deposit_amount if billing else 0)
-    shortfall = max(Decimal("0.00"), required_amount - held_amount).quantize(Decimal("0.01"))
-    if shortfall <= 0:
-        raise ServiceOSException(ERR_ORDER_ALREADY_SATISFIED,
-            "Security deposit is already fully funded for the current technician count.", status_code=409)
-
-    receipt = f"actdep_{str(tenant_id)[:8]}_{uuid.uuid4().hex[:8]}"
-    order = await razorpay_client.create_order(
-        shortfall, receipt=receipt,
-        notes={"tenant_id": str(tenant_id), "payment_kind": PAYMENT_KIND_DEPOSIT,
-               "vertical_key": HOME_SERVICES_VERTICAL_KEY})
-
-    rec = ActivationPaymentOrder(
-        tenant_id=tenant_id, vertical_id=v.id, payment_kind=PAYMENT_KIND_DEPOSIT,
-        gateway="razorpay", gateway_order_id=order["id"], amount=shortfall,
-        currency="INR", status=STATUS_CREATED, policy_version=policy.version_number,
-        raw_order_payload=order,
-    )
-    db.add(rec)
-    await db.commit()
-
-    from app.config import get_settings
-    return {"order_id": order["id"], "amount": float(shortfall),
-            "amount_paise": int(shortfall * 100), "currency": "INR",
-            "key": get_settings().RAZORPAY_KEY_ID,
-            "payment_kind": PAYMENT_KIND_DEPOSIT, "activation_payment_order_id": str(rec.id),
-            "required_amount": float(required_amount), "held_amount": float(held_amount)}
+# create_security_deposit_order() was removed in migration 317. The only
+# activation checkout left is the top-up plan, created by
+# create_activation_funding_order() above.
 
 
 async def create_credit_package_order(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
@@ -565,17 +478,20 @@ async def confirm_activation_payment_webhook(
 
     credited = Decimal("0.00")
     tax = Decimal("0.00")
-    deposit_allocation = Decimal("0.00")
     if order_row.payment_kind == PAYMENT_KIND_DEPOSIT:
-        deposit_allocation = received_amount
+        # A legacy deposit order captured after the deposit was retired.
+        # Rather than drop the money, the whole amount becomes wallet credit:
+        # a deposit and a top-up now serve the same purpose, and the tenant
+        # paid it either way.
+        credited = received_amount
+        tax = Decimal("0.00")
     elif order_row.payment_kind == PAYMENT_KIND_CREDIT:
         credited = _money(order_row.credited_amount if order_row.credited_amount is not None else received_amount)
         tax = _money(order_row.tax_amount)
     elif order_row.payment_kind == PAYMENT_KIND_FUNDING:
         credited = _money(order_row.credited_amount)
         tax = _money(order_row.tax_amount)
-        deposit_allocation = (received_amount - credited - tax).quantize(Decimal("0.01"))
-        if deposit_allocation < 0:
+        if (credited + tax) - received_amount > Decimal("0.01"):
             raise ServiceOSException(
                 "ACTIVATION_PAYMENT_ALLOCATION_INVALID",
                 "Activation funding allocations exceed the captured amount.",
@@ -588,16 +504,41 @@ async def confirm_activation_payment_webhook(
             status_code=422,
         )
 
-    if deposit_allocation > 0:
-        await _post_security_deposit(
+    # ── Grant technician seats ───────────────────────────────────────────────
+    # Seats come from the snapshot taken when the order was created, never from
+    # the plan as it is priced today. They are recorded as an ENTITLEMENT rather
+    # than added straight onto `tenant_billing.entitled_seats`, because that
+    # integer only ever grew: nothing could express a plan's validity, and no
+    # code path could ever take a seat back. `entitled_seats` is now a cached
+    # projection that `recompute_seats` derives from the live entitlements.
+    seats_granted = int(order_row.seats_granted or 0)
+    if seats_granted > 0:
+        from app.engines.vertical_catalog import topup_entitlement_service as entitlements
+
+        # Validity is read from the plan at capture. A plan re-priced later
+        # never rewrites what someone already bought -- same rule the seat and
+        # amount snapshots already follow.
+        validity_days = 0
+        plan_id = getattr(order_row, "topup_plan_id", None)
+        if plan_id is not None:
+            validity_days = int((await db.execute(
+                text("SELECT COALESCE(validity_days, 0) FROM hs_topup_plans WHERE id = :pid"),
+                {"pid": str(plan_id)},
+            )).scalar() or 0)
+
+        await entitlements.grant(
             db,
-            billing=billing,
             tenant_id=tenant_id,
-            amount=deposit_allocation,
-            order_row=order_row,
-            gateway_order_id=gateway_order_id,
-            gateway_payment_id=gateway_payment_id,
+            seats=seats_granted,
+            credit_granted=credited or 0,
+            plan_id=plan_id,
+            order_id=order_row.id,
+            validity_days=validity_days,
         )
+        # `grant` refreshed the cached projection directly in SQL; keep the
+        # ORM copy in step so anything reading `billing` in this same
+        # transaction does not see a stale seat count.
+        await db.refresh(billing, ["entitled_seats"])
 
     if credited > 0:
         tax = order_row.tax_amount if order_row.tax_amount is not None else Decimal("0")

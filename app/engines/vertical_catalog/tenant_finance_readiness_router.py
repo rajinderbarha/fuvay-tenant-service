@@ -9,8 +9,8 @@ lets the tenant declare HOW it accepts that direct payment and its invoice
 preferences (`TenantFinanceReadiness`), and surfaces the already-resolved,
 read-only Home Services finance policy from the published vertical
 Monetization policy, usage-credit balance (tenant_billing),
-and security deposit (tenant_billing.security_deposit_amount/paid — the
-real, live deposit fields; collected only after admin approval, never here).
+and technician seats (tenant_billing.entitled_seats — bought with a top-up
+plan only after admin approval, never here).
 """
 from __future__ import annotations
 
@@ -82,33 +82,28 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
     )).fetchone()
 
     billing_row = (await db.execute(
-        text("SELECT credit_balance, security_deposit_amount, security_deposit_paid "
+        text("SELECT credit_balance, entitled_seats "
              "FROM tenant_billing WHERE tenant_id=:tid"),
         {"tid": str(tid)},
     )).fetchone()
 
     commission_rate = str(await resolve_provider_commission_rate(db, tenant_row.category_id))
 
-    deposit_amount = float(billing_row.security_deposit_amount) if billing_row and billing_row.security_deposit_amount else 0.0
-    deposit_paid = bool(billing_row and billing_row.security_deposit_paid)
+    entitled_seats = int(billing_row.entitled_seats) if billing_row and billing_row.entitled_seats else 0
     credit_balance = float(billing_row.credit_balance) if billing_row else 0.0
 
-    # Real fix: `tenant_billing.security_deposit_amount` is only ever
-    # populated AFTER a deposit is captured (see
-    # activation_payment_service.confirm_activation_payment_webhook), so
-    # before payment this manifest previously reported "not_required" for
-    # every tenant who simply hadn't paid yet -- indistinguishable from a
-    # tenant whose policy genuinely requires nothing. The required amount
-    # must be resolved from the published finance policy, the same source
-    # activation_payment_service already uses to size the Razorpay order.
-    required_deposit_amount = 0.0
+    # What is owed must be resolved from the live catalogue, not from what
+    # the tenant happens to have paid so far: `entitled_seats` is only ever
+    # written AFTER a capture, so reading it alone would report "not required"
+    # for everyone who simply has not bought yet -- indistinguishable from a
+    # tenant who genuinely owes nothing. `resolve_activation_funding_quote` is
+    # the same source that sizes the Razorpay order.
     required_credit_amount = 0.0
     funding_quote = None
     policy_resolved = False
     try:
         funding_quote = await resolve_activation_funding_quote(db, tid)
-        required_deposit_amount = funding_quote["deposit_required"]
-        required_credit_amount = funding_quote["credit_gross"]
+        required_credit_amount = funding_quote["total_due"]
         policy_resolved = True
     except (FinancePolicyResolutionError, ServiceOSException):
         # No published policy yet -- nothing to pay, nothing to gate on.
@@ -158,16 +153,17 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
             "policy_version": "HS_VERTICAL_MONETIZATION_LIVE",
         },
         "activation_requirements": {
-            "security_deposit": {
-                "amount": deposit_amount,
-                "required_amount": required_deposit_amount,
-                "shortfall_amount": funding_quote["deposit_shortfall"] if funding_quote else 0.0,
+            # Seats replaced the security deposit in migration 317: headcount
+            # is bought rather than collateralised.
+            "technician_seats": {
+                "entitled": entitled_seats,
                 "qualifying_technician_count": funding_quote["qualifying_technician_count"] if funding_quote else 0,
-                "amount_per_technician": funding_quote["deposit_per_technician"] if funding_quote else 0.0,
-                "status": "paid" if funding_quote and funding_quote["deposit_funded"] else (
-                    "not_required" if not policy_resolved or required_deposit_amount <= 0 else "required_after_approval"
+                "seats_needed": funding_quote["seats_needed"] if funding_quote else 0,
+                "suggested_plan": funding_quote["suggested_plan"] if funding_quote else None,
+                "status": "funded" if funding_quote and funding_quote["seats_funded"] else (
+                    "not_required" if not policy_resolved else "required_after_approval"
                 ),
-                "can_pay": bool(funding_quote and funding_quote["deposit_shortfall"] > 0),
+                "can_pay": bool(funding_quote and funding_quote.get("total_due", 0) > 0),
             },
             "usage_credit_wallet": {
                 "balance": credit_balance,

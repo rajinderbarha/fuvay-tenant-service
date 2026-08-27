@@ -1,0 +1,208 @@
+"""The three limits that replaced the security deposit.
+
+Together these are what makes "we deduct from credit only" safe. A deposit
+was collateral — held, never spent, so it was still there when something went
+wrong. Credit is consumable, so instead of a held pot there are three gates:
+
+  1. SEATS      a tenant may only have as many technicians as it has bought.
+                Seats are the capacity lever: slot capacity is already
+                derived from ready technicians, so one seat = one technician
+                = one more job bookable in the same slot.
+
+  2. WIP        a tenant may only hold as many open jobs as it has
+                technicians. A seat is occupied from `assigned` until the
+                technician marks `work_done` — at that moment they are
+                physically free again, even though invoicing may still be
+                pending, so back-office delay never blocks field work.
+
+  3. CREDIT     below `credit_booking_floor` no NEW booking is accepted.
+     FLOOR      Work already in flight finishes normally. Nothing is frozen;
+                the floor simply stops the hole being dug deeper, so there is
+                always a balance left to deduct a penalty or settlement
+                against.
+
+Every gate reads the published finance policy, so an admin can retune the
+thresholds without a deploy.
+"""
+from __future__ import annotations
+
+import uuid
+from decimal import Decimal
+
+import structlog
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.exceptions import ServiceOSException
+
+logger = structlog.get_logger("vertical_catalog.seat_enforcement")
+
+#: Seats every Home Services workspace gets without buying a plan.
+#:
+#: Activation no longer blocks on buying capacity -- the top-up plan is an
+#: OFFER made during onboarding. That offer is only real if a provider can
+#: reach their first job without it: with a hard limit of zero purchased
+#: seats, "optional" would simply move the dead end from the activation gate
+#: to the Add Technician button. Revenue is commission on completed work, so a
+#: provider who cannot start earns nothing for anyone.
+#:
+#: Beyond this allowance a plan is required, and the credit floor still stops
+#: new bookings once the balance runs low.
+FREE_STARTER_SEATS = 1
+
+#: Job states that occupy a technician. The seat frees at `work_done` — see
+#: the module docstring for why that boundary and not `completed`.
+OCCUPYING_JOB_STATUSES = (
+    "assigned", "accepted", "scheduled", "on_the_way", "reached_site",
+    "inspection_started", "inspection_done", "quote_required", "service_started",
+    "customer_not_available",
+)
+
+
+async def _billing(db: AsyncSession, tenant_id: uuid.UUID):
+    return (await db.execute(
+        text("SELECT credit_balance, entitled_seats FROM tenant_billing WHERE tenant_id=:tid"),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+
+
+async def _policy(db: AsyncSession):
+    """Published Home Services finance policy, or None.
+
+    Returns None rather than raising: a missing policy must not make the
+    platform unusable, and each caller decides whether to fail open or closed.
+    """
+    return (await db.execute(text(
+        "SELECT credit_warning_threshold, credit_booking_floor, seat_accrual_mode "
+        "FROM home_services_activation_finance_policies WHERE is_current = true LIMIT 1"
+    ))).fetchone()
+
+
+# ── 1. Seats ─────────────────────────────────────────────────────────────────
+async def get_seat_usage(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    from app.engines.vertical_catalog.finance_policy_service import (
+        resolve_qualifying_technician_count,
+    )
+
+    from app.engines.vertical_catalog import topup_entitlement_service as entitlements
+
+    # Read the ENTITLEMENTS, not the cached integer on `tenant_billing`. The
+    # cache is refreshed by the expiry sweep, so trusting it here would let a
+    # workspace keep capacity it had stopped paying for until the sweep next
+    # ran. This is one indexed per-tenant aggregate.
+    purchased = await entitlements.live_seats(db, tenant_id)
+    # The free allowance is a floor, not an addition: buying a 3-seat plan
+    # gives 3 seats, not 4. Otherwise every plan would quietly sell one seat
+    # more than it advertises.
+    entitled = max(purchased, FREE_STARTER_SEATS)
+    used = await resolve_qualifying_technician_count(db, tenant_id)
+    return {
+        "purchased_seats": purchased,
+        "free_starter_seats": FREE_STARTER_SEATS,
+        "entitled_seats": entitled,
+        "used_seats": used,
+        "available_seats": max(0, entitled - used),
+        "over_limit": used > entitled,
+    }
+
+
+async def assert_seat_available(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Raise if adding one more technician would exceed purchased seats."""
+    usage = await get_seat_usage(db, tenant_id)
+    if usage["available_seats"] <= 0:
+        raise ServiceOSException(
+            "TECHNICIAN_SEAT_LIMIT_REACHED",
+            f"All {usage['entitled_seats']} purchased technician seat(s) are in use.",
+            status_code=409,
+            blocking_rule="topup_plan.seat_entitlement",
+            resolution="Buy a top-up plan to add more technician seats.",
+            context=usage,
+        )
+
+
+# ── 2. Work in progress ──────────────────────────────────────────────────────
+async def get_wip_usage(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    """Open jobs occupying a technician, against the technician count."""
+    from app.engines.vertical_catalog.finance_policy_service import (
+        resolve_qualifying_technician_count,
+    )
+
+    technicians = await resolve_qualifying_technician_count(db, tenant_id)
+    open_jobs = int((await db.execute(
+        # service_jobs has no soft-delete column; a job leaves the pipeline by
+        # reaching a terminal status, not by being flagged deleted.
+        text("SELECT count(*) FROM service_jobs "
+             "WHERE tenant_id = :tid AND status = ANY(:statuses)"),
+        {"tid": str(tenant_id), "statuses": list(OCCUPYING_JOB_STATUSES)},
+    )).scalar() or 0)
+    return {
+        "technician_count": technicians,
+        "open_jobs": open_jobs,
+        "available_capacity": max(0, technicians - open_jobs),
+        "at_capacity": open_jobs >= technicians,
+    }
+
+
+async def assert_wip_capacity(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Raise if every technician already has an open job.
+
+    Gates ASSIGNMENT, not booking: a job that cannot be assigned waits in
+    `pending_assignment` rather than being refused, so the customer's request
+    is never lost — it is simply queued until a technician frees up.
+    """
+    usage = await get_wip_usage(db, tenant_id)
+    if usage["technician_count"] <= 0:
+        raise ServiceOSException(
+            "NO_TECHNICIANS_AVAILABLE",
+            "This workspace has no active technicians to assign work to.",
+            status_code=409,
+            resolution="Add a technician, then assign the job.",
+            context=usage,
+        )
+    if usage["at_capacity"]:
+        raise ServiceOSException(
+            "TECHNICIAN_CAPACITY_REACHED",
+            f"All {usage['technician_count']} technician(s) already have an open job "
+            f"({usage['open_jobs']} in progress).",
+            status_code=409,
+            blocking_rule="technician.work_in_progress_limit",
+            resolution="Complete an in-progress job, or buy seats and add a technician.",
+            context=usage,
+        )
+
+
+# ── 3. Credit floor ──────────────────────────────────────────────────────────
+async def get_credit_state(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+    row = await _billing(db, tenant_id)
+    policy = await _policy(db)
+    balance = Decimal(str(row.credit_balance)) if row and row.credit_balance is not None else Decimal("0")
+    floor = Decimal(str(policy.credit_booking_floor)) if policy else Decimal("0")
+    warn = Decimal(str(policy.credit_warning_threshold)) if policy else Decimal("0")
+    return {
+        "credit_balance": float(balance),
+        "booking_floor": float(floor),
+        "warning_threshold": float(warn),
+        "below_floor": balance < floor,
+        "below_warning": balance < warn,
+        "in_arrears": balance < 0,
+    }
+
+
+async def assert_booking_allowed(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Raise if the tenant's credit has fallen below the booking floor.
+
+    Deliberately gates only NEW bookings. Jobs already accepted run to
+    completion — stranding a customer mid-job to punish the provider's balance
+    would put the cost on the wrong person.
+    """
+    state = await get_credit_state(db, tenant_id)
+    if state["below_floor"]:
+        raise ServiceOSException(
+            "CREDIT_BELOW_BOOKING_FLOOR",
+            f"Credit balance ₹{state['credit_balance']:,.2f} is below the "
+            f"₹{state['booking_floor']:,.2f} booking floor.",
+            status_code=409,
+            blocking_rule="finance_policy.credit_booking_floor",
+            resolution="Buy a top-up plan to resume accepting bookings.",
+            context=state,
+        )

@@ -40,12 +40,22 @@ def test_new_technician_inherits_every_open_business_day():
     assert "'staff_member'" in PROVIDER_ROUTER
 
 
-def test_slot_capacity_is_service_and_weekday_scoped():
-    assert "master_service_id" in SLOTS
-    assert "supported_offering_ids" in SLOTS
-    assert "provider_availability_rules" in SLOTS
-    assert "day.isoweekday() % 7" in SLOTS
+def test_slot_capacity_is_headcount_not_service_or_weekday_scoped():
+    """Capacity is one place per active technician.
+
+    Scoping capacity by the requested service and a per-staff weekday rule
+    made it disagree with the seats a provider had bought: a technician with
+    no personal availability row sold no slots while still consuming a seat.
+    Availability is published by the PROVIDER; team members are only active or
+    inactive. `master_service_id` is still accepted by the counter, so the
+    name may appear -- what must not is either narrowing filter.
+    """
+    assert "supported_offering_ids" not in SLOTS
+    assert "scope_type='staff_member'" not in SLOTS
+    # The weekday is still resolved -- for the PROVIDER's own rules, which are
+    # what the customer picks a slot from. What is gone is the per-STAFF rule.
     assert "return max(technicians, 0)" in SLOTS
+    assert "active_technician_sql" in SLOTS
     assert "pg_advisory_xact_lock" in FINAL_CREATION
     assert "home-service-slot:" in FINAL_CREATION
 

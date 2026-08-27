@@ -103,6 +103,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _tq_task = asyncio.create_task(_tq_loop())
     logger.info("trust_quality_worker_loop.started")
 
+    # 11. Top-up entitlement expiry — a plan's validity has to be acted on by
+    # something. Seats stop counting on read the moment they lapse; this is
+    # what withdraws unspent plan credit and settles the cached seat count.
+    from app.jobs.expire_topup_entitlements import background_loop as _tte_loop
+    _tte_task = asyncio.create_task(_tte_loop())
+    logger.info("topup_entitlement_expiry_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
@@ -110,6 +117,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _sla_task.cancel()
     _export_worker_task.cancel()
     _complaint_sla_task.cancel()
+    _tte_task.cancel()
     try:
         await _sla_task
     except asyncio.CancelledError:
@@ -216,15 +224,8 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
 
     # Phase 2 — Auth + Public Registration
     from app.engines.auth.router import router as auth_router, admin_security_router, _me_security_router
-    from app.engines.public_registration.router import router as public_reg_router
-    # Real bug fixed here: RegistrationService (the 5-step no-payment signup
-    # -- Owner Account -> Verify Contact -> Business Identity -> Select
-    # Vertical -> Review & Consent, with real OTP and auto-login) was fully
-    # implemented but never mounted anywhere. `public_reg_router` above is a
-    # DIFFERENT, unrelated paid/Razorpay flow with its own inline logic --
-    # not two versions of the same thing.
     from app.engines.public_registration.signup_router import router as public_signup_router
-    for _r in [auth_router, admin_security_router, _me_security_router, public_reg_router, public_signup_router]:
+    for _r in [auth_router, admin_security_router, _me_security_router, public_signup_router]:
         app.include_router(_r)
 
     # P0 Enterprise Platform Users
@@ -308,13 +309,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     for _r in [review_router, chat_router, webhook_router]:
         app.include_router(_r)
 
-    # Phase 10 — Payment + Inventory + Subscription + Document
+    # Phase 10 — Payment + Inventory + Document
     from app.engines.payment.router      import router as payment_router
     from app.engines.inventory.router    import router as inventory_router
     from app.engines.inventory.extraction_router import router as inventory_extraction_router
-    from app.engines.subscription.router import router as subscription_router
     from app.engines.document.router     import router as document_router
-    for _r in [payment_router, inventory_router, inventory_extraction_router, subscription_router, document_router]:
+    for _r in [payment_router, inventory_router, inventory_extraction_router, document_router]:
         app.include_router(_r)
 
     # Phase 9 — Booking + Appointment
@@ -469,23 +469,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(cflow_admin_router)
 
     # Sprint 4 — Admin Tenant Onboarding + Tenant 360 sub-resources
-    # Static package-commerce tenant paths must be mounted before the generic
-    # tenant portal `/{tenant_id}` paths. Otherwise `credit-wallet` is parsed
-    # as a tenant UUID and the real static endpoint is never reached.
-    from app.engines.package_commerce.tenant_router import router as pkg_tenant_router
-    app.include_router(pkg_tenant_router)
-
     from app.engines.tenant_engine.admin_router import router as admin_tenant_router
     # Sprint 4 — Tenant portal mirror (tenant_id from JWT)
     from app.engines.tenant_engine.portal_router import router as tenant_portal_router
     for _r in [admin_tenant_router, tenant_portal_router]:
-        app.include_router(_r)
-
-    # Sprint 5 — Package Commerce: packages, security deposit, credit wallet, commission
-    from app.engines.package_commerce.admin_router import router as pkg_admin_router
-    # Sprint 070 — Public signup packages (unauthenticated)
-    from app.engines.package_commerce.public_router import router as pkg_public_router
-    for _r in [pkg_admin_router, pkg_public_router]:
         app.include_router(_r)
 
     # Scalability Sprint — Location Engine (states, districts, cities, zones)
@@ -750,21 +737,21 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
                cc_instance_admin_router, cc_tenant_selection_router]:
         app.include_router(_r)
 
-    # Sprint 23 — Invoice / Payment / Commission / Wallet / Subscription
+    # Sprint 23 — Invoice / Payment / Commission / Wallet
     from app.engines.invoice_payment.provider_router import (
         provider_invoice_router, provider_wallet_router,
-        provider_sub_router, staff_invoice_router,
+        staff_invoice_router,
     )
     from app.engines.invoice_payment.customer_router import customer_invoice_router
     from app.engines.invoice_payment.admin_router import (
         admin_invoice_router, admin_payment_router, admin_commission_router,
-        admin_wallet_router, admin_sub_router, admin_fin_events_router,
+        admin_wallet_router, admin_fin_events_router,
     )
     for _r in [
-        provider_invoice_router, provider_wallet_router, provider_sub_router,
+        provider_invoice_router, provider_wallet_router,
         staff_invoice_router, customer_invoice_router,
         admin_invoice_router, admin_payment_router, admin_commission_router,
-        admin_wallet_router, admin_sub_router, admin_fin_events_router,
+        admin_wallet_router, admin_fin_events_router,
     ]:
         app.include_router(_r)
 
@@ -1026,23 +1013,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.platform_notifications.policy_router import router as notification_policy_router
     from app.engines.settings_engine.configuration_router import router as platform_configuration_router
     from app.engines.customer_reviews.hs_review_router import router as hs_review_router
-    # `admin_router` here is the Home Services deposit-refund-request console
-    # (/v1/admin/finance/home-services/deposit-refund-requests). It was written
-    # and permission-guarded but NEVER MOUNTED -- only `router` was imported --
-    # so every one of its endpoints 404'd. A tenant could file a security-
-    # deposit refund request that no admin could then list, request info on,
-    # approve, reject or mark refunded: the request was stuck forever, and the
-    # `info_requested` note the Finance Hub renders could never be set by
-    # anyone. Mounting it is what makes the documented state machine reachable.
     # WhatsApp/Instagram inbound channel. A thin adapter in front of the
     # existing ai_conversation agent -- no second bot, no duplicated booking
     # logic. Unauthenticated by design: Meta calls it, and authenticity is
     # proved by the verify token and the HMAC signature over the raw body.
     from app.engines.messaging_gateway.router import router as messaging_gateway_router
-    from app.engines.finance_hub.tenant_hs_finance_router import (
-        router as tenant_hs_finance_router,
-        admin_router as admin_hs_deposit_refund_router,
-    )
+    from app.engines.finance_hub.tenant_hs_finance_router import router as tenant_hs_finance_router
     from app.engines.finance_hub.admin_hs_finance_router import (
         router as admin_hs_finance_router,
         canonical_router as admin_hs_finance_canonical_router,
@@ -1051,6 +1027,15 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         router as hs_finance_monetization_router,
     )
     from app.engines.vertical_catalog.topup_plan_router import router as hs_topup_plan_router
+    # Top-up plan catalogue (migration 317, replaces the security deposit).
+    # The admin surface authors what is sold; the tenant surface backs the
+    # header credit pill, which reads balance, seats and buyable plans in one
+    # call. The pill fails soft — an unmounted router shows the provider
+    # nothing at all rather than an error, so leaving these out is invisible.
+    from app.engines.vertical_catalog.topup_plan_catalog_router import (
+        admin_router as hs_topup_plan_catalog_admin_router,
+        tenant_router as hs_topup_plan_catalog_tenant_router,
+    )
     for _unmounted in [
         vertical_monetization_admin_router, vertical_monetization_customer_router,
         vertical_directory_router, hs_customer_directory_router,
@@ -1058,9 +1043,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         notification_policy_router, platform_configuration_router,
         hs_review_router, admin_hs_finance_router,
         admin_hs_finance_canonical_router,
-        tenant_hs_finance_router, admin_hs_deposit_refund_router,
+        tenant_hs_finance_router,
         messaging_gateway_router,
         hs_finance_monetization_router, hs_topup_plan_router,
+        hs_topup_plan_catalog_admin_router, hs_topup_plan_catalog_tenant_router,
     ]:
         app.include_router(_unmounted)
 
@@ -1088,8 +1074,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         ("/v1/admin/bookability/providers/{tenant_id}/override-visibility", "DELETE"),
         ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "POST"),
         ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "DELETE"),
-        ("/v1/admin/monetization/providers/{tenant_id}", "GET"),
-        ("/v1/admin/monetization/providers/{tenant_id}/sync", "POST"),
         ("/v1/admin/complaints/{complaint_id}", "GET"),
         ("/v1/admin/complaints/{complaint_id}/assign", "POST"),
         ("/v1/admin/complaints/{complaint_id}/priority", "POST"),

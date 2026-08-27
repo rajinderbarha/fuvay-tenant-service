@@ -54,6 +54,8 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.home_service_assignment.eligibility import active_technician_sql
+
 # Hard ceiling on the walk, independent of the provider's own
 # `maximum_advance_booking_days`. A provider with no configured
 # availability at all should fail fast and visibly, not scan forever.
@@ -225,40 +227,32 @@ async def assignable_technician_count(
 ) -> int:
     """Count technicians who contribute one place to a slot.
 
-    Name-only or incomplete roster rows do not create customer capacity. A
-    technician must be active, assignment-enabled, assigned to the requested
-    tenant service, and have a personal working rule for the target weekday.
+    Capacity is HEADCOUNT: every active, assignment-enabled technician on the
+    roster contributes exactly one place. Availability is published by the
+    provider (`provider_availability_rules` with `scope_type='provider'`) and
+    is what the customer picks a slot from; team members have no schedule of
+    their own, only an active/inactive state.
+
+    `master_service_id` and `day` are accepted so existing callers keep
+    working, but deliberately no longer narrow the count. They used to demand
+    a supported offering for the service AND a per-staff weekday rule, which
+    made slot capacity disagree with the seats the provider had bought — a
+    technician with no personal availability row sold no slots despite
+    consuming a seat and passing the activation gate. Skills stay advisory at
+    assignment time (a warning, never a block), so they cannot silently
+    withdraw capacity here either.
+
+    Returns -1 (not 0) when the roster cannot be read, so callers can tell
+    "unknown" apart from "genuinely nobody" and fail closed.
     """
     try:
-        clauses = [
-            "ptm.tenant_id = CAST(:tid AS uuid)",
-            "ptm.deleted_at IS NULL",
-            "ptm.status = 'active'",
-            "COALESCE(ptm.can_receive_assignment, true) = true",
-            "ptm.member_type IN ('technician', 'owner_technician')",
-        ]
-        params: dict[str, object] = {"tid": str(tenant_id)}
-        if master_service_id is not None:
-            clauses.append(
-                "EXISTS (SELECT 1 FROM tenant_services ts "
-                "WHERE ts.tenant_id=ptm.tenant_id "
-                "AND ts.master_service_id=CAST(:msid AS uuid) "
-                "AND ts.is_enabled=true AND ts.deleted_at IS NULL "
-                "AND COALESCE(ptm.supported_offering_ids, '[]'::jsonb) "
-                "@> jsonb_build_array(ts.id::text))"
-            )
-            params["msid"] = str(master_service_id)
-        if day is not None:
-            clauses.append(
-                "EXISTS (SELECT 1 FROM provider_availability_rules par "
-                "WHERE par.tenant_id=ptm.tenant_id "
-                "AND par.scope_type='staff_member' AND par.scope_id=ptm.id "
-                "AND par.day_of_week=:dow AND par.is_active=true)"
-            )
-            params["dow"] = day.isoweekday() % 7
         row = (await db.execute(
-            text("SELECT count(*) FROM provider_team_members ptm WHERE " + " AND ".join(clauses)),
-            params,
+            text(
+                "SELECT count(*) FROM provider_team_members ptm "
+                "WHERE ptm.tenant_id = CAST(:tid AS uuid) AND "
+                + active_technician_sql("ptm")
+            ),
+            {"tid": str(tenant_id)},
         )).first()
         return int(row[0]) if row and row[0] is not None else 0
     except Exception:  # noqa: BLE001 -- fail closed rather than inventing capacity
