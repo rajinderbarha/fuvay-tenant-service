@@ -1,16 +1,17 @@
 "use client";
-import React, { useState, useCallback, useRef, Suspense } from "react";
+import React, { useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import {
   StatCard, Badge, Btn, Modal, DataTable,
 } from "../../../components/shared/ui";
+import { ActionMenu } from "../../../components/shared/layout";
 import { Card, PageHeader, Pagination, StatusBadge } from "@serviceos/design-system";
 import {
   Search, RefreshCw, Users, CheckCircle, Clock, AlertCircle, XCircle,
   Download, Eye, Archive, Flag, Shield, X, Filter, ChevronDown, ChevronLeft,
   ChevronRight, Building2, UserCheck, MapPin, Zap, TrendingUp,
-  TrendingDown, MoreVertical, Bell, CreditCard, RotateCcw, Plus,
+  TrendingDown, Bell, CreditCard, RotateCcw, Plus,
   BarChart2, Activity, Layers, Lock, Settings, ExternalLink, Edit,
 } from "lucide-react";
 import {
@@ -239,53 +240,35 @@ function BulkBar({ count, onSuspend, onClear }: { count: number; onSuspend: () =
 
 // ── Row Action Menu ────────────────────────────────────────────────────────────
 
-function RowActions({ row, onAction }: {
+function TenantActions({ row, onAction }: {
   row: TenantListItem;
   onAction: (type: string, tenant: TenantListItem) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const items: { label: string; icon: React.ReactNode; action: string; danger?: boolean; divider?: boolean }[] = [
+  const items = [
     { label: "View Details",       icon: <Eye size={12} />,        action: "view" },
     { label: "Open 360",           icon: <ExternalLink size={12} />, action: "360" },
-    { label: "—", icon: null, action: "", divider: true },
-    { label: "Review Verification",icon: <UserCheck size={12} />,  action: "verify" },
+    { label: "Review Verification",icon: <UserCheck size={12} />,  action: "verify", divider: true },
     { label: "Request Changes",    icon: <Edit size={12} />,       action: "request_changes" },
     { label: "Add Usage Credits",  icon: <CreditCard size={12} />, action: "add_credits" },
-    { label: "—", icon: null, action: "", divider: true },
-    { label: "Send Notification",  icon: <Bell size={12} />,       action: "send_notification" },
+    { label: "Send Notification",  icon: <Bell size={12} />,       action: "send_notification", divider: true },
     { label: "View Audit Logs",    icon: <Activity size={12} />,   action: "audit" },
-    { label: "—", icon: null, action: "", divider: true },
     ...(row.status !== "suspended"
-      ? [{ label: "Suspend Tenant", icon: <Lock size={12} />, action: "suspend", danger: true }]
-      : [{ label: "Reactivate",     icon: <RotateCcw size={12} />, action: "reactivate" }]
+      ? [{ label: "Suspend Tenant", icon: <Lock size={12} />, action: "suspend", danger: true, divider: true }]
+      : [{ label: "Reactivate",     icon: <RotateCcw size={12} />, action: "reactivate", divider: true }]
     ),
   ];
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <Btn variant="ghost" size="sm" onClick={() => setOpen(!open)} style={{ padding: "4px 8px" }}>
-        <MoreVertical size={13} />
-      </Btn>
-      {open && (
-        <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setOpen(false)} />
-          <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 50, background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-md)", boxShadow: "0 8px 24px rgba(0,0,0,.12)", minWidth: 200, padding: "4px 0", marginTop: 4 }}>
-            {items.map((item, i) => item.divider
-              ? <div key={i} style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
-              : (
-                <button key={item.action} onClick={() => { setOpen(false); onAction(item.action, row); }}
-                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, color: item.danger ? "var(--danger)" : "var(--text)", textAlign: "left" }}>
-                  <span style={{ color: item.danger ? "var(--danger)" : "var(--text-secondary)" }}>{item.icon}</span>
-                  {item.label}
-                </button>
-              )
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <ActionMenu
+      size="xs"
+      items={items.map(item => ({
+        label: item.label,
+        icon: item.icon,
+        divider: item.divider,
+        variant: item.danger ? "danger" as const : "default" as const,
+        onClick: () => onAction(item.action, row),
+      }))}
+    />
   );
 }
 
@@ -784,7 +767,7 @@ function TenantsPageInner() {
       key: "actions", label: "",
       render: (_v, row) => (
         <div onClick={e => e.stopPropagation()}>
-          <RowActions row={row as unknown as TenantListItem} onAction={handleRowAction} />
+          <TenantActions row={row as unknown as TenantListItem} onAction={handleRowAction} />
         </div>
       ),
     },

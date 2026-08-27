@@ -11,11 +11,12 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  UserPlus, Search, MoreVertical, CheckCircle2, AlertTriangle,
+  UserPlus, Search, CheckCircle2, AlertTriangle,
   ShieldOff, XCircle, ChevronRight,
 } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { Card, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
+import { ActionMenu } from "../../../../../../components/shared/layout";
 import {
   providerTeamMembersApi, ServiceOSError,
   type ProviderTeamMember, type TeamReadinessSummary, type ServiceCoverageRow,
@@ -44,7 +45,6 @@ export default function StaffTechniciansPage() {
   const [search, setSearch] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<ProviderTeamMember | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);

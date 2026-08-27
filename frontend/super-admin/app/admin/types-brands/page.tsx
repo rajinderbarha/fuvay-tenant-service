@@ -6,6 +6,7 @@ import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCata
 import {
   Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Skeleton, EmptyState, SummaryCard, Pagination,} from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
+import { ActionMenu } from "../../../components/shared/layout";
 import { catalogApi, typesApi } from "../../../lib/api";
 import type {
   ServiceTypeMaster, ServiceTypeSummary, BrandMasterSummary,
@@ -14,7 +15,7 @@ import type {
 import { useApi, useAction } from "../../../hooks/useApi";
 import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
 import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
-import { Plus, RefreshCw, Download, Search, ChevronDown, X, Info, Map } from "lucide-react";
+import { Plus, RefreshCw, Download, Search, X, Info, Map } from "lucide-react";
 
 // ── Multi-select checkbox list (categories / service groups) ─────────────────
 // Shared by the Type and Brand mapping modals below -- lets an admin pick
@@ -221,7 +222,7 @@ function ServiceTypesTab() {
       </span>
     )},
     { key:"actions",       label:"Actions",         render:(_v:unknown, row:any) => (
-      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <TypeActionMenu row={row}
+      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <TypeActions row={row}
         onView={() => {
           typesApi.get(row.type_id).then(r => setDetailItem(r));
         }}
@@ -337,38 +338,19 @@ function ServiceTypesTab() {
 // Mapping is managed exclusively from the dedicated "Type Mappings" tab now
 // (explicit user request) -- this menu no longer has a "Manage Mappings"
 // shortcut, so this tab is purely Type CRUD.
-function TypeActionMenu({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
+function TypeActions({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
   { row:ServiceTypeMaster; onView():void; onEdit():void;
     onActivate():void; onDeactivate():void; onArchive():void }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div style={{ position:"relative" }}>
-      <Btn variant="ghost" size="sm" onClick={() => setOpen(o=>!o)}>
-        Actions <ChevronDown size={12}/>
-      </Btn>
-      {open && (
-        <div onClick={e=>e.stopPropagation()} style={{
-          position:"absolute", right:0, top:"calc(100% + 4px)", zIndex:1000,
-          background:"var(--card-bg)", border:"1px solid var(--border)", borderRadius:10,
-          boxShadow:"0 8px 24px rgba(0,0,0,0.12)", minWidth:160, overflow:"hidden",
-        }}>
-          {[
-            { label:"View Details",   fn:() => { onView(); setOpen(false); } },
-            { label:"Edit Type",      fn:() => { onEdit(); setOpen(false); } },
-            row.status !== "active"   ? { label:"Activate",   fn:() => { onActivate(); setOpen(false); } } : null,
-            row.status === "active"   ? { label:"Deactivate", fn:() => { onDeactivate(); setOpen(false); } } : null,
-            row.status !== "archived" ? { label:"Archive",    fn:() => { onArchive(); setOpen(false); }, danger:true } : null,
-          ].filter(Boolean).map((item:any) => (
-            <button key={item.label} onClick={item.fn} style={{
-              display:"block", width:"100%", textAlign:"left", padding:"9px 16px",
-              background:"none", border:"none", cursor:"pointer", fontSize:13,
-              color: item.danger ? "var(--danger-text)" : "var(--text-primary)",
-              borderBottom:"1px solid var(--border)",
-            }}>{item.label}</button>
-          ))}
-        </div>
-      )}
-    </div>
+    <ActionMenu
+      items={[
+        { label: "View details", onClick: onView },
+        { label: "Edit type", onClick: onEdit },
+        row.status !== "active" && { label: "Activate", onClick: onActivate, divider: true },
+        row.status === "active" && { label: "Deactivate", onClick: onDeactivate, divider: true },
+        row.status !== "archived" && { label: "Archive", onClick: onArchive, variant: "danger" },
+      ]}
+    />
   );
 }
 
@@ -938,7 +920,7 @@ function BrandMasterTab() {
       </span>
     )},
     { key:"actions", label:"Actions", render:(_v:unknown, row:any) => (
-      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <BrandActionMenu row={row}
+      row.deleted_at ? <Btn variant="ghost" size="sm" onClick={() => setRestoreItem(row)}>Restore</Btn> : <BrandActions row={row}
         onView={() => setDetailItem(row)}
         onEdit={() => setEditItem(row)}
         onActivate={() => doStatus(row.brand_id, "activate")}
@@ -1047,38 +1029,19 @@ function BrandMasterTab() {
 // Mapping is managed exclusively from the dedicated "Brand-Service Mapping"
 // tab now (explicit user request, same as Service Types) -- this tab is
 // purely Brand CRUD.
-function BrandActionMenu({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
+function BrandActions({ row, onView, onEdit, onActivate, onDeactivate, onArchive }:
   { row:Brand34D; onView():void; onEdit():void;
     onActivate():void; onDeactivate():void; onArchive():void }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div style={{ position:"relative" }}>
-      <Btn variant="ghost" size="sm" onClick={() => setOpen(o=>!o)}>
-        Actions <ChevronDown size={12}/>
-      </Btn>
-      {open && (
-        <div onClick={e=>e.stopPropagation()} style={{
-          position:"absolute", right:0, top:"calc(100% + 4px)", zIndex:1000,
-          background:"var(--card-bg)", border:"1px solid var(--border)", borderRadius:10,
-          boxShadow:"0 8px 24px rgba(0,0,0,0.12)", minWidth:160, overflow:"hidden",
-        }}>
-          {[
-            { label:"View Details",   fn:() => { onView(); setOpen(false); } },
-            { label:"Edit Brand",     fn:() => { onEdit(); setOpen(false); } },
-            row.status !== "active"   ? { label:"Activate",   fn:() => { onActivate(); setOpen(false); } } : null,
-            row.status === "active"   ? { label:"Deactivate", fn:() => { onDeactivate(); setOpen(false); } } : null,
-            row.status !== "archived" ? { label:"Archive", fn:() => { onArchive(); setOpen(false); }, danger:true } : null,
-          ].filter(Boolean).map((item:any) => (
-            <button key={item.label} onClick={item.fn} style={{
-              display:"block", width:"100%", textAlign:"left", padding:"9px 16px",
-              background:"none", border:"none", cursor:"pointer", fontSize:13,
-              color: item.danger ? "var(--danger-text)" : "var(--text-primary)",
-              borderBottom:"1px solid var(--border)",
-            }}>{item.label}</button>
-          ))}
-        </div>
-      )}
-    </div>
+    <ActionMenu
+      items={[
+        { label: "View details", onClick: onView },
+        { label: "Edit brand", onClick: onEdit },
+        row.status !== "active" && { label: "Activate", onClick: onActivate, divider: true },
+        row.status === "active" && { label: "Deactivate", onClick: onDeactivate, divider: true },
+        row.status !== "archived" && { label: "Archive", onClick: onArchive, variant: "danger" },
+      ]}
+    />
   );
 }
 
