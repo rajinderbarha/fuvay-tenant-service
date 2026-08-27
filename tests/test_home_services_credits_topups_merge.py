@@ -182,7 +182,11 @@ class TestCreditUnitsNotCash:
         import pathlib, re
         src = pathlib.Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
         start = src.index("// ── Credits & Top-ups")
-        end = src.index("// ── Security Deposits")
+        # Ends at Invoices, the next top-level section: the deposit section
+        # that used to bound this was removed with the deposit itself
+        # (migration 317/318). The slice still covers every credit
+        # subsection -- accounts, top-ups, ledger and adjustments.
+        end = src.index("// ── Invoices")
         section = src[start:end]
         code_only = "\n".join(
             line for line in section.splitlines()

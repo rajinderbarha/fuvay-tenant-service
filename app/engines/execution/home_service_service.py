@@ -522,6 +522,12 @@ class HomeServiceJobExecutionService:
         await assert_gate_satisfied(db, job, GATE_BEFORE_WORK_START)
         await self._set_status(db, job, JS_SERVICE_STARTED, EV_SERVICE_STARTED, user_id, "staff", request_id=request_id)
         await db.flush()
+        # Offer this moment to the monetization policy. It charges only if
+        # `work_started` is the configured event; otherwise nothing is written
+        # and the job stays chargeable at its real moment.
+        from app.engines.execution.usage_credit_deduction import attempt_charge_at_event
+        await attempt_charge_at_event(
+            db, job=job, chargeable_event="work_started", request_id=request_id)
         return job.to_dict()
 
     async def mark_work_done(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
@@ -529,6 +535,9 @@ class HomeServiceJobExecutionService:
         self._assert_staff_owns_job(job, staff_member_id)
         await self._set_status(db, job, JS_WORK_DONE, EV_WORK_DONE, user_id, "staff", request_id=request_id)
         await db.flush()
+        from app.engines.execution.usage_credit_deduction import attempt_charge_at_event
+        await attempt_charge_at_event(
+            db, job=job, chargeable_event="work_done", request_id=request_id)
         return job.to_dict()
 
     async def mark_customer_not_available(self, db, job_id, tenant_id, staff_member_id, user_id, notes=None, request_id=None):

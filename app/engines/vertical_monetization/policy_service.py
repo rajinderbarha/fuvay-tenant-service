@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.vertical_catalog.models import Vertical, VerticalAuditLog
 from app.engines.vertical_monetization.models import (
     VerticalMonetizationPolicy, MonetizationJobTypeRule, PROVIDER_MODELS, CUSTOMER_FEE_MODELS, COLLECTION_STAGES,
+    PROVIDER_CHARGEABLE_EVENTS,
 )
 from app.engines.vertical_monetization.calculation_service import (
     calculate_customer_platform_fee, to_minor, to_major,
@@ -145,6 +146,26 @@ class VerticalMonetizationPolicyService:
             errors.append("provider_credit_units is required for COMPLETION_CREDITS")
         if pm == "SUBSCRIPTION" and not payload.get("provider_subscription_plan_id"):
             errors.append("provider_subscription_plan_id is required for SUBSCRIPTION")
+        # WHEN the provider is charged. Optional: an unset value means the
+        # runtime default (completion), which is how every policy behaved
+        # before this became configurable.
+        event = payload.get("provider_chargeable_event")
+        if event not in (None, "") and event not in PROVIDER_CHARGEABLE_EVENTS:
+            errors.append(
+                "provider_chargeable_event must be one of "
+                + ", ".join(sorted(PROVIDER_CHARGEABLE_EVENTS))
+            )
+        # A percentage can only be taken of a number that exists. Before
+        # completion the final invoice has not been raised -- on an
+        # inspection job the booking price is just the visit fee -- so a
+        # percentage charged at work_started/work_done would be a percentage
+        # of the wrong amount. Fixed credit models carry no such dependency.
+        if pm == "PERCENTAGE_COMMISSION" and event in ("work_started", "work_done"):
+            errors.append(
+                "PERCENTAGE_COMMISSION can only be charged at job_completed or "
+                "consultation_completed: the final invoiced value is not known "
+                "before the job completes. Use a fixed credit model to charge earlier."
+            )
         provider_pct = decimal_field("provider_percentage", minimum=Decimal("0"), maximum=Decimal("100"))
         provider_fixed = decimal_field("provider_fixed_amount_minor", minimum=Decimal("0"))
         provider_credits = decimal_field("provider_credit_units", minimum=Decimal("0"))
@@ -200,17 +221,54 @@ class VerticalMonetizationPolicyService:
 
         max_version = (await db.execute(select(func.max(VerticalMonetizationPolicy.version_number)).where(
             VerticalMonetizationPolicy.vertical_id == v.id))).scalar() or 0
+
+        # A new version CONTINUES the live policy; it does not start from
+        # blank. Building it from `payload` alone silently reset every field
+        # the caller happened not to send back to a column default, so an edit
+        # to one field could quietly revert the others.
+        live = (await db.execute(select(VerticalMonetizationPolicy).where(
+            VerticalMonetizationPolicy.vertical_id == v.id,
+            VerticalMonetizationPolicy.is_current == True,  # noqa: E712
+        ))).scalar_one_or_none()
+        seeded = {k: getattr(live, k) for k in _DRAFT_FIELDS} if live else {}
+        seeded.update({k: payload[k] for k in _DRAFT_FIELDS if k in payload})
+
         p = VerticalMonetizationPolicy(
             vertical_id=v.id, version_number=max_version + 1, status="draft", is_current=False,
             created_by_user_id=actor_id,
-            **{k: payload[k] for k in _DRAFT_FIELDS if k in payload},
+            **seeded,
         )
         db.add(p)
         await db.flush()
+
+        # Per-job-type rules belong to a policy VERSION, so a new version began
+        # with none of them -- publishing it silently dropped every override the
+        # admin had configured. Confirmed live: v5 carried a rule, v6 onwards
+        # carried none. They are copied forward with the rest of the policy.
+        cloned = 0
+        if live is not None:
+            for r in (await db.execute(select(MonetizationJobTypeRule).where(
+                MonetizationJobTypeRule.policy_id == live.id,
+                MonetizationJobTypeRule.status == "active",
+            ))).scalars().all():
+                db.add(MonetizationJobTypeRule(
+                    policy_id=p.id, job_type_id=r.job_type_id,
+                    customer_charge_enabled=r.customer_charge_enabled,
+                    customer_charge_basis=r.customer_charge_basis,
+                    provider_charge_enabled=r.provider_charge_enabled,
+                    provider_charge_model=r.provider_charge_model,
+                    provider_charge_credit_units=r.provider_charge_credit_units,
+                    provider_chargeable_event=r.provider_chargeable_event,
+                    status=r.status,
+                ))
+                cloned += 1
+            await db.flush()
+
         db.add(VerticalAuditLog(
             vertical_id=v.id, actor_id=actor_id, action_type="monetization.policy.save_draft",
-            before_state=None, after_state=p.to_dict(),
-            notes=payload.get("change_summary") or "Draft created.",
+            before_state=live.to_dict() if live else None, after_state=p.to_dict(),
+            notes=(payload.get("change_summary") or "Draft created.")
+                  + (f" Carried forward {cloned} job-type rule(s)." if cloned else ""),
         ))
         await db.commit()
         return p.to_dict()
@@ -345,10 +403,11 @@ class VerticalMonetizationPolicyService:
                 "Home Services customer charge basis must be booking_price_snapshot",
                 status_code=422,
             )
-        if payload.get("provider_chargeable_event", "job_completed") not in {"job_completed", "consultation_completed"}:
+        if payload.get("provider_chargeable_event", "job_completed") not in PROVIDER_CHARGEABLE_EVENTS:
             raise ServiceOSException(
                 "VALIDATION_ERROR",
-                "provider_chargeable_event must be job_completed or consultation_completed",
+                "provider_chargeable_event must be one of: "
+                + ", ".join(sorted(PROVIDER_CHARGEABLE_EVENTS)),
                 status_code=422,
             )
         if payload.get("provider_charge_model", "INHERIT") not in {"INHERIT", "FIXED_CREDITS"}:

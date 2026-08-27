@@ -352,6 +352,25 @@ const PROVIDER_MODELS = [
   { value: "PERCENTAGE_COMMISSION", label: "Percentage commission" },
   { value: "COMPLETION_CREDITS", label: "Fixed credits per completed job" },
 ] as const;
+// WHEN the provider is charged. Each value is a real lifecycle hook that
+// attempts the deduction, so an admin can only pick a moment the runtime
+// actually reaches. The deduction is idempotent per job, so a job passing
+// several of these is still charged exactly once -- at the configured one.
+const PROVIDER_CHARGE_EVENTS = [
+  { value: "job_completed",          label: "When the job is completed" },
+  { value: "consultation_completed", label: "When a consultation is completed" },
+  { value: "work_done",              label: "When the technician marks work done" },
+  { value: "work_started",           label: "When the technician starts work" },
+] as const;
+// Only `before_work_start` is enforced today -- it blocks work start until the
+// fee is paid. The others are recorded on the charge but gate nothing yet, so
+// they are labelled honestly rather than implying an enforcement that is absent.
+const COLLECTION_STAGES = [
+  { value: "before_work_start",          label: "Before work starts — blocks work until paid", enforced: true },
+  { value: "before_booking_confirmation", label: "At booking confirmation (recorded, not enforced)", enforced: false },
+  { value: "after_estimate_approval",     label: "After estimate approval (recorded, not enforced)", enforced: false },
+  { value: "on_completion",               label: "On completion (recorded, not enforced)", enforced: false },
+] as const;
 const CUSTOMER_FEE_MODELS = [
   { value: "NONE", label: "No customer charge" },
   { value: "PERCENTAGE", label: "Percentage added to service price" },
@@ -679,6 +698,29 @@ function MonetizationTab() {
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
             {PROVIDER_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
+          {form.provider_model !== "NONE" && (
+            <>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>When to charge the provider</label>
+              <select value={form.provider_chargeable_event ?? "job_completed"}
+                onChange={e => setForm({ ...form, provider_chargeable_event: e.target.value })}
+                style={{ width: "100%", padding: "7px 9px", margin: "4px 0 4px" }}>
+                {PROVIDER_CHARGE_EVENTS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              {form.provider_model === "PERCENTAGE_COMMISSION"
+                && ["work_started", "work_done"].includes(form.provider_chargeable_event ?? "") ? (
+                <p style={{ fontSize: 11, color: "var(--danger-text)", margin: "0 0 10px" }}>
+                  A percentage needs the final invoiced value, which does not exist before the job
+                  completes — on an inspection job the booking price is only the visit fee. Charge at
+                  completion, or use a fixed credit model to charge earlier.
+                </p>
+              ) : (
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+                  Charged once per job, at this moment. A job that passes several stages is still
+                  charged exactly once.
+                </p>
+              )}
+            </>
+          )}
           {form.provider_model === "PERCENTAGE_COMMISSION" ? (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
@@ -719,6 +761,22 @@ function MonetizationTab() {
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
             {CUSTOMER_FEE_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
+          {form.customer_fee_model !== "NONE" && (
+            <>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>When to collect from the customer</label>
+              <select value={form.collection_stage ?? "after_estimate_approval"}
+                onChange={e => setForm({ ...form, collection_stage: e.target.value })}
+                style={{ width: "100%", padding: "7px 9px", margin: "4px 0 4px" }}>
+                {COLLECTION_STAGES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              {!COLLECTION_STAGES.find(x => x.value === (form.collection_stage ?? "after_estimate_approval"))?.enforced && (
+                <p style={{ fontSize: 11, color: "var(--warning-text, var(--text-tertiary))", margin: "0 0 10px" }}>
+                  The charge is created and recorded at this stage, but nothing blocks the customer
+                  from proceeding without paying it. Only &quot;before work starts&quot; is enforced today.
+                </p>
+              )}
+            </>
+          )}
           {(form.customer_fee_model === "PERCENTAGE" || form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") && (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>

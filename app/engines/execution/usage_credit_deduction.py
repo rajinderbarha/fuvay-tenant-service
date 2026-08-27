@@ -22,12 +22,20 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = structlog.get_logger("execution.usage_credit_deduction")
 
 DEDUCTION_EVENT_TYPE = "completed_job_deduction"
 _HS_KEY = "home_services"
 
+
+#: Marks a resolution that failed only because this is not the lifecycle moment
+#: the policy charges at -- distinct from "charged zero", which is a real
+#: outcome worth a ledger row.
+_EVENT_NOT_REACHED = "event_not_reached"
 
 async def resolve_commission_credits(
     db: AsyncSession,
@@ -85,8 +93,20 @@ async def resolve_commission_credits(
                     MonetizationJobTypeRule.status == "active",
                 )
             )).scalar_one_or_none()
-        if override is not None and override.provider_chargeable_event != chargeable_event:
-            return Decimal("0"), f"monetization_job_type_rule:{override.id}:event_not_reached"
+        # WHEN the provider is charged is a policy decision. The policy-level
+        # `provider_chargeable_event` used to be stored and validated but never
+        # read here, so only a per-job-type override could influence timing --
+        # and only by suppressing the charge entirely. The override still wins
+        # for its own job type; otherwise the policy answers, defaulting to
+        # completion so an unset policy behaves exactly as before.
+        configured_event = (
+            override.provider_chargeable_event if override is not None
+            else (policy.provider_chargeable_event or "job_completed")
+        )
+        if configured_event != chargeable_event:
+            source = (f"monetization_job_type_rule:{override.id}" if override is not None
+                      else f"monetization_policy:{policy.id}")
+            return Decimal("0"), f"{source}:{_EVENT_NOT_REACHED}"
         from app.engines.vertical_monetization.calculation_service import calculate_provider_completion_credits
         calculated = calculate_provider_completion_credits(
             policy=policy,
@@ -149,6 +169,20 @@ async def deduct_for_completed_job(
         chargeable_event=chargeable_event,
     )
 
+    # This lifecycle moment is not the one the policy charges at. Writing a
+    # zero ledger row here would be indistinguishable from "evaluated and
+    # charged nothing", and the idempotency guard above would then treat the
+    # job as already handled -- so the real chargeable event, when it arrived,
+    # would deduct nothing at all. Record nothing and let it come round again.
+    if deduction_source and deduction_source.endswith(_EVENT_NOT_REACHED):
+        return {
+            "deduction_status": "not_yet_chargeable",
+            "job_id": str(job_id),
+            "chargeable_event": chargeable_event,
+            "deduction_source": deduction_source,
+            "credit_delta": 0,
+        }
+
     billing = (await db.execute(
         select(TenantBilling).where(TenantBilling.tenant_id == tenant_id)
     )).scalars().first()
@@ -178,3 +212,62 @@ async def deduct_for_completed_job(
     db.add(ledger)
     await db.flush()
     return {**ledger.to_dict(), "deduction_status": "deducted"}
+
+
+async def attempt_charge_at_event(
+    db: AsyncSession,
+    *,
+    job,
+    chargeable_event: str,
+    request_id: str | None = None,
+) -> dict:
+    """Offer a lifecycle moment to the policy and charge if it is the one.
+
+    Called from every point a provider charge could legitimately fall due.
+    The policy decides which of them actually charges; the rest resolve to
+    `not_yet_chargeable` and write nothing, so the job stays chargeable when
+    its configured moment arrives. The deduction is idempotent per job, so a
+    job passing several of these moments is still charged exactly once.
+
+    Failures are swallowed deliberately: a finance-side problem must never
+    roll back genuine field work. The status is returned for the caller to log.
+    """
+    from app.engines.final_records.models import ServiceBooking
+    from app.engines.home_service_booking.models import HomeServiceBookingDraft
+
+    offering_type_id = brand_id = None
+    job_price = None
+    if job.booking_id:
+        booking = await db.get(ServiceBooking, job.booking_id)
+        if booking is not None:
+            if booking.draft_id:
+                draft = await db.get(HomeServiceBookingDraft, booking.draft_id)
+                if draft is not None:
+                    offering_type_id = draft.offering_type_id
+                    brand_id = draft.brand_id
+            # Only a basis for FIXED credit models -- publishing refuses to pair
+            # PERCENTAGE_COMMISSION with a pre-completion event precisely
+            # because this number is not the final invoiced value.
+            snapshot = booking.price_snapshot or {}
+            if isinstance(snapshot, dict) and snapshot.get("base_price") is not None:
+                job_price = Decimal(str(snapshot["base_price"]))
+
+    try:
+        return await deduct_for_completed_job(
+            db,
+            tenant_id=job.tenant_id,
+            job_id=job.id,
+            booking_id=job.booking_id,
+            master_service_id=job.offering_id,
+            offering_type_id=offering_type_id,
+            brand_id=brand_id,
+            category_id=job.category_id,
+            job_type_id=job.job_type_id,
+            job_price=job_price,
+            request_id=request_id,
+            chargeable_event=chargeable_event,
+        )
+    except Exception as exc:  # noqa: BLE001 -- finance must not undo field work
+        logger.warning("provider_charge.attempt_failed", job_id=str(job.id),
+                       chargeable_event=chargeable_event, error=str(exc))
+        return {"deduction_status": "failed", "error": str(exc)}

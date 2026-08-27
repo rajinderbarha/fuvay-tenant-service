@@ -23,6 +23,20 @@ PROVIDER_MODELS = {"NONE", "COMPLETION_CREDITS", "PERCENTAGE_COMMISSION",
 CUSTOMER_FEE_MODELS = {"NONE", "PERCENTAGE", "FIXED", "PERCENTAGE_WITH_MIN_MAX"}
 COLLECTION_STAGES = {"before_booking_confirmation", "after_estimate_approval",
                     "before_work_start", "on_completion"}
+
+#: When the provider is charged. Each value corresponds to a real lifecycle
+#: hook that attempts the deduction, so an admin can only choose a moment the
+#: runtime actually reaches:
+#:
+#:   work_started           technician starts the service (start_service)
+#:   work_done              technician marks the work finished (mark_work_done)
+#:   job_completed          the job is completed and invoiced (complete_job)
+#:   consultation_completed as job_completed, for consultation job types
+#:
+#: The deduction is idempotent per job, so a job passing several of these
+#: moments is still charged exactly once -- at the configured one.
+PROVIDER_CHARGEABLE_EVENTS = {"work_started", "work_done",
+                              "job_completed", "consultation_completed"}
 CHARGE_STATUSES = {"PENDING", "NOT_REQUIRED", "PAID", "FAILED", "REFUNDED", "WAIVED"}
 
 

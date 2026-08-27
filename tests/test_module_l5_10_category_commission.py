@@ -35,9 +35,13 @@ def test_admin_endpoints_and_page_exist():
                   encoding="utf-8").read()
     assert '/category-commission-rates' in router
     assert 'must be between 0 and 100' in router   # range guard
-    page = os.path.join(root, "frontend", "super-admin", "app", "admin", "pricing",
-                        "commission", "page.tsx")
-    assert os.path.isfile(page)
+    # The standalone /admin/pricing/commission page was retired: Home Services
+    # commission is authored in Finance > Monetization, which is also where the
+    # rate, the charge model and now the charge TIMING all live. The endpoint
+    # asserted above is what still backs per-category overrides.
+    fin_dir = os.path.join(root, "frontend", "super-admin", "app", "admin",
+                           "home-services", "finance", "page.tsx")
+    assert os.path.isfile(fin_dir)
     # Home Services now has one finance authority: Monetization. Provider
     # Charges is a transaction ledger and must not expose a second editor.
     fin_page = open(os.path.join(root, "frontend", "super-admin", "app", "admin",
