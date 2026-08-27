@@ -636,7 +636,44 @@ async def activate_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(text("UPDATE provider_team_members SET status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"), {"id": str(member_id), "tid": str(tid)})
+
+    # Activating consumes a seat, so it has to answer to the same two limits as
+    # creating. Without this the roster gate was trivially defeated: deactivate
+    # everyone, then activate more people than the plan pays for, since only
+    # ACTIVE members count against the entitlement. Re-activating was also the
+    # one-click undo for a credit suspension.
+    member = (await db.execute(text(
+        "SELECT designation, member_type, status FROM provider_team_members "
+        "WHERE id = :id AND tenant_id = :tid AND deleted_at IS NULL"
+    ), {"id": str(member_id), "tid": str(tid)})).fetchone()
+    if member is None:
+        raise HTTPException(404, "Team member not found")
+
+    if member.status != "active":
+        from app.engines.home_service_assignment.eligibility import is_technician_role
+        if is_technician_role(member.designation, member.member_type):
+            from app.engines.vertical_catalog.seat_enforcement import (
+                assert_seat_available, get_credit_state,
+            )
+            await assert_seat_available(db, tid)
+            credit = await get_credit_state(db, tid)
+            if credit["credit_balance"] <= 0:
+                raise ServiceOSException(
+                    "TEAM_SUSPENDED_NO_CREDIT",
+                    "This workspace has no usage credit, so technicians cannot be activated.",
+                    status_code=409,
+                    blocking_rule="credit.team_suspension",
+                    resolution="Add credit with a top-up plan, and suspended technicians "
+                               "are restored automatically.",
+                    context=credit,
+                )
+
+    # `credit_suspended_at` is cleared: this is now a deliberate activation, and
+    # a later restore must not treat the member as one the system had suspended.
+    result = await db.execute(text(
+        "UPDATE provider_team_members SET status='active', credit_suspended_at=NULL, "
+        "updated_at=now() WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
+    ), {"id": str(member_id), "tid": str(tid)})
     if result.rowcount == 0:
         raise HTTPException(404, "Team member not found")
     await record_platform_audit(

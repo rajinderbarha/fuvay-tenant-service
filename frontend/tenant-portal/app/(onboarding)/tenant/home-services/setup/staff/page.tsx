@@ -21,6 +21,7 @@ import {
   providerTeamMembersApi, ServiceOSError,
   type ProviderTeamMember, type TeamReadinessSummary, type ServiceCoverageRow,
 } from "../../../../../../lib/api";
+import { topupApi } from "../../../../../../lib/api-topup";
 import { AddTeamMemberWizard } from "../../../../../../components/onboarding/AddTeamMemberWizard";
 
 const READINESS_META: Record<string, { label: string; variant: "default" | "success" | "warning" | "danger" | "info"; icon: React.ReactNode }> = {
@@ -58,6 +59,22 @@ export default function StaffTechniciansPage() {
       .catch(e => setError(e instanceof ServiceOSError ? e.message : "We couldn't load your team."))
       .finally(() => setLoading(false));
   }, []);
+
+  // Same gate as the Team workspace, so onboarding cannot quietly add
+  // technicians the plan does not pay for and then fail at the API.
+  const [seats, setSeats] = useState<{ entitled: number; available: number; credit: number } | null>(null);
+  useEffect(() => {
+    topupApi.status()
+      .then(s => setSeats({
+        entitled: s.entitled_seats ?? 0,
+        available: s.available_seats ?? 0,
+        credit: s.credit_balance ?? 0,
+      }))
+      .catch(() => setSeats(null));  // never block setup on a finance read
+  }, []);
+  const noPlan = seats?.entitled === 0;
+  const seatsFull = !!seats && !noPlan && seats.available <= 0;
+  const creditOut = !!seats && seats.credit <= 0;
 
   useEffect(() => { load(); }, [load]);
 
@@ -139,6 +156,22 @@ export default function StaffTechniciansPage() {
         </div>
       )}
 
+      {/* Locked, not hidden: onboarding must still show what a plan unlocks and
+          how to buy one, otherwise this step becomes a dead end. */}
+      {(noPlan || seatsFull || creditOut) && (
+        <div role="status" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning-text)", fontSize: 13, marginBottom: 16 }}>
+          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/>
+          <span>
+            {noPlan
+              ? <><strong>Buy a top-up plan to add technicians.</strong> A plan grants the technician seats that decide how many jobs you can run in one slot.</>
+              : seatsFull
+              ? <>All {seats?.entitled} purchased seat{seats?.entitled === 1 ? "" : "s"} are in use. Buy another plan to add more technicians.</>
+              : <><strong>Your team is suspended — the workspace is out of credit.</strong> Technicians cannot be activated or assigned work until you top up.</>}
+            {" "}<Link href="/home-services/finance">Open finance</Link>
+          </span>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 6 }}>
         <div>
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 6px", textTransform: "uppercase" }}>Tenant Onboarding</p>
@@ -147,7 +180,8 @@ export default function StaffTechniciansPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {counts && <Badge variant={counts.total === 0 ? "info" : counts.ready === counts.total ? "success" : "warning"}>{statusLine}</Badge>}
-          <Btn variant="primary" onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
+          <Btn variant="primary" disabled={noPlan || seatsFull}
+               onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
             <UserPlus size={15}/> Add team member
           </Btn>
         </div>

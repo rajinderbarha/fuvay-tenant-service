@@ -1026,6 +1026,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.vertical_monetization.home_services_finance_router import (
         router as hs_finance_monetization_router,
     )
+    # Tenant Home Services dashboard. Fully built -- service, jobs list and job
+    # detail -- but never added here, so /v1/tenant/home-services/dashboard
+    # 404'd and the provider's operational home screen had no backend at all.
+    from app.engines.execution.home_services_dashboard_router import (
+        router as hs_tenant_dashboard_router,
+    )
     from app.engines.vertical_catalog.topup_plan_router import router as hs_topup_plan_router
     # Top-up plan catalogue (migration 317, replaces the security deposit).
     # The admin surface authors what is sold; the tenant surface backs the
@@ -1047,6 +1053,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         messaging_gateway_router,
         hs_finance_monetization_router, hs_topup_plan_router,
         hs_topup_plan_catalog_admin_router, hs_topup_plan_catalog_tenant_router,
+        hs_tenant_dashboard_router,
     ]:
         app.include_router(_unmounted)
 

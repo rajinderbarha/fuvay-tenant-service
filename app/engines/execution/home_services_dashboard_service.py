@@ -364,6 +364,18 @@ async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
         "SELECT count(*), COALESCE(sum(abs(credit_delta)), 0) FROM usage_credit_ledger "
         "WHERE tenant_id=:tid AND event_type='completed_job_deduction' AND created_at::date = CURRENT_DATE"
     ), {"tid": str(tid)})).fetchone()
+    # Seats come from the live entitlements, not `tenant_billing.entitled_seats`
+    # -- that column is a cached projection refreshed by the expiry sweep, so a
+    # lapsed plan would keep showing its seats on the dashboard for up to an
+    # hour after they had stopped counting anywhere else.
+    from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
+    seats = await get_seat_usage(db, tid)
+
+    suspended = int((await db.execute(text(
+        "SELECT count(*) FROM provider_team_members "
+        "WHERE tenant_id = :tid AND deleted_at IS NULL AND credit_suspended_at IS NOT NULL"
+    ), {"tid": str(tid)})).scalar() or 0)
+
     return {
         "direct_payments_pending": inv_counts.get("pending", 0),
         "direct_payments_confirmed": inv_counts.get("collected", 0),
@@ -372,7 +384,13 @@ async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
         "completion_deductions_today_amount": float(deduction[1]) if deduction and deduction[1] is not None else 0.0,
         # The security deposit was replaced by purchased technician seats in
         # migration 317 — headcount is bought, not collateralised.
-        "entitled_seats": int(billing.entitled_seats) if billing and billing.entitled_seats else 0,
+        "entitled_seats": seats["entitled_seats"],
+        "used_seats": seats["used_seats"],
+        "available_seats": seats["available_seats"],
+        "seats_over_limit": seats["over_limit"],
+        # Surfaced so a suspended workspace can see WHY its technicians went
+        # inactive, instead of finding an empty roster with no explanation.
+        "team_suspended_for_credit": suspended,
     }
 
 
