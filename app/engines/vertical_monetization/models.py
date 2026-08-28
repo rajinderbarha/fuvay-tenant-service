@@ -84,6 +84,13 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     health_suspension_days:      Mapped[int | None]     = mapped_column(Integer, nullable=True)
     health_reinstatement_score:  Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
 
+    # ── Media retention ──────────────────────────────────────────────────────
+    # What the customer sent goes shortly after the job finishes; the
+    # provider's before/after evidence is kept until the warranty it defends
+    # has expired. NULL means that kind is never purged.
+    customer_photo_retention_days:   Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_proof_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     customer_fee_model:              Mapped[str]            = mapped_column(String(30), default="NONE", nullable=False)
     customer_fee_percentage:         Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     customer_fee_fixed_amount_minor: Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
@@ -133,6 +140,8 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "health_suspension_threshold": float(self.health_suspension_threshold) if self.health_suspension_threshold is not None else None,
             "health_suspension_days": self.health_suspension_days,
             "health_reinstatement_score": float(self.health_reinstatement_score) if self.health_reinstatement_score is not None else None,
+            "customer_photo_retention_days": self.customer_photo_retention_days,
+            "completion_proof_retention_days": self.completion_proof_retention_days,
             "customer_fee_refund_policy": self.customer_fee_refund_policy,
             "currency": self.currency,
             "effective_from": self.effective_from.isoformat() if self.effective_from else None,

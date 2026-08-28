@@ -39,6 +39,8 @@ _DRAFT_FIELDS = {
     "sla_penalty_max", "sla_breachable_statuses",
     # Health: when a provider is stopped, for how long, and what they come back at.
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
+    # Media retention: how long each kind of job photo is kept.
+    "customer_photo_retention_days", "completion_proof_retention_days",
 }
 
 

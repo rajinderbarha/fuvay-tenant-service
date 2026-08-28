@@ -117,11 +117,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _sla_task = asyncio.create_task(_sla_loop())
     logger.info("sla_breach_loop.started")
 
+    # 13. Media retention: delete the customer's photos once a job is done, and
+    # completion proofs once the warranty they defend has expired.
+    from app.jobs.media_retention import background_loop as _media_loop
+    _media_task = asyncio.create_task(_media_loop())
+    logger.info("media_retention_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
     _sla_task.cancel()
+    _media_task.cancel()
     _export_worker_task.cancel()
     _complaint_sla_task.cancel()
     _tte_task.cancel()
