@@ -877,9 +877,8 @@ class AdminTenantService:
             "commercial": {
                 "commission_rate": float(settings.commission_rate) if settings else 0.10,
                 "credit_wallet_balance": float(wallet.credit_balance) if wallet else 0,
-                "security_deposit_status": deposit.status if deposit else "not_required",
-                "security_deposit_required": float(deposit.required_amount) if deposit else 0,
-                "security_deposit_paid": float(deposit.total_paid) if deposit else 0,
+                # Deposit fields removed with the feature: credit is what stands
+                # in its place, and it is already reported just above.
                 "plan_type": t.plan_type,
             },
             "operational": {
@@ -1293,7 +1292,6 @@ class AdminTenantService:
         fin_sql = sqlt(f"""
             SELECT
                 COALESCE(SUM(tb.credit_balance), 0)          AS total_credits,
-                COALESCE(SUM(tb.security_deposit_amount), 0) AS total_deposits,
                 COUNT(CASE WHEN tb.credit_balance < 500 AND tb.credit_balance IS NOT NULL THEN 1 END) AS low_credit_tenants
             FROM tenants t
             LEFT JOIN tenant_billing tb ON tb.tenant_id = t.id
@@ -1337,7 +1335,10 @@ class AdminTenantService:
             ],
             "financial_summary": {
                 "total_usage_credits": float(fr_row.total_credits or 0),
-                "total_security_deposits": float(fr_row.total_deposits or 0),
+                # `tenant_billing.security_deposit_amount` was dropped with the
+                # deposit in migration 317/318; summing it raised
+                # UndefinedColumnError and the whole tenant insights view 500'd.
+
                 "low_credit_tenants": int(fr_row.low_credit_tenants or 0),
             },
             "health_summary": {

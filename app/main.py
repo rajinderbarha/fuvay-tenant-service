@@ -926,10 +926,15 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         provider_analytics_router, provider_reports_router,
     )
     from app.engines.analytics.platform_router import platform_analytics_router
+    # platform_analytics_router FIRST: it shares the /v1/admin/analytics prefix
+    # with admin_analytics_router, and Starlette matches in registration order.
+    # Registered after, its STATIC /providers/performance was swallowed by the
+    # other router's /providers/{tenant_id}, which then tried to parse the
+    # literal "performance" as a UUID and 500'd on every call.
     for _r in [
+        platform_analytics_router,
         admin_analytics_router, admin_reports_router,
         provider_analytics_router, provider_reports_router,
-        platform_analytics_router,
     ]:
         app.include_router(_r)
 

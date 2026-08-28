@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 import uuid
+
+from app.exceptions import ServiceOSException
 from datetime import datetime, timezone
 from typing import Any
 
@@ -54,6 +56,21 @@ class ServiceSetupTemplateService:
 
     # ── Template CRUD ─────────────────────────────────────────────────────────
 
+    #: The Sprint-34F template CRUD below reads `ServiceSetupTemplate`, whose
+    #: table was renamed to `service_setup_templates_legacy_34f` and never
+    #: created -- so every one of those endpoints raised UndefinedTableError.
+    #: The live surface is the service_setup engine at
+    #: /v1/admin/service-setup/templates. Only the RUN history at the bottom of
+    #: this file uses a table that exists, and it stays.
+    def _retired(self):
+        raise ServiceOSException(
+            "SETUP_TEMPLATE_CRUD_RETIRED",
+            "Sprint-34F setup templates are retired. Use "
+            "/v1/admin/service-setup/templates -- this engine's table was never "
+            "created, so these endpoints could only ever fail.",
+            status_code=410,
+        )
+
     async def list_templates(
         self,
         status: str | None = None,
@@ -63,6 +80,7 @@ class ServiceSetupTemplateService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict:
+        self._retired()
         q = select(ServiceSetupTemplate).where(ServiceSetupTemplate.deleted_at.is_(None))
         if status:
             q = q.where(ServiceSetupTemplate.status == status)

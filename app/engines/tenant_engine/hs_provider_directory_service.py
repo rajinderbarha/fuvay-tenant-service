@@ -152,7 +152,10 @@ class HomeServicesProviderDirectoryService:
             "rating_average": float(t.rating_average),
             "credit_balance": str(credit_balance),
             "credit_status": "low" if credit_balance < LOW_BALANCE_THRESHOLD else "healthy",
-            "deposit_status": deposit.status if deposit else "not_required",
+            # The deposit went in migration 317/318 and its local was removed
+            # with it, but this reference was left behind -- so building ANY
+            # provider row raised NameError and the whole Providers console
+            # 500'd. Credit is what stands in the deposit's place.
             "email": t.email,
             "phone": t.phone,
             "city": t.city,
@@ -174,7 +177,7 @@ class HomeServicesProviderDirectoryService:
             from app.engines.auth.models import User
             owner = await self.db.get(User, tenant.owner_user_id)
 
-        row = self._provider_row(tenant, billing, deposit)
+        row = self._provider_row(tenant, billing)
         return {
             **row,
             "owner_user_id": str(tenant.owner_user_id) if tenant.owner_user_id else None,

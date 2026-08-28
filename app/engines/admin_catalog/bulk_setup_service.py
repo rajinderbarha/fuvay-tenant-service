@@ -278,15 +278,24 @@ class AdminBulkSetupDraftService:
         vertical_type: str | None = None,
         category_id: uuid.UUID | None = None,
     ) -> list[dict]:
-        q = select(ServiceSetupTemplate).where(
-            ServiceSetupTemplate.status == "published",
-            ServiceSetupTemplate.deleted_at.is_(None),
+        # Use the LIVE service_setup engine's model. The import above resolves
+        # to admin_catalog's Sprint-34F model, whose own comment says it was
+        # superseded by migration 097 -- and whose table
+        # `service_setup_templates_legacy_34f` does not exist, so this 500'd on
+        # a missing relation. The live model names its columns differently
+        # (`vertical_key`, `is_system`) and has no soft-delete.
+        from app.engines.service_setup.models import (
+            ServiceSetupTemplate as LiveServiceSetupTemplate,
+        )
+
+        q = select(LiveServiceSetupTemplate).where(
+            LiveServiceSetupTemplate.status == "published"
         )
         if vertical_type:
-            q = q.where(ServiceSetupTemplate.vertical_type == vertical_type)
-        if category_id:
-            q = q.where(ServiceSetupTemplate.category_id == category_id)
-        q = q.order_by(ServiceSetupTemplate.is_system_template.desc(), ServiceSetupTemplate.name)
+            q = q.where(LiveServiceSetupTemplate.vertical_key == vertical_type)
+        q = q.order_by(
+            LiveServiceSetupTemplate.is_system.desc(), LiveServiceSetupTemplate.name
+        )
         rows = (await self.db.scalars(q)).all()
         return [r.to_dict() for r in rows]
 
@@ -340,10 +349,10 @@ class AdminBulkSetupDraftService:
         group_id: uuid.UUID | None = None,
         vertical_type: str | None = None,
     ) -> list[dict]:
-        q = select(MasterServiceOption).where(
-            MasterServiceOption.status == "active",
-            MasterServiceOption.deleted_at.is_(None),
-        )
+        # `MasterServiceOption` has no soft-delete column -- neither the model nor the
+        # table -- so filtering on `deleted_at` raised AttributeError and this
+        # endpoint 500'd. Lifecycle here is `status`, already filtered above.
+        q = select(MasterServiceOption).where(MasterServiceOption.status == "active")
         if group_id:
             q = q.where(MasterServiceOption.option_group_id == group_id)
         if vertical_type:
@@ -355,10 +364,10 @@ class AdminBulkSetupDraftService:
         self,
         vertical_type: str | None = None,
     ) -> list[dict]:
-        q = select(MasterIssueType).where(
-            MasterIssueType.status == "active",
-            MasterIssueType.deleted_at.is_(None),
-        )
+        # `MasterIssueType` has no soft-delete column -- neither the model nor the
+        # table -- so filtering on `deleted_at` raised AttributeError and this
+        # endpoint 500'd. Lifecycle here is `status`, already filtered above.
+        q = select(MasterIssueType).where(MasterIssueType.status == "active")
         if vertical_type:
             q = q.where(MasterIssueType.vertical_type == vertical_type)
         rows = (await self.db.scalars(q.order_by(MasterIssueType.name))).all()
@@ -388,13 +397,23 @@ class AdminBulkSetupDraftService:
         ]
 
     async def get_available_checklist_templates(self) -> list[dict]:
-        from app.engines.field_ops.models import ServiceChecklistTemplate
+        """Platform checklist templates offered by the bulk wizard.
+
+        Read the LIVE catalogue. This used to select field_ops'
+        `ServiceChecklistTemplate`, whose table `service_checklist_templates`
+        was never migrated, so the endpoint 500'd on a missing relation every
+        time the wizard asked for its options.
+        """
+        from app.engines.checklist_catalog.models import ChecklistTemplate
+
         rows = (await self.db.scalars(
-            select(ServiceChecklistTemplate).where(ServiceChecklistTemplate.is_active == True)
-            .order_by(ServiceChecklistTemplate.name)
+            select(ChecklistTemplate)
+            .where(ChecklistTemplate.status == "active")
+            .order_by(ChecklistTemplate.name)
         )).all()
         return [
-            {"id": str(r.id), "name": r.name, "service_id": str(r.service_id), "tenant_id": str(r.tenant_id)}
+            {"id": str(r.id), "name": r.name, "code": r.code,
+             "purpose": r.purpose, "owner_scope": r.owner_scope}
             for r in rows
         ]
 
