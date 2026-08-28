@@ -317,8 +317,14 @@ export function getRequiredPermissionForRoute(pathname: string): string {
 // Nav items that are Home-Services-specific or otherwise vertical-gated, rather than
 // global admin concepts â€” hidden when the backing vertical/operation is disabled so the
 // sidebar doesn't show irrelevant modules for Coaching/Real Estate/Restaurant/Product tenants.
-// Source of truth is the backend effective-menu resolver (operation_visibility / enabled_vertical_keys);
-// while the menu is still loading (effectiveMenu === null) items are shown to avoid flicker/false-hides.
+// Source of truth is the backend effective-menu resolver (operation_visibility /
+// enabled_vertical_keys); while the menu is still loading (effectiveMenu === null)
+// items are shown to avoid flicker/false-hides.
+//
+// This function USED TO BE A STUB that returned true unconditionally, while
+// comments throughout this file described the gating as if it worked -- so a
+// capability-scoped item such as Provider Bookability rendered even for a
+// deployment whose enabled verticals have no field-ops model at all.
 // NOTE: the field-ops items (Bookings/Jobs/Reviews/Category Rates/Warranty
 // Claims/Service Invoices/Security Deposits/Credit Top-ups/Usage Credits/
 // Commission Records/Provider Wallets) are no longer gated here â€” they moved
@@ -326,8 +332,27 @@ export function getRequiredPermissionForRoute(pathname: string): string {
 // membership inside VerticalCatalogSection instead, so this function is only
 // ever called for plain NAV_GROUPS items now (currently none need per-item
 // gating; kept for future vertical-gated additions to NAV_GROUPS).
+// Nav items that belong to a CAPABILITY rather than a literal vertical. The
+// backend resolves these from the enabled verticals' operational model, so a
+// deployment that gains a second field-ops vertical keeps them without a code
+// change -- which is why they are not keyed on a vertical name.
+//
+// There is deliberately no vertical-name map here: the per-vertical sections
+// are injected by VerticalCatalogSection, which already filters on
+// `v.is_enabled`, so a disabled vertical contributes no menu of its own.
+const OPERATION_SCOPED_NAV: Record<string, keyof EffectiveMenu["operation_visibility"]> = {
+  bookability: "jobs_field_ops",
+};
+
 function isNavItemVisible(itemId: string, effectiveMenu: EffectiveMenu | null): boolean {
+  // Still loading: show, so the sidebar does not flicker items away and back.
   if (!effectiveMenu) return true;
+
+  const operation = OPERATION_SCOPED_NAV[itemId];
+  if (operation) {
+    return Boolean(effectiveMenu.operation_visibility?.[operation]);
+  }
+
   return true;
 }
 
