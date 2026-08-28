@@ -63,6 +63,27 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     provider_min_charge_minor:     Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
     provider_max_charge_minor:     Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
 
+    # ── SLA breach: what a late job costs, and where the money goes ──────────
+    # Every one of these is admin policy rather than a constant, so a penalty
+    # can be retuned, reviewed and rolled back exactly like a commission rate.
+    # All nullable / defaulted so an existing policy keeps behaving as it does.
+    sla_breach_hours:        Mapped[int | None]     = mapped_column(Integer, nullable=True)
+    sla_penalty_amount:      Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    sla_penalty_to_customer: Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
+    sla_penalty_debt_cap:    Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    sla_auto_cancel:         Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
+    sla_notify_provider:     Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
+    sla_penalty_type:        Mapped[str]            = mapped_column(String(20), default="fixed", nullable=False)
+    sla_penalty_percentage:  Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    sla_penalty_min:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    sla_penalty_max:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    sla_breachable_statuses: Mapped[list | None]    = mapped_column(JSONB, nullable=True)
+
+    # ── Health suspension: when a provider is stopped, and what they return at
+    health_suspension_threshold: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    health_suspension_days:      Mapped[int | None]     = mapped_column(Integer, nullable=True)
+    health_reinstatement_score:  Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+
     customer_fee_model:              Mapped[str]            = mapped_column(String(30), default="NONE", nullable=False)
     customer_fee_percentage:         Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     customer_fee_fixed_amount_minor: Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
@@ -98,6 +119,20 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "customer_fee_max_minor": self.customer_fee_max_minor,
             "customer_fee_basis": self.customer_fee_basis,
             "collection_stage": self.collection_stage,
+            "sla_breach_hours": self.sla_breach_hours,
+            "sla_penalty_amount": float(self.sla_penalty_amount) if self.sla_penalty_amount is not None else None,
+            "sla_penalty_to_customer": self.sla_penalty_to_customer,
+            "sla_penalty_debt_cap": float(self.sla_penalty_debt_cap) if self.sla_penalty_debt_cap is not None else None,
+            "sla_auto_cancel": self.sla_auto_cancel,
+            "sla_notify_provider": self.sla_notify_provider,
+            "sla_penalty_type": self.sla_penalty_type,
+            "sla_penalty_percentage": float(self.sla_penalty_percentage) if self.sla_penalty_percentage is not None else None,
+            "sla_penalty_min": float(self.sla_penalty_min) if self.sla_penalty_min is not None else None,
+            "sla_penalty_max": float(self.sla_penalty_max) if self.sla_penalty_max is not None else None,
+            "sla_breachable_statuses": self.sla_breachable_statuses,
+            "health_suspension_threshold": float(self.health_suspension_threshold) if self.health_suspension_threshold is not None else None,
+            "health_suspension_days": self.health_suspension_days,
+            "health_reinstatement_score": float(self.health_reinstatement_score) if self.health_reinstatement_score is not None else None,
             "customer_fee_refund_policy": self.customer_fee_refund_policy,
             "currency": self.currency,
             "effective_from": self.effective_from.isoformat() if self.effective_from else None,
@@ -128,6 +163,10 @@ class MonetizationJobTypeRule(ServiceOSBase):
     provider_charge_model:        Mapped[str]            = mapped_column(String(30), default="INHERIT", nullable=False)
     provider_charge_credit_units: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     provider_chargeable_event:    Mapped[str]            = mapped_column(String(40), default="job_completed", nullable=False)
+    #: Per-job-type SLA penalty. Disabling it exempts this job type entirely;
+    #: an amount overrides whatever the policy would otherwise have charged.
+    sla_penalty_enabled:          Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
+    sla_penalty_amount:           Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     status:                       Mapped[str]            = mapped_column(String(20), default="active", nullable=False)
 
     def to_dict(self) -> dict:
@@ -138,6 +177,8 @@ class MonetizationJobTypeRule(ServiceOSBase):
             "provider_charge_model": self.provider_charge_model,
             "provider_charge_credit_units": str(self.provider_charge_credit_units) if self.provider_charge_credit_units is not None else None,
             "provider_chargeable_event": self.provider_chargeable_event,
+            "sla_penalty_enabled": self.sla_penalty_enabled,
+            "sla_penalty_amount": str(self.sla_penalty_amount) if self.sla_penalty_amount is not None else None,
             "status": self.status,
         }
 

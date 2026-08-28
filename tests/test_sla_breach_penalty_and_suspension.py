@@ -162,3 +162,121 @@ class TestTheCustomerIsReleasedFirst:
         from app.engines.execution.sla_breach_service import BREACHABLE_STATUSES
         for done in ("completed", "cancelled", "work_done"):
             assert done not in BREACHABLE_STATUSES
+
+
+class TestEveryLeverIsAdminControlled:
+    """Nothing about the penalty is decided in code any more."""
+
+    def test_the_model_carries_every_setting(self):
+        from app.engines.vertical_monetization.models import VerticalMonetizationPolicy as P
+        # The migration alone is not enough: save_draft seeds a new version by
+        # reading each field off the ORM object, so a column missing here 500s
+        # the admin save even though the database has it.
+        for field in ("sla_breach_hours", "sla_penalty_amount", "sla_penalty_to_customer",
+                      "sla_penalty_debt_cap", "sla_auto_cancel", "sla_notify_provider",
+                      "sla_penalty_type", "sla_penalty_percentage", "sla_penalty_min",
+                      "sla_penalty_max", "sla_breachable_statuses",
+                      "health_suspension_threshold", "health_suspension_days",
+                      "health_reinstatement_score"):
+            assert hasattr(P, field), field
+
+    def test_every_setting_is_draftable(self):
+        from app.engines.vertical_monetization.policy_service import _DRAFT_FIELDS
+        for field in ("sla_auto_cancel", "sla_notify_provider", "sla_penalty_type",
+                      "sla_penalty_percentage", "sla_penalty_min", "sla_penalty_max",
+                      "sla_breachable_statuses"):
+            assert field in _DRAFT_FIELDS, field
+
+    def test_the_admin_form_exposes_them(self):
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(
+            encoding="utf-8")
+        for label in ("Breach after (hours)", "Penalty type", "Maximum penalty debt",
+                      "Cancel the job so the customer can rebook",
+                      "Give the penalty to the customer as service credit",
+                      "Tell the provider why they were charged",
+                      "Health suspension"):
+            assert label in src, label
+
+
+class TestPenaltySizing:
+    @staticmethod
+    def _policy(**kw):
+        base = dict(sla_penalty_amount=50, sla_penalty_type="fixed",
+                    sla_penalty_percentage=None, sla_penalty_min=None, sla_penalty_max=None)
+        base.update(kw)
+        return type("P", (), base)()
+
+    def test_percentage_scales_with_the_job(self):
+        from decimal import Decimal
+        from app.engines.execution.sla_breach_service import resolve_penalty
+        p = self._policy(sla_penalty_type="percentage", sla_penalty_percentage=5)
+        assert resolve_penalty(p, job_value=Decimal("10000")) == Decimal("500.00")
+
+    def test_the_floor_and_ceiling_bind(self):
+        from decimal import Decimal
+        from app.engines.execution.sla_breach_service import resolve_penalty
+        p = self._policy(sla_penalty_type="percentage", sla_penalty_percentage=5,
+                         sla_penalty_min=100, sla_penalty_max=1000)
+        assert resolve_penalty(p, job_value=Decimal("500")) == Decimal("100")
+        assert resolve_penalty(p, job_value=Decimal("50000")) == Decimal("1000")
+
+    def test_no_job_value_falls_back_to_the_flat_amount(self):
+        from decimal import Decimal
+        from app.engines.execution.sla_breach_service import resolve_penalty
+        # A percentage of an unknown number cannot be computed honestly.
+        p = self._policy(sla_penalty_type="percentage", sla_penalty_percentage=5)
+        assert resolve_penalty(p, job_value=None) == Decimal("50")
+
+    def test_a_job_type_override_wins(self):
+        from decimal import Decimal
+        from app.engines.execution.sla_breach_service import resolve_penalty
+        p = self._policy(sla_penalty_type="percentage", sla_penalty_percentage=5)
+        assert resolve_penalty(p, job_value=Decimal("50000"),
+                               job_type_override=Decimal("25")) == Decimal("25")
+
+
+class TestWaiver:
+    def test_the_ledger_is_never_edited(self):
+        import inspect
+        from app.engines.execution import sla_breach_service
+        src = inspect.getsource(sla_breach_service.waive_penalty)
+        # An append-only ledger is what an operator has to defend.
+        assert "INSERT INTO usage_credit_ledger" in src
+        assert "DELETE FROM usage_credit_ledger" not in src
+        assert "sla_penalty_waived" in src
+
+    def test_a_penalty_cannot_be_waived_twice(self):
+        import inspect
+        from app.engines.execution import sla_breach_service
+        src = inspect.getsource(sla_breach_service.waive_penalty)
+        assert "SLA_PENALTY_ALREADY_WAIVED" in src
+
+    def test_only_unspent_customer_credit_is_revoked(self):
+        import inspect
+        from app.engines.execution import sla_breach_service
+        src = inspect.getsource(sla_breach_service._revoke_unspent_customer_credit)
+        # Money the customer already put toward a booking is theirs; clawing it
+        # back would punish them for the provider's failure.
+        assert "remaining_amount" in src
+
+    def test_waiving_needs_a_reason(self):
+        import inspect
+        from app.engines.vertical_monetization import home_services_finance_router
+        src = inspect.getsource(home_services_finance_router)
+        assert "A reason is required to waive a penalty" in src
+
+
+class TestAutoCancelIsOptional:
+    def test_a_breach_can_be_recorded_without_cancelling(self):
+        import inspect
+        from app.engines.execution import sla_breach_service
+        src = inspect.getsource(sla_breach_service.sweep)
+        assert "if policy.sla_auto_cancel:" in src
+
+    def test_the_customer_is_only_told_when_the_job_was_cancelled(self):
+        import inspect
+        from app.engines.execution import sla_breach_service
+        src = inspect.getsource(sla_breach_service.sweep)
+        idx = src.index("_notify_customer")
+        assert "sla_auto_cancel" in src[max(0, idx - 200):idx]

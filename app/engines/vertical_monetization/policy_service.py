@@ -34,7 +34,9 @@ _DRAFT_FIELDS = {
     "collection_stage", "customer_fee_refund_policy", "currency", "effective_from", "change_summary",
     # SLA breach: what a late job costs, and where the money goes.
     "sla_breach_hours", "sla_penalty_amount", "sla_penalty_to_customer",
-    "sla_penalty_debt_cap",
+    "sla_penalty_debt_cap", "sla_auto_cancel", "sla_notify_provider",
+    "sla_penalty_type", "sla_penalty_percentage", "sla_penalty_min",
+    "sla_penalty_max", "sla_breachable_statuses",
     # Health: when a provider is stopped, for how long, and what they come back at.
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
 }
@@ -206,6 +208,30 @@ class VerticalMonetizationPolicyService:
                         errors.append(f"{name} must be at least {minimum}")
                 except (TypeError, ValueError):
                     errors.append(f"{name} must be a whole number")
+        ptype = payload.get("sla_penalty_type", "fixed") or "fixed"
+        if ptype not in ("fixed", "percentage"):
+            errors.append("sla_penalty_type must be fixed or percentage")
+        pct = decimal_field("sla_penalty_percentage", minimum=Decimal("0"), maximum=Decimal("100"))
+        pmin = decimal_field("sla_penalty_min", minimum=Decimal("0"))
+        pmax = decimal_field("sla_penalty_max", minimum=Decimal("0"))
+        if ptype == "percentage" and pct in (None, Decimal("0")):
+            errors.append("sla_penalty_percentage is required when sla_penalty_type is percentage")
+        if pmin is not None and pmax is not None and pmin > pmax:
+            errors.append("sla_penalty_min cannot exceed sla_penalty_max")
+
+        # A status that no job ever reaches would silently disable the penalty.
+        statuses = payload.get("sla_breachable_statuses")
+        if statuses not in (None, ""):
+            from app.engines.execution.sla_breach_service import BREACHABLE_STATUSES
+            if not isinstance(statuses, list) or not statuses:
+                errors.append("sla_breachable_statuses must be a non-empty list")
+            else:
+                unknown = [x for x in statuses if x not in BREACHABLE_STATUSES]
+                if unknown:
+                    errors.append(
+                        "sla_breachable_statuses contains statuses a job never breaches in: "
+                        + ", ".join(map(str, unknown))
+                    )
         decimal_field("sla_penalty_amount", minimum=Decimal("0"))
         decimal_field("sla_penalty_debt_cap", minimum=Decimal("0"))
         threshold = decimal_field("health_suspension_threshold", minimum=Decimal("0"), maximum=Decimal("100"))
@@ -458,7 +484,12 @@ class VerticalMonetizationPolicyService:
             MonetizationJobTypeRule.policy_id == policy_id, MonetizationJobTypeRule.job_type_id == job_type_id,
         ))).scalar_one_or_none()
         fields = {"customer_charge_enabled", "customer_charge_basis", "provider_charge_enabled",
-                 "provider_charge_model", "provider_charge_credit_units", "provider_chargeable_event", "status"}
+                 "provider_charge_model", "provider_charge_credit_units", "provider_chargeable_event",
+                 # Per-job-type SLA penalty: disable it for a job type, or set
+                 # its own amount. A consultation and a full installation are
+                 # not worth the same to abandon.
+                 "sla_penalty_enabled", "sla_penalty_amount",
+                 "status"}
         if existing:
             for k in fields:
                 if k in payload:

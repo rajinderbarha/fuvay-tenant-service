@@ -161,6 +161,29 @@ async def list_job_type_rules(policy_id: uuid.UUID, r: Request, db: AsyncSession
     return ok({"items": await _svc.list_job_type_rules(db, policy_id)}, _rid(r))
 
 
+@router.post("/jobs/{job_id}/waive-sla-penalty", response_model=ApiResponse,
+             summary="Reverse an SLA penalty charged in error")
+async def waive_sla_penalty(job_id: uuid.UUID, r: Request,
+                            db: AsyncSession = Depends(get_db),
+                            v: Vertical = Depends(_require_hs_action("publish"))):
+    """Refunds the provider and revokes any customer credit still unspent.
+
+    Gated on the same permission as publishing a policy: waiving a charge moves
+    real money and should answer to whoever is trusted to set the rate.
+    """
+    from app.engines.execution.sla_breach_service import waive_penalty
+
+    body = await r.json()
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        raise ServiceOSException("VALIDATION_ERROR",
+                                 "A reason is required to waive a penalty.", status_code=422)
+    actor = getattr(getattr(r, "state", None), "user_id", None)
+    result = await waive_penalty(db, job_id=job_id, actor_id=actor, reason=reason)
+    await db.commit()
+    return ok(result, _rid(r))
+
+
 @router.put("/policies/{policy_id}/job-type-rules/{job_type_id}", response_model=ApiResponse)
 async def upsert_job_type_rule(policy_id: uuid.UUID, job_type_id: uuid.UUID, r: Request,
                                db: AsyncSession = Depends(get_db),

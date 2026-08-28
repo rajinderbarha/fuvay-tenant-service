@@ -879,6 +879,124 @@ function MonetizationTab() {
               )}
             </div>
           )}
+          {/* ── SLA breach & penalty ──────────────────────────────────────
+              Every lever here is policy rather than code, so a penalty can be
+              retuned, reviewed and rolled back like a commission rate. */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+              Late jobs — SLA breach &amp; penalty
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              Measured from the scheduled slot, so a job booked well in advance is never
+              late early. Leave the hours blank to disable this entirely.
+            </p>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Breach after (hours)</label>
+                <Input placeholder="e.g. 24" value={String(form.sla_breach_hours ?? "")}
+                  onChange={v => setForm({ ...form, sla_breach_hours: v === "" ? null : Number(v) })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Penalty type</label>
+                <select value={form.sla_penalty_type ?? "fixed"}
+                  onChange={e => setForm({ ...form, sla_penalty_type: e.target.value })}
+                  style={{ width: "100%", padding: "7px 9px", marginTop: 4 }}>
+                  <option value="fixed">Fixed amount</option>
+                  <option value="percentage">Percentage of job value</option>
+                </select>
+              </div>
+            </div>
+
+            {form.sla_penalty_type === "percentage" ? (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Percentage (%)</label>
+                  <Input placeholder="e.g. 5" value={String(form.sla_penalty_percentage ?? "")}
+                    onChange={v => setForm({ ...form, sla_penalty_percentage: v })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Minimum (₹)</label>
+                  <Input value={String(form.sla_penalty_min ?? "")}
+                    onChange={v => setForm({ ...form, sla_penalty_min: v === "" ? null : Number(v) })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum (₹)</label>
+                  <Input value={String(form.sla_penalty_max ?? "")}
+                    onChange={v => setForm({ ...form, sla_penalty_max: v === "" ? null : Number(v) })} />
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Penalty amount (₹)</label>
+                <Input placeholder="e.g. 50" value={String(form.sla_penalty_amount ?? "")}
+                  onChange={v => setForm({ ...form, sla_penalty_amount: v === "" ? null : Number(v) })} />
+              </div>
+            )}
+
+            <div style={{ marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum penalty debt (₹)</label>
+              <Input placeholder="e.g. 500" value={String(form.sla_penalty_debt_cap ?? "")}
+                onChange={v => setForm({ ...form, sla_penalty_debt_cap: v === "" ? null : Number(v) })} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
+                A penalty may take a balance negative — a provider already at zero would
+                otherwise face no penalty at all. This is how far that can go before
+                further penalties stop being charged.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={form.sla_auto_cancel !== false}
+                  onChange={e => setForm({ ...form, sla_auto_cancel: e.target.checked })} />
+                Cancel the job so the customer can rebook
+              </label>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={!!form.sla_penalty_to_customer}
+                  onChange={e => setForm({ ...form, sla_penalty_to_customer: e.target.checked })} />
+                Give the penalty to the customer as service credit
+              </label>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={form.sla_notify_provider !== false}
+                  onChange={e => setForm({ ...form, sla_notify_provider: e.target.checked })} />
+                Tell the provider why they were charged
+              </label>
+            </div>
+          </div>
+
+          {/* ── Health suspension ─────────────────────────────────────────── */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+              Health suspension
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              Health is already 20% of provider ranking, so a falling score costs a provider
+              work before this ever applies. Leave blank to never suspend anyone.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Suspend below</label>
+                <Input placeholder="e.g. 40" value={String(form.health_suspension_threshold ?? "")}
+                  onChange={v => setForm({ ...form, health_suspension_threshold: v === "" ? null : Number(v) })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>For (days)</label>
+                <Input placeholder="e.g. 90" value={String(form.health_suspension_days ?? "")}
+                  onChange={v => setForm({ ...form, health_suspension_days: v === "" ? null : Number(v) })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Return at</label>
+                <Input placeholder="e.g. 55" value={String(form.health_reinstatement_score ?? "")}
+                  onChange={v => setForm({ ...form, health_reinstatement_score: v === "" ? null : Number(v) })} />
+              </div>
+            </div>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+              Return-at must be above the threshold. Health is earned from work a suspended
+              provider cannot do, so reinstating them at the same score would re-suspend
+              them the same day, permanently.
+            </p>
+          </div>
+
           {errors.length > 0 && errors.map(e => <p key={e} style={{ fontSize: 11, color: "var(--danger-text)" }}>{e}</p>)}
           <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
             <Btn variant="secondary" onClick={runPreview}>Validate &amp; Preview</Btn>
