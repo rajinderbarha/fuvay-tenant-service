@@ -73,6 +73,10 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
       { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <IdCard size={16}/>,       requiredPermission: "staff:read"                    },
       { id: "complaints", href: "/admin/home-services/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: "home_services:complaints:view" },
+      // Support requests raised by providers from the tenant portal. The queue
+      // and its detail page were built and are live, but nothing linked to
+      // them, so a provider could raise a request no admin would ever see.
+      { id: "support",    href: "/admin/support",    label: "Support Requests", icon: <HelpCircle size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       // "Complaint Policies" folded into the Complaints page as a "Policies"
       // tab 2026-08-05 at explicit user request -- removed as a separate
       // nav item. /admin/complaint-policies route stays live, unlinked.
@@ -102,6 +106,9 @@ const NAV_GROUPS: NavGroup[] = [
       // explicit user request -- removed as a separate nav item.
       // /admin/reports route stays live, unlinked.
       { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
+      // The provider-facing assistant's own console -- its knowledge base and
+      // escalations. Live, and previously unreachable.
+      { id: "tenant-assistant", href: "/admin/tenant-assistant", label: "Tenant Assistant", icon: <Inbox size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -126,6 +133,12 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
       { id: "roles",              href: "/admin/roles",              label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
       { id: "permissions",        href: "/admin/permissions",        label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
+      // Terms and privacy policy: authored here, published from here, and read
+      // by the customer app, the staff app and the tenant portal. The engine,
+      // its admin console and all three consumers were built, but neither
+      // router was mounted and no sidebar entry existed -- so the one surface
+      // that controls what every app shows its users was unreachable twice over.
+      { id: "legal",              href: "/admin/legal",              label: "Legal Documents", icon: <FileTextIcon size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "media",              href: "/admin/media",              label: "Media",      icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "settings",           href: "/admin/settings",           label: "Settings",   icon: <Settings size={16}/>,   requiredPermission: SUPER_ADMIN_ONLY },
     ],

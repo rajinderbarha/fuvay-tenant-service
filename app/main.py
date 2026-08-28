@@ -1051,6 +1051,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Tenant Home Services dashboard. Fully built -- service, jobs list and job
     # detail -- but never added here, so /v1/tenant/home-services/dashboard
     # 404'd and the provider's operational home screen had no backend at all.
+    # Legal documents (terms, privacy policy) -- authored and published by the
+    # admin, read by every app. Both routers were built with an admin console
+    # and consumers in the super-admin, tenant portal, customer app and staff
+    # app, but neither was mounted, so /v1/admin/legal and /v1/public/legal
+    # both 404'd and no app could show a policy at all.
+    from app.engines.legal_documents.admin_router import router as legal_admin_router
+    from app.engines.legal_documents.public_router import router as legal_public_router
     from app.engines.execution.home_services_dashboard_router import (
         router as hs_tenant_dashboard_router,
     )
@@ -1076,6 +1083,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         hs_finance_monetization_router, hs_topup_plan_router,
         hs_topup_plan_catalog_admin_router, hs_topup_plan_catalog_tenant_router,
         hs_tenant_dashboard_router,
+        legal_admin_router, legal_public_router,
     ]:
         app.include_router(_unmounted)
 
