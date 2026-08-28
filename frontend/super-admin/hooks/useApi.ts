@@ -12,6 +12,11 @@ export interface ApiState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** Domain error code behind `error` (e.g. "UNAUTHORIZED"), when the failure
+   *  came from the API rather than the network. Callers that must tell "the
+   *  server refused you" apart from "the server could not be reached" need
+   *  this -- the message string alone cannot distinguish them. */
+  errorCode: string | null;
   requestId: string | null;
   refetch: () => void;
 }
@@ -30,19 +35,21 @@ export function useApi<T>(
   const [data,      setData]      = useState<T | null>(null);
   const [loading,   setLoading]   = useState(enabled);
   const [error,     setError]     = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
   const runRef = useRef(0);
 
   const run = useCallback(async () => {
-    if (!enabled) { setLoading(false); setData(null); setError(null); return; }
+    if (!enabled) { setLoading(false); setData(null); setError(null); setErrorCode(null); return; }
     const id = ++runRef.current;
-    setLoading(true); setError(null); setRequestId(null);
+    setLoading(true); setError(null); setErrorCode(null); setRequestId(null);
     try {
       const result = await fetcher();
       if (id === runRef.current) setData(result);
     } catch (e) {
       if (id === runRef.current) {
         setError(e instanceof ServiceOSError ? e.message : "An unexpected error occurred.");
+        setErrorCode(e instanceof ServiceOSError ? e.code : null);
         setRequestId(e instanceof ServiceOSError ? e.requestId ?? null : null);
       }
     } finally {
@@ -52,7 +59,7 @@ export function useApi<T>(
   }, [enabled, ...deps]);
 
   useEffect(() => { run(); }, [run]);
-  return { data, loading, error, requestId, refetch: run };
+  return { data, loading, error, errorCode, requestId, refetch: run };
 }
 
 export function useAction<T, A extends unknown[]>(

@@ -20,16 +20,34 @@ import { useApi } from "./useApi";
  * rendered its content to someone holding an expired token, because "no
  * permission required" was being read as "no session required".
  *
- * So: `authenticated === false` means the server did not confirm a session,
- * and no route may render regardless of what it requires.
+ * `authenticated` is deliberately THREE-valued, not two:
+ *
+ *   true   the server confirmed the session
+ *   false  the server REFUSED it -- the only state that ends a session
+ *   null   we cannot tell: still loading, or the request failed for a reason
+ *          that says nothing about the token (network down, 500, a restarting
+ *          backend, or a request aborted because the admin clicked a link)
+ *
+ * Collapsing that third case into `false` signs valid admins out over a
+ * transient blip. Withholding content while unsure is safe; destroying a live
+ * session is not. `unreachable` lets the gate show "try again" instead of
+ * spinning forever in the null state.
  */
 export function usePermissions() {
   const me = useApi<AdminUser>(useCallback(() => authApi.me(), []));
 
-  // Resolved and confirmed by the server, or not resolved at all.
-  const authenticated: boolean | null = me.loading ? null : Boolean(me.data && !me.error);
+  // Only an explicit refusal from the server counts as "not signed in".
+  const refused = me.errorCode === "UNAUTHORIZED";
+  const authenticated: boolean | null =
+    me.loading ? null
+    : me.data   ? true
+    : refused   ? false
+    : null; // reached a verdict about nothing -- leave the session alone
+
+  const unreachable = !me.loading && !me.data && !refused && me.error !== null;
+
   const permissions: string[] | null =
-    me.loading || !authenticated ? null : (me.data?.permissions ?? []);
+    authenticated === true ? (me.data?.permissions ?? []) : null;
 
   const has = (permission: string) => {
     if (permissions === null) return false; // fail closed while loading or unauthenticated
@@ -40,6 +58,8 @@ export function usePermissions() {
     has,
     loading: me.loading,
     authenticated,
+    unreachable,
+    retry: me.refetch,
     role: me.data?.role ?? null,
     permissions,
   };

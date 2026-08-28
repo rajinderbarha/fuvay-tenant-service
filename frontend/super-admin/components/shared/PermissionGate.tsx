@@ -81,7 +81,28 @@ export function RequirePermission({
   parentLabel?: string;
   children: React.ReactNode;
 }) {
-  const { permissions, role, loading, authenticated } = usePermissions();
+  const { permissions, role, loading, authenticated, unreachable, retry } = usePermissions();
+
+  // Could not reach the server to check. That says nothing about the token, so
+  // the session is left intact and NOT cleared -- signing an admin out over a
+  // network blip is the failure mode this branch exists to prevent. Content
+  // still stays withheld, because unsure is not the same as allowed.
+  if (unreachable) {
+    return (
+      <div role="status" style={{ minHeight: 320, display: "flex", alignItems: "center",
+        justifyContent: "center", flexDirection: "column", gap: 12, textAlign: "center" }}>
+        <p style={{ margin: 0, color: "var(--text-secondary)" }}>
+          Can&apos;t reach the server to confirm your session.
+        </p>
+        <button type="button" onClick={retry}
+          style={{ padding: "8px 16px", borderRadius: 8, cursor: "pointer",
+            border: "1px solid var(--border-default)", background: "var(--bg-surface)",
+            color: "var(--text-primary)" }}>
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (loading || authenticated === null) {
     return <Skeleton height={320}/>;

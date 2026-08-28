@@ -41,8 +41,7 @@ class TestAdminDistinguishesUnauthenticatedFromUnprivileged:
         # The bug was exactly this collapse:
         #   permissions = me.loading ? null : (me.data?.permissions ?? [])
         # A failed fetch produced [], which reads as "resolved, holds nothing".
-        assert "me.error" in src
-        assert "!authenticated ? null" in src
+        assert "authenticated === true ? (me.data?.permissions ?? [])" in src
 
     def test_permissions_are_null_when_unauthenticated(self):
         """`has()` fails closed only if permissions is null, not []."""
@@ -92,9 +91,10 @@ class TestTenantGateAsksTheServer:
 
     def test_it_withholds_children_until_confirmed(self):
         src = _read(TP / "components/shared/RequireSession.tsx")
-        assert 'if (state !== "authenticated")' in src
-        # children only reachable past that guard
-        assert src.index('state !== "authenticated"') < src.index("<>{children}</>")
+        # Children are reachable through exactly ONE branch, and that branch is
+        # conditioned on the confirmed state.
+        assert src.count("{children}") == 1
+        assert 'if (state === "authenticated") return <>{children}</>;' in src
 
     def test_a_rejection_clears_the_session(self):
         src = _read(TP / "components/shared/RequireSession.tsx")
@@ -130,3 +130,52 @@ class TestTheBackendContractTheGatesRelyOn:
         assert idx != -1
         window = src[idx:idx + 500]
         assert "get_current_user" in window or "Depends" in window
+
+
+class TestOnlyARefusalEndsASession:
+    """The other half of the contract, and a defect the first fix shipped with.
+
+    Withholding content is only half-right if the guard also throws away good
+    sessions. The first version treated ANY rejected /auth/me as "signed out",
+    so a network blip, a 500, or a request aborted by clicking a link logged a
+    valid user out. A browser test caught it: me() rejected with "Failed to
+    fetch" -- not a 401 -- and the guard cleared the session.
+    """
+
+    def test_tenant_only_clears_on_an_authentication_rejection(self):
+        src = _read(TP / "components/shared/RequireSession.tsx")
+        assert 'err.code === "UNAUTHORIZED"' in src
+        # Every clearSession() must sit behind a refusal or a missing token,
+        # never behind a bare catch.
+        assert "isAuthRejection(err)" in src
+
+    def test_tenant_ignores_failures_caused_by_navigating_away(self):
+        """A navigation aborts in-flight requests; that is not a rejection."""
+        src = _read(TP / "components/shared/RequireSession.tsx")
+        assert "pagehide" in src and "beforeunload" in src
+        assert "if (cancelled || leaving) return;" in src
+
+    def test_tenant_retries_before_giving_up(self):
+        src = _read(TP / "components/shared/RequireSession.tsx")
+        assert "MAX_RETRIES" in src
+        assert '"unavailable"' in src
+
+    def test_admin_authenticated_is_three_valued(self):
+        """null (cannot tell) must be distinct from false (refused)."""
+        src = _read(SA / "hooks/usePermissions.ts")
+        assert 'me.errorCode === "UNAUTHORIZED"' in src
+        assert "unreachable" in src
+
+    def test_useapi_exposes_the_error_code(self):
+        """Without it the hook cannot tell a 401 from a 500 -- the message
+        string alone does not distinguish them."""
+        src = _read(SA / "hooks/useApi.ts")
+        assert "errorCode: string | null;" in src
+        assert "setErrorCode(e instanceof ServiceOSError ? e.code : null);" in src
+
+    def test_admin_gate_does_not_clear_the_session_when_unreachable(self):
+        src = _read(SA / "components/shared/PermissionGate.tsx")
+        head = src[src.index("export function RequirePermission"):]
+        block = head[head.index("if (unreachable)"):head.index("if (loading ||")]
+        assert "clearSession" not in block
+        assert "Try again" in block
