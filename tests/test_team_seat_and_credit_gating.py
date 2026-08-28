@@ -117,6 +117,11 @@ class TestBookedWorkStillFinishes:
         assert "assert_wip_capacity" in src
         assert "assert_booking_allowed" not in src
 
+    def test_only_assigned_jobs_consume_wip_capacity(self):
+        from app.engines.vertical_catalog import seat_enforcement
+        src = inspect.getsource(seat_enforcement.get_wip_usage)
+        assert "assigned_staff_id IS NOT NULL" in src
+
 
 class TestBookabilityNoLongerReadsTheDeposit:
     def test_the_dropped_columns_are_gone_from_the_query(self):
@@ -146,8 +151,15 @@ class TestDocumentsAreNotTenantManaged:
     """
 
     def test_the_documents_menu_is_gone(self):
+        """Checks the SIDEBAR, not the URL map.
+
+        nav-config.ts was rewritten to a pure path->id resolver while this was
+        being built, so asserting against it passed vacuously while a Documents
+        entry sat in TenantLayout pointing at a different route.
+        """
         from pathlib import Path
-        src = Path("frontend/tenant-portal/lib/nav-config.ts").read_text(encoding="utf-8")
+        src = Path("frontend/tenant-portal/components/layout/TenantLayout.tsx").read_text(
+            encoding="utf-8")
         assert 'label: "Documents"' not in src
 
     def test_the_verified_badge_survives(self):

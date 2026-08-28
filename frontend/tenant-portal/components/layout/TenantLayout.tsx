@@ -28,6 +28,7 @@ import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryD
 import { CreditPill } from "./CreditPill";
 import { useSetupStatus, type SetupStatus } from "../../hooks/useSetupStatus";
 import { AssistantLauncher } from "../assistant/AssistantPanel";
+import { Drawer, Input } from "@serviceos/design-system";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
 // per shell mount and refreshable after an admin entitlement mutation —
@@ -78,85 +79,65 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Business Profile was pulled from the nav on 2026-08-04 as "no longer using",
-    // leaving only Compliance here. What went with it was every route to the business's
-    // own settings: Business Hours lives in the active Coverage & Hours workspace and is reachable
-    // ONLY through Business Profile, so once setup finished there was no way, anywhere in
-    // the portal, to change opening hours, slot length or bookings per slot. Those are
-    // the numbers customer booking slots are generated from -- a provider who wanted to
-    // open an hour earlier had no screen to say so on.
-    //
-    // Restored as a Business group, matching the reference IA, which groups Business
-    // Profile and Documents exactly this way.
-    label: "Business",
-    items: [
-      // These are live business settings, not onboarding-only screens. Coverage,
-      // weekly hours and booking controls stay together so providers do not see
-      // two different editors for the same customer booking rules.
-      { id: "business-profile",    href: "/profile",                                          label: "Business Profile", icon: <Building2 size={16}/> },
-      { id: "business-hours",      href: "/business/coverage-hours",              label: "Coverage & Hours", icon: <Clock size={16}/> },
-      { id: "verification-documents", href: "/business/verification-documents",   label: "Documents", icon: <FileText size={16}/> },
-      { id: "provider-compliance", href: "/provider/compliance",                              label: "Compliance", icon: <Shield size={16}/> },
-    ],
-  },
-  {
-    // UX-03 groups "Bookings" and "Jobs" separately; the two pipelines are
-    // consolidated into one workspace here, which is what that separation
-    // was eventually resolved into.
-    label: "Operations",
+    label: "Daily work",
     items: [
       { id: "hs-bookings-jobs",   href: "/home-services/bookings-jobs",   label: "Bookings & Jobs", icon: <Wrench size={16}/>, badge: 0 },
-      { id: "hs-dispatch",        href: "/home-services/dispatch",        label: "Assignment & Dispatch", icon: <Truck size={16}/> },
-      { id: "appointments",       href: "/appointments",                  label: "Appointments", icon: <CalendarCheck size={16}/> },
+      { id: "hs-dispatch",        href: "/home-services/dispatch",        label: "Dispatch", icon: <Truck size={16}/> },
       { id: "hs-availability",    href: "/home-services/availability",    label: "Availability", icon: <Clock size={16}/> },
     ],
   },
   {
-    // Coverage areas now live in Business -> Coverage & Hours. Keeping a
-    // second Service Areas item here created two entry points for the same
-    // provider rule, so Services & Coverage is focused on the catalog itself.
-    label: "Services & Coverage",
+    label: "Business",
     items: [
+      { id: "customers",    href: "/customers",              label: "Customers", icon: <Users2 size={16}/> },
       { id: "hs-services",  href: "/home-services/services",  label: "Services & Pricing", icon: <ListChecks size={16}/> },
-      { id: "inventory",    href: "/inventory",               label: "Parts & Inventory", icon: <Package size={16}/> },
-    ],
-  },
-  {
-    label: "Team",
-    items: [
       { id: "hs-team", href: "/home-services/team", label: "Team Members", icon: <UserCog size={16}/> },
+      { id: "hs-finance", href: "/home-services/finance", label: "Finance & Credits", icon: <Wallet size={16}/> },
+    ],
+  },
+];
+
+// Occasional destinations stay searchable and one click away without making
+// the daily sidebar a sitemap of the entire provider application.
+const SECONDARY_NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Business setup",
+    items: [
+      { id: "business-profile", href: "/profile", label: "Business Profile", icon: <Building2 size={17}/> },
+      { id: "business-hours", href: "/business/coverage-hours", label: "Coverage & Hours", icon: <Clock size={17}/> },
+      // Documents are not a provider-managed surface: approval verifies the
+      // business, and what they see for it is the Verified badge on their
+      // profile. The route stays live and is linked from the profile ONLY when
+      // a document actually needs their action (rejected or expired) --
+      // otherwise an expired document would be an unfixable dead end.
+      { id: "provider-compliance", href: "/provider/compliance", label: "Compliance", icon: <Shield size={17}/> },
+      { id: "inventory", href: "/inventory", label: "Parts & Inventory", icon: <Package size={17}/> },
     ],
   },
   {
-    // UX-03 groups: "Customers" + "Complaints and Support".
-    label: "Customers",
+    label: "Customer care & growth",
     items: [
-      { id: "customers",     href: "/customers",               label: "Customers", icon: <Users2 size={16}/> },
-      { id: "hs-reviews",    href: "/home-services/reviews",   label: "Reviews", icon: <Star size={16}/> },
-      // UX-03 pointed "Complaints" at /reviews, which is a different
-      // surface entirely -- corrected to the real complaints workspace.
-      { id: "hs-complaints", href: "/home-services/complaints", label: "Complaints", icon: <AlertCircle size={16}/> },
-      { id: "hs-remedies", href: "/provider/refund-requests", label: "Refunds & Warranty", icon: <Shield size={16}/> },
-      { id: "marketing",     href: "/marketing",               label: "Marketing", icon: <Megaphone size={16}/> },
+      { id: "hs-reviews", href: "/home-services/reviews", label: "Reviews", icon: <Star size={17}/> },
+      { id: "hs-complaints", href: "/home-services/complaints", label: "Complaints", icon: <AlertCircle size={17}/> },
+      { id: "hs-remedies", href: "/provider/refund-requests", label: "Refunds & Warranty", icon: <Shield size={17}/> },
+      { id: "marketing", href: "/marketing", label: "Marketing", icon: <Megaphone size={17}/> },
     ],
   },
   {
-    // UX-03 group: "Finance and Credits". Its three separate finance links
-    // are tabs of the consolidated finance workspace now.
-    label: "Finance",
+    label: "Operations & finance",
     items: [
-      { id: "hs-finance",         href: "/home-services/finance",         label: "Finance & Credits", icon: <Wallet size={16}/> },
-      { id: "hs-direct-payments", href: "/home-services/direct-payments", label: "Direct Payments", icon: <CreditCard size={16}/> },
+      { id: "appointments", href: "/appointments", label: "Appointments", icon: <CalendarCheck size={17}/> },
+      { id: "hs-direct-payments", href: "/home-services/direct-payments", label: "Direct Payments", icon: <CreditCard size={17}/> },
+      { id: "media", href: "/media", label: "Media", icon: <Image size={17}/> },
+      { id: "reports", href: "/reports", label: "Reports", icon: <BarChart2 size={17}/> },
+      { id: "activity", href: "/activity", label: "Activity & Audit", icon: <Activity size={17}/> },
     ],
   },
   {
-    label: "More",
+    label: "Account & help",
     items: [
-      { id: "media",        href: "/media",           label: "Media", icon: <Image size={16}/> },
-      { id: "reports",      href: "/reports",         label: "Reports", icon: <BarChart2 size={16}/> },
-      { id: "activity",     href: "/activity",        label: "Activity", icon: <Activity size={16}/> },
-      { id: "settings",     href: "/settings",        label: "Settings", icon: <Settings size={16}/> },
-      { id: "help-support", href: "/help-support",    label: "Help & Support", icon: <HelpCircle size={16}/> },
+      { id: "settings", href: "/settings", label: "Settings", icon: <Settings size={17}/> },
+      { id: "help-support", href: "/help-support", label: "Help & Support", icon: <HelpCircle size={17}/> },
     ],
   },
 ];
@@ -363,9 +344,17 @@ function TenantShellInner({ children, activeNav }: {
   // whole app "looking old". Now defaults open and remembers the user's
   // last choice, same persistence pattern as useTheme.
   const [collapsed,    setCollapsed]    = useState(false);
+  const [compactViewport, setCompactViewport] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem("serviceos-tenant-sidebar-collapsed");
     if (saved != null) setCollapsed(saved === "1");
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1366px)");
+    const sync = () => setCompactViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
   }, []);
   const setCollapsedPersist = useCallback((v: boolean) => {
     setCollapsed(v);
@@ -376,6 +365,8 @@ function TenantShellInner({ children, activeNav }: {
   const [myAvatar,     setMyAvatar]     = useState<string | null>(null);
   const [setupOpen,    setSetupOpen]    = useState(false);
   const [setupPct,     setSetupPct]     = useState<number | null>(null);
+  const [manageOpen,   setManageOpen]   = useState(false);
+  const [manageSearch, setManageSearch] = useState("");
   const [entitledModuleKeys, setEntitledModuleKeys] = useState<string[]>([]);
   const [entitlementsLoaded, setEntitlementsLoaded] = useState(false);
   // Multi-vertical Phase 3: real vertical capabilities from the backend
@@ -489,10 +480,11 @@ function TenantShellInner({ children, activeNav }: {
     clearSession();
   }
 
-  const w = collapsed ? 84 : 248;
+  const sidebarCollapsed = collapsed || compactViewport;
+  const w = sidebarCollapsed ? 76 : 248;
 
   const hasAnyModule = entitlementsLoaded ? entitledModuleKeys.length > 0 : true;
-  const ALWAYS_VISIBLE_GROUPS = new Set(["Overview", "More"]);
+  const ALWAYS_VISIBLE_GROUPS = new Set(["Overview"]);
   // Multi-vertical Phase 3: nav items requiring a specific real capability,
   // resolved from the backend's vertical registry (GET /v1/tenant/navigation
   // -> vertical_context.capabilities) instead of a hardcoded per-vertical-key
@@ -544,7 +536,7 @@ function TenantShellInner({ children, activeNav }: {
   // in sync with that, so a coaching tenant saw "Technicians" in the page
   // but "Staff & Technicians" in the menu that led there.
   const itemLabel = (item: NavItem): string => {
-    if (item.id !== "provider-staff") return item.label;
+    if (item.id !== "hs-team" && item.id !== "provider-staff") return item.label;
     if (tenant.vertical === "coaching") return "Staff & Trainers";
     if (tenant.vertical === "real_estate") return "Staff & Agents";
     return "Staff & Technicians";
@@ -557,6 +549,15 @@ function TenantShellInner({ children, activeNav }: {
   const visibleNavGroups = (hasAnyModule ? NAV_GROUPS : NAV_GROUPS.filter(g => ALWAYS_VISIBLE_GROUPS.has(g.label)))
     .map(g => ({ ...g, items: g.items.filter(it => itemVisible(it.id)).map(it => ({ ...it, label: itemLabel(it) })) }))
     .filter(g => g.items.length > 0);
+  const normalizedManageSearch = manageSearch.trim().toLowerCase();
+  const visibleSecondaryGroups = SECONDARY_NAV_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items
+        .filter(item => itemVisible(item.id))
+        .filter(item => !normalizedManageSearch || `${item.label} ${group.label}`.toLowerCase().includes(normalizedManageSearch)),
+    }))
+    .filter(group => group.items.length > 0);
 
   return (
     <TenantShellCtx.Provider value={true}>
@@ -582,9 +583,9 @@ function TenantShellInner({ children, activeNav }: {
         transition: "width 0.22s cubic-bezier(0.4,0,0.2,1)", overflow: "hidden",
       }}>
         {/* Logo */}
-        <div style={{ height: 64, padding: collapsed ? "0 16px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <FuvayLogo compact={collapsed} height={34}/>
-          {!collapsed && (
+        <div style={{ height: 64, padding: sidebarCollapsed ? "0 14px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
+          <FuvayLogo compact={sidebarCollapsed} height={34}/>
+          {!sidebarCollapsed && (
             <div style={{ minWidth: 0 }}>
               <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
                 {tenant.tenantName ?? "My Business"}
@@ -607,7 +608,7 @@ function TenantShellInner({ children, activeNav }: {
             const isActive = (item: NavItem) =>
               activeNav === item.id || activeNav === item.href?.replace(/^\//, "");
 
-            if (collapsed) {
+            if (sidebarCollapsed) {
               // Boxed rail: one connected, bordered, rounded container per
               // group with 1px separators between items -- gap between
               // containers signals group boundaries (a group-name heading
@@ -629,7 +630,7 @@ function TenantShellInner({ children, activeNav }: {
                 }}>
                   {group.items.map((item, ii) => (
                     <SidebarItem
-                      key={item.id} item={item} active={isActive(item)} collapsed
+                      key={item.id} item={item} active={isActive(item)} collapsed={sidebarCollapsed}
                       isLast={ii === group.items.length - 1}
                     />
                   ))}
@@ -692,15 +693,29 @@ function TenantShellInner({ children, activeNav }: {
 
         {/* Footer */}
         <div style={{ padding: "10px 8px", borderTop: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column", gap: 2 }}>
-          {!collapsed && (
-            <button onClick={tour.restart} style={footerBtnStyle(collapsed)}>
+          <button
+            onClick={() => setManageOpen(true)}
+            aria-label="Manage business"
+            title="Manage business"
+            style={footerBtnStyle(sidebarCollapsed)}
+          >
+            <Settings size={15} style={{ flexShrink: 0 }}/>
+            {!sidebarCollapsed && <span style={{ fontSize: 12 }}>Manage business</span>}
+          </button>
+          {!sidebarCollapsed && (
+            <button onClick={tour.restart} style={footerBtnStyle(sidebarCollapsed)}>
               <HelpCircle size={15} style={{ flexShrink: 0 }}/><span style={{ fontSize: 12 }}>Help & Tour</span>
             </button>
           )}
-          <button onClick={() => setCollapsedPersist(!collapsed)} style={footerBtnStyle(collapsed)}>
-            {collapsed ? <ChevronRight size={15} style={{ flexShrink: 0 }}/> : <ChevronLeft size={15} style={{ flexShrink: 0 }}/>}
-            {!collapsed && <span style={{ fontSize: 12 }}>Collapse</span>}
-          </button>
+          {!compactViewport && (
+            <button onClick={() => setCollapsedPersist(!collapsed)} style={footerBtnStyle(sidebarCollapsed)}>
+              {sidebarCollapsed
+                ? <ChevronRight size={15} style={{ flexShrink: 0 }}/>
+                : <ChevronLeft size={15} style={{ flexShrink: 0 }}/>
+              }
+              {!sidebarCollapsed && <span style={{ fontSize: 12 }}>Collapse</span>}
+            </button>
+          )}
         </div>
       </aside>
 
@@ -708,7 +723,7 @@ function TenantShellInner({ children, activeNav }: {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top nav */}
         <header className="provider-topbar" style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
-          <div style={{ flex: 1, maxWidth: 360 }}>
+          <div className="provider-global-search" style={{ flex: 1, maxWidth: 360 }}>
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
               <input
@@ -720,7 +735,7 @@ function TenantShellInner({ children, activeNav }: {
             </div>
           </div>
           <div style={{ flex: 1 }}/>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 999, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
+          <div className="provider-online-status" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 999, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
@@ -825,7 +840,7 @@ function TenantShellInner({ children, activeNav }: {
               display: "flex", alignItems: "center", gap: 10, background: "none", border: "none",
               cursor: "pointer", padding: "4px 4px 4px 10px", borderRadius: "var(--radius-lg)",
               fontFamily: "inherit" }}>
-              <div style={{ textAlign: "right" }}>
+              <div className="provider-profile-copy" style={{ textAlign: "right" }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</p>
               </div>
@@ -905,6 +920,51 @@ function TenantShellInner({ children, activeNav }: {
         onClose={() => setSetupOpen(false)}
         setup={setupStatus}
       />
+
+      <Drawer open={manageOpen} onClose={() => { setManageOpen(false); setManageSearch(""); }} title="Manage business">
+        <p style={{ margin: "0 0 16px", color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5 }}>
+          Business settings and occasional tools. Your daily work stays in the main menu.
+        </p>
+        <div style={{ position: "relative", marginBottom: 20 }}>
+          <Search size={15} aria-hidden="true" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", zIndex: 1 }}/>
+          <Input
+            aria-label="Search business tools"
+            placeholder="Search settings and tools"
+            value={manageSearch}
+            onChange={event => setManageSearch(event.target.value)}
+            style={{ paddingLeft: 36 }}
+          />
+        </div>
+        {visibleSecondaryGroups.length === 0 ? (
+          <div style={{ padding: "28px 12px", textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
+            No tools match “{manageSearch}”.
+          </div>
+        ) : visibleSecondaryGroups.map(group => (
+          <section key={group.label} style={{ marginBottom: 22 }}>
+            <p style={{ margin: "0 0 8px", color: "var(--text-tertiary)", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              {group.label}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              {group.items.map(item => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  onClick={() => { setManageOpen(false); setManageSearch(""); }}
+                  style={{
+                    minHeight: 76, padding: 12, borderRadius: "var(--radius-lg)",
+                    border: "1px solid var(--border)", background: "var(--surface-sunken)",
+                    color: "var(--text-primary)", textDecoration: "none", display: "flex",
+                    flexDirection: "column", justifyContent: "space-between", gap: 10,
+                  }}
+                >
+                  <span style={{ color: "var(--accent)", display: "flex" }}>{item.icon}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 650, lineHeight: 1.25 }}>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
+      </Drawer>
 
       {tour.mounted && <TourGuide tour={tour}/>}
       <Toaster toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))}/>
