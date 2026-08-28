@@ -1031,6 +1031,99 @@ function MonetizationTab() {
   );
 }
 
+// ── Credit thresholds ───────────────────────────────────────────────────────
+// The two numbers that decide when a provider is warned and when their
+// bookings stop. They live on the activation finance policy, which is a
+// different versioned record from the monetization policy above -- so this
+// card drives its own draft/publish cycle rather than sharing that form.
+//
+// They had no admin surface at all: the only card that ever edited this policy
+// set the starter-purchase fields, which were retired with the activation
+// requirement. The floor is what protects the platform now, so it needs to be
+// something an operator can actually change.
+function CreditThresholdsSection({ onToast }: { onToast: (msg: string, variant?: ToastItem["variant"]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [warn, setWarn] = useState("");
+  const [floor, setFloor] = useState("");
+  const [reason, setReason] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const currentApi = useApi(useCallback(() => homeServicesTopupPlanApi.getCurrent(), []));
+  const saveDraftAction = useAction((p: Record<string, unknown>) => homeServicesTopupPlanApi.saveDraft(p));
+  const publishAction = useAction((r: string) => homeServicesTopupPlanApi.publish(r));
+  const current = currentApi.data as TopupPlan | null;
+
+  function startEdit() {
+    setWarn(String(current?.credit_warning_threshold ?? ""));
+    setFloor(String(current?.credit_booking_floor ?? ""));
+    setReason(""); setErrors([]); setOpen(true);
+  }
+
+  async function saveAndPublish() {
+    const payload = {
+      credit_warning_threshold: Number(warn),
+      credit_booking_floor: Number(floor),
+      change_summary: reason.trim() || "Credit thresholds updated",
+    };
+    const draft = await saveDraftAction.execute(payload);
+    if (!draft) {
+      setErrors([saveDraftAction.error ?? "Could not save the draft."]);
+      return;
+    }
+    const published = await publishAction.execute(reason.trim());
+    if (!published) {
+      setErrors([publishAction.error ?? "Could not publish."]);
+      return;
+    }
+    setOpen(false); currentApi.refetch();
+    onToast("Credit thresholds published.");
+  }
+
+  return (
+    <Card padding={16}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Credit thresholds</p>
+        <Btn variant="ghost" size="sm" icon={<Sparkles size={14} />} onClick={startEdit}>Edit</Btn>
+      </div>
+      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+        When a provider is warned, and the balance below which they stop receiving new
+        bookings. Work already booked always finishes — the floor stops the hole being dug
+        deeper, it never strands a customer who has already booked.
+      </p>
+      {currentApi.loading ? <Skeleton height={54} /> : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, fontSize: 12 }}>
+          <KV label="Warn below" value={current ? money(current.credit_warning_threshold) : "—"} />
+          <KV label="Stop new bookings below" value={current ? money(current.credit_booking_floor) : "—"} />
+        </div>
+      )}
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Edit credit thresholds" size="sm">
+        <label style={{ fontSize: 12, fontWeight: 600 }}>Warn below (₹)</label>
+        <Input value={warn} onChange={setWarn} placeholder="e.g. 300" />
+        <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 10 }}>
+          Stop new bookings below (₹)
+        </label>
+        <Input value={floor} onChange={setFloor} placeholder="e.g. 100" />
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+          The warning must be at or above the floor — a warning below it would only fire
+          after bookings had already stopped.
+        </p>
+        {errors.map(e => <p key={e} style={{ fontSize: 11, color: "var(--danger-text)", margin: "6px 0 0" }}>{e}</p>)}
+        <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginTop: 12 }}>
+          Publish reason (required)
+        </label>
+        <Input value={reason} onChange={setReason} />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+          <Btn variant="ghost" onClick={() => setOpen(false)}>Cancel</Btn>
+          <Btn variant="primary" disabled={!reason.trim() || !warn.trim() || !floor.trim()}
+            loading={saveDraftAction.loading || publishAction.loading}
+            onClick={saveAndPublish}>Publish</Btn>
+        </div>
+      </Modal>
+    </Card>
+  );
+}
+
 // ── Top-up Plans ────────────────────────────────────────────────────────────
 // Lives under Credits & Top-ups > "Top-up Plans" sub-tab.
 //
@@ -1046,6 +1139,7 @@ function TopupPackagesPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Toaster toasts={toasts} onRemove={remove} />
+      <CreditThresholdsSection onToast={push} />
       <TopupPackagesSection onToast={push} />
     </div>
   );

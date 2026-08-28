@@ -399,9 +399,15 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 13 }}>Verification documents</h3>
-            <p style={{ margin: "3px 0 0", color: "var(--text-tertiary)", fontSize: 11 }}>Required files must be reviewed individually before approval.</p>
+            {/* Approving the provider verifies these in the same action, so
+                there is no per-document Verify step any more. They stay listed
+                and openable because an admin should see what they are
+                approving -- and "Request changes" stays, because otherwise
+                spotting one bad document would leave no option but rejecting
+                the whole provider. */}
+            <p style={{ margin: "3px 0 0", color: "var(--text-tertiary)", fontSize: 11 }}>Verified automatically when you approve the provider. Open one to check it first, or send it back.</p>
           </div>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{r.document_summary?.verified ?? 0}/{r.document_summary?.required ?? 0} verified</span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{r.document_summary?.missing ? `${r.document_summary.missing} not uploaded` : `${r.document_summary?.required ?? 0} required`}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {(r.documents ?? []).map(document => {
@@ -420,9 +426,7 @@ function OnboardingReviewPanel({ tenantId, onDone }: { tenantId: string; onDone:
                       try { await openAdminMediaPreview(document.media_asset_id!); }
                       catch (error) { setActionError(error instanceof Error ? error.message : "Could not open this document."); }
                     }}>View</Btn>}
-                    {reviewable && <Btn variant="ghost" disabled={busy !== null} onClick={() => void reviewDocument(document.document_id!, "verified")}>Verify</Btn>}
                     {reviewable && <Btn variant="ghost" disabled={busy !== null} onClick={() => { setDocumentDecision({ documentId: document.document_id!, decision: "changes_requested" }); setReason(""); setDecision(null); }}>Request changes</Btn>}
-                    {reviewable && <Btn variant="ghost" disabled={busy !== null} onClick={() => { setDocumentDecision({ documentId: document.document_id!, decision: "rejected" }); setReason(""); setDecision(null); }}>Reject</Btn>}
                   </div>
                 </div>
                 {documentDecision?.documentId === document.document_id && (

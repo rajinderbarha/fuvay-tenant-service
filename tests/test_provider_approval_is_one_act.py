@@ -95,3 +95,47 @@ class TestTheTenantSideStillReadsAsVerified:
         from app.engines.provider_portal import router
         src = inspect.getsource(router._evaluate_provider_bookability)
         assert "REQUIRED_DOCUMENT_ACTION_NEEDED" in src
+
+
+class TestTheAdminDocumentWorkflowIsGone:
+    """Approving verifies the documents, so reviewing each one is redundant."""
+
+    def test_the_per_document_verify_button_is_removed(self):
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(
+            encoding="utf-8")
+        assert 'reviewDocument(document.document_id!, "verified")' not in src
+
+    def test_documents_stay_visible_and_openable(self):
+        """An admin should see what they are approving."""
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(
+            encoding="utf-8")
+        assert "openAdminMediaPreview" in src
+        assert "Verification documents" in src
+
+    def test_request_changes_survives(self):
+        """Without it, spotting one bad document would leave no option but
+        rejecting the entire provider."""
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(
+            encoding="utf-8")
+        assert "Request changes" in src
+
+
+class TestCreditThresholdsAreEditable:
+    def test_the_floor_has_an_admin_surface(self):
+        from pathlib import Path
+        src = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(
+            encoding="utf-8")
+        # It had none: the only card that ever edited this policy set the
+        # starter-purchase fields, retired with the activation requirement.
+        assert "CreditThresholdsSection" in src
+        assert "Stop new bookings below" in src
+
+    def test_the_warning_cannot_sit_below_the_floor(self):
+        from app.engines.vertical_catalog.topup_plan_service import HomeServicesTopupPlanService
+        errs = HomeServicesTopupPlanService()._validate(
+            {"credit_booking_floor": 500, "credit_warning_threshold": 100})
+        # A warning below the floor would only fire after bookings had stopped.
+        assert any("at or above" in e for e in errs)
