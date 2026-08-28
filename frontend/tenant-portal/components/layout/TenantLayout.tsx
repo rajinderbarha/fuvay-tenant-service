@@ -452,9 +452,11 @@ function TenantShellInner({ children, activeNav }: {
   }, []);
 
   useEffect(() => {
+    // Session validity is RequireSession's job now -- it asks the server
+    // rather than checking that a (possibly expired) token string exists, and
+    // it withholds content instead of redirecting after the first paint.
+    // What remains here is the forced-password-change redirect.
     if (typeof window === "undefined") return;
-    const token = localStorage.getItem("serviceos_tenant_token");
-    if (!token) { window.location.href = "/login"; return; }
     if (localStorage.getItem("serviceos_force_pw_change") === "1") {
       window.location.href = "/change-password";
     }

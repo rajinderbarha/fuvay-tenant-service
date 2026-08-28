@@ -6,6 +6,7 @@
  */
 import { usePathname } from "next/navigation";
 import { TenantLayout } from "../../components/layout/TenantLayout";
+import { RequireSession } from "../../components/shared/RequireSession";
 import { resolveTenantNavId } from "../../lib/nav-config";
 
 // Sprint 34K: use centralized nav-config resolver
@@ -16,8 +17,12 @@ function pathToActiveNav(pathname: string): string {
 export default function TenantShellLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   return (
+    // RequireSession wraps the CHILDREN rather than the whole shell: the
+    // sidebar may paint, but no page content is rendered until the server has
+    // confirmed the session. Guarding here covers every /(tenant)/* route at
+    // once, current and future, the way the admin portal guards its own.
     <TenantLayout activeNav={pathToActiveNav(pathname)}>
-      {children}
+      <RequireSession>{children}</RequireSession>
     </TenantLayout>
   );
 }

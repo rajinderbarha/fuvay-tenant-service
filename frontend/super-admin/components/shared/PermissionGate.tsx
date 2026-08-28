@@ -1,4 +1,5 @@
 "use client";
+import { clearSession } from "../../lib/api";
 /**
  * FINAL-L5-05M — Reusable direct-route permission guard + shared
  * Permission Denied / read-only presentation components.
@@ -80,9 +81,23 @@ export function RequirePermission({
   parentLabel?: string;
   children: React.ReactNode;
 }) {
-  const { permissions, role, loading } = usePermissions();
+  const { permissions, role, loading, authenticated } = usePermissions();
 
-  if (loading || permissions === null) {
+  if (loading || authenticated === null) {
+    return <Skeleton height={320}/>;
+  }
+
+  // No confirmed session: render NOTHING and send them to sign in. This has to
+  // precede the permission check, because a route requiring "" would otherwise
+  // be allowed -- "needs no permission" is not "needs no session", and that is
+  // how pages stayed visible on an expired token. clearSession() is idempotent
+  // and already redirects.
+  if (!authenticated) {
+    if (typeof window !== "undefined") clearSession();
+    return <Skeleton height={320}/>;
+  }
+
+  if (permissions === null) {
     return <Skeleton height={320}/>;
   }
 
