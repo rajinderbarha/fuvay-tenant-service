@@ -91,6 +91,14 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     customer_photo_retention_days:   Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_proof_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # ── Credit reminder cadence ──────────────────────────────────────────────
+    # Hours between reminders at each level. NULL falls back to the service
+    # defaults (24 / 6 / 2), which escalate with severity rather than dripping
+    # at a fixed rate a provider would learn to mute.
+    credit_reminder_hours_low:     Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credit_reminder_hours_blocked: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credit_reminder_hours_arrears: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     customer_fee_model:              Mapped[str]            = mapped_column(String(30), default="NONE", nullable=False)
     customer_fee_percentage:         Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
     customer_fee_fixed_amount_minor: Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
@@ -142,6 +150,9 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "health_reinstatement_score": float(self.health_reinstatement_score) if self.health_reinstatement_score is not None else None,
             "customer_photo_retention_days": self.customer_photo_retention_days,
             "completion_proof_retention_days": self.completion_proof_retention_days,
+            "credit_reminder_hours_low": self.credit_reminder_hours_low,
+            "credit_reminder_hours_blocked": self.credit_reminder_hours_blocked,
+            "credit_reminder_hours_arrears": self.credit_reminder_hours_arrears,
             "customer_fee_refund_policy": self.customer_fee_refund_policy,
             "currency": self.currency,
             "effective_from": self.effective_from.isoformat() if self.effective_from else None,

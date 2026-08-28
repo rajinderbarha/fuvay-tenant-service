@@ -41,6 +41,9 @@ _DRAFT_FIELDS = {
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
     # Media retention: how long each kind of job photo is kept.
     "customer_photo_retention_days", "completion_proof_retention_days",
+    # How often a provider is reminded, per severity level.
+    "credit_reminder_hours_low", "credit_reminder_hours_blocked",
+    "credit_reminder_hours_arrears",
 }
 
 

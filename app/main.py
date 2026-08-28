@@ -123,12 +123,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _media_task = asyncio.create_task(_media_loop())
     logger.info("media_retention_loop.started")
 
+    # 14. Credit reminders: nudge a provider whose balance is running out, at a
+    # cadence matched to severity rather than a fixed drip.
+    from app.jobs.credit_reminders import background_loop as _reminder_loop
+    _reminder_task = asyncio.create_task(_reminder_loop())
+    logger.info("credit_reminders_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
     _sla_task.cancel()
     _media_task.cancel()
+    _reminder_task.cancel()
     _export_worker_task.cancel()
     _complaint_sla_task.cancel()
     _tte_task.cancel()
