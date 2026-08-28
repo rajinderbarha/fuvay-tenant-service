@@ -7,7 +7,6 @@ import {
   AlertCircle,
   Building2,
   Clock3,
-  FileText,
   Globe2,
   IdCard,
   Image as ImageIcon,
@@ -147,13 +146,16 @@ function BusinessProfileReadOnly() {
   const logoUrl = resolveMediaUrl(profile?.logo_url);
   const verifiedLocked = !!profile && ["verified", "approved", "active", "changes_pending_review"].includes(profile.verification_status);
 
-  const documentSummary = useMemo(() => {
-    const docs = profile?.documents ?? [];
-    return {
-      total: docs.length,
-      verified: docs.filter(doc => ["verified", "approved"].includes(doc.status)).length,
-      pending: docs.filter(doc => ["pending", "uploaded", "in_review"].includes(doc.status)).length,
-    };
+  // The provider does not manage documents day to day -- approval verifies the
+  // business and the Verified badge is what they see for it. The only thing
+  // still worth surfacing is a document that needs THEIR action: rejected, or
+  // expired. Bookability blocks on both, so with no route to fix one the
+  // provider would be stuck with no way back.
+  const documentsNeedingAction = useMemo(() => {
+    const now = Date.now();
+    return (profile?.documents ?? []).filter(doc =>
+      doc.status === "rejected"
+      || (doc.expiry_date ? new Date(doc.expiry_date).getTime() < now : false));
   }, [profile]);
 
   return (
@@ -287,7 +289,6 @@ function BusinessProfileReadOnly() {
             <SummaryCard label="Active services" value={profile.operational_summary.active_services} sub="Published offerings" icon={<Wrench/>} tone="success" onClick={() => router.push("/home-services/services")}/>
             <SummaryCard label="Coverage pincodes" value={profile.operational_summary.service_areas} sub="Bookable service areas" icon={<MapPin/>} tone="info" onClick={() => router.push("/business/coverage-hours")}/>
             <SummaryCard label="Technicians" value={profile.operational_summary.active_technicians} sub="Active team members" icon={<Users2/>} tone="success" onClick={() => router.push("/home-services/team")}/>
-            <SummaryCard label="Documents" value={`${documentSummary.verified}/${Math.max(documentSummary.total, 1)}`} sub={documentSummary.pending ? `${documentSummary.pending} pending` : "Current uploads"} icon={<FileText/>} tone={documentSummary.pending ? "warning" : "success"} onClick={() => router.push("/documents")}/>
           </KpiGrid>
 
           <div className="profile-read-body">
@@ -327,23 +328,25 @@ function BusinessProfileReadOnly() {
                 </div>
               </Card>
 
-              <Card>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
-                  <p className="profile-read-card-title" style={{ margin: 0 }}>Documents</p>
-                  <Link href="/documents" style={{ color: "var(--brand)", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>View all</Link>
-                </div>
-                {profile.documents.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--text-tertiary)", fontSize: 13 }}>No current verification documents found.</p>
-                ) : profile.documents.slice(0, 5).map(doc => (
-                  <div key={doc.id} className="profile-read-document-row">
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, color: "var(--text-primary)", fontSize: 13, fontWeight: 700 }}>{doc.label || doc.doc_type}</p>
-                      <p style={{ margin: "3px 0 0", color: "var(--text-tertiary)", fontSize: 11 }}>{doc.doc_type.replace(/_/g, " ")}</p>
+              {documentsNeedingAction.length > 0 && (
+                <Card>
+                  <p className="profile-read-card-title" style={{ margin: "0 0 8px" }}>Action needed</p>
+                  <p style={{ margin: "0 0 10px", color: "var(--text-secondary)", fontSize: 13 }}>
+                    {documentsNeedingAction.length} verification document{documentsNeedingAction.length === 1 ? " needs" : "s need"} replacing.
+                    New bookings are paused until {documentsNeedingAction.length === 1 ? "it is" : "they are"} current again.
+                  </p>
+                  {documentsNeedingAction.map(doc => (
+                    <div key={doc.id} className="profile-read-document-row">
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, color: "var(--text-primary)", fontSize: 13, fontWeight: 700 }}>{doc.label || doc.doc_type}</p>
+                        <p style={{ margin: "3px 0 0", color: "var(--text-tertiary)", fontSize: 11 }}>{doc.doc_type.replace(/_/g, " ")}</p>
+                      </div>
+                      <Badge variant="danger">{doc.status === "rejected" ? "Rejected" : "Expired"}</Badge>
                     </div>
-                    <Badge variant={["verified", "approved"].includes(doc.status) ? "success" : doc.status === "rejected" ? "danger" : "warning"}>{statusLabel(doc.status)}</Badge>
-                  </div>
-                ))}
-              </Card>
+                  ))}
+                  <Link href="/documents" style={{ display: "inline-block", marginTop: 10, color: "var(--brand)", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Replace document</Link>
+                </Card>
+              )}
 
               <Card>
                 <p className="profile-read-card-title">Edit policy</p>

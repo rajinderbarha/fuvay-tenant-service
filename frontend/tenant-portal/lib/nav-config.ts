@@ -55,7 +55,11 @@ export const TENANT_NAV_GROUPS: NavGroup[] = [
     id: "more",
     label: "More",
     items: [
-      { id: "documents",     label: "Documents",     href: "/documents",     icon: "FileText", group: "more" },
+      // Documents are not a tenant-managed surface: approval verifies the
+      // business, and what the provider sees for it is the Verified badge on
+      // their profile. The /documents route still exists and is linked from
+      // the profile ONLY when a document actually needs their action --
+      // otherwise an expired document would be an unfixable dead end.
       { id: "provider-compliance", label: "Compliance",   href: "/provider/compliance", icon: "Shield", group: "more" },
       { id: "notifications", label: "Notifications", href: "/notifications", icon: "Bell",     group: "more" },
       { id: "activity",      label: "Activity",      href: "/activity",      icon: "Activity", group: "more" },

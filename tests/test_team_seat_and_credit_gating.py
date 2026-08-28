@@ -136,3 +136,49 @@ class TestBookabilityNoLongerReadsTheDeposit:
         from app.engines.provider_portal import router
         src = inspect.getsource(router._evaluate_provider_bookability)
         assert "USAGE_CREDITS_INSUFFICIENT" in src
+
+
+class TestDocumentsAreNotTenantManaged:
+    """Approval verifies the business; the provider sees a Verified badge.
+
+    The documents themselves are KEPT -- nothing is purged -- they simply stop
+    being a surface the provider manages day to day.
+    """
+
+    def test_the_documents_menu_is_gone(self):
+        from pathlib import Path
+        src = Path("frontend/tenant-portal/lib/nav-config.ts").read_text(encoding="utf-8")
+        assert 'label: "Documents"' not in src
+
+    def test_the_verified_badge_survives(self):
+        from pathlib import Path
+        src = Path("frontend/tenant-portal/app/(tenant)/profile/page.tsx").read_text(
+            encoding="utf-8")
+        assert 'variant="success">Verified' in src
+
+    def test_a_document_needing_action_still_has_a_route(self):
+        """Bookability blocks on a rejected or expired required document. With
+        the menu gone and no conditional link, fixing one would be impossible
+        and the provider would be stuck unbookable with nowhere to go."""
+        from pathlib import Path
+        src = Path("frontend/tenant-portal/app/(tenant)/profile/page.tsx").read_text(
+            encoding="utf-8")
+        assert "documentsNeedingAction" in src
+        assert 'href="/documents"' in src
+        assert "Replace document" in src
+
+    def test_only_rejected_or_expired_documents_surface(self):
+        from pathlib import Path
+        src = Path("frontend/tenant-portal/app/(tenant)/profile/page.tsx").read_text(
+            encoding="utf-8")
+        # pending_review is the ADMIN's turn, not the provider's -- surfacing it
+        # would be the "pending document approval" noise we are removing.
+        assert 'doc.status === "rejected"' in src
+        assert "expiry_date" in src
+
+    def test_the_bookability_gate_still_requires_documents(self):
+        """Removing the menu must not weaken the check itself."""
+        import inspect
+        from app.engines.provider_portal import router
+        src = inspect.getsource(router._evaluate_provider_bookability)
+        assert "REQUIRED_DOCUMENT_ACTION_NEEDED" in src
