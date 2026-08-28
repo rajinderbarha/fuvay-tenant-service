@@ -457,12 +457,28 @@ async def _build_admin_review_context(db: AsyncSession, tenant_id: uuid.UUID) ->
                 "review_notes": None,
             }
         review_documents.append(item)
-        if requirement["required"] and item["status"] != "verified":
+        # Approving the provider IS the verification of their business, so a
+        # document merely AWAITING review does not block it -- approval marks
+        # those verified in the same action. Two cases still block, because
+        # approval cannot honestly resolve them:
+        #
+        #   not_uploaded  there is nothing to verify;
+        #   rejected /    an admin already made a deliberate negative decision,
+        #   changes_      and approving must not silently overturn it.
+        #   requested
+        if requirement["required"] and item["status"] in ("not_uploaded", None):
             blockers.append({
-                "code": "REQUIRED_DOCUMENT_NOT_VERIFIED",
+                "code": "REQUIRED_DOCUMENT_MISSING",
                 "section": "DOCUMENTS",
                 "document_type": requirement["key"],
-                "message": f'{requirement["label"]} must be verified before approval.',
+                "message": f'{requirement["label"]} has not been uploaded yet.',
+            })
+        elif requirement["required"] and item["status"] in ("rejected", "changes_requested"):
+            blockers.append({
+                "code": "REQUIRED_DOCUMENT_REJECTED",
+                "section": "DOCUMENTS",
+                "document_type": requirement["key"],
+                "message": f'{requirement["label"]} was sent back and needs a new upload.',
             })
 
     for document in documents:
@@ -782,9 +798,24 @@ async def approve_provider_onboarding(
             status_code=422,
             detail="Approval blocked: " + " ".join(messages),
         )
+    # Approval is one decisive act. Verifying the provider without also
+    # verifying the documents that prove who they are left the console
+    # reporting "pending document approval" against a provider the admin had
+    # just approved -- two states for one decision, and no way to reconcile
+    # them from this screen.
+    verified_now = (await db.execute(text(
+        "UPDATE tenant_documents SET status = 'verified', verified_at = now(), "
+        "  verified_by = CAST(:actor AS uuid), reviewed_by = CAST(:actor AS uuid), "
+        "  updated_at = now() "
+        "WHERE tenant_id = CAST(:tid AS uuid) AND is_current = true "
+        "  AND status = 'pending_review' "
+        "RETURNING id"
+    ), {"tid": str(tenant_id), "actor": str(user.user_id)})).fetchall()
+
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     result = await svc.verify_tenant(tenant_id)
+    result["documents_verified_on_approval"] = len(verified_now)
     vertical_result = await _sync_home_services_enrollment_decision(
         db, tenant_id, "approve", actor_id=user.user_id
     )
