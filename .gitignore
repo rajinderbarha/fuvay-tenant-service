@@ -12,7 +12,12 @@ venv/
 .next/
 dist/
 build/
-coverage/
+# Anchored: a bare `coverage/` matches ANY directory of that name, including
+# source such as frontend/tenant-portal/components/coverage/, which it silently
+# kept out of git entirely.
+/coverage/
+frontend/*/coverage/
+mobile/*/coverage/
 *.tsbuildinfo
 
 # Environment / secrets
