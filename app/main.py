@@ -498,8 +498,13 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         app.include_router(_r)
 
     # Scalability Sprint — Location Engine (states, districts, cities, zones)
-    from app.engines.location_engine.router import router as location_router
-    app.include_router(location_router)
+    # The location engine was removed: its four tables (location_states /
+    # _districts / _cities / _zones) were never migrated, so all eight of its
+    # admin routes 500'd on a missing relation from the day they were mounted.
+    # Geography is free text on `tenant_service_areas` (state/district/city/
+    # zipcode), and admin controls it by approving what a provider declares --
+    # reviving a normalised master now would be a second authority for the same
+    # thing. Zero rows ever referenced its zone_id.
 
     # Phase 7 — Data Science Engine
     from app.engines.data_science.router import router as ds_router
