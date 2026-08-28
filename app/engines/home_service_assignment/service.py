@@ -597,6 +597,10 @@ class HomeServiceJobAssignmentService:
             scheduled_date=scheduled_date, scheduled_time_window=scheduled_time_window,
             reassigned=bool(old_status))
 
+        # Assignment is the first point a job has a date to be judged against.
+        from app.engines.execution.sla_breach_service import stamp_due_at
+        await stamp_due_at(self.db, job.id)
+
         return {
             "job_id":                  str(job_id),
             "assignment_id":           str(assignment.id),
@@ -973,6 +977,12 @@ class HomeServiceJobAssignmentService:
         booking.preferred_date = scheduled_date
         booking.preferred_time_window = scheduled_time_window
         await self.db.flush()
+
+        # The SLA clock runs from the SCHEDULED SLOT, so rescheduling moves the
+        # deadline with it -- a customer who agreed a later date has not been
+        # kept waiting, and the provider should not be penalised as if they had.
+        from app.engines.execution.sla_breach_service import stamp_due_at
+        await stamp_due_at(self.db, job.id)
 
         await self._emit_event(
             job_id=job.id, booking_id=booking.id, tenant_id=job.tenant_id,

@@ -32,6 +32,11 @@ _DRAFT_FIELDS = {
     "customer_fee_model", "customer_fee_percentage", "customer_fee_fixed_amount_minor",
     "customer_fee_min_minor", "customer_fee_max_minor", "customer_fee_basis",
     "collection_stage", "customer_fee_refund_policy", "currency", "effective_from", "change_summary",
+    # SLA breach: what a late job costs, and where the money goes.
+    "sla_breach_hours", "sla_penalty_amount", "sla_penalty_to_customer",
+    "sla_penalty_debt_cap",
+    # Health: when a provider is stopped, for how long, and what they come back at.
+    "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
 }
 
 
@@ -190,6 +195,33 @@ class VerticalMonetizationPolicyService:
                 errors.append("customer_fee_min_minor and customer_fee_max_minor are required for PERCENTAGE_WITH_MIN_MAX")
             elif customer_min > customer_max:
                 errors.append("customer_fee_min_minor cannot exceed customer_fee_max_minor")
+
+        # SLA + health. All optional: an unset policy simply does not penalise
+        # or suspend anyone, which is how every existing policy behaves.
+        for name, minimum in (("sla_breach_hours", 1), ("health_suspension_days", 1)):
+            raw = payload.get(name)
+            if raw not in (None, ""):
+                try:
+                    if int(raw) < minimum:
+                        errors.append(f"{name} must be at least {minimum}")
+                except (TypeError, ValueError):
+                    errors.append(f"{name} must be a whole number")
+        decimal_field("sla_penalty_amount", minimum=Decimal("0"))
+        decimal_field("sla_penalty_debt_cap", minimum=Decimal("0"))
+        threshold = decimal_field("health_suspension_threshold", minimum=Decimal("0"), maximum=Decimal("100"))
+        reinstate = decimal_field("health_reinstatement_score", minimum=Decimal("0"), maximum=Decimal("100"))
+
+        # Reinstating BELOW the threshold re-suspends the provider the moment
+        # they return -- permanently, because health is earned from work they
+        # are barred from doing. The score they come back at must clear the bar.
+        if threshold is not None and reinstate is not None and reinstate <= threshold:
+            errors.append(
+                "health_reinstatement_score must be greater than "
+                "health_suspension_threshold, otherwise a reinstated provider is "
+                "immediately re-suspended and can never recover"
+            )
+        if payload.get("sla_penalty_amount") not in (None, "") and not payload.get("sla_breach_hours"):
+            errors.append("sla_breach_hours is required when an SLA penalty is set")
 
         stage = payload.get("collection_stage", "after_estimate_approval")
         if stage not in COLLECTION_STAGES:

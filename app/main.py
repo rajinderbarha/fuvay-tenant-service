@@ -110,6 +110,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _tte_task = asyncio.create_task(_tte_loop())
     logger.info("topup_entitlement_expiry_loop.started")
 
+    # 12. SLA breach: cancel jobs that ran out of time so the customer can
+    # rebook, charge the admin-set penalty, and reinstate providers whose
+    # health suspension has served its time.
+    from app.jobs.sla_breach import background_loop as _sla_loop
+    _sla_task = asyncio.create_task(_sla_loop())
+    logger.info("sla_breach_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
@@ -118,6 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _export_worker_task.cancel()
     _complaint_sla_task.cancel()
     _tte_task.cancel()
+    _sla_task.cancel()
     try:
         await _sla_task
     except asyncio.CancelledError:
