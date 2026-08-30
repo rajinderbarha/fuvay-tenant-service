@@ -1,6 +1,7 @@
 import React from "react";
 import { EmptyState } from "../States";
 import { BookingListFilter } from "../../domain/bookingFilters";
+import { useTheme } from "../../design-system/theme";
 
 export interface BookingListEmptyStateProps {
   filter: BookingListFilter;
@@ -15,6 +16,7 @@ export interface BookingListEmptyStateProps {
 }
 
 export function BookingListEmptyState({ filter, hasAnyBookings, searchTerm, onStartAssistant, onClearFilter }: BookingListEmptyStateProps) {
+  const { theme } = useTheme();
   if (searchTerm && searchTerm.trim()) {
     return (
       <EmptyState
@@ -30,10 +32,11 @@ export function BookingListEmptyState({ filter, hasAnyBookings, searchTerm, onSt
     return (
       <EmptyState
         icon="calendar-outline"
-        // Brand violet circle per the design. Only this state gets it: it
-        // is the one a new customer lands on, so it carries the emptiness
-        // rather than reporting a filter result.
-        iconCircleColor="#7C3AED"
+        // Violet circle per the design. Only this state gets it: it is the
+        // one a new customer lands on, so it carries the emptiness rather
+        // than reporting a filter result. Themed (v2 a4) so it is the right
+        // violet in both light and dark.
+        iconCircleColor={theme.colors.accentViolet}
         title="No bookings yet"
         message="Start a service request with Fuvay Assistant to see it here."
         actionLabel="Start assistant"

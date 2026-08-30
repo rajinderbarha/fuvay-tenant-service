@@ -21,7 +21,7 @@ export function BookingUpdatesCard({ capability, bare = false }: BookingUpdatesC
       <View
         style={{
           width: 40, height: 40, borderRadius: theme.radius.radiusFull,
-          backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}
       >
         <Icon name="notifications" size="standard" color="#FFFFFF" decorative />

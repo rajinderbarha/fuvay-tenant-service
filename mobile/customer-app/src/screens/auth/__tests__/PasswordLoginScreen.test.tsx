@@ -70,7 +70,9 @@ describe("PasswordLoginScreen: the other two ways in", () => {
 
   it("offers create-account, because this is where someone finds out they have none", async () => {
     const screen = render();
-    fireEvent.press(screen.getByLabelText("Sign Up"));
+    // v2 renames this affordance to "Create account" -- the accessible
+    // name matches the visible label, as WCAG "Label in Name" requires.
+    fireEvent.press(screen.getByLabelText("Create account"));
     await waitFor(() => expect(screen.getByText("signup-screen")).toBeTruthy());
   });
 

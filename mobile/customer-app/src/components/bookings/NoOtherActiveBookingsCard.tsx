@@ -9,9 +9,11 @@ export interface NoOtherActiveBookingsCardProps {
   onViewCompleted: () => void;
 }
 
-/** Violet accent per the design -- a fixed brand colour, not a themed
- * surface, same reasoning as the empty state's calendar circle. */
-const VIOLET = "#7C3AED";
+/** Violet accent per the design. Under Fuvay v2 this is a THEMED accent
+ * (a4) rather than a fixed hex -- v2 defines a separate darker violet for
+ * light mode, so a hardcoded value would be the wrong violet in one theme
+ * and would not track future palette changes. Read from the theme at the
+ * call site instead. */
 
 /**
  * Sits directly below the single active-booking card on the Active tab,
@@ -36,7 +38,7 @@ export function NoOtherActiveBookingsCard({ onViewCompleted }: NoOtherActiveBook
           <View
             style={{
               width: 40, height: 40, borderRadius: theme.radius.radiusFull,
-              backgroundColor: VIOLET, alignItems: "center", justifyContent: "center",
+              backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center",
             }}
           >
             {/* Calendar-with-clock in the design; Ionicons has no combined

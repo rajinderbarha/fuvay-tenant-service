@@ -28,11 +28,18 @@ export interface BookingJourneyProps {
  * muted, consistent with bookingStatus.ts's standing rule that a stage is
  * never shown as reached without backend evidence.
  */
-const STEP_STYLE: ReadonlyArray<{ color: string; icon: IconProps["name"] }> = [
-  { color: "#3730A3", icon: "checkmark-circle-outline" },
-  { color: "#047857", icon: "briefcase-outline" },
-  { color: "#7C3AED", icon: "calendar-outline" },
+/** Stage colours come from the Fuvay v2 accent rotation rather than fixed
+ *  hexes: v2 ships a separate, darker set for light mode, so hardcoded
+ *  values would be the wrong shade in one theme. Icons stay fixed. */
+const STEP_ICONS: ReadonlyArray<IconProps["name"]> = [
+  "checkmark-circle-outline",
+  "briefcase-outline",
+  "calendar-outline",
 ];
+
+function stepColors(theme: ReturnType<typeof useTheme>["theme"]): string[] {
+  return [theme.colors.accentCyan, theme.colors.accentMint, theme.colors.accentViolet];
+}
 
 export function BookingJourney({ stage, bare = false }: BookingJourneyProps) {
   const { theme } = useTheme();
@@ -66,12 +73,12 @@ export function BookingJourney({ stage, bare = false }: BookingJourneyProps) {
                 <View
                   style={{
                     width: 34, height: 34, borderRadius: theme.radius.radiusFull,
-                    backgroundColor: reached ? STEP_STYLE[i].color : theme.colors.surfaceInteractive,
+                    backgroundColor: reached ? stepColors(theme)[i] : theme.colors.surfaceInteractive,
                     alignItems: "center", justifyContent: "center",
                   }}
                 >
                   <Icon
-                    name={STEP_STYLE[i].icon}
+                    name={STEP_ICONS[i]}
                     size="compact"
                     color={reached ? "#FFFFFF" : theme.colors.textTertiary}
                     decorative

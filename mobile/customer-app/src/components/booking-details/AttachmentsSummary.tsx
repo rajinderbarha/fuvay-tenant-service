@@ -43,7 +43,7 @@ export function AttachmentsSummary({ attachments, note }: { attachments: Custome
           <View
             style={{
               width: 36, height: 36, borderRadius: theme.radius.radiusFull,
-              backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}
           >
             <Icon name="image-outline" size="compact" color="#FFFFFF" decorative />
