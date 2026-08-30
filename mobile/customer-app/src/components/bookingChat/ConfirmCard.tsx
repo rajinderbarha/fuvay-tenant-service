@@ -1,7 +1,9 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
+import { BotText } from "./BotText";
+import { BOT_GUTTER } from "./BotPrimitives";
 
 export interface ConfirmCardProps {
   bookingNumber: string;
@@ -16,20 +18,20 @@ export interface ConfirmCardProps {
 export function ConfirmCard({ bookingNumber, providerName, onTrackBooking }: ConfirmCardProps) {
   const BOT = useBotColors();
   return (
-    <View style={{ marginLeft: 36, borderRadius: 20, padding: 20, alignItems: "center", backgroundColor: BOT.successBg, borderWidth: 1, borderColor: BOT.successBorder }}>
+    <View style={{ marginLeft: BOT_GUTTER, borderRadius: 20, padding: 20, alignItems: "center", backgroundColor: BOT.successBg, borderWidth: 1, borderColor: BOT.successBorder }}>
       <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 12, backgroundColor: BOT.successTint }}>
         <Ionicons name="checkmark-circle" size={28} color={BOT.success} />
       </View>
-      <Text style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary }}>Booking Confirmed</Text>
-      <Text style={{ fontSize: 13, color: BOT.success, marginTop: 4 }}>Booking {bookingNumber}</Text>
+      <BotText style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary }}>Booking Confirmed</BotText>
+      <BotText style={{ fontSize: 13, color: BOT.success, marginTop: 4 }}>Booking {bookingNumber}</BotText>
       {providerName ? (
-        <Text style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
+        <BotText style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
           {providerName} has been notified and will be in touch.
-        </Text>
+        </BotText>
       ) : (
-        <Text style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
+        <BotText style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 10, textAlign: "center" }}>
           We&apos;ll notify you as soon as a professional is assigned.
-        </Text>
+        </BotText>
       )}
       <View style={{ marginTop: 16, width: "100%" }}>
         <Pressable
@@ -38,7 +40,7 @@ export function ConfirmCard({ bookingNumber, providerName, onTrackBooking }: Con
           accessibilityLabel="Track this booking"
           style={{ height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}
         >
-          <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.bubbleOnBrand }}>Track Booking</Text>
+          <BotText style={{ fontSize: 15, fontWeight: "700", color: BOT.bubbleOnBrand }}>Track Booking</BotText>
         </Pressable>
       </View>
     </View>

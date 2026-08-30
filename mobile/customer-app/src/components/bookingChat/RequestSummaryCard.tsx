@@ -1,10 +1,12 @@
 import React from "react";
-import { View, Text, Image } from "react-native";
+import { View, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { BookingReviewSummary } from "../../domain/bookingReview";
 import { resolveMediaImageSource } from "../../domain/mediaUrl";
 import { getInMemoryAccessToken } from "../../api/session/tokenVault";
+import { BotText } from "./BotText";
+import { BOT_GUTTER } from "./BotPrimitives";
 
 export interface RequestSummaryCardProps {
   summary: BookingReviewSummary;
@@ -46,28 +48,28 @@ export function RequestSummaryCard({ summary, slotLabel, embedded }: RequestSumm
         embedded
           ? undefined
           : {
-              marginLeft: 36, borderRadius: 20, padding: 16,
+              marginLeft: BOT_GUTTER, borderRadius: 20, padding: 16,
               backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
             }
       }
     >
-      <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
+      <BotText style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
         YOUR REQUEST
-      </Text>
+      </BotText>
 
-      <Text style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary, marginTop: 8 }}>
+      <BotText style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary, marginTop: 8 }}>
         {summary.offeringName}
-      </Text>
+      </BotText>
       {summary.jobTypeLabel ? (
-        <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 2 }}>
+        <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 2 }}>
           {summary.jobTypeLabel}
-        </Text>
+        </BotText>
       ) : null}
 
       {summary.issueSummary ? (
-        <Text style={{ fontSize: 15, lineHeight: 21, color: BOT.textSecondary, marginTop: 10 }}>
+        <BotText style={{ fontSize: 15, lineHeight: 21, color: BOT.textSecondary, marginTop: 10 }}>
           {summary.issueSummary}
-        </Text>
+        </BotText>
       ) : null}
 
       {slotLabel ? (
@@ -86,25 +88,25 @@ export function RequestSummaryCard({ summary, slotLabel, embedded }: RequestSumm
       {/* What the customer actually told us, played back for a last check. */}
       {answers.length > 0 ? (
         <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, marginBottom: 8 }}>
+          <BotText style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, marginBottom: 8 }}>
             WHAT YOU TOLD US
-          </Text>
+          </BotText>
           {answers.map(answer => (
             <View
               key={answer.key}
               style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 5 }}
             >
-              <Text style={{ flex: 1, fontSize: 15, color: BOT.textTertiary }} numberOfLines={2}>
+              <BotText style={{ flex: 1, fontSize: 15, color: BOT.textTertiary }} numberOfLines={2}>
                 {answer.label}
-              </Text>
-              <Text
+              </BotText>
+              <BotText
                 style={{
                   fontSize: 15, fontWeight: "600", color: BOT.textPrimary,
                   flexShrink: 1, textAlign: "right", maxWidth: "55%",
                 }}
               >
                 {answer.value}
-              </Text>
+              </BotText>
             </View>
           ))}
         </View>
@@ -112,9 +114,9 @@ export function RequestSummaryCard({ summary, slotLabel, embedded }: RequestSumm
 
       {summary.photoUrls.length > 0 ? (
         <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, marginBottom: 8 }}>
+          <BotText style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, marginBottom: 8 }}>
             {summary.photoUrls.length === 1 ? "PHOTO YOU SENT" : `${summary.photoUrls.length} PHOTOS YOU SENT`}
-          </Text>
+          </BotText>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {summary.photoUrls.map(url => (
               <Image
@@ -146,10 +148,10 @@ function Detail({
     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
       <Ionicons name={icon} size={15} color={BOT.textTertiary} style={{ marginTop: 2 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 13, color: BOT.textTertiary }}>{label}</Text>
-        <Text style={{ fontSize: 15, lineHeight: 21, color: BOT.textPrimary, marginTop: 1 }}>
+        <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>{label}</BotText>
+        <BotText style={{ fontSize: 15, lineHeight: 21, color: BOT.textPrimary, marginTop: 1 }}>
           {value}
-        </Text>
+        </BotText>
       </View>
     </View>
   );

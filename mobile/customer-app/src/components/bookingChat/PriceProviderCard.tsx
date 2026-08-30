@@ -1,11 +1,12 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { BookingReviewSummary } from "../../domain/bookingReview";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
+import { BotText } from "./BotText";
 
 export interface PriceProviderCardProps {
   summary: BookingReviewSummary;
@@ -35,25 +36,25 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
               <Ionicons name="construct" size={18} color={BOT.brand} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>{provider.providerName}</Text>
+              <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>{provider.providerName}</BotText>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
                 {provider.rating != null ? (
                   <>
                     <Ionicons name="star" size={11} color={BOT.warning} />
-                    <Text style={{ fontSize: 13, color: BOT.textTertiary }}>{provider.rating.toFixed(1)} · </Text>
+                    <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>{provider.rating.toFixed(1)} · </BotText>
                   </>
                 ) : null}
                 {provider.publicBadges.slice(0, 2).map((b, i) => (
-                  <Text key={b.name} style={{ fontSize: 13, color: BOT.textTertiary }}>
+                  <BotText key={b.name} style={{ fontSize: 13, color: BOT.textTertiary }}>
                     {b.name}{i < Math.min(provider.publicBadges.length, 2) - 1 ? " · " : ""}
-                  </Text>
+                  </BotText>
                 ))}
               </View>
             </View>
           </View>
         </>
       ) : (
-        <Text style={{ fontSize: 15, color: BOT.textMuted }}>Matching you with an eligible professional…</Text>
+        <BotText style={{ fontSize: 15, color: BOT.textMuted }}>Matching you with an eligible professional…</BotText>
       )}
 
       <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, borderStyle: "dashed" }}>
@@ -66,9 +67,9 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
         ) : summary.priceState.kind === "valid" ? (
           <Row label="Estimated total" value={formatMoney(summary.priceState.amount)} big />
         ) : (
-          <Text style={{ fontSize: 15, color: BOT.textMuted }}>
+          <BotText style={{ fontSize: 15, color: BOT.textMuted }}>
             {resolveServicePriceDisplay(summary.priceState).label}
-          </Text>
+          </BotText>
         )}
       </View>
 
@@ -80,7 +81,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
           loading={confirming}
         />
         {confirmDisabledReason ? (
-          <Text style={{ fontSize: 12, color: BOT.textDim, marginTop: 6, textAlign: "center" }}>{confirmDisabledReason}</Text>
+          <BotText style={{ fontSize: 12, color: BOT.textDim, marginTop: 6, textAlign: "center" }}>{confirmDisabledReason}</BotText>
         ) : null}
       </View>
     </BotCard>
@@ -91,10 +92,10 @@ function Row({ label, value, big, muted }: { label: string; value: string; big?:
   const BOT = useBotColors();
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-      <Text style={{ fontSize: 13, color: BOT.textMuted }}>{label}</Text>
-      <Text style={{ fontSize: big ? 15 : 12, fontWeight: big ? "700" : "400", color: muted ? BOT.textSecondary : BOT.brandLight }}>
+      <BotText style={{ fontSize: 13, color: BOT.textMuted }}>{label}</BotText>
+      <BotText style={{ fontSize: big ? 15 : 12, fontWeight: big ? "700" : "400", color: muted ? BOT.textSecondary : BOT.brandLight }}>
         {value}
-      </Text>
+      </BotText>
     </View>
   );
 }

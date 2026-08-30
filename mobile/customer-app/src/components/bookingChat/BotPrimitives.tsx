@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, Animated, Easing } from "react-native";
+import { View, Pressable, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
 import { FuvayIcon } from "../FuvayIcon";
+import { BotText } from "./BotText";
 
 /**
  * Visual primitives for the merged booking chat -- its own dark, animated
@@ -12,6 +13,15 @@ import { FuvayIcon } from "../FuvayIcon";
  * reduced-motion (falls back to a static equivalent), same discipline as
  * TypingBubble/AssistantActivity elsewhere in the app.
  */
+
+/**
+ * Left gutter that keeps everything in the bot's column — chips, cards,
+ * traces — flush with the text edge of an assistant bubble, clearing the
+ * avatar beside it. It is the assistant avatar (32) plus the row gap (8),
+ * and was previously repeated as a bare `36` in 13 places, so widening the
+ * avatar to the canvas's 32px silently misaligned all of them.
+ */
+export const BOT_GUTTER = 40;
 
 export type BotStageStatus = "done" | "active" | "pending";
 
@@ -47,9 +57,9 @@ export function BotStageTracker({ stages, activeIndex, allDone }: { stages: stri
                   <Ionicons name={stageIcon(i)} size={11} color={active ? BOT.bubbleOnBrand : BOT.textFaint} />
                 )}
               </View>
-              <Text style={{ fontSize: 8, fontWeight: "800", color: active ? BOT.brandLight : BOT.textTertiary }}>{done ? "DONE" : active ? "CURRENT" : "UP NEXT"}</Text>
+              <BotText style={{ fontSize: 8, fontWeight: "800", color: active ? BOT.brandLight : BOT.textTertiary }}>{done ? "DONE" : active ? "CURRENT" : "UP NEXT"}</BotText>
               </View>
-              <Text style={{ fontSize: 9, lineHeight: 11, fontWeight: active ? "700" : "600", color: active ? BOT.textPrimary : BOT.textMuted }} numberOfLines={2}>{s}</Text>
+              <BotText style={{ fontSize: 9, lineHeight: 11, fontWeight: active ? "700" : "600", color: active ? BOT.textPrimary : BOT.textMuted }} numberOfLines={2}>{s}</BotText>
             </View>
           );
         })}
@@ -102,7 +112,7 @@ export function BotTypingDots() {
   }, [reduced]);
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 36 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: BOT_GUTTER }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.borderSubtle }}>
         {dots.map((v, i) => (
           <Animated.View
@@ -144,7 +154,7 @@ export function BotWorkingStep({ label, status }: { label: string; status: "pend
 
   const done = status === "done";
   return (
-    <Animated.View style={[{ flexDirection: "row", alignItems: "center", paddingLeft: 36, paddingRight: 8 }, entrance]}>
+    <Animated.View style={[{ flexDirection: "row", alignItems: "center", paddingLeft: BOT_GUTTER, paddingRight: 8 }, entrance]}>
       <View
         style={{
           flex: 1, flexDirection: "row", alignItems: "center", gap: 10,
@@ -350,9 +360,9 @@ export function BotWorkingTrace({ entries }: { entries: WorkingTraceEntry[] }) {
           onPress={() => setExpanded(false)}
           accessibilityRole="button"
           accessibilityLabel="Hide the steps"
-          style={{ paddingLeft: 36, paddingTop: 2 }}
+          style={{ paddingLeft: BOT_GUTTER, paddingTop: 2 }}
         >
-          <Text style={{ fontSize: 13, color: BOT.textTertiary }}>Hide steps</Text>
+          <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>Hide steps</BotText>
         </Pressable>
       )}
     </View>
@@ -369,12 +379,12 @@ function BotTraceSummary({
       onPress={onExpand}
       accessibilityRole="button"
       accessibilityLabel={`Show the ${stepCount} steps that ran`}
-      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 36, paddingVertical: 2 }}
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: BOT_GUTTER, paddingVertical: 2 }}
     >
       <Ionicons name="checkmark-circle" size={15} color={BOT.success} />
-      <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+      <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>
         Done · {stepCount} step{stepCount === 1 ? "" : "s"}{seconds !== null ? ` · ${seconds}s` : ""}
-      </Text>
+      </BotText>
       <Ionicons name="chevron-down" size={13} color={BOT.textTertiary} />
     </Pressable>
   );
@@ -423,14 +433,14 @@ function BotWorkingFooter({ elapsedSeconds, stepCount }: { elapsedSeconds: numbe
   }, [reduced, shimmer]);
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 36, marginTop: 2 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: BOT_GUTTER, marginTop: 2 }}>
       <BotPulseDot color={BOT.brand} size={7} />
       <Animated.Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight, opacity: reduced ? 1 : shimmer }}>
         Working…
       </Animated.Text>
-      <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+      <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>
         ({elapsedSeconds}s · {stepCount} step{stepCount === 1 ? "" : "s"})
-      </Text>
+      </BotText>
     </View>
   );
 }
@@ -440,12 +450,12 @@ export function BotAssistantBubble({ text, children }: { text?: string; children
   const entrance = useTurnEntrance();
   return (
     <Animated.View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 8 }, entrance]}>
-      <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
-        <FuvayIcon size={18} accessibilityLabel="Fuvay assistant" />
+      <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
+        <FuvayIcon size={20} accessibilityLabel="Fuvay assistant" />
       </View>
       {text ? (
-        <View style={{ maxWidth: "80%", borderRadius: 16, borderTopLeftRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
-          <Text style={{ fontSize: 15, lineHeight: 19, color: BOT.textPrimary }}>{text}</Text>
+        <View style={{ maxWidth: "80%", borderRadius: 18, borderTopLeftRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
+          <BotText style={{ fontSize: 14.5, lineHeight: 19, color: BOT.textPrimary }}>{text}</BotText>
         </View>
       ) : (
         <View style={{ flex: 1 }}>{children}</View>
@@ -459,8 +469,11 @@ export function BotUserBubble({ text }: { text: string }) {
   const entrance = useTurnEntrance();
   return (
     <Animated.View style={[{ flexDirection: "row", justifyContent: "flex-end" }, entrance]}>
-      <View style={{ maxWidth: "78%", borderRadius: 16, borderTopRightRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.brand }}>
-        <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.bubbleOnBrand }}>{text}</Text>
+      {/* The tail sits on the BOTTOM-right, per the canvas (16 16 4 16). It
+          previously notched the top-right, which pointed the bubble back up
+          the thread instead of down toward the sender. */}
+      <View style={{ maxWidth: "78%", borderRadius: 16, borderBottomRightRadius: 4, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: BOT.brand }}>
+        <BotText style={{ fontSize: 14.5, fontWeight: "600", color: BOT.bubbleOnBrand }}>{text}</BotText>
       </View>
     </Animated.View>
   );
@@ -475,7 +488,7 @@ export function BotOptionChips({
   // than producing duplicate React keys and an ambiguous selection.
   const uniqueItems = Array.from(new Set(items));
   return (
-    <View style={{ gap: 8, paddingLeft: 36 }}>
+    <View style={{ gap: 8, paddingLeft: BOT_GUTTER }}>
       {uniqueItems.map((label, i) => (
         <OptionChip
           key={label}
@@ -516,7 +529,7 @@ function OptionChip({
         <View style={{ width: 24, alignItems: "center" }}>
           <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={17} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
         </View>
-        <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</Text>
+        <BotText style={{ flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</BotText>
         <Ionicons name="chevron-forward" size={15} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
       </Pressable>
     </Animated.View>
@@ -527,7 +540,7 @@ export function BotCard({ children }: { children: React.ReactNode }) {
   const BOT = useBotColors();
   const entrance = useTurnEntrance();
   return (
-    <Animated.View style={[{ marginLeft: 36, borderRadius: 12, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }, entrance]}>
+    <Animated.View style={[{ marginLeft: BOT_GUTTER, borderRadius: 12, padding: 16, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }, entrance]}>
       {children}
     </Animated.View>
   );
@@ -558,9 +571,9 @@ export function BotPrimaryButton({ label, onPress, disabled, loading }: { label:
         opacity: isDisabled && !loading && !busy ? 0.6 : 1,
       }}
     >
-      <Text style={{ fontSize: 15, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bubbleOnBrand }}>
+      <BotText style={{ fontSize: 15, fontWeight: "700", color: isDisabled && !loading && !busy ? BOT.textDim : BOT.bubbleOnBrand }}>
         {loading || busy ? "Working…" : label}
-      </Text>
+      </BotText>
     </Pressable>
   );
 }

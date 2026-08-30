@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from "react-native";
+import { View, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
@@ -21,12 +21,12 @@ import { resolveActivityLabel } from "../../domain/assistantActivity";
 import { useBotColors } from "../../components/bookingChat/botTheme";
 import {
   BotStageTracker, BotAssistantBubble, BotUserBubble, BotOptionChips, BotTypingDots,
-  BotWorkingTrace, useWorkingTrace, BotPulseDot,
+  BotWorkingTrace, useWorkingTrace, BotPulseDot, BotCard, BotPrimaryButton, BOT_GUTTER,
 } from "../../components/bookingChat/BotPrimitives";
 import { AddressTurn } from "../../components/bookingChat/AddressTurn";
-import { BotCard, BotPrimaryButton } from "../../components/bookingChat/BotPrimitives";
 import { useServiceLocationPreference } from "../../hooks/useServiceLocationPreference";
 import { FuvayIcon } from "../../components/FuvayIcon";
+import { BotText } from "../../components/bookingChat/BotText";
 
 type Route = RouteProp<CustomerTabsParamList, "Assistant">;
 
@@ -75,7 +75,7 @@ export function BookingChatScreen() {
           style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 8 }}
         >
           <ActivityIndicator color={BOT.brand} size="large" />
-          <Text style={{ color: BOT.textMuted, fontSize: 15 }}>Loading your assistant</Text>
+          <BotText style={{ color: BOT.textMuted, fontSize: 15 }}>Loading your assistant</BotText>
         </View>
       </SafeAreaView>
     );
@@ -86,17 +86,17 @@ export function BookingChatScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: BOT.bg }}>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 32 }}>
           <Ionicons name="location-outline" size={32} color={BOT.textFaint} />
-          <Text style={{ color: BOT.textPrimary, fontSize: 16, fontWeight: "700", textAlign: "center" }}>Choose your location first</Text>
-          <Text style={{ color: BOT.textMuted, fontSize: 15, textAlign: "center" }}>
+          <BotText style={{ color: BOT.textPrimary, fontSize: 16, fontWeight: "700", textAlign: "center" }}>Choose your location first</BotText>
+          <BotText style={{ color: BOT.textMuted, fontSize: 15, textAlign: "center" }}>
             Fuvay Assistant needs your service location to check what's available.
-          </Text>
+          </BotText>
           <Pressable
             onPress={() => navigation.navigate("Home" as never)}
             accessibilityRole="button"
             accessibilityLabel="Go to Home"
             style={{ marginTop: 8, height: 40, paddingHorizontal: 20, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand }}
           >
-            <Text style={{ color: BOT.bubbleOnBrand, fontSize: 15, fontWeight: "700" }}>Go to Home</Text>
+            <BotText style={{ color: BOT.bubbleOnBrand, fontSize: 15, fontWeight: "700" }}>Go to Home</BotText>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -187,13 +187,13 @@ function AssistantIntroHeader({ locationLabel }: { locationLabel?: string | null
         <FuvayIcon size={28} accessibilityLabel="Fuvay booking assistant" />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</Text>
-        <Text style={{ fontSize: 12, color: BOT.textMuted }}>Book confidently in a few simple steps</Text>
+        <BotText style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</BotText>
+        <BotText style={{ fontSize: 12, color: BOT.textMuted }}>Book confidently in a few simple steps</BotText>
       </View>
       {locationLabel ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 104 }}>
           <Ionicons name="location-outline" size={14} color={BOT.textTertiary} />
-          <Text style={{ fontSize: 12, fontWeight: "600", color: BOT.textSecondary }} numberOfLines={1}>{locationLabel}</Text>
+          <BotText style={{ fontSize: 12, fontWeight: "600", color: BOT.textSecondary }} numberOfLines={1}>{locationLabel}</BotText>
         </View>
       ) : null}
     </View>
@@ -210,7 +210,7 @@ function ProblemChoiceGrid({ items, onSelect }: {
   const BOT = useBotColors();
   const unique = Array.from(new Map(items.map(item => [item.id, item])).values());
   return (
-    <View style={{ gap: 0, marginLeft: 36, marginRight: 12, overflow: "hidden", borderRadius: 12, borderWidth: 1, borderColor: BOT.borderSubtle, backgroundColor: BOT.surface }}>
+    <View style={{ gap: 0, marginLeft: BOT_GUTTER, marginRight: 12, overflow: "hidden", borderRadius: 12, borderWidth: 1, borderColor: BOT.borderSubtle, backgroundColor: BOT.surface }}>
       {unique.map(item => {
         return (
           <Pressable
@@ -230,7 +230,7 @@ function ProblemChoiceGrid({ items, onSelect }: {
             <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
               <Ionicons name="construct-outline" size={16} color={BOT.textSecondary} />
             </View>
-            <Text style={{ flex: 1, fontSize: 14, lineHeight: 19, fontWeight: "600", color: BOT.textPrimary }} numberOfLines={2}>{item.name}</Text>
+            <BotText style={{ flex: 1, fontSize: 14, lineHeight: 19, fontWeight: "600", color: BOT.textPrimary }} numberOfLines={2}>{item.name}</BotText>
             <Ionicons name="chevron-forward" size={17} color={BOT.textFaint} />
           </Pressable>
         );
@@ -493,13 +493,13 @@ function BookingChatConversation({
               <FuvayIcon size={27} accessibilityLabel="Fuvay booking assistant" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 1.1, color: BOT.textTertiary }}>GUIDED BOOKING</Text>
-              <Text style={{ fontSize: 18, lineHeight: 21, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</Text>
+              <BotText style={{ fontSize: 10, fontWeight: "800", letterSpacing: 1.1, color: BOT.textTertiary }}>GUIDED BOOKING</BotText>
+              <BotText style={{ fontSize: 18, lineHeight: 21, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</BotText>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <BotPulseDot color={booked ? BOT.success : BOT.brand} />
-                <Text style={{ fontSize: 12, color: BOT.textMuted }} numberOfLines={1}>
+                <BotText style={{ fontSize: 12, color: BOT.textMuted }} numberOfLines={1}>
                   {booked ? "Booking confirmed" : `${entryContext.categoryName ?? "Service"} booking`}
-                </Text>
+                </BotText>
               </View>
             </View>
 
@@ -562,7 +562,7 @@ function BookingChatConversation({
               {c.notice ? (
                 <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingHorizontal: 4 }}>
                   <Ionicons name="information-circle-outline" size={14} color={BOT.textMuted} style={{ marginTop: 1 }} />
-                  <Text style={{ flex: 1, fontSize: 12, color: BOT.textMuted }}>{c.notice}</Text>
+                  <BotText style={{ flex: 1, fontSize: 12, color: BOT.textMuted }}>{c.notice}</BotText>
                 </View>
               ) : null}
 
@@ -570,7 +570,7 @@ function BookingChatConversation({
                 <BotCard>
                   <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
                     <Ionicons name="alert-circle" size={16} color={BOT.danger} style={{ marginTop: 2 }} />
-                    <Text style={{ flex: 1, fontSize: 13, color: BOT.textPrimary }}>{c.errorMessage}</Text>
+                    <BotText style={{ flex: 1, fontSize: 13, color: BOT.textPrimary }}>{c.errorMessage}</BotText>
                   </View>
                   {/* Retry only. Starting over already has its own control in the
                       header, and a second one with the same label here would be two
@@ -603,12 +603,12 @@ function BookingChatConversation({
                    * "describe your problem" box, because the assistant's later steps
                    * (pricing, matching) are scoped to a real issue at a real ZIP. */
                   <BotCard>
-                    <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
+                    <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
                       Nothing to book here yet
-                    </Text>
-                    <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 4 }}>
+                    </BotText>
+                    <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 4 }}>
                       {`No ${c.offeringChoice.categoryName} problems are available in ${entryContext.zipcode} right now.`}
-                    </Text>
+                    </BotText>
                     <View style={{ marginTop: 12 }}>
                       <BotPrimaryButton label="Choose another service" onPress={() => navigation.goBack()} />
                     </View>
@@ -735,13 +735,13 @@ function BookingChatConversation({
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, minHeight: 24 }}>
               <FuvayIcon size={16} accessibilityLabel="Fuvay assistant" />
-              <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
+              <BotText style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
                 {booked
                   ? "Your booking is confirmed"
                   : inReviewPhase
                     ? "Fuvay AI is finishing your booking…"
                     : "Choose an option above to continue"}
-              </Text>
+              </BotText>
             </View>
           )}
         </View>

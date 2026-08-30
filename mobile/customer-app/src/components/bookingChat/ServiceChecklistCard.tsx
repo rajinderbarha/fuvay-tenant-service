@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Animated, Easing, Pressable } from "react-native";
+import { View, Animated, Easing, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
 import { ServiceChecklist } from "../../domain/serviceChecklist";
+import { BotText } from "./BotText";
+import { BOT_GUTTER } from "./BotPrimitives";
 
 export interface ServiceChecklistCardProps {
   checklist: ServiceChecklist;
@@ -62,23 +64,23 @@ export function ServiceChecklistCard({ checklist, onContinue }: ServiceChecklist
   return (
     <View
       style={{
-        marginLeft: 36, borderRadius: 20, padding: 16,
+        marginLeft: BOT_GUTTER, borderRadius: 20, padding: 16,
         backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Ionicons name="clipboard-outline" size={18} color={BOT.brand} />
-        <Text style={{ flex: 1, fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>
+        <BotText style={{ flex: 1, fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>
           What your technician will do
-        </Text>
+        </BotText>
       </View>
 
-      <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 4 }}>
+      <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 4 }}>
         {checklist.totalPoints} checks on this visit
         {checklist.photoPoints > 0
           ? ` · ${checklist.photoPoints} photographed for you`
           : ""}
-      </Text>
+      </BotText>
 
       <View style={{ marginTop: 14, gap: 2 }}>
         {shown.map((point, index) => (
@@ -104,9 +106,9 @@ export function ServiceChecklistCard({ checklist, onContinue }: ServiceChecklist
           accessibilityLabel={`Show all ${flat.length} checks`}
           style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}
         >
-          <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
+          <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
             + {hidden} more {hidden === 1 ? "check" : "checks"}
-          </Text>
+          </BotText>
           <Ionicons name="chevron-down" size={13} color={BOT.brandLight} />
         </Pressable>
       ) : null}
@@ -118,9 +120,9 @@ export function ServiceChecklistCard({ checklist, onContinue }: ServiceChecklist
         }}
       >
         <Ionicons name="shield-checkmark-outline" size={13} color={BOT.success} />
-        <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }}>
+        <BotText style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }}>
           Your technician records each one, so you can see it was done.
-        </Text>
+        </BotText>
       </View>
 
       <Pressable
@@ -132,9 +134,9 @@ export function ServiceChecklistCard({ checklist, onContinue }: ServiceChecklist
           alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand,
         }}
       >
-        <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.bubbleOnBrand }}>
+        <BotText style={{ fontSize: 15, fontWeight: "700", color: BOT.bubbleOnBrand }}>
           Looks good
-        </Text>
+        </BotText>
       </Pressable>
     </View>
   );
@@ -168,14 +170,14 @@ function ChecklistLine({
   return (
     <Animated.View style={style}>
       {sectionTitle ? (
-        <Text
+        <BotText
           style={{
             fontSize: 12, fontWeight: "700", color: BOT.textTertiary,
             textTransform: "uppercase", letterSpacing: 0.4, marginTop: 10, marginBottom: 4,
           }}
         >
           {sectionTitle}
-        </Text>
+        </BotText>
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 4 }}>
         <Ionicons
@@ -184,9 +186,9 @@ function ChecklistLine({
           color={BOT.success}
           style={{ marginTop: 1 }}
         />
-        <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textSecondary }}>
+        <BotText style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textSecondary }}>
           {label}
-        </Text>
+        </BotText>
         {requiresPhoto ? (
           <Ionicons name="camera-outline" size={14} color={BOT.textTertiary} style={{ marginTop: 3 }} />
         ) : null}

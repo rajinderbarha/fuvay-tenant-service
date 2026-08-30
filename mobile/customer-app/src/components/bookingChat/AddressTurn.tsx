@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, TextInput, ActivityIndicator } from "react-native";
+import { View, Pressable, TextInput, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { BotCard, BotPrimaryButton } from "./BotPrimitives";
@@ -7,6 +7,7 @@ import { CustomerSavedAddress } from "../../domain/customerSavedAddress";
 import { AddressCreatePayload } from "../../domain/addressForm";
 import { AddressSearchField } from "../AddressSearchField";
 import { useAddressAutocomplete } from "../../hooks/useAddressAutocomplete";
+import { BotText } from "./BotText";
 
 export interface AddressTurnProps {
   zipcode: string;
@@ -98,10 +99,10 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
 
   return (
     <BotCard>
-      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Where should the technician come?</Text>
-      <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
+      <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Where should the technician come?</BotText>
+      <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
         Only addresses in {zipcode} -- the professional matched is local to this zip.
-      </Text>
+      </BotText>
 
       {matching.length > 0 ? (
         <View style={{ marginTop: 12, gap: 8 }}>
@@ -119,10 +120,10 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
             >
               <Ionicons name="home" size={16} color={BOT.brand} style={{ marginTop: 1 }} />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>{a.label ?? "Address"}</Text>
-                <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 1 }} numberOfLines={2}>
+                <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>{a.label ?? "Address"}</BotText>
+                <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 1 }} numberOfLines={2}>
                   {[a.line1, a.line2, a.city, a.postalCode].filter(Boolean).join(", ")}
-                </Text>
+                </BotText>
               </View>
               <Ionicons name="chevron-forward" size={16} color={BOT.textFaint} />
             </Pressable>
@@ -131,17 +132,17 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
       ) : null}
 
       {excludedCount > 0 && matching.length === 0 ? (
-        <Text style={{ fontSize: 12, color: BOT.textDim, marginTop: 10 }}>
+        <BotText style={{ fontSize: 12, color: BOT.textDim, marginTop: 10 }}>
           {excludedCount} saved address{excludedCount === 1 ? "" : "es"} outside {zipcode} — not shown here.
-        </Text>
+        </BotText>
       ) : null}
 
-      {error ? <Text style={{ fontSize: 13, color: BOT.danger, marginTop: 10 }}>{error}</Text> : null}
+      {error ? <BotText style={{ fontSize: 13, color: BOT.danger, marginTop: 10 }}>{error}</BotText> : null}
 
       {!showForm ? (
         <Pressable onPress={() => setShowForm(true)} style={{ marginTop: 12, flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Ionicons name="add-circle-outline" size={16} color={BOT.brandLight} />
-          <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.brandLight }}>Add a new address in {zipcode}</Text>
+          <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.brandLight }}>Add a new address in {zipcode}</BotText>
         </Pressable>
       ) : (
         <View style={{ marginTop: 14, gap: 8 }}>
@@ -165,9 +166,9 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
               accessibilityLabel="Type the address instead"
               style={{ paddingVertical: 8 }}
             >
-              <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
+              <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
                 Type the address instead
-              </Text>
+              </BotText>
             </Pressable>
           ) : null}
 
@@ -196,7 +197,7 @@ export function AddressTurn({ zipcode, addresses, loading, submitting, error, on
             <>
               {/* Zipcode is shown, never editable -- see component doc. */}
               <View style={{ height: 40, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
-                <Text style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</Text>
+                <BotText style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</BotText>
               </View>
               <View style={{ marginTop: 4 }}>
                 <BotPrimaryButton label="Save & use this address" onPress={submitNew} disabled={!canSubmit || submitting} loading={submitting} />

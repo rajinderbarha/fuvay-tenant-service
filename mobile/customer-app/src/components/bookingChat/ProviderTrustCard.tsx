@@ -1,9 +1,11 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { ReviewProvider } from "../../domain/bookingReview";
 import { distinctBadges } from "../../domain/providerBadges";
+import { BotText } from "./BotText";
+import { BOT_GUTTER } from "./BotPrimitives";
 
 export interface ProviderTrustCardProps {
   provider: ReviewProvider;
@@ -58,14 +60,14 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
         embedded
           ? undefined
           : {
-              marginLeft: 36, borderRadius: 20, padding: 16,
+              marginLeft: BOT_GUTTER, borderRadius: 20, padding: 16,
               backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle,
             }
       }
     >
-      <Text style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
+      <BotText style={{ fontSize: 13, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.4 }}>
         YOUR TECHNICIAN
-      </Text>
+      </BotText>
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10 }}>
         <View
@@ -79,12 +81,12 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
 
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text
+            <BotText
               numberOfLines={1}
               style={{ fontSize: 18, fontWeight: "700", color: BOT.textPrimary, flexShrink: 1 }}
             >
               {provider.providerName}
-            </Text>
+            </BotText>
             {/* Only when the platform genuinely verified them. */}
             {facts?.verified ? (
               <Ionicons name="checkmark-circle" size={17} color={BOT.brand} />
@@ -94,29 +96,29 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
           {showHeadlineRating ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 }}>
               <Stars BOT={BOT} rating={rating!} />
-              <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary, marginLeft: 2 }}>
+              <BotText style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary, marginLeft: 2 }}>
                 {rating!.toFixed(1)}
-              </Text>
-              <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+              </BotText>
+              <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>
                 ({reviewCount} {reviewCount === 1 ? "review" : "reviews"})
-              </Text>
+              </BotText>
             </View>
           ) : rating != null && reviewCount > 0 ? (
             // Real but thin: shown with its count, never as a headline stat.
-            <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
+            <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
               {rating.toFixed(1)} from {reviewCount} {reviewCount === 1 ? "review" : "reviews"}
-            </Text>
+            </BotText>
           ) : rating != null ? (
             // A rating with no known count (an older payload predating `facts`).
             // Stated without a count rather than claiming "no reviews yet",
             // which would contradict the rating sitting right next to it.
-            <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
+            <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
               {rating.toFixed(1)} average rating
-            </Text>
+            </BotText>
           ) : (
-            <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
+            <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 3 }}>
               New on Fuvay — no reviews yet
-            </Text>
+            </BotText>
           )}
         </View>
       </View>
@@ -134,9 +136,9 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
               }}
             >
               <Ionicons name="ribbon-outline" size={12} color={BOT.brand} />
-              <Text style={{ fontSize: 12, fontWeight: "600", color: BOT.brandLight }}>
+              <BotText style={{ fontSize: 12, fontWeight: "600", color: BOT.brandLight }}>
                 {badge.name}
-              </Text>
+              </BotText>
             </View>
           ))}
         </View>
@@ -173,12 +175,12 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
           from. Hidden entirely when there are no approved reviews. */}
       {starRows.length > 0 ? (
         <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, gap: 6 }}>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
+          <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
             RATING BREAKDOWN
-          </Text>
+          </BotText>
           {starRows.map(({ star, count }) => (
             <View key={star} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ fontSize: 12, color: BOT.textTertiary, width: 28 }}>{star}★</Text>
+              <BotText style={{ fontSize: 12, color: BOT.textTertiary, width: 28 }}>{star}★</BotText>
               <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: BOT.surfaceRaised, overflow: "hidden" }}>
                 <View
                   style={{
@@ -187,9 +189,9 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
                   }}
                 />
               </View>
-              <Text style={{ fontSize: 12, color: BOT.textTertiary, width: 28, textAlign: "right" }}>
+              <BotText style={{ fontSize: 12, color: BOT.textTertiary, width: 28, textAlign: "right" }}>
                 {count}
-              </Text>
+              </BotText>
             </View>
           ))}
         </View>
@@ -199,27 +201,27 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
           reviewer identity -- the backend never sends one. */}
       {facts?.recentReviews && facts.recentReviews.length > 0 ? (
         <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, gap: 10 }}>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
+          <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textTertiary, letterSpacing: 0.3 }}>
             WHAT CUSTOMERS SAID
-          </Text>
+          </BotText>
           {facts.recentReviews.map((review, index) => (
             <View key={`${review.createdAt ?? "r"}-${index}`} style={{ gap: 4 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Stars BOT={BOT} rating={review.rating} />
                 {review.createdAt ? (
-                  <Text style={{ fontSize: 12, color: BOT.textTertiary }}>
+                  <BotText style={{ fontSize: 12, color: BOT.textTertiary }}>
                     {sinceLabel(review.createdAt)}
-                  </Text>
+                  </BotText>
                 ) : null}
               </View>
               {review.title ? (
-                <Text style={{ fontSize: 14, fontWeight: "600", color: BOT.textPrimary }}>
+                <BotText style={{ fontSize: 14, fontWeight: "600", color: BOT.textPrimary }}>
                   {review.title}
-                </Text>
+                </BotText>
               ) : null}
-              <Text style={{ fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
+              <BotText style={{ fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
                 {review.text}
-              </Text>
+              </BotText>
             </View>
           ))}
         </View>
@@ -232,10 +234,10 @@ export function ProviderTrustCard({ provider, embedded }: ProviderTrustCardProps
         }}
       >
         <Ionicons name="lock-closed-outline" size={13} color={BOT.textTertiary} style={{ marginTop: 2 }} />
-        <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: BOT.textTertiary }}>
+        <BotText style={{ flex: 1, fontSize: 13, lineHeight: 19, color: BOT.textTertiary }}>
           Calls go through Fuvay, so your number stays private. Every visit is tracked and
           covered by Fuvay support.
-        </Text>
+        </BotText>
       </View>
     </View>
   );
@@ -269,8 +271,8 @@ function Stat({
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <Ionicons name={icon} size={14} color={BOT.textTertiary} />
-      <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary }}>{value}</Text>
-      <Text style={{ fontSize: 13, color: BOT.textTertiary }}>{label}</Text>
+      <BotText style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary }}>{value}</BotText>
+      <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>{label}</BotText>
     </View>
   );
 }

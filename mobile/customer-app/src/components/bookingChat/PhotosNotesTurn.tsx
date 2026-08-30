@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, Image, Pressable, ActivityIndicator, Alert } from "react-native";
+import { View, Image, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
@@ -7,6 +7,7 @@ import { BotCard, BotPrimaryButton } from "./BotPrimitives";
 import { resolveMediaImageSource } from "../../domain/mediaUrl";
 import { MAX_DRAFT_PHOTOS, ALLOWED_PHOTO_MIME_TYPES, type PickedPhoto } from "../../api/bookingPhotos/bookingPhotoApi";
 import { getInMemoryAccessToken } from "../../api/session/tokenVault";
+import { BotText } from "./BotText";
 
 export interface PhotosNotesTurnProps {
   photoUrls: string[];
@@ -72,10 +73,10 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
 
   return (
     <BotCard>
-      <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Add a photo? (optional)</Text>
-      <Text style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
+      <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Add a photo? (optional)</BotText>
+      <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
         A photo helps your provider bring the right parts.
-      </Text>
+      </BotText>
 
       {photoUrls.length > 0 || pendingPreviewUri ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
@@ -124,7 +125,7 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
           style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border, opacity: atLimit ? 0.5 : 1 }}
         >
           <Ionicons name="camera-outline" size={15} color={BOT.textSecondary} />
-          <Text style={{ fontSize: 13, color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add a photo" : "Add another"}</Text>
+          <BotText style={{ fontSize: 13, color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add a photo" : "Add another"}</BotText>
         </Pressable>
         {busy ? <ActivityIndicator size="small" color={BOT.brand} /> : null}
       </View>

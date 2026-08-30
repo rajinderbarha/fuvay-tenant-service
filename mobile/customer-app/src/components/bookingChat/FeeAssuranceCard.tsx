@@ -1,10 +1,12 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
 import { formatMoney } from "../../domain/money";
 import { InspectionPricing } from "../../domain/servicePricing";
 import { Money } from "../../domain/money";
+import { BotText } from "./BotText";
+import { BOT_GUTTER } from "./BotPrimitives";
 
 export interface FeeAssuranceCardProps {
   inspection: InspectionPricing | null;
@@ -50,16 +52,16 @@ export function FeeAssuranceCard({ inspection, emergencySurcharge, embedded }: F
         embedded
           ? undefined
           : {
-              marginLeft: 36, borderRadius: 20, padding: 16,
+              marginLeft: BOT_GUTTER, borderRadius: 20, padding: 16,
               backgroundColor: BOT.successBg, borderWidth: 1, borderColor: BOT.successBorder,
             }
       }
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Ionicons name="shield-checkmark" size={18} color={BOT.success} />
-        <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>
+        <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>
           What you&apos;ll pay
-        </Text>
+        </BotText>
       </View>
 
       {inspection ? (
@@ -74,7 +76,7 @@ export function FeeAssuranceCard({ inspection, emergencySurcharge, embedded }: F
             <>
               <Highlight BOT={BOT} icon="return-down-forward">
                 This {formatMoney(inspection.visitFee)} is{" "}
-                <Text style={{ fontWeight: "700" }}>adjusted against your repair bill</Text> if you
+                <BotText style={{ fontWeight: "700" }}>adjusted against your repair bill</BotText> if you
                 go ahead with the work.
               </Highlight>
               <Muted BOT={BOT}>
@@ -112,9 +114,9 @@ export function FeeAssuranceCard({ inspection, emergencySurcharge, embedded }: F
         }}
       >
         <Ionicons name="lock-closed" size={13} color={BOT.textTertiary} />
-        <Text style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }}>
+        <BotText style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }}>
           No work starts until you approve the price.
-        </Text>
+        </BotText>
       </View>
     </View>
   );
@@ -125,8 +127,8 @@ function Line({
 }: { BOT: ReturnType<typeof useBotColors>; label: string; value: string; strong?: boolean; muted?: boolean }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <Text style={{ fontSize: 15, color: BOT.textSecondary }}>{label}</Text>
-      <Text
+      <BotText style={{ fontSize: 15, color: BOT.textSecondary }}>{label}</BotText>
+      <BotText
         style={{
           fontSize: strong ? 16 : 15,
           fontWeight: strong ? "700" : "400",
@@ -135,7 +137,7 @@ function Line({
         }}
       >
         {value}
-      </Text>
+      </BotText>
     </View>
   );
 }
@@ -153,11 +155,11 @@ function Highlight({
       }}
     >
       <Ionicons name={icon} size={15} color={BOT.brand} style={{ marginTop: 2 }} />
-      <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textPrimary }}>{children}</Text>
+      <BotText style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textPrimary }}>{children}</BotText>
     </View>
   );
 }
 
 function Muted({ BOT, children }: { BOT: ReturnType<typeof useBotColors>; children: React.ReactNode }) {
-  return <Text style={{ fontSize: 13, lineHeight: 19, color: BOT.textTertiary }}>{children}</Text>;
+  return <BotText style={{ fontSize: 13, lineHeight: 19, color: BOT.textTertiary }}>{children}</BotText>;
 }

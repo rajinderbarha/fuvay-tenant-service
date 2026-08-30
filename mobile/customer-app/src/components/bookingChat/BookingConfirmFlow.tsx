@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, Animated, Easing, Dimensions, ScrollView } from "react-native";
+import { View, Pressable, Animated, Easing, Dimensions, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "../../design-system/theme";
 import { useBotColors } from "./botTheme";
+import { BotText } from "./BotText";
 
 export interface BookingConfirmFlowProps {
   /** "confirming" while the backend call is in flight, "confirmed" once it has
@@ -146,19 +147,19 @@ export function BookingConfirmFlow({
                   : [{ translateY: details.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
               }}
             >
-              <Text
+              <BotText
                 style={{
                   fontSize: 26, fontWeight: "800", color: BOT.textPrimary,
                   marginTop: 22, textAlign: "center",
                 }}
               >
                 You&apos;re booked
-              </Text>
-              <Text style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 8, textAlign: "center" }}>
+              </BotText>
+              <BotText style={{ fontSize: 15, color: BOT.textSecondary, marginTop: 8, textAlign: "center" }}>
                 {providerName
                   ? `${providerName} has been notified and will be in touch.`
                   : "We'll notify you as soon as a professional is assigned."}
-              </Text>
+              </BotText>
 
               <View
                 style={{
@@ -190,19 +191,19 @@ export function BookingConfirmFlow({
                   }}
                 >
                   <Ionicons name="return-down-forward" size={16} color={BOT.brand} style={{ marginTop: 2 }} />
-                  <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textPrimary }}>
+                  <BotText style={{ flex: 1, fontSize: 15, lineHeight: 21, color: BOT.textPrimary }}>
                     Your {amountLabel} visit fee is{" "}
-                    <Text style={{ fontWeight: "800" }}>credited against the repair</Text> if you go
+                    <BotText style={{ fontWeight: "800" }}>credited against the repair</BotText> if you go
                     ahead with the work.
-                  </Text>
+                  </BotText>
                 </View>
               ) : null}
 
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 }}>
                 <Ionicons name="shield-checkmark" size={15} color={BOT.success} />
-                <Text style={{ fontSize: 13, color: BOT.textTertiary }}>
+                <BotText style={{ fontSize: 13, color: BOT.textTertiary }}>
                   No work starts until you approve the price.
-                </Text>
+                </BotText>
               </View>
 
               <Pressable
@@ -214,9 +215,9 @@ export function BookingConfirmFlow({
                   alignItems: "center", justifyContent: "center", backgroundColor: BOT.brand,
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: "700", color: BOT.bubbleOnBrand }}>
+                <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.bubbleOnBrand }}>
                   Track my booking
-                </Text>
+                </BotText>
               </Pressable>
 
               {onBookAnother ? (
@@ -230,9 +231,9 @@ export function BookingConfirmFlow({
                     backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.border,
                   }}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary }}>
+                  <BotText style={{ fontSize: 15, fontWeight: "700", color: BOT.textPrimary }}>
                     Book another service
-                  </Text>
+                  </BotText>
                 </Pressable>
               ) : null}
 
@@ -242,7 +243,7 @@ export function BookingConfirmFlow({
                 accessibilityLabel="Done"
                 style={{ height: 44, marginTop: 6, alignItems: "center", justifyContent: "center" }}
               >
-                <Text style={{ fontSize: 15, fontWeight: "600", color: BOT.textTertiary }}>Done</Text>
+                <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textTertiary }}>Done</BotText>
               </Pressable>
             </Animated.View>
           </>
@@ -286,9 +287,9 @@ function Processing({
             : [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] }) }],
         }}
       />
-      <Text style={{ fontSize: 20, fontWeight: "700", color: BOT.textPrimary, marginTop: 24 }}>
+      <BotText style={{ fontSize: 20, fontWeight: "700", color: BOT.textPrimary, marginTop: 24 }}>
         Confirming your booking
-      </Text>
+      </BotText>
       <Animated.Text
         style={{
           fontSize: 15, color: BOT.textTertiary, marginTop: 8, textAlign: "center",
@@ -297,9 +298,9 @@ function Processing({
       >
         {label}
       </Animated.Text>
-      <Text style={{ fontSize: 13, color: BOT.textDim, marginTop: 20, textAlign: "center" }}>
+      <BotText style={{ fontSize: 13, color: BOT.textDim, marginTop: 20, textAlign: "center" }}>
         Please keep this screen open.
-      </Text>
+      </BotText>
     </View>
   );
 }
@@ -323,8 +324,8 @@ function Row({
       }}
     >
       <Ionicons name={icon} size={15} color={BOT.textTertiary} />
-      <Text style={{ fontSize: 15, color: BOT.textTertiary, flex: 1 }}>{label}</Text>
-      <Text
+      <BotText style={{ fontSize: 15, color: BOT.textTertiary, flex: 1 }}>{label}</BotText>
+      <BotText
         numberOfLines={1}
         style={{
           fontSize: 15, fontWeight: strong ? "700" : "600",
@@ -333,7 +334,7 @@ function Row({
         }}
       >
         {value}
-      </Text>
+      </BotText>
     </View>
   );
 }

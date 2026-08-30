@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "../../design-system/theme";
@@ -8,6 +8,7 @@ import { HomeCategory, HomeServiceGroup } from "../../domain/customerHome";
 import { FuvayIcon } from "../FuvayIcon";
 import { Icon } from "../Icon";
 import { useBotColors } from "./botTheme";
+import { BotText } from "./BotText";
 
 export interface CategoryChoiceTurnProps {
   categories: HomeCategory[];
@@ -52,23 +53,23 @@ export function CategoryChoiceTurn({
             <FuvayIcon size={32} accessibilityLabel="Fuvay booking assistant" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, fontWeight: "800", color: BOT.brandLight, letterSpacing: 1.1 }}>ASK FUVAY</Text>
-            <Text style={{ marginTop: 4, fontSize: 26, lineHeight: 31, fontWeight: "800", color: BOT.textPrimary }}>{headline}</Text>
-            <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
+            <BotText style={{ fontSize: 11, fontWeight: "800", color: BOT.brandLight, letterSpacing: 1.1 }}>ASK FUVAY</BotText>
+            <BotText style={{ marginTop: 4, fontSize: 26, lineHeight: 31, fontWeight: "800", color: BOT.textPrimary }}>{headline}</BotText>
+            <BotText style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
               Pick a service and we'll show only its relevant problems and booking questions.
-            </Text>
+            </BotText>
           </View>
         </View>
         <View style={{ marginTop: theme.spacing.md, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs, borderRadius: theme.radius.radiusFull, backgroundColor: BOT.surfaceSunken }}>
           <Ionicons name="location-outline" size={14} color={BOT.brandLight} />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{locationLabel}</Text>
+          <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{locationLabel}</BotText>
         </View>
       </View>
 
       {loading ? (
         <View style={{ minHeight: 132, alignItems: "center", justifyContent: "center", gap: theme.spacing.sm, borderRadius: 18, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
           <ActivityIndicator size="small" color={BOT.brand} />
-          <Text style={{ fontSize: 14, color: BOT.textMuted }}>Checking what's available near you...</Text>
+          <BotText style={{ fontSize: 14, color: BOT.textMuted }}>Checking what's available near you...</BotText>
         </View>
       ) : choices.length === 0 ? (
         <View style={{ padding: theme.spacing.lg, borderRadius: 18, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
@@ -77,10 +78,10 @@ export function CategoryChoiceTurn({
               <Ionicons name="location-outline" size={20} color={theme.colors.statusWarning} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: "800", color: BOT.textPrimary }}>No services here yet</Text>
-              <Text style={{ marginTop: 3, fontSize: 14, lineHeight: 20, color: BOT.textMuted }}>
+              <BotText style={{ fontSize: 16, fontWeight: "800", color: BOT.textPrimary }}>No services here yet</BotText>
+              <BotText style={{ marginTop: 3, fontSize: 14, lineHeight: 20, color: BOT.textMuted }}>
                 {city ? `We aren't serving ${city} yet. Change your location on Home to see what's available.` : "Change your location on Home to see what's available."}
-              </Text>
+              </BotText>
             </View>
           </View>
         </View>
@@ -88,10 +89,10 @@ export function CategoryChoiceTurn({
         <View style={{ gap: theme.spacing.md }}>
           <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
             <View>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Services near you</Text>
-              <Text style={{ marginTop: 2, fontSize: 13, color: BOT.textMuted }}>Choose one to begin</Text>
+              <BotText style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Services near you</BotText>
+              <BotText style={{ marginTop: 2, fontSize: 13, color: BOT.textMuted }}>Choose one to begin</BotText>
             </View>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{choices.length} available</Text>
+            <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{choices.length} available</BotText>
           </View>
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
@@ -112,7 +113,7 @@ export function CategoryChoiceTurn({
                   <View style={{ width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
                     <Icon name={resolveServiceChoiceIcon(choice.name, choice.slug)} size="standard" color={BOT.brandLight} decorative />
                   </View>
-                  <Text style={{ marginTop: theme.spacing.xs, paddingRight: 24, fontSize: 14, lineHeight: 18, fontWeight: "700", color: BOT.textPrimary }} numberOfLines={2}>{choice.name}</Text>
+                  <BotText style={{ marginTop: theme.spacing.xs, paddingRight: 24, fontSize: 14, lineHeight: 18, fontWeight: "700", color: BOT.textPrimary }} numberOfLines={2}>{choice.name}</BotText>
                   <View style={{ position: "absolute", right: 10, top: 10, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
                     <Ionicons name="arrow-forward" size={15} color={BOT.textSecondary} />
                   </View>
@@ -147,7 +148,7 @@ function Assurance({ icon, label }: { icon: React.ComponentProps<typeof Ionicons
   return (
     <View style={{ alignItems: "center", gap: 3, flex: 1 }}>
       <Ionicons name={icon} size={17} color={BOT.brandLight} />
-      <Text style={{ fontSize: 11, fontWeight: "700", color: BOT.textSecondary }}>{label}</Text>
+      <BotText style={{ fontSize: 11, fontWeight: "700", color: BOT.textSecondary }}>{label}</BotText>
     </View>
   );
 }

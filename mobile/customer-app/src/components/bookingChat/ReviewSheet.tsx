@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, Pressable, ScrollView, Animated, Easing } from "react-native";
+import { View, Pressable, ScrollView, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "../../design-system/theme";
@@ -9,6 +9,7 @@ import { ProviderTrustCard } from "./ProviderTrustCard";
 import { FeeAssuranceCard } from "./FeeAssuranceCard";
 import { BookingReviewSummary } from "../../domain/bookingReview";
 import { formatMoney } from "../../domain/money";
+import { BotText } from "./BotText";
 
 export interface ReviewSheetProps {
   summary: BookingReviewSummary;
@@ -95,12 +96,12 @@ export function ReviewSheet({
           <Ionicons name="chevron-back" size={17} color={BOT.textTertiary} />
         </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>
+          <BotText style={{ fontSize: 17, fontWeight: "700", color: BOT.textPrimary }}>
             Review &amp; confirm
-          </Text>
-          <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 1 }}>
+          </BotText>
+          <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 1 }}>
             Check the details before you book
-          </Text>
+          </BotText>
         </View>
         <View
           style={{
@@ -109,7 +110,7 @@ export function ReviewSheet({
           }}
         >
           <Ionicons name="shield-checkmark" size={12} color={BOT.success} />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: BOT.success }}>Protected</Text>
+          <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.success }}>Protected</BotText>
         </View>
       </View>
 
@@ -179,8 +180,8 @@ export function ReviewSheet({
               marginBottom: 12,
             }}
           >
-            <Text style={{ fontSize: 15, color: BOT.textTertiary }}>Due at the visit</Text>
-            <Text style={{ fontSize: 20, fontWeight: "800", color: BOT.textPrimary }}>{payable}</Text>
+            <BotText style={{ fontSize: 15, color: BOT.textTertiary }}>Due at the visit</BotText>
+            <BotText style={{ fontSize: 20, fontWeight: "800", color: BOT.textPrimary }}>{payable}</BotText>
           </View>
         ) : null}
 
@@ -198,19 +199,19 @@ export function ReviewSheet({
           }}
         >
           {!confirming ? <Ionicons name="lock-closed" size={15} color={BOT.bubbleOnBrand} /> : null}
-          <Text
+          <BotText
             style={{
               fontSize: 16, fontWeight: "700",
               color: disabled && !confirming ? BOT.textDim : BOT.bubbleOnBrand,
             }}
           >
             {confirming ? "Confirming…" : "Confirm & Book"}
-          </Text>
+          </BotText>
         </Pressable>
 
-        <Text style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 10, textAlign: "center" }}>
+        <BotText style={{ fontSize: 13, color: BOT.textTertiary, marginTop: 10, textAlign: "center" }}>
           {confirmDisabledReason ?? "Free cancellation before the technician sets off."}
-        </Text>
+        </BotText>
       </View>
     </Animated.View>
   );
@@ -251,7 +252,7 @@ function EditChip({
       }}
     >
       <Ionicons name={icon} size={14} color={BOT.textSecondary} />
-      <Text style={{ fontSize: 13, fontWeight: "600", color: BOT.textSecondary }}>{label}</Text>
+      <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.textSecondary }}>{label}</BotText>
     </Pressable>
   );
 }
