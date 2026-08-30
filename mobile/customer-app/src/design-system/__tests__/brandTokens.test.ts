@@ -31,9 +31,15 @@ function contrastRatio(a: string, b: string): number {
 }
 
 describe("customer native brand and contrast tokens", () => {
-  it("uses the approved blue brand fill in both themes (brighter blue in dark mode)", () => {
-    expect(lightColors.brandPrimary).toBe("#3868E0");
-    expect(darkColors.brandPrimary).toBe("#1A6FE0");
+  it("uses the Fuvay v2 blue (a2) as the brand fill, brighter in dark mode", () => {
+    // v2's a2 accent -- the canvas uses it for every primary action.
+    expect(lightColors.brandPrimary).toBe("#1a63a8");
+    expect(darkColors.brandPrimary).toBe("#3f9bf0");
+    // Dark mode must be the brighter of the two, so a filled button reads
+    // as raised against a dark shell rather than sinking into it.
+    expect(relativeLuminance(darkColors.brandPrimary)).toBeGreaterThan(
+      relativeLuminance(lightColors.brandPrimary),
+    );
   });
 
   /**
@@ -67,14 +73,21 @@ describe("customer native brand and contrast tokens", () => {
     }
   });
 
-  it("uses the approved semantic status colors", () => {
-    expect(lightColors.statusSuccess).toBe("#1E8E5A");
-    expect(lightColors.statusWarning).toBe("#B5750B");
-    expect(lightColors.statusDanger).toBe("#C4342A");
+  it("maps semantic status colors onto the v2 accent rotation", () => {
+    // success = a3 (green), warning = a1 (amber). Danger has no v2 accent
+    // -- none of a1-a4 may signal destruction -- so it is a hue-matched
+    // addition, asserted for contrast rather than identity alone.
+    expect(lightColors.statusSuccess).toBe("#207c4a");
+    expect(lightColors.statusWarning).toBe("#9c6209");
+    expect(darkColors.statusSuccess).toBe("#4ecb7c");
+    expect(darkColors.statusWarning).toBe("#f0b429");
+    for (const theme of [lightColors, darkColors]) {
+      expect(contrastRatio(theme.statusDanger, theme.backgroundPrimary)).toBeGreaterThanOrEqual(3);
+    }
   });
 
-  it("uses the approved neutral charcoal (not pure-black) dark background", () => {
-    expect(darkColors.backgroundPrimary).toBe("#1C1C1E");
+  it("uses the v2 neutral shell (not pure-black) as the dark background", () => {
+    expect(darkColors.backgroundPrimary).toBe("#232326");
     expect(darkColors.backgroundPrimary).not.toBe("#000000");
   });
 
@@ -90,12 +103,26 @@ describe("customer native brand and contrast tokens", () => {
   });
 
   it("keeps dark-mode primary text close to white, not washed-out gray", () => {
-    expect(darkColors.textPrimary).toBe("#F5F5F7");
+    expect(darkColors.textPrimary).toBe("#f0f0f2");
+    // The real requirement: near-white, and comfortably readable on the shell.
+    expect(relativeLuminance(darkColors.textPrimary)).toBeGreaterThan(0.8);
+    expect(
+      contrastRatio(darkColors.textPrimary, darkColors.backgroundPrimary),
+    ).toBeGreaterThanOrEqual(7);
   });
 
   it("defines distinct campaign tokens for light and dark treatments", () => {
-    expect(lightColors.campaignBackground).toBe("#EEF3FF");
+    // v2 campaigns are amber-washed (a1), and the hex "OFF" badge is a
+    // fixed amber in BOTH themes -- so its foreground is computed, not
+    // theme-flipped.
+    expect(lightColors.campaignBackground).toBe("#9c620918");
     expect(darkColors.campaignGradientStart).not.toBe(lightColors.campaignBackground);
+    expect(lightColors.campaignAccent).toBe(darkColors.campaignAccent);
+    for (const theme of [lightColors, darkColors]) {
+      expect(
+        contrastRatio(theme.campaignBadgeForeground, theme.campaignAccent),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   /**

@@ -3,18 +3,38 @@
  * value -- every color a screen needs must resolve through these tokens (or
  * the theme built from them in ../theme).
  *
- * CONFLICT NOTE (Home-screen redesign phase): these values were replaced
- * with a new "approved brand tokens" spec for the Home screen redesign
- * (#FF641A primary, new surface/campaign tokens) that DIFFERS from the
- * palette mirrored from mobile/staff-app in earlier phases (#D9642B
- * primary). This is a real, reportable divergence from the "identical
- * visual DNA as Staff App" instruction established in Phase A-C/E -- see
- * the delivery report. The new tokens are applied here because this
- * phase's brief explicitly labels them "APPROVED," superseding the
- * earlier mirrored value for this app; Staff App itself was NOT touched
- * and still uses #D9642B, so the two apps are now visually divergent
- * pending an explicit design-system reconciliation decision.
+ * ── Fuvay v2 ──────────────────────────────────────────────────────────────
+ * Every value below now resolves to the Fuvay v2 design language defined in
+ * ./fuvay.ts (the "Fuvay App Screens" canvas). This file is the bridge: it
+ * keeps the semantic names ~200 files already import, while the actual
+ * colours come from the v2 palette. That is what makes the redesign reach
+ * all 57 screens rather than only the four the canvas draws -- a screen that
+ * asks for `surfaceDefault` gets the v2 card colour without being touched.
+ *
+ * Two consequences worth knowing:
+ *
+ * 1. `brandPrimary` is v2's **a2 (blue)**. The canvas uses a2 for every
+ *    primary action -- the active nav pill, "Send code", "Ask AI" -- so it
+ *    is the honest mapping for the single-brand-colour token. The other
+ *    three accents (a1 amber / a3 green / a4 violet) are exposed through
+ *    `accentAmber` / `accentMint` / `accentViolet`, and directly via
+ *    ./fuvay.ts for screens that rotate accents per card.
+ *
+ * 2. `brandOnPrimary` is now theme-DEPENDENT. v2's dark-mode blue (#3f9bf0)
+ *    is a light colour, so WCAG-correct foreground on it is near-black, not
+ *    white. This is `ink()` in ./fuvay.ts doing its job; a filled button in
+ *    dark mode legitimately gets dark text. Hardcoding white there would
+ *    fail contrast.
  */
+import {
+  darkAccents,
+  darkSurfaces,
+  ink,
+  lightAccents,
+  lightSurfaces,
+  softAccent,
+} from "./fuvay";
+
 export interface ColorTokens {
   brandPrimary: string;
   brandPrimaryPressed: string;
@@ -23,13 +43,10 @@ export interface ColorTokens {
   /**
    * The brand colour for TEXT and ICONS sitting on a normal page surface.
    *
-   * Needed because one hex cannot do both jobs in light mode: the warm
-   * yellow brand fill (#F2994A) only reaches 2.06:1 against the light
-   * background, so using it for a label or icon would be unreadable. This
-   * is the same hue (28deg) darkened until it passes WCAG AA for body
-   * text, so the brand still reads as warm yellow without sacrificing
-   * legibility. In dark mode the fill colour is already legible against
-   * dark surfaces, so both tokens are the same value there.
+   * Needed because one hex cannot do both jobs: v2's dark-mode blue is a
+   * light tint that fills a shape well but is used as-is for text on dark
+   * surfaces, while the light theme needs a darkened blue to stay legible
+   * on pale ones.
    *
    * Rule of thumb: `brandPrimary` fills a shape, `brandPrimaryStrong`
    * draws on top of the page, `brandOnPrimary` draws on top of a fill.
@@ -66,9 +83,9 @@ export interface ColorTokens {
   iconDefault: string;
   bottomNavigation: string;
 
-  /** Solid campaign-banner background (light theme uses a single flat
-   * tint per the approved design; dark theme uses campaignGradientStart/
-   * End instead -- see buildTheme.ts campaignGradient helper). */
+  /** Campaign / promo banner surfaces. v2 draws these as photography with a
+   *  scrim plus an amber hex badge, so the accent is a1 and the badge
+   *  foreground is computed from it. */
   campaignBackground: string;
   campaignGradientStart: string;
   campaignGradientEnd: string;
@@ -85,9 +102,9 @@ export interface ColorTokens {
   mediaScrim: string;
   mediaScrimStrong: string;
 
-  /** Product accents are intentionally plural. The permanent shell stays
-   * neutral while service glyphs, campaigns and editorial modules can carry
-   * their own colour without turning the whole application blue. */
+  /** Product accents are intentionally plural -- in v2 they are the a1-a4
+   * rotation itself. The permanent shell stays neutral while service glyphs,
+   * campaigns and editorial modules carry their own colour. */
   accentCyan: string;
   accentMint: string;
   accentCoral: string;
@@ -109,162 +126,169 @@ export interface ColorTokens {
   statusBarStyle: "dark" | "light";
 }
 
-// Aligned to the Staff app's palette (mobile/staff-app/src/design-system/
-// tokens/colors.ts) so both apps read as one product family. This also
-// fixed a real, user-visible chat defect: the customer app's
-// `surfaceInteractive` was #FBFAF8 against a #F7F6F4 background -- a ~1.5%
-// luminance step, so assistant chat bubbles were effectively invisible
-// against the conversation background. The staff ramp has a genuine,
-// legible step between background/surface/border at every level.
-// Blue palette — per the 2026-08-04 project rebrand (warm orange -> blue),
-// matching frontend/customer-app, frontend/super-admin and
-// frontend/tenant-portal's globals.css exactly. `brandOnPrimary` stays
-// white -- blue has enough luminance contrast for white text/icons on a
-// filled button, unlike the previous yellow which needed dark ink.
+const L = lightAccents;
+const LS = lightSurfaces;
+const D = darkAccents;
+const DS = darkSurfaces;
+
+/**
+ * Danger has no accent in the v2 canvas -- a1-a4 are amber/blue/green/violet
+ * and none of them may signal destruction. These are the one addition, hue-
+ * matched to the palette's saturation and verified for AA in the tests.
+ */
+const LIGHT_DANGER = "#b3261e";
+const DARK_DANGER = "#f2827a";
+
 export const lightColors: ColorTokens = {
-  brandPrimary: "#3868E0",
-  brandPrimaryPressed: "#2F5BD1",
-  brandPrimaryMuted: "#EEF3FF",
-  brandOnPrimary: "#FFFFFF",
-  brandPrimaryStrong: "#2F5BD1",
+  brandPrimary: L.a2,
+  brandPrimaryPressed: "#134e85",
+  brandPrimaryMuted: softAccent(L.a2, false),
+  brandOnPrimary: ink(L.a2),
+  brandPrimaryStrong: L.a2,
 
-  // Deliberately NOT pure white -- surfaceDefault (cards, chat bubbles) IS
-  // pure white, so it must sit on something else or it's invisible (the
-  // exact chat-legibility regression this token set already fixed once).
-  backgroundPrimary: "#F5F8FD",
-  backgroundSecondary: "#F1F5FB",
-  backgroundElevated: "#FFFFFF",
-  backgroundSunken: "#EAEFF8",
-  backgroundOverlay: "rgba(15, 23, 42, 0.45)",
+  // The v2 shell is the page ground; panel and card stack above it. Keeping
+  // three distinct steps matters -- a previous regression made chat bubbles
+  // invisible when surface and background were within ~1.5% luminance.
+  backgroundPrimary: LS.shell,
+  backgroundSecondary: LS.panel,
+  backgroundElevated: LS.card,
+  backgroundSunken: "#eceae7",
+  backgroundOverlay: "rgba(20, 20, 26, 0.45)",
 
-  surfaceDefault: "#FFFFFF",
-  surfaceSecondary: "#F1F5FB",
-  surfaceRaised: "#FFFFFF",
-  surfaceInteractive: "#EEF3FF",
-  surfaceSelected: "#EEF3FF",
-  surfaceDisabled: "#EAEFF8",
+  // v2 has two card-ish surfaces with distinct jobs: `panel` is the raised
+  // content card (booking card, recommendation row), `card` is the RECESSED
+  // input surface (search field, AI prompt rows). surfaceDefault is the
+  // former -- mapping it to `card` put dark-mode bubbles only 3.07 luminance
+  // from the background and tripped the chat-legibility guard below.
+  surfaceDefault: LS.panel,
+  surfaceSecondary: LS.card,
+  surfaceRaised: LS.card,
+  surfaceInteractive: softAccent(L.a2, false),
+  surfaceSelected: softAccent(L.a2, false),
+  surfaceDisabled: "#eceae7",
 
-  textPrimary: "#0F172A",
-  textSecondary: "#475569",
-  textTertiary: "#94A3B8",
-  textDisabled: "#CBD3E1",
-  textInverse: "#FFFFFF",
-  textLink: "#2F5BD1",
+  textPrimary: LS.text,
+  textSecondary: LS.sub,
+  textTertiary: LS.faint,
+  textDisabled: "rgba(60,52,44,0.38)",
+  textInverse: "#ffffff",
+  textLink: L.a2,
 
-  borderSubtle: "#E7EBF3",
-  borderDefault: "#CBD3E1",
-  borderStrong: "#94A3B8",
-  borderFocus: "#3B6FED",
-  borderDisabled: "#E7EBF3",
-  divider: "#E7EBF3",
+  borderSubtle: LS.edge,
+  borderDefault: LS.rule,
+  borderStrong: "rgba(90,82,74,0.28)",
+  borderFocus: L.a2,
+  borderDisabled: LS.edge,
+  divider: LS.rule,
 
-  iconDefault: "#475569",
-  bottomNavigation: "#FFFFFF",
+  iconDefault: LS.faint,
+  bottomNavigation: LS.card,
 
-  campaignBackground: "#EEF3FF",
-  campaignGradientStart: "#EEF3FF",
-  campaignGradientEnd: "#EEF3FF",
-  campaignAccent: "#F6C344",
-  campaignBadgeForeground: "#211806",
-  campaignScrim: "rgba(3, 18, 48, 0.24)",
-  campaignBadgeScrim: "rgba(3, 18, 48, 0.75)",
+  campaignBackground: softAccent(L.a1, false),
+  campaignGradientStart: softAccent(L.a1, false),
+  campaignGradientEnd: LS.panel,
+  // The hex "₹500 OFF" badge is fixed amber in both themes in the canvas.
+  campaignAccent: LS.hexFill,
+  campaignBadgeForeground: ink(LS.hexFill),
+  campaignScrim: "rgba(10, 8, 14, 0.55)",
+  campaignBadgeScrim: "rgba(10, 8, 14, 0.92)",
 
-  mediaForeground: "#FFFFFF",
-  mediaForegroundMuted: "#EEEAE2",
-  mediaScrim: "rgba(8, 9, 10, 0.30)",
-  mediaScrimStrong: "rgba(8, 9, 10, 0.60)",
-  accentCyan: "#3AA7C7",
-  accentMint: "#33A879",
-  accentCoral: "#EE765F",
-  accentAmber: "#E7A63D",
-  accentViolet: "#9D4EDD",
-  accentVioletSurface: "#F2EAFE",
+  mediaForeground: "#ffffff",
+  mediaForegroundMuted: "rgba(255,255,255,0.72)",
+  mediaScrim: "rgba(10, 8, 14, 0.30)",
+  mediaScrimStrong: "rgba(10, 8, 14, 0.66)",
 
-  statusSuccess: "#1E8E5A",
-  statusSuccessSurface: "#E6F5EC",
-  statusWarning: "#B5750B",
-  statusWarningSurface: "#FCF0DC",
-  statusDanger: "#C4342A",
-  statusDangerSurface: "#FBE8E6",
-  statusInfo: "#1E6FB8",
-  statusInfoSurface: "#E6F0FA",
-  statusNeutral: "#475569",
-  statusNeutralSurface: "#EAEFF8",
+  accentCyan: L.a2,
+  accentMint: L.a3,
+  accentCoral: LIGHT_DANGER,
+  accentAmber: L.a1,
+  accentViolet: L.a4,
+  accentVioletSurface: softAccent(L.a4, false),
+
+  statusSuccess: L.a3,
+  statusSuccessSurface: softAccent(L.a3, false),
+  statusWarning: L.a1,
+  statusWarningSurface: softAccent(L.a1, false),
+  statusDanger: LIGHT_DANGER,
+  statusDangerSurface: softAccent(LIGHT_DANGER, false),
+  statusInfo: L.a2,
+  statusInfoSurface: softAccent(L.a2, false),
+  statusNeutral: LS.faint,
+  statusNeutralSurface: "rgba(90,82,74,0.08)",
 
   statusBarStyle: "dark",
 };
 
-// Tesla-app reference: neutral charcoal-black layered surfaces (never pure
-// black everywhere), off-white (not pure-white) primary text, electric-blue
-// brand accent.
 export const darkColors: ColorTokens = {
-  brandPrimary: "#1A6FE0",
-  brandPrimaryPressed: "#1558B8",
-  brandPrimaryMuted: "#1A3A5C",
-  brandOnPrimary: "#FFFFFF",
-  // On dark surfaces the fill colour is already legible as a foreground
-  // (#2B8FFF on #1C1C1E is well over 4.5:1), so no separate shade is needed.
-  brandPrimaryStrong: "#5AB0FF",
+  brandPrimary: D.a2,
+  brandPrimaryPressed: "#3287d6",
+  brandPrimaryMuted: softAccent(D.a2, true),
+  // #3f9bf0 is a light blue -- WCAG puts near-black on it, not white.
+  brandOnPrimary: ink(D.a2),
+  brandPrimaryStrong: D.a2,
 
-  backgroundPrimary: "#1C1C1E",
-  backgroundSecondary: "#202024",
-  backgroundElevated: "#232326",
-  backgroundSunken: "#161618",
+  backgroundPrimary: DS.shell,
+  backgroundSecondary: DS.panel,
+  backgroundElevated: DS.card,
+  backgroundSunken: "#1d1d20",
   backgroundOverlay: "rgba(0, 0, 0, 0.6)",
 
-  surfaceDefault: "#232326",
-  surfaceSecondary: "#202024",
-  surfaceRaised: "#2C2C30",
-  surfaceInteractive: "#2C2C30",
-  surfaceSelected: "#1A3A5C",
-  surfaceDisabled: "#202024",
+  // See the light-theme note: `panel` is the raised card, `card` the
+  // recessed input surface.
+  surfaceDefault: DS.panel,
+  surfaceSecondary: DS.card,
+  surfaceRaised: DS.hexPanel,
+  surfaceInteractive: softAccent(D.a2, true),
+  surfaceSelected: softAccent(D.a2, true),
+  surfaceDisabled: "#1d1d20",
 
-  textPrimary: "#F5F5F7",
-  textSecondary: "#9B9BA1",
-  textTertiary: "#6E6E73",
-  textDisabled: "#44444A",
-  textInverse: "#1C1C1E",
-  textLink: "#5AB0FF",
+  textPrimary: DS.text,
+  textSecondary: DS.sub,
+  textTertiary: DS.faint,
+  textDisabled: "rgba(255,255,255,0.38)",
+  textInverse: "#14141a",
+  textLink: D.a2,
 
-  borderSubtle: "#2C2C30",
-  borderDefault: "#333338",
-  borderStrong: "#44444A",
-  borderFocus: "#2B8FFF",
-  borderDisabled: "#2C2C30",
-  divider: "#2C2C30",
+  borderSubtle: DS.edge,
+  borderDefault: DS.rule,
+  borderStrong: "rgba(140,140,150,0.35)",
+  borderFocus: D.a2,
+  borderDisabled: DS.edge,
+  divider: DS.rule,
 
-  iconDefault: "#9B9BA1",
-  bottomNavigation: "#232326",
+  iconDefault: DS.faint,
+  bottomNavigation: DS.card,
 
-  campaignBackground: "#1A3A5C",
-  campaignGradientStart: "#1A3A5C",
-  campaignGradientEnd: "#202024",
-  campaignAccent: "#F6C344",
-  campaignBadgeForeground: "#211806",
-  campaignScrim: "rgba(3, 18, 48, 0.36)",
-  campaignBadgeScrim: "rgba(3, 18, 48, 0.82)",
+  campaignBackground: softAccent(D.a1, true),
+  campaignGradientStart: softAccent(D.a1, true),
+  campaignGradientEnd: DS.panel,
+  campaignAccent: DS.hexFill,
+  campaignBadgeForeground: ink(DS.hexFill),
+  campaignScrim: "rgba(10, 8, 14, 0.55)",
+  campaignBadgeScrim: "rgba(10, 8, 14, 0.92)",
 
-  mediaForeground: "#FFFFFF",
-  mediaForegroundMuted: "#E8E5DF",
-  mediaScrim: "rgba(0, 0, 0, 0.34)",
-  mediaScrimStrong: "rgba(0, 0, 0, 0.66)",
-  accentCyan: "#53C5E3",
-  accentMint: "#4ED5A1",
-  accentCoral: "#FF8D78",
-  accentAmber: "#F5B84E",
-  accentViolet: "#C16CFF",
-  accentVioletSurface: "#24114A",
+  mediaForeground: "#ffffff",
+  mediaForegroundMuted: "rgba(255,255,255,0.72)",
+  mediaScrim: "rgba(10, 8, 14, 0.34)",
+  mediaScrimStrong: "rgba(10, 8, 14, 0.70)",
 
-  statusSuccess: "#4ADE80",
-  statusSuccessSurface: "#16301F",
-  statusWarning: "#FBBF24",
-  statusWarningSurface: "#3A2E0E",
-  statusDanger: "#F87171",
-  statusDangerSurface: "#3A1614",
-  statusInfo: "#60A5E8",
-  statusInfoSurface: "#122C3E",
-  statusNeutral: "#9B9BA1",
-  statusNeutralSurface: "#2C2C30",
+  accentCyan: D.a2,
+  accentMint: D.a3,
+  accentCoral: DARK_DANGER,
+  accentAmber: D.a1,
+  accentViolet: D.a4,
+  accentVioletSurface: softAccent(D.a4, true),
+
+  statusSuccess: D.a3,
+  statusSuccessSurface: softAccent(D.a3, true),
+  statusWarning: D.a1,
+  statusWarningSurface: softAccent(D.a1, true),
+  statusDanger: DARK_DANGER,
+  statusDangerSurface: softAccent(DARK_DANGER, true),
+  statusInfo: D.a2,
+  statusInfoSurface: softAccent(D.a2, true),
+  statusNeutral: DS.faint,
+  statusNeutralSurface: "rgba(255,255,255,0.06)",
 
   statusBarStyle: "light",
 };

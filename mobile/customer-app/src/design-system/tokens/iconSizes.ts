@@ -1,4 +1,4 @@
-/** One icon library only: @expo/vector-icons (Ionicons set). */
+/** Shared size scale for both app-wide Ionicons and the Home Lucide set. */
 export const iconSizes = {
   compact: 16,
   standard: 20,

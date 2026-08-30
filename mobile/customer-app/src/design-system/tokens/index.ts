@@ -1,4 +1,6 @@
 export * from "./colors";
+export * from "./fonts";
+export * from "./fuvay";
 export * from "./spacing";
 export * from "./radius";
 export * from "./typography";
@@ -7,3 +9,4 @@ export * from "./motion";
 export * from "./opacity";
 export * from "./iconSizes";
 export * from "./touchTargets";
+export * from "./material";

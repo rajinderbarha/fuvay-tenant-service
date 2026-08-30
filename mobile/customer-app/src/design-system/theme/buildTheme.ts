@@ -7,11 +7,13 @@ import { motion } from "../tokens/motion";
 import { opacity } from "../tokens/opacity";
 import { iconSizes } from "../tokens/iconSizes";
 import { touchTargets } from "../tokens/touchTargets";
+import { darkMaterial, lightMaterial } from "../tokens/material";
 
 export type ThemeMode = "light" | "dark";
 
 export function buildTheme(mode: ThemeMode) {
   const colors: ColorTokens = mode === "dark" ? darkColors : lightColors;
+  const material = mode === "dark" ? darkMaterial : lightMaterial;
   return {
     mode,
     colors,
@@ -25,6 +27,7 @@ export function buildTheme(mode: ThemeMode) {
     opacity,
     iconSizes,
     touchTargets,
+    material,
   } as const;
 }
 

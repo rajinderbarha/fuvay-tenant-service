@@ -23,6 +23,16 @@ export const layout = {
   inlineGap: spacing.xs,
   compactGap: spacing.xxs,
   minTouchTarget: 48,
+  /** Authentication uses one responsive shell across OTP and password.
+   * Keeping these dimensions here prevents either route from inventing its
+   * own logo, form, artwork or footer size. */
+  authContentMaxWidth: 440,
+  authCompactWidthBreakpoint: 360,
+  authCompactHeightBreakpoint: 720,
+  authLogoMaxWidth: 260,
+  authLogoCompactWidth: 216,
+  authCityArtworkHeight: 112,
+  authFooterMinHeight: 188,
 } as const;
 
 export type SpacingToken = keyof typeof spacing;
