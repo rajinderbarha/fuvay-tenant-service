@@ -48,7 +48,7 @@ export function CategoryChoiceTurn({
     <View style={{ gap: theme.spacing.xl }}>
       <View style={{ paddingVertical: theme.spacing.sm }}>
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.md }}>
-          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: BOT.border, alignItems: "center", justifyContent: "center" }}>
+          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, alignItems: "center", justifyContent: "center" }}>
             <FuvayIcon size={32} accessibilityLabel="Fuvay booking assistant" />
           </View>
           <View style={{ flex: 1 }}>

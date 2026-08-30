@@ -440,7 +440,7 @@ export function BotAssistantBubble({ text, children }: { text?: string; children
   const entrance = useTurnEntrance();
   return (
     <Animated.View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 8 }, entrance]}>
-      <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
+      <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, marginTop: 2 }}>
         <FuvayIcon size={18} accessibilityLabel="Fuvay assistant" />
       </View>
       {text ? (

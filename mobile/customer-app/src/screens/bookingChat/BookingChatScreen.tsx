@@ -180,7 +180,7 @@ function AssistantIntroHeader({ locationLabel }: { locationLabel?: string | null
       <View
         style={{
           width: 42, height: 42, borderRadius: 21, alignItems: "center",
-          justifyContent: "center", backgroundColor: "#FFFFFF",
+          justifyContent: "center", backgroundColor: BOT.surfaceRaised,
           borderWidth: 1, borderColor: BOT.border,
         }}
       >
@@ -489,7 +489,7 @@ function BookingChatConversation({
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 36, height: 40, alignItems: "flex-start", justifyContent: "center" }}>
               <Ionicons name="chevron-back" size={19} color={BOT.textSecondary} />
             </Pressable>
-            <View style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: BOT.border }}>
+            <View style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
               <FuvayIcon size={27} accessibilityLabel="Fuvay booking assistant" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
