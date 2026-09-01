@@ -38,16 +38,16 @@ async def test_health_returns_engine_registry():
         response = await client.get("/health")
     data = response.json()
     engines = data["engines"]
-    # 35 engines: original 30 + workflow/trust_quality/compliance/marketing/audit
-    # registered so the dashboard Engine Health panel no longer reports them "not_configured".
-    assert engines["total"] == 35, f"Expected 35 engines, got {engines['total']}"
+    # Keep this resilient as engines are added: the endpoint must report a
+    # complete current registry and retain all core/plugin coverage.
+    assert engines["total"] >= 36, f"Expected at least 36 engines, got {engines['total']}"
     assert engines["core"] >= 9, f"Expected at least 9 core engines, got {engines['core']}"
     assert engines["plugin"] >= 14, f"Expected at least 14 plugin engines, got {engines['plugin']}"
 
 
 @pytest.mark.asyncio
 async def test_engine_registry_endpoint():
-    """GET /v1/engines should return all 35 engines."""
+    """GET /v1/engines should return the complete current registry."""
     from app.engines.auth.utils import create_access_token
     token, _ = create_access_token(
         user_id="00000000-0000-0000-0000-000000000001",
@@ -65,7 +65,11 @@ async def test_engine_registry_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    assert data["data"]["total"] == 35
+    registry = data["data"]
+    assert registry["total"] == len(registry["engines"])
+    assert registry["total"] >= 36
+    engine_ids = {engine["engine_id"] for engine in registry["engines"]}
+    assert {"workflow", "trust_quality", "compliance", "marketing", "complaint_dispute", "audit"} <= engine_ids
 
 
 @pytest.mark.asyncio

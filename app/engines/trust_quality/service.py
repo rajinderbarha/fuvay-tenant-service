@@ -1220,6 +1220,11 @@ class TrustQualityService:
     # ── Risk Scoring (simple) ────────────────────────────────────────────────
 
     async def recalculate_risk_for_target(self, target_type: str, target_id: uuid.UUID, metrics: dict) -> dict:
+        if target_type not in VALID_HEALTH_TARGETS:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                f"target_type must be one of {sorted(VALID_HEALTH_TARGETS)}",
+            )
         rules = (await self.db.execute(
             select(RiskRule).where(RiskRule.target_type == target_type, RiskRule.status == "active")
         )).scalars().all()
@@ -1371,16 +1376,12 @@ class TrustQualityService:
                 m["tenant_status"] = tenant["status"]
 
             billing = (await self.db.execute(text("""
-                SELECT credit_balance, security_deposit_paid, security_deposit_amount
+                SELECT credit_balance
                   FROM tenant_billing
                  WHERE tenant_id = :target_id AND vertical_key = 'home_services'
                  ORDER BY updated_at DESC NULLS LAST LIMIT 1
             """), {"target_id": str(target_id)})).mappings().one_or_none()
             if billing:
-                deposit_required = float(billing["security_deposit_amount"] or 0) > 0
-                deposit_ready = not deposit_required or bool(billing["security_deposit_paid"])
-                m["security_deposit_score"] = 100.0 if deposit_ready else 0.0
-                m["security_deposit_missing"] = not deposit_ready
                 credit_ready = float(billing["credit_balance"] or 0) > 0
                 m["usage_credit_score"] = 100.0 if credit_ready else 0.0
                 m["usage_credit_depleted"] = not credit_ready
@@ -1884,8 +1885,7 @@ _DEFAULT_HEALTH_FORMULAS = [
         "components": [
             {"metric_key": "profile_completion_percent", "weight_percent": 10},
             {"metric_key": "document_verification_score", "weight_percent": 10},
-            {"metric_key": "security_deposit_score", "weight_percent": 10},
-            {"metric_key": "usage_credit_score", "weight_percent": 10},
+            {"metric_key": "usage_credit_score", "weight_percent": 20},
             {"metric_key": "job_completion_rate", "weight_percent": 15},
             {"metric_key": "response_sla_score", "weight_percent": 10},
             {"metric_key": "rating_score", "weight_percent": 15},
@@ -1895,7 +1895,6 @@ _DEFAULT_HEALTH_FORMULAS = [
         ],
         "penalties": [
             {"metric_key": "tenant_status", "operator": "equals", "value": "suspended", "penalty_points": 0, "hard_override_score": 0},
-            {"metric_key": "security_deposit_missing", "operator": "equals", "value": True, "penalty_points": 20},
             {"metric_key": "usage_credit_depleted", "operator": "equals", "value": True, "penalty_points": 20},
             {"metric_key": "complaint_rate", "operator": "greater_than", "value": 10, "penalty_points": 20},
             {"metric_key": "average_rating", "operator": "less_than", "value": 3.5, "penalty_points": 20},

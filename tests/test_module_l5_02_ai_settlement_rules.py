@@ -7,8 +7,7 @@
   * A case strong enough to warrant MORE than the cap is NOT settled by the AI —
     it goes to admin manual review.
   * Compensation is CREDIT POINTS, never real money.
-  * Those credits are funded from the PROVIDER's credit wallet, falling back to
-    their security deposit.
+  * Those credits are funded from the PROVIDER's canonical usage credit.
   * The admin only sets the rule.
 """
 import inspect
@@ -28,8 +27,7 @@ JOB = Decimal("1000.00")   # cap = 250.00
 def test_defaults_match_the_business_rule():
     assert AI_SETTLEMENT_DEFAULT_MAX_PCT == Decimal("25.00")
     assert AI_SETTLEMENT_FEE_CREDITS == Decimal("20.00")
-    # provider credits first, then their security deposit
-    assert SETTLEMENT_DEDUCTION_STRATEGY == "tenant_wallet_then_security_deposit"
+    assert SETTLEMENT_DEDUCTION_STRATEGY == "tenant_wallet"
 
 
 def test_no_monetary_remedy_is_ever_permitted():
@@ -89,15 +87,17 @@ def test_provider_is_charged_for_the_ai_settlement():
     from app.engines.complaints import settlement_rules
     src = inspect.getsource(settlement_rules.charge_ai_settlement_fee)
     assert "AI_SETTLEMENT_FEE_CREDITS" in src
-    assert "ai_settlement_fee" in src            # wallet txn reference
-    assert "SETTLEMENT_DEDUCTION_STRATEGY" in src  # wallet -> deposit cascade
+    assert "UsageCreditService" in src
+    assert "charge_ai_settlement_fee" in src
+    assert "TenantWallet" not in src
+    assert '"charged_from_deposit": 0.0' in src
 
 
 def test_payout_is_credits_funded_by_the_provider():
     from app.engines.complaints.complaint_service import ComplaintService
     src = inspect.getsource(ComplaintService._execute_settlement_payout)
     assert "MONETARY_REMEDIES" in src              # money can never leave this way
-    assert "SETTLEMENT_DEDUCTION_STRATEGY" in src  # provider wallet -> deposit
+    assert "SETTLEMENT_DEDUCTION_STRATEGY" in src
     assert "execute_settlement" in src
 
 

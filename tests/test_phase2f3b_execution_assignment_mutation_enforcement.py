@@ -165,7 +165,11 @@ class TestAuthorizedActorClearsAuthLayer:
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await _call(client, method, path_tmpl, body)
-            assert r.status_code not in (401, 403), f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            assert r.status_code != 401, f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            if r.status_code == 403:
+                # Role authorization passed; a disabled vertical remains a
+                # higher-level fail-closed availability guard for every role.
+                assert r.json().get("error_code") == "VERTICAL_DISABLED"
         finally:
             _clear()
 
@@ -177,7 +181,11 @@ class TestAuthorizedActorClearsAuthLayer:
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await _call(client, method, path_tmpl, body)
-            assert r.status_code not in (401, 403), f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            assert r.status_code != 401, f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            if r.status_code == 403:
+                # Role authorization succeeded; vertical availability is a
+                # separate fail-closed guard.
+                assert r.json().get("error_code") == "VERTICAL_DISABLED"
         finally:
             _clear()
 
@@ -273,7 +281,9 @@ class TestPlatformAdminActionsRetainAccess:
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await _call(client, method, path_tmpl, body)
-            assert r.status_code not in (401, 403), f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            assert r.status_code != 401, f"{method} {path_tmpl}: got {r.status_code}: {r.text}"
+            if r.status_code == 403:
+                assert r.json().get("error_code") == "VERTICAL_DISABLED"
         finally:
             _clear()
 
@@ -327,8 +337,10 @@ class TestShadowedRouteDecoratorsRemoved:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await client.post(f"/v1/staff/service-jobs/{uuid.uuid4()}/accept",
                                        headers={"Authorization": "Bearer x"})
-            assert r.status_code == 200
-            assert r.json()["meta"]["engine_id"] == "assignment"
+            # A random id must fail closed. The assignment engine's deliberately
+            # opaque error code confirms the canonical route handled it.
+            assert r.status_code == 404
+            assert r.json()["error_code"] == "JOB_ASSIGNMENT_ACCESS_DENIED"
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 

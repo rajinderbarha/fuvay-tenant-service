@@ -73,7 +73,6 @@ def test_bulk_metric_path_contains_every_live_formula_signal():
     source = open(recalculation.__file__, encoding="utf-8").read()
     expected = {
         "profile_completion_percent",
-        "security_deposit_score",
         "usage_credit_score",
         "staff_availability_score",
         "response_time_minutes",

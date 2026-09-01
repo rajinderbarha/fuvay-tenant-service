@@ -248,13 +248,16 @@ class TestArchitectureGuards:
         assert "TenantWallet" not in src
 
     def test_package_purchase_grant_uses_canonical_service_not_credit_wallet(self):
-        src = self._read(APP / "engines" / "package_commerce" / "service.py")
-        assert "UsageCreditService" in src
-        assert "grant_package_credit" in src
+        src = self._read(APP / "engines" / "platform_commerce" / "service.py")
+        body = src.split("async def confirm_purchase", 1)[1].split("\n    async def ", 1)[0]
+        assert "UsageCreditService" in body
+        assert "grant_topup_credit" in body
+        assert "await credit_wallet(" not in body
 
-    def test_package_credit_wallet_legacy_endpoints_delegate_to_canonical_service(self):
-        src = self._read(APP / "engines" / "package_commerce" / "admin_router.py")
-        assert "UsageCreditService" in src
+    def test_removed_package_commerce_engine_stays_removed(self):
+        package_engine = APP / "engines" / "package_commerce"
+        assert not (package_engine / "service.py").exists()
+        assert not (package_engine / "admin_router.py").exists()
 
     def test_tenant_engine_wallet_topup_and_adjust_are_blocked(self):
         src = self._read(APP / "engines" / "tenant_engine" / "admin_router.py")

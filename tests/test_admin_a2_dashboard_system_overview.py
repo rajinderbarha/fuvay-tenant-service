@@ -68,7 +68,7 @@ def test_tenant_lifecycle_summary():
 
 def test_finance_summary_correct_labels():
     for label in ["Platform Revenue", "Provider Direct Service Value",
-                  "Completed Job Deductions", "Security Deposits Held"]:
+                  "Completed Job Deductions", "Customer service credits issued"]:
         assert label in PAGE
 
 

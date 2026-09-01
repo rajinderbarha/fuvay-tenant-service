@@ -38,7 +38,7 @@ VALID_EVENT_TYPES = {
     "payment_recorded", "review_requested", "complaint_created",
     "dispute_created", "customer_service_credit_issued", "tenant_approved",
     "tenant_changes_requested", "staff_invited", "package_expiring",
-    "usage_credit_low", "security_deposit_required", "document_expiring",
+    "usage_credit_low", "document_expiring",
     "login_otp", "password_reset", "marketing_post_scheduled",
 }
 
@@ -73,7 +73,6 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "staff_invited": ["tenant_name", "job_number"],
     "package_expiring": ["tenant_name", "package_name", "approval_date"],
     "usage_credit_low": ["tenant_name", "usage_credit_balance"],
-    "security_deposit_required": ["tenant_name", "security_deposit_amount"],
     "document_expiring": ["tenant_name"],
     "login_otp": ["customer_name"],
     "password_reset": ["customer_name"],
@@ -85,6 +84,6 @@ COMMON_VARIABLES = ["customer_name", "tenant_name"]
 # Internal/finance/risk variables that must never appear in a customer-audience template
 # (provider payable_to_provider is customer-visible by design for Home Services direct-pay).
 CUSTOMER_FORBIDDEN_VARIABLES = {
-    "usage_credit_balance", "deduction_amount", "security_deposit_amount",
+    "usage_credit_balance", "deduction_amount",
     "change_request_reason", "review_status",
 }

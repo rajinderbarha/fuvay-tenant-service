@@ -366,10 +366,10 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.field_ops.checklist_router import router as fieldops_checklist_router
     # Step 9 — Payment / Invoice / Commission Closure Flow
     from app.engines.field_ops.tenant_finance_router import (
-        router as fieldops_tenant_finance_router, wallet_router as fieldops_tenant_wallet_router,
+        router as fieldops_tenant_finance_router,
     )
     from app.engines.field_ops.admin_finance_router import (
-        router as fieldops_admin_finance_router, wallet_router as fieldops_admin_wallet_router,
+        router as fieldops_admin_finance_router,
     )
     # P0 — Enterprise Finance Hub Upgrade. Mounted BEFORE fieldops_admin_finance_router:
     # both define GET /v1/admin/finance/summary — FastAPI matches first-registered-wins,
@@ -392,8 +392,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
                fieldops_staff_router, fieldops_customer_router,
                fieldops_checklist_router,
                fieldops_customer_invoice_router, fieldops_tenant_finance_router,
-               fieldops_tenant_wallet_router, fieldops_admin_finance_router,
-               fieldops_admin_wallet_router]:
+               fieldops_admin_finance_router]:
         app.include_router(_r)
 
     # Sprint 76 — Types & Brands Enterprise (service types master, mappings, brand mappings)

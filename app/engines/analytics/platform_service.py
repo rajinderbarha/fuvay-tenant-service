@@ -134,12 +134,6 @@ class PlatformAnalyticsService:
             f"LEFT JOIN tenants t ON t.id=csc.tenant_id "
             f"WHERE csc.created_at BETWEEN :from_dt AND :to_dt {v_clause}", p)
 
-        # Security deposit held
-        security_deposit_held = await _safe_scalar(db,
-            f"SELECT COALESCE(SUM(sd.total_paid+sd.replenishment_total-sd.warranty_drawn),0) "
-            f"FROM security_deposits sd JOIN tenants t ON t.id=sd.tenant_id "
-            f"WHERE sd.status IN ('paid','partially_paid') {v_clause}", p)
-
         # Active customers
         active_customers = await _safe_count(db,
             f"SELECT COUNT(DISTINCT sj.customer_id) FROM service_jobs sj "
@@ -157,7 +151,7 @@ class PlatformAnalyticsService:
             "pending_approvals": pending_approvals,
             "new_providers": new_providers,
             "customer_service_credits_issued": float(customer_service_credits_issued or 0),
-            "security_deposit_held": float(security_deposit_held or 0),
+            "security_deposit_held": 0.0,
             "active_customers": active_customers,
         }
 
@@ -538,13 +532,6 @@ class PlatformAnalyticsService:
               {tenant_filter('csc')}
         """, p)
 
-        security_deposits_held = await _safe_scalar(db, f"""
-            SELECT COALESCE(SUM(sd.total_paid+sd.replenishment_total-sd.warranty_drawn),0)
-            FROM security_deposits sd
-            WHERE sd.status IN ('paid','partially_paid')
-              {tenant_filter('sd')}
-        """, p)
-
         failed_deductions = await _safe_count(db, f"""
             SELECT COUNT(*) FROM service_jobs sj
             LEFT JOIN usage_credit_ledger ucl
@@ -560,7 +547,7 @@ class PlatformAnalyticsService:
             "completed_job_deductions": float(completed_job_deductions or 0),
             "provider_direct_service_value": float(provider_direct_service_value or 0),
             "customer_service_credits_issued": float(customer_service_credits_issued or 0),
-            "security_deposits_held": float(security_deposits_held or 0),
+            "security_deposits_held": 0.0,
             "failed_deductions": failed_deductions,
         }
 

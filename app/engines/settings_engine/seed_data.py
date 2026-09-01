@@ -9,7 +9,6 @@ CATEGORY_ONBOARDING = "tenant_onboarding"
 CATEGORY_BOOKING = "booking_and_jobs"
 CATEGORY_PRICING = "pricing_and_bargain"
 CATEGORY_CREDITS = "packages_and_usage_credits"
-CATEGORY_DEPOSIT = "security_deposits"
 CATEGORY_DISPUTES = "disputes_and_customer_credits"
 CATEGORY_MEDIA = "media_and_storage"
 CATEGORY_NOTIFICATIONS = "notifications"
@@ -22,7 +21,7 @@ CATEGORY_FEATURE_FLAGS = "feature_flags"
 
 ALL_CATEGORIES = [
     CATEGORY_GENERAL, CATEGORY_ONBOARDING, CATEGORY_BOOKING, CATEGORY_PRICING,
-    CATEGORY_CREDITS, CATEGORY_DEPOSIT, CATEGORY_DISPUTES, CATEGORY_MEDIA,
+    CATEGORY_CREDITS, CATEGORY_DISPUTES, CATEGORY_MEDIA,
     CATEGORY_NOTIFICATIONS, CATEGORY_COMPLIANCE, CATEGORY_SECURITY, CATEGORY_AI,
     CATEGORY_AUDIT, CATEGORY_MAINTENANCE, CATEGORY_FEATURE_FLAGS,
 ]
@@ -57,7 +56,6 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     _s("tenant_admin_approval_required", "Tenant Admin Approval Required", True, CATEGORY_ONBOARDING, risk="medium"),
     _s("tenant_profile_completion_required_percent", "Profile Completion Required %", 100, CATEGORY_ONBOARDING, "percentage"),
     _s("tenant_document_verification_required", "Document Verification Required", True, CATEGORY_ONBOARDING, risk="medium"),
-    _s("tenant_security_deposit_required", "Security Deposit Required", True, CATEGORY_ONBOARDING, risk="medium"),
     _s("tenant_package_starts_after_approval", "Package Starts After Approval", True, CATEGORY_ONBOARDING, risk="high"),
     _s("tenant_included_credits_added_after_approval", "Included Credits Added After Approval", True, CATEGORY_ONBOARDING, risk="high"),
     _s("tenant_bookable_only_after_approval", "Bookable Only After Approval", True, CATEGORY_ONBOARDING, risk="high"),
@@ -103,12 +101,6 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     _s("manual_credit_adjustment_requires_reason", "Manual Adjustment Requires Reason", True, CATEGORY_CREDITS, risk="medium"),
 
     # ── G6. Security Deposit ─────────────────────────────────────────────────
-    _s("security_deposit_enabled", "Security Deposit Enabled", True, CATEGORY_DEPOSIT),
-    _s("security_deposit_one_time_only", "One-Time Deposit Only", True, CATEGORY_DEPOSIT),
-    _s("security_deposit_adjustment_enabled", "Deposit Adjustment Enabled", True, CATEGORY_DEPOSIT, risk="medium"),
-    _s("security_deposit_deduction_requires_admin_approval", "Deduction Requires Admin Approval", True, CATEGORY_DEPOSIT, risk="high"),
-    _s("security_deposit_refund_enabled", "Deposit Refund Enabled", False, CATEGORY_DEPOSIT, risk="high"),
-    _s("security_deposit_used_for_dispute_recovery", "Used For Dispute Recovery", True, CATEGORY_DEPOSIT, risk="medium"),
 
     # ── G7. Disputes & Customer Service Credits ──────────────────────────────
     _s("complaint_enabled", "Complaints Enabled", True, CATEGORY_DISPUTES),
@@ -117,9 +109,8 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     _s("customer_service_credit_is_cash_refund", "Credit Is Cash Refund", False, CATEGORY_DISPUTES,
        risk="critical", description="Must stay false — customer service credit is not a cash refund."),
     _s("customer_service_credit_expiry_days", "Credit Expiry (Days)", 180, CATEGORY_DISPUTES, "duration"),
-    _s("settlement_deduction_priority", "Settlement Deduction Priority", "usage_credit_then_security_deposit",
-       CATEGORY_DISPUTES, "enum",
-       allowed_values=["usage_credit_then_security_deposit", "security_deposit_then_usage_credit"]),
+    _s("settlement_deduction_priority", "Settlement Deduction Priority", "usage_credit",
+       CATEGORY_DISPUTES, "enum", allowed_values=["usage_credit"]),
     _s("manual_customer_refund_enabled", "Manual Customer Refund Enabled", False, CATEGORY_DISPUTES, risk="high"),
 
     # ── G8. Media & Storage ──────────────────────────────────────────────────

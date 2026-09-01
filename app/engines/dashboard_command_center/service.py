@@ -208,11 +208,6 @@ class DashboardCommandCenterService:
             JOIN tenants t ON t.id = csc.tenant_id
             WHERE t.vertical = 'home_services' AND csc.created_at BETWEEN :f AND :t
         """, p)
-        deposits = await _safe_scalar(self.db, """
-            SELECT COALESCE(SUM(sd.total_paid + sd.replenishment_total - sd.warranty_drawn), 0)
-            FROM security_deposits sd JOIN tenants t ON t.id = sd.tenant_id
-            WHERE t.vertical = 'home_services' AND sd.status IN ('paid','partially_paid')
-        """)
         missing_deductions = await _safe_count(self.db, """
             SELECT COUNT(*) FROM service_jobs sj
             LEFT JOIN usage_credit_ledger ucl
@@ -223,7 +218,7 @@ class DashboardCommandCenterService:
             "platform_revenue": float(topups or 0), "usage_credit_topups": float(topups or 0),
             "completed_job_deductions": float(deductions or 0),
             "customer_service_credits_issued": float(credits_issued or 0),
-            "security_deposits_held": float(deposits or 0),
+            "security_deposits_held": 0.0,
             "failed_deductions": missing_deductions,
             "provider_direct_service_value": float(provider_direct_value or 0),
         }

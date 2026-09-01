@@ -353,8 +353,7 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         # Latest Home Services finance readiness per provider. DISTINCT ON
         # keeps this one set-based query even if legacy tenants have revisions.
         rows = (await db.execute(text(
-            "SELECT DISTINCT ON (tenant_id) tenant_id AS target_key, credit_balance, "
-            "       security_deposit_paid, security_deposit_amount "
+            "SELECT DISTINCT ON (tenant_id) tenant_id AS target_key, credit_balance "
             "FROM tenant_billing "
             "WHERE tenant_id = ANY(CAST(:ids AS uuid[])) "
             "  AND vertical_key = 'home_services' "
@@ -363,10 +362,6 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             t = _key(row["target_key"])
             if t not in out:
                 continue
-            deposit_required = float(row["security_deposit_amount"] or 0) > 0
-            deposit_ready = not deposit_required or bool(row["security_deposit_paid"])
-            out[t]["security_deposit_score"] = 100.0 if deposit_ready else 0.0
-            out[t]["security_deposit_missing"] = not deposit_ready
             credit_ready = float(row["credit_balance"] or 0) > 0
             out[t]["usage_credit_score"] = 100.0 if credit_ready else 0.0
             out[t]["usage_credit_depleted"] = not credit_ready

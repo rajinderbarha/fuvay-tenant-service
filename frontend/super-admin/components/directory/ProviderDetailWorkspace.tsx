@@ -16,7 +16,7 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ShieldCheck, ArrowLeft, FileText, Wrench, Users, Briefcase, Star,
-  Wallet, ShieldCheck as DepositIcon, AlertTriangle, ChevronRight,
+  Wallet, AlertTriangle, ChevronRight,
   PauseCircle, RotateCcw, Send,
 } from "lucide-react";
 import { AdminLayout } from "../layout/AdminLayout";
@@ -294,7 +294,6 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
   const rs = reviews.data?.summary as Record<string, unknown> | null | undefined;
 
   const credits = f?.usage_credits as Record<string, unknown> | undefined;
-  const deposit = f?.security_deposit as Record<string, unknown> | undefined;
   const byStatus = (o?.by_status ?? {}) as Record<string, number>;
   const jobs = ((o?.jobs ?? []) as Record<string, unknown>[]).slice(0, 6);
   const complaints = (q?.complaints ?? []) as Record<string, unknown>[];
@@ -328,7 +327,6 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
           <SummaryCard label="Rating" value={rs ? Number(rs.average_rating).toFixed(1) : Number(d.rating_average ?? 0).toFixed(1)}
             sub={rs ? `${rs.total_reviews} reviews` : undefined} icon={<Star size={15} />} />
           <SummaryCard label="Usage Credits" value={finance.loading ? "…" : money(credits?.balance as string)} icon={<Wallet size={15} />} tone={credits?.low_balance ? "warning" : undefined} />
-          <SummaryCard label="Security Deposit" value={finance.loading ? "…" : money(deposit?.current_balance as string)} icon={<DepositIcon size={15} />} />
           {attention.length > 0 && (
             <SummaryCard label="Items need attention" value={String(attention.length)} icon={<AlertTriangle size={15} />} tone="warning" />
           )}
@@ -342,7 +340,6 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
           {readiness ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
               <ReadinessRow ok={readiness.business_verification_complete} label="Business verification complete" />
-              <ReadinessRow ok={readiness.security_deposit_active} label="Security deposit active" />
               <ReadinessRow ok={readiness.credit_account_healthy} label="Credit account healthy" />
               <ReadinessRow ok={!readiness.admin_hold_active} label="No blocking admin hold" />
             </div>
@@ -444,12 +441,6 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "var(--text-tertiary)" }}>Usage credits</span><strong>{money(credits?.balance as string)}</strong>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-tertiary)" }}>Security deposit</span><strong>{String(deposit?.status ?? "not_required")}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-tertiary)" }}>Deposit held</span><strong>{money(deposit?.current_balance as string)}</strong>
-              </div>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{String(f?.customer_payment_note ?? "")}</p>
             </div>
           )}
@@ -514,7 +505,6 @@ function FinanceTab({ providerId }: { providerId: string }) {
   }
   const f = finance.data as Record<string, unknown> | undefined;
   if (!f) return null;
-  const deposit = f.security_deposit as Record<string, unknown> | undefined;
   const credits = f.usage_credits as Record<string, unknown> | undefined;
   const charges = (f.provider_charges ?? []) as Record<string, unknown>[];
   const topups = (f.topup_history ?? []) as Record<string, unknown>[];
@@ -552,9 +542,6 @@ function FinanceTab({ providerId }: { providerId: string }) {
 
       <KpiGrid minCardWidth={180}>
         <SummaryCard label="Usage Credit Balance" value={money(credits?.balance as string)} sub={credits?.low_balance ? "Low balance" : undefined} />
-        <SummaryCard label="Security Deposit" value={String(deposit?.status ?? "not_required")} />
-        <SummaryCard label="Deposit Required" value={money(deposit?.required_amount as string)} />
-        <SummaryCard label="Deposit Held" value={money(deposit?.current_balance as string)} />
       </KpiGrid>
 
       <div>

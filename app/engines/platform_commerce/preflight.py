@@ -17,10 +17,10 @@ from app.engines.platform_commerce.constants import (
     WALLET_BUFFER_MULTIPLIER, CUSTOMER_ADVANCE_REQUIRED_PCT,
 )
 from app.engines.platform_commerce.models import (
-    SecurityDeposit, TenantWallet, CustomerHealthScore,
+    CustomerHealthScore,
     CustomerCreditBalance,
 )
-from app.engines.tenant_engine.models import Tenant
+from app.engines.tenant_engine.models import Tenant, TenantBilling
 
 logger = structlog.get_logger("commerce.preflight")
 
@@ -69,7 +69,7 @@ async def run_booking_preflight(
     required_wallet = (estimated_commission * WALLET_BUFFER_MULTIPLIER).quantize(Decimal("0.01"))
 
     wallet_result = await db.execute(
-        select(TenantWallet).where(TenantWallet.tenant_id == tenant_id)
+        select(TenantBilling).where(TenantBilling.tenant_id == tenant_id)
     )
     wallet = wallet_result.scalar_one_or_none()
     wallet_balance = wallet.credit_balance if wallet else Decimal("0.00")

@@ -388,8 +388,8 @@ class BillingService:
 
     # ── Tenant finance views ──────────────────────────────────────────────────
     async def get_tenant_finance_summary(self, tenant_id: uuid.UUID) -> dict:
-        from app.engines.platform_commerce.service import CommerceService
-        wallet = await CommerceService(self.db, actor_id=self.actor_id).get_wallet(tenant_id)
+        from app.engines.usage_credits.service import UsageCreditService
+        credit = await UsageCreditService(self.db, actor_id=self.actor_id).get_balance(tenant_id)
 
         inv_count = await self.db.execute(select(func.count(InvoiceRecord.id)).where(
             InvoiceRecord.tenant_id == tenant_id))
@@ -400,7 +400,7 @@ class BillingService:
         commission_total = await self.db.execute(select(func.sum(CommissionRecord.commission_amount)).where(
             CommissionRecord.tenant_id == tenant_id))
 
-        return {"wallet_balance": wallet["credit_balance"],
+        return {"wallet_balance": credit["usage_credit_balance"],
                 "total_invoices": inv_count.scalar_one_or_none() or 0,
                 "total_invoice_amount": float(inv_total.scalar_one_or_none() or 0),
                 "total_paid_amount": float(paid_total.scalar_one_or_none() or 0),
@@ -431,14 +431,26 @@ class BillingService:
             tenant_id, limit, None)
 
     async def get_tenant_wallet(self, tenant_id: uuid.UUID) -> dict:
-        from app.engines.platform_commerce.service import CommerceService
-        return await CommerceService(self.db, actor_id=self.actor_id).get_wallet(tenant_id)
+        from app.engines.usage_credits.service import UsageCreditService
+        credit = await UsageCreditService(self.db, actor_id=self.actor_id).get_balance(tenant_id)
+        return {
+            "tenant_id": str(tenant_id),
+            "credit_balance": credit["usage_credit_balance"],
+            "source": credit["source"],
+        }
 
     async def get_tenant_wallet_ledger(self, tenant_id: uuid.UUID, limit: int = 50,
                                         cursor: str | None = None) -> dict:
-        from app.engines.platform_commerce.service import CommerceService
-        return await CommerceService(self.db, actor_id=self.actor_id).get_wallet_transactions(
-            tenant_id, None, limit, cursor)
+        from app.engines.usage_credits.service import UsageCreditService
+        ledger = await UsageCreditService(self.db, actor_id=self.actor_id).get_ledger(
+            tenant_id, limit=limit,
+        )
+        return {
+            "transactions": ledger["items"],
+            "has_next": False,
+            "next_cursor": None,
+            "source": ledger["source"],
+        }
 
     # ── Admin (super_admin, platform-wide) ────────────────────────────────────
     async def admin_finance_summary(self) -> dict:
@@ -463,24 +475,3 @@ class BillingService:
         r = await self.db.execute(select(CommissionRecord).order_by(
             CommissionRecord.deducted_at.desc()).limit(limit))
         return {"commissions": [svc._rec_dict(c) for c in r.scalars().all()]}
-
-    async def admin_wallet_topup(self, tenant_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
-        if amount <= 0:
-            raise ServiceOSException("INVALID_INVOICE_AMOUNT", "Top-up amount must be positive.", status_code=422)
-        from app.engines.platform_commerce.service import CommerceService
-        return await CommerceService(self.db, actor_id=self.actor_id, actor_role=self.actor_role).admin_credit_wallet(
-            tenant_id, amount, reason, "topup")
-
-    async def admin_wallet_adjust(self, tenant_id: uuid.UUID, amount: Decimal, reason: str) -> dict:
-        """Signed adjustment — positive credits, negative debits."""
-        from app.engines.platform_commerce.ledger import credit_wallet, debit_wallet
-        from app.engines.platform_commerce.constants import TxnType
-        if amount == 0:
-            raise ServiceOSException("INVALID_INVOICE_AMOUNT", "Adjustment amount cannot be zero.", status_code=422)
-        if amount > 0:
-            txn = await credit_wallet(self.db, tenant_id, amount, TxnType.MANUAL_CREDIT,
-                None, "admin_adjustment", reason, self.actor_id)
-        else:
-            txn = await debit_wallet(self.db, tenant_id, abs(amount), TxnType.MANUAL_CREDIT,
-                None, "admin_adjustment", reason, self.actor_id)
-        return {"amount_adjusted": float(amount), "balance_after": float(txn.balance_after)}

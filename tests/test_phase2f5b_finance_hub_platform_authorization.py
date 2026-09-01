@@ -44,13 +44,8 @@ def _clear():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-# The 7 endpoints whose permission IS granted to admin_finance.
+# Credit top-up mutations whose permission is granted to admin_finance.
 ADMIN_FINANCE_GRANTED_ENDPOINTS = [
-    ("POST", "/v1/admin/finance/deposits/{id}/approve", {"notes": "ok"}),
-    ("POST", "/v1/admin/finance/deposits/{id}/reject", {"reason": "test"}),
-    ("POST", "/v1/admin/finance/deposits/{id}/record-offline", {"amount": "10.00", "reference": "ref1"}),
-    ("POST", "/v1/admin/finance/deposits/{id}/refund", {"amount": "10.00", "reason": "test"}),
-    ("POST", "/v1/admin/finance/deposits/{id}/adjust", {"amount": "10.00", "reason": "test"}),
     ("POST", "/v1/admin/finance/topups/{id}/refund", {"amount": "10.00", "reason": "test"}),
     ("POST", "/v1/admin/finance/topups/{id}/retry-credit", None),
 ]
@@ -71,7 +66,7 @@ SUPER_ADMIN_ONLY_ENDPOINTS = [
 ]
 
 ALL_MUTATIONS = ADMIN_FINANCE_GRANTED_ENDPOINTS + SUPER_ADMIN_ONLY_ENDPOINTS
-assert len(ALL_MUTATIONS) == 17
+assert len(ALL_MUTATIONS) == 12
 
 
 async def _call(client, method, path_tmpl, body):
@@ -188,14 +183,14 @@ class TestSuperAdminRetainsAccessEverywhere:
 
     async def test_unauthenticated_rejected_401(self):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            r = await client.post(f"/v1/admin/finance/deposits/{uuid.uuid4()}/approve", json={})
+            r = await client.post(f"/v1/admin/finance/topups/{uuid.uuid4()}/refund", json={})
         assert r.status_code == 401, r.text
 
     async def test_unknown_role_fails_closed(self):
         _override(_user("some_made_up_role"))
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                r = await client.post(f"/v1/admin/finance/deposits/{uuid.uuid4()}/approve", json={},
+                r = await client.post(f"/v1/admin/finance/topups/{uuid.uuid4()}/refund", json={},
                                        headers={"Authorization": "Bearer x"})
             assert r.status_code == 403, r.text
         finally:
@@ -224,41 +219,6 @@ class TestNoNewPermissionGranted:
             )
 
 
-@pytest.mark.asyncio
-class TestDepositApprovalFinalStateGuard:
-    """Workstream 4/13: the real defect found and fixed this slice --
-    approve_deposit must reject re-approving an already-refunded deposit."""
-
-    async def test_approve_deposit_rejects_already_refunded(self):
-        from app.engines.finance_hub.service import FinanceHubService
-        from app.exceptions import ServiceOSException
-
-        deposit_id = uuid.uuid4()
-        tenant_id = uuid.uuid4()
-        deposit_row = MagicMock(id=deposit_id, tenant_id=tenant_id, status="refunded")
-
-        db = AsyncMock()
-        result = MagicMock()
-        result.scalar_one_or_none = MagicMock(return_value=deposit_row)
-        db.execute = AsyncMock(return_value=result)
-
-        svc = FinanceHubService(db=db, request_id="test", actor_id=uuid.uuid4(), actor_role="admin_finance")
-        # _deposit_dict is called on a bare MagicMock row -- patch it to avoid
-        # unrelated attribute-access noise; only the guard behavior is under test.
-        svc._deposit_dict = MagicMock(return_value={"status": "refunded"})
-
-        with pytest.raises(ServiceOSException) as exc:
-            await svc.approve_deposit(deposit_id, notes="test")
-        assert exc.value.error_code == "DEPOSIT_ALREADY_REFUNDED"
-
-    def test_source_confirms_guard_present(self):
-        import inspect
-        from app.engines.finance_hub.service import FinanceHubService
-        src = inspect.getsource(FinanceHubService.approve_deposit)
-        assert 'd.status == "refunded"' in src
-        assert "DEPOSIT_ALREADY_REFUNDED" in src
-
-
 class TestExistingStateMachineGuardsUnchanged:
     """Workstream 5/6: confirms (without re-implementing) that the payout
     _require_status machine and settle_claim's approved-only guard remain
@@ -282,11 +242,11 @@ class TestExistingStateMachineGuardsUnchanged:
         src = inspect.getsource(FinanceHubService.mark_completed)
         assert '("processing",)' in src
 
-    def test_settle_claim_requires_approved_status(self):
+    def test_separate_claim_settle_action_is_retired(self):
         import inspect
         from app.engines.finance_hub.service import FinanceHubService
         src = inspect.getsource(FinanceHubService.settle_claim)
-        assert 'c.status != "approved"' in src
+        assert "WARRANTY_SETTLEMENT_ATOMIC" in src
 
     def test_refund_topup_caps_at_amount_paid(self):
         import inspect
@@ -319,12 +279,12 @@ class TestModuleVerificationExitsClean:
         spec.loader.exec_module(mod)
         return mod
 
-    def test_all_17_finance_hub_routes_in_allowlist_or_accepted(self):
+    def test_all_12_finance_hub_routes_in_allowlist_or_accepted(self):
         mod = self._load_inventory_module()
         from app.main import app
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.finance_hub.admin_router"]
-        assert len(routes) == 17
+        assert len(routes) == 12
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

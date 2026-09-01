@@ -57,8 +57,6 @@ class TestNavigationConsolidation:
         src = pathlib.Path("frontend/super-admin/components/layout/AdminLayout.tsx").read_text(encoding="utf-8")
         assert '"finance-provider-wallets"' not in src
         assert 'label: "Provider Wallets"' not in src
-        nav_config = pathlib.Path("frontend/super-admin/lib/nav-config.ts").read_text(encoding="utf-8")
-        assert '"provider-wallets"' not in nav_config
 
     def test_legacy_routes_are_redirects_not_duplicate_pages(self):
         import pathlib

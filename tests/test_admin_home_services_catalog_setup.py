@@ -15,7 +15,6 @@ LEGACY = (
 LAYOUT = (
     FRONTEND / "components/layout/AdminLayout.tsx"
 ).read_text(encoding="utf-8-sig")
-NAV = (FRONTEND / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
 API = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8-sig")
 
@@ -25,7 +24,7 @@ def test_legacy_route_redirects_to_single_catalog_workspace():
 
 
 def test_navigation_points_to_canonical_workspace_only():
-    combined = LAYOUT + NAV
+    combined = LAYOUT
     assert '"hs-service-catalog"' in combined
     assert 'label: "Service Catalog"' in combined
     assert 'href: "/admin/catalog-workspace"' in combined

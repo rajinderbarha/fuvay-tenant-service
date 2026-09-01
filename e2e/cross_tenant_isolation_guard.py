@@ -4,8 +4,9 @@ MODULE-L5-04: systemic cross-tenant isolation guard (fail-closed).
 The audit found the same anti-pattern in multiple engines: a tenant-isolation
 control that gates on `actor_role == "tenant_owner"` ONLY, which fails open for
 every other tenant-scoped role (staff, technician, ...). Two were actively
-exploitable (serviceability service areas, booking customer-PII); others were
-defense-in-depth (catalog, deposits).
+exploitable (serviceability service areas, booking customer-PII); catalog is
+also retained as defense-in-depth. Security deposits were removed in migrations
+317/318, so their deleted ownership helper is no longer an auditable target.
 
 This guard locks in the fixes: for each known isolation method it asserts the
 vulnerable single-role gate is gone and the robust PLATFORM_ROLES-denylist
@@ -27,7 +28,6 @@ TARGETS = [
     ("app/engines/serviceability/service.py", "_assert_owns_tenant"),
     ("app/engines/admin_catalog/tenant_service.py", "_assert_tenant_owns_ts"),
     ("app/engines/booking/service.py", "_assert_can_access_booking"),
-    ("app/engines/platform_commerce/service.py", "_assert_owns_tenant_deposit"),
 ]
 VULN_GATE = re.compile(r'if self\.actor_role == "tenant_owner"')
 

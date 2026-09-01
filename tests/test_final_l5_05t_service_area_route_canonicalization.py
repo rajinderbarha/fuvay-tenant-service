@@ -120,17 +120,6 @@ _PRE_EXISTING_APP_WIDE_DUPLICATE_METHOD_PATH_ALLOWLIST: set[tuple[str, str]] = {
     ("GET", "/v1/admin/engines"),
     ("GET", "/v1/admin/engines/health"),
     ("GET", "/v1/admin/finance/summary"),
-    ("GET", "/v1/tenant/wallet"),
-    ("GET", "/v1/tenant/wallet/ledger"),
-    ("GET", "/v1/admin/tenants/{tenant_id}/wallet"),
-    ("GET", "/v1/admin/tenants/{tenant_id}/wallet/ledger"),
-    ("POST", "/v1/admin/tenants/{tenant_id}/wallet/adjust"),
-    ("GET", "/v1/admin/master-services/{service_id}/issues"),
-    ("GET", "/v1/admin/service-options"),
-    ("POST", "/v1/admin/service-options"),
-    ("GET", "/v1/admin/service-options/summary"),
-    ("GET", "/v1/admin/service-options/{option_id}"),
-    ("PUT", "/v1/admin/service-options/{option_id}"),
     # PROTECTED_BY_LATER_SLICE: 2F-39 removed
     # ("POST", "/v1/staff/service-jobs/{job_id}/accept") and
     # ("POST", "/v1/staff/service-jobs/{job_id}/reject") from this

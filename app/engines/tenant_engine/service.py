@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engine_registry.registry import registry
 from app.engine_registry.models import TenantEngine
 from app.engines.tenant_engine.constants import (
-    PLAN_LIMITS, SECURITY_DEPOSIT_BY_PLAN, DEFAULT_ENGINES_BY_VERTICAL,
+    PLAN_LIMITS, DEFAULT_ENGINES_BY_VERTICAL,
     CHECKLIST_ITEMS, HEALTH_BANDS, COMMISSION_ADJUSTMENT_BY_BAND,
 )
 from app.engines.tenant_engine.models import (
@@ -153,8 +153,7 @@ class TenantService:
         return {
             "billing_email": b.billing_email, "billing_cycle": b.billing_cycle,
             "credit_balance": float(b.credit_balance),
-            "security_deposit_paid": b.security_deposit_paid,
-            "security_deposit_amount": float(b.security_deposit_amount),
+            "entitled_seats": b.entitled_seats,
             "subscription_status": b.subscription_status,
             "next_billing_date": b.next_billing_date.isoformat() if b.next_billing_date else None,
         }
@@ -349,8 +348,7 @@ class TenantService:
         self.db.add(TenantBusinessProfile(tenant_id=tenant.id, gstin=req.gstin,
             registered_address={"city": req.city, "state": req.state, "country": "India"}))
         self.db.add(TenantBranding(tenant_id=tenant.id))
-        self.db.add(TenantBilling(tenant_id=tenant.id, billing_email=req.owner_email,
-            security_deposit_amount=float(SECURITY_DEPOSIT_BY_PLAN[plan])))
+        self.db.add(TenantBilling(tenant_id=tenant.id, billing_email=req.owner_email))
         self.db.add(TenantLimits(tenant_id=tenant.id, **limits_config))
         # MODULE-L5-46: this is the canonical tenant-signup path
         # (OnboardingRequest -> activate) and never created a

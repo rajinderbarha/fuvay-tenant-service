@@ -1,6 +1,5 @@
 """Field Ops Engine — Step 9: Super Admin Finance Router (platform-wide)."""
 import uuid
-from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import UserContext, require_super_admin
@@ -9,7 +8,6 @@ from app.engines.field_ops.billing_service import BillingService
 from app.schemas.base import ApiResponse, ok
 
 router = APIRouter(prefix="/v1/admin/finance", tags=["Admin Finance"])
-wallet_router = APIRouter(prefix="/v1/admin/tenants", tags=["Admin Finance"])
 ENGINE_ID = "commerce"
 
 
@@ -46,36 +44,4 @@ async def admin_commissions(r: Request, u: UserContext = Depends(require_super_a
     return ok(await s.admin_list_commissions(), _rid(r), ENGINE_ID)
 
 
-@wallet_router.get("/{tenant_id}/wallet", summary="Step 9: Any tenant's wallet (admin)",
-                    response_model=ApiResponse[dict])
-async def admin_get_wallet(tenant_id: uuid.UUID, r: Request, u: UserContext = Depends(require_super_admin),
-                            s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.get_tenant_wallet(tenant_id), _rid(r), ENGINE_ID)
-
-
-@wallet_router.get("/{tenant_id}/wallet/ledger", summary="Step 9: Any tenant's wallet ledger (admin)",
-                    response_model=ApiResponse[dict])
-async def admin_get_wallet_ledger(tenant_id: uuid.UUID, r: Request,
-                                   u: UserContext = Depends(require_super_admin),
-                                   s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.get_tenant_wallet_ledger(tenant_id), _rid(r), ENGINE_ID)
-
-
-@wallet_router.post("/{tenant_id}/wallet/top-up", summary="Step 9: Admin tops up a tenant's wallet",
-                     response_model=ApiResponse[dict])
-async def admin_wallet_topup(tenant_id: uuid.UUID, r: Request,
-                              u: UserContext = Depends(require_super_admin),
-                              s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
-    body = await r.json()
-    return ok(await s.admin_wallet_topup(tenant_id, Decimal(str(body["amount"])), body.get("reason", "")),
-              _rid(r), ENGINE_ID)
-
-
-@wallet_router.post("/{tenant_id}/wallet/adjust", summary="Step 9: Admin adjusts a tenant's wallet (signed amount)",
-                     response_model=ApiResponse[dict])
-async def admin_wallet_adjust(tenant_id: uuid.UUID, r: Request,
-                               u: UserContext = Depends(require_super_admin),
-                               s: BillingService = Depends(_svc)) -> ApiResponse[dict]:
-    body = await r.json()
-    return ok(await s.admin_wallet_adjust(tenant_id, Decimal(str(body["amount"])), body.get("reason", "")),
-              _rid(r), ENGINE_ID)
+# Tenant usage-credit routes are owned exclusively by tenant_engine.admin_router.

@@ -1629,8 +1629,6 @@ async def preview_workflow_runtime(r: Request,
     ), _rid(r), ENGINE_ID)
 
 
-@router.get("/workflow-templates", response_model=ApiResponse[dict],
-            summary="List master workflow templates", tags=["Master Workflow Templates"])
 async def list_workflow_templates(r: Request,
                                    category_id: uuid.UUID | None = Query(None),
                                    master_service_id: uuid.UUID | None = Query(None),
@@ -1647,8 +1645,6 @@ async def list_workflow_templates(r: Request,
                                               status_, q, readiness, page, limit), _rid(r), ENGINE_ID)
 
 
-@router.post("/workflow-templates", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
-             summary="Create master workflow template", tags=["Master Workflow Templates"])
 async def create_workflow_template(r: Request,
                                     u: UserContext = Depends(require_super_admin),
                                     s: AdminCatalogService = Depends(_svc)):

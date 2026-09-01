@@ -223,6 +223,24 @@ class UsageCreditService:
 
     # ── Package Credit Grant ───────────────────────────────────────────────
 
+    async def charge_ai_settlement_fee(
+        self, *, tenant_id: uuid.UUID, complaint_id: uuid.UUID, amount: Decimal,
+    ) -> dict:
+        """Post the provider-funded AI complaint fee exactly once."""
+        if amount <= 0:
+            raise ServiceOSException(
+                "INVALID_CREDIT_AMOUNT", "AI settlement fee must be positive.", status_code=422,
+            )
+        return await self._post(
+            tenant_id=tenant_id, amount=-amount,
+            event_type=EVENT_MANUAL_CREDIT_REMOVED,
+            source_type="ai_settlement_fee", source_id=str(complaint_id),
+            reason_code="billing_dispute_resolution",
+            reason=f"AI settlement fee — complaint {complaint_id}",
+            idempotency_key=f"ai_settlement_fee:{complaint_id}",
+            allow_negative=True,
+        )
+
     async def grant_package_credit(
         self, *, tenant_id: uuid.UUID, package_assignment_id: str,
         activation_version: int | str, amount: Decimal, reason: str = "Package credit grant",

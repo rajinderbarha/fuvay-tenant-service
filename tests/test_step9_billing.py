@@ -444,9 +444,9 @@ async def test_tenant_finance_summary_shows_wallet_balance():
     db = MagicMock()
     db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=0)))
     svc = BillingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner", actor_tenant_id=tid)
-    svc_get_wallet = AsyncMock(return_value={"credit_balance": 855.0})
+    svc_get_wallet = AsyncMock(return_value={"usage_credit_balance": 855.0})
     with __import__("unittest.mock", fromlist=["patch"]).patch(
-            "app.engines.platform_commerce.service.CommerceService.get_wallet", new=svc_get_wallet):
+            "app.engines.usage_credits.service.UsageCreditService.get_balance", new=svc_get_wallet):
         result = await svc.get_tenant_finance_summary(tid)
     assert result["wallet_balance"] == 855.0
     assert result["currency"] == "INR"
@@ -456,26 +456,20 @@ async def test_tenant_wallet_ledger_lists_own_entries_only():
     tid = uuid.uuid4()
     db = MagicMock()
     svc = BillingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner", actor_tenant_id=tid)
-    fake_txns = AsyncMock(return_value={"transactions": [], "has_next": False, "next_cursor": None})
+    fake_txns = AsyncMock(return_value={"items": [], "source": "usage_credit_ledger"})
     with __import__("unittest.mock", fromlist=["patch"]).patch(
-            "app.engines.platform_commerce.service.CommerceService.get_wallet_transactions", new=fake_txns):
+            "app.engines.usage_credits.service.UsageCreditService.get_ledger", new=fake_txns):
         result = await svc.get_tenant_wallet_ledger(tid)
     assert "transactions" in result
-    fake_txns.assert_awaited_once_with(tid, None, 50, None)
+    fake_txns.assert_awaited_once_with(tid, limit=50)
 
 
 # ── 9. Admin finance ──────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_admin_wallet_topup_creates_credit_ledger():
-    tid = uuid.uuid4()
-    db = MagicMock()
-    svc = BillingService(db=db, actor_id=uuid.uuid4(), actor_role="super_admin")
-    fake_credit = AsyncMock(return_value={"amount_credited": 1000.0, "balance_after": 1855.0})
-    with __import__("unittest.mock", fromlist=["patch"]).patch(
-            "app.engines.platform_commerce.service.CommerceService.admin_credit_wallet", new=fake_credit):
-        result = await svc.admin_wallet_topup(tid, Decimal("1000"), "Manual top-up")
-    assert result["balance_after"] == 1855.0
+async def test_field_ops_admin_wallet_topup_is_retired():
+    svc = BillingService(db=MagicMock(), actor_id=uuid.uuid4(), actor_role="super_admin")
+    assert not hasattr(svc, "admin_wallet_topup")
 
 @pytest.mark.asyncio
 async def test_tenant_owner_cannot_use_admin_topup_route():
@@ -560,7 +554,8 @@ def test_openapi_includes_admin_finance_endpoints():
     from app.main import app
     schema = app.openapi()
     assert "/v1/admin/finance/summary" in schema["paths"]
-    assert "/v1/admin/tenants/{tenant_id}/wallet/top-up" in schema["paths"]
+    assert "/v1/admin/usage-credits/{tenant_id}/adjustments" in schema["paths"]
+    assert "/v1/admin/tenants/{tenant_id}/wallet/top-up" not in schema["paths"]
 
 def test_openapi_schemas_are_valid():
     from app.main import app

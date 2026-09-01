@@ -14,7 +14,6 @@ SUPER_ADMIN = ROOT / "frontend/super-admin"
 TENANT_PORTAL = ROOT / "frontend/tenant-portal"
 
 ADMIN_LAYOUT = (SUPER_ADMIN / "components/layout/AdminLayout.tsx").read_text(encoding="utf-8-sig")
-NAV_CONFIG = (SUPER_ADMIN / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
 API_TS = (SUPER_ADMIN / "lib/api.ts").read_text(encoding="utf-8-sig")
 PROVIDER_MATCHING_PAGE = (
     SUPER_ADMIN / "app/admin/home-services/provider-matching/page.tsx"
@@ -43,7 +42,7 @@ def test_retired_admin_pricing_pages_are_deleted():
 
 
 def test_admin_navigation_no_longer_exposes_retired_pricing_surfaces():
-    combined = ADMIN_LAYOUT + NAV_CONFIG
+    combined = ADMIN_LAYOUT
     forbidden = [
         "hs-price-experience",
         "Customer Price Experience",

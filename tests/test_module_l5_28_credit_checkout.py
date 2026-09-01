@@ -35,7 +35,7 @@ def test_invoice_has_credit_column():
         finally:
             await c.close()
 
-    assert asyncio.get_event_loop().run_until_complete(check())
+    assert asyncio.run(check())
 
 
 class TestApplyCreditLive:

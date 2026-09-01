@@ -7,9 +7,9 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADMIN = ROOT / "frontend/super-admin"
 TENANT = ROOT / "frontend/tenant-portal"
-ADMIN_NAV = (ADMIN / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
 ADMIN_LAYOUT = (ADMIN / "components/layout/AdminLayout.tsx").read_text(encoding="utf-8-sig")
 TENANT_NAV = (TENANT / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
+TENANT_LAYOUT = (TENANT / "components/layout/TenantLayout.tsx").read_text(encoding="utf-8-sig")
 SETUP = (
     TENANT / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
 ).read_text(encoding="utf-8-sig")
@@ -19,7 +19,7 @@ FINANCE = (
 
 
 def test_admin_menu_uses_catalog_and_finance_not_price_rules():
-    combined = ADMIN_NAV + ADMIN_LAYOUT
+    combined = ADMIN_LAYOUT
     assert "/admin/catalog-workspace" in combined
     assert "/admin/home-services/finance" in combined
     for retired in ("/admin/pricing-rules", "Price Experience", "Bargain Rules"):
@@ -27,8 +27,9 @@ def test_admin_menu_uses_catalog_and_finance_not_price_rules():
 
 
 def test_tenant_menu_uses_operational_services_workspace():
-    assert "/home-services/services" in TENANT_NAV
-    assert "/provider/service-setup" not in TENANT_NAV
+    combined = TENANT_NAV + TENANT_LAYOUT
+    assert "/home-services/services" in combined
+    assert "/provider/service-setup" not in combined
 
 
 def test_provider_sets_default_type_and_brand_price_ranges():

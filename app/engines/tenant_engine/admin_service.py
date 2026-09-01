@@ -20,17 +20,14 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, select, text, update
+from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.auth.models import User
-from app.engines.platform_commerce.models import (
-    TenantWallet, WalletTransaction,
-)
 from app.engines.serviceability.models import TenantServiceArea
 from app.engines.tenant_engine.models import (
     Tenant, TenantAuditLog, TenantBilling, TenantBranding,
-    TenantLimits, TenantSettings,
+    TenantLimits, TenantSettings, UsageCreditLedger,
 )
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -273,11 +270,6 @@ class AdminTenantService:
         self.db.add(billing)
 
         # ── 5. Tenant wallet ──────────────────────────────────────────────────
-        wallet = TenantWallet(
-            tenant_id=tenant.id,
-            credit_balance=Decimal("0.00"),
-        )
-        self.db.add(wallet)
         await self.db.flush()
 
         # ── 7. Branding stub ──────────────────────────────────────────────────
@@ -841,14 +833,6 @@ class AdminTenantService:
         rb = await self.db.execute(select(TenantBilling).where(TenantBilling.tenant_id == tenant_id))
         billing = rb.scalar_one_or_none()
 
-        # wallet
-        rw = await self.db.execute(select(TenantWallet).where(TenantWallet.tenant_id == tenant_id))
-        wallet = rw.scalar_one_or_none()
-
-        # deposit
-        rd = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tenant_id))
-        deposit = rd.scalar_one_or_none()
-
         # service areas count
         from sqlalchemy import func
         rsa = await self.db.execute(
@@ -876,7 +860,7 @@ class AdminTenantService:
             "owner": owner_info,
             "commercial": {
                 "commission_rate": float(settings.commission_rate) if settings else 0.10,
-                "credit_wallet_balance": float(wallet.credit_balance) if wallet else 0,
+                "credit_wallet_balance": float(billing.credit_balance) if billing else 0,
                 # Deposit fields removed with the feature: credit is what stands
                 # in its place, and it is already reported just above.
                 "plan_type": t.plan_type,
@@ -1129,81 +1113,51 @@ class AdminTenantService:
     async def get_credit_wallet(self, tenant_id: uuid.UUID) -> dict:
         await self._get_tenant(tenant_id)
         r = await self.db.execute(
-            select(TenantWallet).where(TenantWallet.tenant_id == tenant_id)
+            select(TenantBilling).where(TenantBilling.tenant_id == tenant_id)
         )
-        wallet = r.scalar_one_or_none()
-        if not wallet:
-            raise ServiceOSException("CREDIT_WALLET_NOT_FOUND", "No wallet found.")
+        billing = r.scalar_one_or_none()
+        if not billing:
+            return {
+                "wallet_id": None, "tenant_id": str(tenant_id),
+                "credit_balance": 0.0, "lifetime_purchased": 0.0,
+                "lifetime_consumed": 0.0,
+                "source": "tenant_billing.credit_balance",
+            }
+        totals = (await self.db.execute(
+            select(
+                func.coalesce(func.sum(UsageCreditLedger.credit_delta).filter(
+                    UsageCreditLedger.credit_delta > 0), 0),
+                func.coalesce(func.sum(-UsageCreditLedger.credit_delta).filter(
+                    UsageCreditLedger.credit_delta < 0), 0),
+            ).where(UsageCreditLedger.tenant_id == tenant_id)
+        )).one()
         return {
-            "wallet_id": str(wallet.id), "tenant_id": str(tenant_id),
-            "credit_balance": float(wallet.credit_balance),
-            "lifetime_purchased": float(wallet.lifetime_purchased),
-            "lifetime_consumed": float(wallet.lifetime_consumed),
+            "wallet_id": str(billing.id), "tenant_id": str(tenant_id),
+            "credit_balance": float(billing.credit_balance),
+            "lifetime_purchased": float(totals[0] or 0),
+            "lifetime_consumed": float(totals[1] or 0),
+            "source": "tenant_billing.credit_balance",
         }
 
     async def get_credit_ledger(self, tenant_id: uuid.UUID, limit: int = 50) -> dict:
         await self._get_tenant(tenant_id)
         r = await self.db.execute(
-            select(WalletTransaction).where(WalletTransaction.tenant_id == tenant_id)
-            .order_by(WalletTransaction.created_at.desc())
+            select(UsageCreditLedger).where(UsageCreditLedger.tenant_id == tenant_id)
+            .order_by(UsageCreditLedger.created_at.desc())
             .limit(limit)
         )
         txns = r.scalars().all()
         return {
             "transactions": [{
                 "txn_id": str(t.id),
-                "txn_type": t.txn_type,
-                "amount": float(t.amount),
+                "txn_type": t.event_type,
+                "amount": float(t.credit_delta),
                 "balance_before": float(t.balance_before),
                 "balance_after": float(t.balance_after),
-                "description": t.description,
+                "description": t.reason,
                 "created_at": t.created_at.isoformat(),
             } for t in txns]
         }
-
-    async def credit_topup(self, tenant_id: uuid.UUID, amount: float, notes: str) -> dict:
-        await self._get_tenant(tenant_id)
-        r = await self.db.execute(
-            select(TenantWallet).where(TenantWallet.tenant_id == tenant_id)
-        )
-        wallet = r.scalar_one_or_none()
-        if not wallet:
-            raise ServiceOSException("CREDIT_WALLET_NOT_FOUND", "No wallet found.")
-        bal_before = wallet.credit_balance
-        wallet.credit_balance += Decimal(str(amount))
-        wallet.lifetime_purchased += Decimal(str(amount))
-        wallet.last_transaction_at = utcnow()
-        txn = WalletTransaction(
-            tenant_id=tenant_id, txn_type="admin_topup",
-            amount=Decimal(str(amount)),
-            balance_before=bal_before, balance_after=wallet.credit_balance,
-            description=notes or "Admin top-up", actor_id=self.actor_id,
-        )
-        self.db.add(txn)
-        await self._audit(tenant_id, "admin_credit_topup", after={"amount": amount, "notes": notes})
-        return {"new_balance": float(wallet.credit_balance), "amount_added": amount}
-
-    async def credit_adjust(self, tenant_id: uuid.UUID, amount: float, reason: str) -> dict:
-        if not reason or not reason.strip():
-            raise ServiceOSException("CREDIT_ADJUSTMENT_REASON_REQUIRED", "Reason is required.")
-        r = await self.db.execute(
-            select(TenantWallet).where(TenantWallet.tenant_id == tenant_id)
-        )
-        wallet = r.scalar_one_or_none()
-        if not wallet:
-            raise ServiceOSException("CREDIT_WALLET_NOT_FOUND", "No wallet found.")
-        bal_before = wallet.credit_balance
-        wallet.credit_balance += Decimal(str(amount))
-        txn = WalletTransaction(
-            tenant_id=tenant_id, txn_type="admin_adjustment",
-            amount=Decimal(str(amount)),
-            balance_before=bal_before, balance_after=wallet.credit_balance,
-            description=reason, actor_id=self.actor_id,
-        )
-        self.db.add(txn)
-        await self._audit(tenant_id, "admin_credit_adjustment",
-                          after={"amount": amount, "reason": reason})
-        return {"new_balance": float(wallet.credit_balance), "adjustment": amount}
 
     # ═══════════════════════════════════════════════════════════════
     # PHASE 13 — READ-ONLY DATA TABS (bookings, jobs, reviews, audit)
@@ -1335,10 +1289,6 @@ class AdminTenantService:
             ],
             "financial_summary": {
                 "total_usage_credits": float(fr_row.total_credits or 0),
-                # `tenant_billing.security_deposit_amount` was dropped with the
-                # deposit in migration 317/318; summing it raised
-                # UndefinedColumnError and the whole tenant insights view 500'd.
-
                 "low_credit_tenants": int(fr_row.low_credit_tenants or 0),
             },
             "health_summary": {

@@ -99,7 +99,7 @@ class AdminAnalyticsService:
         """.format(tenant_clause="AND tenant_id = :tenant_id" if tenant_id else ""), p))
 
         summary["total_wallet_balance"]       = await safe_metric(_scalar(db,
-            "SELECT COALESCE(SUM(credit_balance), 0) FROM tenant_wallets WHERE is_active = true"))
+            "SELECT COALESCE(SUM(credit_balance), 0) FROM tenant_billing"))
 
         # Quality
         summary["average_rating"]             = await safe_metric(_scalar(db, """
@@ -295,13 +295,13 @@ class AdminAnalyticsService:
         """, p))
 
         summary["total_wallet_balance"]       = await safe_metric(_scalar(db,
-            "SELECT COALESCE(SUM(credit_balance), 0) FROM tenant_wallets WHERE is_active = true"))
+            "SELECT COALESCE(SUM(credit_balance), 0) FROM tenant_billing"))
 
         summary["low_wallet_providers"]       = await safe_metric(_scalar(db,
-            "SELECT COUNT(*) FROM tenant_wallets WHERE credit_balance < 500 AND is_active = true"))
+            "SELECT COUNT(*) FROM tenant_billing WHERE credit_balance < 500"))
 
         summary["exhausted_wallet_providers"] = await safe_metric(_scalar(db,
-            "SELECT COUNT(*) FROM tenant_wallets WHERE credit_balance <= 0 AND is_active = true"))
+            "SELECT COUNT(*) FROM tenant_billing WHERE credit_balance <= 0"))
 
         summary["refund_requested_amount"]    = await safe_metric(_scalar(db, f"""
             SELECT COALESCE(SUM(requested_amount), 0) FROM refund_requests
@@ -445,15 +445,15 @@ class AdminAnalyticsService:
         alerts = []
 
         low_wallet = await safe_metric(_rows(db,
-            "SELECT tenant_id::text, credit_balance FROM tenant_wallets "
-            "WHERE credit_balance < 500 AND is_active = true LIMIT 20"), [])
+            "SELECT tenant_id::text, credit_balance FROM tenant_billing "
+            "WHERE credit_balance < 500 LIMIT 20"), [])
         for r in low_wallet:
             alerts.append({"type": "low_wallet", "tenant_id": r["tenant_id"],
                            "balance": str(r["credit_balance"]), "severity": "warning"})
 
         exhausted = await safe_metric(_rows(db,
-            "SELECT tenant_id::text FROM tenant_wallets "
-            "WHERE credit_balance <= 0 AND is_active = true LIMIT 20"), [])
+            "SELECT tenant_id::text FROM tenant_billing "
+            "WHERE credit_balance <= 0 LIMIT 20"), [])
         for r in exhausted:
             alerts.append({"type": "exhausted_wallet", "tenant_id": r["tenant_id"],
                            "severity": "critical"})

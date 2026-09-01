@@ -321,8 +321,8 @@ class ReportService:
             """,
             "admin_wallet_report": f"""
                 SELECT tenant_id::text, credit_balance::text,
-                       lifetime_purchased::text, lifetime_consumed::text
-                FROM tenant_wallets WHERE is_active = true
+                       entitled_seats::text
+                FROM tenant_billing
                 LIMIT :row_limit
             """,
             "provider_dashboard_report": f"""
@@ -377,9 +377,9 @@ class ReportService:
                 ORDER BY created_at DESC LIMIT :row_limit
             """ if tenant_id else "SELECT 'no_data' AS info",
             "provider_wallet_ledger_report": f"""
-                SELECT txn_type, amount::text, balance_before::text,
+                SELECT event_type AS txn_type, credit_delta::text AS amount, balance_before::text,
                        balance_after::text, created_at::text
-                FROM wallet_transactions
+                FROM usage_credit_ledger
                 WHERE tenant_id = :tenant_id
                 AND created_at BETWEEN :from_dt AND :to_dt
                 ORDER BY created_at DESC LIMIT :row_limit

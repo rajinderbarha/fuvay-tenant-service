@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.integrations import razorpay_client
 from app.engines.platform_commerce.constants import (
-    COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT, SECURITY_DEPOSIT_AMOUNT,
+    COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT,
     CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
     CUSTOMER_SIGNAL_WEIGHTS, CUSTOMER_DEFAULT_SIGNALS, RESERVATION_TTL_HOURS,
     TxnType, BADGE_THRESHOLDS,
@@ -163,14 +163,10 @@ class CommerceService:
     # what keeps a balance available to recover from.
 
     async def list_packages(self, tid=None):
-        if tid:
-            d_r = await self.db.execute(select(SecurityDeposit).where(SecurityDeposit.tenant_id == tid))
-            d = d_r.scalar_one_or_none()
-            if not d or not d.is_unlocked:
-                return {"packages": [], "security_deposit_required": True,
-                        "message": "Pay your security deposit to access credit packages."}
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.is_active == True)
             .order_by(CreditPackage.sort_order, CreditPackage.price_inr))
+        # Compatibility field retained for older clients; deposits no longer
+        # gate package visibility or purchase (migrations 317/318).
         return {"packages": [self._pkg_dict(p) for p in r.scalars().all()], "security_deposit_required": False}
 
     async def get_package(self, pid):
@@ -939,11 +935,9 @@ class CommerceService:
             r = await self.db.execute(select(func.sum(CommissionRecord.commission_amount))
                 .where(CommissionRecord.deducted_at >= since))
             return float(r.scalar_one_or_none() or 0)
-        dr = await self.db.execute(select(func.sum(
-            SecurityDeposit.total_paid + SecurityDeposit.replenishment_total - SecurityDeposit.warranty_drawn)))
         return {"commission": {"today": await _csum(today), "week": await _csum(today-timedelta(days=7)),
                 "month": await _csum(today-timedelta(days=30))},
-                "deposits_held": float(dr.scalar_one_or_none() or 0)}
+                "deposits_held": 0.0}
 
     async def get_at_risk_tenants(self):
         from app.engines.tenant_engine.models import Tenant

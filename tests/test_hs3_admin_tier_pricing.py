@@ -12,7 +12,7 @@ BARGAIN_ENGINE = (
 MATCHING = (
     ROOT / "app/engines/home_service_booking/matching_engine.py"
 ).read_text(encoding="utf-8-sig")
-NAV = (ADMIN / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
+NAV = (ADMIN / "components/layout/AdminLayout.tsx").read_text(encoding="utf-8-sig")
 
 
 def test_retired_admin_pricing_pages_are_deleted():

@@ -348,8 +348,7 @@ class TestNavigationConsolidation:
 
     def test_no_global_complaints_menu(self):
         import pathlib
-        nav = pathlib.Path("frontend/super-admin/lib/nav-config.ts").read_text(encoding="utf-8")
-        assert 'href: "/admin/complaints"' not in nav
         layout = pathlib.Path("frontend/super-admin/components/layout/AdminLayout.tsx").read_text(encoding="utf-8")
         code_only = "\n".join(l for l in layout.splitlines() if not l.strip().startswith("//"))
         assert 'href: "/admin/complaints"' not in code_only
+        assert 'href: "/admin/home-services/complaints"' in code_only

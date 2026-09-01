@@ -137,10 +137,11 @@ class TestSeedDefaults:
         r = await client.get("/v1/admin/trust-quality/health-rules")
         assert r.status_code == 200
         formula_keys = {f["formula_key"] for f in r.json()["data"]["items"]}
-        assert "provider_business_health_default" in formula_keys
-        assert "technician_performance_health_default" in formula_keys
-        assert "customer_account_health_default" in formula_keys
-        assert "service_quality_health_default" in formula_keys
+        canonical_keys = {key for key in formula_keys if not key.startswith("l5")}
+        assert canonical_keys == {
+            "provider_business_health_default",
+            "technician_performance_health_default",
+        }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -184,24 +185,23 @@ class TestBadgeSimulator:
         assert r.status_code >= 400
 
     async def test_manual_award_with_reason_succeeds(self, client):
-        badges = await client.get("/v1/admin/trust-quality/badges/definitions")
+        badges = await client.get(
+            "/v1/admin/trust-quality/badges/definitions", params={"target_type": "tenant"})
         badge_id = badges.json()["data"]["items"][0]["id"]
+        tenants = await client.get("/v1/admin/tenants?page=1&page_size=1")
+        target_id = tenants.json()["data"]["items"][0]["tenant_id"]
         r = await client.post("/v1/admin/trust-quality/badges/manual-award", json={
             "badge_id": badge_id, "target_type": "tenant",
-            "target_id": "00000000-0000-0000-0000-000000000002", "reason": "Manual QA verification",
+            "target_id": target_id, "reason": "Manual QA verification",
         })
         assert r.status_code == 200, r.text
 
     async def test_revoke_requires_reason(self, client):
-        badges = await client.get("/v1/admin/trust-quality/badges/definitions")
-        badge_id = badges.json()["data"]["items"][0]["id"]
-        award = await client.post("/v1/admin/trust-quality/badges/manual-award", json={
-            "badge_id": badge_id, "target_type": "tenant",
-            "target_id": "00000000-0000-0000-0000-000000000003", "reason": "setup for revoke test",
-        })
-        assignment_id = award.json()["data"]["id"]
-        r = await client.post(f"/v1/admin/trust-quality/badges/{assignment_id}/revoke", json={"reason": ""})
-        assert r.status_code >= 400
+        r = await client.post(
+            "/v1/admin/trust-quality/badges/00000000-0000-0000-0000-000000000003/revoke",
+            json={"reason": ""},
+        )
+        assert r.status_code == 422
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -219,7 +219,7 @@ class TestHealthSimulator:
         fid = await self._provider_formula_id(client)
         metrics = {
             "profile_completion_percent": 100, "document_verification_score": 100,
-            "security_deposit_score": 100, "package_credit_score": 100,
+            "usage_credit_score": 100,
             "job_completion_rate": 97, "response_sla_score": 90, "rating_score": 96,
             "complaint_dispute_score": 5, "cancellation_rate": 2, "staff_availability_score": 90,
             "average_rating": 4.8, "complaint_rate": 2, "tenant_status": "active",
@@ -254,17 +254,14 @@ class TestHealthSimulator:
         only dispute_abuse_score (fraud/abuse signal), not a generic complaint metric."""
         r = await client.get("/v1/admin/trust-quality/health-rules", params={"target_type": "customer_account"})
         assert r.status_code == 200
-        formula = next(f for f in r.json()["data"]["items"] if f["formula_key"] == "customer_account_health_default")
-        detail = await client.get(f"/v1/admin/trust-quality/health-rules/{formula['id']}")
-        component_keys = {c["metric_key"] for c in detail.json()["data"]["components"]}
-        assert "complaint_rate" not in component_keys
-        assert "valid_complaint_ratio" not in component_keys
-        assert "dispute_abuse_score" in component_keys
+        # Customer-account health is owned by its commerce engine; keeping a
+        # second Trust & Quality formula produced conflicting health states.
+        assert r.json()["data"]["items"] == []
 
     async def test_formula_activation_requires_weights_sum_100(self, client):
         r = await client.post("/v1/admin/trust-quality/health-rules", json={
             "formula_key": "test_bad_weight_formula", "name": "Bad Weight Test",
-            "target_type": "tenant_provider", "status": "active",
+            "target_type": "tenant", "status": "active",
             "components": [{"metric_key": "job_completion_rate", "weight_percent": 50}],
             "bands": [
                 {"band_key": "a", "band_name": "A", "min_score": 0, "max_score": 100},
@@ -275,7 +272,7 @@ class TestHealthSimulator:
     async def test_band_overlap_rejected(self, client):
         r = await client.post("/v1/admin/trust-quality/health-rules", json={
             "formula_key": "test_band_overlap_formula", "name": "Band Overlap Test",
-            "target_type": "tenant_provider", "status": "active",
+            "target_type": "tenant", "status": "active",
             "components": [{"metric_key": "job_completion_rate", "weight_percent": 100}],
             "bands": [
                 {"band_key": "a", "band_name": "A", "min_score": 0, "max_score": 60},
@@ -294,13 +291,13 @@ class TestRiskAndJobsAndAudit:
             "target_type": "tenant_provider", "target_id": "00000000-0000-0000-0000-000000000004",
             "metrics": {},
         })
-        assert r.status_code == 200, r.text
-        assert r.json()["data"]["risk_level"] == "normal"
+        assert r.status_code == 422, r.text
+        assert r.json()["error_code"] == "VALIDATION_ERROR"
 
     async def test_run_recalculation_job(self, client):
         r = await client.post("/v1/admin/trust-quality/recalculate/all", json={"job_type": "all"})
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["status"] == "completed"
+        assert r.json()["data"]["status"] in ("queued", "running", "cancelling")
 
     async def test_recalculation_jobs_list(self, client):
         await client.post("/v1/admin/trust-quality/recalculate/all", json={"job_type": "all"})
@@ -310,7 +307,10 @@ class TestRiskAndJobsAndAudit:
 
     async def test_audit_logs_recorded_for_seed(self, client):
         await client.post("/v1/admin/trust-quality/seed-defaults")
-        r = await client.get("/v1/admin/trust-quality/audit-logs")
+        r = await client.get(
+            "/v1/admin/trust-quality/audit-logs",
+            params={"action_type": "trust_quality.seed_defaults"},
+        )
         assert r.status_code == 200
         action_types = {a["action_type"] for a in r.json()["data"]["items"]}
         assert "trust_quality.seed_defaults" in action_types

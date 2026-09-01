@@ -73,8 +73,8 @@ class ProviderAnalyticsService:
             AND created_at BETWEEN :from_dt AND :to_dt
         """, p))
         summary["wallet_balance"]   = await safe_metric(_scalar(db, """
-            SELECT credit_balance FROM tenant_wallets
-            WHERE tenant_id = :tenant_id AND is_active = true
+            SELECT credit_balance FROM tenant_billing
+            WHERE tenant_id = :tenant_id
         """, p))
         summary["average_rating"]   = await safe_metric(_scalar(db, """
             SELECT ROUND(AVG(overall_rating)::numeric, 2)
@@ -129,16 +129,16 @@ class ProviderAnalyticsService:
             AND created_at BETWEEN :from_dt AND :to_dt
         """, p))
         summary["wallet_balance"]     = await safe_metric(_scalar(db, """
-            SELECT credit_balance FROM tenant_wallets
-            WHERE tenant_id = :tenant_id AND is_active = true
+            SELECT credit_balance FROM tenant_billing
+            WHERE tenant_id = :tenant_id
         """, p))
         summary["wallet_total_purchased"] = await safe_metric(_scalar(db, """
-            SELECT lifetime_purchased FROM tenant_wallets
-            WHERE tenant_id = :tenant_id AND is_active = true
+            SELECT COALESCE(SUM(credit_delta), 0) FROM usage_credit_ledger
+            WHERE tenant_id = :tenant_id AND credit_delta > 0
         """, p))
         summary["wallet_total_consumed"]  = await safe_metric(_scalar(db, """
-            SELECT lifetime_consumed FROM tenant_wallets
-            WHERE tenant_id = :tenant_id AND is_active = true
+            SELECT COALESCE(SUM(-credit_delta), 0) FROM usage_credit_ledger
+            WHERE tenant_id = :tenant_id AND credit_delta < 0
         """, p))
         summary["refund_requested"]   = await safe_metric(_scalar(db, """
             SELECT COALESCE(SUM(requested_amount), 0) FROM refund_requests
@@ -152,11 +152,11 @@ class ProviderAnalyticsService:
 
         # Wallet transaction breakdown
         wallet_breakdown = await safe_metric(_rows(db, """
-            SELECT txn_type, COUNT(*) AS count,
-                   COALESCE(SUM(amount), 0) AS total_amount
-            FROM wallet_transactions
+            SELECT event_type AS txn_type, COUNT(*) AS count,
+                   COALESCE(SUM(credit_delta), 0) AS total_amount
+            FROM usage_credit_ledger
             WHERE tenant_id = :tenant_id AND created_at BETWEEN :from_dt AND :to_dt
-            GROUP BY txn_type ORDER BY count DESC
+            GROUP BY event_type ORDER BY count DESC
         """, p), [])
 
         return analytics_ok(
@@ -317,8 +317,8 @@ class ProviderAnalyticsService:
         alerts = []
 
         wallet_balance = await safe_metric(_scalar(db, """
-            SELECT credit_balance FROM tenant_wallets
-            WHERE tenant_id = :tenant_id AND is_active = true
+            SELECT credit_balance FROM tenant_billing
+            WHERE tenant_id = :tenant_id
         """, p))
         if wallet_balance is not None:
             if float(wallet_balance) <= 0:

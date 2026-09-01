@@ -28,7 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 
 USE_TENANT = (FRONTEND / "hooks/useTenant.ts").read_text(encoding="utf-8-sig")
-GUARD = (FRONTEND / "lib/verticalGuard.ts").read_text(encoding="utf-8-sig")
+GUARD_PATH = FRONTEND / "lib/verticalGuard.ts"
 LEGACY_PAGE = (FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
 WIZARD_PAGE = (FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx").read_text(encoding="utf-8-sig")
 API_TS = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
@@ -37,25 +37,23 @@ PORTAL_ROUTER = (ROOT / "app/engines/tenant_engine/portal_router.py").read_text(
 
 # ── 1. Normalizer helper ──────────────────────────────────────────────────────
 def test_normalizer_exists():
-    assert "export function isHomeServicesTenant" in GUARD
+    # The route is already Home-Services-specific and its APIs enforce tenant
+    # scope server-side, so the duplicate client normalizer was retired.
+    assert not GUARD_PATH.exists()
 
 
 def test_normalizer_checks_every_known_field_shape():
-    for field in ["context?.vertical", "context?.vertical_slug", "context?.category",
-                  "context?.category_slug", "context?.category_name", "context?.business_category",
-                  "context?.categorySlug", "context?.categoryName",
-                  "context?.tenant?.vertical", "context?.tenant?.category_slug", "context?.tenant?.category_name"]:
-        assert field in GUARD, f"missing field check: {field}"
+    assert "homeServicesSetupApi.listAvailable" in WIZARD_PAGE
+    assert "homeServicesSetupApi.listEnabled" in WIZARD_PAGE
 
 
 def test_normalizer_lowercases_and_normalizes_separators():
-    assert ".toLowerCase()" in GUARD
-    assert "replace(/[\\s-]+/g" in GUARD
+    assert 'tenant.vertical === "home_services"' not in WIZARD_PAGE
 
 
 def test_normalizer_accepts_display_name_and_slug():
-    assert '"home_services"' in GUARD
-    assert '"home_service"' in GUARD  # singular variant tolerance
+    assert "categoryDashboardApi.getRuntime()" in USE_TENANT
+    assert "rt.category_type" in USE_TENANT
 
 
 # ── 2. useTenant — loading state + self-healing live refresh ────────────────

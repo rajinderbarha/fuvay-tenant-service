@@ -205,41 +205,24 @@ async def charge_ai_settlement_fee(
     complaint_id: uuid.UUID,
     actor_id: uuid.UUID | None = None,
 ) -> dict:
-    """Charge the PROVIDER for running an AI settlement — from their credit
-    wallet, falling back to their security deposit (the same cascade the payout
-    uses). Never fatal: a provider who cannot pay the fee still gets the
-    settlement, and the shortfall is reported so finance can chase it."""
-    from app.engines.customer_credits.service import DisputeSettlementService
+    """Charge the provider exactly once from canonical usage credit.
 
-    svc = DisputeSettlementService(db=db, actor_id=actor_id)
-    preview = await svc.preview_deduction(
-        tenant_id, AI_SETTLEMENT_FEE_CREDITS, SETTLEMENT_DEDUCTION_STRATEGY)
+    No deposit fallback exists. A negative resulting balance is surfaced by
+    account health and blocks new bookings until the provider replenishes it.
+    """
+    from app.engines.usage_credits.service import UsageCreditService
 
-    wallet_take = Decimal(str(preview["wallet_deduction"]))
-    if wallet_take > Decimal("0"):
-        from app.engines.platform_commerce.models import TenantWallet, WalletTransaction
-        wallet = (await db.execute(
-            select(TenantWallet).where(TenantWallet.tenant_id == tenant_id)
-        )).scalar_one_or_none()
-        if wallet:
-            before = wallet.credit_balance
-            wallet.credit_balance -= wallet_take
-            db.add(WalletTransaction(
-                tenant_id=tenant_id,
-                txn_type="manual_deduct",
-                amount=-wallet_take,
-                balance_before=before,
-                balance_after=wallet.credit_balance,
-                reference_id=str(complaint_id),
-                reference_type="ai_settlement_fee",
-                idempotency_key=f"ai_fee_{complaint_id}",
-                description=f"AI settlement fee — complaint {complaint_id}",
-            ))
-        await db.flush()
+    result = await UsageCreditService(db=db, actor_id=actor_id).charge_ai_settlement_fee(
+        tenant_id=tenant_id,
+        complaint_id=complaint_id,
+        amount=AI_SETTLEMENT_FEE_CREDITS,
+    )
 
     return {
         "fee": float(AI_SETTLEMENT_FEE_CREDITS),
-        "charged_from_wallet": float(wallet_take),
-        "charged_from_deposit": float(preview["deposit_deduction"]),
-        "uncovered": float(preview["uncovered_amount"]),
+        "charged_from_wallet": float(AI_SETTLEMENT_FEE_CREDITS),
+        "charged_from_deposit": 0.0,
+        "uncovered": 0.0,
+        "balance_after": result["balance_after"],
+        "idempotent": result["idempotent"],
     }

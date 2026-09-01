@@ -24,6 +24,16 @@ from app.engines.home_service_booking.matching_engine import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_standing_lookup_for_badge_list_unit_tests():
+    """Standing has its own fact-loader tests; these cases isolate list logic."""
+    with patch(
+        "app.engines.trust_quality.provider_standing.resolve_standing_badge",
+        new=AsyncMock(return_value=None),
+    ):
+        yield
+
+
 def _earned(*badges: dict) -> MagicMock:
     """A TrustQualityService whose read side returns exactly these badges."""
     service = MagicMock()

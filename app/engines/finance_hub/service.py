@@ -17,14 +17,14 @@ from app.core.audit import record_platform_audit
 from app.engines.finance_hub.models import CreditTopupOrder
 
 from app.engines.platform_commerce.models import (
-    TenantWallet, WalletTransaction,
+    WalletTransaction,
     WarrantyClaim, CommissionRecord, CreditPackage,
 )
 from app.engines.platform_commerce.service import CommerceService
 from app.engines.payment.models import PayoutRecord
 from app.engines.payment.service import PaymentService
 from app.engines.security.models import PlatformAuditLog
-from app.engines.tenant_engine.models import Tenant
+from app.engines.tenant_engine.models import Tenant, TenantBilling, UsageCreditLedger
 from app.exceptions import ServiceOSException, NotFoundException
 
 logger = structlog.get_logger("finance_hub.service")
@@ -75,16 +75,17 @@ class FinanceHubService:
 
     async def get_finance_summary(self) -> dict:
         active_wallets = (await self.db.execute(
-            select(func.count()).select_from(TenantWallet).where(TenantWallet.is_active == True)
+            select(func.count()).select_from(TenantBilling)
         )).scalar_one()
         low_balance_wallets = (await self.db.execute(
-            select(func.count()).select_from(TenantWallet).where(
-                TenantWallet.is_active == True,
-                TenantWallet.credit_balance <= func.coalesce(TenantWallet.low_balance_threshold, LOW_BALANCE_DEFAULT_THRESHOLD),
+            select(func.count()).select_from(TenantBilling).where(
+                TenantBilling.credit_balance <= LOW_BALANCE_DEFAULT_THRESHOLD,
             )
         )).scalar_one()
         credits_issued = (await self.db.execute(
-            select(func.coalesce(func.sum(TenantWallet.lifetime_purchased), 0))
+            select(func.coalesce(func.sum(UsageCreditLedger.credit_delta), 0)).where(
+                UsageCreditLedger.credit_delta > 0,
+            )
         )).scalar_one()
         # MODULE-L5-10: "commission earned" must count only commission actually
         # COLLECTED. Summing every status counted refunded commission (given back),
@@ -122,8 +123,8 @@ class FinanceHubService:
 
         # Top low-balance tenants
         low_bal_result = await self.db.execute(
-            select(TenantWallet, Tenant).join(Tenant, Tenant.id == TenantWallet.tenant_id)
-            .where(TenantWallet.is_active == True).order_by(TenantWallet.credit_balance.asc()).limit(10))
+            select(TenantBilling, Tenant).join(Tenant, Tenant.id == TenantBilling.tenant_id)
+            .order_by(TenantBilling.credit_balance.asc()).limit(10))
         top_low_balance = [{
             "tenant_id": str(t.id), "tenant_name": t.tenant_name,
             "wallet_balance": float(w.credit_balance), "health_band": t.health_band,
@@ -146,9 +147,9 @@ class FinanceHubService:
 
         # Recent finance activity — combine the most recent rows across the 4 ledgers
         activity: list[dict] = []
-        wt_result = await self.db.execute(select(WalletTransaction).order_by(WalletTransaction.created_at.desc()).limit(10))
+        wt_result = await self.db.execute(select(UsageCreditLedger).order_by(UsageCreditLedger.created_at.desc()).limit(10))
         for t in wt_result.scalars().all():
-            activity.append({"type": "wallet_transaction", "label": f"{t.txn_type} — ₹{t.amount}",
+            activity.append({"type": "usage_credit", "label": f"{t.event_type} — {t.credit_delta} credits",
                               "tenant_id": str(t.tenant_id), "created_at": t.created_at.isoformat()})
         claims_result = await self.db.execute(select(WarrantyClaim).order_by(WarrantyClaim.updated_at.desc()).limit(10))
         for c in claims_result.scalars().all():
@@ -639,7 +640,7 @@ class FinanceHubService:
 
     async def list_wallets(self, q: str | None = None, health_band: str | None = None,
                             page: int = 1, page_size: int = 50) -> dict:
-        stmt = select(TenantWallet, Tenant).join(Tenant, Tenant.id == TenantWallet.tenant_id)
+        stmt = select(TenantBilling, Tenant).join(Tenant, Tenant.id == TenantBilling.tenant_id)
         if q:
             like = f"%{q.lower()}%"
             stmt = stmt.where(func.lower(Tenant.tenant_name).like(like))
@@ -647,43 +648,53 @@ class FinanceHubService:
             stmt = stmt.where(Tenant.health_band == health_band)
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = (await self.db.execute(count_stmt)).scalar_one()
-        stmt = stmt.order_by(TenantWallet.credit_balance.asc()).limit(page_size).offset((page - 1) * page_size)
+        stmt = stmt.order_by(TenantBilling.credit_balance.asc()).limit(page_size).offset((page - 1) * page_size)
         result = await self.db.execute(stmt)
         items = [{
             "wallet_id": str(w.id), "tenant_id": str(w.tenant_id), "tenant_name": t.tenant_name,
-            "available_balance": float(w.credit_balance), "reserved_balance": float(w.reserved_balance),
-            "low_balance_threshold": float(w.low_balance_threshold) if w.low_balance_threshold is not None else None,
-            "last_transaction_at": w.last_transaction_at.isoformat() if w.last_transaction_at else None,
-            "health_band": t.health_band, "is_active": w.is_active,
+            "available_balance": float(w.credit_balance), "reserved_balance": 0.0,
+            "low_balance_threshold": float(LOW_BALANCE_DEFAULT_THRESHOLD),
+            "last_transaction_at": None,
+            "health_band": t.health_band, "is_active": t.status == "active",
         } for w, t in result.all()]
         return {"items": items, "pagination": {"page": page, "page_size": page_size, "total": total,
                 "total_pages": max(1, (total + page_size - 1) // page_size)}}
 
     async def get_wallet_ledger(self, wallet_id: uuid.UUID, page: int = 1, page_size: int = 50) -> dict:
-        wr = await self.db.execute(select(TenantWallet).where(TenantWallet.id == wallet_id))
+        wr = await self.db.execute(select(TenantBilling).where(TenantBilling.id == wallet_id))
         w = wr.scalar_one_or_none()
-        if not w: raise NotFoundException("TenantWallet", str(wallet_id))
+        if not w: raise NotFoundException("TenantBilling", str(wallet_id))
         tr = await self.db.execute(select(Tenant).where(Tenant.id == w.tenant_id))
         tenant = tr.scalar_one_or_none()
-        count_stmt = select(func.count()).select_from(WalletTransaction).where(WalletTransaction.tenant_id == w.tenant_id)
+        count_stmt = select(func.count()).select_from(UsageCreditLedger).where(UsageCreditLedger.tenant_id == w.tenant_id)
         total = (await self.db.execute(count_stmt)).scalar_one()
-        txn_stmt = (select(WalletTransaction).where(WalletTransaction.tenant_id == w.tenant_id)
-                    .order_by(WalletTransaction.created_at.desc()).limit(page_size).offset((page - 1) * page_size))
+        txn_stmt = (select(UsageCreditLedger).where(UsageCreditLedger.tenant_id == w.tenant_id)
+                    .order_by(UsageCreditLedger.created_at.desc()).limit(page_size).offset((page - 1) * page_size))
         txns = (await self.db.execute(txn_stmt)).scalars().all()
+        totals = (await self.db.execute(
+            select(
+                func.coalesce(func.sum(UsageCreditLedger.credit_delta).filter(
+                    UsageCreditLedger.credit_delta > 0), 0),
+                func.coalesce(func.sum(-UsageCreditLedger.credit_delta).filter(
+                    UsageCreditLedger.credit_delta < 0), 0),
+            ).where(UsageCreditLedger.tenant_id == w.tenant_id)
+        )).one()
         return {
             "wallet": {
                 "wallet_id": str(w.id), "tenant_id": str(w.tenant_id),
                 "tenant_name": tenant.tenant_name if tenant else None,
-                "available_balance": float(w.credit_balance), "reserved_balance": float(w.reserved_balance),
-                "lifetime_purchased": float(w.lifetime_purchased), "lifetime_consumed": float(w.lifetime_consumed),
-                "low_balance_threshold": float(w.low_balance_threshold) if w.low_balance_threshold is not None else None,
-                "health_band": tenant.health_band if tenant else None, "is_active": w.is_active,
+                "available_balance": float(w.credit_balance), "reserved_balance": 0.0,
+                "lifetime_purchased": float(totals[0] or 0),
+                "lifetime_consumed": float(totals[1] or 0),
+                "low_balance_threshold": float(LOW_BALANCE_DEFAULT_THRESHOLD),
+                "health_band": tenant.health_band if tenant else None,
+                "is_active": bool(tenant and tenant.status == "active"),
             },
             "ledger": [{
-                "txn_id": str(t.id), "txn_type": t.txn_type, "amount": float(t.amount),
+                "txn_id": str(t.id), "txn_type": t.event_type, "amount": float(t.credit_delta),
                 "balance_before": float(t.balance_before), "balance_after": float(t.balance_after),
-                "reference_id": t.reference_id, "reference_type": t.reference_type,
-                "description": t.description, "created_at": t.created_at.isoformat(),
+                "reference_id": t.source_id, "reference_type": t.source_type,
+                "description": t.reason, "created_at": t.created_at.isoformat(),
             } for t in txns],
             "pagination": {"page": page, "page_size": page_size, "total": total,
                            "total_pages": max(1, (total + page_size - 1) // page_size)},

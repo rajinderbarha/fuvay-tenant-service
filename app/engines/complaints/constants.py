@@ -325,12 +325,12 @@ REMEDY_TO_SETTLEMENT_TYPE = {
     "no_action":     "no_compensation",
 }
 
-# Provider credits first, then their security deposit.
-SETTLEMENT_DEDUCTION_STRATEGY = "tenant_wallet_then_security_deposit"
+# Customer remedies are funded from canonical provider usage credit only.
+SETTLEMENT_DEDUCTION_STRATEGY = "tenant_wallet"
 
 # Running an AI settlement is a paid platform service: the PROVIDER is charged
 # this many usage credits when the session starts (deducted from their credit
-# wallet, falling back to their security deposit — same cascade as the payout).
+# balance — the same canonical account as the remedy itself).
 AI_SETTLEMENT_FEE_CREDITS = Decimal("20.00")
 
 ERR_AI_SETTLEMENT_DISABLED = "AI_SETTLEMENT_DISABLED"

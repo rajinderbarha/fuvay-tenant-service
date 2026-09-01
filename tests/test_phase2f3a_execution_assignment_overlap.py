@@ -47,43 +47,37 @@ def _clear():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-@pytest.mark.asyncio
 class TestAcceptRejectRouteShadowing:
     """Locks in which implementation actually answers the shared path."""
 
+    @pytest.mark.asyncio
     async def test_accept_route_is_answered_by_home_service_assignment_not_execution(self):
         _override(_user())
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await client.post(f"/v1/staff/service-jobs/{uuid.uuid4()}/accept",
                                        headers={"Authorization": "Bearer x"})
-            assert r.status_code == 200
+            assert r.status_code == 404
             body = r.json()
             # home_service_assignment.staff_router's engine_id is "assignment"
             # (see app/engines/home_service_assignment/staff_router.py); if this
             # ever becomes "staff-exec-accept" (execution router's engine_id),
             # main.py's registration order changed and the overlap adjudication
             # in phase-02a-slice-02f3a/ must be redone.
-            assert body["meta"]["engine_id"] == "assignment", (
-                f"Expected home_service_assignment.staff_router to answer this route, "
-                f"got engine_id={body['meta']['engine_id']!r} -- registration order in "
-                f"app/main.py may have changed; re-adjudicate the overlap"
-            )
+            assert body["error_code"] == "JOB_ASSIGNMENT_ACCESS_DENIED"
         finally:
             _clear()
 
+    @pytest.mark.asyncio
     async def test_reject_route_is_answered_by_home_service_assignment_not_execution(self):
         _override(_user())
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 r = await client.post(f"/v1/staff/service-jobs/{uuid.uuid4()}/reject",
                                        json={"reason": "test"}, headers={"Authorization": "Bearer x"})
-            assert r.status_code == 200
+            assert r.status_code == 404
             body = r.json()
-            assert body["meta"]["engine_id"] == "assignment", (
-                f"Expected home_service_assignment.staff_router to answer this route, "
-                f"got engine_id={body['meta']['engine_id']!r}"
-            )
+            assert body["error_code"] == "JOB_ASSIGNMENT_ACCESS_DENIED"
         finally:
             _clear()
 

@@ -125,8 +125,8 @@ class TestModels:
     def test_dispute_settlement_has_wallet_deduction_amount(self):
         assert "tenant_wallet_deduction_amount" in _read(MODELS)
 
-    def test_dispute_settlement_has_security_deposit_deduction_amount(self):
-        assert "security_deposit_deduction_amount" in _read(MODELS)
+    def test_dispute_settlement_has_no_retired_security_deposit_amount(self):
+        assert "security_deposit_deduction_amount" not in _read(MODELS)
 
 
 # ── Service ──────────────────────────────────────────────────────────────────
@@ -211,11 +211,11 @@ class TestService:
         # Service must acknowledge credits are platform credits
         assert "platform credit" in _read(SERVICE).lower() or "service credit" in _read(SERVICE).lower()
 
-    def test_execute_deducts_wallet_first(self):
+    def test_execute_deducts_canonical_usage_credit(self):
         content = _read(SERVICE)
-        wallet_idx = content.find("credit_balance")
-        deposit_idx = content.find("warranty_drawn")
-        assert wallet_idx < deposit_idx, "Wallet deduction must precede deposit deduction in execute_settlement."
+        assert "credit_balance" in content
+        assert "UsageCreditLedger(" in content
+        assert "warranty_drawn" not in content
 
     def test_execute_creates_audit_log(self):
         content = _read(SERVICE)
@@ -226,12 +226,12 @@ class TestService:
         assert "UsageCreditLedger" in source
         assert "WalletTransaction" not in source
 
-    def test_execute_creates_deposit_transaction(self):
-        assert "SecurityDepositTransaction" in _read(SERVICE)
+    def test_execute_never_creates_retired_deposit_transaction(self):
+        assert "SecurityDepositTransaction" not in _read(SERVICE)
 
     def test_valid_deduction_strategies_defined(self):
         content = _read(SERVICE)
-        assert "tenant_wallet_then_security_deposit" in content
+        assert "tenant_wallet" in content
         assert "platform_goodwill" in content
 
     def test_preview_returns_can_fully_cover(self):
