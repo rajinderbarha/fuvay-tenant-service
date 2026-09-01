@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { StyleProp, TextInput, TextInputProps, View, ViewStyle } from "react-native";
 import { useTheme } from "../design-system/theme";
 import { AppText } from "./AppText";
+import { AppSurface } from "./AppSurface";
 
 export interface AppInputProps extends TextInputProps {
   label?: string;
@@ -45,28 +46,33 @@ export const AppInput = React.forwardRef<TextInput, AppInputProps>(function AppI
           {label}
         </AppText>
       ) : null}
-      <TextInput
-        ref={ref}
-        editable={!disabled}
-        placeholderTextColor={theme.colors.textTertiary}
-        onFocus={e => { setFocused(true); onFocus?.(e); }}
-        onBlur={e => { setFocused(false); onBlur?.(e); }}
-        accessibilityState={{ disabled: !!disabled }}
-        style={[
-          {
-            minHeight: theme.touchTargets.minimum,
-            borderWidth: 1,
-            borderColor,
-            borderRadius: theme.radiusUsage.input,
-            paddingHorizontal: theme.spacing.base,
-            color: disabled ? theme.colors.textDisabled : theme.colors.textPrimary,
-            backgroundColor: disabled ? theme.colors.surfaceDisabled : theme.colors.surfaceDefault,
-            ...theme.typography.body,
-          },
-          style,
-        ]}
-        {...rest}
-      />
+      <AppSurface
+        variant="inset"
+        elevated={false}
+        colors={disabled ? [theme.colors.surfaceDisabled, theme.colors.surfaceDisabled] : undefined}
+        style={{ borderColor, borderRadius: theme.radiusUsage.input, overflow: "hidden" }}
+      >
+        <TextInput
+          ref={ref}
+          editable={!disabled}
+          placeholderTextColor={theme.colors.textTertiary}
+          onFocus={e => { setFocused(true); onFocus?.(e); }}
+          onBlur={e => { setFocused(false); onBlur?.(e); }}
+          accessibilityState={{ disabled: !!disabled }}
+          style={[
+            {
+              minHeight: theme.touchTargets.minimum,
+              borderWidth: 0,
+              paddingHorizontal: theme.spacing.base,
+              color: disabled ? theme.colors.textDisabled : theme.colors.textPrimary,
+              backgroundColor: "transparent",
+              ...theme.typography.body,
+            },
+            style,
+          ]}
+          {...rest}
+        />
+      </AppSurface>
       {error ? (
         <AppText variant="caption" color="danger" style={{ marginTop: theme.spacing.xxs }}>
           {error}

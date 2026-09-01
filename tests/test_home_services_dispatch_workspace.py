@@ -13,7 +13,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "frontend/tenant-portal/app/(tenant)/home-services/dispatch/page.tsx"
 API = ROOT / "frontend/tenant-portal/lib/api-tenant-workspaces.ts"
-NAV = ROOT / "frontend/tenant-portal/lib/nav-config.ts"
+NAV = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
 LEGACY = ROOT / "frontend/tenant-portal/app/(tenant)/dispatch/page.tsx"
 
 
@@ -119,3 +119,45 @@ def test_projection_uses_canonical_status_and_bounded_queries():
     assert ".limit(limit).offset(offset)" in source
     assert "schedule_cap = 5000" in source
     assert "TERMINAL_STATUSES" in source
+    assert "ServiceJob.assigned_staff_id.is_(None)" in source
+    assert "ServiceJob.status == \"pending_assignment\"" in source
+    assert "ServiceJob.assigned_staff_id.is_not(None)" in source
+
+
+def test_dispatch_projects_real_technician_photos_with_ui_fallbacks():
+    from app.engines.home_service_assignment.dispatch_service import HomeServiceDispatchProjectionService
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    projection = inspect.getsource(HomeServiceDispatchProjectionService)
+    eligibility = inspect.getsource(HomeServiceJobAssignmentService.list_eligible_staff_for_job)
+    page = PAGE.read_text(encoding="utf-8")
+    api = API.read_text(encoding="utf-8")
+
+    assert '"profile_photo_url"' in projection
+    assert '"profile_photo_url"' in eligibility
+    assert "profile_photo_url?: string | null" in api
+    assert "<DefaultAvatar" in page
+    assert "src={technician.profile_photo_url}" in page
+
+
+def test_dispatch_job_cards_include_service_icon_slot_and_service_address():
+    from app.engines.home_service_assignment.dispatch_service import HomeServiceDispatchProjectionService
+
+    projection = inspect.getsource(HomeServiceDispatchProjectionService)
+    page = PAGE.read_text(encoding="utf-8")
+    api = API.read_text(encoding="utf-8")
+
+    assert "MasterService.icon_url" in projection
+    assert '"requested_time_window"' in projection
+    assert '"customer_address"' in projection
+    assert "service_icon_url?: string | null" in api
+    assert "<ServiceJobIcon job={job}" in page
+    assert "job.customer_address || job.locality" in page
+
+
+def test_assignment_notification_resolves_team_member_login_identity():
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    source = inspect.getsource(HomeServiceJobAssignmentService._notify_staff_assigned)
+    assert "ProviderTeamMember.user_id" in source
+    assert "user_id=recipient_user_id" in source

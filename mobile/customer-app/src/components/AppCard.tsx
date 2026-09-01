@@ -1,32 +1,35 @@
 import React from "react";
-import { View, ViewProps } from "react-native";
+import { StyleSheet, ViewProps } from "react-native";
 import { useTheme } from "../design-system/theme";
+import { AppSurface, type AppSurfaceVariant } from "./AppSurface";
 
 export interface AppCardProps extends ViewProps {
   elevated?: boolean;
+  variant?: AppSurfaceVariant;
 }
 
 /** Standard elevated surface: rounded corners, subtle border + shadow,
  * card padding token. Screens compose content inside this rather than
  * styling their own bordered Views. */
-export function AppCard({ elevated = true, style, children, ...rest }: AppCardProps) {
+export function AppCard({ elevated = true, variant = "raised", style, children, ...rest }: AppCardProps) {
   const { theme } = useTheme();
+  const flattened = StyleSheet.flatten(style);
+  const customBackground = typeof flattened?.backgroundColor === "string" ? flattened.backgroundColor : null;
   return (
-    <View
+    <AppSurface
+      variant={variant}
+      elevated={elevated}
+      colors={customBackground ? [customBackground, customBackground] : undefined}
       style={[
         {
-          backgroundColor: theme.colors.surfaceDefault,
           borderRadius: theme.radiusUsage.card,
-          borderWidth: 1,
-          borderColor: theme.colors.borderSubtle,
           padding: theme.layout.cardPadding,
         },
-        elevated ? theme.shadow.sm : null,
         style,
       ]}
       {...rest}
     >
       {children}
-    </View>
+    </AppSurface>
   );
 }

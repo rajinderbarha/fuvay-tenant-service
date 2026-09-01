@@ -5,9 +5,12 @@ import { useTheme } from "../../design-system/theme";
 import { buildFuvayTheme } from "../../design-system/tokens/fuvay";
 import { AppScreen } from "../AppScreen";
 import { AppText } from "../AppText";
+import { AppButton } from "../AppButton";
 import { Icon, IconProps } from "../Icon";
+import { FuvayAmbientCanvas, FuvayEyebrow, FuvayPanel } from "../fuvay";
 import { LegalLinksFooter } from "./LegalLinksFooter";
 import { LoginMethod, LoginMethodSegmentedControl } from "./LoginMethodSegmentedControl";
+import { customerExperienceCopy } from "../../content/customerExperience";
 
 interface LoginExperienceShellProps {
   method: LoginMethod;
@@ -45,6 +48,7 @@ export function LoginExperienceShell({
   const { theme, mode } = useTheme();
   const fuvay = useMemo(() => buildFuvayTheme(mode === "dark"), [mode]);
   const { width, height } = useWindowDimensions();
+  const copy = customerExperienceCopy.login;
   const compact =
     width <= theme.layout.authCompactWidthBreakpoint ||
     height <= theme.layout.authCompactHeightBreakpoint;
@@ -52,63 +56,40 @@ export function LoginExperienceShell({
   /** The two universal points from the canvas; the caller's own message
    *  leads, so the list stays method-accurate. */
   const points: { label: string; icon: IconProps["name"]; color: string }[] = [
-    { label: securityMessage, icon: "shield-checkmark-outline", color: fuvay.accents.a3 },
-    { label: "Your number is never shared with pros", icon: "eye-off-outline", color: fuvay.accents.a2 },
-    { label: "Track and reschedule any booking", icon: "calendar-outline", color: fuvay.accents.a1 },
+    { label: method === "otp" ? copy.reassurance.fastCode : securityMessage, icon: "time-outline", color: fuvay.accents.a2 },
+    { label: copy.reassurance.privateNumber, icon: "shield-checkmark-outline", color: fuvay.accents.a3 },
+    { label: copy.reassurance.flexibleBooking, icon: "calendar-outline", color: fuvay.accents.a1 },
   ];
 
   return (
     <AppScreen scroll contentContainerStyle={{ padding: 0, flexGrow: 1 }}>
-      <View style={{ flex: 1, backgroundColor: theme.colors.backgroundPrimary, overflow: "hidden" }}>
-        {/* Ambient glow, top-right, matching the canvas. */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            right: -120,
-            top: -140,
-            width: 300,
-            height: 300,
-            borderRadius: 150,
-            backgroundColor: fuvay.surfaces.glowTint,
-          }}
-        />
+      <FuvayAmbientCanvas>
 
         {/* ── Header ─────────────────────────────────────────────────── */}
-        <View style={{ paddingHorizontal: 26, paddingTop: compact ? 32 : 52, paddingBottom: 30, gap: 20 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ width: 26, height: 1, backgroundColor: fuvay.accents.a2 }} />
-            <AppText variant="metaLabelWide" style={{ color: fuvay.accents.a2 }}>
-              SIGN IN
-            </AppText>
-          </View>
+        <View style={{ paddingHorizontal: 26, paddingTop: compact ? 40 : 52, paddingBottom: 30, gap: 20 }}>
+          <FuvayEyebrow color={fuvay.accents.a2}>{copy.eyebrow}</FuvayEyebrow>
           <View style={{ gap: 10 }}>
             <AppText variant="displayLarge" accessibilityRole="header">
-              Your home,{"\n"}one number away.
+              {copy.title}
             </AppText>
             <AppText variant="body" color="secondary" style={{ maxWidth: 270 }}>
-              Enter your mobile number and we&apos;ll send a one-time code — no password to
-              remember.
+              {method === "otp" ? copy.otpDescription : copy.passwordDescription}
             </AppText>
           </View>
         </View>
 
         {/* ── Panel ──────────────────────────────────────────────────── */}
-        <View
+        <FuvayPanel
           style={{
             flex: 1,
-            marginHorizontal: 14,
-            paddingHorizontal: 20,
-            paddingTop: 22,
-            paddingBottom: 24,
+            marginHorizontal: theme.metrics.screen.authHorizontalInset,
+            paddingHorizontal: theme.metrics.panel.horizontalPadding,
+            paddingTop: theme.metrics.panel.verticalPadding,
+            paddingBottom: theme.spacing.xl,
             borderTopLeftRadius: 28,
             borderTopRightRadius: 28,
             borderBottomLeftRadius: theme.radius.radiusShell,
             borderBottomRightRadius: theme.radius.radiusShell,
-            backgroundColor: theme.colors.surfaceDefault,
-            borderWidth: 1,
-            borderColor: theme.colors.borderSubtle,
-            ...theme.shadow.md,
           }}
         >
           <LoginMethodSegmentedControl value={method} onChange={onMethodChange} />
@@ -137,31 +118,14 @@ export function LoginExperienceShell({
               }}
             >
               <AppText variant="bodySmall" color="secondary">
-                New to Fuvay?
+                {copy.newCustomer}
               </AppText>
-              <AppText
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel="Create account"
-                onPress={onSignup}
-                style={{
-                  minHeight: theme.touchTargets.minimum,
-                  paddingHorizontal: 20,
-                  paddingVertical: 13,
-                  borderRadius: theme.radiusUsage.button,
-                  borderWidth: 1.5,
-                  borderColor: fuvay.accents.a2,
-                  color: fuvay.accents.a2,
-                  textAlign: "center",
-                }}
-              >
-                Create account
-              </AppText>
+              <AppButton label={copy.createAccount} tone="secondary" size="compact" onPress={onSignup} />
             </View>
             <LegalLinksFooter />
           </View>
-        </View>
-      </View>
+        </FuvayPanel>
+      </FuvayAmbientCanvas>
     </AppScreen>
   );
 }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { CustomerTabsParamList } from "../../navigation/routeTypes";
 import { useCustomerProfileQuery } from "../../api/customer/useCustomerProfileQuery";
@@ -17,16 +18,19 @@ import { ReviewAndConfirmPhase } from "./ReviewAndConfirmPhase";
 import type { ConfirmPhaseState, ReviewReadyState } from "./ReviewAndConfirmPhase";
 import { ReviewSheet } from "../../components/bookingChat/ReviewSheet";
 import { BookingConfirmFlow } from "../../components/bookingChat/BookingConfirmFlow";
-import { resolveActivityLabel } from "../../domain/assistantActivity";
 import { useBotColors } from "../../components/bookingChat/botTheme";
 import {
   BotStageTracker, BotAssistantBubble, BotUserBubble, BotOptionChips, BotTypingDots,
-  BotWorkingTrace, useWorkingTrace, BotPulseDot, BotCard, BotPrimaryButton, BOT_GUTTER,
+  BotPulseDot, BotCard, BotPrimaryButton, BOT_GUTTER,
 } from "../../components/bookingChat/BotPrimitives";
 import { AddressTurn } from "../../components/bookingChat/AddressTurn";
 import { useServiceLocationPreference } from "../../hooks/useServiceLocationPreference";
 import { FuvayIcon } from "../../components/FuvayIcon";
 import { BotText } from "../../components/bookingChat/BotText";
+import { AppSurface, FuvayIconControl } from "../../components";
+import { useTheme } from "../../design-system/theme";
+import { fuvayGradientGeometry } from "../../design-system/tokens/fuvay";
+import { customerExperienceCopy } from "../../content/customerExperience";
 
 type Route = RouteProp<CustomerTabsParamList, "Assistant">;
 
@@ -39,6 +43,8 @@ const STAGES = ["Understand", "Match technician", "Confirm & price", "Book"];
  */
 export function BookingChatScreen() {
   const BOT = useBotColors();
+  const { theme } = useTheme();
+  const copy = customerExperienceCopy.assistant;
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const { data: profile } = useCustomerProfileQuery();
@@ -75,7 +81,7 @@ export function BookingChatScreen() {
           style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 8 }}
         >
           <ActivityIndicator color={BOT.brand} size="large" />
-          <BotText style={{ color: BOT.textMuted, fontSize: 15 }}>Loading your assistant</BotText>
+          <BotText style={{ color: BOT.textMuted, fontSize: 15 }}>{copy.loading}</BotText>
         </View>
       </SafeAreaView>
     );
@@ -86,9 +92,9 @@ export function BookingChatScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: BOT.bg }}>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 32 }}>
           <Ionicons name="location-outline" size={32} color={BOT.textFaint} />
-          <BotText style={{ color: BOT.textPrimary, fontSize: 16, fontWeight: "700", textAlign: "center" }}>Choose your location first</BotText>
+          <BotText style={{ color: BOT.textPrimary, fontSize: 16, fontWeight: "700", textAlign: "center" }}>{copy.chooseLocation}</BotText>
           <BotText style={{ color: BOT.textMuted, fontSize: 15, textAlign: "center" }}>
-            Fuvay Assistant needs your service location to check what's available.
+            {copy.chooseLocationBody}
           </BotText>
           <Pressable
             onPress={() => navigation.navigate("Home" as never)}
@@ -115,11 +121,10 @@ export function BookingChatScreen() {
     return (
       <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
         <AssistantIntroHeader locationLabel={home?.address?.city ?? entryContext.zipcode} />
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 18, paddingBottom: 32 }}
-        >
-          <CategoryChoiceTurn
+        <AppSurface colors={[theme.fuvay.surfaces.panel, theme.fuvay.surfaces.panel]} variant="raised" style={{ flex: 1, marginHorizontal: 12, marginTop: 4, marginBottom: 12, borderRadius: 30, overflow: "hidden" }}>
+          <View style={{ paddingTop: 14, paddingHorizontal: 20, paddingBottom: 2 }}><View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 4, backgroundColor: theme.fuvay.surfaces.rule }} /></View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 }}>
+            <CategoryChoiceTurn
             categories={home?.bookableCategories ?? []}
             serviceGroups={home?.bookableServiceGroups ?? []}
             loading={homePending}
@@ -141,8 +146,9 @@ export function BookingChatScreen() {
               serviceGroupSlug: group.slug,
               zipcode: entryContext.zipcode,
             }))}
-          />
-        </ScrollView>
+            />
+          </ScrollView>
+        </AppSurface>
       </SafeAreaView>
     );
   }
@@ -168,27 +174,21 @@ export function BookingChatScreen() {
  * beginning of that conversation rather than a different screen. */
 function AssistantIntroHeader({ locationLabel }: { locationLabel?: string | null }) {
   const BOT = useBotColors();
+  const { theme } = useTheme();
+  const copy = customerExperienceCopy.assistant;
   return (
     <View
       style={{
         flexDirection: "row", alignItems: "center", gap: 12,
-        paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14,
-        backgroundColor: BOT.surface,
-        borderBottomWidth: 1, borderBottomColor: BOT.borderSubtle,
+        paddingHorizontal: 20, paddingTop: 22, paddingBottom: 16,
       }}
     >
-      <View
-        style={{
-          width: 42, height: 42, borderRadius: 21, alignItems: "center",
-          justifyContent: "center", backgroundColor: BOT.surfaceRaised,
-          borderWidth: 1, borderColor: BOT.border,
-        }}
-      >
-        <FuvayIcon size={28} accessibilityLabel="Fuvay booking assistant" />
-      </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <BotText style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</BotText>
-        <BotText style={{ fontSize: 12, color: BOT.textMuted }}>Book confidently in a few simple steps</BotText>
+        <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>{copy.title}</BotText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.xs }}>
+          <BotPulseDot color={BOT.success} />
+          <BotText style={{ fontSize: 11, color: BOT.textMuted }}>{copy.online}</BotText>
+        </View>
       </View>
       {locationLabel ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 104 }}>
@@ -196,6 +196,9 @@ function AssistantIntroHeader({ locationLabel }: { locationLabel?: string | null
           <BotText style={{ fontSize: 12, fontWeight: "600", color: BOT.textSecondary }} numberOfLines={1}>{locationLabel}</BotText>
         </View>
       ) : null}
+      <AppSurface colors={[theme.fuvay.surfaces.card, theme.fuvay.surfaces.card]} variant="inset" elevated={false} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" }}>
+        <FuvayIcon size={21} accessibilityLabel="Fuvay booking assistant" />
+      </AppSurface>
     </View>
   );
 }
@@ -210,7 +213,7 @@ function ProblemChoiceGrid({ items, onSelect }: {
   const BOT = useBotColors();
   const unique = Array.from(new Map(items.map(item => [item.id, item])).values());
   return (
-    <View style={{ gap: 0, marginLeft: BOT_GUTTER, marginRight: 12, overflow: "hidden", borderRadius: 12, borderWidth: 1, borderColor: BOT.borderSubtle, backgroundColor: BOT.surface }}>
+    <View style={{ marginLeft: BOT_GUTTER, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
       {unique.map(item => {
         return (
           <Pressable
@@ -219,19 +222,14 @@ function ProblemChoiceGrid({ items, onSelect }: {
             accessibilityRole="button"
             accessibilityLabel={item.name}
             style={({ pressed }) => ({
-              minHeight: 54, paddingHorizontal: 14, paddingVertical: 11,
-              flexDirection: "row", alignItems: "center", gap: 10,
-              borderBottomWidth: item.id === unique[unique.length - 1]?.id ? 0 : 1,
-              borderBottomColor: BOT.borderSubtle,
+              minHeight: 40, paddingHorizontal: 16,
+              flexDirection: "row", alignItems: "center",
+              borderRadius: 999, borderWidth: 1.2, borderColor: BOT.brand,
               backgroundColor: pressed ? BOT.surfaceActive : BOT.surface,
               opacity: pressed ? 0.84 : 1,
             })}
           >
-            <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
-              <Ionicons name="construct-outline" size={16} color={BOT.textSecondary} />
-            </View>
-            <BotText style={{ flex: 1, fontSize: 14, lineHeight: 19, fontWeight: "600", color: BOT.textPrimary }} numberOfLines={2}>{item.name}</BotText>
-            <Ionicons name="chevron-forward" size={17} color={BOT.textFaint} />
+            <BotText style={{ fontSize: 12.5, lineHeight: 18, fontWeight: "600", color: BOT.brand }} numberOfLines={2}>{item.name}</BotText>
           </Pressable>
         );
       })}
@@ -243,6 +241,8 @@ function BookingChatConversation({
   entryContext, customerId, onClose,
 }: { entryContext: AssistantEntryContext; customerId: import("../../domain/ids").CustomerId; onClose: () => void }) {
   const BOT = useBotColors();
+  const { theme } = useTheme();
+  const copy = customerExperienceCopy.assistant;
   const navigation = useNavigation();
   const c = useAssistantController(entryContext, customerId);
   const zipcode = entryContext.zipcode;
@@ -302,9 +302,9 @@ function BookingChatConversation({
    * Begins a brand-new request.
    *
    * `c.restart()` resets the controller (session, draft, envelope, messages) but
-   * knows nothing about this screen's own state, so the local turn/trace state
+   * knows nothing about this screen's own state, so the local presentation state
    * has to be cleared alongside it -- otherwise the fresh conversation inherits
-   * the previous booking's confirmed overlay and answered-question traces.
+   * the previous booking's confirmed overlay.
    */
   const startNewBooking = useCallback(() => {
     setConfirmPhase(null);
@@ -313,8 +313,6 @@ function BookingChatConversation({
     setBooked(false);
     setSelectedIssueLabel(null);
     setAnswerDraft("");
-    setLiveTraceQuestionId(null);
-    setTracesByQuestion({});
     c.restart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -354,34 +352,6 @@ function BookingChatConversation({
     }, []),
   );
 
-  // The full running task list for the current operation. The controller
-  // records every stage it genuinely passed through (activityTrace), so
-  // steps that resolve in the same React batch are still shown instead of
-  // collapsing into one flash. Keyed on the live question so each question
-  // gets its own trace rather than one list growing all conversation.
-  const traceLabels = useMemo(
-    () => c.activityTrace.map(stage => resolveActivityLabel(stage, zipcode)),
-    [c.activityTrace, zipcode],
-  );
-  const trace = useWorkingTrace(traceLabels, c.activityStage !== null);
-
-  // The next turn waits for the working steps to finish playing, so the
-  // customer sees what was done before being asked the next thing --
-  // options never pop in underneath a still-running trace.
-  const traceBusy = trace.some(e => e.status === "pending");
-
-  // Which question the running trace belongs to, and the finished trace of
-  // every question answered before it. Without this, past questions lose
-  // their steps and the whole transcript's worth of work piles up in one
-  // block at the bottom instead of sitting with the question that caused it.
-  const [liveTraceQuestionId, setLiveTraceQuestionId] = useState<string | null>(null);
-  const [tracesByQuestion, setTracesByQuestion] = useState<Record<string, string[]>>({});
-
-  useEffect(() => {
-    if (!liveTraceQuestionId || traceLabels.length === 0) return;
-    setTracesByQuestion(prev => ({ ...prev, [liveTraceQuestionId]: traceLabels }));
-  }, [liveTraceQuestionId, traceLabels]);
-
   // Auto-scroll is handled by the list's onContentSizeChange (below), which
   // fires on every real growth. A second state-keyed scroll effect here
   // would fight it and make the list jitter.
@@ -417,8 +387,7 @@ function BookingChatConversation({
    */
   const currentQuestion = c.envelope?.currentQuestion ?? null;
   const composerTarget: "answer" | "interpret" | "issue" | null =
-    traceBusy ? null
-      : currentQuestion && !questionsComplete
+    currentQuestion && !questionsComplete
         ? ((currentQuestion.options?.length ?? 0) > 0 ? "interpret" : "answer")
         : c.offeringChoice && !c.draftId ? "issue"
           : null;
@@ -452,7 +421,6 @@ function BookingChatConversation({
       return;
     }
     if (!currentQuestion) return;
-    setLiveTraceQuestionId(currentQuestion.questionId);
     if (composerTarget === "interpret") {
       // Constrained matching against this question's own options. The response
       // carries the authoritative envelope, so nothing here infers what to show
@@ -471,34 +439,19 @@ function BookingChatConversation({
     // SafeAreaView's padding. Inside it, an absolutely-positioned overlay
     // inherits the host's inset handling, which is how the review sheet's header
     // ended up under the status bar. Each overlay now applies its own insets.
-    <View style={{ flex: 1, backgroundColor: BOT.bg }}>
-    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: BOT.bg }}>
+    <LinearGradient colors={theme.fuvay.surfaces.headerGradient as [string, string, string]} start={fuvayGradientGeometry.css170Start} end={fuvayGradientGeometry.css170End} style={{ flex: 1 }}>
+    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: "transparent" }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         {/* Header */}
-        <View
-          style={{
-            paddingHorizontal: 16,
-            paddingTop: 10,
-            paddingBottom: 12,
-            backgroundColor: BOT.surface,
-            borderBottomWidth: 1,
-            borderBottomColor: BOT.borderSubtle,
-          }}
-        >
+        <View style={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 16 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ width: 36, height: 40, alignItems: "flex-start", justifyContent: "center" }}>
-              <Ionicons name="chevron-back" size={19} color={BOT.textSecondary} />
-            </Pressable>
-            <View style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
-              <FuvayIcon size={27} accessibilityLabel="Fuvay booking assistant" />
-            </View>
+            <FuvayIconControl icon="chevron-back" label="Close assistant" onPress={onClose} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <BotText style={{ fontSize: 10, fontWeight: "800", letterSpacing: 1.1, color: BOT.textTertiary }}>GUIDED BOOKING</BotText>
-              <BotText style={{ fontSize: 18, lineHeight: 21, fontWeight: "800", color: BOT.textPrimary }}>Ask Fuvay</BotText>
+              <BotText style={{ fontSize: 15, lineHeight: 20, fontWeight: "600", color: BOT.textPrimary }}>{copy.title}</BotText>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <BotPulseDot color={booked ? BOT.success : BOT.brand} />
                 <BotText style={{ fontSize: 12, color: BOT.textMuted }} numberOfLines={1}>
-                  {booked ? "Booking confirmed" : `${entryContext.categoryName ?? "Service"} booking`}
+                  {booked ? copy.composerBooked : copy.online}
                 </BotText>
               </View>
             </View>
@@ -508,24 +461,16 @@ function BookingChatConversation({
                 -- a customer who has answered eight questions should not lose
                 them to a mis-tap. Hidden once booked, when there is nothing left
                 to restart. */}
-            {!booked ? (
-              <Pressable
-                onPress={confirmRestart}
-                accessibilityRole="button"
-                accessibilityLabel="Start over"
-                hitSlop={8}
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  alignItems: "center", justifyContent: "center",
-                  backgroundColor: BOT.surfaceSunken,
-                }}
-              >
-                <Ionicons name="refresh" size={17} color={BOT.textSecondary} />
-              </Pressable>
-            ) : null}
+            <AppSurface colors={[theme.fuvay.surfaces.card, theme.fuvay.surfaces.card]} variant="inset" elevated={false} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" }}>
+              <FuvayIcon size={21} accessibilityLabel="Fuvay booking assistant" />
+            </AppSurface>
           </View>
-          <BotStageTracker stages={STAGES} activeIndex={activeStageIndex} allDone={booked} />
         </View>
+
+        <AppSurface colors={[theme.fuvay.surfaces.panel, theme.fuvay.surfaces.panel]} variant="raised" style={{ flex: 1, marginHorizontal: 12, marginTop: 4, marginBottom: 12, borderRadius: 30, overflow: "hidden" }}>
+          <View style={{ paddingTop: 14, paddingHorizontal: 20, paddingBottom: 2 }}>
+            <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 4, backgroundColor: theme.fuvay.surfaces.rule }} />
+          </View>
 
         {/* Transcript */}
         <FlatList
@@ -535,7 +480,7 @@ function BookingChatConversation({
           // working step, a new bubble, a card mounting -- without needing a
           // state key for each one.
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20, gap: 12 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, gap: 14 }}
           data={[0]}
           keyExtractor={() => "content"}
           renderItem={() => (
@@ -581,7 +526,7 @@ function BookingChatConversation({
                 </BotCard>
               ) : null}
 
-              {c.offeringChoice && !selectedIssueLabel && !traceBusy ? (
+              {c.offeringChoice && !selectedIssueLabel ? (
                 c.offeringChoice.offerings.length > 0 ? (
                   <ProblemChoiceGrid
                     items={c.offeringChoice.offerings}
@@ -616,34 +561,17 @@ function BookingChatConversation({
                 )
               ) : null}
 
-              {/* 2. Question loop -- answered history, then the live question */}
-              {/* Each question keeps the steps that ran for IT, directly
-                  below its answer -- so work stays attached to the question
-                  that caused it instead of piling up in one block. */}
+              {/* 2. Question loop -- answered history, then the live question. */}
               {c.envelope?.answeredQuestions.map(a => (
                 <View key={a.questionId} style={{ gap: 8 }}>
                   <BotAssistantBubble text={a.questionLabel} />
                   <BotUserBubble text={a.answerLabel} />
-                  {a.questionId === liveTraceQuestionId ? (
-                    <BotWorkingTrace entries={trace} />
-                  ) : tracesByQuestion[a.questionId] ? (
-                    <BotWorkingTrace
-                      entries={tracesByQuestion[a.questionId].map(label => ({ label, status: "done" as const }))}
-                    />
-                  ) : null}
                 </View>
               ))}
 
-              {/* Work that belongs to no question in the history yet --
-                  bootstrap, picking the issue, or the brief moment before
-                  the answered question lands -- still shows in sequence
-                  here, so a running trace is never rendered nowhere. */}
-              {liveTraceQuestionId === null
-                || !c.envelope?.answeredQuestions.some(a => a.questionId === liveTraceQuestionId)
-                ? <BotWorkingTrace entries={trace} />
-                : null}
+              {c.activityStage !== null ? <BotTypingDots /> : null}
 
-              {c.envelope?.currentQuestion && !questionsComplete && !traceBusy ? (
+              {c.envelope?.currentQuestion && !questionsComplete ? (
                 <View style={{ gap: 8 }}>
                   <BotAssistantBubble text={c.envelope.currentQuestion.text} />
                   {/* A free-text question is answered in the composer at the
@@ -657,7 +585,6 @@ function BookingChatConversation({
                         const opt = c.envelope!.currentQuestion!.options.find(o => o.label === label);
                         if (!opt) return;
                         const questionId = c.envelope!.currentQuestion!.questionId;
-                        setLiveTraceQuestionId(questionId);
                         c.submitAnswer(questionId, opt.id, null);
                       }}
                     />
@@ -666,7 +593,7 @@ function BookingChatConversation({
               ) : null}
 
               {/* 3. Address */}
-              {addressPhaseActive && !addr.resolvedAddressId && !traceBusy ? (
+              {addressPhaseActive && !addr.resolvedAddressId ? (
                 <AddressTurn
                   zipcode={zipcode}
                   addresses={addr.addresses}
@@ -737,14 +664,15 @@ function BookingChatConversation({
               <FuvayIcon size={16} accessibilityLabel="Fuvay assistant" />
               <BotText style={{ flex: 1, fontSize: 13, color: BOT.textTertiary }} numberOfLines={1}>
                 {booked
-                  ? "Your booking is confirmed"
+                  ? copy.composerBooked
                   : inReviewPhase
-                    ? "Fuvay AI is finishing your booking…"
-                    : "Choose an option above to continue"}
+                    ? copy.composerReview
+                    : copy.composerIdle}
               </BotText>
             </View>
           )}
         </View>
+        </AppSurface>
       </KeyboardAvoidingView>
     </SafeAreaView>
 
@@ -788,6 +716,6 @@ function BookingChatConversation({
           />
         </View>
       ) : null}
-    </View>
+    </LinearGradient>
   );
 }

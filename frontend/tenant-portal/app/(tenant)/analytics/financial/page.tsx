@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { providerAnalyticsApi } from "../../../../lib/api";
-import { KpiCard, DateFilter, SimpleTable } from "../../../../components/analytics";
+import { AnalyticsMetric, DateFilter, SimpleTable } from "../../../../components/analytics";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
@@ -37,16 +37,16 @@ export default function ProviderFinancialPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
-        <KpiCard label="Gross Revenue"   value={s.gross_revenue}   unit="AED" loading={loading} />
-        <KpiCard label="Net Revenue"     value={s.net_revenue}     unit="AED" loading={loading} />
-        <KpiCard label="Commission Paid" value={s.commission_paid} unit="AED" loading={loading} />
-        <KpiCard label="Usage Credit Balance"  value={s.wallet_balance}  unit="AED" loading={loading} />
+        <AnalyticsMetric label="Gross Revenue"   value={s.gross_revenue}   unit="AED" loading={loading} />
+        <AnalyticsMetric label="Net Revenue"     value={s.net_revenue}     unit="AED" loading={loading} />
+        <AnalyticsMetric label="Commission Paid" value={s.commission_paid} unit="AED" loading={loading} />
+        <AnalyticsMetric label="Usage Credit Balance"  value={s.wallet_balance}  unit="AED" loading={loading} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
-        <KpiCard label="Paid Invoices"    value={s.paid_invoices}    loading={loading} />
-        <KpiCard label="Pending Invoices" value={s.pending_invoices} loading={loading} severity={Number(s.pending_invoices) > 0 ? "warning" : "normal"} />
-        <KpiCard label="Refunds Issued"   value={s.refunds_issued}   unit="AED" loading={loading} />
+        <AnalyticsMetric label="Paid Invoices"    value={s.paid_invoices}    loading={loading} />
+        <AnalyticsMetric label="Pending Invoices" value={s.pending_invoices} loading={loading} severity={Number(s.pending_invoices) > 0 ? "warning" : "normal"} />
+        <AnalyticsMetric label="Refunds Issued"   value={s.refunds_issued}   unit="AED" loading={loading} />
       </div>
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>

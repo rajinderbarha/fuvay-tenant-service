@@ -36,4 +36,22 @@ describe("provider shell structural parity", () => {
       expect(registry).toContain(`"${path}"`);
     }
   });
+
+  it("keeps the primary provider navigation focused on daily work", () => {
+    const primary = operational.match(/const NAV_GROUPS: NavGroup\[\] = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+    const itemIds = Array.from(primary.matchAll(/\{ id: "([^"]+)"/g), match => match[1]);
+
+    expect(itemIds).toEqual([
+      "dashboard",
+      "hs-bookings-jobs",
+      "hs-dispatch",
+      "hs-availability",
+      "customers",
+      "hs-services",
+      "hs-team",
+      "hs-finance",
+    ]);
+    expect(operational).toContain("Manage business");
+    expect(operational).toContain("SECONDARY_NAV_GROUPS");
+  });
 });

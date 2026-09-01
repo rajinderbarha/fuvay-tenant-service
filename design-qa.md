@@ -52,6 +52,77 @@
 
 final result: passed
 
+## Customer design system — Circle Tile + Customer Home v2 — 2026-08-30
+
+**Source of truth**
+
+- Component language: `C:\Users\Aiviq Technologies\Downloads\Circle Tile Light + Dark.dc.html`.
+- Latest Home hierarchy: `C:\Users\Aiviq Technologies\Downloads\Customer Home Screen v2.dc.html`.
+- Rendered reference evidence: `G:\serviceos\.artifacts\customer-design-system\customer-home-v2-reference.png`.
+- The reference's amber accent was intentionally mapped to the existing Fuvay brand and semantic palette; its neutral depth, spacing, tile construction, and light/dark behavior were retained.
+
+**Implemented system**
+
+- One `AppSurface` contract now owns raised, interactive, inset, and flat material treatments.
+- One `AppIconTile` contract now owns circular and squircle Lucide service/action tiles with semantic tones.
+- One `AppLucideIcon` registry now supplies navigation, home-service, search, status, and action icons.
+- Cards, buttons, icon buttons, inputs, badges, screens, and bottom navigation consume the shared material recipes instead of screen-local shadows and backgrounds.
+- Home now follows the v2 information hierarchy: identity/location row, home-care command title, next visit summary, microphone search, layered service tiles, neutral live-booking timeline, and individually elevated recommendation cards.
+- Admin-provided section order, visibility, layout variants, campaigns, services, bookings, and action routes remain intact.
+
+**Blocking comparison result**
+
+- P0: none. Strict TypeScript and the Home/API fixture suite pass; backend-driven content and navigation contracts remain intact.
+- P1: none in the implemented component hierarchy. Fixed the previous one-off purple booking surface and nested recommendation panel that conflicted with the v2 system.
+- P2: Android emulator screenshot automation was unavailable because the emulator's Android `system` process raised its own ANR dialog after a cold restart. Expo Go remained the resumed activity and logcat showed no React Native fatal or bundle-resolution error, but no post-change native screenshot is claimed from that device state.
+- P3: when the emulator system image is healthy, capture one light and one dark authenticated Home screenshot for the visual archive; this is evidence follow-up, not a code-contract gap.
+
+**Verification**
+
+- TypeScript: passed (`tsc --noEmit --incremental false --skipLibCheck`).
+- Focused ESLint: passed for Home, navigation, surfaces, tiles, and Lucide registry.
+- Jest: 5 suites / 20 tests passed, including Home, theme material recipes, AppSurface consumers, and AppIconTile.
+- Source hygiene: scoped `git diff --check` passed; only repository line-ending notices remain.
+- Runtime: API healthy on port 8000, Metro healthy on port 8081, and Expo Go resumed the customer experience without React Native fatal errors.
+
+final result: passed
+
+## Native customer Home — Home (4) parity and Lucide polish — 2026-08-28
+
+**Comparison target**
+
+- Source visual truth: `C:\Users\Aiviq Technologies\Downloads\Home (4).png`.
+- Final dark first viewport: `G:\serviceos\.artifacts\customer-home\home-dark-final-top2.png`.
+- Final dark lower-section evidence: `G:\serviceos\.artifacts\customer-home\home-dark-final-mid.png`.
+- Final light first viewport: `G:\serviceos\.artifacts\customer-home\home-light-final.png`.
+- Runtime: authenticated native Android customer app in Expo Go at 1080 x 2340 px, tested with the real PIN 140412 Home aggregate.
+
+| Area | Result | Evidence |
+| --- | --- | --- |
+| Header and search | Passed | Compact greeting/location hierarchy, 40 dp visual action circles inside accessible targets, neutral tokenized search field, and no duplicated assistant control inside search. |
+| Hero slider | Passed | Backend-managed multi-slide hero keeps the approved image-led marketplace treatment; broken/expired media falls back to packaged campaign art instead of a blank block. |
+| Popular/nearby services | Passed | Four-column responsive grid uses the requested bright, two-dimensional Lucide line icons and solid semantic wells in both themes. |
+| Recommendations | Passed | Editorial lead plus a stable two-column supporting grid; cards are unique live master-service records and collapse cleanly when fewer results exist. |
+| Global and spotlight sections | Passed | Backend-driven section order/content retained; Fuvay global services use the same colored Lucide system and Spotlight no longer duplicates a campaign to fill an empty slot. |
+| Spacing and responsiveness | Passed | Shared screen, section, card, row and inline tokens govern rhythm; Android fractional-width tolerance prevents one-column wrapping on wider phones and compact tablets. |
+| Light theme | Passed | Neutral pale canvas, white elevated surfaces, readable dark text, colored icon wells, and image-first cards confirmed on device. |
+| Dark theme | Passed | Approved charcoal canvas and layered graphite surfaces, high-contrast text, saturated icon wells, campaign imagery, and persistent navigation confirmed on device. |
+| Data integrity | Passed | PIN, catalog groups, master services, campaigns and availability remain API-backed; no fake services or duplicate fallback records are rendered. |
+
+**Automated verification**
+
+- Customer app TypeScript: passed (`npx tsc --noEmit --pretty false`).
+- Focused Home lint: passed (`HomeScreen.tsx` and `HomeLucideIcon.tsx`).
+- Native Home/API/component tests: 8 suites, 60 tests passed.
+- Jest now transforms `lucide-react-native` ESM modules, so CI exercises the same per-icon imports used by Metro.
+
+**Accepted live-data differences**
+
+- The reference contains illustrative services and booking content. The implementation truthfully renders the services, campaigns and bookings returned for PIN 140412, so counts and titles may differ while the selected layout and component behavior remain the same.
+- Campaign art and ordering remain admin-controlled; the screenshot may show a different valid slider frame after the six-second rotation.
+
+final result: passed
+
 ## Admin command-center header and KPI unification — 2026-08-27
 
 **Comparison target**

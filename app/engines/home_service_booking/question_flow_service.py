@@ -169,45 +169,76 @@ class QuestionFlowService:
         never the JSON answers. Without this, tapping a real brand/type
         option would save the answer but finalize() would still report
         brand/type as permanently missing -- the tap would silently do
-        nothing toward actually completing the booking. answer_value here
-        is already the option's `code` (see submit_answer above), matching
-        Brand.slug / ServiceType.slug by construction of this module's own
-        seed data (question_key "brand" / "ac_type").
+        nothing toward actually completing the booking.
+
+        Which column an answer belongs to is decided by the DIMENSION the
+        question draws its options from (`CatalogDimension.legacy_source`),
+        not by the question's name. Matching on names was a real bug: the
+        list was ("ac_type", "service_type", "offering_type"), while the
+        catalog names the same dimension-backed question `equipment_type` on
+        every non-AC offering -- 14 of the 18 published services. For all of
+        those `offering_type_id` was never written, so EVERY chimney, geyser,
+        RO, washing-machine and refrigerator booking failed confirmation with
+        "Missing required fields: offering_type_id". Confirmed live on a real
+        WhatsApp booking for Chimney Repair.
         """
-        # Real bug fixed here: this matched `Brand.slug == answer_value`
-        # EXACTLY, but the catalog's own option codes are authored in upper
-        # case ("LG", "SAMSUNG", "VOLTAS") while Brand.slug is lower case
-        # ("lg", "samsung", "voltas"). The match therefore never succeeded,
-        # `draft.brand_id` stayed NULL, and because the offering is
-        # `is_brand_required`, EVERY booking failed confirmation with
-        # "Missing required fields: brand_id" -- confirmed live. Matching
-        # case-insensitively on slug, then falling back to the brand's
-        # display name, makes the bridge robust to how an admin happens to
-        # have cased the option code.
-        if question_key == "brand" and answer_value:
+        source = await self._answer_target(draft, question_key)
+        if not answer_value or source is None:
+            return
+
+        # `answer_value` is the option's own `code` -- Brand.slug /
+        # ServiceType.slug by construction. Match case-insensitively: option
+        # codes are authored in upper case ("LG", "SAMSUNG") while the slugs
+        # are lower case, so an exact compare never succeeded and left the
+        # column NULL. Fall back to the display name for options an admin
+        # authored by hand.
+        needle = str(answer_value).strip().lower()
+        if source == "brands":
             from app.engines.admin_catalog.models import Brand
-            needle = str(answer_value).strip().lower()
-            brand = (await self.db.execute(
-                select(Brand).where(func.lower(Brand.slug) == needle)
-            )).scalars().first()
-            if not brand:
-                brand = (await self.db.execute(
-                    select(Brand).where(func.lower(Brand.name) == needle)
-                )).scalars().first()
-            if brand:
-                draft.brand_id = brand.id
-        elif question_key in ("ac_type", "service_type", "offering_type") and answer_value:
+            model, column = Brand, "brand_id"
+        else:
             from app.engines.admin_catalog.models import ServiceType
-            needle = str(answer_value).strip().lower()
-            stype = (await self.db.execute(
-                select(ServiceType).where(func.lower(ServiceType.slug) == needle)
+            model, column = ServiceType, "offering_type_id"
+
+        row = (await self.db.execute(
+            select(model).where(func.lower(model.slug) == needle)
+        )).scalars().first()
+        if not row:
+            row = (await self.db.execute(
+                select(model).where(func.lower(model.name) == needle)
             )).scalars().first()
-            if not stype:
-                stype = (await self.db.execute(
-                    select(ServiceType).where(func.lower(ServiceType.name) == needle)
-                )).scalars().first()
-            if stype:
-                draft.offering_type_id = stype.id
+        if row:
+            setattr(draft, column, row.id)
+
+    async def _answer_target(
+        self, draft: HomeServiceBookingDraft, question_key: str,
+    ) -> str | None:
+        """"brands", "service_types", or None when the answer is just an answer.
+
+        Read from the question's own dimension so a renamed or newly added
+        question bridges correctly without this module being edited. The two
+        legacy key names are kept as a fallback for static-option questions
+        that carry no dimension at all.
+        """
+        from app.engines.admin_catalog.models import CatalogDimension, CatalogQuestion
+
+        legacy_source = (await self.db.execute(
+            select(CatalogDimension.legacy_source)
+            .join(CatalogQuestion, CatalogQuestion.dimension_id == CatalogDimension.id)
+            .where(
+                CatalogQuestion.master_service_id == draft.offering_id,
+                CatalogQuestion.question_key == question_key,
+                CatalogQuestion.is_active.is_(True),
+            )
+            .limit(1)
+        )).scalars().first()
+        if legacy_source in ("brands", "service_types"):
+            return legacy_source
+        if question_key == "brand":
+            return "brands"
+        if question_key in ("ac_type", "service_type", "offering_type"):
+            return "service_types"
+        return None
 
     # ── Historical answer snapshot (finalize()-time only) ───────────────────
 

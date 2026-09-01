@@ -10,3 +10,5 @@ export * from "./opacity";
 export * from "./iconSizes";
 export * from "./touchTargets";
 export * from "./material";
+export * from "./components";
+export * from "./editorial";

@@ -1,5 +1,5 @@
 "use client";
-import { TableSurface } from "@serviceos/design-system";
+import { PageHeader, PageShell, TableSurface } from "@serviceos/design-system";
 /**
  * Home Services Finance Hub — TENANT-HS-FINANCE-HUB-01.
  *
@@ -90,15 +90,6 @@ function humanStatus(s: string): string {
 }
 
 /* ── small presentational primitives (same visual language as dispatch) ──── */
-
-function KpiCard({ label, value, sub, icon, variant = "default" }: {
-  label: string; value: React.ReactNode; sub?: string;
-  icon: React.ReactNode;
-  variant?: "default" | "success" | "warning" | "danger" | "info";
-}) {
-  return <SummaryCard label={label} value={value} sub={sub} icon={icon}
-    tone={variant === "default" ? undefined : variant} />;
-}
 
 function SectionTitle({ icon, title, subtitle, actions }: {
   icon?: React.ReactNode; title: string; subtitle?: string; actions?: React.ReactNode;
@@ -563,7 +554,7 @@ export default function HomeServicesFinancePage() {
   }, [kpis]);
 
   return (
-    <div style={{ padding: 24, maxWidth: 1800, margin: "0 auto" }}>
+    <PageShell>
       <style>{`
         .fh-kpis { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; margin: 20px 0; }
         @media (max-width: 1500px) { .fh-kpis { grid-template-columns: repeat(3, minmax(0,1fr)); } }
@@ -579,26 +570,19 @@ export default function HomeServicesFinancePage() {
       `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-        flexWrap: "wrap", gap: 14 }}>
-        <div>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase",
-            color: "var(--accent)", margin: "0 0 6px" }}>FINANCE</p>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>
-            Home Services Finance
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, maxWidth: 720 }}>
-            Manage usage credits, technician seats and finance readiness for this Home Services workspace.
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <PageHeader
+        eyebrow="Finance"
+        context="Home Services"
+        title="Finance & Credits"
+        description="Manage usage credits, technician seats and finance readiness for this workspace."
+        actions={<>
           <Btn variant="secondary" icon={<Download size={14} />} onClick={doExport}>Export Statement</Btn>
           <Btn variant="secondary" icon={<FileText size={14} />} onClick={() => { setPolicyOpen(true); goTab("policy"); }}>
             View Policy
           </Btn>
           <Btn variant="primary" icon={<CreditCard size={14} />} onClick={openBuy}>Buy Usage Credits</Btn>
-        </div>
-      </div>
+        </>}
+      />
 
       {exportMsg && (
         <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 0" }}>{exportMsg}</p>
@@ -611,24 +595,24 @@ export default function HomeServicesFinancePage() {
         <KpiGrid className="fh-kpis">{[0, 1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={104} radius={20} />)}</KpiGrid>
       ) : kpis && (
         <KpiGrid className="fh-kpis">
-          <KpiCard label="Usable credits" value={moneyCompact(kpis.usable_credits)}
+          <SummaryCard label="Usable credits" value={moneyCompact(kpis.usable_credits)}
             sub={data?.usage_credits.is_low_balance ? "Below low-balance threshold" : "Available to spend on jobs"}
-            icon={<Wallet size={17} />} variant={data?.usage_credits.is_low_balance ? "warning" : "success"} />
-          <KpiCard label="Credits used this month" value={moneyCompact(kpis.credits_used_this_month)}
+            icon={<Wallet size={17} />} tone={data?.usage_credits.is_low_balance ? "warning" : "success"} />
+          <SummaryCard label="Credits used this month" value={moneyCompact(kpis.credits_used_this_month)}
             sub={`${data?.usage_credits.completed_job_deductions ?? 0} completed-job deduction(s) all-time`}
-            icon={<TrendingDown size={17} />} variant="info" />
+            icon={<TrendingDown size={17} />} tone="info" />
           {/* Seats replaced the security deposit: headcount is bought with a
               top-up plan rather than collateralised. */}
-          <KpiCard label="Technician seats" value={kpis.entitled_seats ?? 0}
+          <SummaryCard label="Technician seats" value={kpis.entitled_seats ?? 0}
             sub="Bought with a top-up plan — also jobs bookable per slot"
-            icon={<Shield size={17} />} variant="default" />
-          <KpiCard label="Action items" value={kpis.action_items}
+            icon={<Shield size={17} />} />
+          <SummaryCard label="Action items" value={kpis.action_items}
             sub="Open finance items needing you"
-            icon={<ListChecks size={17} />} variant={kpis.action_items > 0 ? "warning" : "success"} />
-          <KpiCard label="Finance status" value={kpis.finance_status_label}
+            icon={<ListChecks size={17} />} tone={kpis.action_items > 0 ? "warning" : "success"} />
+          <SummaryCard label="Finance status" value={kpis.finance_status_label}
             sub="Server-computed readiness"
             icon={statusVar === "success" ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
-            variant={statusVar} />
+            tone={statusVar} />
         </KpiGrid>
       )}
 
@@ -1261,7 +1245,7 @@ export default function HomeServicesFinancePage() {
           </Card>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

@@ -57,7 +57,7 @@ export function PageHeader({
           </div>
         </div>
       </div>
-      {actions && <div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap", paddingTop: "var(--space-1)" }}>{actions}</div>}
+      {actions && <div className="ds-section-header-actions" style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "center", flexWrap: "wrap", paddingTop: "var(--space-1)" }}>{actions}</div>}
     </header>
   );
 }

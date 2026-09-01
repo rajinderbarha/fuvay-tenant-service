@@ -20,11 +20,11 @@ import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle, ArrowUpDown, BellRing, CheckCircle2, ChevronDown, Clock,
+  AlertTriangle, ArrowUpDown, BellRing, CheckCircle2, Clock,
   Download, ExternalLink, FileText, Image as ImageIcon, Info, Lock, Pencil,
   RefreshCw, Search, ShieldAlert, Wrench,
 } from "lucide-react";
-import { Badge, Btn, Card, Skeleton, Pagination } from "../../../../components/shared/ui";
+import { Badge, Btn, Card, Select, Skeleton, Pagination } from "../../../../components/shared/ui";
 import {
   API_BASE, ServiceOSError, getToken, homeServicesDirectPaymentsApi,
   type HsDpDetail, type HsDpQueue, type HsDpRecord,
@@ -287,7 +287,7 @@ function DirectPaymentsPageInner() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <Btn variant="secondary" icon={<Download size={14}/>} onClick={doExport}
                loading={action === "export"}>Export</Btn>
-          <Select value={range} onChange={v => setParam({ range: v, page: "1" })}
+          <QueueSelect value={range} onChange={v => setParam({ range: v, page: "1" })}
                   options={DATE_RANGES.map(d => ({ value: d.key, label: d.label }))} width={150}/>
           <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>
         </div>
@@ -378,16 +378,16 @@ function DirectPaymentsPageInner() {
                   border: "1px solid var(--border)", borderRadius: 9, outline: "none",
                 }}/>
             </div>
-            <Select value={tab} onChange={v => setParam({ status: v, page: "1" })} width={150}
+            <QueueSelect value={tab} onChange={v => setParam({ status: v, page: "1" })} width={150}
                     options={[{ value: "all", label: "All statuses" },
                               ...(queue?.filters.statuses ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <Select value={method} onChange={v => setParam({ method: v, page: "1" })} width={130}
+            <QueueSelect value={method} onChange={v => setParam({ method: v, page: "1" })} width={130}
                     options={[{ value: "", label: "All methods" },
                               ...(queue?.filters.methods ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <Select value={serviceId} onChange={v => setParam({ service_id: v, page: "1" })} width={150}
+            <QueueSelect value={serviceId} onChange={v => setParam({ service_id: v, page: "1" })} width={150}
                     options={[{ value: "", label: "All services" },
                               ...(queue?.filters.services ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <Select value={technicianId} onChange={v => setParam({ technician_id: v, page: "1" })} width={150}
+            <QueueSelect value={technicianId} onChange={v => setParam({ technician_id: v, page: "1" })} width={150}
                     options={[{ value: "", label: "All technicians" },
                               ...(queue?.filters.technicians ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
           </div>
@@ -1083,23 +1083,12 @@ function EmptyQueue({ tab, hasError }: { tab: string; hasError: boolean }) {
   );
 }
 
-function Select({ value, onChange, options, width = 140 }: {
+function QueueSelect({ value, onChange, options, width = 140 }: {
   value: string; onChange: (v: string) => void;
   options: { value: string; label: string }[]; width?: number;
 }) {
   return (
-    <div style={{ position: "relative", width }}>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        style={{
-          width: "100%", appearance: "none", padding: "8px 26px 8px 10px", fontSize: 12.5,
-          background: "var(--surface)", color: "var(--text-primary)",
-          border: "1px solid var(--border)", borderRadius: 9, cursor: "pointer", outline: "none",
-        }}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <ChevronDown size={13} style={{ position: "absolute", right: 9, top: 10,
-        color: "var(--text-tertiary)", pointerEvents: "none" }}/>
-    </div>
+    <div style={{ width }}><Select value={value} onChange={onChange} options={options}/></div>
   );
 }
 

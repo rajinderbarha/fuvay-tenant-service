@@ -14,6 +14,8 @@ describe("TableSurface", () => {
     const table = screen.getByRole("table", { name: "Providers" });
     expect(table).toHaveClass("ds-table");
     expect(table).toHaveAttribute("data-density", "compact");
+    expect(table.parentElement).toHaveClass("ds-table-viewport");
+    expect(table.parentElement).toHaveAttribute("tabindex", "0");
     expect(screen.getByText("Acme Services")).toBeInTheDocument();
   });
 });

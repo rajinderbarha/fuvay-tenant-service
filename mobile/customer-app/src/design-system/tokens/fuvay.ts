@@ -44,6 +44,15 @@ export const darkAccents: AccentSet = {
   a4: "#a875f5",
 };
 
+/** Fixed official mark colours. These do not theme-switch; they are part of
+ * the Fuvay asset specification. */
+export const fuvayBrand = {
+  electricBlue: "#0563fe",
+  deepNavy: "#02154a",
+  darkMarkInk: "#ffffff",
+  lightMarkInk: "#22262e",
+} as const;
+
 export const lightAccents: AccentSet = {
   /**
    * DELIBERATE DIVERGENCE from the canvas, which specifies #a3670a.
@@ -128,6 +137,120 @@ export const lightTile: TileSurface = {
   icon: "#3c3c44",
 };
 
+/** Standalone 30%-radius plate from Circle Tile Light + Dark. Unlike the
+ * ringed quick-action tile, this is one continuous gradient face. */
+export interface SquircleTileSurface {
+  stops: readonly [string, string, string, string];
+  hairline: string;
+  highlight: string;
+  shade: string;
+  shadow: { color: string; offsetY: number; radius: number; opacity: number };
+}
+
+export const darkSquircleTile: SquircleTileSurface = {
+  stops: ["#34343a", "#2e2e33", "#29292d", "#232326"],
+  hairline: "rgba(0,0,0,0.4)",
+  highlight: "rgba(255,255,255,0.07)",
+  shade: "rgba(0,0,0,0.4)",
+  shadow: { color: "#000000", offsetY: 10, radius: 16, opacity: 0.5 },
+};
+
+export const lightSquircleTile: SquircleTileSurface = {
+  stops: ["#ffffff", "#fbfaf8", "#f7f5f2", "#f1efeb"],
+  hairline: "rgba(120,110,100,0.12)",
+  highlight: "rgba(255,255,255,0.9)",
+  shade: "rgba(120,110,100,0.035)",
+  shadow: { color: "transparent", offsetY: 0, radius: 0, opacity: 0 },
+};
+
+/** Coloured-corner card treatment from the supplied service-card set. */
+export interface ServiceCardSurface {
+  stops: readonly [string, string, string];
+  hairline: string;
+  highlight: string;
+  shadow: { color: string; offsetY: number; radius: number; opacity: number };
+}
+
+export const darkServiceCard: ServiceCardSurface = {
+  stops: ["#34343a", "#2c2c31", "#242427"],
+  hairline: "rgba(0,0,0,0.35)",
+  highlight: "rgba(255,255,255,0.06)",
+  shadow: { color: "#000000", offsetY: 16, radius: 26, opacity: 0.65 },
+};
+
+export const lightServiceCard: ServiceCardSurface = {
+  stops: ["#ffffff", "#f7f5f3", "#eeebe7"],
+  hairline: "rgba(120,110,100,0.1)",
+  highlight: "rgba(255,255,255,0.9)",
+  shadow: { color: "#8f867d", offsetY: 8, radius: 14, opacity: 0.1 },
+};
+
+/** React Native coordinates equivalent to the CSS gradients in the canvas. */
+export const fuvayGradientGeometry = {
+  css170Start: { x: 0.59, y: 0 },
+  css170End: { x: 0.41, y: 1 },
+  verticalStart: { x: 0.5, y: 0 },
+  verticalEnd: { x: 0.5, y: 1 },
+  bottomLeftStart: { x: 0, y: 1 },
+  topRightEnd: { x: 1, y: 0 },
+} as const;
+
+/** Rotated rounded plate used only by the Home "Browse by category" grid.
+ * Values are transcribed from Circle Tile Light + Dark.dc.html. */
+export interface DiamondTileSurface {
+  ghostBorder: string;
+  ghostFill: string;
+  plateBorder: string;
+  plateStops: readonly [string, string, string];
+  innerHighlight: string;
+  innerShade: string;
+  innerHairline: string;
+  label: string;
+  shadow: { color: string; offsetY: number; radius: number; opacity: number };
+}
+
+export const darkDiamondTile: DiamondTileSurface = {
+  ghostBorder: "#33333a",
+  ghostFill: "#26262a",
+  plateBorder: "#1f1f22",
+  plateStops: ["#35353b", "#2d2d32", "#232326"],
+  innerHighlight: "rgba(255,255,255,0.07)",
+  innerShade: "rgba(0,0,0,0.4)",
+  innerHairline: "rgba(0,0,0,0.35)",
+  label: "#e8e8ea",
+  shadow: { color: "#000000", offsetY: 8, radius: 11, opacity: 0.55 },
+};
+
+export const lightDiamondTile: DiamondTileSurface = {
+  ghostBorder: "#dcd8d3",
+  ghostFill: "#efedea",
+  plateBorder: "rgba(120,110,100,0.22)",
+  plateStops: ["#ffffff", "#f6f4f2", "#eae7e3"],
+  innerHighlight: "rgba(255,255,255,0.9)",
+  innerShade: "rgba(60,52,44,0.1)",
+  innerHairline: "rgba(120,110,100,0.1)",
+  label: "#33333a",
+  shadow: { color: "#3c342c", offsetY: 8, radius: 11, opacity: 0.24 },
+};
+
+export const fuvayDiamondGeometry = {
+  containerWidth: 104,
+  containerHeight: 108,
+  plateSize: 68,
+  plateRadius: 16,
+  plateLeft: 18,
+  plateTop: 14,
+  ghostLeft: 15,
+  ghostTop: 18,
+  contentTop: 14,
+  contentHeight: 68,
+  iconSize: 18,
+  contentGap: 5,
+  labelSize: 8.5,
+  labelLineHeight: 10.5,
+  labelTracking: 0.35,
+} as const;
+
 /** Shell/surface colours specific to the v2 language. These sit alongside
  *  the existing semantic tokens rather than replacing them. */
 export interface FuvaySurfaces {
@@ -138,7 +261,10 @@ export interface FuvaySurfaces {
   navBg: readonly [string, string];
   headerGradient: readonly [string, string, string];
   splashGradient: readonly [string, string, string, string];
+  /** Low-to-high blue wash used by full-card ambient gradients. */
+  ambientGlow: readonly [string, string, string];
   glowTint: string;
+  sheen: string;
   edge: string;
   rule: string;
   text: string;
@@ -157,7 +283,9 @@ export const darkSurfaces: FuvaySurfaces = {
   navBg: ["#26262a", "#202023"] as const,
   headerGradient: ["#313137", "#2a2a2e", "#232326"] as const,
   splashGradient: ["#34343c", "#2b2b31", "#232326", "#1d1d20"] as const,
+  ambientGlow: ["rgba(63,155,240,0)", "rgba(63,155,240,0.04)", "rgba(63,155,240,0.18)"] as const,
   glowTint: "rgba(63,155,240,0.18)",
+  sheen: "rgba(255,255,255,0.28)",
   edge: "rgba(255,255,255,0.07)",
   rule: "rgba(255,255,255,0.09)",
   text: "#f0f0f2",
@@ -174,11 +302,13 @@ export const lightSurfaces: FuvaySurfaces = {
   navBg: ["#ffffff", "#f2f0ed"] as const,
   headerGradient: ["#ffffff", "#f8f6f4", "#f0eeeb"] as const,
   splashGradient: ["#ffffff", "#f7f5f3", "#efedea", "#e8e5e1"] as const,
+  ambientGlow: ["rgba(27,111,186,0)", "rgba(27,111,186,0.025)", "rgba(27,111,186,0.14)"] as const,
   glowTint: "rgba(27,111,186,0.14)",
+  sheen: "rgba(255,255,255,0.75)",
   edge: "rgba(120,110,100,0.14)",
   rule: "rgba(90,82,74,0.14)",
   text: "#2a2a2f",
-  sub: "rgba(60,52,44,0.62)",
+  sub: "rgba(60,52,44,0.78)",
   faint: "rgba(60,52,44,0.72)",
   hexFill: "#f0b429",
 };
@@ -214,10 +344,25 @@ export const monoTracking = {
   widest: 2.3,
 } as const;
 
+/** Motion used by the few stateful moments in the reference design. Routine
+ * cards and booking rails stay still; only a live state, chat turn, or
+ * confirmation may opt in to these values. */
+export const fuvayMotion = {
+  livePulseMs: 1800,
+  confirmationMs: 4600,
+  confirmationFadeInEnd: 0.1,
+  confirmationFadeOutStart: 0.84,
+} as const;
+
 export interface FuvayTheme {
   accents: AccentSet;
   surfaces: FuvaySurfaces;
   tile: TileSurface;
+  squircleTile: SquircleTileSurface;
+  serviceCard: ServiceCardSurface;
+  diamondTile: DiamondTileSurface;
+  softShadow: { color: string; offsetY: number; radius: number; opacity: number };
+  motion: typeof fuvayMotion;
   isDark: boolean;
   /** Convenience: accent wash bound to this theme's alpha. */
   soft: (hex: string) => string;
@@ -231,6 +376,13 @@ export function buildFuvayTheme(isDark: boolean): FuvayTheme {
     accents: isDark ? darkAccents : lightAccents,
     surfaces: isDark ? darkSurfaces : lightSurfaces,
     tile: isDark ? darkTile : lightTile,
+    squircleTile: isDark ? darkSquircleTile : lightSquircleTile,
+    serviceCard: isDark ? darkServiceCard : lightServiceCard,
+    diamondTile: isDark ? darkDiamondTile : lightDiamondTile,
+    softShadow: isDark
+      ? { color: "#000000", offsetY: 8, radius: 16, opacity: 0.55 }
+      : { color: "#8f867d", offsetY: 5, radius: 10, opacity: 0.1 },
+    motion: fuvayMotion,
     isDark,
     soft: (hex: string) => softAccent(hex, isDark),
     ink,

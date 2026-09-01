@@ -15,23 +15,15 @@ export interface AvailabilityKpiValues {
   conflicts: number;
 }
 
-function KpiCard({ label, value, icon, variant }: {
-  label: string; value: number; icon: React.ReactNode;
-  variant: "success" | "default" | "info" | "indigo" | "warning" | "danger";
-}) {
-  const tone = variant === "default" || variant === "indigo" ? undefined : variant;
-  return <SummaryCard label={label} value={value} icon={icon} tone={tone} />;
-}
-
 export function AvailabilityKpis({ values, dateLabel = "today" }: { values: AvailabilityKpiValues; dateLabel?: string }) {
   return (
     <KpiGrid minCardWidth={150} style={{ margin: "20px 0" }}>
-      <KpiCard label={`Available ${dateLabel}`} value={values.availableToday} icon={<CheckCircle2 size={16}/>} variant="success" />
-      <KpiCard label={`On leave ${dateLabel}`} value={values.onLeave} icon={<UserX size={16}/>} variant="default" />
-      <KpiCard label="Total capacity" value={values.totalCapacity} icon={<Briefcase size={16}/>} variant="info" />
-      <KpiCard label="Assigned" value={values.assigned} icon={<ClipboardList size={16}/>} variant="indigo" />
-      <KpiCard label="Remaining" value={values.remaining} icon={<RefreshCcw size={16}/>} variant="success" />
-      <KpiCard label="Conflicts" value={values.conflicts} icon={<AlertTriangle size={16}/>} variant={values.conflicts > 0 ? "danger" : "default"} />
+      <SummaryCard label={`Available ${dateLabel}`} value={values.availableToday} icon={<CheckCircle2 size={16}/>} tone="success" />
+      <SummaryCard label={`On leave ${dateLabel}`} value={values.onLeave} icon={<UserX size={16}/>} />
+      <SummaryCard label="Total capacity" value={values.totalCapacity} icon={<Briefcase size={16}/>} tone="info" />
+      <SummaryCard label="Assigned" value={values.assigned} icon={<ClipboardList size={16}/>} />
+      <SummaryCard label="Remaining" value={values.remaining} icon={<RefreshCcw size={16}/>} tone="success" />
+      <SummaryCard label="Conflicts" value={values.conflicts} icon={<AlertTriangle size={16}/>} tone={values.conflicts > 0 ? "danger" : undefined} />
     </KpiGrid>
   );
 }

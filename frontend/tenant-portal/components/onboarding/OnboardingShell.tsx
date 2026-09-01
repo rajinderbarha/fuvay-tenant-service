@@ -137,6 +137,11 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
         .onboarding-sidebar { width: 248px; transform: translateX(0); transition: transform 0.2s ease; }
         .onboarding-hamburger { display: none; }
         .onboarding-drawer-backdrop { display: none; }
+        @media (min-width: 1025px) and (max-width: 1366px) {
+          .onboarding-sidebar { width: 220px; }
+          .onboarding-main-pad { padding: 22px 20px !important; }
+          .onboarding-header-pad { padding-left: 20px !important; padding-right: 20px !important; }
+        }
         @media (max-width: 1024px) {
           .onboarding-sidebar {
             position: fixed; top: 0; left: 0; height: 100vh; z-index: 200;

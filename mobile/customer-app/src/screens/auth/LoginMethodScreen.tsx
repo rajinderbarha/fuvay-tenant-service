@@ -89,7 +89,7 @@ export function LoginMethodScreen() {
           </View>
         ) : null}
 
-        <View style={{ marginTop: theme.spacing.lg }}>
+        <View style={{ marginTop: theme.spacing.base }}>
           <PhoneNumberField
             countryCode={countryCode}
             onCountryCodeChange={setCountryCode}
@@ -97,18 +97,17 @@ export function LoginMethodScreen() {
             onNationalNumberChange={value => { setNationalNumber(value); setFieldError(undefined); }}
             error={fieldError}
             disabled={submitting}
-            showLabel={false}
-            placeholder="Enter mobile number"
+            showLabel
+            placeholder="98765 43210"
           />
         </View>
 
-        <View style={{ marginTop: theme.spacing.lg }}>
+        <View style={{ marginTop: theme.spacing.base }}>
           <AppButton
-            label="Continue"
+            label="Send code"
             onPress={handleContinue}
             loading={submitting}
             trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
-            style={{ minHeight: 54 }}
             fullWidth
           />
         </View>

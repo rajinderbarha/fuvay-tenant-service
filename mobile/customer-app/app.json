@@ -7,9 +7,9 @@
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/splash-screen.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#0A5BFF"
+      "image": "./assets/fuvay-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f4f3f1"
     },
     "ios": {
       "supportsTablet": false,
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#071633"
+        "backgroundColor": "#f4f3f1"
       },
       "package": "com.serviceos.customer",
       "permissions": [

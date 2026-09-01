@@ -28,7 +28,9 @@ class BackendToolExecutor:
     }
 
     def __init__(self, db: AsyncSession, customer_id: uuid.UUID | None,
-                 session_id: str | None = None, zipcode: str | None = None):
+                 session_id: str | None = None, zipcode: str | None = None,
+                 channel: str | None = None, channel_user_id: str | None = None,
+                 display_name: str | None = None):
         self.db          = db
         self.customer_id = customer_id
         self.session_id  = session_id
@@ -40,6 +42,9 @@ class BackendToolExecutor:
         # covering 140412 -- without this filter it still surfaced as a
         # bookable offering to a 140412 customer.
         self.zipcode     = zipcode
+        self.channel     = channel
+        self.channel_user_id = channel_user_id
+        self.display_name = display_name
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Dispatch a tool call and return JSON string result."""
@@ -185,17 +190,17 @@ class BackendToolExecutor:
         return {"category": category_slug, "faqs": faqs}
 
     async def _tool_get_my_recent_bookings(self, limit: int = 5) -> dict:
-        """Fetch real customer bookings from the bookings table."""
+        """Fetch the same final Home Services bookings the customer app uses."""
         if not self.customer_id:
             return {"bookings": [], "note": "Please log in to view your bookings."}
 
         try:
-            from app.engines.booking.models import Booking
+            from app.engines.final_records.models import ServiceBooking
             limit = min(limit, 10)
             q = (
-                select(Booking)
-                .where(Booking.customer_id == self.customer_id)
-                .order_by(desc(Booking.created_at))
+                select(ServiceBooking)
+                .where(ServiceBooking.customer_id == self.customer_id)
+                .order_by(desc(ServiceBooking.created_at))
                 .limit(limit)
             )
             rows = (await self.db.execute(q)).scalars().all()
@@ -204,11 +209,14 @@ class BackendToolExecutor:
             return {
                 "bookings": [
                     {
-                        "id":           str(r.id),
-                        "status":       r.status,
-                        "service_name": r.service_name if hasattr(r, "service_name") else "Service",
-                        "scheduled_at": r.scheduled_at.isoformat() if hasattr(r, "scheduled_at") and r.scheduled_at else None,
-                        "created_at":   r.created_at.isoformat() if r.created_at else None,
+                        "booking_number": r.booking_number,
+                        "status": r.status,
+                        "issue_summary": r.issue_summary,
+                        "city": r.city,
+                        "preferred_date": r.preferred_date.isoformat() if r.preferred_date else None,
+                        "preferred_time_window": r.preferred_time_window,
+                        "assignment_status": r.assignment_status,
+                        "created_at": r.created_at.isoformat() if r.created_at else None,
                     }
                     for r in rows
                 ],
@@ -217,6 +225,43 @@ class BackendToolExecutor:
         except Exception as exc:
             logger.warning("backend_tools.bookings_failed", error=str(exc))
             return {"bookings": [], "note": "Unable to load bookings at this time."}
+
+    async def _tool_get_booking_tracking(self, booking_number: str | None = None) -> dict:
+        """Return customer-safe status for one owned final booking."""
+        if not self.customer_id:
+            return {"booking": None, "note": "Link or sign in to your Fuvay account to track bookings."}
+        try:
+            from app.engines.final_records.models import ServiceBooking, ServiceJob
+
+            query = select(ServiceBooking).where(ServiceBooking.customer_id == self.customer_id)
+            if booking_number:
+                query = query.where(ServiceBooking.booking_number == booking_number.strip())
+            booking = (await self.db.execute(
+                query.order_by(ServiceBooking.created_at.desc()).limit(1)
+            )).scalars().first()
+            if not booking:
+                return {"booking": None, "note": "No matching booking was found on this account."}
+            job = (await self.db.execute(
+                select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
+            )).scalars().first()
+            return {
+                "booking": {
+                    "booking_number": booking.booking_number,
+                    "status": booking.status,
+                    "assignment_status": booking.assignment_status,
+                    "issue_summary": booking.issue_summary,
+                    "city": booking.city,
+                    "preferred_date": booking.preferred_date.isoformat() if booking.preferred_date else None,
+                    "preferred_time_window": booking.preferred_time_window,
+                    "job_status": job.status if job else None,
+                    "scheduled_date": job.scheduled_date.isoformat() if job and job.scheduled_date else None,
+                    "scheduled_time_window": job.scheduled_time_window if job else None,
+                },
+                "note": "This is the latest backend status. Do not invent an ETA or technician location.",
+            }
+        except Exception as exc:
+            logger.warning("backend_tools.booking_tracking_failed", error=str(exc))
+            return {"booking": None, "note": "Unable to load booking tracking right now."}
 
     async def _tool_check_service_area(
         self, city: str, category_slug: str | None = None
@@ -257,8 +302,7 @@ class BackendToolExecutor:
     # in plain chat text, even while still empty.
     _CHAT_UNASKABLE_FIELDS = {"offering_type_id", "brand_id"}
 
-    @staticmethod
-    def _still_needed(draft_dict: dict) -> list[str]:
+    def _still_needed(self, draft_dict: dict) -> list[str]:
         """Diff `required_fields` (static, offering-driven) against the
         draft's own current values to get the genuinely-empty subset that
         DeepSeek may actually ask about via chat."""
@@ -269,10 +313,24 @@ class BackendToolExecutor:
             "brand_id":        draft_dict.get("brand_id"),
             "preferred_date":  draft_dict.get("preferred_date"),
         }
-        return [
+        missing = [
             f for f in draft_dict.get("required_fields", [])
             if not value_by_field.get(f) and f not in BackendToolExecutor._CHAT_UNASKABLE_FIELDS
         ]
+        # Native app bookings select a saved address in deterministic UI.
+        # Social chats have no such screen, so the agent must collect the
+        # minimum deliverable address and persist an immutable snapshot.
+        if self.channel in {"whatsapp", "instagram"}:
+            snapshot = draft_dict.get("address_snapshot") or {}
+            social_required = {
+                "address_line_1": snapshot.get("address_line_1"),
+                "city": draft_dict.get("city"),
+                "zipcode": draft_dict.get("zipcode"),
+            }
+            for field, value in social_required.items():
+                if not value and field not in missing:
+                    missing.append(field)
+        return missing
 
     # ── Sprint 16 — Home Service Booking Draft tools ─────────────────────────
 
@@ -299,6 +357,19 @@ class BackendToolExecutor:
                 category_slug=category_slug,
                 offering_slug=offering_slug,
             )
+            # WhatsApp supplies a platform-verified sender number. Populate
+            # contact fields without making the irreversible account/booking
+            # records yet; those are created only after CONFIRM BOOKING.
+            if self.channel == "whatsapp" and self.channel_user_id:
+                digits = "".join(ch for ch in self.channel_user_id if ch.isdigit())
+                result = await svc.update_draft_fields(
+                    draft_id=_uuid.UUID(str(result["id"])),
+                    customer_id=self.customer_id,
+                    payload={
+                        "customer_name": self.display_name or "WhatsApp Customer",
+                        "customer_phone": f"+{digits}" if digits else self.channel_user_id,
+                    },
+                )
             # The real problems list is returned in THIS SAME response
             # (not a separate get_service_problems call DeepSeek has to
             # remember to make) -- confirmed live that DeepSeek's own tool-
@@ -446,12 +517,36 @@ class BackendToolExecutor:
             from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
             import uuid as _uuid
 
+            address_keys = {
+                "address_line_1", "address_line_2", "landmark",
+                "state", "country",
+            }
+            address_fields = {key: fields.pop(key) for key in list(fields) if key in address_keys}
             svc = HomeServiceChatbotBookingService(db=self.db)
             result = await svc.update_draft_fields(
                 draft_id=_uuid.UUID(draft_id),
                 customer_id=self.customer_id,
                 payload=fields,
             )
+            if address_fields:
+                from app.engines.home_service_booking.models import HomeServiceBookingDraft
+
+                draft = await self.db.get(HomeServiceBookingDraft, _uuid.UUID(draft_id))
+                if draft:
+                    snapshot = dict(draft.address_snapshot or {})
+                    snapshot.update({key: value for key, value in address_fields.items() if value is not None})
+                    snapshot.update({
+                        "city": draft.city,
+                        "zipcode": draft.zipcode,
+                        "name": draft.customer_name,
+                        "phone": draft.customer_phone,
+                    })
+                    snapshot.setdefault("country", "India")
+                    draft.address_snapshot = snapshot
+                    await self.db.commit()
+                    result = await svc.get_booking_draft(
+                        draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id,
+                    )
             return {
                 "draft_status":  result.get("status"),
                 # Was `result.get("required_fields", [])` -- the same
@@ -516,21 +611,184 @@ class BackendToolExecutor:
             import uuid as _uuid
 
             svc = HomeServiceChatbotBookingService(db=self.db)
-            result = await svc.resolve_price_estimate(
-                draft_id=_uuid.UUID(draft_id),
+            draft_uuid = _uuid.UUID(draft_id)
+            draft = await svc.get_booking_draft(draft_id=draft_uuid, customer_id=self.customer_id)
+            result = await svc.match_provider_and_price(
+                category_id=_uuid.UUID(str(draft["category_id"])),
+                master_service_id=_uuid.UUID(str(draft["offering_id"])),
+                city=str(draft.get("city") or ""),
+                zipcode=draft.get("zipcode"),
+                offering_type_id=_uuid.UUID(str(draft["offering_type_id"])) if draft.get("offering_type_id") else None,
+                brand_id=_uuid.UUID(str(draft["brand_id"])) if draft.get("brand_id") else None,
+                job_type_id=_uuid.UUID(str(draft["job_type_id"])) if draft.get("job_type_id") else None,
+                draft_id=draft_uuid,
                 customer_id=self.customer_id,
             )
             snap = result.get("price_snapshot", {})
+            # Fixed-price bookings have exactly one server-authoritative price.
+            # Record that choice now; inspection-first bookings deliberately do
+            # not have a fixed price tier.
+            if snap.get("standard_price") is not None:
+                await svc.confirm_price_choice(draft_uuid, "standard", self.customer_id)
             return {
                 "display_price":  snap.get("display_price"),
                 "pricing_model":  snap.get("pricing_model"),
                 "note":           snap.get("note"),
                 "currency":       snap.get("currency", "INR"),
                 "draft_status":   result.get("draft_status"),
+                "selected_provider": result.get("selected_provider"),
             }
         except Exception as exc:
             logger.warning("backend_tools.price_estimate_failed", error=str(exc))
             return {"error": "Unable to estimate price.", "display_price": None}
+
+    async def _tool_get_available_home_service_slots(self, draft_id: str, emergency: bool = False) -> dict:
+        """List real capacity-checked slots for a matched booking draft."""
+        try:
+            from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+            import uuid as _uuid
+            if not self.customer_id and self.channel != "whatsapp":
+                return {"slots": [], "error": "Link your Fuvay account before choosing a slot."}
+            return await HomeServiceChatbotBookingService(self.db).list_available_slots(
+                draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id, emergency=emergency,
+            )
+        except Exception as exc:
+            logger.warning("backend_tools.slots_failed", error=str(exc))
+            return {"slots": [], "error": "Unable to load available slots right now."}
+
+    async def _tool_select_home_service_slot(
+        self, draft_id: str, date: str, time_window: str, emergency: bool = False,
+    ) -> dict:
+        """Select one exact slot returned by get_available_home_service_slots."""
+        try:
+            from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+            import uuid as _uuid
+            if not self.customer_id and self.channel != "whatsapp":
+                return {"selected": False, "error": "Link your Fuvay account before choosing a slot."}
+            result = await HomeServiceChatbotBookingService(self.db).select_promised_slot(
+                draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id,
+                date_iso=date, time_window=time_window, emergency=emergency,
+            )
+            return {"selected": True, **result}
+        except Exception as exc:
+            logger.warning("backend_tools.select_slot_failed", error=str(exc))
+            return {"selected": False, "error": "That slot is no longer available. Please choose another."}
+
+    async def _tool_get_home_service_booking_summary(self, draft_id: str) -> dict:
+        """Build the real customer-safe summary before explicit confirmation."""
+        try:
+            from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+            import uuid as _uuid
+            if not self.customer_id and self.channel != "whatsapp":
+                return {"summary": None, "error": "Link your Fuvay account before confirming a booking."}
+            summary = await HomeServiceChatbotBookingService(self.db).build_booking_summary(
+                draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id,
+            )
+            return {
+                "summary": summary,
+                "confirmation_instruction": "Show this summary, then ask the customer to reply exactly CONFIRM BOOKING.",
+            }
+        except Exception as exc:
+            logger.warning("backend_tools.booking_summary_failed", error=str(exc))
+            return {"summary": None, "error": "Unable to prepare the booking summary right now."}
+
+    async def _tool_confirm_home_service_booking(self, draft_id: str, confirmation_phrase: str) -> dict:
+        """Create final records only after an exact explicit confirmation phrase."""
+        if " ".join((confirmation_phrase or "").upper().split()) != "CONFIRM BOOKING":
+            return {"confirmed": False, "error": "Ask the customer to reply exactly CONFIRM BOOKING first."}
+        if not self.customer_id and self.channel != "whatsapp":
+            return {"confirmed": False, "error": "Link your Fuvay account before confirming a booking."}
+        try:
+            import uuid as _uuid
+            from app.engines.auth.models import User
+            from app.engines.ai_conversation.models import AIConversationSession
+            from app.engines.final_records.creation_service import HomeServiceFinalCreationService
+            from app.engines.home_service_booking.models import HomeServiceBookingDraft
+            from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+
+            draft_uuid = _uuid.UUID(draft_id)
+            booking_service = HomeServiceChatbotBookingService(self.db)
+            if not self.customer_id:
+                digits = "".join(ch for ch in (self.channel_user_id or "") if ch.isdigit())
+                if not digits:
+                    return {"confirmed": False, "error": "Your WhatsApp number could not be verified."}
+                draft_model = await self.db.get(HomeServiceBookingDraft, draft_uuid)
+                if not draft_model:
+                    return {"confirmed": False, "error": "Booking draft not found."}
+                address = draft_model.address_snapshot or {}
+                if not (
+                    address.get("address_line_1")
+                    and draft_model.city
+                    and draft_model.zipcode
+                ):
+                    return {
+                        "confirmed": False,
+                        "error": "Collect the complete service address and postal code before confirming.",
+                    }
+                phone = f"+{digits}"
+                tail = digits[-10:]
+                # Match on the phone ALONE, not on `role == "customer"`.
+                # `users.phone` is globally unique (uq_users_phone), so a
+                # number already registered as a technician, tenant owner or
+                # deactivated customer cannot be inserted a second time: the
+                # role-filtered lookup missed those rows, the INSERT below
+                # violated the constraint, and the poisoned session then took
+                # the whole webhook down with a 500 — which Meta redelivers
+                # forever. Confirmed live on a real WhatsApp booking whose
+                # sender was also a technician account.
+                # Ordered, not arbitrary: a customer account wins over any
+                # other role, and the number the sender actually messaged from
+                # wins over another row that merely shares its last ten digits
+                # (confirmed live: +919041624576 and +9041624576 are two
+                # different accounts with the same tail, and the untied query
+                # attached the booking to whichever came back first).
+                user = (await self.db.execute(select(User).where(
+                    User.phone.isnot(None),
+                    func.right(func.regexp_replace(User.phone, r"\D", "", "g"), 10) == tail,
+                ).order_by(
+                    (User.role == "customer").desc(),
+                    (User.phone == phone).desc(),
+                    User.is_active.desc(),
+                ).limit(1))).scalars().first()
+                if user and user.role != "customer":
+                    logger.info("backend_tools.confirm_booking_existing_account",
+                                role=user.role)
+                if not user:
+                    user = User(
+                        email=f"customer_wa_{_uuid.uuid4().hex[:12]}@serviceos.internal",
+                        phone=phone,
+                        full_name=draft_model.customer_name or self.display_name or "WhatsApp Customer",
+                        role="customer",
+                        tenant_id=None,
+                        is_active=True,
+                        is_verified=True,
+                        onboarding_complete=False,
+                        meta={"registration_source": "whatsapp_booking"},
+                    )
+                    self.db.add(user)
+                    await self.db.flush()
+                self.customer_id = user.id
+                draft_model.customer_id = user.id
+                draft_model.customer_phone = draft_model.customer_phone or phone
+                if self.session_id:
+                    ai_session = await self.db.get(AIConversationSession, _uuid.UUID(self.session_id))
+                    if ai_session:
+                        ai_session.customer_id = user.id
+                await self.db.flush()
+            existing = await booking_service.get_booking_draft(draft_uuid, self.customer_id)
+            if existing.get("status") != "confirmed":
+                await booking_service.mark_ready_for_confirmation(draft_uuid, self.customer_id)
+            result = await HomeServiceFinalCreationService(self.db).finalize(
+                draft_id=draft_uuid,
+                customer_id=self.customer_id,
+                idempotency_key=f"social:{self.session_id or self.customer_id}:{draft_id}",
+                request_id=f"social:{self.session_id or 'chat'}",
+            )
+            await self.db.commit()
+            return {"confirmed": True, **result}
+        except Exception as exc:
+            logger.warning("backend_tools.confirm_booking_failed", error=str(exc))
+            return {"confirmed": False, "error": "The booking could not be confirmed. Review the details and try again."}
 
     # ── Sprint 17 — Coaching Appointment Draft tools ─────────────────────────
 

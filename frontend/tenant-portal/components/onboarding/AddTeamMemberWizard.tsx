@@ -26,7 +26,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { X, CheckCircle2, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
-import { Btn } from "../shared/ui";
+import { Btn, Input } from "../shared/ui";
 import { ProfilePhotoUploader } from "../shared/ProfilePhotoUploader";
 import {
   providerTeamMembersApi, providerTeamSkillsApi, homeServicesSetupApi, getTenantId,
@@ -570,9 +570,6 @@ function Field({ label, required, hint, children }: { label: string; required?: 
       {hint && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{hint}</p>}
     </div>
   );
-}
-function Input({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={selectStyle}/>;
 }
 const selectStyle: React.CSSProperties = {
   width: "100%", height: 40, padding: "0 12px", fontSize: 13, borderRadius: 8,

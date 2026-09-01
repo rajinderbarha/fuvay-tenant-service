@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.serviceability.constants import (
     CoverageType, MatchLevel, MATCH_LEVEL_PRIORITY, JOB_TYPES,
-    ERR_ADDRESS_NOT_FOUND, ERR_ADDRESS_DEFAULT_CONFLICT, ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
+    ERR_ADDRESS_NOT_FOUND, ERR_ADDRESS_DEFAULT_CONFLICT, ERR_ADDRESS_LABEL_CONFLICT,
+    ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
     ERR_SERVICE_NOT_FOUND, ERR_SERVICE_NOT_ACTIVE, ERR_NOT_AVAILABLE,
     ERR_NO_TENANT, ERR_NO_STAFF, ERR_AREA_NOT_FOUND, ERR_DUPLICATE_AREA,
     ERR_INVALID_COVERAGE, ERR_ZIPCODE_REQUIRED, ERR_CITY_REQUIRED,
@@ -74,6 +75,23 @@ class ServiceabilityService:
             raise ServiceOSException(ERR_INVALID_ZIPCODE, "zipcode is required.", status_code=422)
         if not payload.get("city"):
             raise ServiceOSException(ERR_INVALID_CITY, "city is required.", status_code=422)
+
+        label = payload.get("label")
+        if label:
+            duplicate = (await self.db.execute(
+                select(CustomerAddress.id).where(
+                    CustomerAddress.customer_id == customer_id,
+                    CustomerAddress.label == label,
+                    CustomerAddress.is_active.is_(True),
+                ).limit(1)
+            )).scalar_one_or_none()
+            if duplicate is not None:
+                display_label = "Office" if label == "Work" else label
+                raise ServiceOSException(
+                    ERR_ADDRESS_LABEL_CONFLICT,
+                    f"Only one {display_label} address can be saved.",
+                    status_code=409,
+                )
 
         is_default = bool(payload.get("is_default", False))
         if is_default:
@@ -147,6 +165,23 @@ class ServiceabilityService:
 
     async def update_address(self, address_id: uuid.UUID, payload: dict) -> dict:
         addr = await self.get_address(address_id)
+        new_label = payload.get("label")
+        if new_label and new_label != addr.label:
+            duplicate = (await self.db.execute(
+                select(CustomerAddress.id).where(
+                    CustomerAddress.customer_id == addr.customer_id,
+                    CustomerAddress.label == new_label,
+                    CustomerAddress.is_active.is_(True),
+                    CustomerAddress.id != addr.id,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if duplicate is not None:
+                display_label = "Office" if new_label == "Work" else new_label
+                raise ServiceOSException(
+                    ERR_ADDRESS_LABEL_CONFLICT,
+                    f"Only one {display_label} address can be saved.",
+                    status_code=409,
+                )
         # `is_default` is handled separately from the generic field loop:
         # only `True` is ever actionable here (atomically clear every other
         # default and set this one). A bare `is_default: false` in the

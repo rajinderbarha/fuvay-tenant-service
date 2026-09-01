@@ -50,6 +50,23 @@ async def _load_job(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID):
     return row._mapping
 
 
+async def _load_customer_job(
+    db: AsyncSession, booking_id: uuid.UUID, customer_id: uuid.UUID,
+):
+    """Resolve an owned booking to its job without exposing whether another
+    customer's booking exists."""
+    row = (await db.execute(text(
+        "SELECT sj.id, sj.booking_id, sj.tenant_id, sj.customer_id, "
+        "sj.status, sj.assigned_staff_id "
+        "FROM service_jobs sj "
+        "JOIN service_bookings sb ON sb.id = sj.booking_id "
+        "WHERE sb.id=:bid AND sb.customer_id=:cid"
+    ), {"bid": str(booking_id), "cid": str(customer_id)})).fetchone()
+    if not row:
+        raise ServiceOSException(c.ERR_JOB_NOT_FOUND, "Job not found.", status_code=404)
+    return row._mapping
+
+
 async def _customer_number(db: AsyncSession, job) -> str | None:
     """Read at dial time only, never persisted by this engine.
 
@@ -212,6 +229,86 @@ async def place_call(
             status_code=502,
         )
 
+    session.provider_call_id = result.provider_call_id
+    session.status = c.STATUS_RINGING
+    await db.flush()
+    return session
+
+
+async def place_customer_call(
+    db: AsyncSession, *, booking_id: uuid.UUID, customer_id: uuid.UUID,
+) -> MaskedCallSession:
+    """Bridge an owning customer to the technician assigned to this booking.
+
+    The customer starts the provider bridge from their own number, but neither
+    party receives the other's number. An unassigned booking cannot be called.
+    """
+    job = await _load_customer_job(db, booking_id, customer_id)
+    if str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
+        raise ServiceOSException(
+            c.ERR_JOB_NOT_CALLABLE,
+            "This job is closed, so a new call cannot be placed for it.",
+            status_code=409,
+        )
+    if not job.get("assigned_staff_id"):
+        raise ServiceOSException(
+            c.ERR_NO_ASSIGNED_STAFF,
+            "A technician has not been assigned yet.",
+            status_code=409,
+        )
+
+    provider = get_provider()
+    settings = get_settings()
+    caller_id = settings.MASKED_CALLING_CALLER_ID
+    if not provider.configured or not caller_id:
+        raise ServiceOSException(
+            c.ERR_CALLING_NOT_CONFIGURED,
+            "Calling is not available right now. Please try again later.",
+            status_code=503,
+        )
+
+    customer_number = await _customer_number(db, job)
+    if not customer_number:
+        raise ServiceOSException(
+            c.ERR_NO_CUSTOMER_NUMBER,
+            "Add a phone number to your profile before placing calls.",
+            status_code=422,
+        )
+    staff_number = await _staff_number(db, job["assigned_staff_id"])
+    if not staff_number:
+        raise ServiceOSException(
+            c.ERR_NO_STAFF_NUMBER,
+            "Calling is not available for this technician right now.",
+            status_code=422,
+        )
+
+    session = MaskedCallSession(
+        job_id=job["id"], booking_id=job.get("booking_id"),
+        tenant_id=job["tenant_id"], customer_id=customer_id,
+        initiated_by_user_id=customer_id, initiator_role=c.ROLE_CUSTOMER,
+        direction=c.DIR_CUSTOMER_TO_STAFF,
+        provider=provider.name, caller_id_used=caller_id,
+        status=c.STATUS_REQUESTED,
+        expires_at=_now() + timedelta(minutes=c.BINDING_TTL_MINUTES),
+    )
+    db.add(session)
+    await db.flush()
+    result = await provider.bridge(
+        from_number=customer_number,
+        to_number=staff_number,
+        caller_id=caller_id,
+        reference=str(session.id),
+    )
+    if not result.accepted:
+        session.status = c.STATUS_FAILED
+        session.failure_reason = (result.failure_reason or c.ERR_PROVIDER_FAILED)[:200]
+        session.ended_at = _now()
+        await db.flush()
+        raise ServiceOSException(
+            c.ERR_PROVIDER_FAILED,
+            "We could not connect the call. Please try again.",
+            status_code=502,
+        )
     session.provider_call_id = result.provider_call_id
     session.status = c.STATUS_RINGING
     await db.flush()

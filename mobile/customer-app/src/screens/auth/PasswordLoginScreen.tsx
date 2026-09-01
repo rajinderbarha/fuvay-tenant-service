@@ -130,7 +130,6 @@ export function PasswordLoginScreen() {
           loading={submitting}
           disabled={!identifier.trim() || !password}
           trailingIcon={<Icon name="arrow-forward" size="compact" color={theme.colors.brandOnPrimary} decorative />}
-          style={{ minHeight: 54 }}
           fullWidth
         />
         {/* Only for an email identifier -- the code goes to an inbox, so offering it

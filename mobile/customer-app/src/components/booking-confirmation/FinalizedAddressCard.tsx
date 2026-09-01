@@ -21,7 +21,7 @@ export function FinalizedAddressCard({ address }: { address: ReceiptAddress }) {
             backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}
         >
-          <Icon name={address.label?.toLowerCase() === "home" ? "home" : "location"} size="standard" color="#FFFFFF" decorative />
+          <Icon name={address.label?.toLowerCase() === "home" ? "home" : "location"} size="standard" color={theme.colors.textInverse} decorative />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           {address.label ? <AppText variant="body">{address.label}</AppText> : null}

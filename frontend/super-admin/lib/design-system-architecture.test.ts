@@ -76,4 +76,17 @@ describe("admin design-system architecture", () => {
 
     expect(violations, "List pages must use the shared Pagination component instead of page-specific controls.").toEqual([]);
   }, 90_000);
+
+  it("keeps feature tables and row menus on the shared overflow-safe primitives", () => {
+    const violations = [...adminSourceFiles, ...featureComponentFiles].flatMap(file => {
+      const source = readFileSync(file, "utf8");
+      const issues: string[] = [];
+      if (/<table\b|<\/table>/.test(source)) issues.push("raw table markup");
+      if (/(?:function|const)\s+\w*ActionMenu\b/.test(source)) issues.push("local action menu");
+      if (/(?:function|const)\s+EnterpriseFilterBar\b/.test(source)) issues.push("local enterprise filter bar");
+      return issues.map(issue => `${relative(root, file)} contains ${issue}`);
+    });
+
+    expect(violations, "Use TableSurface, ActionMenu, and EnterpriseFilterBar from @serviceos/design-system.").toEqual([]);
+  }, 90_000);
 });

@@ -80,7 +80,7 @@ export function BookingJourney({ stage, bare = false }: BookingJourneyProps) {
                   <Icon
                     name={STEP_ICONS[i]}
                     size="compact"
-                    color={reached ? "#FFFFFF" : theme.colors.textTertiary}
+                    color={reached ? theme.colors.brandOnPrimary : theme.colors.textTertiary}
                     decorative
                   />
                 </View>

@@ -1,13 +1,14 @@
-import React, { useState } from "react";
-import { View, Pressable, TextInput, ActivityIndicator } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useBotColors } from "./botTheme";
-import { BotCard, BotPrimaryButton } from "./BotPrimitives";
-import { CustomerSavedAddress } from "../../domain/customerSavedAddress";
-import { AddressCreatePayload } from "../../domain/addressForm";
-import { AddressSearchField } from "../AddressSearchField";
-import { useAddressAutocomplete } from "../../hooks/useAddressAutocomplete";
-import { BotText } from "./BotText";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
+
+import { useTheme } from "../../design-system/theme";
+import type { AddressCreatePayload, AddressLabel } from "../../domain/addressForm";
+import type { CustomerSavedAddress } from "../../domain/customerSavedAddress";
+import { AppLucideIcon, type AppLucideName } from "../AppLucideIcon";
+import { AppText } from "../AppText";
+import { FuvayIcon } from "../FuvayIcon";
+import { BotPrimaryButton } from "./BotPrimitives";
+import { FuvayAssistantSheet } from "./FuvayAssistantSheet";
 
 export interface AddressTurnProps {
   zipcode: string;
@@ -19,193 +20,165 @@ export interface AddressTurnProps {
   onCreateNew: (payload: AddressCreatePayload) => void;
 }
 
-/**
- * Address step inside the merged chat.
- *
- * Zipcode is NEVER editable here, by explicit product rule: the assigned
- * provider was matched against the entry zipcode, and the backend's own
- * `update_draft_fields` overwrites `draft.zipcode` from whatever address
- * is attached -- so only an address whose OWN zipcode already equals this
- * one may ever be offered or created. Saved addresses with a different
- * zip are filtered out entirely (shown as a plain count, never picked);
- * the "add new" form's zip field is pre-filled and disabled.
- */
+type Sheet = "addresses" | "new" | null;
+
+const ADDRESS_OPTIONS: ReadonlyArray<{ value: AddressLabel; display: string }> = [
+  { value: "Home", display: "Home" },
+  { value: "Work", display: "Office" },
+  { value: "Other", display: "Other" },
+];
+
+function displayAddressLabel(label: string | null): string {
+  return /work|office/i.test(label ?? "") ? "Office" : label ?? "Home";
+}
+
+function addressIcon(label: string | null): AppLucideName {
+  if (/office|work/i.test(label ?? "")) return "cube";
+  if (/parent|family/i.test(label ?? "")) return "account-outline";
+  return "home-outline";
+}
+
 export function AddressTurn({ zipcode, addresses, loading, submitting, error, onPickExisting, onCreateNew }: AddressTurnProps) {
-  const BOT = useBotColors();
-  const [showForm, setShowForm] = useState(false);
+  const { theme } = useTheme();
+  const f = theme.fuvay;
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const didAutoOpen = useRef(false);
+  const [label, setLabel] = useState<AddressLabel>("Home");
+  const [fullName, setFullName] = useState("");
   const [line1, setLine1] = useState("");
   const [line2, setLine2] = useState("");
   const [landmark, setLandmark] = useState("");
   const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [label, setLabel] = useState("Home");
-  // Coordinates only ever come from a resolved lookup -- never typed, never guessed.
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
-  const autocomplete = useAddressAutocomplete();
-  /** Same rule as the saved-address form: search first, type only what the lookup
-   * cannot know. With every field on screen people typed all of it and the lookup went
-   * unused, so no address carried a real point. Never a wall -- "type it instead" is
-   * always offered, and it is the only path when no lookup is configured. */
-  const [manualEntry, setManualEntry] = useState(false);
-  const [placeChosen, setPlaceChosen] = useState(false);
-  const detailsRevealed = manualEntry || placeChosen || !autocomplete.available;
+  const [region, setRegion] = useState("");
+  const matching = (addresses ?? []).filter(address => address.postalCode === zipcode);
+  const chosen = matching.find(address => address.isDefault) ?? matching[0] ?? null;
+  const usedLabels = new Set((addresses ?? []).map(address => /work|office/i.test(address.label ?? "") ? "Work" : address.label));
+  const availableOptions = ADDRESS_OPTIONS.filter(option => !usedLabels.has(option.value));
+  const canAddAddress = availableOptions.length > 0;
+  const canSave = !usedLabels.has(label) && line1.trim().length >= 2 && city.trim().length > 0 && region.trim().length > 0;
 
-  const matching = (addresses ?? []).filter(a => a.postalCode === zipcode);
-  const excludedCount = (addresses ?? []).length - matching.length;
-  const canSubmit = line1.trim().length > 0 && city.trim().length > 0 && state.trim().length > 0;
+  useEffect(() => {
+    if (!loading && addresses !== null && !didAutoOpen.current) {
+      didAutoOpen.current = true;
+      setSheet("addresses");
+    }
+  }, [addresses, loading]);
 
-  function onSearchChange(value: string) {
-    setSearch(value);
-    autocomplete.setQuery(value);
+  function selectAddress(address: CustomerSavedAddress) {
+    setSheet(null);
+    onPickExisting(address.id);
   }
 
-  async function pickSuggestion(placeId: string) {
-    const resolved = await autocomplete.select(placeId);
-    if (!resolved) return;
-    setSearch(resolved.formattedAddress ?? "");
-    setPlaceChosen(true);
-    // Each field is filled only if Google actually returned it, so a partial
-    // result never blanks out something the customer already typed.
-    if (resolved.line1) setLine1(resolved.line1);
-    if (resolved.city) setCity(resolved.city);
-    if (resolved.state) setState(resolved.state);
-    // The resolved PIN is deliberately DISCARDED here. This request's zipcode is
-    // fixed to the one the provider was matched against (see component doc); a
-    // Google PIN that disagrees would either be silently ignored or break the
-    // match, so the search is used for street/city/state and coordinates only.
-    setLatitude(resolved.latitude);
-    setLongitude(resolved.longitude);
+  function openNewAddress() {
+    const firstAvailable = availableOptions[0];
+    if (!firstAvailable) return;
+    setLabel(firstAvailable.value);
+    setSheet("new");
   }
 
-  function submitNew() {
-    if (!canSubmit) return;
+  function saveAddress() {
+    if (!canSave) return;
     onCreateNew({
-      label, name: null,
-      address_line_1: line1.trim(), address_line_2: line2.trim() || null, landmark: landmark.trim() || null,
-      city: city.trim(), state: state.trim(), zipcode, is_default: matching.length === 0,
-      latitude, longitude,
+      label,
+      name: fullName.trim() || null,
+      address_line_1: line1.trim(),
+      address_line_2: line2.trim() || null,
+      landmark: landmark.trim() || null,
+      city: city.trim(),
+      state: region.trim(),
+      zipcode,
+      is_default: (addresses ?? []).length === 0,
+      latitude: null,
+      longitude: null,
     });
   }
 
-  if (loading) {
-    return (
-      <BotCard>
-        <ActivityIndicator color={BOT.brand} />
-      </BotCard>
-    );
-  }
-
   return (
-    <BotCard>
-      <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Where should the technician come?</BotText>
-      <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
-        Only addresses in {zipcode} -- the professional matched is local to this zip.
-      </BotText>
-
-      {matching.length > 0 ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          {matching.map(a => (
-            <Pressable
-              key={a.id}
-              onPress={() => onPickExisting(a.id)}
-              disabled={submitting}
-              accessibilityRole="button"
-              accessibilityLabel={`${a.label ?? "Address"}, ${a.line1}`}
-              style={{
-                flexDirection: "row", alignItems: "flex-start", gap: 10,
-                padding: 12, borderRadius: 14, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.borderSubtle,
-              }}
-            >
-              <Ionicons name="home" size={16} color={BOT.brand} style={{ marginTop: 1 }} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>{a.label ?? "Address"}</BotText>
-                <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 1 }} numberOfLines={2}>
-                  {[a.line1, a.line2, a.city, a.postalCode].filter(Boolean).join(", ")}
-                </BotText>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={BOT.textFaint} />
-            </Pressable>
-          ))}
+    <View style={{ gap: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}>
+          <FuvayIcon size={17} accessibilityLabel="Fuvay booking assistant" />
         </View>
-      ) : null}
+        <View style={{ flex: 1, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 4, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}>
+          <AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>Where should the technician come?</AppText>
+        </View>
+      </View>
 
-      {excludedCount > 0 && matching.length === 0 ? (
-        <BotText style={{ fontSize: 12, color: BOT.textDim, marginTop: 10 }}>
-          {excludedCount} saved address{excludedCount === 1 ? "" : "es"} outside {zipcode} — not shown here.
-        </BotText>
-      ) : null}
-
-      {error ? <BotText style={{ fontSize: 13, color: BOT.danger, marginTop: 10 }}>{error}</BotText> : null}
-
-      {!showForm ? (
-        <Pressable onPress={() => setShowForm(true)} style={{ marginTop: 12, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Ionicons name="add-circle-outline" size={16} color={BOT.brandLight} />
-          <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.brandLight }}>Add a new address in {zipcode}</BotText>
+      {chosen ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Change service address" onPress={() => setSheet("addresses")} style={({ pressed }) => ({ marginLeft: 42, alignSelf: "flex-end", maxWidth: "78%", paddingHorizontal: 14, paddingVertical: 11, borderRadius: 16, backgroundColor: f.soft(f.accents.a2), borderWidth: 1, borderColor: f.surfaces.edge, flexDirection: "row", alignItems: "center", gap: 10, opacity: pressed ? theme.opacity.pressed : 1 })}>
+          <AppLucideIcon name="map-marker-path" size={16} color={f.accents.a2} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>{displayAddressLabel(chosen.label)}</AppText>
+            <AppText numberOfLines={1} variant="caption" style={{ color: f.surfaces.sub }}>{[chosen.line1, chosen.city, chosen.postalCode].filter(Boolean).join(", ")}</AppText>
+          </View>
+          <AppLucideIcon name="pencil" size={13} color={f.accents.a2} />
         </Pressable>
-      ) : (
-        <View style={{ marginTop: 14, gap: 8 }}>
-          <AddressSearchField
-            value={search}
-            onChangeText={onSearchChange}
-            suggestions={autocomplete.suggestions}
-            available={autocomplete.available}
-            searching={autocomplete.searching}
-            resolving={autocomplete.resolving}
-            onSelect={pickSuggestion}
-            palette={{
-              surface: BOT.surfaceSunken, border: BOT.borderSubtle,
-              text: BOT.textPrimary, placeholder: BOT.textFaint, muted: BOT.textMuted,
-            }}
-          />
-          {!detailsRevealed ? (
-            <Pressable
-              onPress={() => setManualEntry(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Type the address instead"
-              style={{ paddingVertical: 8 }}
-            >
-              <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
-                Type the address instead
-              </BotText>
-            </Pressable>
-          ) : null}
-
-          {(detailsRevealed ? [
-            ["Label (Home/Work/Other)", label, setLabel],
-            ["Address line 1", line1, setLine1],
-            ["Address line 2 (optional)", line2, setLine2],
-            ["Landmark (optional)", landmark, setLandmark],
-            ["City", city, setCity],
-            ["State", state, setState],
-          ] as const : []).map(([placeholder, value, setter]) => (
-            <TextInput
-              key={placeholder}
-              value={value}
-              onChangeText={setter}
-              placeholder={placeholder}
-              placeholderTextColor={BOT.textFaint}
-              style={{
-                height: 40, borderRadius: 10, paddingHorizontal: 12,
-                backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.borderSubtle,
-                color: BOT.textPrimary, fontSize: 15,
-              }}
-            />
-          ))}
-          {detailsRevealed ? (
-            <>
-              {/* Zipcode is shown, never editable -- see component doc. */}
-              <View style={{ height: 40, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center", backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border }}>
-                <BotText style={{ fontSize: 15, color: BOT.textMuted }}>ZIP {zipcode} (fixed to this request)</BotText>
-              </View>
-              <View style={{ marginTop: 4 }}>
-                <BotPrimaryButton label="Save & use this address" onPress={submitNew} disabled={!canSubmit || submitting} loading={submitting} />
-              </View>
-            </>
-          ) : null}
-        </View>
+      ) : loading ? <ActivityIndicator color={f.accents.a2} /> : (
+        <Pressable accessibilityRole="button" accessibilityLabel="Choose service address" onPress={() => setSheet("addresses")} style={{ marginLeft: 42, minHeight: 44, borderRadius: 22, borderWidth: 1, borderColor: f.accents.a2, alignItems: "center", justifyContent: "center" }}>
+          <AppText variant="button" style={{ color: f.accents.a2 }}>Choose service address</AppText>
+        </Pressable>
       )}
-    </BotCard>
+
+      {error ? <AppText variant="caption" style={{ marginLeft: 42, color: theme.colors.statusDanger }}>{error}</AppText> : null}
+
+      <FuvayAssistantSheet
+        visible={sheet === "addresses"}
+        title="Service address"
+        onClose={() => setSheet(null)}
+      >
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>SAVED ADDRESSES</AppText>
+        <View style={{ gap: 10 }}>
+          {matching.map((address, index) => {
+            const selected = address.id === chosen?.id;
+            return (
+              <Pressable key={address.id} accessibilityRole="button" accessibilityLabel={`${address.label ?? "Address"}, ${address.line1}`} disabled={submitting} onPress={() => selectAddress(address)} style={({ pressed }) => ({ minHeight: 60, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, backgroundColor: selected ? f.soft(f.accents.a2) : f.surfaces.card, borderWidth: selected ? 1.5 : 1, borderColor: selected ? f.accents.a2 : f.surfaces.edge, flexDirection: "row", alignItems: "center", gap: 11, opacity: pressed ? theme.opacity.pressed : 1 })}>
+                <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: f.soft(selected ? f.accents.a2 : f.tile.icon) }}>
+                  <AppLucideIcon name={addressIcon(address.label)} size={17} color={selected ? f.accents.a2 : f.surfaces.sub} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>{address.label ? displayAddressLabel(address.label) : `Address ${index + 1}`}</AppText>
+                  <AppText variant="caption" numberOfLines={1} style={{ color: f.surfaces.sub }}>{[address.line1, address.city, address.postalCode].filter(Boolean).join(", ")}</AppText>
+                </View>
+                {selected ? <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: f.accents.a2, alignItems: "center", justifyContent: "center" }}><AppLucideIcon name="check" size={12} color={f.ink(f.accents.a2)} /></View> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Add a new address" accessibilityState={{ disabled: !canAddAddress }} disabled={!canAddAddress} onPress={openNewAddress} style={{ minHeight: 52, borderRadius: 14, borderWidth: 1.5, borderColor: canAddAddress ? f.accents.a2 : f.surfaces.rule, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 11, opacity: canAddAddress ? 1 : 0.62 }}>
+          <AppLucideIcon name={canAddAddress ? "plus" : "check"} size={16} color={canAddAddress ? f.accents.a2 : f.surfaces.faint} />
+          <AppText variant="labelStrong" style={{ color: canAddAddress ? f.accents.a2 : f.surfaces.faint }}>{canAddAddress ? "Add a new address" : "Home, Office and Other already saved"}</AppText>
+        </Pressable>
+      </FuvayAssistantSheet>
+
+      <FuvayAssistantSheet visible={sheet === "new"} title="New address" onClose={() => setSheet("addresses")} scroll>
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>SAVE AS</AppText>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {ADDRESS_OPTIONS.map(option => {
+            const selected = option.value === label;
+            const unavailable = usedLabels.has(option.value);
+            return <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected, disabled: unavailable }} disabled={unavailable} onPress={() => setLabel(option.value)} style={{ minHeight: 40, paddingHorizontal: 16, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: selected ? f.accents.a2 : f.surfaces.card, borderWidth: 1, borderColor: selected ? f.accents.a2 : f.surfaces.edge, opacity: unavailable ? 0.42 : 1 }}><AppText variant="labelStrong" style={{ color: selected ? f.ink(f.accents.a2) : f.surfaces.sub }}>{option.display}</AppText></Pressable>;
+          })}
+        </View>
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>RECIPIENT NAME (OPTIONAL)</AppText>
+        <TextInput accessibilityLabel="Recipient name" value={fullName} onChangeText={setFullName} placeholder="Full name" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>FLAT, BUILDING &amp; STREET</AppText>
+        <TextInput accessibilityLabel="Flat, building and street" value={line1} onChangeText={setLine1} placeholder="e.g. 14 Model Town, Block B" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>APARTMENT, FLOOR OR AREA (OPTIONAL)</AppText>
+        <TextInput accessibilityLabel="Apartment floor or area" value={line2} onChangeText={setLine2} placeholder="Apartment, floor, area or locality" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>LANDMARK (OPTIONAL)</AppText>
+        <TextInput accessibilityLabel="Landmark" value={landmark} onChangeText={setLandmark} placeholder="Nearby landmark" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>CITY</AppText>
+        <TextInput accessibilityLabel="City" value={city} onChangeText={setCity} placeholder="City" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>STATE</AppText>
+        <TextInput accessibilityLabel="State" value={region} onChangeText={setRegion} placeholder="State" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 52, borderRadius: 14, paddingHorizontal: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
+        <AppText variant="metaLabel" style={{ color: f.surfaces.faint }}>PINCODE</AppText>
+        <View style={{ minHeight: 52, borderRadius: 14, paddingHorizontal: 14, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <TextInput accessibilityLabel="Pincode, automatically filled" value={zipcode} editable={false} selectTextOnFocus={false} style={[theme.typography.body, { flex: 1, color: f.surfaces.sub }]} />
+          <AppLucideIcon name="shield-check-outline" size={15} color={f.surfaces.faint} />
+        </View>
+        <View style={{ minHeight: 40, paddingHorizontal: 13, borderRadius: 13, backgroundColor: f.soft(f.accents.a2), flexDirection: "row", alignItems: "center", gap: 9 }}><AppLucideIcon name="map-marker-path" size={14} color={f.accents.a2} /><AppText variant="caption" style={{ flex: 1, color: f.surfaces.sub }}>We only share the address with the assigned technician.</AppText></View>
+        <BotPrimaryButton label="Save address  ✓" onPress={saveAddress} disabled={!canSave || submitting} loading={submitting} />
+      </FuvayAssistantSheet>
+    </View>
   );
 }

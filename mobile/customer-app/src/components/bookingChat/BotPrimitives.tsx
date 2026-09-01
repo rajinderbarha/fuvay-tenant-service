@@ -488,7 +488,7 @@ export function BotOptionChips({
   // than producing duplicate React keys and an ambiguous selection.
   const uniqueItems = Array.from(new Set(items));
   return (
-    <View style={{ gap: 8, paddingLeft: BOT_GUTTER }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 2, paddingLeft: BOT_GUTTER }}>
       {uniqueItems.map((label, i) => (
         <OptionChip
           key={label}
@@ -519,18 +519,14 @@ function OptionChip({
         accessibilityRole="button"
         accessibilityLabel={label}
         style={{
-          minHeight: 52, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10,
-          flexDirection: "row", alignItems: "center", gap: 10,
+          minHeight: 40, paddingHorizontal: 16, borderRadius: 999,
+          flexDirection: "row", alignItems: "center",
           backgroundColor: isSelected ? BOT.brand : BOT.surface,
           borderWidth: 1, borderColor: isSelected ? BOT.brand : BOT.border,
           opacity: isInactive ? 0.4 : 1,
         }}
       >
-        <View style={{ width: 24, alignItems: "center" }}>
-          <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={17} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
-        </View>
-        <BotText style={{ flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600", color: isSelected ? BOT.bubbleOnBrand : BOT.textSecondary }}>{label}</BotText>
-        <Ionicons name="chevron-forward" size={15} color={isSelected ? BOT.bubbleOnBrand : BOT.textFaint} />
+        <BotText style={{ fontSize: 12.5, lineHeight: 18, fontWeight: "600", color: isSelected ? BOT.bubbleOnBrand : BOT.brand }}>{label}</BotText>
       </Pressable>
     </Animated.View>
   );
@@ -566,7 +562,7 @@ export function BotPrimaryButton({ label, onPress, disabled, loading }: { label:
       accessibilityLabel={label}
       accessibilityState={{ disabled: isDisabled }}
       style={{
-        height: 46, borderRadius: 10, alignItems: "center", justifyContent: "center",
+        minHeight: 54, borderRadius: 27, alignItems: "center", justifyContent: "center",
         backgroundColor: isDisabled && !loading && !busy ? BOT.surfaceRaised : BOT.brand,
         opacity: isDisabled && !loading && !busy ? 0.6 : 1,
       }}

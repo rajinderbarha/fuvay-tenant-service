@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { providerAnalyticsApi } from "../../../lib/api";
-import { KpiCard, DateFilter, AlertList } from "../../../components/analytics";
+import { AnalyticsMetric, DateFilter, AlertList } from "../../../components/analytics";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
@@ -54,16 +54,16 @@ export default function ProviderAnalyticsDashboard() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
-        <KpiCard label="Total Jobs"      value={s.total_jobs}      loading={loading} />
-        <KpiCard label="Revenue (AED)"   value={s.total_revenue}   loading={loading} />
-        <KpiCard label="Avg Rating"      value={s.avg_rating}      loading={loading} severity={Number(s.avg_rating) < 3.5 ? "warning" : "success"} />
-        <KpiCard label="Open Complaints" value={s.open_complaints} loading={loading} severity={Number(s.open_complaints) > 0 ? "warning" : "normal"} />
+        <AnalyticsMetric label="Total Jobs"      value={s.total_jobs}      loading={loading} />
+        <AnalyticsMetric label="Revenue (AED)"   value={s.total_revenue}   loading={loading} />
+        <AnalyticsMetric label="Avg Rating"      value={s.avg_rating}      loading={loading} severity={Number(s.avg_rating) < 3.5 ? "warning" : "success"} />
+        <AnalyticsMetric label="Open Complaints" value={s.open_complaints} loading={loading} severity={Number(s.open_complaints) > 0 ? "warning" : "normal"} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
-        <KpiCard label="Active Staff"     value={s.active_staff}     loading={loading} />
-        <KpiCard label="Usage Credit Balance"   value={s.wallet_balance}   unit="AED" loading={loading} />
-        <KpiCard label="Pending Invoices" value={s.pending_invoices} loading={loading} />
+        <AnalyticsMetric label="Active Staff"     value={s.active_staff}     loading={loading} />
+        <AnalyticsMetric label="Usage Credit Balance"   value={s.wallet_balance}   unit="AED" loading={loading} />
+        <AnalyticsMetric label="Pending Invoices" value={s.pending_invoices} loading={loading} />
       </div>
 
       <div style={card}>

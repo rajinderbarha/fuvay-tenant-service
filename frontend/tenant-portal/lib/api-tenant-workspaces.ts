@@ -636,12 +636,16 @@ export interface HsDispatchJobSummary {
   requested_at?: string | null;
   scheduled_date?: string | null;
   scheduled_time_window?: string | null;
+  requested_date?: string | null;
+  requested_time_window?: string | null;
   customer_alias?: string | null;
+  customer_address?: string | null;
   locality?: string | null;
   city?: string | null;
   zipcode?: string | null;
   issue_summary?: string | null;
   master_service_name?: string | null;
+  service_icon_url?: string | null;
   is_emergency?: boolean;
   service_due_at?: string | null;
   minutes_until_due?: number | null;
@@ -653,6 +657,9 @@ export interface HsDispatchTechnician {
   staff_member_id: string;
   name: string;
   status: string;
+  profile_photo_url?: string | null;
+  capacity_used?: number;
+  capacity_limit?: number;
   jobs_in_range: HsDispatchJobSummary[];
   jobs_today?: HsDispatchJobSummary[];
 }
@@ -688,6 +695,7 @@ export interface HsAssignmentOptionTechnician {
   name: string;
   role: string;
   status: string;
+  profile_photo_url?: string | null;
   eligibility_status: "eligible" | "blocked";
   match_reasons?: string[];
   blocked_reasons?: string[];
@@ -703,6 +711,7 @@ export interface HsAssignmentOptions {
     assigned_staff_member_id: string;
     assignment_status: string;
     staff_name?: string | null;
+    profile_photo_url?: string | null;
   } & Record<string, unknown>) | null;
   available_actions: string[];
   version?: string | null;

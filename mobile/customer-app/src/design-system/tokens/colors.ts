@@ -91,6 +91,7 @@ export interface ColorTokens {
   campaignGradientEnd: string;
   campaignAccent: string;
   campaignBadgeForeground: string;
+  campaignBadgeSurface: string;
   campaignScrim: string;
   campaignBadgeScrim: string;
 
@@ -190,6 +191,7 @@ export const lightColors: ColorTokens = {
   // The hex "₹500 OFF" badge is fixed amber in both themes in the canvas.
   campaignAccent: LS.hexFill,
   campaignBadgeForeground: ink(LS.hexFill),
+  campaignBadgeSurface: "rgba(20,20,26,0.12)",
   campaignScrim: "rgba(10, 8, 14, 0.55)",
   campaignBadgeScrim: "rgba(10, 8, 14, 0.92)",
 
@@ -264,6 +266,7 @@ export const darkColors: ColorTokens = {
   campaignGradientEnd: DS.panel,
   campaignAccent: DS.hexFill,
   campaignBadgeForeground: ink(DS.hexFill),
+  campaignBadgeSurface: "rgba(20,20,26,0.12)",
   campaignScrim: "rgba(10, 8, 14, 0.55)",
   campaignBadgeScrim: "rgba(10, 8, 14, 0.92)",
 

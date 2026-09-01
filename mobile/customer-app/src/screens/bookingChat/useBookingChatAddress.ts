@@ -82,18 +82,29 @@ export function useBookingChatAddress(draftId: string | null, zipcode: string) {
       setError("This address must be in the same ZIP this request was matched for.");
       return;
     }
+    const normalizedLabel = /work|office/i.test(payload.label) ? "Work" : payload.label;
+    const duplicateLabel = (addresses ?? []).some(address => {
+      const existingLabel = /work|office/i.test(address.label ?? "") ? "Work" : address.label;
+      return existingLabel === normalizedLabel;
+    });
+    if (duplicateLabel) {
+      const displayLabel = normalizedLabel === "Work" ? "Office" : normalizedLabel;
+      setError(`Only one ${displayLabel} address can be saved.`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const created = await createMyAddress(payload);
       await setDraftAddress(draftId, created.data.id);
+      setAddresses(current => [adaptCustomerSavedAddress(created.data), ...(current ?? [])]);
       setResolvedAddressId(created.data.id);
     } catch (err) {
       setError(err instanceof DomainError ? err.diagnostic : "Couldn't save that address. Please try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [draftId, zipcode]);
+  }, [addresses, draftId, zipcode]);
 
   return { addresses, loading, submitting, error, resolvedAddressId, loadAddresses, pickExisting, createNew };
 }

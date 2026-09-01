@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { providerAnalyticsApi } from "../../../../lib/api";
-import { KpiCard, DateFilter, SimpleTable } from "../../../../components/analytics";
+import { AnalyticsMetric, DateFilter, SimpleTable } from "../../../../components/analytics";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
@@ -37,10 +37,10 @@ export default function ProviderComplaintsPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
-        <KpiCard label="Total Complaints"    value={s.total_complaints}    loading={loading} />
-        <KpiCard label="Open Complaints"     value={s.open_complaints}     loading={loading} severity={Number(s.open_complaints) > 0 ? "warning" : "normal"} />
-        <KpiCard label="Refunds Issued"      value={s.refunds_issued}      unit="AED" loading={loading} />
-        <KpiCard label="Avg Resolution Days" value={s.avg_resolution_days} loading={loading} />
+        <AnalyticsMetric label="Total Complaints"    value={s.total_complaints}    loading={loading} />
+        <AnalyticsMetric label="Open Complaints"     value={s.open_complaints}     loading={loading} severity={Number(s.open_complaints) > 0 ? "warning" : "normal"} />
+        <AnalyticsMetric label="Refunds Issued"      value={s.refunds_issued}      unit="AED" loading={loading} />
+        <AnalyticsMetric label="Avg Resolution Days" value={s.avg_resolution_days} loading={loading} />
       </div>
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>

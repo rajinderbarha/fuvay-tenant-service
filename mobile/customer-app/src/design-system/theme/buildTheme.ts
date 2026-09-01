@@ -8,12 +8,17 @@ import { opacity } from "../tokens/opacity";
 import { iconSizes } from "../tokens/iconSizes";
 import { touchTargets } from "../tokens/touchTargets";
 import { darkMaterial, lightMaterial } from "../tokens/material";
+import { componentMetrics } from "../tokens/components";
+import { darkEditorialPalettes, lightEditorialPalettes } from "../tokens/editorial";
+import { buildFuvayTheme } from "../tokens/fuvay";
 
 export type ThemeMode = "light" | "dark";
 
 export function buildTheme(mode: ThemeMode) {
   const colors: ColorTokens = mode === "dark" ? darkColors : lightColors;
   const material = mode === "dark" ? darkMaterial : lightMaterial;
+  const editorial = mode === "dark" ? darkEditorialPalettes : lightEditorialPalettes;
+  const fuvay = buildFuvayTheme(mode === "dark");
   return {
     mode,
     colors,
@@ -28,6 +33,9 @@ export function buildTheme(mode: ThemeMode) {
     iconSizes,
     touchTargets,
     material,
+    metrics: componentMetrics,
+    editorial,
+    fuvay,
   } as const;
 }
 

@@ -105,18 +105,19 @@ CONTENT = [
         "priority": 220,
     },
     {
+        # Keep the original stable key so re-running this idempotent seed also
+        # replaces the previously published digital-studio card in existing DBs.
         "key": "fuvay_home_digital_spotlight_v1",
-        "file": "fuvay-digital-studio-v1.png",
-        "title": "Build your next digital product with Fuvay",
-        "subtitle": "Websites and mobile apps designed for ambitious businesses, available in every PIN code.",
+        "file": "fuvay-ac-care-hero-v1.png",
+        "title": "Breathe easier with seasonal AC care",
+        "subtitle": "Cooling checks, deep cleaning and repairs from verified home-service professionals.",
         "placement": "home_spotlight",
         "variant": "feature",
-        "theme_key": "violet",
-        "badge": "Fuvay digital studio",
-        "offer_text": None,
-        "action_label": "Start a project",
-        "action_url": "fuvay://global-services",
-        "service_group_slug": None,
+        "theme_key": "sky",
+        "badge": "AC care",
+        "offer_text": "Seasonal slots available",
+        "action_label": "Explore AC care",
+        "service_group_slug": "ac_services",
         "priority": 200,
     },
     {

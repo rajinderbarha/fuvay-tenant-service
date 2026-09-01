@@ -93,7 +93,7 @@ function TeamDirectory() {
   const summary = directory.data?.summary;
   const fundingQuote = funding.data as any;
   return <TenantLayout activeNav="provider-staff"><PageShell>
-    <PageHeader title="Staff & technicians"
+    <PageHeader eyebrow="Business" context="Team" title="Staff & technicians"
       description="One operational roster for setup readiness, dispatch capacity, staff access and service delivery."
       actions={<><Button variant="secondary" leftIcon={<Download size={14} />} disabled={!directory.data?.staff.length} onClick={exportPage}>Export page</Button><Button variant="primary" leftIcon={<UserPlus size={14} />} disabled={noPlan || seatsFull} onClick={() => setAddOpen(true)}>Add team member</Button></>} />
     {directory.error && <Alert tone="danger">{directory.error}</Alert>}

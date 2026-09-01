@@ -424,7 +424,7 @@ function ServicesPricingPageContent() {
     return (
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 280px", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 20 }}>
           <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
         </div>
       </OnboardingShell>
@@ -482,7 +482,7 @@ function ServicesPricingPageContent() {
 
       <style>{`
         .svc-grid { display: grid; grid-template-columns: 280px 1fr 300px; gap: 20px; align-items: start; margin-top: 20px; }
-        @media (max-width: 1200px) { .svc-grid { grid-template-columns: 240px 1fr; } .svc-grid > :nth-child(3) { grid-column: 1 / -1; } }
+        @media (max-width: 1366px) { .svc-grid { grid-template-columns: 220px minmax(0, 1fr); } .svc-grid > :nth-child(3) { grid-column: 1 / -1; } }
         @media (max-width: 900px) { .svc-grid { grid-template-columns: 1fr; } .svc-grid > :nth-child(3) { grid-column: auto; } }
         .svc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         @media (max-width: 480px) { .svc-row2 { grid-template-columns: 1fr; } }

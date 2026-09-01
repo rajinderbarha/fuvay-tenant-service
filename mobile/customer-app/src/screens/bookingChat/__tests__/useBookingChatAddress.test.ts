@@ -58,6 +58,24 @@ describe("useBookingChatAddress -- zipcode lock", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("refuses a second saved address with the same Home/Office/Other type", async () => {
+    (addressesApi.listMyAddresses as jest.Mock).mockResolvedValue({
+      data: { addresses: [addressDto()], total: 1 },
+    });
+    const { result } = renderHook(() => useBookingChatAddress("draft-1", "141002"));
+
+    await act(async () => { await result.current.loadAddresses(); });
+    await act(async () => {
+      await result.current.createNew({
+        label: "Home", name: null, address_line_1: "2 Main St", address_line_2: null, landmark: null,
+        city: "Ludhiana", state: "Punjab", zipcode: "141002", is_default: false, latitude: null, longitude: null,
+      });
+    });
+
+    expect(addressesApi.createMyAddress).not.toHaveBeenCalled();
+    expect(result.current.error).toBe("Only one Home address can be saved.");
+  });
+
   it("attaches an existing saved address without re-validating its zip client-side (the picker already filtered it)", async () => {
     (reviewApi.setDraftAddress as jest.Mock).mockResolvedValue({ data: {} });
     const { result } = renderHook(() => useBookingChatAddress("draft-1", "141002"));

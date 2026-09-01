@@ -27,7 +27,7 @@ import {
   Megaphone, Package, ScrollText, ListChecks, BarChart3,
   HelpCircle, Image, AlertOctagon, Globe,
   FileText as FileTextIcon,
-  IdCard, UserCog, KeyRound, CalendarCheck,
+  IdCard, UserCog, KeyRound, CalendarCheck, MessageCircle,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -98,6 +98,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "marketing",     href: "/admin/marketing",     label: "Campaigns",       icon: <Megaphone size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       { id: "customer-home", href: "/admin/marketing/home", label: "Customer Home",   icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
+      { id: "messaging-channels", href: "/admin/messaging-channels", label: "Social Booking", icon: <MessageCircle size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
       // "Notification Settings" folded into Notifications as a "Settings"
       // tab 2026-08-05 at explicit user request -- removed as a separate
       // nav item. /admin/notifications/settings route stays live, unlinked.

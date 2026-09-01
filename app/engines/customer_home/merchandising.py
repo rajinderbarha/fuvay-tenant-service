@@ -106,55 +106,34 @@ HOME_COMPOSITION_SETTING_KEY = "customer_home.section_composition.v1"
 # without allowing arbitrary remote UI code. Every section is native-rendered,
 # accessibility-tested and backed by an existing bounded API collection.
 HOME_SECTION_DEFINITIONS: dict[str, dict[str, Any]] = {
-    "hero": {"label": "Hero slider", "title": None, "variants": ["marketplace", "cinematic", "edge_to_edge"], "max_items": 5},
-    "service_groups": {"label": "Popular services", "title": "Popular Services", "variants": ["compact_grid", "visual_rail", "two_row"], "max_items": 12, "default_items": 8},
-    "nearby_services": {"label": "Nearby services", "title": "Services Nearby", "variants": ["two_row", "compact_grid", "visual_rail"], "max_items": 12, "default_items": 8},
-    "live_booking": {"label": "Live booking", "title": "Your live booking", "variants": ["timeline"], "max_items": 1},
-    "recent_bookings": {"label": "My booking", "title": "More Active Booking", "variants": ["compact_rail", "stack"], "max_items": 3, "default_items": 1},
-    "featured_services": {"label": "Featured services", "title": "More home services", "variants": ["catalog_grid", "compact_cards", "feature_rail"], "max_items": 12, "default_items": 6},
-    "master_services": {"label": "Master services", "title": "Recommended for you", "variants": ["recommendation_cards", "image_rail", "editorial_grid"], "max_items": 12, "default_items": 4},
-    "trust_strip": {"label": "Customer assurance", "title": None, "variants": ["icon_row", "compact_cards"], "max_items": 4},
-    "stories": {"label": "Stories and offers", "title": "Ideas and offers", "variants": ["landscape", "portrait"], "max_items": 8},
-    "spotlight": {"label": "Editorial spotlight", "title": "In the spotlight", "variants": ["cinematic_card", "split_feature"], "max_items": 2},
-    "mosaic": {"label": "Campaign mosaic", "title": "Fresh ways to care for home", "variants": ["asymmetric"], "max_items": 3},
-    "global_services": {"label": "Fuvay digital services", "title": "Build with Fuvay", "variants": ["compact_services", "studio_rail"], "max_items": 6, "default_items": 5},
-    "collection": {"label": "Curated collection", "title": "Offers for you", "variants": ["editorial_cards"], "max_items": 8},
-    "banners": {"label": "Editorial banners", "title": None, "variants": ["full_bleed", "contained"], "max_items": 4},
+    "service_groups": {"label": "Quick services", "title": "Popular services", "variants": ["compact_grid"], "max_items": 4, "default_items": 4},
+    "nearby_services": {"label": "Category browser", "title": "Browse by category", "variants": ["category_orbs"], "max_items": 5, "default_items": 5},
+    "live_booking": {"label": "Live booking", "title": "Live Booking", "variants": ["timeline"], "max_items": 1},
+    "featured_services": {"label": "Popular nearby", "title": "Popular near you", "variants": ["popular_grid"], "max_items": 4, "default_items": 4},
+    "master_services": {"label": "Recommendations", "title": "Recommended for you", "variants": ["recommendation_cards"], "max_items": 5, "default_items": 5},
+    "spotlight": {"label": "Editorial spotlight", "title": "Spotlights", "variants": ["cinematic_card"], "max_items": 3},
+    "collection": {"label": "Cover plans", "title": "Cover plans", "variants": ["cover_plans"], "max_items": 3, "default_items": 3},
+    "banners": {"label": "Booking CTA", "title": None, "variants": ["single_cta"], "max_items": 1},
     "assistant": {"label": "Ask Fuvay", "title": None, "variants": ["command_strip"], "max_items": 1},
-    "featured_problems": {"label": "Featured problems", "title": "What Needs Fixing", "variants": ["photo_cards", "editorial_list", "compact_grid"], "max_items": 8, "default_items": 4},
     "active_bookings": {"label": "More active bookings", "title": "More active bookings", "variants": ["stack"], "max_items": 3},
-    "repair_problems": {"label": "Repair problems", "title": "Repairs you can book now", "variants": ["editorial_rail"], "max_items": 12},
-    "consultation_problems": {"label": "Consultation problems", "title": "Get an expert opinion", "variants": ["editorial_list"], "max_items": 8},
-    "more_problems": {"label": "More problems", "title": "More ways we can help", "variants": ["compact_grid"], "max_items": 12},
-    "notices": {"label": "Notices", "title": None, "variants": ["strips"], "max_items": 2},
-    "support_actions": {"label": "Location and support", "title": None, "variants": ["utility_rows"], "max_items": 2},
 }
 
 DEFAULT_HOME_SECTION_ORDER = [
-    "hero", "service_groups", "master_services", "nearby_services", "recent_bookings",
-    "assistant", "trust_strip", "featured_problems", "spotlight", "featured_services", "global_services",
-    "banners", "collection", "live_booking", "stories", "mosaic", "active_bookings", "repair_problems",
-    "consultation_problems", "more_problems", "notices", "support_actions",
+    "service_groups", "live_booking", "active_bookings", "master_services", "featured_services",
+    "nearby_services", "spotlight", "collection", "banners", "assistant",
 ]
 
-DEFAULT_ENABLED_HOME_SECTIONS = {
-    "hero", "service_groups", "master_services", "nearby_services", "recent_bookings",
-    "assistant", "trust_strip", "featured_problems", "spotlight", "featured_services", "global_services",
-}
+DEFAULT_ENABLED_HOME_SECTIONS = set(DEFAULT_HOME_SECTION_ORDER)
 
 DEFAULT_HOME_PRESENTATION: dict[str, dict[str, str]] = {
-    "hero": {"spacing": "compact", "surface": "canvas"},
     "live_booking": {"spacing": "compact", "surface": "canvas"},
     "service_groups": {"spacing": "compact", "surface": "canvas"},
     "nearby_services": {"spacing": "compact", "surface": "canvas"},
-    "recent_bookings": {"spacing": "compact", "surface": "canvas"},
     "featured_services": {"spacing": "compact", "surface": "canvas"},
     "master_services": {"spacing": "compact", "surface": "canvas"},
     "banners": {"spacing": "standard", "surface": "canvas"},
     "collection": {"spacing": "compact", "surface": "canvas"},
     "spotlight": {"spacing": "compact", "surface": "canvas"},
-    "global_services": {"spacing": "compact", "surface": "canvas"},
-    "trust_strip": {"spacing": "compact", "surface": "subtle"},
 }
 
 

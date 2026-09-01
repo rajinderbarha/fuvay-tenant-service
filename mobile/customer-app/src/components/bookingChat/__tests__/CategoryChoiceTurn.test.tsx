@@ -90,8 +90,8 @@ describe("CategoryChoiceTurn", () => {
     renderWithProviders(
       <CategoryChoiceTurn categories={[]} loading={false} city="Ludhiana" onSelect={() => {}} />,
     );
-    expect(screen.getByText("No services here yet")).toBeTruthy();
-    expect(screen.getByText(/aren't serving Ludhiana yet/)).toBeTruthy();
+    expect(screen.getByText("Let's get your location ready")).toBeTruthy();
+    expect(screen.getByText(/No services are available here yet/)).toBeTruthy();
     expect(screen.queryByText("Which service do you need?")).toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe("CategoryChoiceTurn", () => {
     renderWithProviders(
       <CategoryChoiceTurn categories={[]} loading city={null} onSelect={() => {}} />,
     );
-    expect(screen.getByText(/Checking what's available near you/)).toBeTruthy();
-    expect(screen.queryByText("No services here yet")).toBeNull();
+    expect(screen.getByText("Finding services near you")).toBeTruthy();
+    expect(screen.queryByText(/No services are available here yet/)).toBeNull();
   });
 });

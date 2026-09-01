@@ -1,7 +1,7 @@
 import React from "react";
-import { View } from "react-native";
 import { useTheme } from "../design-system/theme";
 import { AppText } from "./AppText";
+import { AppSurface } from "./AppSurface";
 
 export type BadgeTone = "success" | "warning" | "danger" | "info" | "neutral";
 
@@ -26,16 +26,18 @@ export function AppBadge({ label, tone = "neutral" }: AppBadgeProps) {
   const keys = TONE_KEYS[tone];
   const colors = theme.colors as unknown as Record<string, string>;
   return (
-    <View
+    <AppSurface
+      elevated={false}
+      colors={[colors[keys.bg], colors[keys.bg]]}
       style={{
         alignSelf: "flex-start",
         paddingHorizontal: theme.spacing.sm,
         paddingVertical: theme.spacing.xxs,
         borderRadius: theme.radiusUsage.statusPill,
-        backgroundColor: colors[keys.bg],
+        borderColor: `${colors[keys.fg]}40`,
       }}
     >
       <AppText variant="labelStrong" style={{ color: colors[keys.fg] }}>{label}</AppText>
-    </View>
+    </AppSurface>
   );
 }

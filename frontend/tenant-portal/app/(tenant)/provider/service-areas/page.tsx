@@ -95,15 +95,6 @@ function SectionError({ title, error, requestId, onRetry }: {
   );
 }
 
-function KpiCard({ label, value, sub, variant, icon }: {
-  label: string; value: string | number; sub?: string;
-  variant?: "success" | "warning" | "danger" | "neutral"; icon: React.ReactNode;
-}) {
-  const v = variant ?? "neutral";
-  return <SummaryCard label={label} value={value} sub={sub} icon={icon}
-    tone={v === "neutral" ? undefined : v}/>;
-}
-
 // ── Slots-used circular progress ──────────────────────────────────────────────
 function CoverageRing({ pct }: { pct: number }) {
   const r = 34, c = 2 * Math.PI * r;
@@ -968,18 +959,18 @@ export default function ProviderServiceAreasPage() {
 
         {/* KPI Cards */}
         <KpiGrid minCardWidth={190}>
-          <KpiCard label="Total Areas" value={list.length}
+          <SummaryCard label="Total Areas" value={list.length}
             sub={`${maxAreas} slot${maxAreas === 1 ? "" : "s"} on your plan`}
-            icon={<MapPin size={15}/>} variant="neutral"/>
-          <KpiCard label="Primary Area" value={primaryArea ? areaLabel(primaryArea) : "Not set"}
+            icon={<MapPin size={15}/>}/>
+          <SummaryCard label="Primary Area" value={primaryArea ? areaLabel(primaryArea) : "Not set"}
             sub={primaryArea ? areaDescription(primaryArea) : "Set a primary area"}
-            icon={<Star size={15}/>} variant={primaryArea ? "success" : "warning"}/>
-          <KpiCard label="Coverage Health" value={issues.length === 0 ? "Good" : issues.some(i=>i.severity==="danger") ? "Blocked" : "Needs Attention"}
+            icon={<Star size={15}/>} tone={primaryArea ? "success" : "warning"}/>
+          <SummaryCard label="Coverage Health" value={issues.length === 0 ? "Good" : issues.some(i=>i.severity==="danger") ? "Blocked" : "Needs Attention"}
             sub={issues.length === 0 ? "All checks passing" : `${issues.length} issue${issues.length > 1 ? "s" : ""} found`}
-            icon={<Shield size={15}/>} variant={issues.length === 0 ? "success" : issues.some(i=>i.severity==="danger") ? "danger" : "warning"}/>
-          <KpiCard label="Validation Issues" value={issues.length}
+            icon={<Shield size={15}/>} tone={issues.length === 0 ? "success" : issues.some(i=>i.severity==="danger") ? "danger" : "warning"}/>
+          <SummaryCard label="Validation Issues" value={issues.length}
             sub={issues.length === 0 ? "No action required" : "Resolve in Action Required panel"}
-            icon={<AlertTriangle size={15}/>} variant={issues.length > 0 ? "warning" : "success"}/>
+            icon={<AlertTriangle size={15}/>} tone={issues.length > 0 ? "warning" : "success"}/>
         </KpiGrid>
 
         {/* Action Required Panel */}

@@ -14,12 +14,13 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import require_staff_or_above_mutation
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_customer
 from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.engines.masked_calling import service as svc
 
 staff_router = APIRouter(prefix="/v1/staff/service-jobs", tags=["staff-masked-calling"])
+customer_router = APIRouter(prefix="/v1/customer/bookings", tags=["customer-masked-calling"])
 webhook_router = APIRouter(prefix="/v1/webhooks/masked-calling", tags=["masked-calling-webhooks"])
 
 
@@ -69,6 +70,27 @@ async def call_customer(
     payload = session.to_dict()
     await db.commit()
     return ok(payload, _rid(r), "staff-masked-call")
+
+
+@customer_router.post(
+    "/{booking_id}/call",
+    summary="Call the assigned technician through the platform",
+    description=(
+        "Bridges the owning customer and assigned technician without returning "
+        "or revealing either party's phone number."
+    ),
+)
+async def call_assigned_technician(
+    booking_id: uuid.UUID, r: Request,
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    session = await svc.place_customer_call(
+        db, booking_id=booking_id,
+        customer_id=uuid.UUID(str(user.user_id)),
+    )
+    payload = session.to_dict()
+    await db.commit()
+    return ok(payload, _rid(r), "customer-masked-call")
 
 
 @webhook_router.post(

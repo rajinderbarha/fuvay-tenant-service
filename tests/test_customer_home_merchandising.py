@@ -71,40 +71,44 @@ def test_every_home_placement_has_bounded_native_variants() -> None:
 
 def test_every_native_section_has_a_safe_backend_layout_contract() -> None:
     sections = default_home_composition()
-    assert len(sections) >= 19
-    assert {section["key"] for section in sections} >= {"hero", "spotlight", "master_services", "featured_problems", "trust_strip"}
+    assert len(sections) == 10
+    assert [section["key"] for section in sections] == [
+        "service_groups", "live_booking", "active_bookings", "master_services",
+        "featured_services", "nearby_services", "spotlight", "collection",
+        "banners", "assistant",
+    ]
     enabled = {section["key"] for section in sections if section["enabled"]}
-    assert enabled == {
-        "hero", "service_groups", "master_services", "nearby_services",
-        "recent_bookings", "assistant", "trust_strip", "featured_problems",
-        "spotlight", "featured_services", "global_services",
-    }
+    assert enabled == {section["key"] for section in sections}
     assert all(section["spacing"] in {"compact", "standard", "generous"} for section in sections)
     assert all(section["surface"] in {"canvas", "subtle", "raised", "brand_tint"} for section in sections)
-    assert next(section for section in sections if section["key"] == "hero")["variant"] == "marketplace"
     assert next(section for section in sections if section["key"] == "service_groups")["variant"] == "compact_grid"
     assert next(section for section in sections if section["key"] == "master_services")["variant"] == "recommendation_cards"
+    assert next(section for section in sections if section["key"] == "featured_services")["variant"] == "popular_grid"
+    assert next(section for section in sections if section["key"] == "nearby_services")["variant"] == "category_orbs"
     configured = HomeSectionWrite(
-        key="hero", enabled=True, title=None, variant="edge_to_edge",
+        key="featured_services", enabled=True, title="Popular near you", variant="popular_grid",
         max_items=4, spacing="generous", surface="brand_tint",
     )
     assert configured.spacing == "generous"
     assert configured.surface == "brand_tint"
     with pytest.raises(ValidationError):
         HomeSectionWrite(
-            key="hero", enabled=True, variant="arbitrary_html", max_items=1,
+            key="featured_services", enabled=True, variant="arbitrary_html", max_items=1,
             spacing="standard", surface="canvas",
         )
 
 
-def test_spotlight_has_independent_future_ready_native_layouts() -> None:
+def test_spotlight_is_locked_to_the_approved_native_layout() -> None:
     cinematic = HomeSectionWrite(
         key="spotlight", enabled=True, title="Seasonal spotlight",
         variant="cinematic_card", max_items=2,
     )
-    split = cinematic.model_copy(update={"variant": "split_feature"})
     assert cinematic.variant == "cinematic_card"
-    assert split.variant == "split_feature"
+    with pytest.raises(ValidationError):
+        HomeSectionWrite(
+            key="spotlight", enabled=True, title="Seasonal spotlight",
+            variant="split_feature", max_items=2,
+        )
 
 
 @pytest.mark.asyncio

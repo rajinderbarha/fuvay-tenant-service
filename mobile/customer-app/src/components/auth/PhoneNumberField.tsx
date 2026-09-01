@@ -1,9 +1,9 @@
 import React from "react";
-import { View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import { useTheme } from "../../design-system/theme";
 import { AppText } from "../AppText";
-import { AppInput } from "../AppInput";
-import { CountryCode, DEFAULT_COUNTRY_CODE, SUPPORTED_COUNTRY_CODES, sanitizeNationalNumber } from "../../domain/phone";
+import { AppLucideIcon } from "../AppLucideIcon";
+import { CountryCode, DEFAULT_COUNTRY_CODE, SUPPORTED_COUNTRY_CODES, isValidNationalNumber, sanitizeNationalNumber } from "../../domain/phone";
 
 export interface PhoneNumberFieldProps {
   countryCode: CountryCode;
@@ -39,45 +39,37 @@ export function PhoneNumberField({
 
   return (
     <View>
-      {showLabel ? (
-        <AppText variant="label" color="secondary" style={{ marginBottom: theme.spacing.xxs }}>
-          Mobile number
-        </AppText>
-      ) : null}
-      <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
-        <View
-          accessible
+      {showLabel ? <AppText variant="metaLabel" style={{ marginBottom: 9, color: theme.fuvay.surfaces.faint }}>MOBILE NUMBER</AppText> : null}
+      <View style={{ minHeight: 58, flexDirection: "row", alignItems: "stretch", borderRadius: 18, overflow: "hidden", borderWidth: 1.5, borderColor: error ? theme.colors.statusDanger : theme.fuvay.accents.a2, backgroundColor: theme.fuvay.surfaces.card }}>
+        <Pressable
           accessibilityRole={SUPPORTED_COUNTRY_CODES.length > 1 ? "button" : undefined}
           accessibilityLabel={`Country code ${countryCode.code}`}
-          onTouchEnd={cycleCountry}
-          style={{
-            minHeight: theme.touchTargets.minimum,
-            paddingHorizontal: theme.spacing.base,
-            borderWidth: 1,
-            borderColor: theme.colors.borderDefault,
-            borderRadius: theme.radiusUsage.input,
-            backgroundColor: theme.colors.surfaceDefault,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+          onPress={cycleCountry}
+          disabled={SUPPORTED_COUNTRY_CODES.length < 2 || disabled}
+          style={{ paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 6 }}
         >
-          <AppText variant="body">{countryCode.code}</AppText>
+          <AppText variant="bodyStrong" style={{ color: theme.fuvay.surfaces.text, fontSize: 14 }}>{countryCode.code}</AppText>
+          <AppLucideIcon name="chevron-down" size={13} color={theme.fuvay.surfaces.faint} strokeWidth={2} />
+        </Pressable>
+        <View style={{ width: 1, backgroundColor: theme.fuvay.surfaces.rule, marginVertical: 12 }} />
+        <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <TextInput
+            value={nationalNumber}
+            onChangeText={raw => onNationalNumberChange(sanitizeNationalNumber(raw))}
+            keyboardType="phone-pad"
+            textContentType="telephoneNumber"
+            autoComplete="tel-national"
+            maxLength={countryCode.nationalDigits}
+            placeholder={placeholder}
+            placeholderTextColor={theme.fuvay.surfaces.faint}
+            editable={!disabled}
+            accessibilityLabel="Mobile number"
+            style={[theme.typography.body, { flex: 1, minWidth: 0, paddingVertical: 0, color: theme.fuvay.surfaces.text, fontSize: 16, letterSpacing: 0.96 }]}
+          />
+          {isValidNationalNumber(nationalNumber, countryCode) ? <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: theme.fuvay.accents.a3, alignItems: "center", justifyContent: "center" }}><AppLucideIcon name="check" size={13} color={theme.fuvay.ink(theme.fuvay.accents.a3)} strokeWidth={3} /></View> : null}
         </View>
-        <AppInput
-          // The WRAPPER has to grow, not just the field inside it -- see AppInput.
-          containerStyle={{ flex: 1 }}
-          value={nationalNumber}
-          onChangeText={raw => onNationalNumberChange(sanitizeNationalNumber(raw))}
-          keyboardType="phone-pad"
-          textContentType="telephoneNumber"
-          autoComplete="tel-national"
-          maxLength={countryCode.nationalDigits}
-          placeholder={placeholder}
-          editable={!disabled}
-          error={error}
-          accessibilityLabel="Mobile number"
-        />
       </View>
+      {error ? <AppText variant="caption" style={{ marginTop: 6, color: theme.colors.statusDanger }}>{error}</AppText> : null}
     </View>
   );
 }

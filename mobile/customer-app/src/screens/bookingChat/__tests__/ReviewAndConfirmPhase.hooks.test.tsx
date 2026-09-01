@@ -105,7 +105,7 @@ describe("ReviewAndConfirmPhase — hook order", () => {
     // ErrorBoundary catches the hooks error, so a throw-based assertion passed
     // even with the bug reintroduced. If the hook order regresses, the boundary
     // replaces the tree and this content disappears.
-    expect(screen.getByText("When should the technician come?")).toBeTruthy();
+    expect(screen.getByText("Anything else we should know?")).toBeTruthy();
   });
 
   it("survives ready -> confirming -> confirmed without a hook-count change", async () => {
@@ -152,14 +152,15 @@ describe("ReviewAndConfirmPhase — hook order", () => {
     const onReviewReady = jest.fn();
     renderPhase({ draftId: "d1", onTrackBooking: jest.fn(), onReviewReady });
 
-    // Walk the turns the way the customer does, so the sheet becomes ready.
-    fireEvent.press(screen.getByLabelText("Continue"));
+    // Walk the reference turns: notes -> price/coverage -> schedule -> review.
+    fireEvent.press(screen.getByLabelText(/Get my price/));
+    await waitFor(() => expect(screen.getByText("TECHNICIAN AVAILABLE")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText(/Continue to schedule/));
+    await waitFor(() => expect(screen.getByText("Where should the technician come?")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText(/Review booking/));
     await waitFor(() =>
       expect(selectSlot).toHaveBeenCalledWith("2026-08-09", "14:00-15:00", false),
     );
-    await waitFor(() => expect(screen.getByText("Add a photo? (optional)")).toBeTruthy());
-    fireEvent.press(screen.getByLabelText("Continue"));
-
     const ready = await waitFor(() => {
       const state = onReviewReady.mock.calls.map(([s]) => s).filter(Boolean).pop();
       expect(state).toBeTruthy();
@@ -174,7 +175,7 @@ describe("ReviewAndConfirmPhase — hook order", () => {
     act(() => ready.onEditSlot());
 
     await waitFor(() => expect(onReviewReady).toHaveBeenCalledWith(null));
-    expect(screen.getByText("When should the technician come?")).toBeTruthy();
+    expect(screen.getByText("And when suits you? Pick any open slot — or choose emergency for a visit within 2 hours.")).toBeTruthy();
   });
 
   it("reports the phase back to null once no longer confirming", async () => {

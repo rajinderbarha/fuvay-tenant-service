@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { View } from "react-native";
-import { useBookingReviewController, bookingReviewLoadLabel } from "../booking-review/useBookingReviewController";
-import { BotAssistantBubble, BotWorkingTrace, useWorkingTrace, useObservedSequence } from "../../components/bookingChat/BotPrimitives";
+import { useBookingReviewController } from "../booking-review/useBookingReviewController";
+import { BotAssistantBubble, BotTypingDots } from "../../components/bookingChat/BotPrimitives";
 import { SlotPickerCard } from "../../components/bookingChat/SlotPickerCard";
 import { PhotosNotesTurn } from "../../components/bookingChat/PhotosNotesTurn";
-import { ServiceChecklistCard } from "../../components/bookingChat/ServiceChecklistCard";
+import { TechnicianQuoteCard } from "../../components/bookingChat/TechnicianQuoteCard";
 import { useServiceChecklist } from "./useServiceChecklist";
 import { formatMoney } from "../../domain/money";
 import { resolveServicePriceDisplay } from "../../domain/servicePricing";
@@ -89,8 +89,9 @@ function priceLabelFor(summary: BookingReviewSummary): string | null {
  * every real API call and state machine is the same one Review already
  * used and had tested.
  *
- * Three sequential turns once the summary is ready: pick a time (with the
- * real price shown alongside it) -> optional photos -> provider + confirm.
+ * Three sequential turns once the summary is ready: optional notes/photos ->
+ * fixed-price coverage -> time -> review. This follows the supplied assistant
+ * screens while retaining the existing backend controller unchanged.
  */
 export function ReviewAndConfirmPhase({
   draftId, onTrackBooking, onConfirmed, onConfirmPhase, onReviewReady,
@@ -109,13 +110,7 @@ export function ReviewAndConfirmPhase({
     if (confirmed) onConfirmed?.();
   }, [confirmed, onConfirmed]);
 
-  // The five real load stages (checking details -> serviceability ->
-  // pricing -> provider -> preparing review) accumulate into a visible
-  // checklist. Each line settles only when the controller genuinely
-  // advances, so the trace is a readout of real work, not a timed script.
   const loading = c.uiState === "loading";
-  const observed = useObservedSequence(loading && c.loadStage ? bookingReviewLoadLabel(c.loadStage) : null);
-  const trace = useWorkingTrace(observed, loading);
 
   // Committing the booking takes over the WHOLE screen, which this component
   // cannot do from inside the chat transcript -- so the phase is reported up and
@@ -163,7 +158,7 @@ export function ReviewAndConfirmPhase({
     && !confirmActive
     && !!c.summary
     && slotDone
-    && (checklistDone || !checklist.checklist || checklist.checklist.totalPoints === 0)
+    && checklistDone
     && photosDone;
 
   const summaryForReview = c.summary;
@@ -191,7 +186,7 @@ export function ReviewAndConfirmPhase({
   // ── Conditional rendering only from here down: no hooks past this line ────
 
   if (loading) {
-    return <BotWorkingTrace entries={trace} />;
+    return <BotTypingDots />;
   }
 
   if (c.uiState === "offline" || c.uiState === "recoverable_error" || c.uiState === "blocked") {
@@ -208,11 +203,28 @@ export function ReviewAndConfirmPhase({
 
   return (
     <View style={{ gap: 12 }}>
-      {/* Settled checklist stays on screen -- the customer can still see
-          what was actually checked on their behalf. */}
-      <BotWorkingTrace entries={trace} />
-      {!slotDone ? (
+      {!photosDone ? (
+        <PhotosNotesTurn
+          photoUrls={c.summary.photoUrls}
+          onAddPhoto={c.addPhoto}
+          onRemovePhoto={c.removePhoto}
+          onContinue={() => setPhotosDone(true)}
+          summaryChips={[
+            c.summary.offeringName,
+            c.summary.issueSummary,
+            ...c.summary.answers.map(answer => answer.value),
+          ].filter((value): value is string => Boolean(value))}
+        />
+      ) : !checklistDone ? (
+        <TechnicianQuoteCard
+          summary={c.summary}
+          checklist={checklist.checklist}
+          onContinue={() => setChecklistDone(true)}
+        />
+      ) : !slotDone ? (
         <SlotPickerCard
+          addressTitle={c.summary.address.lines[0] ?? c.summary.address.city ?? "Service address"}
+          addressLine={[...c.summary.address.lines.slice(1), c.summary.address.city, c.summary.address.zipcode].filter(Boolean).join(", ")}
           promisedSlot={c.summary.promisedSlot}
           priceLabel={priceLabelFor(c.summary)}
           emergencySurchargeLabel={
@@ -237,18 +249,6 @@ export function ReviewAndConfirmPhase({
             }
             setSlotDone(true);
           }}
-        />
-      ) : !checklistDone && checklist.checklist && checklist.checklist.totalPoints > 0 ? (
-        <ServiceChecklistCard
-          checklist={checklist.checklist}
-          onContinue={() => setChecklistDone(true)}
-        />
-      ) : !photosDone ? (
-        <PhotosNotesTurn
-          photoUrls={c.summary.photoUrls}
-          onAddPhoto={c.addPhoto}
-          onRemovePhoto={c.removePhoto}
-          onContinue={() => setPhotosDone(true)}
         />
       ) : (
         // Nothing in the transcript: the screen is showing the full-screen

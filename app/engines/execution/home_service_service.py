@@ -879,7 +879,40 @@ class HomeServiceJobExecutionService:
             await self._reserve_parts_inventory(db, pr, approver_user_id)
         db.add(pr)
         await db.flush()
+        if pr.status == PARTS_STATUS_CUSTOMER_APPROVAL_PENDING:
+            # The job is now halted on the customer's answer, so ask them where
+            # they actually are. Best-effort: a chat notification never decides
+            # whether the provider's approval succeeded.
+            await self._notify_customer_parts_pending(db, pr)
         return pr.to_dict()
+
+    @staticmethod
+    async def _notify_customer_parts_pending(db: AsyncSession, pr) -> None:
+        """Tell the customer on WhatsApp/Instagram that a part needs approving.
+
+        Only lands inside Meta's 24-hour customer service window; outside it a
+        pre-approved template would be required, so the request simply waits
+        for the customer's next message, where the chat shows it first.
+        """
+        from app.engines.final_records.models import ServiceJob
+        from app.engines.messaging_gateway.service import notify_customer
+
+        try:
+            job = await db.get(ServiceJob, pr.job_id)
+            if not job or not job.customer_id:
+                return
+            await notify_customer(
+                db, job.customer_id,
+                "Your technician needs a part to finish the job: "
+                f"{pr.part_name} x {pr.quantity}. "
+                "Reply here to approve or decline it.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            import structlog
+
+            structlog.get_logger(__name__).warning(
+                "parts_request.customer_notify_failed",
+                parts_request_id=str(pr.id), error=str(exc))
 
     async def reject_parts_request(
         self, db: AsyncSession, parts_request_id: uuid.UUID, tenant_id: uuid.UUID,

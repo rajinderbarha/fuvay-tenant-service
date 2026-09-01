@@ -1,5 +1,5 @@
 "use client";
-import { TableSurface } from "@serviceos/design-system";
+import { SummaryCard, TableSurface } from "@serviceos/design-system";
 /**
  * Sprint 28 — Provider Analytics Shared Components (design-token edition)
  * All className removed — uses inline CSS with design token variables.
@@ -8,7 +8,7 @@ import { useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface KpiCardProps {
+interface AnalyticsMetricProps {
   label: string; value: string | number | null | undefined;
   unit?: string; loading?: boolean;
   severity?: "normal" | "warning" | "critical" | "success";
@@ -32,8 +32,6 @@ interface AlertListProps { alerts: AlertItem[]; loading?: boolean; }
 
 // ── Severity token mappings ────────────────────────────────────────────────────
 
-const SEV_BORDER: Record<string, string> = { normal: "var(--border)", warning: "var(--warning)", critical: "var(--danger)", success: "var(--success)" };
-const SEV_VALUE: Record<string, string>  = { normal: "var(--text-primary)", warning: "var(--warning-text)", critical: "var(--danger-text)", success: "var(--success-text)" };
 const ALERT_BG:  Record<string, string>  = { critical: "var(--danger-bg)", warning: "var(--warning-bg)", info: "var(--info-bg)" };
 const ALERT_BD:  Record<string, string>  = { critical: "var(--danger-border)", warning: "var(--warning-border)", info: "var(--info-border)" };
 const ALERT_TX:  Record<string, string>  = { critical: "var(--danger-text)", warning: "var(--warning-text)", info: "var(--info-text)" };
@@ -41,25 +39,14 @@ const ALERT_IC:  Record<string, string>  = { critical: "🚨", warning: "⚠️"
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
-export function KpiCard({ label, value, unit, loading, severity = "normal" }: KpiCardProps) {
-  return (
-    <div style={{
-      background: "var(--surface)", borderRadius: 12, padding: "16px 20px",
-      border: `1px solid var(--border)`, borderLeft: `4px solid ${SEV_BORDER[severity]}`,
-      boxShadow: "var(--shadow-sm)",
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-        color: "var(--text-tertiary)", marginBottom: 8 }}>{label}</div>
-      {loading ? (
-        <div style={{ height: 28, width: 64, borderRadius: 6, background: "var(--surface-sunken)" }}/>
-      ) : (
-        <div style={{ fontSize: 24, fontWeight: 700, color: SEV_VALUE[severity], lineHeight: 1 }}>
-          {value == null ? <span style={{ color: "var(--text-tertiary)", fontSize: 14 }}>—</span> : value}
-          {unit && value != null && <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)", marginLeft: 4 }}>{unit}</span>}
-        </div>
-      )}
-    </div>
-  );
+export function AnalyticsMetric({ label, value, unit, loading, severity = "normal" }: AnalyticsMetricProps) {
+  const tone = severity === "critical" ? "danger" : severity === "normal" ? undefined : severity;
+  return <SummaryCard
+    label={label}
+    value={value == null ? "—" : unit ? `${value} ${unit}` : value}
+    loading={loading}
+    tone={tone}
+  />;
 }
 
 // ── Date Filter ───────────────────────────────────────────────────────────────

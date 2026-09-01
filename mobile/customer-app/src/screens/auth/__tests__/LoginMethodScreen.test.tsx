@@ -17,7 +17,7 @@ describe("LoginMethodScreen", () => {
     const spy = jest.spyOn(sessionManager, "requestLoginOtp");
     const { getByLabelText, getByText, findByText } = renderAuthScreen("LoginMethod", LoginMethodScreen);
     fireEvent.changeText(getByLabelText("Mobile number"), "987");
-    fireEvent.press(getByText("Continue"));
+    fireEvent.press(getByText("Send code"));
     await findByText(/valid 10-digit mobile number/i);
     expect(spy).not.toHaveBeenCalled();
   });
@@ -28,7 +28,7 @@ describe("LoginMethodScreen", () => {
     );
     const { getByLabelText, getByText, findByText } = renderAuthScreen("LoginMethod", LoginMethodScreen);
     fireEvent.changeText(getByLabelText("Mobile number"), "9876543210");
-    fireEvent.press(getByText("Continue"));
+    fireEvent.press(getByText("Send code"));
     const banner = await findByText(/check the details you entered/i);
     expect(banner).toBeTruthy();
   });
@@ -40,7 +40,7 @@ describe("LoginMethodScreen", () => {
     );
     const { getByLabelText, getByRole } = renderAuthScreen("LoginMethod", LoginMethodScreen);
     fireEvent.changeText(getByLabelText("Mobile number"), "9876543210");
-    const continueButton = getByRole("button", { name: "Continue" });
+    const continueButton = getByRole("button", { name: "Send code" });
     fireEvent.press(continueButton);
     fireEvent.press(continueButton);
     resolveFn();

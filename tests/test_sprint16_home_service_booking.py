@@ -942,9 +942,21 @@ class TestConfirmDraft:
         # real query would return None (no group -> entitlement check is
         # skipped, the correct behavior for offerings with no group) —
         # simulate that here rather than leaving db.execute unmocked.
-        execute_result = MagicMock()
-        execute_result.scalar_one_or_none.return_value = None
-        db.execute = AsyncMock(return_value=execute_result)
+        from types import SimpleNamespace
+        billing_result = MagicMock()
+        billing_result.fetchone.return_value = SimpleNamespace(
+            credit_balance=1000, entitled_seats=1,
+        )
+        policy_result = MagicMock()
+        policy_result.fetchone.return_value = SimpleNamespace(
+            credit_booking_floor=0, credit_warning_threshold=100,
+            seat_accrual_mode="purchased",
+        )
+        offering_result = MagicMock()
+        offering_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(side_effect=[
+            billing_result, policy_result, offering_result,
+        ])
 
         async def fake_refresh(obj):
             obj.status = DRAFT_STATUS_CONFIRMED

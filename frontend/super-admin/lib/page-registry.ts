@@ -268,6 +268,11 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Notifications" }],
   },
+  "/admin/messaging-channels": {
+    title: "Social Booking",
+    section: "engagement",
+    breadcrumbs: [{ label: "Social Booking" }],
+  },
   "/admin/reviews": {
     title: "Reviews",
     section: "engagement",

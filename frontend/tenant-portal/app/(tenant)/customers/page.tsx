@@ -127,6 +127,8 @@ function CustomersWorkspace() {
     <TenantLayout activeNav="customers">
       <PageShell>
         <PageHeader
+          eyebrow="Business"
+          context="Customers"
           title="Customers"
           description="A privacy-safe relationship view across bookings, jobs, payments, reviews and support cases."
           actions={<Button variant="secondary" leftIcon={<RefreshCw size={15} />} onClick={() => { summary.refetch(); customers.refetch(); }} disabled={summary.loading || customers.loading}>Refresh</Button>}

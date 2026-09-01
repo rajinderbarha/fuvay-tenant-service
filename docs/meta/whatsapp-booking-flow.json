@@ -1,0 +1,83 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "BOOKING_SLOT",
+      "title": "Complete booking",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "service": {
+          "type": "string",
+          "__example__": "AC Repair"
+        },
+        "booking_details": {
+          "type": "string",
+          "__example__": "Provider matched · Price ₹1,499"
+        },
+        "address": {
+          "type": "string",
+          "__example__": "House 12, Main Road, Ludhiana 141001"
+        },
+        "available_slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            {
+              "id": "sl|2026-09-03|10:00-11:00",
+              "title": "Thu 03 Sep 10:00-11:00",
+              "description": "Standard slot"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.service}"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.booking_details}"
+          },
+          {
+            "type": "TextCaption",
+            "text": "${data.address}"
+          },
+          {
+            "type": "Form",
+            "name": "booking_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "slot_id",
+                "label": "Choose appointment",
+                "required": true,
+                "data-source": "${data.available_slots}"
+              },
+              {
+                "type": "Footer",
+                "label": "Review booking",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "slot_id": "${form.slot_id}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

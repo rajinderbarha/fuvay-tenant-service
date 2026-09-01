@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.db import get_db
 from app.exceptions import ServiceOSException
 from app.engines.messaging_gateway import handoff, meta_client
-from app.engines.messaging_gateway.constants import ENGINE_ID
+from app.engines.messaging_gateway.config_service import messaging_channel_config_service
+from app.engines.messaging_gateway.constants import (
+    CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, ENGINE_ID, VALID_CHANNELS,
+)
 from app.engines.messaging_gateway.service import MessagingGatewayService
 from app.schemas.base import ok
 
@@ -31,6 +34,7 @@ async def verify_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
     hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
     hub_challenge: str | None = Query(None, alias="hub.challenge"),
+    db: AsyncSession = Depends(get_db),
 ):
     """Meta calls this once when the webhook URL is saved.
 
@@ -38,8 +42,36 @@ async def verify_webhook(
     envelope or any other body fails verification, which is why this returns a
     bare `Response` rather than the usual `ok(...)` wrapper.
     """
-    if not meta_client.verify_subscription(hub_mode, hub_verify_token):
+    matched = False
+    for channel in (CHANNEL_WHATSAPP, CHANNEL_INSTAGRAM):
+        config = await messaging_channel_config_service.get(db, channel)
+        if config and meta_client.verify_subscription(
+            hub_mode, hub_verify_token,
+            verify_token=str(config.get("verify_token") or ""),
+        ):
+            matched = True
+            break
+    if not matched:
         logger.warning("messaging_gateway.verify.rejected", mode=hub_mode)
+        return Response(content="forbidden", status_code=403, media_type="text/plain")
+    return Response(content=hub_challenge or "", status_code=200, media_type="text/plain")
+
+
+@router.get("/webhook/{channel}", summary="Channel-specific Meta webhook handshake")
+async def verify_channel_webhook(
+    channel: str,
+    hub_mode: str | None = Query(None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(None, alias="hub.challenge"),
+    db: AsyncSession = Depends(get_db),
+):
+    if channel not in VALID_CHANNELS:
+        return Response(content="not found", status_code=404, media_type="text/plain")
+    config = await messaging_channel_config_service.get(db, channel)
+    if not config or not meta_client.verify_subscription(
+        hub_mode, hub_verify_token, verify_token=str(config.get("verify_token") or ""),
+    ):
+        logger.warning("messaging_gateway.verify.rejected", mode=hub_mode, channel=channel)
         return Response(content="forbidden", status_code=403, media_type="text/plain")
     return Response(content=hub_challenge or "", status_code=200, media_type="text/plain")
 
@@ -58,28 +90,41 @@ async def receive_webhook(
     rejected — that traffic is not Meta's and should not be acknowledged.
     """
     raw = await r.body()
-    signature = r.headers.get("X-Hub-Signature-256")
-
-    if not meta_client.verify_signature(raw, signature):
-        logger.warning("messaging_gateway.signature.rejected",
-                       has_signature=bool(signature), body_bytes=len(raw))
-        return Response(content="invalid signature", status_code=403,
-                        media_type="text/plain")
-
     try:
         payload = await r.json()
     except Exception:
         logger.warning("messaging_gateway.payload.unparseable")
         return ok({"received": 0, "results": []}, _rid(r), ENGINE_ID)
+    channel = CHANNEL_INSTAGRAM if payload.get("object") == "instagram" else CHANNEL_WHATSAPP
+    config = await messaging_channel_config_service.get(db, channel)
+    if not config:
+        return Response(content="channel not configured", status_code=503, media_type="text/plain")
+    signature = r.headers.get("X-Hub-Signature-256")
+    if not meta_client.verify_signature(
+        raw, signature, app_secret=str(config.get("app_secret") or ""),
+    ):
+        logger.warning("messaging_gateway.signature.rejected", channel=channel,
+                       has_signature=bool(signature), body_bytes=len(raw))
+        return Response(content="invalid signature", status_code=403,
+                        media_type="text/plain")
+    active = await messaging_channel_config_service.get(db, channel, require_enabled=True)
+    if not active:
+        return ok({"received": 0, "results": [], "disabled": True}, _rid(r), ENGINE_ID)
 
-    messages = meta_client.parse_inbound(payload)
+    messages = meta_client.parse_inbound(payload, expected_channel=channel)
     if not messages:
         # Delivery/read receipts and echoes land here — expected, not an error.
         return ok({"received": 0, "results": []}, _rid(r), ENGINE_ID)
 
-    svc = MessagingGatewayService(db, request_id=_rid(r))
+    accepted = [
+        message for message in messages
+        if await messaging_channel_config_service.accepts_business_id(
+            db, channel, message.business_id,
+        )
+    ]
+    svc = MessagingGatewayService(db, request_id=_rid(r), channel_config=active)
     results = []
-    for msg in messages:
+    for msg in accepted:
         if not msg.provider_message_id or not msg.from_id:
             continue
         try:
@@ -91,7 +136,62 @@ async def receive_webhook(
                            provider_message_id=msg.provider_message_id, error=str(exc))
             results.append({"status": "failed", "reply_sent": False})
 
-    return ok({"received": len(messages), "results": results}, _rid(r), ENGINE_ID)
+    return ok({"received": len(accepted), "results": results}, _rid(r), ENGINE_ID)
+
+
+@router.post("/webhook/{channel}", summary="Channel-specific Meta inbound webhook")
+async def receive_channel_webhook(
+    channel: str,
+    r: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    if channel not in VALID_CHANNELS:
+        return Response(content="not found", status_code=404, media_type="text/plain")
+    config = await messaging_channel_config_service.get(db, channel)
+    if not config:
+        return Response(content="channel not configured", status_code=503, media_type="text/plain")
+    raw = await r.body()
+    if not meta_client.verify_signature(
+        raw, r.headers.get("X-Hub-Signature-256"),
+        app_secret=str(config.get("app_secret") or ""),
+    ):
+        logger.warning("messaging_gateway.signature.rejected", channel=channel, body_bytes=len(raw))
+        return Response(content="invalid signature", status_code=403, media_type="text/plain")
+    active = await messaging_channel_config_service.get(db, channel, require_enabled=True)
+    if not active:
+        # A correctly signed event received while the admin switch is off is
+        # acknowledged but never processed, preventing Meta retry storms.
+        return ok({"received": 0, "results": [], "disabled": True}, _rid(r), ENGINE_ID)
+    try:
+        payload = await r.json()
+    except Exception:
+        return ok({"received": 0, "results": []}, _rid(r), ENGINE_ID)
+    messages = meta_client.parse_inbound(payload, expected_channel=channel)
+    accepted = [
+        message for message in messages
+        if await messaging_channel_config_service.accepts_business_id(db, channel, message.business_id)
+    ]
+    if len(accepted) != len(messages):
+        logger.warning(
+            "messaging_gateway.business_id.rejected",
+            # The id actually seen, so a mismatch is diagnosable from the log
+            # instead of only being visible as a silent count.
+            seen_business_ids=sorted({
+                str(m.business_id) for m in messages if m.business_id
+            }),
+            channel=channel, rejected=len(messages) - len(accepted),
+        )
+    svc = MessagingGatewayService(db, request_id=_rid(r), channel_config=active)
+    results = []
+    for msg in accepted:
+        if not msg.provider_message_id or not msg.from_id:
+            continue
+        try:
+            results.append(await svc.handle_inbound(msg))
+        except Exception as exc:
+            logger.warning("messaging_gateway.inbound.failed", provider_message_id=msg.provider_message_id, error=str(exc))
+            results.append({"status": "failed", "reply_sent": False})
+    return ok({"received": len(accepted), "results": results}, _rid(r), ENGINE_ID)
 
 
 @router.post("/handoff/redeem", summary="Redeem a chat -> web handoff link")

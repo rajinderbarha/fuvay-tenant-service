@@ -33,6 +33,7 @@ function adaptActiveBooking(dto: ActiveBookingDto) {
     preferredTimeWindow: dto.preferred_time_window ?? null,
     providerName: dto.provider_name ?? null,
     serviceName: dto.service_name ?? null,
+    serviceImageUrl: dto.service_image_url ?? null,
     scheduledDate: dto.scheduled_date ?? null,
     scheduledTimeWindow: dto.scheduled_time_window ?? null,
     provider: dto.provider

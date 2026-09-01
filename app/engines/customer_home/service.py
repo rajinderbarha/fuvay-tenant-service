@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.customer_home.intent import classify_intent
@@ -822,10 +822,24 @@ class CustomerHomeService:
             BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED,
         )
         terminal = {BOOKING_STATUS_COMPLETED, BOOKING_STATUS_CANCELLED}
+        # Keep one genuinely active/accepted visit visible even when newer
+        # pending requests exist. Ordering only by created_at allowed test or
+        # draft-created pending records to push the customer's live visit out
+        # of the capped Home payload entirely.
+        live_first = case(
+            (
+                ServiceBooking.status.in_({
+                    "accepted", "assigned", "scheduled", "on_the_way",
+                    "arrived", "in_progress", "work_started",
+                }),
+                0,
+            ),
+            else_=1,
+        )
         rows = (await self.db.execute(
             select(ServiceBooking)
             .where(ServiceBooking.customer_id == customer_id, ServiceBooking.status.notin_(terminal))
-            .order_by(ServiceBooking.created_at.desc())
+            .order_by(live_first, ServiceBooking.created_at.desc())
             .limit(MAX_HOME_ACTIVE_BOOKINGS)
         )).scalars().all()
         summaries = []
@@ -849,10 +863,16 @@ class CustomerHomeService:
         # like the bookings list does -- `issue_summary` is the customer's
         # own words, not the service they booked.
         service_name = None
-        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+        service_image_url = None
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory, ServiceGroup
         if row.offering_id:
             offering = await self.db.get(MasterService, row.offering_id)
-            service_name = offering.service_name if offering else None
+            if offering:
+                service_name = offering.service_name
+                service_image_url = offering.image_url or offering.icon_url
+                if not service_image_url and offering.service_group_id:
+                    service_group = await self.db.get(ServiceGroup, offering.service_group_id)
+                    service_image_url = service_group.icon_url if service_group else None
         if not service_name and row.category_id:
             category = await self.db.get(ServiceCategory, row.category_id)
             service_name = category.name if category else None
@@ -874,6 +894,7 @@ class CustomerHomeService:
             "assignment_status": getattr(row, "assignment_status", None),
             "issue_summary": getattr(row, "issue_summary", None),
             "service_name": service_name,
+            "service_image_url": service_image_url,
             "preferred_date": row.preferred_date.isoformat() if getattr(row, "preferred_date", None) else None,
             "preferred_time_window": getattr(row, "preferred_time_window", None),
             # The slot the provider actually COMMITTED to, from the job. The

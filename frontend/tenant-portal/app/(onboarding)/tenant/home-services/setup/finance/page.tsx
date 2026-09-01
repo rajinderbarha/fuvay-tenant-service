@@ -147,6 +147,7 @@ export default function FinanceReadinessPage() {
         .fin-policy-row { display: flex; justify-content: space-between; font-size: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); }
         .fin-policy-row:last-child { border-bottom: none; }
         .fin-funding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .fin-invoice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
         .fin-funding-account { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-sunken); }
         .fin-funding-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; color: var(--brand); border: 1px solid color-mix(in srgb, var(--brand) 32%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--brand) 10%, transparent); }
         .fin-funding-label { margin: 0 0 3px; color: var(--text-secondary); font-size: 11.5px; font-weight: 650; }
@@ -164,6 +165,7 @@ export default function FinanceReadinessPage() {
         .fin-funded-banner span { color: var(--text-secondary); font-size: 11px; }
         .fin-policy-unavailable { display: flex; gap: 8px; padding: 12px; color: var(--warning); border: 1px solid var(--warning-border, var(--border)); border-radius: 10px; background: var(--warning-bg, var(--surface-sunken)); font-size: 12px; }
         @media (max-width: 1000px) { .fin-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 760px) { .fin-invoice-grid { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .fin-methods { grid-template-columns: repeat(2, 1fr); } .fin-funding-grid { grid-template-columns: 1fr; } }
       `}</style>
 
@@ -232,7 +234,7 @@ export default function FinanceReadinessPage() {
 
           <Card style={{ marginTop: 16 }}>
             <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Business invoice details</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div className="fin-invoice-grid">
               <Field label="Invoice business name">
                 <input aria-label="Invoice business name" value={form.invoice_business_name ?? manifest.invoice_defaults.business_name ?? ""}
                   onChange={e => setForm({ ...form, invoice_business_name: e.target.value })}

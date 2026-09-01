@@ -34,11 +34,10 @@ describe("BookingConfirmFlow", () => {
 
   it("shows the real booking details once confirmed", () => {
     renderWithProviders(<BookingConfirmFlow {...base} phase="confirmed" />);
-    expect(screen.getByText("You're booked")).toBeTruthy();
-    expect(screen.getByText("BK-20260808-000002")).toBeTruthy();
-    expect(screen.getByText("Today, 14:00-15:00")).toBeTruthy();
+    expect(screen.getByText("Booking confirmed")).toBeTruthy();
+    expect(screen.getByText(/BK-20260808-000002/)).toBeTruthy();
     expect(screen.getByText("₹299.00")).toBeTruthy();
-    expect(screen.getByText(/Guramrit has been notified/)).toBeTruthy();
+    expect(screen.getByText(/Guramrit will arrive Today, 14:00-15:00/)).toBeTruthy();
   });
 
   it("highlights the fee credit only when the backend asserted it", () => {
@@ -57,7 +56,7 @@ describe("BookingConfirmFlow", () => {
     renderWithProviders(
       <BookingConfirmFlow {...base} phase="confirmed" slotLabel={null} />,
     );
-    expect(screen.getByText("Your provider will confirm a time")).toBeTruthy();
+    expect(screen.getByText(/Your provider will confirm a time/)).toBeTruthy();
   });
 
   it("falls back to an honest message when no provider was assigned", () => {

@@ -17,6 +17,7 @@ import {
   Clock3,
   ExternalLink,
   Filter,
+  MapPin,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -25,13 +26,16 @@ import {
   UserPlus,
   UserX,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
+import { DefaultAvatar } from "../../../../components/shared/ProfilePhotoUploader";
 import {
   Alert,
   Button,
   Card,
+  Drawer,
   Input,
   KpiGrid,
   Modal,
@@ -136,6 +140,53 @@ function dueLabel(job: HsDispatchJobSummary) {
   return minutes < 0 ? `${readable} overdue` : `${readable} left`;
 }
 
+function compactJobNumber(value: string) {
+  if (value.length <= 12) return value;
+  return `JOB-${value.slice(-6)}`;
+}
+
+function ServiceJobIcon({ job, size = 44 }: { job: HsDispatchJobSummary; size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        flex: `0 0 ${size}px`,
+        display: "grid",
+        placeItems: "center",
+        overflow: "hidden",
+        borderRadius: 10,
+        color: "var(--brand)",
+        background: "var(--accent-muted)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      <Wrench size={Math.round(size * 0.45)} strokeWidth={1.8} />
+      {job.service_icon_url ? (
+        <img
+          src={job.service_icon_url}
+          alt=""
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            padding: 6,
+            background: "var(--surface-raised)",
+          }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 export default function DispatchPage() {
   return (
     <Suspense fallback={<DispatchSkeleton />}>
@@ -167,6 +218,7 @@ function DispatchWorkspace() {
   const pageSize = parsePageSize(params.get("page_size"));
   const [searchDraft, setSearchDraft] = useState(search);
   const [showFilters, setShowFilters] = useState(false);
+  const [showCapacity, setShowCapacity] = useState(true);
   const [options, setOptions] = useState<HsAssignmentOptions | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState<string | null>(null);
@@ -381,8 +433,10 @@ function DispatchWorkspace() {
   return (
     <TenantLayout activeNav="dispatch">
       <PageShell>
-        <style>{`.dispatch-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dispatch-kpis{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}.dispatch-filters{display:grid;grid-template-columns:minmax(240px,1.6fr) repeat(2,minmax(180px,.7fr)) auto;gap:10px;align-items:end}.dispatch-grid{display:grid;grid-template-columns:minmax(280px,340px) minmax(560px,1fr) minmax(320px,380px);gap:14px;align-items:start}.dispatch-grid.schedule-only{grid-template-columns:minmax(680px,1fr) minmax(320px,380px)}.dispatch-grid.queue-only{grid-template-columns:minmax(320px,420px) minmax(320px,380px)}.dispatch-sticky{position:sticky;top:20px}.week-grid{display:grid;grid-template-columns:150px repeat(7,minmax(130px,1fr));min-width:1080px}.week-cell{min-height:88px;padding:8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}@media(max-width:1500px){.dispatch-grid,.dispatch-grid.schedule-only,.dispatch-grid.queue-only{grid-template-columns:320px minmax(0,1fr)}.dispatch-panel{grid-column:1/-1}.dispatch-sticky{position:static}}@media(max-width:1050px){.dispatch-kpis{grid-template-columns:repeat(2,1fr)}.dispatch-filters{grid-template-columns:1fr 1fr}.dispatch-grid,.dispatch-grid.schedule-only,.dispatch-grid.queue-only{grid-template-columns:1fr}}@media(max-width:640px){.dispatch-kpis,.dispatch-filters{grid-template-columns:1fr}}`}</style>
+        <style>{`.dispatch-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dispatch-period-bar{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface)}.dispatch-kpis{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:10px}.dispatch-filters{display:grid;grid-template-columns:minmax(240px,1.6fr) repeat(2,minmax(160px,.7fr)) auto;gap:10px;align-items:end}.dispatch-grid{display:grid;grid-template-columns:minmax(330px,34%) minmax(0,1fr);gap:12px;align-items:stretch}.dispatch-grid>*{min-width:0}.dispatch-grid.schedule-only{grid-template-columns:minmax(0,1fr)}.dispatch-grid.queue-only{grid-template-columns:minmax(330px,520px)}.dispatch-panel-card{height:clamp(460px,calc(100vh - 390px),660px);display:flex!important;flex-direction:column;overflow:hidden}.dispatch-panel-card>.dispatch-board-scroll{flex:1;min-height:0;max-height:none!important}.dispatch-board-scroll{max-height:clamp(420px,calc(100vh - 390px),660px)!important}.dispatch-selection-hint{display:flex;justify-content:flex-end;align-items:center;gap:7px;color:var(--text-tertiary);font-size:11.5px;padding:0 4px}.week-grid{display:grid;grid-template-columns:160px repeat(7,minmax(130px,1fr));min-width:1080px}.week-cell{min-height:88px;padding:8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}.dispatch-switch{width:36px;height:20px;padding:2px;border:0;border-radius:999px;background:var(--surface-sunken);box-shadow:inset 0 0 0 1px var(--border);cursor:pointer;display:inline-flex;align-items:center;transition:.18s}.dispatch-switch[data-on=true]{background:var(--brand)}.dispatch-switch>span{width:16px;height:16px;border-radius:50%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.28);transform:translateX(0);transition:.18s}.dispatch-switch[data-on=true]>span{transform:translateX(16px)}@media(max-width:1180px){.dispatch-filters{grid-template-columns:minmax(220px,1fr) repeat(2,minmax(150px,.7fr))}.dispatch-filters>.dispatch-actions{grid-column:1/-1}}@media(max-width:1050px){.dispatch-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.dispatch-filters{grid-template-columns:1fr 1fr}.dispatch-grid,.dispatch-grid.schedule-only,.dispatch-grid.queue-only{grid-template-columns:1fr}.dispatch-panel-card{height:auto;min-height:420px}.dispatch-board-scroll{max-height:560px!important}.dispatch-selection-hint{justify-content:flex-start}}@media(max-width:720px){.dispatch-period-bar{align-items:flex-start;flex-direction:column}.dispatch-period-bar>.dispatch-actions{width:100%}.dispatch-filters{grid-template-columns:1fr}.dispatch-filters>.dispatch-actions{grid-column:auto}.dispatch-kpis{grid-template-columns:1fr}}`}</style>
         <PageHeader
+          eyebrow="Daily work"
+          context="Operations"
           title="Dispatch command center"
           description="Assign qualified technicians, protect committed slots, and resolve schedule conflicts from one operational workspace."
           actions={
@@ -403,10 +457,7 @@ function DispatchWorkspace() {
             </div>
           }
         />
-        <div
-          className="dispatch-actions"
-          style={{ justifyContent: "space-between" }}
-        >
+        <div className="dispatch-period-bar">
           <div className="dispatch-actions">
             <Button
               variant="secondary"
@@ -535,7 +586,7 @@ function DispatchWorkspace() {
                 tone="success"
               />
               <SummaryCard
-                label="Technicians scheduled"
+                label="Capacity"
                 value={`${summary.capacity_used}/${summary.capacity_total}`}
                 sub="Roster utilization"
                 icon={<Users />}
@@ -692,7 +743,7 @@ function DispatchWorkspace() {
                 />
               )}
               {scheduleVisible && (
-                <Card padding="none" style={{ overflow: "hidden" }}>
+                <Card padding="none" className="dispatch-panel-card">
                   <div
                     style={{
                       padding: "14px 16px",
@@ -710,18 +761,36 @@ function DispatchWorkspace() {
                           : "Committed visits by technician and time"}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => router.push("/home-services/team")}
-                    >
-                      Manage team <ExternalLink size={13} />
-                    </Button>
+                    <div className="dispatch-actions" style={{ flexWrap: "nowrap" }}>
+                      <span style={{ color: "var(--text-secondary)", fontSize: 11.5, whiteSpace: "nowrap" }}>
+                        View capacity
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={showCapacity}
+                        aria-label="Show technician capacity"
+                        className="dispatch-switch"
+                        data-on={showCapacity}
+                        onClick={() => setShowCapacity((value) => !value)}
+                      >
+                        <span />
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => router.push("/home-services/team")}
+                      >
+                        Manage team <ExternalLink size={13} />
+                      </Button>
+                    </div>
                   </div>
                   {view === "day" ? (
                     <DaySchedule
+                      targetDate={date}
                       technicians={board.data.technician_schedule}
                       jobs={scheduledJobs}
+                      showCapacity={showCapacity}
                       selectedJobId={selectedJobId}
                       onSelect={selectJob}
                     />
@@ -730,43 +799,47 @@ function DispatchWorkspace() {
                       start={date}
                       technicians={board.data.technician_schedule}
                       jobs={scheduledJobs}
+                      showCapacity={showCapacity}
                       selectedJobId={selectedJobId}
                       onSelect={selectJob}
                     />
                   )}
                 </Card>
               )}
-              <div className="dispatch-panel">
-                <div className="dispatch-sticky">
-                  <AssignmentPanel
-                    jobId={selectedJobId}
-                    options={options}
-                    loading={optionsLoading}
-                    error={optionsError}
-                    actionLoading={actionLoading}
-                    showExcluded={showExcluded}
-                    onShowExcluded={() => setShowExcluded((value) => !value)}
-                    onClose={() => updateParams({ job_id: null })}
-                    onOpenJob={() =>
-                      selectedJobId &&
-                      router.push(`/service-jobs/${selectedJobId}`)
-                    }
-                    onSchedule={openSchedule}
-                    onAssign={(technician) =>
-                      setPendingAction({
-                        type: options?.current_assignment
-                          ? "reassign"
-                          : "assign",
-                        technician,
-                      })
-                    }
-                    onUnassign={() => setPendingAction({ type: "unassign" })}
-                  />
-                </div>
-              </div>
             </div>
           )
         )}
+        {board.data && !selectedJobId && (
+          <div className="dispatch-selection-hint">
+            <UserCheck size={14} /> Select a job to assign or reschedule
+          </div>
+        )}
+        <Drawer
+          open={Boolean(selectedJobId)}
+          onClose={() => updateParams({ job_id: null })}
+          title="Job assignment"
+        >
+          <AssignmentPanel
+            jobId={selectedJobId}
+            options={options}
+            loading={optionsLoading}
+            error={optionsError}
+            actionLoading={actionLoading}
+            showExcluded={showExcluded}
+            onShowExcluded={() => setShowExcluded((value) => !value)}
+            onOpenJob={() =>
+              selectedJobId && router.push(`/service-jobs/${selectedJobId}`)
+            }
+            onSchedule={openSchedule}
+            onAssign={(technician) =>
+              setPendingAction({
+                type: options?.current_assignment ? "reassign" : "assign",
+                technician,
+              })
+            }
+            onUnassign={() => setPendingAction({ type: "unassign" })}
+          />
+        </Drawer>
         <Modal
           open={Boolean(pendingAction)}
           onClose={() => !actionLoading && setPendingAction(null)}
@@ -935,23 +1008,69 @@ function UnassignedQueue({
   onPage: (page: number) => void;
   onPageSize: (size: number) => void;
 }) {
-  const sorted = [...jobs].sort(
-    (first, second) =>
-      (first.minutes_until_due ?? Number.MAX_SAFE_INTEGER) -
-      (second.minutes_until_due ?? Number.MAX_SAFE_INTEGER),
-  );
+  const [sort, setSort] = useState<"oldest" | "due">("oldest");
+  const sorted = [...jobs].sort((first, second) => {
+    if (sort === "due") {
+      return (
+        (first.minutes_until_due ?? Number.MAX_SAFE_INTEGER) -
+        (second.minutes_until_due ?? Number.MAX_SAFE_INTEGER)
+      );
+    }
+    return new Date(first.requested_at || 0).getTime() - new Date(second.requested_at || 0).getTime();
+  });
   return (
-    <Card padding="none" style={{ overflow: "hidden" }}>
+    <Card padding="none" className="dispatch-panel-card">
       <div
         style={{
-          padding: "14px 16px",
+          padding: "12px 14px",
           borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <h2 style={sectionTitle}>Assignment queue</h2>
-        <p style={sectionSub}>{total} jobs need an owner</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <h2 style={sectionTitle}>Unassigned queue</h2>
+          <span
+            style={{
+              minWidth: 24,
+              height: 24,
+              padding: "0 7px",
+              display: "inline-grid",
+              placeItems: "center",
+              borderRadius: 999,
+              color: "var(--text-secondary)",
+              background: "var(--surface-sunken)",
+              border: "1px solid var(--border)",
+              fontSize: 11,
+              fontWeight: 750,
+            }}
+          >
+            {total}
+          </span>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="ds-text-caption" style={{ color: "var(--text-tertiary)" }}>Sort</span>
+          <select
+            aria-label="Sort unassigned jobs"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as "oldest" | "due")}
+            style={{
+              border: 0,
+              outline: 0,
+              background: "transparent",
+              color: "var(--text-secondary)",
+              fontSize: 11.5,
+              cursor: "pointer",
+            }}
+          >
+            <option value="oldest">Oldest first</option>
+            <option value="due">Due first</option>
+          </select>
+        </label>
       </div>
-      <div style={{ maxHeight: 590, overflowY: "auto" }}>
+      <div className="dispatch-board-scroll" style={{ overflowY: "auto" }}>
         {sorted.length ? (
           sorted.map((job) => (
             <JobQueueCard
@@ -970,7 +1089,7 @@ function UnassignedQueue({
         )}
       </div>
       {total > 0 && (
-        <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
+        <div style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <label
             style={{
               display: "flex",
@@ -978,7 +1097,7 @@ function UnassignedQueue({
               alignItems: "center",
               color: "var(--text-tertiary)",
               fontSize: 11.5,
-              marginBottom: 8,
+              marginBottom: 0,
             }}
           >
             Rows
@@ -1020,6 +1139,7 @@ function JobQueueCard({
   onClick: () => void;
 }) {
   const due = dueLabel(job);
+  const displayTime = job.scheduled_time_window || job.requested_time_window;
   return (
     <button
       onClick={onClick}
@@ -1029,115 +1149,126 @@ function JobQueueCard({
         textAlign: "left",
         border: 0,
         borderBottom: "1px solid var(--border)",
-        borderLeft: selected
-          ? "3px solid var(--brand)"
-          : "3px solid transparent",
-        padding: 13,
+        borderLeft: `3px solid ${job.is_emergency ? "var(--warning-text)" : selected ? "var(--brand)" : "transparent"}`,
+        padding: "10px 12px",
         background: selected ? "var(--accent-muted)" : "transparent",
         cursor: "pointer",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <strong style={{ color: "var(--text-link)", fontSize: 12 }}>
-          {job.job_number}
-        </strong>
-        {due && (
-          <span
-            style={{
-              fontSize: 10.5,
-              fontWeight: 700,
-              color: job.is_overdue
-                ? "var(--danger-text)"
-                : "var(--warning-text)",
-            }}
-          >
-            {due}
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <ServiceJobIcon job={job} size={42} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <strong
+              style={{
+                color: "var(--text-primary)",
+                fontSize: 12.5,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {job.job_number}
+            </strong>
+            <span style={{ flexShrink: 0, color: "var(--text-secondary)", fontSize: 11 }}>
+              {displayTime || "Time slot pending"}
+            </span>
+          </div>
+          <div style={{ marginTop: 2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "var(--text-secondary)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {job.master_service_name || "Service visit"}
+            </span>
+            <span style={{ color: job.is_emergency ? "var(--warning-text)" : "var(--text-link)", fontSize: 10.5 }}>
+              {job.is_emergency ? "Emergency" : due || "Standard"}
+            </span>
+          </div>
+          <span style={{ marginTop: 4, display: "flex", gap: 5, alignItems: "center", color: "var(--text-tertiary)", fontSize: 10.5, minWidth: 0 }}>
+            <MapPin size={11} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {job.customer_address || job.locality || "Service address unavailable"}
+            </span>
           </span>
-        )}
-      </div>
-      <p
-        style={{
-          margin: "5px 0 2px",
-          color: "var(--text-primary)",
-          fontSize: 13.5,
-          fontWeight: 650,
-        }}
-      >
-        {job.master_service_name || "Service visit"}
-      </p>
-      <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 11.5 }}>
-        {job.customer_alias || "Customer"} ·{" "}
-        {job.locality || "Locality unavailable"}
-      </p>
-      <div style={{ marginTop: 7, display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {job.is_emergency && (
-          <span
-            className="ds-text-caption"
-            style={{ color: "var(--danger-text)" }}
-          >
-            Emergency
-          </span>
-        )}
-        <span
-          className="ds-text-caption"
-          style={{ color: "var(--text-tertiary)" }}
-        >
-          {job.scheduled_date
-            ? `${formatDate(job.scheduled_date)} · ${job.scheduled_time_window || "Time pending"}`
-            : "Schedule pending"}
-        </span>
+        </div>
       </div>
     </button>
   );
 }
 
 function DaySchedule({
+  targetDate,
   technicians,
   jobs,
+  showCapacity,
   selectedJobId,
   onSelect,
 }: {
+  targetDate: string;
   technicians: HsDispatchProjection["technician_schedule"];
   jobs: HsDispatchJobSummary[];
+  showCapacity: boolean;
   selectedJobId: string | null;
   onSelect: (id: string) => void;
 }) {
   const allowed = new Set(jobs.map((job) => job.job_id));
+  const now = new Date();
+  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const currentPosition =
+    localToday() === targetDate &&
+    nowHour >= DAY_START &&
+    nowHour <= DAY_END
+      ? ((nowHour - DAY_START) / (DAY_END - DAY_START)) * 100
+      : null;
   return (
-    <div style={{ maxHeight: 650, overflow: "auto" }}>
+    <div className="dispatch-board-scroll" style={{ overflow: "auto", minHeight: 0 }}>
       {technicians.length ? (
-        <div style={{ minWidth: 880 }}>
+        <div style={{ minWidth: 920, minHeight: "100%" }}>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: `150px repeat(${DAY_END - DAY_START},1fr)`,
+              gridTemplateColumns: "160px 1fr",
               borderBottom: "1px solid var(--border)",
+              minHeight: 36,
             }}
           >
             <span />
-            {Array.from({ length: DAY_END - DAY_START }, (_, index) => (
-              <span
-                key={index}
-                style={{
-                  padding: 7,
-                  textAlign: "center",
-                  color: "var(--text-tertiary)",
-                  fontSize: 10,
-                }}
-              >
-                {String(((DAY_START + index - 1) % 12) + 1)}{" "}
-                {DAY_START + index >= 12 ? "PM" : "AM"}
-              </span>
-            ))}
+            <div style={{ position: "relative", display: "grid", gridTemplateColumns: `repeat(${DAY_END - DAY_START},1fr)` }}>
+              {Array.from({ length: DAY_END - DAY_START }, (_, index) => (
+                <span
+                  key={index}
+                  style={{
+                    padding: "9px 4px 7px",
+                    textAlign: "center",
+                    color: "var(--text-tertiary)",
+                    fontSize: 10,
+                  }}
+                >
+                  {String(((DAY_START + index - 1) % 12) + 1)}{" "}
+                  {DAY_START + index >= 12 ? "PM" : "AM"}
+                </span>
+              ))}
+              {currentPosition != null ? (
+                <span
+                  style={{
+                    position: "absolute",
+                    left: `${currentPosition}%`,
+                    top: 3,
+                    transform: "translateX(-50%)",
+                    zIndex: 5,
+                    padding: "3px 6px",
+                    borderRadius: 5,
+                    background: "var(--brand)",
+                    color: "white",
+                    fontSize: 9.5,
+                    fontWeight: 750,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              ) : null}
+            </div>
           </div>
-          {technicians.map((technician) => {
+          {technicians.map((technician, technicianIndex) => {
             const techJobs = (
               technician.jobs_in_range ||
               technician.jobs_today ||
@@ -1148,13 +1279,41 @@ function DaySchedule({
                 key={technician.staff_member_id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "150px 1fr",
-                  minHeight: 72,
+                  gridTemplateColumns: "160px 1fr",
+                  minHeight: 82,
                   borderBottom: "1px solid var(--border)",
                 }}
               >
-                <TechnicianLabel technician={technician} />
-                <div style={{ position: "relative", margin: "7px 8px" }}>
+                <div style={{ padding: "14px 10px", borderRight: "1px solid var(--border)" }}>
+                  <TechnicianLabel technician={technician} showCapacity={showCapacity} />
+                </div>
+                <div style={{ position: "relative", minHeight: 81, overflow: "hidden" }}>
+                  {Array.from({ length: DAY_END - DAY_START }, (_, index) => (
+                    <span
+                      key={index}
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        insetBlock: 0,
+                        left: `${(index / (DAY_END - DAY_START)) * 100}%`,
+                        borderLeft: "1px dashed var(--border)",
+                        opacity: 0.7,
+                      }}
+                    />
+                  ))}
+                  {currentPosition != null ? (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        insetBlock: 0,
+                        left: `${currentPosition}%`,
+                        borderLeft: "1px solid var(--brand)",
+                        zIndex: 3,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  ) : null}
                   {techJobs.length ? (
                     techJobs.map((job) => {
                       const window = parseWindow(job.scheduled_time_window);
@@ -1186,19 +1345,20 @@ function DaySchedule({
                             position: "absolute",
                             left: `${left}%`,
                             width: `${Math.max(width, 8)}%`,
-                            top: 3,
-                            minHeight: 48,
+                            top: 10,
+                            minHeight: 58,
                             overflow: "hidden",
-                            padding: 7,
+                            padding: "8px 9px",
                             textAlign: "left",
                             cursor: "pointer",
-                            borderRadius: 8,
+                            borderRadius: 6,
                             border: `1px solid ${job.has_conflict ? "var(--danger-border)" : job.job_id === selectedJobId ? "var(--brand)" : "var(--info-border)"}`,
                             background: job.has_conflict
                               ? "var(--danger-bg)"
                               : job.job_id === selectedJobId
                                 ? "var(--accent-muted)"
-                                : "var(--info-bg)",
+                                : ["var(--success-bg)", "var(--info-bg)", "var(--warning-bg)"][technicianIndex % 3],
+                            zIndex: 2,
                           }}
                         >
                           <strong
@@ -1213,7 +1373,7 @@ function DaySchedule({
                               textOverflow: "ellipsis",
                             }}
                           >
-                            {job.job_number}
+                            {compactJobNumber(job.job_number)}
                           </strong>
                           <span
                             style={{
@@ -1230,7 +1390,7 @@ function DaySchedule({
                     <span
                       style={{
                         display: "inline-flex",
-                        marginTop: 16,
+                        margin: "29px 0 0 12px",
                         color:
                           technician.status === "active"
                             ? "var(--success-text)"
@@ -1262,19 +1422,21 @@ function WeekSchedule({
   start,
   technicians,
   jobs,
+  showCapacity,
   selectedJobId,
   onSelect,
 }: {
   start: string;
   technicians: HsDispatchProjection["technician_schedule"];
   jobs: HsDispatchJobSummary[];
+  showCapacity: boolean;
   selectedJobId: string | null;
   onSelect: (id: string) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, index) => shiftDate(start, index));
   const allowed = new Set(jobs.map((job) => job.job_id));
   return (
-    <div style={{ overflow: "auto", maxHeight: 660 }}>
+    <div className="dispatch-board-scroll" style={{ overflow: "auto", maxHeight: 660 }}>
       <div className="week-grid">
         <div className="week-cell" />
         {days.map((day) => (
@@ -1298,7 +1460,7 @@ function WeekSchedule({
         {technicians.map((technician) => (
           <React.Fragment key={technician.staff_member_id}>
             <div className="week-cell">
-              <TechnicianLabel technician={technician} />
+              <TechnicianLabel technician={technician} showCapacity={showCapacity} />
             </div>
             {days.map((day) => {
               const dayJobs = (technician.jobs_in_range || []).filter(
@@ -1332,27 +1494,18 @@ function WeekSchedule({
 }
 function TechnicianLabel({
   technician,
+  showCapacity = true,
 }: {
   technician: HsDispatchProjection["technician_schedule"][number];
+  showCapacity?: boolean;
 }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
-      <span
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 9,
-          display: "grid",
-          placeItems: "center",
-          background: "var(--accent-muted)",
-          color: "var(--text-link)",
-          fontSize: 10.5,
-          fontWeight: 800,
-          flexShrink: 0,
-        }}
-      >
-        {technician.name.slice(0, 2).toUpperCase()}
-      </span>
+      <DefaultAvatar
+        name={technician.name}
+        src={technician.profile_photo_url}
+        size={30}
+      />
       <div style={{ minWidth: 0 }}>
         <strong
           style={{
@@ -1366,9 +1519,19 @@ function TechnicianLabel({
         >
           {technician.name}
         </strong>
-        <span style={{ color: "var(--text-tertiary)", fontSize: 10 }}>
-          {technician.status}
-        </span>
+        {showCapacity ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--text-secondary)", fontSize: 10 }}>
+            <span
+              aria-hidden="true"
+              style={{ width: 6, height: 6, borderRadius: "50%", background: technician.status === "active" ? "var(--success-text)" : "var(--text-tertiary)" }}
+            />
+            {technician.capacity_used ?? technician.jobs_in_range?.length ?? 0}/{technician.capacity_limit ?? 1}
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-tertiary)", fontSize: 10 }}>
+            {technician.status}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1415,7 +1578,7 @@ function JobChip({
         {job.job_number}
       </strong>
       <span style={{ color: "var(--text-tertiary)", fontSize: 9 }}>
-        {job.scheduled_time_window || "Time pending"}
+        {job.scheduled_time_window || job.requested_time_window || "Time pending"}
       </span>
     </button>
   );
@@ -1429,7 +1592,6 @@ function AssignmentPanel({
   actionLoading,
   showExcluded,
   onShowExcluded,
-  onClose,
   onOpenJob,
   onSchedule,
   onAssign,
@@ -1442,7 +1604,6 @@ function AssignmentPanel({
   actionLoading: boolean;
   showExcluded: boolean;
   onShowExcluded: () => void;
-  onClose: () => void;
   onOpenJob: () => void;
   onSchedule: () => void;
   onAssign: (technician: HsAssignmentOptionTechnician) => void;
@@ -1475,18 +1636,6 @@ function AssignmentPanel({
             Only backend-qualified technicians are actionable
           </p>
         </div>
-        <button
-          aria-label="Close assignment panel"
-          onClick={onClose}
-          style={{
-            border: 0,
-            background: "transparent",
-            color: "var(--text-tertiary)",
-            cursor: "pointer",
-          }}
-        >
-          <X size={17} />
-        </button>
       </div>
       <div style={{ padding: 15, display: "grid", gap: 14 }}>
         {loading && <Skeleton height={360} />}
@@ -1568,22 +1717,32 @@ function AssignmentPanel({
                   alignItems: "center",
                 }}
               >
-                <div>
-                  <span
-                    style={{ color: "var(--text-tertiary)", fontSize: 10.5 }}
-                  >
-                    Current owner
-                  </span>
-                  <strong
-                    style={{
-                      display: "block",
-                      color: "var(--text-primary)",
-                      fontSize: 13,
-                    }}
-                  >
-                    {options.current_assignment.staff_name ||
-                      "Assigned technician"}
-                  </strong>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                  <DefaultAvatar
+                    name={options.current_assignment.staff_name || "Assigned technician"}
+                    src={options.current_assignment.profile_photo_url}
+                    size={34}
+                  />
+                  <div style={{ minWidth: 0 }}>
+                    <span
+                      style={{ color: "var(--text-tertiary)", fontSize: 10.5 }}
+                    >
+                      Current owner
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        color: "var(--text-primary)",
+                        fontSize: 13,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {options.current_assignment.staff_name ||
+                        "Assigned technician"}
+                    </strong>
+                  </div>
                 </div>
                 {options.available_actions.includes("unassign") && (
                   <Button
@@ -1620,26 +1779,36 @@ function AssignmentPanel({
                         background: "var(--success-bg)",
                       }}
                     >
-                      <div>
-                        <strong
-                          style={{
-                            display: "block",
-                            color: "var(--text-primary)",
-                            fontSize: 12.5,
-                          }}
-                        >
-                          {technician.name}
-                        </strong>
-                        <span
-                          style={{
-                            color: "var(--success-text)",
-                            fontSize: 10.5,
-                          }}
-                        >
-                          {current
-                            ? "Current assignment"
-                            : "Skill and availability verified"}
-                        </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                        <DefaultAvatar
+                          name={technician.name}
+                          src={technician.profile_photo_url}
+                          size={34}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <strong
+                            style={{
+                              display: "block",
+                              color: "var(--text-primary)",
+                              fontSize: 12.5,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {technician.name}
+                          </strong>
+                          <span
+                            style={{
+                              color: "var(--success-text)",
+                              fontSize: 10.5,
+                            }}
+                          >
+                            {current
+                              ? "Current assignment"
+                              : "Skill and availability verified"}
+                          </span>
+                        </div>
                       </div>
                       <Button
                         size="sm"
@@ -1678,8 +1847,17 @@ function AssignmentPanel({
                         padding: 9,
                         border: "1px solid var(--border)",
                         borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 9,
                       }}
                     >
+                      <DefaultAvatar
+                        name={technician.name}
+                        src={technician.profile_photo_url}
+                        size={30}
+                      />
+                      <div>
                       <strong
                         style={{ color: "var(--text-primary)", fontSize: 11.5 }}
                       >
@@ -1699,6 +1877,7 @@ function AssignmentPanel({
                           )
                           .join(" · ") || "Not eligible"}
                       </p>
+                      </div>
                     </div>
                   ))}
                 </div>

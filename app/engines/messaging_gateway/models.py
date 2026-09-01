@@ -34,7 +34,10 @@ class MessagingThread(ServiceOSBase):
         # One live thread per identity per channel. The channel identity is the
         # account key: on WhatsApp the sender's phone number IS the identity we
         # log them in with, which is why phone-OTP accounts fit this cleanly.
-        UniqueConstraint("channel", "channel_user_id", name="uq_msg_thread_channel_user"),
+        UniqueConstraint(
+            "channel", "channel_business_id", "channel_user_id",
+            name="uq_msg_thread_business_user",
+        ),
         Index("ix_msg_thread_customer", "customer_id"),
         Index("ix_msg_thread_session", "ai_session_id"),
         Index("ix_msg_thread_last_inbound", "last_inbound_at"),
@@ -45,12 +48,27 @@ class MessagingThread(ServiceOSBase):
     channel_user_id: Mapped[str] = mapped_column(String(120), nullable=False)
     #: The business number/page the customer messaged, so one deployment can
     #: serve several tenants' numbers later without a schema change.
-    channel_business_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    channel_business_id: Mapped[str] = mapped_column(String(120), nullable=False)
 
     display_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    pending_customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    pending_phone_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    #: Where this person is. Asked once, before any service is chosen, so a
+    #: customer outside every provider's area is told immediately instead of
+    #: after picking a service and answering its questions. Survives /fuvay,
+    #: so a second booking does not re-ask it.
+    zipcode: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    #: The option ids of the last list this thread was sent, in display order.
+    #: Instagram answers a list by number, and only the ids actually sent can
+    #: say what "3" meant — the step alone cannot, since a category's offerings
+    #: and a "Show more" page are both reachable only through an earlier tap.
+    last_options: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     #: The live agent session. Cleared by /fuvay and /reset so the next message
     #: opens a fresh one.
@@ -72,6 +90,9 @@ class MessagingThread(ServiceOSBase):
             "channel_user_id": self.channel_user_id,
             "display_name": self.display_name,
             "customer_id": str(self.customer_id) if self.customer_id else None,
+            "identity_link_pending": bool(self.pending_customer_id or self.pending_phone_ciphertext),
+            "zipcode": self.zipcode,
+            "city": self.city,
             "ai_session_id": str(self.ai_session_id) if self.ai_session_id else None,
             "opted_out": self.opted_out,
             "human_handoff": self.human_handoff,

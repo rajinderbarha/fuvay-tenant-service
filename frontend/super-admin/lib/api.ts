@@ -8110,6 +8110,44 @@ export interface NotificationChannelAudit {
   before_state: Record<string, unknown> | null; after_state: Record<string, unknown> | null;
   created_at: string;
 }
+export interface MessagingChannelStatus {
+  channel: "whatsapp" | "instagram"; label: string; provider: string; description: string;
+  configured: boolean; enabled: boolean; verified: boolean; state: string;
+  webhook_path: string; thread_count: number; credential_fingerprint: string | null;
+    last_tested_at: string | null; last_test_status: string | null; last_test_message: string | null;
+    profile_synced_at: string | null; profile_sync_status: string | null; profile_sync_message: string | null;
+    booking_flow_configured?: boolean;
+  fields: NotificationChannelField[];
+}
+export interface MessagingThreadRecord {
+  id: string; channel: string; channel_user_id: string; display_name: string | null;
+  customer_id: string | null; ai_session_id: string | null; opted_out: boolean;
+  human_handoff: boolean; last_inbound_at: string | null; last_outbound_at: string | null;
+  session_count: number;
+}
+export const messagingChannelsApi = {
+  list: () => apiFetch<{ items: MessagingChannelStatus[] }>("/v1/admin/messaging-channels"),
+  save: (channel: string, values: Record<string, string | boolean>) =>
+    apiFetch<MessagingChannelStatus>(`/v1/admin/messaging-channels/${channel}`, {
+      method: "PUT", body: JSON.stringify({ values }),
+    }),
+  test: (channel: string) =>
+    apiFetch<MessagingChannelStatus>(`/v1/admin/messaging-channels/${channel}/test`, { method: "POST" }),
+  setEnabled: (channel: string, enabled: boolean) =>
+    apiFetch<MessagingChannelStatus>(`/v1/admin/messaging-channels/${channel}/enabled`, {
+      method: "PUT", body: JSON.stringify({ enabled }),
+    }),
+  syncProfile: (channel: string) =>
+    apiFetch<MessagingChannelStatus>(`/v1/admin/messaging-channels/${channel}/profile/sync`, { method: "POST" }),
+  audit: (channel: string) =>
+    apiFetch<{ items: NotificationChannelAudit[] }>(`/v1/admin/messaging-channels/${channel}/audit`),
+  threads: (channel = "") =>
+    apiFetch<{ items: MessagingThreadRecord[]; total: number }>(`/v1/admin/messaging-channels/threads/list${channel ? `?channel=${channel}` : ""}`),
+  setHandoff: (threadId: string, human_handoff: boolean) =>
+    apiFetch<MessagingThreadRecord>(`/v1/admin/messaging-channels/threads/${threadId}/handoff`, {
+      method: "PUT", body: JSON.stringify({ human_handoff }),
+    }),
+};
 export interface BadgeCriterionInput {
   metric_key: string; operator: string; value: unknown;
   is_required?: boolean; time_window_days?: number | null;

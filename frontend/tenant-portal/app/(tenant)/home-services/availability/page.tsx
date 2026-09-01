@@ -35,7 +35,7 @@ import { Skeleton, Btn, Card, Pagination } from "../../../../components/shared/u
 import { apiFetch } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
-import { PageShell } from "@serviceos/design-system";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import { AvailabilityKpis } from "../../../../components/availability/AvailabilityKpis";
 import { AvailabilityFilters } from "../../../../components/availability/AvailabilityFilters";
 import { TeamRoster, type RosterRow } from "../../../../components/availability/TeamRoster";
@@ -576,13 +576,12 @@ function AvailabilityCapacityPlannerContent() {
         @media(max-width:1280px){.availability-workspace{display:grid;grid-template-columns:260px minmax(0,1fr)}.availability-workspace>aside:last-child{grid-column:1/-1}}
         @media(max-width:820px){.availability-workspace{grid-template-columns:1fr}.availability-workspace>aside{position:static!important;width:auto!important}}
       `}</style>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px", textTransform: "uppercase" }}>Team</p>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Availability & Capacity</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Plan working hours, time off and safe booking capacity for your team.</p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <PageHeader
+        eyebrow="Daily work"
+        context="Team planning"
+        title="Availability & Capacity"
+        description="Plan working hours, time off and safe booking capacity for your team."
+        actions={<>
           <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 4 }}>
             <button onClick={() => moveRange(-1)} aria-label={view === "day" ? "Previous day" : "Previous week"}
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
@@ -621,8 +620,8 @@ function AvailabilityCapacityPlannerContent() {
           <Btn variant="primary" onClick={() => router.push("/business/coverage-hours")}>
             Business hours
           </Btn>
-        </div>
-      </div>
+        </>}
+      />
 
       {planner.loading ? (
         <div style={{ display: "flex", gap: 14, margin: "20px 0" }}>

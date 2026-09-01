@@ -221,7 +221,7 @@ function BusinessProfileWorkspace() {
       <ProfileShell mode={mode}>
         <Skeleton height={70} style={{ marginBottom: 20 }}/>
         <Skeleton height={12} style={{ marginBottom: 20 }}/>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 20 }}>
           <Skeleton height={520}/>
           <Skeleton height={520}/>
         </div>

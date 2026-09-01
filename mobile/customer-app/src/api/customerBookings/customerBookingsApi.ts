@@ -2,6 +2,32 @@ import { authenticatedRequest } from "../client/authenticatedClient";
 import { parseApiSuccess } from "../client/responseParser";
 import { serviceBookingDtoSchema, bookingListResponseSchema } from "../contracts/customerBookings";
 import { BookingListFilter } from "../../domain/bookingFilters";
+import { z } from "zod";
+
+const bookingActionEligibilitySchema = z.object({
+  booking_id: z.string(),
+  job_id: z.string(),
+  status: z.string(),
+  version: z.string(),
+  can_cancel: z.boolean(),
+  cancel_block_reason: z.string().nullable(),
+  allowed_cancellation_reasons: z.array(z.string()),
+}).passthrough();
+
+const cancelledBookingSchema = z.object({
+  booking_id: z.string(),
+  job_id: z.string(),
+  status: z.string(),
+  reason: z.string(),
+  version: z.string(),
+}).passthrough();
+
+const maskedCallSchema = z.object({
+  id: z.string(),
+  booking_id: z.string().nullable(),
+  direction: z.literal("customer_to_staff"),
+  status: z.string(),
+}).passthrough();
 
 export async function listMyBookings(
   bucket: BookingListFilter,
@@ -33,4 +59,32 @@ export async function getMyBooking(bookingId: string) {
     method: "GET", path: `/v1/customer/my-activity/bookings/${bookingId}`,
   });
   return parseApiSuccess(res.json, serviceBookingDtoSchema);
+}
+
+export async function getBookingActionEligibility(bookingId: string) {
+  const res = await authenticatedRequest({
+    method: "GET",
+    path: `/v1/customer/bookings/${encodeURIComponent(bookingId)}/cancel-reschedule-eligibility`,
+  });
+  return parseApiSuccess(res.json, bookingActionEligibilitySchema);
+}
+
+export async function cancelCustomerBooking(
+  bookingId: string,
+  input: { reason: string; expectedVersion: string },
+) {
+  const res = await authenticatedRequest({
+    method: "POST",
+    path: `/v1/customer/bookings/${encodeURIComponent(bookingId)}/cancel`,
+    body: { reason: input.reason, expected_version: input.expectedVersion },
+  });
+  return parseApiSuccess(res.json, cancelledBookingSchema);
+}
+
+export async function callAssignedTechnician(bookingId: string) {
+  const res = await authenticatedRequest({
+    method: "POST",
+    path: `/v1/customer/bookings/${encodeURIComponent(bookingId)}/call`,
+  });
+  return parseApiSuccess(res.json, maskedCallSchema);
 }

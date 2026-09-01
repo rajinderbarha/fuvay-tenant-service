@@ -22,13 +22,15 @@ export function TableSurface({
   ...tableProps
 }: TableSurfaceProps) {
   return (
-    <table
-      {...tableProps}
-      data-density={density}
-      className={["ds-table", className].filter(Boolean).join(" ")}
-      style={style}
-    >
-      {children}
-    </table>
+    <div className="ds-table-viewport" tabIndex={0}>
+      <table
+        {...tableProps}
+        data-density={density}
+        className={["ds-table", className].filter(Boolean).join(" ")}
+        style={style}
+      >
+        {children}
+      </table>
+    </div>
   );
 }

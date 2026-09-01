@@ -102,6 +102,7 @@ export const homeActiveBookingDtoSchema = z.object({
   // resolved from the catalog by id. `issue_summary` above is the
   // customer's own wording and is not a substitute for it.
   service_name: z.string().nullable().optional(),
+  service_image_url: z.string().nullable().optional(),
   technician: homeTechnicianDtoSchema.optional(),
   // The slot the provider COMMITTED to, off the job. Distinct from the
   // preferred_* fields above, which are only what the customer asked for.

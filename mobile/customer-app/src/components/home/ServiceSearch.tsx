@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, TextInput, Animated, Easing, AccessibilityInfo } from "react-native";
+import { View, TextInput, Animated, Easing, AccessibilityInfo, AppState, type StyleProp, type ViewStyle } from "react-native";
 import { useTheme, useReducedMotion } from "../../design-system/theme";
 import { Icon } from "../Icon";
 
@@ -16,6 +16,11 @@ export interface ServiceSearchProps {
    * suggestion at all. Falls back to the static placeholder when empty.
    */
   suggestions?: readonly string[];
+  suggestionPrefix?: string;
+  suggestionSuffix?: string;
+  rightAccessory?: React.ReactNode;
+  containerStyle?: StyleProp<ViewStyle>;
+  appearance?: "default" | "fuvay";
 }
 
 const HOLD_MS = 2000;
@@ -51,17 +56,37 @@ export function ServiceSearch({
   onSubmit,
   placeholder = "Search AC repair, plumbing, cleaning…",
   suggestions,
+  suggestionPrefix = "Search ",
+  suggestionSuffix = "…",
+  rightAccessory,
+  containerStyle,
+  appearance = "default",
 }: ServiceSearchProps) {
   const { theme } = useTheme();
   const reduceMotion = useReducedMotion();
   const [screenReaderOn, setScreenReaderOn] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [animationGeneration, setAnimationGeneration] = useState(0);
   /** Which line of the strip is on screen, as a float so it can be animated. */
   const position = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     AccessibilityInfo.isScreenReaderEnabled().then(setScreenReaderOn).catch(() => {});
     const sub = AccessibilityInfo.addEventListener("screenReaderChanged", setScreenReaderOn);
+    return () => sub.remove();
+  }, []);
+
+  // Native animations can be cancelled when iOS backgrounds the app. Restart
+  // the declarative infinite loop on foreground so the placeholder never
+  // freezes after the customer returns to Home.
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const sub = AppState.addEventListener("change", next => {
+      if (next === "active" && previous !== "active") {
+        setAnimationGeneration(current => current + 1);
+      }
+      previous = next;
+    });
     return () => sub.remove();
   }, []);
 
@@ -76,7 +101,7 @@ export function ServiceSearch({
    */
   const hintStyle = {
     ...theme.typography.body,
-    color: theme.colors.textTertiary,
+    color: appearance === "fuvay" ? theme.fuvay.surfaces.faint : theme.colors.textTertiary,
   };
   // The token always defines one; the fallback keeps TypeScript honest about the type
   // rather than pretending it cannot be absent.
@@ -113,9 +138,11 @@ export function ServiceSearch({
             // slide is what makes a ticker feel mechanical.
             easing: Easing.inOut(Easing.cubic),
             useNativeDriver: true,
+            isInteraction: false,
           }),
         ]).flat(),
       ),
+      { iterations: -1, resetBeforeIteration: true },
     );
     animation.start();
 
@@ -123,7 +150,7 @@ export function ServiceSearch({
       animation.stop();
       position.setValue(0);
     };
-  }, [rotating, count, position]);
+  }, [rotating, count, position, animationGeneration]);
 
   const showAnimated = count > 0 && !focused && value.length === 0;
 
@@ -136,15 +163,17 @@ export function ServiceSearch({
 
   return (
     <View
-      style={{
+      style={[{
         flexDirection: "row", alignItems: "center", gap: theme.spacing.sm,
         minHeight: theme.touchTargets.comfortable, paddingHorizontal: theme.spacing.base,
-        borderRadius: theme.radiusUsage.input, backgroundColor: theme.colors.surfaceDefault,
-        borderWidth: 1, borderColor: theme.colors.borderSubtle,
+        borderRadius: theme.radiusUsage.input,
+        backgroundColor: appearance === "fuvay" ? theme.fuvay.surfaces.card : theme.colors.surfaceDefault,
+        borderWidth: 1,
+        borderColor: appearance === "fuvay" ? theme.fuvay.surfaces.edge : theme.colors.borderSubtle,
         ...theme.shadow.sm,
-      }}
+      }, containerStyle]}
     >
-      <Icon name="search-outline" size="standard" color={theme.colors.iconDefault} decorative />
+      <Icon name="search-outline" size="standard" color={appearance === "fuvay" ? theme.fuvay.surfaces.faint : theme.colors.iconDefault} decorative />
       <View style={{ flex: 1, justifyContent: "center" }}>
         <TextInput
           value={value}
@@ -156,13 +185,13 @@ export function ServiceSearch({
           // suppressed while it is showing -- otherwise both render on top of each
           // other.
           placeholder={showAnimated ? "" : placeholder}
-          placeholderTextColor={theme.colors.textTertiary}
+          placeholderTextColor={appearance === "fuvay" ? theme.fuvay.surfaces.faint : theme.colors.textTertiary}
           returnKeyType="search"
           accessibilityLabel="Search services"
           // Screen readers get the stable description, never the word that happens
           // to be on screen at that instant.
           accessibilityHint={placeholder}
-          style={{ color: theme.colors.textPrimary, ...theme.typography.body }}
+          style={{ color: appearance === "fuvay" ? theme.fuvay.surfaces.text : theme.colors.textPrimary, ...theme.typography.body }}
         />
         {showAnimated ? (
           <View
@@ -171,7 +200,7 @@ export function ServiceSearch({
             importantForAccessibility="no-hide-descendants"
             style={{ position: "absolute", left: 0, right: 0, flexDirection: "row" }}
           >
-            <Animated.Text style={hintStyle}>Search </Animated.Text>
+            <Animated.Text style={hintStyle}>{suggestionPrefix}</Animated.Text>
             {/* One line tall and clipped: the outgoing and incoming words are never
                 both visible, which is what separates a scroll from a glitch. */}
             <View style={{ flex: 1, height: lineHeight, overflow: "hidden" }}>
@@ -180,7 +209,7 @@ export function ServiceSearch({
                   // Index-keyed on purpose: this is a positional strip, and the first
                   // word deliberately appears twice, so its name is not a unique key.
                   <Animated.Text key={`${i}-${word}`} numberOfLines={1} style={hintStyle}>
-                    {`${word}…`}
+                    {`${word}${suggestionSuffix}`}
                   </Animated.Text>
                 ))}
               </Animated.View>
@@ -188,6 +217,7 @@ export function ServiceSearch({
           </View>
         ) : null}
       </View>
+      {rightAccessory}
     </View>
   );
 }

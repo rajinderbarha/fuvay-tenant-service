@@ -134,7 +134,9 @@ async def get_wip_usage(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         # service_jobs has no soft-delete column; a job leaves the pipeline by
         # reaching a terminal status, not by being flagged deleted.
         text("SELECT count(*) FROM service_jobs "
-             "WHERE tenant_id = :tid AND status = ANY(:statuses)"),
+             "WHERE tenant_id = :tid "
+             "AND assigned_staff_id IS NOT NULL "
+             "AND status = ANY(:statuses)"),
         {"tid": str(tenant_id), "statuses": list(OCCUPYING_JOB_STATUSES)},
     )).scalar() or 0)
     return {

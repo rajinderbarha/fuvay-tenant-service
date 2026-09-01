@@ -10,6 +10,8 @@ export * from "./HomeSkeleton";
 export * from "./HomeErrorState";
 export * from "./NoAddressState";
 export * from "./UnserviceableState";
+export * from "./HomeReferenceSections";
+export * from "./FuvayHomeV2";
 export * from "./HomeSectionErrorBoundary";
 export * from "./LocationPickerModal";
 export * from "./SearchResultsList";

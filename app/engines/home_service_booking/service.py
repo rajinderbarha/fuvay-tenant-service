@@ -2207,7 +2207,11 @@ class HomeServiceChatbotBookingService:
             base = max(tenant_price["minimum_price"], floor_price)
             min_price = tenant_price["minimum_price"]
             max_price = tenant_price["maximum_price"]
-            note = f"Tenant-set price ({tenant_price['source']})."
+            # `source` is an internal pricing-rule identifier such as
+            # `type_override`, `type_brand_override`, or `tenant_default`.
+            # It is useful for auditing but must never be placed in the
+            # customer-facing note consumed by WhatsApp and Instagram.
+            note = "Price set by the selected service provider."
         elif pricing_model == PRICING_MODEL_FIXED:
             base  = max(float(offering.base_price), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base

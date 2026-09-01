@@ -1,21 +1,19 @@
-import React, { useState } from "react";
-import { View, Pressable, ScrollView, ActivityIndicator } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useBotColors } from "./botTheme";
-import { BotCard, BotPrimaryButton } from "./BotPrimitives";
-import { AvailableSlot, BookingReviewSummary } from "../../domain/bookingReview";
-import { BotText } from "./BotText";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, View } from "react-native";
+
+import { useTheme } from "../../design-system/theme";
+import type { AvailableSlot, BookingReviewSummary } from "../../domain/bookingReview";
+import { AppLucideIcon } from "../AppLucideIcon";
+import { AppText } from "../AppText";
+import { FuvayIcon } from "../FuvayIcon";
+import { BotPrimaryButton } from "./BotPrimitives";
+import { FuvayAssistantSheet } from "./FuvayAssistantSheet";
 
 export interface SlotPickerCardProps {
+  addressTitle: string;
+  addressLine: string;
   promisedSlot: BookingReviewSummary["promisedSlot"];
-  /** Shown alongside the slot -- there is no per-slot price anywhere in
-   * the backend, so every offered time costs the same resolved amount;
-   * this is that one real price, not a per-slot fabrication. Null when
-   * pricing hasn't resolved to a displayable value (e.g. bargain mode). */
   priceLabel: string | null;
-  /** What an emergency visit costs extra with this provider, formatted. Shown
-   * ON the emergency option so the extra charge is known before it is tapped,
-   * never discovered after a slot is chosen. Null when there is no surcharge. */
   emergencySurchargeLabel: string | null;
   availableSlots: AvailableSlot[] | null;
   slotsLoading: boolean;
@@ -28,226 +26,115 @@ export interface SlotPickerCardProps {
 function dayLabel(dateIso: string, daysAhead: number): string {
   if (daysAhead === 0) return "Today";
   if (daysAhead === 1) return "Tomorrow";
-  const d = new Date(`${dateIso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateIso;
-  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  const date = new Date(`${dateIso}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? dateIso : date.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-/**
- * Tenant-configured slots, shown to the customer to pick from -- the
- * provider already set up their own business hours and per-slot capacity
- * (`provider_availability_rules`); this just surfaces exactly what that
- * produces via the real, capacity-checked `list_available_slots` walk.
- *
- * Every timing rule lives in the backend, driven by the provider's own
- * booking-window settings -- nothing here is simulated client-side, and no
- * specific number of hours is quoted in this UI because the provider owns
- * that value and can change it:
- *  - a slot must clear the provider's configured notice period
- *    (`minimum_notice_minutes`). "Soonest possible" asks the backend to
- *    waive it, which it does only if that provider enabled
- *    `emergency_booking_allowed` -- it can never conjure a slot outside
- *    their real working hours or capacity.
- *  - once a working day's slots are exhausted, the next options are the
- *    next OPEN day's; there is no invented "after hours" slot.
- *
- * The service price is shown in the SAME card as the slot list (not a
- * separate step) since the customer should see cost and timing together
- * before picking -- there is no per-slot price anywhere in the backend,
- * so every slot costs the same resolved price, never a fabricated
- * time-of-day surcharge.
- */
 export function SlotPickerCard({
-  promisedSlot, priceLabel, emergencySurchargeLabel, availableSlots,
-  slotsLoading, slotSelectionError, onLoadSlots, onSelectSlot, onContinue,
+  addressTitle,
+  addressLine,
+  promisedSlot,
+  priceLabel,
+  emergencySurchargeLabel,
+  availableSlots,
+  slotsLoading,
+  slotSelectionError,
+  onLoadSlots,
+  onSelectSlot,
+  onContinue,
 }: SlotPickerCardProps) {
-  const BOT = useBotColors();
+  const { theme } = useTheme();
+  const f = theme.fuvay;
   const [open, setOpen] = useState(false);
   const [emergency, setEmergency] = useState(false);
   const [pickingKey, setPickingKey] = useState<string | null>(null);
-  const [acceptingSuggested, setAcceptingSuggested] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const didAutoOpen = useRef(false);
+  const groups = useMemo(() => {
+    const byDay = new Map<string, AvailableSlot[]>();
+    (availableSlots ?? []).forEach(slot => {
+      const key = `${slot.date}|${slot.daysAhead}`;
+      byDay.set(key, [...(byDay.get(key) ?? []), slot]);
+    });
+    return [...byDay.entries()].map(([key, slots]) => ({ key, slots, label: dayLabel(slots[0].date, slots[0].daysAhead) }));
+  }, [availableSlots]);
 
-  function openPicker(nextEmergency: boolean) {
+  useEffect(() => {
+    if (didAutoOpen.current) return;
+    didAutoOpen.current = true;
+    setOpen(true);
+    onLoadSlots(false);
+  }, [onLoadSlots]);
+
+  function showPicker(nextEmergency = false) {
     setEmergency(nextEmergency);
     setOpen(true);
     onLoadSlots(nextEmergency);
   }
 
-  async function handlePick(s: AvailableSlot) {
-    const key = `${s.date}|${s.timeWindow}`;
+  async function pick(slot: AvailableSlot) {
+    const key = `${slot.date}|${slot.timeWindow}`;
     setPickingKey(key);
     try {
-      await onSelectSlot(s.date, s.timeWindow, emergency);
+      await onSelectSlot(slot.date, slot.timeWindow, emergency);
       setOpen(false);
-    } catch {
-      // slotSelectionError below already shows the real reason.
     } finally {
       setPickingKey(null);
     }
   }
 
-  async function handleContinue() {
-    if (acceptingSuggested) return;
-    setAcceptingSuggested(true);
-    try {
-      await onContinue();
-    } catch {
-      // The controller exposes the authoritative slot-selection error in
-      // this card. Keep the customer here so they can choose another time.
-    } finally {
-      setAcceptingSuggested(false);
-    }
+  async function continueFlow() {
+    setContinuing(true);
+    try { await onContinue(); } finally { setContinuing(false); }
   }
 
   return (
-    <BotCard>
-      <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>When should the technician come?</BotText>
-
-      {promisedSlot ? (
-        <View style={{ marginTop: 10, gap: 6 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Ionicons name="time-outline" size={15} color={BOT.brand} />
-            <BotText style={{ fontSize: 15, color: BOT.textSecondary }}>
-              {dayLabel(promisedSlot.date, promisedSlot.daysAhead)}, {promisedSlot.timeWindow}
-            </BotText>
-          </View>
-          {priceLabel ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="pricetag-outline" size={15} color={BOT.brand} />
-              <BotText style={{ fontSize: 15, color: BOT.textSecondary }}>{priceLabel}</BotText>
-            </View>
-          ) : null}
+    <View style={{ gap: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}><FuvayIcon size={17} accessibilityLabel="Fuvay booking assistant" /></View>
+        <View style={{ flex: 1, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 4, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}>
+          <AppText variant="body" style={{ color: f.surfaces.text }}>Where should the technician come?</AppText>
         </View>
-      ) : (
-        <BotText style={{ fontSize: 15, color: BOT.textMuted, marginTop: 6 }}>
-          We can&apos;t promise a time right now -- your provider will contact you to arrange one.
-        </BotText>
-      )}
-
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-        <Pressable
-          onPress={() => openPicker(false)}
-          accessibilityRole="button"
-          accessibilityLabel="Choose a different time"
-          style={{ flex: 1, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border }}
-        >
-          <BotText style={{ fontSize: 13, color: BOT.textSecondary }}>Choose a time</BotText>
-        </Pressable>
-        <Pressable
-          onPress={() => openPicker(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Soonest possible time"
-          style={{ flex: 1, height: 36, borderRadius: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: BOT.brandTint, borderWidth: 1, borderColor: BOT.brand }}
-        >
-          <Ionicons name="flash" size={13} color={BOT.warning} />
-          <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.brandLight }}>
-            {emergencySurchargeLabel ? `Soonest (+${emergencySurchargeLabel})` : "Soonest possible"}
-          </BotText>
-        </Pressable>
       </View>
-
-      {promisedSlot ? (
-        <View style={{ marginTop: 14 }}>
-          <BotPrimaryButton
-            label={acceptingSuggested ? "Checking time…" : "Continue"}
-            onPress={() => { void handleContinue(); }}
-            disabled={acceptingSuggested}
-          />
+      <View style={{ marginLeft: 42, alignSelf: "flex-end", maxWidth: "84%", paddingHorizontal: 13, paddingVertical: 11, borderRadius: 18, borderBottomRightRadius: 4, backgroundColor: f.soft(f.accents.a2), borderWidth: 1, borderColor: f.surfaces.edge, flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <AppLucideIcon name="map-marker-path" size={15} color={f.accents.a2} />
+        <View style={{ flex: 1 }}><AppText variant="labelStrong" style={{ color: f.surfaces.text }}>{addressTitle}</AppText><AppText variant="caption" numberOfLines={1} style={{ color: f.surfaces.sub }}>{addressLine}</AppText></View>
+        <AppLucideIcon name="pencil" size={13} color={f.accents.a2} />
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}><FuvayIcon size={17} accessibilityLabel="Fuvay booking assistant" /></View>
+        <View style={{ flex: 1, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 4, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }}>
+          <AppText variant="body" style={{ color: f.surfaces.text }}>And when suits you? Pick any open slot — or choose emergency for a visit within 2 hours.</AppText>
         </View>
-      ) : null}
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Pick a slot" onPress={() => showPicker(false)} style={({ pressed }) => ({ marginLeft: 42, alignSelf: "flex-end", minHeight: 40, paddingHorizontal: 16, borderRadius: 20, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: f.soft(f.accents.a2), borderWidth: 1, borderColor: f.surfaces.edge, opacity: pressed ? theme.opacity.pressed : 1 })}>
+        <AppLucideIcon name="calendar-clock" size={16} color={f.accents.a2} />
+        <AppText variant="labelStrong" style={{ color: f.accents.a2 }}>{promisedSlot ? `${dayLabel(promisedSlot.date, promisedSlot.daysAhead)}, ${promisedSlot.timeWindow}` : "Pick a slot"}</AppText>
+        <AppLucideIcon name="chevron-right" size={14} color={f.accents.a2} />
+      </Pressable>
+      {priceLabel ? <View style={{ paddingHorizontal: 14, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: f.surfaces.edge, backgroundColor: f.surfaces.card, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}><View style={{ flex: 1 }}><AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>Nothing due now</AppText><AppText variant="caption" style={{ color: f.surfaces.faint }}>Inspection fee is payable after the visit</AppText></View><AppText variant="numericMedium" style={{ color: f.surfaces.text }}>{priceLabel.replace(" inspection visit", "")}</AppText></View> : null}
+      {promisedSlot ? <BotPrimaryButton label={continuing ? "Checking time…" : "Review booking  →"} onPress={continueFlow} disabled={continuing} loading={continuing} /> : null}
 
-      {open ? (
-        <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: BOT.borderSubtle, paddingTop: 14 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <BotText style={{ fontSize: 15, fontWeight: "600", color: BOT.textPrimary }}>
-              {emergency ? "Soonest the provider can come" : "Available times"}
-            </BotText>
-            <Pressable onPress={() => setOpen(false)} accessibilityRole="button" accessibilityLabel="Close">
-              <Ionicons name="close" size={16} color={BOT.textFaint} />
-            </Pressable>
+      <FuvayAssistantSheet visible={open} title="Choose a time" subtitle="All available slots · 2-hour arrival window" onClose={() => setOpen(false)} scroll>
+        <Pressable accessibilityRole="button" accessibilityLabel="Emergency within 2 hours" onPress={() => showPicker(true)} style={{ minHeight: 58, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: emergency ? f.accents.a1 : f.surfaces.edge, backgroundColor: f.surfaces.card, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: f.soft(f.accents.a1) }}><AppLucideIcon name="lightning-bolt-outline" size={18} color={f.accents.a1} /></View>
+          <View style={{ flex: 1 }}><AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>Emergency · within 2 hours</AppText><AppText variant="caption" style={{ color: f.surfaces.sub }}>Priority dispatch{emergencySurchargeLabel ? `, +${emergencySurchargeLabel}` : ""}</AppText></View>
+          <AppLucideIcon name="chevron-right" size={16} color={f.accents.a1} />
+        </Pressable>
+        {slotSelectionError ? <AppText variant="caption" style={{ color: theme.colors.statusDanger }}>{slotSelectionError}</AppText> : null}
+        {slotsLoading ? <ActivityIndicator color={f.accents.a2} /> : groups.map(group => (
+          <View key={group.key} style={{ gap: 9 }}>
+            <AppText variant="bodyStrong" style={{ color: f.surfaces.text }}>{group.label}</AppText>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 9 }}>
+              {group.slots.map(slot => {
+                const key = `${slot.date}|${slot.timeWindow}`;
+                const current = promisedSlot?.date === slot.date && promisedSlot?.timeWindow === slot.timeWindow;
+                return <Pressable key={key} accessibilityRole="button" accessibilityLabel={`${group.label}, ${slot.timeWindow}`} disabled={pickingKey !== null} onPress={() => pick(slot)} style={({ pressed }) => ({ width: "31%", minHeight: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: current ? f.accents.a2 : f.surfaces.card, borderWidth: 1, borderColor: current ? f.accents.a2 : f.surfaces.edge, opacity: pressed ? theme.opacity.pressed : 1 })}>{pickingKey === key ? <ActivityIndicator size="small" color={f.accents.a2} /> : <AppText variant="labelStrong" style={{ color: current ? f.ink(f.accents.a2) : f.surfaces.text }}>{slot.timeWindow}</AppText>}</Pressable>;
+              })}
+            </View>
           </View>
-
-          {emergency && emergencySurchargeLabel ? (
-            <View
-              style={{
-                flexDirection: "row", gap: 8, alignItems: "flex-start",
-                marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: BOT.brandTint,
-              }}
-            >
-              <Ionicons name="flash" size={14} color={BOT.warning} style={{ marginTop: 2 }} />
-              <BotText style={{ flex: 1, fontSize: 13, lineHeight: 19, color: BOT.textPrimary }}>
-                Coming out at short notice costs{" "}
-                <BotText style={{ fontWeight: "700" }}>{emergencySurchargeLabel} extra</BotText>. It is
-                added to the total you approve — never charged later.
-              </BotText>
-            </View>
-          ) : null}
-
-          {/* A failed load is recoverable: the customer gets the real reason and
-              a way to try again, rather than a dead panel they must close. */}
-          {slotSelectionError ? (
-            <View style={{ marginTop: 10 }}>
-              <BotText style={{ fontSize: 13, color: BOT.danger }}>{slotSelectionError}</BotText>
-              <Pressable
-                onPress={() => onLoadSlots(emergency)}
-                accessibilityRole="button"
-                accessibilityLabel="Try loading times again"
-                style={{
-                  alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6,
-                  marginTop: 8, paddingHorizontal: 12, height: 34, borderRadius: 17,
-                  backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border,
-                }}
-              >
-                <Ionicons name="refresh" size={13} color={BOT.textSecondary} />
-                <BotText style={{ fontSize: 13, fontWeight: "600", color: BOT.textSecondary }}>
-                  Try again
-                </BotText>
-              </Pressable>
-            </View>
-          ) : null}
-
-          {slotsLoading && !availableSlots ? (
-            <ActivityIndicator color={BOT.brand} style={{ marginTop: 12 }} />
-          ) : availableSlots && availableSlots.length === 0 ? (
-            <BotText style={{ fontSize: 15, color: BOT.textMuted, marginTop: 10 }}>
-              No times available{emergency ? " even at the earliest" : ""}. Your provider will contact you to arrange one.
-            </BotText>
-          ) : (
-            <ScrollView style={{ maxHeight: 220, marginTop: 10 }}>
-              <View style={{ gap: 8 }}>
-                {(availableSlots ?? []).map(s => {
-                  const key = `${s.date}|${s.timeWindow}`;
-                  const isCurrent = promisedSlot?.date === s.date && promisedSlot?.timeWindow === s.timeWindow;
-                  const isBusy = pickingKey === key;
-                  return (
-                    <Pressable
-                      key={key}
-                      onPress={() => handlePick(s)}
-                      disabled={isCurrent || pickingKey !== null}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${dayLabel(s.date, s.daysAhead)}, ${s.timeWindow}${isCurrent ? ", currently selected" : ""}`}
-                      style={{
-                        flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-                        height: 44, paddingHorizontal: 14, borderRadius: 12,
-                        backgroundColor: isCurrent ? BOT.brandTint : BOT.surfaceSunken,
-                        borderWidth: 1, borderColor: isCurrent ? BOT.brand : BOT.borderSubtle,
-                        opacity: pickingKey !== null && !isBusy ? 0.5 : 1,
-                      }}
-                    >
-                      <BotText style={{ fontSize: 15, color: BOT.textSecondary }}>{dayLabel(s.date, s.daysAhead)}, {s.timeWindow}</BotText>
-                      {isBusy ? (
-                        <ActivityIndicator size="small" color={BOT.brand} />
-                      ) : isCurrent ? (
-                        <Ionicons name="checkmark-circle" size={16} color={BOT.brand} />
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          )}
-        </View>
-      ) : null}
-    </BotCard>
+        ))}
+      </FuvayAssistantSheet>
+    </View>
   );
 }

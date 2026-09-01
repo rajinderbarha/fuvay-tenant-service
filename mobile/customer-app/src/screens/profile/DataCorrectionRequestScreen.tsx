@@ -243,7 +243,7 @@ export function DataCorrectionRequestScreen() {
 
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+          style={{ flex: 1, backgroundColor: theme.colors.backgroundOverlay, justifyContent: "flex-end" }}
           onPress={() => setPickerVisible(false)}
         >
           <Pressable

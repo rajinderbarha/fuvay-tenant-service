@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { providerAnalyticsApi } from "../../../../lib/api";
-import { KpiCard, DateFilter, SimpleTable } from "../../../../components/analytics";
+import { AnalyticsMetric, DateFilter, SimpleTable } from "../../../../components/analytics";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
@@ -37,10 +37,10 @@ export default function ProviderQualityPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
-        <KpiCard label="Total Reviews"  value={s.total_reviews}   loading={loading} />
-        <KpiCard label="Average Rating" value={s.avg_rating}      loading={loading} severity={Number(s.avg_rating) < 3.5 ? "warning" : "success"} />
-        <KpiCard label="5-Star Reviews" value={s.five_star_count} loading={loading} />
-        <KpiCard label="1-Star Reviews" value={s.one_star_count}  loading={loading} severity={Number(s.one_star_count) > 5 ? "warning" : "normal"} />
+        <AnalyticsMetric label="Total Reviews"  value={s.total_reviews}   loading={loading} />
+        <AnalyticsMetric label="Average Rating" value={s.avg_rating}      loading={loading} severity={Number(s.avg_rating) < 3.5 ? "warning" : "success"} />
+        <AnalyticsMetric label="5-Star Reviews" value={s.five_star_count} loading={loading} />
+        <AnalyticsMetric label="1-Star Reviews" value={s.one_star_count}  loading={loading} severity={Number(s.one_star_count) > 5 ? "warning" : "normal"} />
       </div>
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>

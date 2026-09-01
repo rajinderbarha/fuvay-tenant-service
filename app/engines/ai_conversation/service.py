@@ -284,6 +284,22 @@ class AIConversationService:
 
         # ── Get active system prompt ──────────────────────────────────────────
         system_prompt = await self._get_active_system_prompt()
+        social_context = session.context_data or {}
+        if social_context.get("channel") in {"whatsapp", "instagram"}:
+            # Active templates may predate social booking. Append the channel
+            # contract so address and confirmation rules remain deterministic.
+            system_prompt += """
+
+SOCIAL BOOKING CONTRACT:
+- This conversation is WhatsApp or Instagram, not the native app.
+- Ask for each field returned in still_needed, including address_line_1,
+  city and zipcode. Save optional address_line_2, landmark, state and country
+  when the customer supplies them. Never invent address data.
+- Show the backend booking summary, then require the latest customer message
+  to be exactly CONFIRM BOOKING before calling confirm_home_service_booking.
+- Payment is collected after inspection or completed work; never say pay now
+  or paid now at booking confirmation.
+"""
 
         # ── Context injection ──────────────────────────────────────────────────
         context_prefix = self.workflow.build_context_prompt(
@@ -311,7 +327,10 @@ class AIConversationService:
             db=self.db,
             customer_id=customer_id or session.customer_id,
             session_id=str(session.id),
-            zipcode=(session.context_data or {}).get("zipcode"),
+            zipcode=social_context.get("zipcode"),
+            channel=social_context.get("channel"),
+            channel_user_id=social_context.get("channel_user_id"),
+            display_name=social_context.get("display_name"),
         )
 
         tools_called: list[str] = []

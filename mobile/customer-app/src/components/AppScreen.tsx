@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ViewProps, ScrollView, ScrollViewProps, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView, Edge } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "../design-system/theme";
 
 interface AppScreenProps extends ViewProps {
@@ -32,19 +33,21 @@ export function AppScreen({ scroll = false, edges, contentContainerStyle, style,
   );
 
   return (
-    <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: theme.colors.backgroundPrimary }}>
-      {scroll ? (
-        // `behavior={undefined}` on Android is a no-op -- KeyboardAvoidingView
-        // does nothing, so the keyboard can open directly over a focused
-        // input on any scroll-mode screen using this wrapper. "height" is
-        // the correct Android behavior (matches LoginScreen/ReviewScreen/
-        // ChatScreen/AddressBookScreen's own KeyboardAvoidingView usage).
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          {body}
-        </KeyboardAvoidingView>
-      ) : (
-        body
-      )}
+    <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: theme.material.canvas[1] }}>
+      <LinearGradient colors={theme.material.canvas} style={{ flex: 1 }}>
+        {scroll ? (
+          // `behavior={undefined}` on Android is a no-op -- KeyboardAvoidingView
+          // does nothing, so the keyboard can open directly over a focused
+          // input on any scroll-mode screen using this wrapper. "height" is
+          // the correct Android behavior (matches LoginScreen/ReviewScreen/
+          // ChatScreen/AddressBookScreen's own KeyboardAvoidingView usage).
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            {body}
+          </KeyboardAvoidingView>
+        ) : (
+          body
+        )}
+      </LinearGradient>
     </SafeAreaView>
   );
 }

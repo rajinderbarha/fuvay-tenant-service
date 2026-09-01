@@ -447,6 +447,7 @@ class HomeServiceJobAssignmentService:
                 designation = normalise_designation(getattr(s, "role", None))
                 status = "active" if getattr(s, "is_active", True) else "inactive"
                 name = s.full_name
+                profile_photo_url = getattr(s, "avatar_url", None)
             else:
                 if s.status != "active":
                     reasons.append("staff_inactive")
@@ -457,6 +458,7 @@ class HomeServiceJobAssignmentService:
                 designation = normalise_designation(getattr(s, "designation", None))
                 status = s.status
                 name = s.full_name
+                profile_photo_url = getattr(s, "profile_photo_url", None)
                 # Raw-lowercasing left every MULTI-WORD designation unmatched,
                 # so a real "Senior Technician" was refused with
                 # role_not_allowed while a plain "Technician" passed.
@@ -483,6 +485,7 @@ class HomeServiceJobAssignmentService:
                 "name":            name,
                 "role":            designation or "unknown",
                 "status":          status,
+                "profile_photo_url": profile_photo_url,
             }
             if not reasons:
                 eligible.append({
@@ -590,8 +593,7 @@ class HomeServiceJobAssignmentService:
         # MODULE-L5-25: tell the technician they have a new job. assign_job only
         # emitted an internal audit event, so a staff member was given work and
         # never told — the whole point of an assignment is that they act on it.
-        # (service_jobs.assigned_staff_id = users.id, so the staff id is the
-        # recipient user id directly.)
+        # The notifier resolves the roster record to its authenticated user.
         await self._notify_staff_assigned(
             job=job, staff_member_id=staff_member_id, tenant_id=tenant_id,
             scheduled_date=scheduled_date, scheduled_time_window=scheduled_time_window,
@@ -617,6 +619,27 @@ class HomeServiceJobAssignmentService:
         reassigned: bool,
     ) -> None:
         from app.engines.platform_notifications.models import InAppNotification
+        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from app.engines.auth.models import User
+
+        # Assignments store the provider-team-member id, while notifications
+        # belong to an authenticated User. These ids are intentionally not the
+        # same. Resolve the login identity and allow non-login roster members
+        # to be assigned without creating an invalid notification row.
+        recipient_user_id = (await self.db.execute(
+            select(ProviderTeamMember.user_id).where(
+                ProviderTeamMember.id == staff_member_id,
+                ProviderTeamMember.tenant_id == tenant_id,
+                ProviderTeamMember.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        if recipient_user_id is None:
+            recipient_user_id = (await self.db.execute(
+                select(User.id).where(User.id == staff_member_id)
+            )).scalar_one_or_none()
+        if recipient_user_id is None:
+            return
+
         when = ""
         if scheduled_date:
             when = f" for {scheduled_date.isoformat()}"
@@ -624,7 +647,7 @@ class HomeServiceJobAssignmentService:
                 when += f" ({scheduled_time_window})"
         verb = "reassigned to you" if reassigned else "assigned to you"
         self.db.add(InAppNotification(
-            user_id=staff_member_id,
+            user_id=recipient_user_id,
             tenant_id=tenant_id,
             notification_type="job_assigned",
             title="New job assigned to you" if not reassigned else "A job was reassigned to you",

@@ -6,6 +6,7 @@ import {
   StatCard, Badge, Btn, Modal, DataTable,
 } from "../../../components/shared/ui";
 import { ActionMenu } from "../../../components/shared/layout";
+import EnterpriseFilterBar from "../../../components/enterprise/EnterpriseFilterBar";
 import { Card, PageHeader, Pagination, StatusBadge } from "@serviceos/design-system";
 import {
   Search, RefreshCw, Users, CheckCircle, Clock, AlertCircle, XCircle,
@@ -134,97 +135,39 @@ function Toolbar({ filters, onChange, onExport, onRefresh, onAdd }: {
   filters: Filters; onChange: (f: Filters) => void;
   onExport: () => void; onRefresh: () => void; onAdd: () => void;
 }) {
-  const [adv, setAdv] = useState(false);
-  const inp: React.CSSProperties = { height: 34, border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", background: "var(--surface)", color: "var(--text)", fontSize: 12 };
-  const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    onChange({ ...filters, [k]: e.target.value });
-
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-secondary)" }} />
-          <input
-            placeholder="Search by name, email, phone, tenant ID…"
-            value={filters.q} onChange={set("q")}
-            style={{ ...inp, width: "100%", paddingLeft: 30 }}
-          />
-        </div>
-        <select value={filters.status} onChange={set("status")} style={inp}>
-          <option value="">All Statuses</option>
-          {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select value={filters.verification_status} onChange={set("verification_status")} style={inp}>
-          <option value="">All Verification</option>
-          {Object.entries(VERIF_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <Btn variant="secondary" size="sm" onClick={() => setAdv(!adv)}>
-          <Filter size={12} /> Advanced {adv ? <ChevronDown size={11} style={{ transform: "rotate(180deg)" }} /> : <ChevronDown size={11} />}
-        </Btn>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+      <EnterpriseFilterBar
+        searchValue={filters.q}
+        onSearch={q => onChange({ ...filters, q })}
+        filters={[
+          { key: "status", label: "Status", type: "select", options: Object.entries(STATUS_LABEL).map(([value, label]) => ({ value, label })) },
+          { key: "verification_status", label: "Verification", type: "select", options: Object.entries(VERIF_LABEL).map(([value, label]) => ({ value, label })) },
+          { key: "city_tier", label: "City tier", type: "select", advanced: true, group: "Location", options: [{ value: "metro", label: "Metro" }, { value: "large", label: "Large city" }, { value: "mid", label: "Mid-size" }, { value: "small", label: "Small town" }] },
+          { key: "state", label: "State", type: "text", advanced: true, group: "Location" },
+          { key: "city", label: "City", type: "text", advanced: true, group: "Location" },
+          { key: "created", label: "Created", type: "date_range", advanced: true, group: "Lifecycle" },
+          { key: "sort_by", label: "Sort by", type: "select", advanced: true, group: "Ordering", options: [{ value: "created_at", label: "Created" }, { value: "updated_at", label: "Updated" }, { value: "tenant_name", label: "Name" }, { value: "health_score", label: "Health" }] },
+          { key: "sort_dir", label: "Direction", type: "select", advanced: true, group: "Ordering", options: [{ value: "desc", label: "Descending" }, { value: "asc", label: "Ascending" }] },
+        ]}
+        values={{ ...filters, created_from: filters.created_from, created_to: filters.created_to }}
+        onChange={(key, value) => {
+          const mapped = key === "created_from" ? "created_from" : key === "created_to" ? "created_to" : key;
+          onChange({ ...filters, [mapped]: value });
+        }}
+        onBatchChange={changes => onChange({ ...filters, ...changes, created_from: changes.created_from ?? filters.created_from, created_to: changes.created_to ?? filters.created_to })}
+        onReset={() => onChange(DEFAULT_FILTERS)}
+        rightSlot={<div style={{ display: "flex", gap: 6 }}>
           <Btn variant="secondary" size="sm" onClick={onExport}><Download size={12} /> Export</Btn>
           <Btn variant="secondary" size="sm" onClick={onRefresh}><RefreshCw size={12} /></Btn>
-          <Btn variant="primary" size="sm" onClick={onAdd}><Plus size={12} /> Add Tenant</Btn>
-        </div>
-      </div>
-      {adv && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", padding: "12px 16px", background: "var(--surface-sunken)", borderRadius:"var(--radius-md)", border: "1px solid var(--border)" }}>
-          <select value={filters.city_tier} onChange={set("city_tier")} style={inp}>
-            <option value="">All Tiers</option>
-            <option value="metro">Metro</option>
-            <option value="large">Large City</option>
-            <option value="mid">Mid-Size</option>
-            <option value="small">Small Town</option>
-          </select>
-          <input placeholder="State" value={filters.state} onChange={set("state")} style={{ ...inp, width: 140 }} />
-          <input placeholder="City" value={filters.city} onChange={set("city")} style={{ ...inp, width: 140 }} />
-          <select value={filters.sort_by} onChange={set("sort_by")} style={inp}>
-            <option value="created_at">Sort: Created</option>
-            <option value="updated_at">Sort: Updated</option>
-            <option value="tenant_name">Sort: Name</option>
-            <option value="health_score">Sort: Health</option>
-          </select>
-          <select value={filters.sort_dir} onChange={set("sort_dir")} style={inp}>
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-          </select>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <input type="date" value={filters.created_from} onChange={set("created_from")} style={{ ...inp, fontSize: 11 }} />
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>to</span>
-            <input type="date" value={filters.created_to} onChange={set("created_to")} style={{ ...inp, fontSize: 11 }} />
-          </div>
-          <Btn variant="ghost" size="sm" onClick={() => { onChange(DEFAULT_FILTERS); setAdv(false); }}>Clear All</Btn>
-        </div>
-      )}
+          <Btn variant="primary" size="sm" onClick={onAdd}><Plus size={12} /> Add tenant</Btn>
+        </div>}
+      />
     </div>
   );
 }
 
 // ── Active Filter Chips ────────────────────────────────────────────────────────
-
-function ActiveChips({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
-  const chips: { key: keyof Filters; label: string }[] = [];
-  if (filters.q)                    chips.push({ key: "q",                    label: `"${filters.q}"` });
-  if (filters.status)               chips.push({ key: "status",               label: STATUS_LABEL[filters.status] || filters.status });
-  if (filters.verification_status)  chips.push({ key: "verification_status",  label: `Verif: ${VERIF_LABEL[filters.verification_status] || filters.verification_status}` });
-  if (filters.city_tier)            chips.push({ key: "city_tier",            label: `Tier: ${humanize(filters.city_tier)}` });
-  if (filters.state)                chips.push({ key: "state",                label: `State: ${filters.state}` });
-  if (filters.city)                 chips.push({ key: "city",                 label: `City: ${filters.city}` });
-  if (filters.created_from)         chips.push({ key: "created_from",         label: `From: ${filters.created_from}` });
-  if (filters.created_to)           chips.push({ key: "created_to",           label: `To: ${filters.created_to}` });
-  if (!chips.length) return null;
-  return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-      {chips.map(c => (
-        <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, background: "var(--accent-muted, var(--accent-muted))", color: "var(--accent, var(--brand))", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 10px" }}>
-          {c.label}
-          <button onClick={() => onChange({ ...filters, [c.key]: "" })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}><X size={10} /></button>
-        </span>
-      ))}
-      <Btn variant="ghost" size="sm" onClick={() => onChange(DEFAULT_FILTERS)} style={{ fontSize: 11 }}>Clear all</Btn>
-    </div>
-  );
-}
 
 // ── Bulk Action Bar ────────────────────────────────────────────────────────────
 
@@ -802,8 +745,6 @@ function TenantsPageInner() {
               onRefresh={refresh}
               onAdd={() => { window.location.href = "/admin/tenants/onboarding"; }}
             />
-            <ActiveChips filters={filters} onChange={f => { setFilters(f); setPage(1); }} />
-
             {selected.size > 0 && (
               <BulkBar
                 count={selected.size}

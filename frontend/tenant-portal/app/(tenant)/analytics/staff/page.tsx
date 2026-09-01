@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { providerAnalyticsApi } from "../../../../lib/api";
-import { KpiCard, DateFilter, SimpleTable } from "../../../../components/analytics";
+import { AnalyticsMetric, DateFilter, SimpleTable } from "../../../../components/analytics";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const ago30  = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
@@ -37,9 +37,9 @@ export default function ProviderStaffPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
-        <KpiCard label="Total Staff"        value={s.total_staff}        loading={loading} />
-        <KpiCard label="Active This Period" value={s.active_staff}       loading={loading} />
-        <KpiCard label="Avg Jobs/Staff"     value={s.avg_jobs_per_staff} loading={loading} />
+        <AnalyticsMetric label="Total Staff"        value={s.total_staff}        loading={loading} />
+        <AnalyticsMetric label="Active This Period" value={s.active_staff}       loading={loading} />
+        <AnalyticsMetric label="Avg Jobs/Staff"     value={s.avg_jobs_per_staff} loading={loading} />
       </div>
 
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-lg)", padding: 20 }}>

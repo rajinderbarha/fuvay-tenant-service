@@ -48,7 +48,7 @@ export function BookingActivity({ events, bare = false }: BookingActivityProps) 
                   alignItems: "center", justifyContent: "center",
                 }}
               >
-                <Icon name="checkmark" size="compact" color="#FFFFFF" decorative />
+                <Icon name="checkmark" size="compact" color={theme.colors.brandOnPrimary} decorative />
               </View>
               {/* Continues past the last event too, faded, so the feed
                   reads as ongoing rather than finished. */}

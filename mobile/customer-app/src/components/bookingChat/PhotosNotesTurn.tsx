@@ -1,19 +1,22 @@
 import React, { useCallback, useState } from "react";
-import { View, Image, Pressable, ActivityIndicator, Alert } from "react-native";
+import { View, Image, Pressable, ActivityIndicator, Alert, TextInput } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useBotColors } from "./botTheme";
-import { BotCard, BotPrimaryButton } from "./BotPrimitives";
+import { BotPrimaryButton } from "./BotPrimitives";
 import { resolveMediaImageSource } from "../../domain/mediaUrl";
 import { MAX_DRAFT_PHOTOS, ALLOWED_PHOTO_MIME_TYPES, type PickedPhoto } from "../../api/bookingPhotos/bookingPhotoApi";
 import { getInMemoryAccessToken } from "../../api/session/tokenVault";
 import { BotText } from "./BotText";
+import { useTheme } from "../../design-system/theme";
+import { AppLucideIcon } from "../AppLucideIcon";
 
 export interface PhotosNotesTurnProps {
   photoUrls: string[];
   onAddPhoto: (photo: PickedPhoto) => Promise<void>;
   onRemovePhoto: (photoUrl: string) => Promise<void>;
   onContinue: () => void;
+  summaryChips?: string[];
 }
 
 const THUMB = 64;
@@ -33,8 +36,10 @@ function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string | null {
  * "additional detail" is NOT a separate step here: it is already the
  * catalog's own `issue_detail` text question, answered earlier in the
  * normal question loop like any other question. */
-export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContinue }: PhotosNotesTurnProps) {
+export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContinue, summaryChips = [] }: PhotosNotesTurnProps) {
   const BOT = useBotColors();
+  const { theme } = useTheme();
+  const f = theme.fuvay;
   const [busy, setBusy] = useState(false);
   const [pendingPreviewUri, setPendingPreviewUri] = useState<string | null>(null);
   const atLimit = photoUrls.length >= MAX_DRAFT_PHOTOS;
@@ -72,11 +77,11 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
   }, [busy, onRemovePhoto]);
 
   return (
-    <BotCard>
-      <BotText style={{ fontSize: 16, fontWeight: "700", color: BOT.textPrimary }}>Add a photo? (optional)</BotText>
-      <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 2 }}>
-        A photo helps your provider bring the right parts.
-      </BotText>
+    <View style={{ gap: 18 }}>
+      <BotText style={{ fontSize: 22, lineHeight: 27, fontWeight: "700", color: BOT.textPrimary }}>Anything else we should know?</BotText>
+      <BotText style={{ fontSize: 11.5, lineHeight: 17, color: BOT.textMuted, marginTop: -10 }}>Optional. A short note helps the technician arrive prepared.</BotText>
+      {summaryChips.length ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{summaryChips.slice(0, 4).map(chip => <View key={chip} style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: f.soft(f.accents.a3), flexDirection: "row", alignItems: "center", gap: 6 }}><AppLucideIcon name="check" size={12} color={f.accents.a3} /><BotText style={{ fontSize: 11.5, color: f.accents.a3 }}>{chip}</BotText></View>)}</View> : null}
+      <TextInput accessibilityLabel="Additional booking note" multiline placeholder="e.g. Outdoor unit is on the balcony, gate code 4412" placeholderTextColor={f.surfaces.faint} style={[theme.typography.body, { minHeight: 128, textAlignVertical: "top", borderRadius: 18, padding: 14, color: f.surfaces.text, backgroundColor: f.surfaces.card, borderWidth: 1, borderColor: f.surfaces.edge }]} />
 
       {photoUrls.length > 0 || pendingPreviewUri ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
@@ -116,23 +121,24 @@ export function PhotosNotesTurn({ photoUrls, onAddPhoto, onRemovePhoto, onContin
         </View>
       ) : null}
 
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable
           onPress={handleAdd}
           disabled={busy || atLimit}
           accessibilityRole="button"
           accessibilityLabel={photoUrls.length === 0 ? "Add a photo" : "Add another photo"}
-          style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border, opacity: atLimit ? 0.5 : 1 }}
+          style={{ flex: 1, height: 44, paddingHorizontal: 14, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border, opacity: atLimit ? 0.5 : 1 }}
         >
-          <Ionicons name="camera-outline" size={15} color={BOT.textSecondary} />
-          <BotText style={{ fontSize: 13, color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add a photo" : "Add another"}</BotText>
+          <Ionicons name="attach-outline" size={15} color={BOT.textSecondary} />
+          <BotText style={{ fontSize: 11.5, fontWeight: "600", color: BOT.textSecondary }}>{photoUrls.length === 0 ? "Add photo" : "Add another"}</BotText>
         </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Add voice note" style={{ flex: 1, height: 44, paddingHorizontal: 14, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, backgroundColor: BOT.surfaceSunken, borderWidth: 1, borderColor: BOT.border }}><AppLucideIcon name="mic" size={14} color={f.surfaces.sub} /><BotText style={{ fontSize: 11.5, fontWeight: "600", color: BOT.textSecondary }}>Voice note</BotText></Pressable>
         {busy ? <ActivityIndicator size="small" color={BOT.brand} /> : null}
       </View>
 
-      <View style={{ marginTop: 14 }}>
-        <BotPrimaryButton label="Continue" onPress={onContinue} />
+      <View style={{ marginTop: 4 }}>
+        <BotPrimaryButton label="Get my price  →" onPress={onContinue} />
       </View>
-    </BotCard>
+    </View>
   );
 }

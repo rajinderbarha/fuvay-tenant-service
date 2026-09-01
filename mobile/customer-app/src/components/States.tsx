@@ -45,7 +45,7 @@ function StateView({ icon, title, message, actionLabel, onAction, secondaryActio
             ...theme.shadow.sm,
           }}
         >
-          <Icon name={icon} size="feature" color="#FFFFFF" decorative />
+          <Icon name={icon} size="feature" color={theme.colors.brandOnPrimary} decorative />
         </View>
       ) : (
         <Icon name={icon} size="emptyState" color={theme.colors.textTertiary} decorative />

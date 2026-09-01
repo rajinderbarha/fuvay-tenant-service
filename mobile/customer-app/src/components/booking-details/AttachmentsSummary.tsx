@@ -46,7 +46,7 @@ export function AttachmentsSummary({ attachments, note }: { attachments: Custome
               backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}
           >
-            <Icon name="image-outline" size="compact" color="#FFFFFF" decorative />
+            <Icon name="image-outline" size="compact" color={theme.colors.textInverse} decorative />
           </View>
           <AppText variant="bodySmall" numberOfLines={1}>
             {attachments.length > 0 ? `${attachments.length} photo${attachments.length === 1 ? "" : "s"}` : "No photos"}
@@ -56,10 +56,10 @@ export function AttachmentsSummary({ attachments, note }: { attachments: Custome
           <View
             style={{
               width: 36, height: 36, borderRadius: theme.radius.radiusFull,
-              backgroundColor: "#C2570C", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              backgroundColor: theme.colors.statusWarning, alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}
           >
-            <Icon name="document-text-outline" size="compact" color="#FFFFFF" decorative />
+            <Icon name="document-text-outline" size="compact" color={theme.colors.textInverse} decorative />
           </View>
           <AppText variant="bodySmall" numberOfLines={1}>{note ?? "No additional note"}</AppText>
         </View>

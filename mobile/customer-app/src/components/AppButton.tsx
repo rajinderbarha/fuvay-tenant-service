@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Pressable, ActivityIndicator, ViewStyle, GestureResponderEvent } from "react-native";
 import { useTheme } from "../design-system/theme";
 import { AppText } from "./AppText";
+import { AppSurface } from "./AppSurface";
 
 export type ButtonTone = "primary" | "secondary" | "tertiary" | "destructive";
 export type ButtonSize = "default" | "compact";
@@ -82,38 +83,49 @@ export function AppButton({
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
         hitSlop={8}
         style={({ pressed }) => {
-          const c = toneColors(theme, tone, pressed, disabled && !isLoading);
           return [
             {
-              minHeight: theme.touchTargets.minimum,
-              paddingHorizontal: theme.spacing.base,
-              borderRadius: theme.radiusUsage.button,
-              backgroundColor: c.bg,
-              borderWidth: tone === "secondary" || tone === "destructive" ? 1 : 0,
-              borderColor: c.border,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: theme.spacing.xs,
               opacity: disabled && !isLoading ? theme.opacity.disabled : 1,
               alignSelf: fullWidth ? "stretch" : "flex-start",
               width: fullWidth ? "100%" : undefined,
+              transform: [{ scale: pressed ? 0.985 : 1 }],
             },
-            size === "compact" ? { minHeight: 40, paddingHorizontal: theme.spacing.sm } : null,
             style,
           ];
         }}
       >
         {({ pressed }) => {
           const c = toneColors(theme, tone, pressed, disabled && !isLoading);
-          return isLoading ? (
-            <ActivityIndicator color={c.fg} />
-          ) : (
-            <>
-              {leadingIcon}
-              <AppText variant="button" style={{ color: c.fg }}>{label}</AppText>
-              {trailingIcon}
-            </>
+          const gradient = tone === "primary"
+            ? [pressed ? theme.colors.brandPrimaryPressed : theme.colors.brandPrimary, theme.colors.brandPrimaryPressed] as const
+            : [c.bg, c.bg] as const;
+          return (
+            <AppSurface
+              variant={tone === "secondary" ? "interactive" : "flat"}
+              elevated={tone === "primary" || tone === "secondary"}
+              colors={gradient}
+              style={{
+                minHeight: size === "compact" ? 40 : theme.touchTargets.minimum,
+                paddingHorizontal: size === "compact" ? theme.spacing.sm : theme.spacing.base,
+                borderRadius: theme.radiusUsage.button,
+                borderWidth: tone === "secondary" || tone === "destructive" ? 1 : 0,
+                borderColor: c.border,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: theme.spacing.xs,
+              }}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={c.fg} />
+              ) : (
+                <>
+                  {leadingIcon}
+                  <AppText variant="button" style={{ color: c.fg }}>{label}</AppText>
+                  {trailingIcon}
+                </>
+              )}
+            </AppSurface>
           );
         }}
       </Pressable>

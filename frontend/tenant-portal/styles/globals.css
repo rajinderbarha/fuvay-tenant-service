@@ -253,7 +253,41 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 1280px) {
   .provider-main {
-    padding: 24px !important;
+    padding: 20px !important;
+  }
+
+  .provider-topbar {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+}
+
+/* A 13-inch/14-inch laptop needs the operational content more than it needs
+ * a permanent global-search field and duplicated online text. Navigation is
+ * already rendered as a labelled icon rail by TenantLayout at this width. */
+@media (max-width: 1180px) {
+  .provider-global-search,
+  .provider-online-status {
+    display: none !important;
+  }
+
+  .provider-topbar {
+    gap: 8px !important;
+  }
+
+  .provider-profile-copy {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .provider-main {
+    padding: 16px !important;
+  }
+
+  .provider-credit-pill button {
+    padding-left: 9px !important;
+    padding-right: 9px !important;
   }
 }
 
@@ -264,6 +298,6 @@ a { color: inherit; text-decoration: none; }
   }
 
   .provider-main {
-    padding: 20px 16px !important;
+    padding: 14px 12px !important;
   }
 }

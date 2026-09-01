@@ -86,7 +86,7 @@ export function GlobalServiceInquiryModal({ service, defaultZipcode, onClose }: 
                 onPress={onClose}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
-                style={({ pressed }) => ({ width: 44, height: 44, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.14)", opacity: pressed ? 0.72 : 1 })}
+                style={({ pressed }) => ({ width: 44, height: 44, alignItems: "center", justifyContent: "center", backgroundColor: theme.material.highlight, opacity: pressed ? theme.opacity.pressed : 1 })}
               >
                 <Icon name="close" color={theme.colors.brandOnPrimary} decorative />
               </Pressable>

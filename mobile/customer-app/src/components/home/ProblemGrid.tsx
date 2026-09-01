@@ -100,7 +100,7 @@ function ProblemCard({ issue, index, onPress }: { issue: HomeQuickIssue; index: 
         </View>
         <View>
           <AppText variant="bodyStrong" numberOfLines={3} style={{ lineHeight: 19 }}>{issue.label}</AppText>
-          <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginTop: 5, fontWeight: "700" }}>Book this service â†’</AppText>
+          <AppText variant="caption" color="secondary" numberOfLines={1} style={{ marginTop: 5, fontWeight: "700" }}>{"Book this service \u2192"}</AppText>
         </View>
       </View>
     </Pressable>

@@ -99,7 +99,7 @@ export function CreditPill() {
     : 100;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <div ref={wrapRef} className="provider-credit-pill" style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(o => !o)}
         aria-label={`Credit balance ${inr(status.credit_balance)}. Click to top up.`}

@@ -62,7 +62,7 @@ export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisab
           <>
             <Row label="Visit fee" value={formatMoney(summary.inspection.visitFee)} />
             <Row label="Repair price" value="After inspection" muted />
-            <Row label="Payment" value="Pay provider directly" muted />
+            <Row label="Payment" value="After inspection or completed work" muted />
           </>
         ) : summary.priceState.kind === "valid" ? (
           <Row label="Estimated total" value={formatMoney(summary.priceState.amount)} big />

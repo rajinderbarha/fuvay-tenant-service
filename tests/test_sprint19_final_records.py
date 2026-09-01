@@ -327,13 +327,15 @@ class TestHomeServiceFinalCreation:
         db.execute = AsyncMock(return_value=draft_result)
         db.flush   = AsyncMock()
         db.refresh = AsyncMock()
+        # SQLAlchemy AsyncSession.add() is synchronous. AsyncMock would emit
+        # un-awaited coroutine warnings and does not model the real session.
+        db.add     = MagicMock()
 
         # Mock number generation
         with patch("app.engines.final_records.creation_service.generate_booking_number",
                    new=AsyncMock(return_value="BK-20260702-000001")), \
              patch("app.engines.final_records.creation_service.generate_job_number",
-                   new=AsyncMock(return_value="JOB-20260702-000001")), \
-             patch.object(db, "add"):
+                   new=AsyncMock(return_value="JOB-20260702-000001")):
 
             # Mock lock creation
             lock_svc = AsyncMock()
@@ -367,6 +369,13 @@ class TestHomeServiceFinalCreation:
         lock_svc.create_lock = AsyncMock()
         db.add   = MagicMock()
         db.flush = AsyncMock()
+        existing_job = MagicMock()
+        existing_job.id = uuid.uuid4()
+        existing_job.job_number = "JOB-20260702-000001"
+        existing_job.status = "confirmed"
+        mock_res = MagicMock()
+        mock_res.scalars.return_value.first.return_value = existing_job
+        db.execute = AsyncMock(return_value=mock_res)
 
         svc      = HomeServiceFinalCreationService(db=db)
         svc.lock = lock_svc
@@ -374,6 +383,8 @@ class TestHomeServiceFinalCreation:
         result = await svc.finalize(draft_id)
         assert result["idempotent"]    is True
         assert result["booking_number"] == "BK-20260702-000001"
+        assert result["job_number"] == "JOB-20260702-000001"
+        assert result["job_id"] == str(existing_job.id)
         lock_svc.create_lock.assert_not_called()
 
     @pytest.mark.asyncio

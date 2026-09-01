@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable } from "react-native";
 import { useTheme } from "../design-system/theme";
 import { Icon, IconProps } from "./Icon";
+import { AppSurface } from "./AppSurface";
 
 export interface AppIconButtonProps {
   name: IconProps["name"];
@@ -26,14 +27,24 @@ export function AppIconButton({ name, onPress, accessibilityLabel, disabled, ton
       style={({ pressed }) => ({
         width: theme.touchTargets.iconButton,
         height: theme.touchTargets.iconButton,
-        borderRadius: theme.radius.radiusFull,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: pressed ? theme.colors.surfaceInteractive : "transparent",
         opacity: disabled ? theme.opacity.disabled : 1,
+        transform: [{ scale: pressed ? 0.96 : 1 }],
       })}
     >
-      <Icon name={name} size="navigation" color={tone === "primary" ? theme.colors.brandPrimary : theme.colors.textPrimary} />
+      <AppSurface
+        variant="interactive"
+        style={{
+          width: theme.touchTargets.iconButton,
+          height: theme.touchTargets.iconButton,
+          borderRadius: theme.radius.radiusFull,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icon name={name} size="navigation" color={tone === "primary" ? theme.colors.brandPrimaryStrong : theme.colors.textPrimary} />
+      </AppSurface>
     </Pressable>
   );
 }

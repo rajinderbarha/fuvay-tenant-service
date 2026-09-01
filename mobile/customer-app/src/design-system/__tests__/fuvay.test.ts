@@ -1,8 +1,14 @@
 import {
   buildFuvayTheme,
   darkAccents,
+  darkDiamondTile,
+  darkServiceCard,
+  darkSquircleTile,
   ink,
   lightAccents,
+  lightDiamondTile,
+  lightServiceCard,
+  lightSquircleTile,
   softAccent,
 } from "../tokens/fuvay";
 
@@ -76,6 +82,22 @@ describe("softAccent()", () => {
 });
 
 describe("buildFuvayTheme()", () => {
+  it("binds the exact Circle Tile diamond surfaces to each theme", () => {
+    expect(buildFuvayTheme(true).diamondTile).toBe(darkDiamondTile);
+    expect(buildFuvayTheme(false).diamondTile).toBe(lightDiamondTile);
+    expect(darkDiamondTile.plateStops).toEqual(["#35353b", "#2d2d32", "#232326"]);
+    expect(lightDiamondTile.plateStops).toEqual(["#ffffff", "#f6f4f2", "#eae7e3"]);
+  });
+
+  it("binds the exact Circle Tile squircle and service-card gradients", () => {
+    expect(buildFuvayTheme(true).squircleTile).toBe(darkSquircleTile);
+    expect(buildFuvayTheme(false).squircleTile).toBe(lightSquircleTile);
+    expect(buildFuvayTheme(true).serviceCard).toBe(darkServiceCard);
+    expect(buildFuvayTheme(false).serviceCard).toBe(lightServiceCard);
+    expect(darkSquircleTile.stops).toEqual(["#34343a", "#2e2e33", "#29292d", "#232326"]);
+    expect(lightServiceCard.stops).toEqual(["#ffffff", "#f7f5f3", "#eeebe7"]);
+  });
+
   it("binds soft() to the theme so callers cannot mix alphas", () => {
     expect(buildFuvayTheme(true).soft("#3f9bf0")).toBe("#3f9bf01f");
     expect(buildFuvayTheme(false).soft("#3f9bf0")).toBe("#3f9bf018");

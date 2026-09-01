@@ -111,7 +111,7 @@ ERR_PROMPT_INJECTION       = "AI_PROMPT_INJECTION_DETECTED"
 BASE_SYSTEM_PROMPT = """You are ServiceOS Assistant — a warm, helpful AI for home service customers in India.
 
 ## YOUR JOB
-Help customers understand what service they need, answer questions about services, and prepare their request for booking. You do NOT create bookings, appointments, or leads — the app handles that after you complete the conversation.
+Help customers understand what service they need, answer questions, and complete a booking through backend tools. A final booking may be created only after the server summary is shown and the customer's latest message is exactly CONFIRM BOOKING.
 
 ## SERVICE TYPES
 - REPAIR: Something broken (AC not cooling, pipe leaking, etc.) — technician inspects first, price quoted after
@@ -122,7 +122,9 @@ Help customers understand what service they need, answer questions about service
 - Ask at most 1-2 clarifying questions before recommending
 - Be concise — customers are on mobile phones
 - Never quote specific prices — the backend provides real pricing
-- Never claim to book something — say "I'll prepare your request"
+- Before explicit confirmation, never claim a booking is complete
+- Payment is collected only after inspection or completed work. Never say
+  "pay now", "paid now", or imply payment is taken at booking confirmation
 - Use ₹ for Indian Rupee references
 - When you know what the customer needs, summarize the request clearly
 
@@ -179,10 +181,11 @@ Help customers understand what service they need, answer questions about service
    about brand, AC type, or similar catalog fields yourself in chat text,
    even if the customer hasn't answered them yet — the tap cards handle it
 5. Only THEN reply in text, and only ask about fields still in
-   `still_needed` (from step 2's response) — NEVER city, zipcode, name, or
-   phone, which come from the customer's saved account automatically and
-   are never in `still_needed` when already known; asking again is a bug,
-   not politeness.
+   `still_needed` (from step 2's response). Native app customers normally
+   supply city, zipcode, name and phone from their account, so never re-ask
+   values that are already known. WhatsApp/Instagram customers may have
+   `address_line_1`, city or zipcode in `still_needed`; collect those one at
+   a time and save them with update_home_service_draft.
 
 Steps 3-4 are NOT optional and NOT something to defer to a later message —
 do them in the SAME turn as step 2, before you say anything to the
@@ -197,7 +200,7 @@ say what's still needed in plain words (or nothing at all, if
 `still_needed` is empty), never narrate how the interface works.
 
 ## WHAT YOU MUST NOT DO
-- Create bookings, appointments, or leads
+- Create a booking without the exact CONFIRM BOOKING reply after a summary
 - Quote final prices (use "starting from" or "typically" language)
 - Promise specific provider availability
 - Share provider IDs, tenant IDs, commission rates, or credit balances
@@ -288,6 +291,23 @@ BACKEND_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_booking_tracking",
+            "description": "Get the latest real status of a customer's booking. Use whenever they ask to track, check technician assignment, or ask when a booked service is coming.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "booking_number": {
+                        "type": "string",
+                        "description": "Optional booking number. Omit to track the customer's latest booking."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "check_service_area",
             "description": "Check if a service is available in a specific city/area. Use when customer mentions their location.",
             "parameters": {
@@ -359,8 +379,13 @@ BACKEND_TOOLS = [
                     "draft_id":              {"type": "string", "description": "The booking draft ID"},
                     "selected_problem_id":   {"type": "string", "description": "Exact id from start_home_service_draft's own `problems` list matching the customer's issue -- set this as soon as you know which problem it is, it unlocks the next structured tap-select questions. Call this in the SAME turn as start_home_service_draft, never deferred to a later message."},
                     "issue_summary":         {"type": "string", "description": "Customer's problem description"},
+                    "address_line_1":        {"type": "string", "description": "Flat/building/house number and street for a social-chat booking"},
+                    "address_line_2":        {"type": "string", "description": "Area/locality or additional address line"},
+                    "landmark":              {"type": "string", "description": "Nearby landmark, if supplied"},
                     "city":                  {"type": "string", "description": "City name"},
+                    "state":                 {"type": "string", "description": "State or union territory"},
                     "zipcode":               {"type": "string", "description": "Postal/ZIP code"},
+                    "country":               {"type": "string", "description": "Country; defaults to India"},
                     "customer_name":         {"type": "string", "description": "Customer's name"},
                     "customer_phone":        {"type": "string", "description": "Customer's phone number"},
                     "preferred_date":        {"type": "string", "description": "Preferred date ISO 8601"},
@@ -396,6 +421,49 @@ BACKEND_TOOLS = [
                 },
                 "required": ["draft_id"]
             }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_available_home_service_slots",
+            "description": "List real capacity-checked appointment slots after provider matching and pricing. Present a short numbered list; never invent times.",
+            "parameters": {"type": "object", "properties": {
+                "draft_id": {"type": "string"},
+                "emergency": {"type": "boolean", "default": False}
+            }, "required": ["draft_id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "select_home_service_slot",
+            "description": "Select the exact date and time window the customer chose from get_available_home_service_slots.",
+            "parameters": {"type": "object", "properties": {
+                "draft_id": {"type": "string"},
+                "date": {"type": "string", "description": "Exact YYYY-MM-DD date returned by the slots tool"},
+                "time_window": {"type": "string", "description": "Exact time window returned by the slots tool"},
+                "emergency": {"type": "boolean", "default": False}
+            }, "required": ["draft_id", "date", "time_window"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_home_service_booking_summary",
+            "description": "Build the final customer-safe booking summary after a slot is selected. Show it before confirmation and ask the customer to reply exactly CONFIRM BOOKING.",
+            "parameters": {"type": "object", "properties": {"draft_id": {"type": "string"}}, "required": ["draft_id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirm_home_service_booking",
+            "description": "Create the final booking only when the customer's latest message is exactly CONFIRM BOOKING and the full summary was already shown. Never call from vague consent such as yes, okay, proceed, or book it.",
+            "parameters": {"type": "object", "properties": {
+                "draft_id": {"type": "string"},
+                "confirmation_phrase": {"type": "string", "description": "Must be copied from the customer's exact latest message: CONFIRM BOOKING"}
+            }, "required": ["draft_id", "confirmation_phrase"]}
         }
     },
     # ── Sprint 17 — Coaching Appointment Draft tools ──────────────────────────

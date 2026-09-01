@@ -145,6 +145,18 @@
 }
 
 /* Canonical data-table contract shared by admin and tenant. */
+.ds-table-viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  border-radius: inherit;
+}
+.ds-table-viewport:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
+}
 .ds-table {
   --ds-table-cell-padding-block: var(--space-3);
   --ds-table-cell-padding-inline: var(--space-4);
@@ -249,6 +261,14 @@
 .ds-action-menu-icon { display: inline-flex; flex: 0 0 auto; opacity: 0.8; }
 .ds-action-menu-divider { height: 1px; margin: var(--space-1) 0; background: var(--border); }
 
+@media (max-width: 1100px) {
+  .ds-section-header-actions {
+    flex: 1 1 100%;
+    width: 100%;
+    padding-top: 0 !important;
+  }
+}
+
 @keyframes ds-skeleton-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -260,6 +280,14 @@
 }
 
 @media (max-width: 768px) {
+  .ds-section-header-actions {
+    width: 100%;
+  }
+
+  .ds-section-header-actions > * {
+    max-width: 100%;
+  }
+
   .ds-datatable-scroll { display: none; }
   .ds-datatable-cards { display: flex !important; }
 }

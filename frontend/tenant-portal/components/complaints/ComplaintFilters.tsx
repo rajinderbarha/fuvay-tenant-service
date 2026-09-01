@@ -1,12 +1,6 @@
 "use client";
-import React from "react";
-import { Search } from "lucide-react";
 import { Card } from "../shared/ui";
-
-const selectStyle: React.CSSProperties = {
-  padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)",
-  background: "var(--surface)", color: "var(--text-primary)", fontSize: 12.5,
-};
+import EnterpriseFilterBar from "../enterprise/EnterpriseFilterBar";
 
 export function ComplaintFilters({
   search, onSearch, status, onStatus, severity, onSeverity, slaState, onSlaState,
@@ -20,44 +14,18 @@ export function ComplaintFilters({
 }) {
   return (
     <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr", gap: 10, alignItems: "end" }}>
-        <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Search</label>
-          <div style={{ position: "relative" }}>
-            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
-            <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search complaints…"
-              style={{ width: "100%", height: 36, padding: "0 12px 0 32px", fontSize: 12.5, background: "var(--surface-sunken)",
-                border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)", outline: "none", boxSizing: "border-box" }}/>
-          </div>
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Status</label>
-          <select value={status} onChange={e => onStatus(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
-            <option value="">All</option>
-            {statusOptions.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Severity</label>
-          <select value={severity} onChange={e => onSeverity(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
-            <option value="">All</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
-          </select>
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>SLA</label>
-          <select value={slaState} onChange={e => onSlaState(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
-            <option value="">All</option>
-            <option value="on_time">On time</option>
-            <option value="at_risk">At risk</option>
-            <option value="breached">Breached</option>
-            <option value="escalated">Escalated</option>
-          </select>
-        </div>
-      </div>
+      <EnterpriseFilterBar
+        searchValue={search}
+        onSearch={onSearch}
+        filters={[
+          { key: "status", label: "Status", type: "select", options: statusOptions.map(value => ({ value, label: value.replace(/_/g, " ") })) },
+          { key: "severity", label: "Severity", type: "select", options: ["low", "medium", "high", "critical"].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
+          { key: "slaState", label: "SLA", type: "select", options: [{ value: "on_time", label: "On time" }, { value: "at_risk", label: "At risk" }, { value: "breached", label: "Breached" }, { value: "escalated", label: "Escalated" }] },
+        ]}
+        values={{ status, severity, slaState }}
+        onChange={(key, value) => key === "status" ? onStatus(value) : key === "severity" ? onSeverity(value) : onSlaState(value)}
+        onReset={() => { onSearch(""); onStatus(""); onSeverity(""); onSlaState(""); }}
+      />
     </Card>
   );
 }

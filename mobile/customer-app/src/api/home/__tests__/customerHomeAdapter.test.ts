@@ -91,7 +91,7 @@ describe("customer home adapter", () => {
     expect(home.activeBooking).toEqual({
       bookingId: "b-1", bookingNumber: "SB-1", status: "scheduled", createdAt: "2026-08-01T09:00:00Z",
       assignmentStatus: null, issueSummary: null, preferredDate: null, preferredTimeWindow: null, providerName: null,
-      serviceName: null, technician: null,
+      serviceName: null, serviceImageUrl: null, technician: null,
       // A committed slot and a provider block are absent here, so they must be
       // null rather than reconstructed from the requested date or the snapshot.
       scheduledDate: null, scheduledTimeWindow: null, provider: null,

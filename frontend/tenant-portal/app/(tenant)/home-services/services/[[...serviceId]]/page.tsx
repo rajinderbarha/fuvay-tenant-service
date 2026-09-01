@@ -127,6 +127,8 @@ function ServicesPricingPageContent() {
   return (
       <PageShell>
         <PageHeader
+          eyebrow="Business"
+          context="Service catalog"
           title="Services & Pricing"
           description="Choose what you provide and configure your own pricing within Admin-approved service blueprints."
           actions={

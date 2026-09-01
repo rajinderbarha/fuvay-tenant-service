@@ -23,6 +23,16 @@ CHANNEL_WHATSAPP = "whatsapp"
 CHANNEL_INSTAGRAM = "instagram"
 VALID_CHANNELS = {CHANNEL_WHATSAPP, CHANNEL_INSTAGRAM}
 
+# Encrypted configuration-store keys. These are intentionally distinct from
+# the notification engine's Twilio ``whatsapp`` delivery provider.
+CONFIG_CHANNEL_WHATSAPP = "wa_booking"
+CONFIG_CHANNEL_INSTAGRAM = "ig_booking"
+CONFIG_CHANNEL_BY_PUBLIC = {
+    CHANNEL_WHATSAPP: CONFIG_CHANNEL_WHATSAPP,
+    CHANNEL_INSTAGRAM: CONFIG_CHANNEL_INSTAGRAM,
+}
+DEFAULT_GRAPH_API_VERSION = "v26.0"
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 # `/fuvay` is an OPTIONAL entry point: any message starts or continues a
 # conversation, and `/fuvay` explicitly starts over. Requiring it would lose
@@ -33,18 +43,21 @@ CMD_RESET = "reset"
 CMD_STOP = "stop"
 CMD_HELP = "help"
 CMD_HUMAN = "human"
+CMD_TRACK = "track"
+CMD_LINK = "link"
+CMD_VERIFY = "verify"
 
 #: Commands understood regardless of casing or surrounding whitespace.
-KNOWN_COMMANDS = {CMD_START, CMD_RESET, CMD_STOP, CMD_HELP, CMD_HUMAN}
+KNOWN_COMMANDS = {
+    CMD_START, CMD_RESET, CMD_STOP, CMD_HELP, CMD_HUMAN, CMD_TRACK,
+    CMD_LINK, CMD_VERIFY,
+}
 
 HELP_TEXT = (
-    "I can help you book a home service, check an existing booking, or answer "
-    "questions about what we cover.\n\n"
-    "Just tell me what you need — for example \"AC not cooling in Ludhiana\".\n\n"
-    "Commands:\n"
-    "/fuvay — start over\n"
-    "/human — talk to a person\n"
-    "/stop — stop messages"
+    "I can book a home service for you, or show you where an existing "
+    "booking has got to.\n\n"
+    "Everything is a tap — just choose from the options I show you. "
+    "Start over is on every message."
 )
 
 STOP_TEXT = (
@@ -77,3 +90,97 @@ MAX_OUTBOUND_CHARS = 4096
 #: agent has its own per-session turn cap (MAX_TURNS_PER_SESSION); this guards
 #: the cheaper abuse of repeatedly starting fresh sessions.
 MAX_SESSIONS_PER_SENDER_PER_HOUR = 6
+
+# ── In-chat pickers ──────────────────────────────────────────────────────────
+# Choosing an AC type, a brand or a slot is a pick-list, not a sentence. Rather
+# than send the customer out to a web screen, the gateway renders the SAME
+# option set the customer app renders (`question_flow_service`'s
+# `current_question.options`, `list_available_slots`) as a native WhatsApp
+# interactive list or Instagram quick replies, and maps the tap straight back
+# onto the draft. Meta's own caps drive these numbers:
+#:   list rows: 10 total, title 24 chars, description 72
+#:   reply buttons: 3, title 20 chars
+#:   Instagram quick replies: 13, title 20 chars
+MAX_WA_LIST_ROWS = 10
+MAX_WA_BUTTONS = 3
+MAX_IG_QUICK_REPLIES = 13
+MAX_IG_GENERIC_ELEMENTS = 10
+IG_GENERIC_TITLE_CHARS = 80
+IG_GENERIC_SUBTITLE_CHARS = 80
+#: Instagram has no list message: quick replies render as a single horizontal
+#: strip of chips that scrolls off-screen, so a long option set is unreadable.
+#: Options are therefore sent as a NUMBERED, stacked text list that the
+#: customer answers with a number — which also survives clients that render
+#: quick replies inconsistently.
+MAX_IG_STACKED_OPTIONS = 12
+WA_ROW_TITLE_CHARS = 24
+WA_ROW_DESCRIPTION_CHARS = 72
+WA_BUTTON_TITLE_CHARS = 20
+#: An interactive body is capped well below a plain text body.
+MAX_INTERACTIVE_BODY_CHARS = 1024
+
+#: The bundled WhatsApp Flow has one terminal scheduling screen. ServiceOS
+#: injects live slots at send time and processes the resulting ``nfm_reply``
+#: through the same slot-selection service as an ordinary list tap.
+WHATSAPP_BOOKING_FLOW_SCREEN = "BOOKING_SLOT"
+WHATSAPP_BOOKING_FLOW_CTA = "Complete booking"
+WHATSAPP_FLOW_TOKEN_TTL_HOURS = 48
+
+#: Row-id grammar. Every id is self-describing so a tap needs no server-side
+#: "what did I last ask?" state — a resumed conversation, a redelivered
+#: webhook and a tap on an older message all resolve identically.
+PICKER_SEP = "|"
+PICK_QUESTION = "qf"      # qf|<question_id>|<option_id>
+PICK_SLOT = "sl"          # sl|<date>|<time_window>
+PICK_MORE = "more"        # more|<kind>|<page>
+PICKER_PREFIXES = (PICK_QUESTION, PICK_SLOT, PICK_MORE)
+
+# Steps that are a choice between admin-defined rows, and so are asked as a
+# picker rather than a sentence. Every id is `<prefix>|<value>[|<value>]`.
+PICK_CATEGORY = "cat"     # cat|<category_slug>
+PICK_OFFERING = "of"      # of|<category_slug>|<offering_slug>
+PICK_PROBLEM = "pb"       # pb|<issue_type_id>
+PICK_CONFIRM = "cf"       # cf|yes / cf|no
+PICK_EMERGENCY = "em"     # em|on / em|off — switch between the two slot lists
+PICK_RESTART = "rs"       # rs|1 — abandon this booking and start a new one
+PICK_TRACK = "tr"         # tr|<booking_number> — where has my booking got to
+PICK_AREA = "ar"          # ar|<zipcode> — the exact pincode we cover
+PICK_AREA_CITY = "ac"     # ac|<city> — narrow to that city's pincodes
+PICK_CANCEL = "cx"        # cx|<booking_number> — ask, then cx|<number>|<reason>
+PICK_SKIP = "sk"          # sk|location — carry on without a location pin
+PICK_PARTS = "pt"         # pt|<parts_request_id>|approve / decline
+PICK_QUOTE = "qt"         # qt|<quote_id>|approve / decline / revise
+PICK_HANDOVER = "ho"      # ho|<job_id>|acknowledge
+PICK_PAYMENT = "pay"      # pay|<payment_id>|confirm / not_paid
+PICK_PHONE = "phone"      # phone|change — discard pending OTP and enter another number
+PICKER_PREFIXES = (
+    PICK_QUESTION, PICK_SLOT, PICK_MORE,
+    PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_EMERGENCY,
+    PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
+    PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE,
+)
+
+#: WhatsApp only allows a business-initiated message outside this window via a
+#: pre-approved template; inside it, an ordinary message is fine. Instagram
+#: applies the same 24 hours and has no template mechanism at all. So a parts
+#: request raised while the customer is quiet waits for them to write in.
+CUSTOMER_SERVICE_WINDOW_HOURS = 24
+
+#: A booking a customer can still be waiting on. Anything else — completed,
+#: cancelled — is history, and offering to track it would be noise.
+LIVE_BOOKING_STATUSES = (
+    # Canonical statuses from execution.constants. Keep every non-terminal
+    # state here so chat does not lose a booking as field work progresses.
+    "pending_assignment", "assigned", "accepted", "scheduled",
+    "on_the_way", "reached_site", "inspection_started", "inspection_done",
+    "quote_required", "service_started", "work_done",
+    "customer_not_available",
+)
+
+#: Marks a slot row taken from the EMERGENCY list (`sl|<date>|<window>|e`), so
+#: the tap alone tells `select_promised_slot` which list it came from — that
+#: call is what records `is_emergency` and prices the surcharge.
+SLOT_EMERGENCY_FLAG = "e"
+
+#: The exact phrase the booking service demands before creating final records.
+CONFIRM_PHRASE = "CONFIRM BOOKING"

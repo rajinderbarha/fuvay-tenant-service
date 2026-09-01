@@ -24,7 +24,7 @@ export function BookingUpdatesCard({ capability, bare = false }: BookingUpdatesC
           backgroundColor: theme.colors.accentViolet, alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}
       >
-        <Icon name="notifications" size="standard" color="#FFFFFF" decorative />
+        <Icon name="notifications" size="standard" color={theme.colors.textInverse} decorative />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         {capability.kind === "enabled" ? (

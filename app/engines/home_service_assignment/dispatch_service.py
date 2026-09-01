@@ -69,6 +69,31 @@ class HomeServiceDispatchProjectionService:
         row = res.first()
         return row[0] if row else None
 
+    @staticmethod
+    def _format_service_address(snapshot: dict | None, city: str | None, zipcode: str | None) -> str | None:
+        """Build a concise operational address from the immutable booking copy."""
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        parts: list[str] = []
+        for keys in (
+            ("address_line_1", "address_line1", "line1", "address"),
+            ("address_line_2", "address_line2", "line2"),
+            ("locality", "area"),
+            ("landmark",),
+            ("city",),
+            ("state",),
+            ("pincode", "zipcode", "postal_code"),
+        ):
+            value = next((snapshot.get(key) for key in keys if snapshot.get(key)), None)
+            if value:
+                rendered = str(value).strip()
+                if rendered and rendered.casefold() not in {part.casefold() for part in parts}:
+                    parts.append(rendered)
+        for value in (city, zipcode):
+            rendered = str(value).strip() if value else ""
+            if rendered and rendered.casefold() not in {part.casefold() for part in parts}:
+                parts.append(rendered)
+        return ", ".join(parts) or None
+
     def _job_summary(self, job, booking) -> dict:
         # Dispatch Board is a bulk projection shown to office staff BEFORE
         # (or independent of) assignment — raw customer_name/phone here would
@@ -79,7 +104,11 @@ class HomeServiceDispatchProjectionService:
         from app.engines.tenant_engine.customer_operational_access_policy import (
             customer_alias as _alias, masked_locality as _loc,
         )
-        due_at = slot_end(job.scheduled_date, job.scheduled_time_window)
+        requested_date = booking.preferred_date if booking else None
+        requested_window = booking.preferred_time_window if booking else None
+        display_date = job.scheduled_date or requested_date
+        display_window = job.scheduled_time_window or requested_window
+        due_at = slot_end(display_date, display_window)
         now = _utcnow()
         minutes_until_due = None
         if due_at is not None:
@@ -95,8 +124,18 @@ class HomeServiceDispatchProjectionService:
             "requested_at":          booking.created_at.isoformat() if booking and booking.created_at else None,
             "scheduled_date":        job.scheduled_date.isoformat() if job.scheduled_date else None,
             "scheduled_time_window": job.scheduled_time_window,
+            "requested_date":        requested_date.isoformat() if requested_date else None,
+            "requested_time_window": requested_window,
             "customer_alias":       _alias(job.tenant_id, job.customer_id) if job.customer_id else None,
             "locality":              _loc(job.city, job.zipcode),
+            # Exact address is only exposed after assignment. Before that the
+            # dispatcher sees the masked locality, preventing a bulk customer
+            # address leak while still making the queue useful.
+            "customer_address":      self._format_service_address(
+                job.address_snapshot or (booking.address_snapshot if booking else None),
+                job.city or (booking.city if booking else None),
+                job.zipcode or (booking.zipcode if booking else None),
+            ) if job.assigned_staff_id else _loc(job.city, job.zipcode),
             "city":                  job.city,
             "zipcode":               job.zipcode,
             "issue_summary":         booking.issue_summary if booking else None,
@@ -145,7 +184,11 @@ class HomeServiceDispatchProjectionService:
 
         unassigned_conditions = [
             *base_conditions,
-            ServiceJob.assignment_status == "unassigned",
+            ServiceJob.assigned_staff_id.is_(None),
+            or_(
+                ServiceJob.assignment_status == "unassigned",
+                ServiceJob.status == "pending_assignment",
+            ),
             or_(
                 ServiceJob.scheduled_date.is_(None),
                 ServiceJob.scheduled_date.between(target_date, range_end),
@@ -157,12 +200,19 @@ class HomeServiceDispatchProjectionService:
 
         scheduled_conditions = [
             *base_conditions,
+            ServiceJob.assigned_staff_id.is_not(None),
             ServiceJob.assignment_status != "unassigned",
             ServiceJob.scheduled_date.between(target_date, range_end),
         ]
 
         row_shape = (
-            select(ServiceJob, ServiceBooking, MasterService.service_name)
+            select(
+                ServiceJob,
+                ServiceBooking,
+                MasterService.service_name,
+                MasterService.icon_url,
+                MasterService.image_url,
+            )
             .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
             .outerjoin(MasterService, MasterService.id == ServiceJob.offering_id)
         )
@@ -203,7 +253,7 @@ class HomeServiceDispatchProjectionService:
         # technician-schedule panel -- one row per technician.
         by_staff: dict[str, list[dict]] = {}
 
-        scheduled_job_ids = [job.id for job, _booking, _name in scheduled_rows]
+        scheduled_job_ids = [job.id for job, _booking, _name, _icon, _image in scheduled_rows]
         current_assignments_res = await self.db.execute(
             select(ServiceJobAssignment).where(
                 ServiceJobAssignment.tenant_id == tenant_id,
@@ -216,14 +266,16 @@ class HomeServiceDispatchProjectionService:
             if current_assignments_res is not None else {}
         )
 
-        for job, booking, service_name in unassigned_rows:
+        for job, booking, service_name, service_icon_url, service_image_url in unassigned_rows:
             entry = self._job_summary(job, booking)
             entry["master_service_name"] = service_name
+            entry["service_icon_url"] = service_icon_url or service_image_url
             unassigned_jobs.append(entry)
 
-        for job, booking, service_name in scheduled_rows:
+        for job, booking, service_name, service_icon_url, service_image_url in scheduled_rows:
             entry = self._job_summary(job, booking)
             entry["master_service_name"] = service_name
+            entry["service_icon_url"] = service_icon_url or service_image_url
             assignment = assignment_by_job.get(str(job.id))
             staff_id = str(job.assigned_staff_id) if job.assigned_staff_id else None
             if not staff_id:
@@ -264,6 +316,9 @@ class HomeServiceDispatchProjectionService:
                 "staff_member_id": t["staff_member_id"],
                 "name":            t["name"],
                 "status":          t["status"],
+                "profile_photo_url": t.get("profile_photo_url"),
+                "capacity_used": len(by_staff.get(t["staff_member_id"], [])),
+                "capacity_limit": max(1, int(t.get("max_concurrent_jobs") or 1)),
                 "jobs_in_range":   by_staff.get(t["staff_member_id"], []),
                 # Compatibility alias for older clients during rollout.
                 "jobs_today":      by_staff.get(t["staff_member_id"], []),
@@ -337,6 +392,8 @@ class HomeServiceDispatchProjectionService:
         if rows:
             return [{"staff_member_id": str(r.id), "name": r.full_name,
                       "status": r.status,
+                      "profile_photo_url": r.profile_photo_url,
+                      "max_concurrent_jobs": r.max_concurrent_jobs,
                       "can_receive_assignment": bool(r.can_receive_assignment)} for r in rows]
 
         res2 = await self.db.execute(
@@ -345,6 +402,8 @@ class HomeServiceDispatchProjectionService:
         users = list(res2.scalars().all())
         return [{"staff_member_id": str(u.id), "name": u.full_name,
                   "status": "active" if getattr(u, "is_active", True) else "inactive",
+                  "profile_photo_url": getattr(u, "avatar_url", None),
+                  "max_concurrent_jobs": 1,
                   "can_receive_assignment": bool(getattr(u, "is_active", True))} for u in users]
 
     # ── Assignment options (single job) ─────────────────────────────────────
@@ -383,6 +442,13 @@ class HomeServiceDispatchProjectionService:
             current_assignment_payload["staff_name"] = next(
                 (
                     row["name"] for row in roster
+                    if row["staff_member_id"] == str(current_assignment.assigned_staff_member_id)
+                ),
+                None,
+            )
+            current_assignment_payload["profile_photo_url"] = next(
+                (
+                    row.get("profile_photo_url") for row in roster
                     if row["staff_member_id"] == str(current_assignment.assigned_staff_member_id)
                 ),
                 None,

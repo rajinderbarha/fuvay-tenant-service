@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, Pressable } from "react-native";
+import { lightColors, radius, spacing, typography } from "../design-system/tokens";
 
 interface Props { children: React.ReactNode }
 interface State { hasError: boolean }
@@ -29,12 +30,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F8FD", padding: 28 }}>
-          <View style={{ width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", backgroundColor: "#EEF3FF", marginBottom: 20 }}>
-            <Text style={{ color: "#3868E0", fontSize: 28, fontWeight: "800" }}>!</Text>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: lightColors.backgroundPrimary, padding: spacing.xxl }}>
+          <View style={{ width: 64, height: 64, borderRadius: radius.radiusFull, alignItems: "center", justifyContent: "center", backgroundColor: lightColors.brandPrimaryMuted, marginBottom: spacing.lg }}>
+            <Text style={[typography.headingLarge, { color: lightColors.brandPrimaryStrong }]}>!</Text>
           </View>
-          <Text style={{ color: "#0F172A", fontSize: 22, fontWeight: "700", marginBottom: 8 }}>Something went wrong</Text>
-          <Text style={{ color: "#475569", fontSize: 15, lineHeight: 22, textAlign: "center", marginBottom: 24 }}>
+          <Text style={[typography.headingLarge, { color: lightColors.textPrimary, marginBottom: spacing.sm }]}>Something went wrong</Text>
+          <Text style={[typography.body, { color: lightColors.textSecondary, textAlign: "center", marginBottom: spacing.xl }]}>
             Fuvay could not open this screen. You can try it again safely.
           </Text>
           <Pressable
@@ -44,13 +45,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
             style={({ pressed }) => ({
               minWidth: 180,
               minHeight: 48,
-              borderRadius: 12,
+              borderRadius: radius.radiusPill,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: pressed ? "#2F5BD1" : "#3868E0",
+              backgroundColor: pressed ? lightColors.brandPrimaryPressed : lightColors.brandPrimary,
             })}
           >
-            <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>Try again</Text>
+            <Text style={[typography.button, { color: lightColors.brandOnPrimary }]}>Try again</Text>
           </Pressable>
         </View>
       );

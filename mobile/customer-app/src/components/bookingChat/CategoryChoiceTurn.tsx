@@ -1,13 +1,10 @@
 import React from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Pressable, View } from "react-native";
 
 import { useTheme } from "../../design-system/theme";
-import { resolveCategoryIcon } from "../../domain/categoryIcon";
-import { HomeCategory, HomeServiceGroup } from "../../domain/customerHome";
+import type { HomeCategory, HomeServiceGroup } from "../../domain/customerHome";
+import { AppLucideIcon } from "../AppLucideIcon";
 import { FuvayIcon } from "../FuvayIcon";
-import { Icon } from "../Icon";
-import { useBotColors } from "./botTheme";
 import { BotText } from "./BotText";
 
 export interface CategoryChoiceTurnProps {
@@ -20,135 +17,57 @@ export interface CategoryChoiceTurnProps {
   onSelectGroup?: (group: HomeServiceGroup) => void;
 }
 
-/** Backend-driven service chooser. Service groups are preferred because a
- * broad category such as Home Services must not mix unrelated appliances. */
+/** Backend-driven choices presented using the approved assistant bubble/chip pattern. */
 export function CategoryChoiceTurn({
-  categories, serviceGroups = [], loading, city, zipcode, onSelect, onSelectGroup,
+  categories,
+  serviceGroups = [],
+  loading,
+  city,
+  zipcode,
+  onSelect,
+  onSelectGroup,
 }: CategoryChoiceTurnProps) {
-  const BOT = useBotColors();
   const { theme } = useTheme();
-  const choices = serviceGroups.length > 0
-    ? serviceGroups.map(group => ({
-        id: group.serviceGroupId,
-        name: group.name,
-        slug: group.slug,
-        iconUrl: group.iconUrl,
-        select: () => onSelectGroup?.(group),
-      }))
-    : categories.map(category => ({
-        id: category.categoryId,
-        name: category.name,
-        slug: category.slug,
-        iconUrl: category.iconUrl,
-        select: () => onSelect(category),
-      }));
+  const choices = serviceGroups.length
+    ? serviceGroups.map(group => ({ id: group.serviceGroupId, name: group.name, select: () => onSelectGroup?.(group) }))
+    : categories.map(category => ({ id: category.categoryId, name: category.name, select: () => onSelect(category) }));
   const locationLabel = city ? [city, zipcode].filter(Boolean).join(" · ") : zipcode ?? "Saved service location";
-  const headline = loading ? "Finding services near you" : choices.length > 0 ? "Which service do you need?" : "Let's get your location ready";
+  const headline = loading ? "Finding services near you" : choices.length ? "Which service do you need?" : "Let's get your location ready";
 
   return (
-    <View style={{ gap: theme.spacing.xl }}>
-      <View style={{ paddingVertical: theme.spacing.sm }}>
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.md }}>
-          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: BOT.surfaceRaised, borderWidth: 1, borderColor: BOT.border, alignItems: "center", justifyContent: "center" }}>
-            <FuvayIcon size={32} accessibilityLabel="Fuvay booking assistant" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <BotText style={{ fontSize: 11, fontWeight: "800", color: BOT.brandLight, letterSpacing: 1.1 }}>ASK FUVAY</BotText>
-            <BotText style={{ marginTop: 4, fontSize: 26, lineHeight: 31, fontWeight: "800", color: BOT.textPrimary }}>{headline}</BotText>
-            <BotText style={{ marginTop: 6, fontSize: 14, lineHeight: 20, color: BOT.textSecondary }}>
-              Pick a service and we'll show only its relevant problems and booking questions.
-            </BotText>
-          </View>
+    <View style={{ gap: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.fuvay.surfaces.card, borderWidth: 1, borderColor: theme.fuvay.surfaces.edge, alignItems: "center", justifyContent: "center" }}>
+          <FuvayIcon size={17} accessibilityLabel="Fuvay booking assistant" />
         </View>
-        <View style={{ marginTop: theme.spacing.md, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs, borderRadius: theme.radius.radiusFull, backgroundColor: BOT.surfaceSunken }}>
-          <Ionicons name="location-outline" size={14} color={BOT.brandLight} />
-          <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{locationLabel}</BotText>
+        <View style={{ flex: 1, minWidth: 0, paddingHorizontal: 15, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 4, backgroundColor: theme.fuvay.surfaces.card, borderWidth: 1, borderColor: theme.fuvay.surfaces.edge }}>
+          <BotText style={{ fontSize: 14.5, lineHeight: 19, fontWeight: "600", color: theme.fuvay.surfaces.text }}>{headline}</BotText>
+          {!loading && choices.length ? <BotText style={{ marginTop: 5, fontSize: 11.5, lineHeight: 17, color: theme.fuvay.surfaces.sub }}>Pick one and I'll ask only the questions needed to book it.</BotText> : null}
         </View>
       </View>
 
       {loading ? (
-        <View style={{ minHeight: 132, alignItems: "center", justifyContent: "center", gap: theme.spacing.sm, borderRadius: 18, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
-          <ActivityIndicator size="small" color={BOT.brand} />
-          <BotText style={{ fontSize: 14, color: BOT.textMuted }}>Checking what's available near you...</BotText>
+        <View accessibilityRole="progressbar" accessibilityLabel="Finding available services" style={{ marginLeft: 42, alignSelf: "flex-start", flexDirection: "row", gap: 5, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 18, borderTopLeftRadius: 4, backgroundColor: theme.fuvay.surfaces.card, borderWidth: 1, borderColor: theme.fuvay.surfaces.edge }}>
+          {[0, 1, 2].map(dot => <View key={dot} style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.fuvay.accents.a2 }} />)}
         </View>
-      ) : choices.length === 0 ? (
-        <View style={{ padding: theme.spacing.lg, borderRadius: 18, backgroundColor: BOT.surface, borderWidth: 1, borderColor: BOT.borderSubtle }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm }}>
-            <View style={{ width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.statusWarningSurface }}>
-              <Ionicons name="location-outline" size={20} color={theme.colors.statusWarning} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <BotText style={{ fontSize: 16, fontWeight: "800", color: BOT.textPrimary }}>No services here yet</BotText>
-              <BotText style={{ marginTop: 3, fontSize: 14, lineHeight: 20, color: BOT.textMuted }}>
-                {city ? `We aren't serving ${city} yet. Change your location on Home to see what's available.` : "Change your location on Home to see what's available."}
-              </BotText>
-            </View>
-          </View>
+      ) : choices.length ? (
+        <View style={{ marginLeft: 42, flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+          {choices.map(choice => (
+            <Pressable key={choice.id} onPress={choice.select} accessibilityRole="button" accessibilityLabel={`Book ${choice.name}`} style={({ pressed }) => ({ minHeight: 40, paddingHorizontal: 16, borderRadius: 99, borderWidth: 1.2, borderColor: theme.fuvay.accents.a2, backgroundColor: pressed ? theme.fuvay.accents.a2 : theme.fuvay.surfaces.card, flexDirection: "row", alignItems: "center", gap: 7 })}>
+              {({ pressed }) => <><AppLucideIcon name="tools" size={13} color={pressed ? theme.fuvay.ink(theme.fuvay.accents.a2) : theme.fuvay.accents.a2} /><BotText style={{ fontSize: 12.5, fontWeight: "600", color: pressed ? theme.fuvay.ink(theme.fuvay.accents.a2) : theme.fuvay.accents.a2 }}>{choice.name}</BotText></>}
+            </Pressable>
+          ))}
         </View>
       ) : (
-        <View style={{ gap: theme.spacing.md }}>
-          <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
-            <View>
-              <BotText style={{ fontSize: 18, fontWeight: "800", color: BOT.textPrimary }}>Services near you</BotText>
-              <BotText style={{ marginTop: 2, fontSize: 13, color: BOT.textMuted }}>Choose one to begin</BotText>
-            </View>
-            <BotText style={{ fontSize: 12, fontWeight: "700", color: BOT.textSecondary }}>{choices.length} available</BotText>
-          </View>
-
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm }}>
-            {choices.map(choice => {
-              return (
-                <Pressable
-                  key={choice.id}
-                  onPress={choice.select}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Book ${choice.name}`}
-                  style={({ pressed }) => ({
-                    width: "48%", minHeight: 102, padding: theme.spacing.sm,
-                    borderRadius: 14, backgroundColor: pressed ? BOT.surfaceRaised : BOT.surface,
-                    borderWidth: 1, borderColor: pressed ? BOT.borderActive : BOT.borderSubtle,
-                    opacity: pressed ? 0.82 : 1,
-                  })}
-                >
-                  <View style={{ width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
-                    <Icon name={resolveServiceChoiceIcon(choice.name, choice.slug)} size="standard" color={BOT.brandLight} decorative />
-                  </View>
-                  <BotText style={{ marginTop: theme.spacing.xs, paddingRight: 24, fontSize: 14, lineHeight: 18, fontWeight: "700", color: BOT.textPrimary }} numberOfLines={2}>{choice.name}</BotText>
-                  <View style={{ position: "absolute", right: 10, top: 10, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: BOT.surfaceSunken }}>
-                    <Ionicons name="arrow-forward" size={15} color={BOT.textSecondary} />
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+        <View style={{ marginLeft: 42, padding: 15, borderRadius: 18, backgroundColor: theme.fuvay.surfaces.card, borderWidth: 1, borderColor: theme.fuvay.surfaces.edge }}>
+          <BotText style={{ fontSize: 13, color: theme.fuvay.surfaces.sub }}>No services are available here yet. Change your service location on Home.</BotText>
         </View>
       )}
 
-      <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: theme.spacing.md, borderTopWidth: 1, borderTopColor: BOT.borderSubtle }}>
-        <Assurance icon="shield-checkmark-outline" label="Verified" />
-        <Assurance icon="receipt-outline" label="Clear pricing" />
-        <Assurance icon="navigate-outline" label="Tracked" />
+      <View style={{ marginLeft: 42, flexDirection: "row", alignItems: "center", gap: 7, paddingTop: 4 }}>
+        <AppLucideIcon name="map-marker-path" size={12} color={theme.fuvay.surfaces.faint} />
+        <BotText style={{ flex: 1, fontSize: 10.5, color: theme.fuvay.surfaces.faint }}>{locationLabel}</BotText>
       </View>
-    </View>
-  );
-}
-
-function resolveServiceChoiceIcon(name: string, slug: string | null): React.ComponentProps<typeof Icon>["name"] {
-  if (/air|\bac\b|cool/i.test(name)) return "snow-outline";
-  if (/geyser|heater/i.test(name)) return "flame-outline";
-  if (/refriger|fridge/i.test(name)) return "cube-outline";
-  if (/washing/i.test(name)) return "refresh-circle-outline";
-  if (/chimney|hob|kitchen/i.test(name)) return "restaurant-outline";
-  if (/purifier|\bro\b|water/i.test(name)) return "water-outline";
-  return resolveCategoryIcon(slug);
-}
-
-function Assurance({ icon, label }: { icon: React.ComponentProps<typeof Ionicons>["name"]; label: string }) {
-  const BOT = useBotColors();
-  return (
-    <View style={{ alignItems: "center", gap: 3, flex: 1 }}>
-      <Ionicons name={icon} size={17} color={BOT.brandLight} />
-      <BotText style={{ fontSize: 11, fontWeight: "700", color: BOT.textSecondary }}>{label}</BotText>
     </View>
   );
 }

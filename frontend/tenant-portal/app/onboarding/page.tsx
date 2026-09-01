@@ -4,6 +4,7 @@ import {
   Check, ArrowRight, ArrowLeft, Building2, Tag, Users2, PartyPopper, SkipForward,
 } from "lucide-react";
 import { tenantSelfApi, pricingApi, authApi } from "../../lib/api";
+import { Btn, Input } from "../../components/shared/ui";
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
 type StepId = "profile" | "service" | "staff" | "done";
@@ -42,48 +43,6 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)",
       display: "block", marginBottom: 5 }}>{children}</label>
-  );
-}
-
-function TextInput({ value, onChange, placeholder, type = "text", hint }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string;
-}) {
-  return (
-    <div>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{ width: "100%", height: 42, padding: "0 14px", fontSize: 14,
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 10, color: "var(--text-primary)", outline: "none",
-          fontFamily: "inherit", boxSizing: "border-box" as const }}
-        onFocus={e => e.currentTarget.style.borderColor = "var(--border-focus)"}
-        onBlur={e  => e.currentTarget.style.borderColor = "var(--border)"}
-      />
-      {hint && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "3px 0 0" }}>{hint}</p>}
-    </div>
-  );
-}
-
-function Btn({ children, onClick, disabled, loading, variant = "primary", size = "md" }: {
-  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
-  loading?: boolean; variant?: "primary" | "ghost" | "secondary"; size?: "md" | "lg";
-}) {
-  const bg = variant === "primary" ? "var(--brand)"
-    : variant === "secondary" ? "var(--surface-raised)"
-    : "transparent";
-  const color = variant === "primary" ? "white" : "var(--text-primary)";
-  const h = size === "lg" ? 46 : 40;
-  return (
-    <button onClick={onClick} disabled={disabled || loading}
-      style={{ height: h, padding: "0 20px", borderRadius: 11, border: variant === "secondary" ? "1px solid var(--border)" : "none",
-        background: bg, color, fontWeight: 600, fontSize: 14, cursor: (disabled || loading) ? "not-allowed" : "pointer",
-        opacity: (disabled || loading) ? 0.6 : 1, fontFamily: "inherit",
-        transition: "opacity 0.15s", display: "flex", alignItems: "center", gap: 8 }}>
-      {loading ? "Saving…" : children}
-    </button>
   );
 }
 
@@ -242,17 +201,17 @@ export default function OnboardingPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <FieldLabel>Short Description</FieldLabel>
-              <TextInput value={description} onChange={setDescription}
+              <Input value={description} onChange={setDescription}
                 placeholder="e.g. Trusted AC service in Mumbai since 2018" hint="Shown to customers on your profile"/>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
                 <FieldLabel>State</FieldLabel>
-                <TextInput value={state} onChange={setState} placeholder="e.g. Maharashtra"/>
+                <Input value={state} onChange={setState} placeholder="e.g. Maharashtra"/>
               </div>
               <div>
                 <FieldLabel>Website (optional)</FieldLabel>
-                <TextInput value={website} onChange={setWebsite} type="url" placeholder="https://yourbusiness.com"/>
+                <Input value={website} onChange={setWebsite} type="url" placeholder="https://yourbusiness.com"/>
               </div>
             </div>
           </div>
@@ -295,17 +254,17 @@ export default function OnboardingPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
                 <FieldLabel>Service ID (slug)</FieldLabel>
-                <TextInput value={serviceId} onChange={setServiceId}
+                <Input value={serviceId} onChange={setServiceId}
                   placeholder="auto-generated if blank" hint="e.g. ac_service_1ton"/>
               </div>
               <div>
                 <FieldLabel>City</FieldLabel>
-                <TextInput value={cityName} onChange={setCityName} placeholder="e.g. Mumbai"/>
+                <Input value={cityName} onChange={setCityName} placeholder="e.g. Mumbai"/>
               </div>
             </div>
             <div>
               <FieldLabel>Base Price (₹ per visit)</FieldLabel>
-              <TextInput value={basePrice} onChange={setBasePrice} type="number" placeholder="e.g. 499"/>
+              <Input value={basePrice} onChange={setBasePrice} type="number" placeholder="e.g. 499"/>
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
@@ -342,11 +301,11 @@ export default function OnboardingPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <FieldLabel>Full Name</FieldLabel>
-              <TextInput value={staffName} onChange={setStaffName} placeholder="e.g. Ravi Kumar"/>
+              <Input value={staffName} onChange={setStaffName} placeholder="e.g. Ravi Kumar"/>
             </div>
             <div>
               <FieldLabel>Email Address</FieldLabel>
-              <TextInput value={staffEmail} onChange={setStaffEmail} type="email"
+              <Input value={staffEmail} onChange={setStaffEmail} type="email"
                 placeholder="staff@yourbusiness.com" hint="An invite will be sent to this address"/>
             </div>
           </div>

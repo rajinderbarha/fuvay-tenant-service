@@ -24,7 +24,7 @@ from app.engines.serviceability.models import (
     CustomerAddress, TenantServiceArea, TenantServiceAreaService,
 )
 from app.engines.serviceability.constants import (
-    ERR_ADDRESS_NOT_FOUND, ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
+    ERR_ADDRESS_NOT_FOUND, ERR_ADDRESS_LABEL_CONFLICT, ERR_INVALID_ZIPCODE, ERR_INVALID_CITY,
     ERR_SERVICE_NOT_FOUND, ERR_SERVICE_NOT_ACTIVE, ERR_AREA_NOT_FOUND,
     ERR_DUPLICATE_AREA, ERR_INVALID_COVERAGE, ERR_ZIPCODE_REQUIRED,
     ERR_CITY_REQUIRED, ERR_ZONE_REQUIRED, ERR_RADIUS_REQUIRED,
@@ -133,6 +133,21 @@ async def test_05_create_address_requires_city():
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_address(uuid.uuid4(), None, address_payload(city=""))
     assert exc.value.error_code == ERR_INVALID_CITY
+
+
+@pytest.mark.asyncio
+async def test_create_address_allows_only_one_active_address_per_label():
+    db = make_db()
+    customer_id = uuid.uuid4()
+    db.execute.return_value = result(scalar_one_or_none=uuid.uuid4())
+    svc = ServiceabilityService(db=db, actor_role="customer", actor_id=customer_id)
+
+    with pytest.raises(ServiceOSException) as exc:
+        await svc.create_address(customer_id, None, address_payload(label="Work"))
+
+    assert exc.value.error_code == ERR_ADDRESS_LABEL_CONFLICT
+    assert exc.value.status_code == 409
+    assert "Office" in exc.value.detail
 
 
 @pytest.mark.asyncio

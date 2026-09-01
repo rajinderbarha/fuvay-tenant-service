@@ -85,6 +85,9 @@ export interface HomeActiveBooking {
   /** The service actually booked, from the catalog. Distinct from
    * `issueSummary`, which is the customer's own description. */
   serviceName: string | null;
+  /** Catalog-authored artwork for the booked service, with its service-group
+   * icon as the backend fallback. Never a sample-photo URL. */
+  serviceImageUrl: string | null;
   preferredDate: string | null;
   preferredTimeWindow: string | null;
   providerName: string | null;
@@ -179,31 +182,19 @@ export interface HomeSectionConfig {
 }
 
 export const DEFAULT_HOME_SECTIONS: HomeSectionConfig[] = [
-  ["hero", null, "marketplace", 5, true, "compact", "canvas"],
-  ["service_groups", "Popular Services", "compact_grid", 8, true, "compact", "canvas"],
-  ["master_services", "Recommended for you", "recommendation_cards", 4, true, "compact", "canvas"],
-  ["nearby_services", "Services Nearby", "two_row", 8, true, "compact", "canvas"],
-  ["recent_bookings", "More Active Booking", "compact_rail", 1, true, "compact", "canvas"],
+  ["service_groups", "Popular services", "compact_grid", 4, true, "compact", "canvas"],
+  ["live_booking", "Live Booking", "timeline", 1, true, "compact", "canvas"],
+  ["active_bookings", "More active bookings", "stack", 3, true, "compact", "canvas"],
+  ["master_services", "Recommended for you", "recommendation_cards", 5, true, "compact", "canvas"],
+  ["featured_services", "Popular near you", "popular_grid", 4, true, "compact", "canvas"],
+  ["nearby_services", "Browse by category", "category_orbs", 5, true, "compact", "canvas"],
+  ["spotlight", "Spotlights", "cinematic_card", 3, true, "compact", "canvas"],
+  ["collection", "Cover plans", "cover_plans", 3, true, "compact", "canvas"],
+  ["banners", null, "single_cta", 1, true, "standard", "canvas"],
   ["assistant", null, "command_strip", 1, true, "compact", "canvas"],
-  ["trust_strip", null, "icon_row", 4, true, "compact", "subtle"],
-  ["featured_problems", "What Needs Fixing", "photo_cards", 4, true, "compact", "canvas"],
-  ["spotlight", "Service of the day", "cinematic_card", 2, true, "compact", "canvas"],
-  ["featured_services", "More home services", "catalog_grid", 6, true, "compact", "canvas"],
-  ["global_services", "Build with Fuvay", "compact_services", 5, true, "compact", "canvas"],
-  ["banners", null, "contained", 4, false, "standard", "canvas"],
-  ["collection", "Offers for you", "editorial_cards", 8, false, "compact", "canvas"],
-  ["live_booking", "Your live booking", "timeline", 1, false, "compact", "canvas"],
-  ["stories", "Ideas and offers", "landscape", 8],
-  ["mosaic", "Fresh ways to care for home", "asymmetric", 3],
-  ["active_bookings", "More active bookings", "stack", 3],
-  ["repair_problems", "Repairs you can book now", "editorial_rail", 12],
-  ["consultation_problems", "Get an expert opinion", "editorial_list", 8],
-  ["more_problems", "More ways we can help", "compact_grid", 12],
-  ["notices", null, "strips", 2],
-  ["support_actions", null, "utility_rows", 2],
 ].map(([key, title, variant, maxItems, enabled, spacing, surface]) => ({
   key: String(key),
-  enabled: enabled == null ? ["hero", "service_groups", "recent_bookings", "global_services"].includes(String(key)) : Boolean(enabled),
+  enabled: enabled == null ? false : Boolean(enabled),
   title: title == null ? null : String(title),
   variant: String(variant),
   maxItems: Number(maxItems),

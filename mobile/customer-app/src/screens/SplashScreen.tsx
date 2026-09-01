@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, Image, View, useWindowDimensions } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Defs, LinearGradient as SvgLinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import { AppText } from "../components";
 import { useTheme } from "../design-system/theme";
 import { buildFuvayTheme } from "../design-system/tokens/fuvay";
+import { customerExperienceCopy } from "../content/customerExperience";
 
 /**
  * Fuvay v2 splash.
@@ -31,6 +32,8 @@ export function SplashScreen() {
   const { theme, mode } = useTheme();
   const fuvay = useMemo(() => buildFuvayTheme(mode === "dark"), [mode]);
   const { width } = useWindowDimensions();
+  const metrics = theme.metrics.splash;
+  const copy = customerExperienceCopy.splash;
 
   const brand = useRef(new Animated.Value(0)).current;
   const sheen = useRef(new Animated.Value(0)).current;
@@ -79,51 +82,36 @@ export function SplashScreen() {
     return () => sequence.stop();
   }, [brand, sheen, tagline, track]);
 
-  const logoWidth = Math.min(216, Math.round(width * 0.58));
+  const logoWidth = Math.min(metrics.logoWidth, Math.round(width * 0.58));
   const logoSource =
     mode === "dark"
-      ? require("../../assets/fuvay-logo-native.png")
+      ? require("../../assets/fuvay-wordmark-dark.png")
       : require("../../assets/fuvay-logo.png");
 
   return (
     <View
       style={{ flex: 1, backgroundColor: theme.colors.backgroundPrimary }}
       accessibilityRole="progressbar"
-      accessibilityLabel="Loading Fuvay"
+      accessibilityLabel={copy.accessibilityLabel}
     >
-      <LinearGradient
-        colors={fuvay.surfaces.splashGradient}
-        // The canvas anchors this radial at 78% 6%; a linear gradient on the
-        // same diagonal is the closest RN equivalent without shipping an SVG
-        // radial for a screen that is visible for two seconds.
-        start={{ x: 0.78, y: 0.06 }}
-        end={{ x: 0.1, y: 1 }}
-        style={{ position: "absolute", inset: 0 }}
-      />
-
-      {/* Ambient glows. Static rather than drifting -- see the header note. */}
-      <View
-        style={{
-          position: "absolute",
-          right: -110,
-          top: -120,
-          width: 320,
-          height: 320,
-          borderRadius: 160,
-          backgroundColor: fuvay.surfaces.glowTint,
-        }}
-      />
-      <View
-        style={{
-          position: "absolute",
-          left: -90,
-          bottom: 130,
-          width: 260,
-          height: 260,
-          borderRadius: 130,
-          backgroundColor: fuvay.surfaces.glowTint,
-        }}
-      />
+      <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0 }}>
+        <Defs>
+          <SvgLinearGradient id="splashBase" x1="78" y1="4" x2="12" y2="100" gradientUnits="userSpaceOnUse">
+            {fuvay.surfaces.splashGradient.map((color, index) => <Stop key={color} offset={`${(index / (fuvay.surfaces.splashGradient.length - 1)) * 100}%`} stopColor={color} />)}
+          </SvgLinearGradient>
+          <RadialGradient id="splashTopGlow" cx="82" cy="3" r="72" gradientUnits="userSpaceOnUse">
+            <Stop offset="0" stopColor={fuvay.accents.a2} stopOpacity={mode === "dark" ? 0.16 : 0.11} />
+            <Stop offset="1" stopColor={fuvay.accents.a2} stopOpacity="0" />
+          </RadialGradient>
+          <RadialGradient id="splashLowerGlow" cx="18" cy="72" r="56" gradientUnits="userSpaceOnUse">
+            <Stop offset="0" stopColor={fuvay.accents.a2} stopOpacity={mode === "dark" ? 0.12 : 0.09} />
+            <Stop offset="1" stopColor={fuvay.accents.a2} stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
+        <Rect width="100" height="100" fill="url(#splashBase)" />
+        <Rect width="100" height="100" fill="url(#splashTopGlow)" />
+        <Rect width="100" height="100" fill="url(#splashLowerGlow)" />
+      </Svg>
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 34 }}>
         <Animated.View
@@ -145,7 +133,7 @@ export function SplashScreen() {
             <Image
               source={logoSource}
               resizeMode="contain"
-              style={{ width: logoWidth, height: Math.round(logoWidth / 3.25) }}
+              style={{ width: logoWidth, height: Math.round(logoWidth / metrics.logoAspectRatio) }}
               accessibilityRole="image"
               accessibilityLabel="Fuvay"
               accessibilityIgnoresInvertColors
@@ -158,9 +146,7 @@ export function SplashScreen() {
                 top: 0,
                 bottom: 0,
                 width: 42,
-                backgroundColor: fuvay.isDark
-                  ? "rgba(255,255,255,0.28)"
-                  : "rgba(255,255,255,0.75)",
+                backgroundColor: fuvay.surfaces.sheen,
                 opacity: sheen.interpolate({
                   inputRange: [0, 0.15, 0.85, 1],
                   outputRange: [0, 1, 1, 0],
@@ -179,8 +165,8 @@ export function SplashScreen() {
 
           <Animated.View
             style={{
-              width: 46,
-              height: 2,
+              width: metrics.brandRuleWidth,
+              height: metrics.loadingTrackHeight,
               backgroundColor: fuvay.accents.a2,
               transform: [{ scaleX: tagline }],
             }}
@@ -203,7 +189,7 @@ export function SplashScreen() {
               variant="metaLabel"
               style={{ color: theme.colors.textSecondary, textAlign: "center" }}
             >
-              HOME SERVICES, DONE RIGHT
+              {copy.tagline}
             </AppText>
           </Animated.View>
         </Animated.View>
@@ -212,8 +198,8 @@ export function SplashScreen() {
       <View style={{ position: "absolute", left: 34, right: 34, bottom: 46, alignItems: "center", gap: 14 }}>
         <View
           style={{
-            width: 120,
-            height: 2,
+            width: metrics.loadingTrackWidth,
+            height: metrics.loadingTrackHeight,
             borderRadius: 2,
             backgroundColor: theme.colors.divider,
             overflow: "hidden",
@@ -232,7 +218,7 @@ export function SplashScreen() {
           />
         </View>
         <AppText variant="metaLabelWide" style={{ color: theme.colors.textTertiary }}>
-          LOADING YOUR HOME
+          {copy.loadingLabel}
         </AppText>
       </View>
     </View>

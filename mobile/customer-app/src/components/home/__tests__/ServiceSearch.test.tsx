@@ -54,6 +54,21 @@ describe("ServiceSearch rotating placeholder", () => {
     expect(getByText("Plumbing…", HIDDEN)).toBeTruthy();
   });
 
+  it("supports the Home reference's Try prompt while keeping the same upward strip", () => {
+    const { getByText, getAllByText } = renderWithProviders(
+      <ServiceSearch
+        value=""
+        onChangeText={() => {}}
+        suggestions={["“AC not cooling”", "“Water leaking”"]}
+        suggestionPrefix="Try "
+        suggestionSuffix=""
+      />,
+    );
+    expect(getByText("Try ", HIDDEN)).toBeTruthy();
+    expect(getAllByText("“AC not cooling”", HIDDEN)).toHaveLength(2);
+    expect(getByText("“Water leaking”", HIDDEN)).toBeTruthy();
+  });
+
   it("suppresses the hint once the field has text", () => {
     // A hint moving under the caret while someone types is a distraction.
     const { queryByText } = renderWithProviders(

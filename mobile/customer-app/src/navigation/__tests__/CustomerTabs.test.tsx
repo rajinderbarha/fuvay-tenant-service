@@ -26,9 +26,19 @@ describe("CustomerTabs", () => {
     // phase." placeholder that no longer exists anywhere in the codebase --
     // the Support tab has since been built out as `HelpSupportScreen`, and
     // this assertion was simply never updated alongside it.
-    const { getByLabelText, findByText } = renderTabs();
+    const { getByLabelText, findByText, queryByText } = renderTabs();
     fireEvent.press(getByLabelText("Support"));
     expect(await findByText("Help & Support")).toBeTruthy();
+    // Only Home has a visual text label in the reference bottom bar. The
+    // destination remains accessible by its icon's accessibility label.
+    expect(queryByText("Support")).toBeNull();
+  });
+
+  it("keeps non-Home tabs icon-only when selected", async () => {
+    const { getByLabelText, findByLabelText, queryByText } = renderTabs();
+    fireEvent.press(getByLabelText("Profile"));
+    expect(await findByLabelText("Loading your profile")).toBeTruthy();
+    expect(queryByText("Account")).toBeNull();
   });
 
   it("switches to the Assistant tab without exposing the underlying model/vendor name", async () => {

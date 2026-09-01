@@ -63,20 +63,20 @@ describe("ReviewSheet", () => {
         confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
-    expect(screen.getByText("Review & confirm")).toBeTruthy();
-    expect(screen.getByText("YOUR REQUEST")).toBeTruthy();
-    expect(screen.getByText("YOUR TECHNICIAN")).toBeTruthy();
-    expect(screen.getByText("What you'll pay")).toBeTruthy();
+    expect(screen.getByText("Review your booking")).toBeTruthy();
+    expect(screen.getByText("THE PROBLEM")).toBeTruthy();
+    expect(screen.getByText("PAYMENT AFTER SERVICE")).toBeTruthy();
   });
 
-  it("pins the amount due beside the single primary action", () => {
+  it("makes it clear that no payment is collected while booking", () => {
     renderWithProviders(
       <ReviewSheet
         summary={summary()} slotLabel="Today, 14:00-15:00"
         confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
-    expect(screen.getByText("Due at the visit")).toBeTruthy();
+    expect(screen.getByText("Nothing due now")).toBeTruthy();
+    expect(screen.getByText("Pay after inspection or completed work")).toBeTruthy();
     expect(screen.getByLabelText("Confirm and book")).toBeTruthy();
   });
 
@@ -87,10 +87,9 @@ describe("ReviewSheet", () => {
         confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
-    expect(screen.queryByText("Due at the visit")).toBeNull();
-    expect(screen.queryByText("What you'll pay")).toBeNull();
+    expect(screen.queryByText("Inspection fee")).toBeNull();
     // The rest of the sheet still renders.
-    expect(screen.getByText("YOUR REQUEST")).toBeTruthy();
+    expect(screen.getByText("THE PROBLEM")).toBeTruthy();
   });
 
   it("lets the customer leave without booking", () => {
@@ -106,7 +105,7 @@ describe("ReviewSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("offers a way back to the slot and photo turns", () => {
+  it("offers a way back to the selected time", () => {
     const onEditSlot = jest.fn();
     const onEditPhotos = jest.fn();
     renderWithProviders(
@@ -119,8 +118,7 @@ describe("ReviewSheet", () => {
     );
     fireEvent.press(screen.getByLabelText("Change time"));
     expect(onEditSlot).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByLabelText("Add a photo"));
-    expect(onEditPhotos).toHaveBeenCalledTimes(1);
+    expect(onEditPhotos).not.toHaveBeenCalled();
   });
 
   it("blocks confirmation with the real reason when not eligible", () => {
@@ -157,6 +155,6 @@ describe("ReviewSheet", () => {
         confirming={false} confirmDisabledReason={null} {...noop}
       />,
     );
-    expect(screen.getByText(/Free cancellation before the technician sets off/)).toBeTruthy();
+    expect(screen.getByText(/Free cancellation up to 2 hours before the visit/)).toBeTruthy();
   });
 });

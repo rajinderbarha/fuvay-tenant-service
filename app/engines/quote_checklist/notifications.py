@@ -58,6 +58,18 @@ async def notify_customer_quote_sent(db: AsyncSession, quote: ServiceJobQuote) -
          # notification opens the quote approval card safely instead of
          # rendering an action-looking dead row.
          source_type="service_bookings", source_id=quote.booking_id)
+    # A chat-originated customer may never open the native inbox. Notify the
+    # same recent WhatsApp/Instagram thread best-effort; their next message is
+    # answered with the customer-safe estimate and decision controls.
+    try:
+        from app.engines.messaging_gateway.service import notify_customer
+        await notify_customer(
+            db, quote.customer_id,
+            f"Your provider sent estimate {quote.quote_number}. "
+            "Reply here to review the itemised customer total.",
+        )
+    except Exception:
+        pass
 
 
 async def notify_provider_quote_decision(

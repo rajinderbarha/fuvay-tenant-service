@@ -43,7 +43,7 @@ export function NoOtherActiveBookingsCard({ onViewCompleted }: NoOtherActiveBook
           >
             {/* Calendar-with-clock in the design; Ionicons has no combined
                 glyph, so the calendar carries it. */}
-            <Icon name="calendar-outline" size="standard" color="#FFFFFF" decorative />
+            <Icon name="calendar-outline" size="standard" color={theme.colors.brandOnPrimary} decorative />
           </View>
           <View style={{ flex: 1 }}>
             <AppText variant="bodyStrong">No other active bookings</AppText>

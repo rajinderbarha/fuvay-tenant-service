@@ -750,9 +750,11 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Masked calling — platform-bridged technician<->customer calls so neither
     # side ever learns the other's number (off-platform leakage prevention).
     from app.engines.masked_calling.router import (
-        staff_router as mc_staff_router, webhook_router as mc_webhook_router,
+        staff_router as mc_staff_router, customer_router as mc_customer_router,
+        webhook_router as mc_webhook_router,
     )
     app.include_router(mc_staff_router)
+    app.include_router(mc_customer_router)
     app.include_router(mc_webhook_router)
 
     # Tenant selection of which authored checklist points this provider runs
@@ -1050,6 +1052,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # logic. Unauthenticated by design: Meta calls it, and authenticity is
     # proved by the verify token and the HMAC signature over the raw body.
     from app.engines.messaging_gateway.router import router as messaging_gateway_router
+    from app.engines.messaging_gateway.admin_router import router as messaging_gateway_admin_router
     from app.engines.finance_hub.tenant_hs_finance_router import router as tenant_hs_finance_router
     from app.engines.finance_hub.admin_hs_finance_router import (
         router as admin_hs_finance_router,
@@ -1090,6 +1093,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         admin_hs_finance_canonical_router,
         tenant_hs_finance_router,
         messaging_gateway_router,
+        messaging_gateway_admin_router,
         hs_finance_monetization_router, hs_topup_plan_router,
         hs_topup_plan_catalog_admin_router, hs_topup_plan_catalog_tenant_router,
         hs_tenant_dashboard_router,
