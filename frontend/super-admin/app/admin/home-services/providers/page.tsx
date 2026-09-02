@@ -129,11 +129,10 @@ function DirectoryTab() {
     { key:"registration_status", label:"Registration", visible:true, order:1 },
     { key:"verification_status", label:"Verification", visible:true, order:2 },
     { key:"credit_status", label:"Credits", visible:true, order:3 },
-    { key:"deposit_status", label:"Deposit", visible:true, order:4 },
-    { key:"health_score", label:"Health", visible:true, order:5 },
-    { key:"city", label:"City", visible:true, order:6 },
-    { key:"created_at", label:"Registered", visible:true, order:7 },
-    { key:"provider_id", label:"Actions", visible:true, order:8 },
+    { key:"health_score", label:"Health", visible:true, order:4 },
+    { key:"city", label:"City", visible:true, order:5 },
+    { key:"created_at", label:"Registered", visible:true, order:6 },
+    { key:"provider_id", label:"Actions", visible:true, order:7 },
   ]);
 
   function setListState(next: Record<string, string | number | undefined>) {
@@ -213,7 +212,6 @@ function DirectoryTab() {
           { key: "registration_status", label: "Registration", render: v => <Badge variant={v === "active" ? "success" : v === "suspended" || v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
           { key: "verification_status", label: "Verification", render: v => <Badge variant={v === "approved" ? "success" : v === "rejected" ? "danger" : v === "changes_requested" ? "warning" : "default"}>{String(v)}</Badge> },
           { key: "credit_status", label: "Credits", render: v => <Badge variant={v === "healthy" ? "success" : "warning"}>{String(v)}</Badge> },
-          { key: "deposit_status", label: "Deposit", render: v => <Badge variant={v === "paid" ? "success" : "default"}>{String(v)}</Badge> },
           { key: "health_score", label: "Health", render: v => <span>{Number(v).toFixed(0)}%</span> },
           { key: "city", label: "City" },
           { key: "created_at", label: "Registered", render: v => dt(v as string) },

@@ -121,7 +121,7 @@ function fmtRange(from: string, to: string): string {
   const t = new Date(to + "T00:00:00");
   const fs = f.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   const ts = t.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  return from === to ? t.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : `${fs} â€“ ${ts}`;
+  return from === to ? t.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : `${fs} – ${ts}`;
 }
 
 // Groups the current week's 7 daily working-hours ranges into contiguous
@@ -134,7 +134,7 @@ function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], 
     // The panel writes hours out the way a person would ("9:00 AM â€“ 6:00 PM"); the grid
     // keeps 24-hour because its cells have no room for the suffix.
     return s?.working_hours?.start && s?.working_hours?.end
-      ? `${to12h(s.working_hours.start)} â€“ ${to12h(s.working_hours.end)}`
+      ? `${to12h(s.working_hours.start)} – ${to12h(s.working_hours.end)}`
       : "Off";
   });
   const lines: WeeklyPatternLine[] = [];
@@ -142,7 +142,7 @@ function summarizeWeeklyPattern(days: string[], schedules: EffectiveSchedule[], 
   while (i < values.length) {
     let j = i;
     while (j + 1 < values.length && values[j + 1] === values[i]) j++;
-    const label = i === j ? dayName(days[i]) : `${dayName(days[i])} â€“ ${dayName(days[j])}`;
+    const label = i === j ? dayName(days[i]) : `${dayName(days[i])} – ${dayName(days[j])}`;
     lines.push({ label, value: values[i] });
     i = j + 1;
   }
@@ -202,7 +202,7 @@ function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: 
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
           <strong style={{ fontSize: 14, color: "var(--text-primary)" }}>Add time off</strong>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}>âœ•</button>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer" }}>×</button>
         </div>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{staffName}</p>
 
@@ -245,12 +245,12 @@ function AddTimeOffModal({ staffId, staffName, defaultDate, onClose, onSaved }: 
 
           <div>
             <label style={{ display: "block", marginBottom: 4, color: "var(--text-tertiary)" }}>Reason (optional)</label>
-            <input type="text" value={reason} maxLength={300} placeholder="Annual leave, sick, trainingâ€¦"
+            <input type="text" value={reason} maxLength={300} placeholder="Annual leave, sick, training…"
               onChange={e => setReason(e.target.value)} style={input}/>
           </div>
 
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-            A part-day absence blocks only those hours â€” the technician stays bookable for the rest of the day.
+            A part-day absence blocks only those hours — the technician stays bookable for the rest of the day.
           </p>
 
           {save.error && (
@@ -690,7 +690,7 @@ function AvailabilityCapacityPlannerContent() {
                 id: t.id,
                 name: t.full_name,
                 // Mirrors the roster's "2/4 jobs" so the two panels read as one row.
-                subtitle: cap != null ? `${s?.assignments_today.length ?? 0}/${cap} jobs` : "â€”",
+                subtitle: cap != null ? `${s?.assignments_today.length ?? 0}/${cap} jobs` : "—",
               };
             })}
             days={days} scheduleFor={scheduleFor}
@@ -704,7 +704,7 @@ function AvailabilityCapacityPlannerContent() {
             // Named from the selected technician's actual break, not a hardcoded
             // "13:00-14:00" -- the design's label is that tenant's break, not a constant.
             breakLabel={selectedSchedule?.break
-              ? `${selectedSchedule.break.start}â€“${selectedSchedule.break.end}`
+              ? `${selectedSchedule.break.start}–${selectedSchedule.break.end}`
               : null}
           />
           </div>
@@ -715,7 +715,7 @@ function AvailabilityCapacityPlannerContent() {
               readiness={readiness}
               weeklyPattern={weeklyPattern}
               breakLine={selectedSchedule?.break
-                ? `${to12h(selectedSchedule.break.start)} â€“ ${to12h(selectedSchedule.break.end)}`
+                ? `${to12h(selectedSchedule.break.start)} – ${to12h(selectedSchedule.break.end)}`
                 : null}
               maxJobsPerDay={selectedSchedule?.daily_capacity?.limit ?? null}
               maxConcurrentJobs={selectedTech.max_concurrent_jobs}

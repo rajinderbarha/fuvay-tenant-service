@@ -3,8 +3,8 @@ import React, { useCallback } from "react";
 import { StaffLayout } from "../../../components/layout/StaffLayout";
 import { useApi } from "../../../hooks/useApi";
 import { useStaffContextValue } from "../../../hooks/useStaffContext";
-import { staffSelfApi, tenantSetupApi, homeServiceStaffJobsApi } from "../../../lib/api";
-import { ClipboardList, Wrench, MapPin, Clock, FileText, Bell, CheckCircle2, AlertTriangle } from "lucide-react";
+import { staffSelfApi, tenantSetupApi, homeServiceStaffJobsApi, providerAvailabilityApi } from "../../../lib/api";
+import { ClipboardList, Wrench, MapPin, Clock, Bell, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Card, Skeleton, EmptyState, StatusBadge as DsStatusBadge } from "@serviceos/design-system";
 
 export default function StaffDashboardPage() {
@@ -49,6 +49,7 @@ function StaffDashboardContent() {
   const notifs   = useApi(useCallback(() => staffSelfApi.getNotifications(), []));
   const areas    = useApi(useCallback(() => staffSelfApi.getServiceAreas(), []));
   const status   = useApi(useCallback(() => tenantSetupApi.getStatus(), []));
+  const availability = useApi(useCallback(() => providerAvailabilityApi.list(), []));
 
   const jobCount = jobs.data?.jobs?.length ?? 0;
   const skillCount = skills.data?.skills?.length ?? 0;
@@ -57,6 +58,12 @@ function StaffDashboardContent() {
 
   const readonlyStatus = status.data as Record<string, unknown> | null;
   const bookable = !!readonlyStatus?.bookable;
+  const activeToday = availability.data?.rules.some(
+    rule => rule.day_of_week === new Date().getDay() && rule.is_active,
+  ) ?? false;
+  const availabilityLabel = availability.data == null
+    ? "Not scheduled"
+    : activeToday ? "Available today" : "Off today";
 
   return (
     <>
@@ -68,15 +75,14 @@ function StaffDashboardContent() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
-        {jobs.loading || skills.loading || areas.loading || notifs.loading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height="5.75rem"/>)
+        {jobs.loading || skills.loading || areas.loading || notifs.loading || availability.loading ? (
+          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} height="5.75rem"/>)
         ) : (
           <>
             <StatTile label="Today's Assigned Work" value={jobCount} icon={<ClipboardList size={16}/>}/>
             <StatTile label="Active Skills" value={skillCount} icon={<Wrench size={16}/>}/>
             <StatTile label="Service Areas" value={areaCount} icon={<MapPin size={16}/>}/>
-            <StatTile label="Availability Status" value="—" icon={<Clock size={16}/>}/>
-            <StatTile label="Documents Status" value="Not tracked yet" icon={<FileText size={16}/>}/>
+            <StatTile label="Availability Status" value={availabilityLabel} icon={<Clock size={16}/>}/>
             <StatTile label="Notifications" value={unread} icon={<Bell size={16}/>} alert={unread > 0}/>
           </>
         )}

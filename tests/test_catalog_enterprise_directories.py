@@ -86,10 +86,12 @@ def test_category_runtime_includes_live_home_services_module_routes():
         "/admin/home-services/customers",
         "/admin/home-services/staff",
         "/admin/home-services/finance",
-        "/admin/home-services/complaints",
         "/admin/service-area-requests",
     ):
         assert route in src
+    # Customer complaints/remedies are provider-owned.  The category runtime
+    # must not resurrect the retired admin dispute surface.
+    assert '"route_path": "/admin/home-services/complaints"' not in src
     assert "runtime_route" in src
     assert "if key in retired_keys:" in src
     assert "HOME_SERVICES_REGISTRY_MODULE_ENGINE_MAP" in src

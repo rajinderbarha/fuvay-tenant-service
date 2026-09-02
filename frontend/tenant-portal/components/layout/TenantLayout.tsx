@@ -27,7 +27,6 @@ import { Breadcrumbs } from "./Breadcrumbs";
 import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryDashboardApi, clearSession, type InAppNotificationItem } from "../../lib/api";
 import { CreditPill } from "./CreditPill";
 import { useSetupStatus, type SetupStatus } from "../../hooks/useSetupStatus";
-import { AssistantLauncher } from "../assistant/AssistantPanel";
 import { Drawer, Input } from "@serviceos/design-system";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
@@ -126,7 +125,6 @@ const SECONDARY_NAV_GROUPS: NavGroup[] = [
   {
     label: "Operations & finance",
     items: [
-      { id: "appointments", href: "/appointments", label: "Appointments", icon: <CalendarCheck size={17}/> },
       { id: "hs-direct-payments", href: "/home-services/direct-payments", label: "Direct Payments", icon: <CreditCard size={17}/> },
       { id: "media", href: "/media", label: "Media", icon: <Image size={17}/> },
       { id: "reports", href: "/reports", label: "Reports", icon: <BarChart2 size={17}/> },
@@ -742,7 +740,6 @@ function TenantShellInner({ children, activeNav }: {
             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
           <CreditPill/>
-          <AssistantLauncher path={pathname}/>
           <div ref={bellRef} style={{ position: "relative" }}>
             <button onClick={openBell}
               aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}

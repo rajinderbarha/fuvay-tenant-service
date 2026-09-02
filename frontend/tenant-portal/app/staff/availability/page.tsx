@@ -18,7 +18,7 @@ export default function StaffAvailabilityPage() {
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>My Availability</h1>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-          Working hours configured for your business. View only — contact your tenant admin to request a schedule change.
+          Your assigned working hours. View only — contact your tenant admin to request a schedule change.
         </p>
       </div>
 

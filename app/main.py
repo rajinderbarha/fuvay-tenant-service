@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # 5. Compliance SLA background loop (runs every 15 min)
     from app.jobs.compliance_sla import background_loop as _compliance_sla_loop
-    _sla_task = asyncio.create_task(_compliance_sla_loop())
+    _compliance_sla_task = asyncio.create_task(_compliance_sla_loop())
     logger.info("compliance_sla_loop.started")
 
     # 6. Export worker background loop (FINAL-L5-05S) — claims and
@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # rebook, charge the admin-set penalty, and reinstate providers whose
     # health suspension has served its time.
     from app.jobs.sla_breach import background_loop as _sla_loop
-    _sla_task = asyncio.create_task(_sla_loop())
+    _job_sla_task = asyncio.create_task(_sla_loop())
     logger.info("sla_breach_loop.started")
 
     # 13. Media retention: delete the customer's photos once a job is done, and
@@ -129,19 +129,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _reminder_task = asyncio.create_task(_reminder_loop())
     logger.info("credit_reminders_loop.started")
 
+    # 15. Live platform-status evidence for Help & Support. Without a producer,
+    # the correctly fail-closed banner stayed "Status unavailable" forever.
+    from app.jobs.platform_status import background_loop as _platform_status_loop
+    _platform_status_task = asyncio.create_task(_platform_status_loop())
+    logger.info("platform_status_loop.started")
+
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
-    _sla_task.cancel()
+    _compliance_sla_task.cancel()
     _media_task.cancel()
     _reminder_task.cancel()
     _export_worker_task.cancel()
     _complaint_sla_task.cancel()
     _tte_task.cancel()
-    _sla_task.cancel()
+    _job_sla_task.cancel()
+    _platform_status_task.cancel()
     try:
-        await _sla_task
+        await _job_sla_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _compliance_sla_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _platform_status_task
     except asyncio.CancelledError:
         pass
     try:

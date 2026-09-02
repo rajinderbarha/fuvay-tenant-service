@@ -922,9 +922,37 @@ async def list_availability(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    params = {"tid": str(tid)}
+    where = "tenant_id=:tid"
+    select_clause = "SELECT *"
+    order_by = "day_of_week, start_time"
+    if str(user.role) in ("Role.STAFF", "Role.TECHNICIAN", "staff", "technician"):
+        staff_id = (await db.execute(text(
+            "SELECT id FROM provider_team_members "
+            "WHERE tenant_id=:tid AND user_id=:uid AND deleted_at IS NULL LIMIT 1"
+        ), {"tid": str(tid), "uid": user.user_id})).scalar()
+        if staff_id:
+            staff_rule_count = (await db.execute(text(
+                "SELECT count(*) FROM provider_availability_rules "
+                "WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid"
+            ), {"tid": str(tid), "sid": str(staff_id)})).scalar() or 0
+            if staff_rule_count:
+                where += " AND scope_type='staff_member' AND scope_id=:sid"
+                params["sid"] = str(staff_id)
+            else:
+                # A technician without a personal override inherits only the
+                # provider's business hours, never another technician's rows.
+                where += " AND scope_type='provider'"
+        else:
+            where += " AND scope_type='provider'"
+        # Setup presets can leave historical rows for the same weekday. The
+        # staff view is an effective weekly schedule, not the provider's rule
+        # editor, so expose only the newest row for each day.
+        select_clause = "SELECT DISTINCT ON (day_of_week) *"
+        order_by = "day_of_week, updated_at DESC, start_time"
     result = await db.execute(
-        text("SELECT * FROM provider_availability_rules WHERE tenant_id=:tid ORDER BY day_of_week, start_time"),
-        {"tid": str(tid)}
+        text(f"{select_clause} FROM provider_availability_rules WHERE {where} ORDER BY {order_by}"),
+        params,
     )
     rows = [dict(r._mapping) for r in result.fetchall()]
     return ok({"rules": rows, "count": len(rows)}, request_id=rid)

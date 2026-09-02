@@ -46,7 +46,7 @@ function useToasts() {
 
 type TabKey =
   | "overview" | "monetization" | "provider-charges" | "credits"
-  | "invoices" | "customer-refunds" | "financial-events" | "direct-payments";
+  | "invoices" | "financial-events" | "direct-payments";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -55,7 +55,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "credits", label: "Credits & Top-ups" },
   { key: "direct-payments", label: "Direct Payments" },
   { key: "invoices", label: "Invoices" },
-  { key: "customer-refunds", label: "Customer Refunds" },
   { key: "financial-events", label: "Financial Events" },
 ];
 const TAB_KEYS = new Set<TabKey>(TABS.map(item => item.key));
@@ -138,7 +137,6 @@ function HomeServicesFinanceWorkspace() {
       {tab === "credits" && <CreditsTab params={params} />}
       {tab === "direct-payments" && <DirectPaymentsTab />}
       {tab === "invoices" && <InvoicesTab />}
-      {tab === "customer-refunds" && <CustomerRefundsTab />}
       {tab === "financial-events" && <FinancialEventsTab />}
 
       <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Audit Trail" size="lg">
@@ -171,7 +169,6 @@ function ExportButton({ tab }: { tab: TabKey }) {
     if (tab === "provider-charges") rows = (await homeServicesFinanceApi.listProviderCharges({ pageSize: 200 })).items;
     else if (tab === "credits") rows = (await homeServicesFinanceApi.listTopups({ pageSize: 200 })).items;
     else if (tab === "invoices") rows = (await homeServicesFinanceApi.listInvoices({ pageSize: 200 })).items;
-    else if (tab === "customer-refunds") rows = (await homeServicesFinanceApi.listRefunds({ pageSize: 200 })).items;
     else if (tab === "financial-events") rows = (await homeServicesFinanceApi.listFinancialEvents({ pageSize: 200 })).items;
     else { const ov = await homeServicesFinanceApi.getOverview(); rows = [ov as Record<string, unknown>]; }
 

@@ -214,7 +214,7 @@ export default function AccountPage() {
         {tab === "sessions" && (
           <Card>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <p style={{ fontWeight:600, margin:0 }}>Active Sessions ({sessions.data?.active_sessions ?? 0})</p>
+              <p style={{ fontWeight:600, margin:0 }}>Active Sessions ({sessions.data?.total ?? 0})</p>
               <Btn variant="danger" size="sm" onClick={logoutAll.execute} loading={logoutAll.loading}>Revoke All</Btn>
             </div>
             {sessions.loading ? <Spinner /> : (
@@ -224,14 +224,15 @@ export default function AccountPage() {
                     padding:"12px 14px", border:"1px solid var(--border)", borderRadius:"var(--radius-md)" }}>
                     <div>
                       <p style={{ margin:"0 0 2px", fontSize:13, fontWeight:500 }}>
-                        {s.ip_address}
+                        {s.device_display_name || "Unknown device"}
                         {s.is_current && <span style={{ marginLeft:8 }}><Badge variant="success">Current</Badge></span>}
                       </p>
                       <p style={{ margin:0, fontSize:11, color:"var(--text-secondary)" }}>
-                        Last: {new Date(s.last_seen_at).toLocaleString()} · Expires: {new Date(s.expires_at).toLocaleString()}
+                        {s.channel} · Last active: {new Date(s.last_active_at).toLocaleString()}
+                        {s.approximate_location ? ` · ${s.approximate_location}` : ""}
                       </p>
                     </div>
-                    {!s.is_current && (
+                    {!s.is_current && s.allowed_actions.includes("revoke") && (
                       <Btn variant="ghost" size="sm" onClick={() => revokeSession.execute(s.session_id)} loading={revokeSession.loading}>
                         Revoke
                       </Btn>

@@ -285,16 +285,6 @@ class HomeServiceJobAssignmentService:
         if blocked:
             return staff, blocked
 
-        if not is_user:
-            from app.engines.home_service_assignment.team_readiness_service import (
-                member_has_verified_required_documents,
-            )
-            if not await member_has_verified_required_documents(
-                self.db, uuid.UUID(str(job.tenant_id)), staff_member_id
-            ):
-                blocked.append("required_documents_missing")
-                return staff, blocked
-
         if await self._job_requires_technician(job) and not is_user:
             tenant_service_id = await self._tenant_service_id_for_job(job)
             supported = {str(value) for value in (getattr(staff, "supported_offering_ids", None) or [])}
@@ -418,12 +408,6 @@ class HomeServiceJobAssignmentService:
             all_staff = list(res2.scalars().all())
 
         provider_staff_ids = [s.id for s in all_staff if hasattr(s, "designation")]
-        from app.engines.home_service_assignment.team_readiness_service import (
-            members_with_verified_required_documents,
-        )
-        documented_staff_ids = await members_with_verified_required_documents(
-            self.db, tenant_id, [str(member_id) for member_id in provider_staff_ids]
-        )
         # The roster row and the LOGIN are different records. A member can sit
         # at status='active' while their user account is deactivated -- the
         # assign path already refuses those, so listing them as eligible only
@@ -480,9 +464,6 @@ class HomeServiceJobAssignmentService:
                 # role_not_allowed while a plain "Technician" passed.
                 if designation and not is_technician_role(s.designation, s.member_type):
                     reasons.append("role_not_allowed")
-                if str(s.id) not in documented_staff_ids:
-                    reasons.append("required_documents_missing")
-
                 if technician_required:
                     supported = {
                         str(value)

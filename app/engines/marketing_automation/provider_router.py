@@ -46,13 +46,19 @@ async def provider_visibility_status(
     result = await db.execute(text("""
         SELECT
           t.id                  AS tenant_id,
-          t.is_bookable,
-          t.is_visible,
-          t.subscription_status,
-          t.verification_status,
-          t.status              AS tenant_status,
-          t.city
+          COALESCE(pvs.is_bookable, false) AS is_bookable,
+          COALESCE(pvs.is_visible, false)  AS is_visible,
+          false                            AS visibility_boost_active,
+          NULL::timestamptz                AS visibility_boost_expires_at,
+          t.status                         AS provider_status
         FROM tenants t
+        LEFT JOIN LATERAL (
+          SELECT is_bookable, is_visible
+          FROM provider_visibility_statuses
+          WHERE tenant_id = t.id
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) pvs ON true
         WHERE t.id = :tenant_id
         LIMIT 1
     """), {"tenant_id": str(tenant_id)})

@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent } from "@testing-library/react-native";
+import { cleanup, fireEvent } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { BookingDetailsScreen } from "../BookingDetailsScreen";
 import * as detailsQueryModule from "../../../api/customerBookings/useCustomerBookingDetailsQuery";
@@ -130,7 +130,16 @@ function render() {
 
 describe("BookingDetailsScreen", () => {
   beforeEach(() => { mockQuoteHooks(undefined); mockPartsHooks(undefined); mockReviewHooks(null); });
-  afterEach(() => { jest.restoreAllMocks(); mockNavigate.mockClear(); mockGoBack.mockClear(); });
+  // Unmount before restoring hook spies. Provider hydration can otherwise
+  // re-render a still-mounted screen after the mocked query hook has been
+  // restored, producing a false hook-order violation and leaking timers into
+  // the rest of the suite.
+  afterEach(() => {
+    cleanup();
+    jest.restoreAllMocks();
+    mockNavigate.mockClear();
+    mockGoBack.mockClear();
+  });
 
   it("shows the loading state", () => {
     mockQuery(undefined, { isPending: true });

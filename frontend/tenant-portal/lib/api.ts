@@ -1927,8 +1927,19 @@ export interface PasswordResetConfirmResult { message:string; }
 export interface MfaSetup   { secret:string; qr_code_url:string; backup_codes:string[]; }
 export interface MfaConfirm { mfa_enabled:boolean; backup_codes:string[]; }
 export interface BackupCodes { backup_codes:string[]; generated_at:string; }
-export interface UserSession { session_id:string; device_info:Record<string,unknown>; ip_address:string; last_seen_at:string; expires_at:string; is_current?:boolean; }
-export interface UserSessionList { user_id:string; active_sessions:number; sessions:UserSession[]; }
+export interface UserSession {
+  session_id:string;
+  device_display_name:string;
+  device_type:string;
+  channel:string;
+  last_active_at:string;
+  created_at:string;
+  is_current:boolean;
+  is_trusted:boolean;
+  allowed_actions:string[];
+  approximate_location:string|null;
+}
+export interface UserSessionList { sessions:UserSession[]; total:number; current_session_id:string|null; trusted_device_count:number; }
 export interface InviteStaffPayload { email:string; full_name:string; role:string; permissions?:string[]; tenant_id?:string; }
 export interface StaffInvite { invite_id:string; email:string; role:string; expires_at:string; }
 export interface ApiKey { key_id:string; name:string; prefix:string; scopes:string[]; is_active:boolean; created_at:string; expires_at?:string; last_used_at?:string; }

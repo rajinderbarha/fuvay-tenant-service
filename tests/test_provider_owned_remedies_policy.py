@@ -173,6 +173,14 @@ def test_retired_admin_settlement_pages_redirect_to_penalty_oversight():
         assert 'redirect("/admin/finance/tenant-penalties")' in page
 
 
+def test_tenant_ai_chat_and_admin_refund_decisions_are_not_reachable():
+    tenant_ai = source("frontend/tenant-portal/app/(tenant)/ai-chat/page.tsx")
+    admin_finance = source("frontend/super-admin/app/admin/home-services/finance/page.tsx")
+    assert 'redirect("/dashboard")' in tenant_ai
+    assert 'key: "customer-refunds"' not in admin_finance
+    assert 'tab === "customer-refunds"' not in admin_finance
+
+
 def test_material_terms_reacceptance_is_enforced_in_tenant_and_customer_apps():
     router = source("app/engines/legal_documents/user_router.py")
     tenant_gate = source("frontend/tenant-portal/components/shared/LegalReacceptanceGate.tsx")

@@ -329,7 +329,9 @@ function CoverageAvailabilityWorkspace() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <Badge variant={isReady ? "success" : "warning"} size="lg">{isReady ? "Ready for bookings" : "Setup incomplete"}</Badge>
+          <Badge variant={isReady ? "success" : "warning"} size="lg">
+            {isReady ? (workspace ? "Coverage setup ready" : "Ready for review") : "Setup incomplete"}
+          </Badge>
           {workspace && <Btn variant="secondary" size="sm" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>}
         </div>
       </div>
@@ -505,7 +507,7 @@ function CoverageAvailabilityWorkspace() {
 
         <div style={{ minWidth: 0 }}>
           <Card style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>{workspace ? "Booking readiness" : "Setup readiness"}</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>{workspace ? "Coverage setup readiness" : "Setup readiness"}</h3>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
               <ProgressRing pct={readinessPct} tone={isReady ? "success" : "brand"} />
             </div>

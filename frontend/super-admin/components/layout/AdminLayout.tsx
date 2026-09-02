@@ -637,15 +637,17 @@ function VerticalCatalogSection({ vertical, activeNav, collapsed, isLast }: {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const flyoutRef = React.useRef<HTMLDivElement>(null);
   const modules = vertical.modules.filter(m => m.is_enabled);
-  // Home Services' bespoke pages (Overview/Service Catalog/Completed Job
-  // Deduction/Settings/Bookability) are now
-  // real registered catalog modules (CatalogModuleDefinition +
-  // VerticalCatalogModule rows) rather than a hardcoded `vertical_key ===
-  // "home_services"` escape hatch -- they arrive through `modules` above like
-  // every other vertical's pages. Only the cross-vertical FIELD_OPS shared
-  // items (Bookings/Jobs/Reviews/Finance items shared by every field-ops-
-  // style vertical, not just Home Services) remain a separate addendum here.
+  // The effective menu is tenant/database driven, but older deployments can
+  // legitimately be missing newer Home Services registrations. Keep the
+  // built-in Home Services workspaces reachable while deduplicating anything
+  // the effective menu already supplied (Service Catalog in particular).
+  const moduleHrefs = new Set(modules.map(module =>
+    module.admin_path || `/admin/verticals/${vertical.vertical_key}?tab=capabilities`,
+  ));
   const extraItems = [
+    ...(vertical.vertical_key === "home_services"
+      ? HOME_SERVICES_EXTRA_ITEMS.filter(item => !moduleHrefs.has(item.href))
+      : []),
     ...(FIELD_OPS_VERTICALS.has(vertical.vertical_key) ? FIELD_OPS_SHARED_ITEMS : []),
   ];
 

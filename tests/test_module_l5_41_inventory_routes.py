@@ -31,9 +31,8 @@ API_TS = ROOT / "frontend/tenant-portal/lib/api.ts"
 PAGE = ROOT / "frontend/tenant-portal/app/(tenant)/inventory/page.tsx"
 
 BASE = "http://localhost:8000"
-PROVIDER_EMAIL = "provider@serviceos.local"
+PROVIDER_EMAIL = "provider@serviceos.in"
 PASSWORD = "Password123!"
-TENANT_ID = "5209ef33-a53e-4fc0-b3f6-006335b8d712"
 
 
 def _inv_block(src: str) -> str:
@@ -71,41 +70,107 @@ def test_page_uses_real_response_fields():
 async def _login(email):
     async with AsyncClient(base_url=BASE, timeout=30) as c:
         r = await c.post("/v1/auth/login", json={"email": email, "password": PASSWORD})
-        return r.json()["data"]["access_token"] if r.status_code == 200 else None
+        if r.status_code != 200:
+            return None
+        data = r.json()["data"]
+        return data["access_token"], data["user"]["tenant_id"]
 
 
 class TestLive:
     async def test_full_inventory_flow_on_real_routes(self):
-        tok = await _login(PROVIDER_EMAIL)
-        if not tok:
+        login = await _login(PROVIDER_EMAIL)
+        if not login:
             pytest.skip("provider login unavailable")
-        loc = str(uuid.uuid4())
+        tok, tenant_id = login
         sku = f"L541T-{uuid.uuid4().hex[:6]}"
         item_id = None
+        location_ids = []
         async with AsyncClient(base_url=BASE, timeout=30,
                                headers={"Authorization": f"Bearer {tok}"}) as c:
             # dead route 404s
-            dead = await c.get(f"/v1/inventory/items?tenant_id={TENANT_ID}")
+            dead = await c.get(f"/v1/inventory/items?tenant_id={tenant_id}")
             assert dead.status_code == 404
 
-            created = await c.post(f"/v1/inventory/tenants/{TENANT_ID}/items",
+            for suffix, kind in (("Warehouse", "warehouse"), ("Van", "van")):
+                location = await c.post(
+                    f"/v1/inventory/tenants/{tenant_id}/locations",
+                    json={"location_name": f"L541 {suffix} {sku}", "location_type": kind},
+                )
+                assert location.status_code == 201, location.text
+                location_ids.append(location.json()["data"]["location_id"])
+
+            created = await c.post(f"/v1/inventory/tenants/{tenant_id}/items",
                                    json={"name": "L541 Widget", "sku": sku, "unit": "pcs",
-                                         "unit_cost": 50, "min_quantity": 10})
+                                         "unit_cost": 50, "selling_price": 75,
+                                         "min_quantity": 30})
             assert created.status_code == 201, created.text
             item_id = created.json()["data"]["item_id"]
 
             try:
-                rcv = await c.post(f"/v1/inventory/items/{item_id}/locations/{loc}/receive",
-                                   json={"tenant_id": TENANT_ID, "quantity": 25})
+                fetched = await c.get(f"/v1/inventory/items/{item_id}")
+                assert fetched.status_code == 200 and fetched.json()["data"]["sku"] == sku
+
+                updated = await c.put(
+                    f"/v1/inventory/tenants/{tenant_id}/items/{item_id}",
+                    json={"name": "L541 Widget Updated", "selling_price": 80},
+                )
+                assert updated.status_code == 200, updated.text
+                assert updated.json()["data"]["name"] == "L541 Widget Updated"
+                assert float(updated.json()["data"]["selling_price"]) == 80
+
+                listed = await c.get(
+                    f"/v1/inventory/tenants/{tenant_id}/items", params={"search": sku}
+                )
+                assert listed.status_code == 200, listed.text
+                assert any(row["item_id"] == item_id for row in listed.json()["data"]["items"])
+
+                source, destination = location_ids
+                rcv = await c.post(f"/v1/inventory/items/{item_id}/locations/{source}/receive",
+                                   json={"tenant_id": tenant_id, "quantity": 25})
                 assert rcv.status_code == 200, rcv.text
 
-                bal = await c.get(f"/v1/inventory/items/{item_id}/locations/{loc}/balance")
-                d = bal.json()["data"]
-                assert d["quantity"] == 25 and d["available_qty"] == 25
-                assert "available_qty" in d and "below_minimum" in d
+                counted = await c.post(
+                    f"/v1/inventory/items/{item_id}/locations/{source}/count",
+                    json={"tenant_id": tenant_id, "counted_quantity": 24,
+                          "reason": "Operation-level integration audit",
+                          "idempotency_key": str(uuid.uuid4())},
+                )
+                assert counted.status_code == 200 and counted.json()["data"]["adjustment"] == -1
 
-                low = await c.get(f"/v1/inventory/tenants/{TENANT_ID}/low-stock")
+                transferred = await c.post(
+                    f"/v1/inventory/items/{item_id}/transfer",
+                    json={"tenant_id": tenant_id, "from_location_id": source,
+                          "to_location_id": destination, "quantity": 4,
+                          "reason": "Operation-level integration audit",
+                          "idempotency_key": str(uuid.uuid4())},
+                )
+                assert transferred.status_code == 200, transferred.text
+
+                source_bal = await c.get(f"/v1/inventory/items/{item_id}/locations/{source}/balance")
+                destination_bal = await c.get(f"/v1/inventory/items/{item_id}/locations/{destination}/balance")
+                assert source_bal.json()["data"]["quantity"] == 20
+                assert destination_bal.json()["data"]["quantity"] == 4
+                assert source_bal.json()["data"]["reconciliation_ok"] is True
+                assert destination_bal.json()["data"]["reconciliation_ok"] is True
+
+                ledger = await c.get(
+                    f"/v1/inventory/items/{item_id}/locations/{source}/transactions"
+                )
+                assert ledger.status_code == 200 and ledger.json()["data"]["transactions"]
+
+                low = await c.get(f"/v1/inventory/tenants/{tenant_id}/low-stock")
                 assert low.status_code == 200 and "items" in low.json()["data"]
+                assert any(row["item_id"] == item_id for row in low.json()["data"]["items"])
+
+                replenish = await c.post(
+                    f"/v1/inventory/tenants/{tenant_id}/items/{item_id}/replenish",
+                    json={"quantity": 10},
+                )
+                assert replenish.status_code == 200
+                assert replenish.json()["data"]["quantity_requested"] == 10
+
+                archived = await c.delete(f"/v1/inventory/tenants/{tenant_id}/items/{item_id}")
+                assert archived.status_code == 200 and archived.json()["data"]["deleted"] is True
             finally:
                 import asyncpg
                 conn = await asyncpg.connect("postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos")
@@ -113,4 +178,6 @@ class TestLive:
                 for tbl in ("stock_reservations", "stock_transactions", "stock_balances"):
                     await conn.execute(f"DELETE FROM {tbl} WHERE item_id=$1", iid)
                 await conn.execute("DELETE FROM inventory_items WHERE id=$1", iid)
+                for location_id in location_ids:
+                    await conn.execute("DELETE FROM stock_locations WHERE id=$1", uuid.UUID(location_id))
                 await conn.close()

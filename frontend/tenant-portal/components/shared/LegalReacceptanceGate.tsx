@@ -70,7 +70,7 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
   return (
     <main style={{ maxWidth: 680, margin: "48px auto", padding: "0 20px" }}>
       <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 28 }}>
-        <p style={{ color: "var(--primary)", fontWeight: 700, fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase" }}>Action required</p>
+        <p style={{ color: "var(--brand)", fontWeight: 700, fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase" }}>Action required</p>
         <h1 style={{ fontSize: 26, margin: "6px 0 10px" }}>Review our updated provider terms</h1>
         <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>{status.message}</p>
         <ul style={{ lineHeight: 1.7, paddingLeft: 20 }}>
@@ -82,7 +82,7 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "18px 0" }}>
           {status.documents.map(document => (
             <Link key={document.id} href={document.doc_type === "privacy_policy" ? "/privacy" : "/terms"} target="_blank"
-              style={{ color: "var(--primary)", fontWeight: 650 }}>
+              style={{ color: "var(--brand)", fontWeight: 650 }}>
               Read {document.title} (v{document.version})
             </Link>
           ))}
@@ -93,7 +93,7 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
         </label>
         {error && <p role="alert" style={{ color: "var(--danger-text)", marginBottom: 0 }}>{error}</p>}
         <button type="button" disabled={!accepted || busy} onClick={() => void acceptUpdates()}
-          style={{ width: "100%", marginTop: 18, padding: "12px 18px", border: 0, borderRadius: 9, background: "var(--primary)", color: "white", fontWeight: 700, cursor: accepted && !busy ? "pointer" : "not-allowed", opacity: accepted && !busy ? 1 : .55 }}>
+          style={{ width: "100%", marginTop: 18, padding: "12px 18px", border: 0, borderRadius: 9, background: "var(--brand)", color: "white", fontWeight: 700, cursor: accepted && !busy ? "pointer" : "not-allowed", opacity: accepted && !busy ? 1 : .55 }}>
           {busy ? "Saving acceptance…" : "Accept and continue"}
         </button>
       </section>

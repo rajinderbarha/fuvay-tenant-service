@@ -716,6 +716,16 @@ class TenantCatalogService:
             tenant_visit = _decimal_or_none(data.get("tenant_visit_fee"))
             warranty_days = self._validate_warranty_days(data.get("warranty_days", 5))
 
+            # ``tenant_base_price`` is the legacy/public API spelling for an
+            # exact fixed price.  Publish and customer price resolution use
+            # the canonical min/max pair, so accepting only base_price without
+            # filling that pair created a service that saved successfully but
+            # could never publish.  Preserve the alias while normalizing it to
+            # the single pricing authority.
+            if tenant_base is not None and tenant_min is None and tenant_max is None:
+                tenant_min = tenant_base
+                tenant_max = tenant_base
+
             # MODULE-L5-03: `is not None`, not truthiness — Decimal('0') is falsy,
             # so the old `any([...])`/`if tenant_min and ...` skipped validation
             # when a tenant set price 0, storing a floor-bypassing value.
@@ -814,6 +824,16 @@ class TenantCatalogService:
     async def update_enabled_service(self, tenant_service_id: uuid.UUID, data: dict) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+
+        # Same compatibility normalization as enable_service: an exact base
+        # price is represented canonically as min == max everywhere that
+        # validates, publishes, or quotes the service.
+        data = dict(data)
+        if (data.get("tenant_base_price") is not None
+                and "tenant_min_price" not in data
+                and "tenant_max_price" not in data):
+            data["tenant_min_price"] = data["tenant_base_price"]
+            data["tenant_max_price"] = data["tenant_base_price"]
 
         if not ts.override_allowed:
             for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
