@@ -85,6 +85,7 @@ def _publisher_filter(zipcode: str | None):
         .where(
             TenantServiceArea.zipcode == zipcode,
             TenantServiceArea.is_active == True,  # noqa: E712
+            TenantServiceArea.tenant_id == TenantServiceAreaService.tenant_id,
             TenantServiceAreaService.is_available == True,  # noqa: E712
             TenantServiceAreaService.status == "ACTIVE",
             TenantServiceAreaService.tenant_id.in_(

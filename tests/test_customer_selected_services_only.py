@@ -36,3 +36,13 @@ def test_search_and_catalog_receive_and_apply_customer_zipcode():
     assert flow.count("_publisher_filter(zipcode)") >= 4
     assert "zipcode=${encodeURIComponent(zipcode)}" in mobile_search
     assert "searchCustomerCatalog(q, zipcode)" in mobile_query
+
+
+def test_direct_offering_and_flow_resolution_cannot_bypass_selected_service_filter():
+    flow = source("app/engines/customer_flow/service.py")
+
+    assert "offering_slug_or_id, cat.id, zipcode=zipcode" in flow
+    assert "offering_slug, cat.id, zipcode=zipcode" in flow
+    assert "if not zipcode:" in flow
+    assert "service_filters.append(_publisher_filter(zipcode))" in flow
+    assert "This service is not currently available in ZIP code {zipcode}." in flow

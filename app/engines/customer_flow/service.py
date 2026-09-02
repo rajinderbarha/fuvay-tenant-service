@@ -232,22 +232,9 @@ class CustomerCategoryFlowService:
         zipcode: str | None = None,
     ) -> dict:
         cat = await self._load_visible_category(category_slug_or_id)
-        offering = await self._load_active_offering(offering_slug_or_id, cat.id)
-        if zipcode and isinstance(offering, MasterService):
-            from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
-
-            is_bookable_here = (await self.db.execute(
-                select(MasterService.id).where(
-                    MasterService.id == offering.id,
-                    _publisher_filter(zipcode),
-                )
-            )).scalar_one_or_none()
-            if is_bookable_here is None:
-                raise ServiceOSException(
-                    ERR_OFFERING_NOT_FOUND,
-                    f"This service is not currently available in ZIP code {zipcode}.",
-                    status_code=404,
-                )
+        offering = await self._load_active_offering(
+            offering_slug_or_id, cat.id, zipcode=zipcode,
+        )
         flow_cfg = await self._load_flow_config_for_cat(cat.id)
         is_master_service = isinstance(offering, MasterService)
         return {
@@ -356,7 +343,9 @@ class CustomerCategoryFlowService:
 
         offering_data: dict | None = None
         if offering_slug:
-            offering = await self._load_active_offering(offering_slug, cat.id)
+            offering = await self._load_active_offering(
+                offering_slug, cat.id, zipcode=zipcode,
+            )
             is_master_service = isinstance(offering, MasterService)
             offering_data = {
                 "id": str(offering.id),
@@ -657,46 +646,68 @@ class CustomerCategoryFlowService:
         return cat
 
     async def _load_active_offering(
-        self, slug_or_id: str, category_id: uuid.UUID
+        self,
+        slug_or_id: str,
+        category_id: uuid.UUID,
+        zipcode: str | None = None,
     ) -> MasterOffering | MasterService:
-        stmt = select(MasterOffering).where(
-            MasterOffering.category_id == category_id,
-            MasterOffering.slug == slug_or_id,
-        )
-        try:
-            uid = uuid.UUID(slug_or_id)
+        # Legacy MasterOffering rows have no provider publication or service
+        # area relationship. Once a customer has supplied a ZIP, only the
+        # canonical MasterService catalog can prove that the selected provider
+        # actually offers that exact service there. This also prevents a legacy
+        # row with the same slug from shadowing a provider-selected service.
+        if not zipcode:
             stmt = select(MasterOffering).where(
-                MasterOffering.id == uid,
                 MasterOffering.category_id == category_id,
+                MasterOffering.slug == slug_or_id,
             )
-        except ValueError:
-            pass
+            try:
+                uid = uuid.UUID(slug_or_id)
+                stmt = select(MasterOffering).where(
+                    MasterOffering.id == uid,
+                    MasterOffering.category_id == category_id,
+                )
+            except ValueError:
+                pass
 
-        offering = (await self.db.execute(stmt)).scalar_one_or_none()
-        if offering and (not offering.is_active or offering.status != "active"):
-            raise ServiceOSException(
-                ERR_OFFERING_INACTIVE, f"Offering '{offering.name}' is inactive.", status_code=404
-            )
-        if offering:
-            return offering
+            offering = (await self.db.execute(stmt)).scalar_one_or_none()
+            if offering and (not offering.is_active or offering.status != "active"):
+                raise ServiceOSException(
+                    ERR_OFFERING_INACTIVE,
+                    f"Offering '{offering.name}' is inactive.",
+                    status_code=404,
+                )
+            if offering:
+                return offering
 
         # Home Services' canonical records live in master_services rather than
         # master_offerings.  Resolve the same slug/id there before declaring a
         # customer-visible service missing.
-        service_stmt = select(MasterService).where(
+        service_filters = [
             MasterService.category_id == category_id,
             MasterService.slug == slug_or_id,
-        )
+        ]
         try:
             uid = uuid.UUID(slug_or_id)
-            service_stmt = select(MasterService).where(
+            service_filters = [
                 MasterService.id == uid,
                 MasterService.category_id == category_id,
-            )
+            ]
         except ValueError:
             pass
+        if zipcode:
+            from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
+            service_filters.append(_publisher_filter(zipcode))
+        service_stmt = select(MasterService).where(*service_filters)
         service = (await self.db.execute(service_stmt)).scalar_one_or_none()
         if not service:
+            if zipcode:
+                raise ServiceOSException(
+                    ERR_OFFERING_NOT_FOUND,
+                    f"This service is not currently available in ZIP code {zipcode}.",
+                    status_code=404,
+                )
             raise ServiceOSException(
                 ERR_OFFERING_NOT_FOUND,
                 f"Offering '{slug_or_id}' not found in this category.",
