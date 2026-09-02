@@ -15,7 +15,7 @@ import uuid
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,6 +108,12 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
         "warranty_days":         warranty_days,
         "warranty_expires_at":   warranty_expires_at.isoformat() if warranty_expires_at else None,
         "warranty_active":       bool(warranty_expires_at and warranty_expires_at >= datetime.now(timezone.utc)),
+        "warranty_certificate": ({
+            "certificate_number": job.warranty_certificate_number,
+            "issued_at": (job.warranty_certificate_issued_at.isoformat()
+                          if job.warranty_certificate_issued_at else None),
+            "download_path": f"/v1/customer/my-activity/jobs/{job.id}/warranty-certificate",
+        } if job.warranty_certificate_number else None),
     }
 
 
@@ -488,6 +494,40 @@ async def _catalog_labels(db: AsyncSession, booking: ServiceBooking) -> dict:
 
 
 # ── GET /jobs/{job_id} ────────────────────────────────────────────────────────
+
+@router.get("/jobs/{job_id}/warranty-certificate", summary="Download provider warranty certificate")
+async def download_warranty_certificate(
+    job_id: uuid.UUID,
+    user: UserContext = Depends(require_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    customer_id = uuid.UUID(user.user_id)
+    job = await db.scalar(select(ServiceJob).where(
+        ServiceJob.id == job_id, ServiceJob.customer_id == customer_id,
+    ))
+    if not job:
+        raise ServiceOSException("FINAL_JOB_NOT_FOUND", "Service job not found.", status_code=404)
+    if job.status != "completed" or not job.warranty_expires_at:
+        raise ServiceOSException(
+            "WARRANTY_CERTIFICATE_UNAVAILABLE",
+            "The warranty certificate is available after job completion.", status_code=409,
+        )
+    if job.warranty_expires_at < datetime.now(timezone.utc):
+        raise ServiceOSException(
+            "WARRANTY_PERIOD_EXPIRED",
+            "The warranty certificate download period has ended.", status_code=410,
+        )
+    from app.engines.final_records.warranty_certificate import (
+        issue_warranty_certificate, render_certificate_html,
+    )
+    snapshot = await issue_warranty_certificate(db, job)
+    document = render_certificate_html(snapshot)
+    filename = f"warranty-{job.warranty_certificate_number}.html"
+    return Response(
+        content=document, media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 @router.get("/jobs/{job_id}", summary="Get a service job", response_model=ApiResponse)
 async def get_my_job(

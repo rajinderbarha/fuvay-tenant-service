@@ -17,12 +17,18 @@ of the suite and with manual live testing done elsewhere.
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
 from sqlalchemy import text
 
 from app.database import get_session_factory, init_db
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 TENANT_ONE_ID = uuid.UUID("5209ef33-a53e-4fc0-b3f6-006335b8d712")   # demo-ac-services
 TENANT_TWO_ID = uuid.UUID("f45664c1-50b7-42c5-a115-37fed1bbaf53")   # isolation-test-services

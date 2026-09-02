@@ -1,12 +1,12 @@
-"""Top-up plan validity, and the free seat that makes buying optional.
+"""Top-up plan validity and the post-approval seat purchase model.
 
 Three things are certified here:
 
   * a plan's `validity_days` reaches the entitlement it grants, and an expiry
     withdraws ONLY the unspent part of that grant;
   * a redelivered payment does not grant seats twice;
-  * activation no longer blocks on buying capacity, and the free starter seat
-    means "optional" is not just the dead end moved one screen later.
+  * activation no longer blocks on buying capacity, while adding a technician
+    still requires a purchased seat.
 """
 from __future__ import annotations
 

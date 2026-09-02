@@ -11,10 +11,10 @@ import pytest
 import pytest_asyncio
 
 from app.engines.platform_commerce.constants import (
-    COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT, SECURITY_DEPOSIT_AMOUNT,
-    DEPOSIT_REPLENISHMENT_PCT, CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
+    COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT,
+    CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
     CUSTOMER_SIGNAL_WEIGHTS, CUSTOMER_DEFAULT_SIGNALS, WALLET_BUFFER_MULTIPLIER,
-    TxnType, DepositTxnType, BADGE_THRESHOLDS,
+    TxnType, BADGE_THRESHOLDS,
 )
 
 
@@ -30,19 +30,6 @@ def test_health_band_commission_adjustments():
     assert COMMISSION_HEALTH_ADJUSTMENT["gold"] == Decimal("0")      # neutral
     assert COMMISSION_HEALTH_ADJUSTMENT["silver"] > Decimal("0")     # penalty
     assert COMMISSION_HEALTH_ADJUSTMENT["at_risk"] == COMMISSION_HEALTH_ADJUSTMENT["critical"]
-
-def test_security_deposit_amounts_by_plan():
-    assert SECURITY_DEPOSIT_AMOUNT["starter"] == Decimal("5000.00")
-    assert SECURITY_DEPOSIT_AMOUNT["growth"] == Decimal("15000.00")
-    assert SECURITY_DEPOSIT_AMOUNT["enterprise"] == Decimal("50000.00")
-    assert SECURITY_DEPOSIT_AMOUNT["enterprise"] > SECURITY_DEPOSIT_AMOUNT["growth"] > SECURITY_DEPOSIT_AMOUNT["starter"]
-
-def test_deposit_replenishment_pct():
-    assert DEPOSIT_REPLENISHMENT_PCT == Decimal("0.05")
-    # Purchase of 10,000 should replenish 500 to deposit
-    purchase = Decimal("10000.00")
-    replenishment = purchase * DEPOSIT_REPLENISHMENT_PCT
-    assert replenishment == Decimal("500.00")
 
 def test_customer_health_bands_cover_full_range():
     all_scores = list(range(0, 101))
@@ -76,10 +63,6 @@ def test_wallet_buffer_multiplier():
 def test_txn_type_constants_unique():
     txn_values = [v for k, v in TxnType.__dict__.items() if not k.startswith("_")]
     assert len(txn_values) == len(set(txn_values)), "TxnType values are not unique"
-
-def test_deposit_txn_type_constants_unique():
-    values = [v for k, v in DepositTxnType.__dict__.items() if not k.startswith("_")]
-    assert len(values) == len(set(values)), "DepositTxnType values are not unique"
 
 
 # ── 2. Effective commission rate computation ───────────────────────────────
@@ -127,39 +110,6 @@ def test_commission_never_below_minimum():
     adj = COMMISSION_HEALTH_ADJUSTMENT["platinum"]
     effective = max(Decimal("1.00"), base + adj)
     assert effective >= Decimal("1.00")
-
-
-# ── 4. Security deposit lifecycle ─────────────────────────────────────────
-def test_deposit_status_initial():
-    # Test the balance formula directly
-    total_paid = Decimal("0.00")
-    warranty_drawn = Decimal("0.00")
-    replenishment_total = Decimal("0.00")
-    current_balance = total_paid + replenishment_total - warranty_drawn
-    is_unlocked = False  # status = "unpaid"
-    assert current_balance == Decimal("0.00")
-    assert not is_unlocked
-
-def test_deposit_balance_after_payment():
-    total_paid = Decimal("5000.00")
-    warranty_drawn = Decimal("0.00")
-    replenishment_total = Decimal("0.00")
-    current_balance = total_paid + replenishment_total - warranty_drawn
-    assert current_balance == Decimal("5000.00")
-    assert current_balance > 0  # unlocked when paid
-
-def test_deposit_balance_after_warranty_draw():
-    total_paid = Decimal("5000.00")
-    warranty_drawn = Decimal("800.00")
-    replenishment_total = Decimal("250.00")
-    current_balance = total_paid + replenishment_total - warranty_drawn
-    # 5000 + 250 - 800 = 4450
-    assert current_balance == Decimal("4450.00")
-
-def test_deposit_replenishment_on_purchase():
-    purchase_amount = Decimal("15000.00")
-    replenishment = purchase_amount * DEPOSIT_REPLENISHMENT_PCT
-    assert replenishment == Decimal("750.00")
 
 
 # ── 5. Customer health score computation ──────────────────────────────────
@@ -268,14 +218,6 @@ def test_credit_reservation_unique_booking_id():
 
 
 # ── 8. Model computed properties ──────────────────────────────────────────
-def test_security_deposit_current_balance_formula():
-    total_paid = Decimal("5000.00")
-    warranty_drawn = Decimal("1200.00")
-    replenishment_total = Decimal("750.00")
-    current_balance = total_paid + replenishment_total - warranty_drawn
-    # 5000 + 750 - 1200 = 4550
-    assert current_balance == Decimal("4550.00")
-
 def test_customer_credit_balance_available():
     # Test the available_balance formula directly
     credit_balance = Decimal("1000.00")
@@ -296,18 +238,12 @@ def test_commerce_engine_meta(client):
     assert r.status_code == 200
     d = r.json()
     assert d["engine_id"] == "platform_commerce"
-    assert d["endpoint_count"] == 41
-    assert "security_deposit" in d["capabilities"]
+    assert d["endpoint_count"] == 48
     assert "commission" in d["capabilities"]
     assert "preflight" in d["capabilities"]
 
 def test_commerce_packages_requires_auth(client):
     r = client.get("/v1/commerce/packages")
-    assert r.status_code == 401
-
-def test_commerce_deposit_requires_auth(client):
-    tid = uuid.uuid4()
-    r = client.get(f"/v1/commerce/tenants/{tid}/deposit")
     assert r.status_code == 401
 
 def test_commerce_commission_deduct_requires_admin(client):
@@ -369,15 +305,6 @@ def test_phase3_routes_are_mounted(client):
     assert client.get("/v1/commerce/packages").status_code == 401
     assert client.post("/v1/commerce/bookings/preflight", json={}).status_code == 401
     assert client.get("/v1/commerce/platform/summary").status_code == 401
-
-def test_phase3_deposit_routes_mounted(client):
-    import uuid
-    tid = uuid.uuid4()
-    assert client.get(f"/v1/commerce/tenants/{tid}/deposit").status_code == 401
-    assert client.post(f"/v1/commerce/tenants/{tid}/deposit/initiate", json={}).status_code == 401
-    # confirm is open (webhook) — returns 422 (missing fields) not 404
-    r = client.post(f"/v1/commerce/tenants/{tid}/deposit/confirm", json={})
-    assert r.status_code in (422, 200, 400)
 
 def test_phase3_commission_routes_mounted(client):
     import uuid

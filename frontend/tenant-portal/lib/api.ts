@@ -2796,6 +2796,7 @@ export interface OfferingReadinessBlocker {
 
 export interface AvailableOffering {
   offering_id: string;
+  job_type_id: string | null;
   name: string;
   slug: string;
   category_id: string | null;
@@ -2844,6 +2845,7 @@ export interface EnabledOffering {
 
 export interface EnableOfferingPayload {
   offering_id: string;
+  job_type_id?: string | null;
   provider_display_name?: string | null;
   provider_description?: string | null;
   supported_type_ids?: string[] | null;
@@ -4797,16 +4799,10 @@ export const homeServiceProviderJobsApi = {
 };
 
 // ── Tenant My Status — Provider Visibility & Bookability Control Center ──────
-// Real backend endpoints only. Two endpoints from the ticket's suggested list
-// (/v1/provider/onboarding/status and /v1/provider/onboarding/items) were
-// confirmed live-404/500 (the backing tables do not exist — see
-// TENANT_MY_STATUS_API_MAPPING_REPORT.md) and are NOT used here; the Setup
-// Readiness Checklist is instead computed client-side from the same real,
-// working data sources this app's own SetupWizardDrawer already uses
-// (provider status blockers + onboarding summary + credit wallet +
-// service areas + team members + availability), extended with two additional
-// real, dedicated endpoints (credit-wallet) that give more
-// accurate detail than the legacy combined wallet status the drawer used.
+// Real backend endpoints only. This page composes provider status, credit,
+// service-area, team and availability reads for a richer per-section view.
+// Dedicated onboarding screens can use /provider/onboarding/status and
+// /provider/onboarding/items; both project the same canonical gates.
 
 // NOTE: PackageAssignmentSummary is already declared above (Phase 9) with the
 // same shape our GET /v1/provider/onboarding/package-summary response uses —
@@ -4916,12 +4912,22 @@ export const offeringPricingApi = {
 
 export interface TenantMatchingReadiness {
   matching_ready: boolean;
+  reason_code?: string | null;
+  job_type_results?: Array<{
+    job_type_id: string | null;
+    matching_ready: boolean;
+    reason_code: string | null;
+  }>;
   message: string;
 }
 
 export const tenantAutoPriceOptionsApi = {
-  getMatchingReadiness: (masterServiceId: string) =>
-    apiFetch<TenantMatchingReadiness>(`/v1/tenant/home-services/matching-readiness?master_service_id=${masterServiceId}`),
+  getMatchingReadiness: (masterServiceId: string, jobTypeId?: string, zipcode?: string) => {
+    const params = new URLSearchParams({ master_service_id: masterServiceId });
+    if (jobTypeId) params.set("job_type_id", jobTypeId);
+    if (zipcode) params.set("zipcode", zipcode);
+    return apiFetch<TenantMatchingReadiness>(`/v1/tenant/home-services/matching-readiness?${params.toString()}`);
+  },
 };
 
 // ── FINAL-L5-04B — Tenant Entitlement Self-Read ───────────────────────────────

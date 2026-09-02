@@ -184,7 +184,7 @@ def test_usage_credit_disclaimer_present():
 
 def test_correct_finance_terminology_used():
     assert "Usage Credit" in DETAIL_PAGE
-    assert "Security Deposit" in DETAIL_PAGE
+    assert "Security Deposit" not in DETAIL_PAGE
 
 
 # ── Data normalization ────────────────────────────────────────────────────────

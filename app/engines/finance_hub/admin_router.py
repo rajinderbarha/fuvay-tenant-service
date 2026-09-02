@@ -15,6 +15,7 @@ from app.engines.finance_hub.service import FinanceHubService
 from app.schemas.base import ApiResponse, ok
 
 router = APIRouter(prefix="/v1/admin/finance", tags=["Finance Hub"])
+retired_warranty_router = APIRouter()
 ENGINE_ID = "finance_hub"
 
 
@@ -106,7 +107,7 @@ async def refund_topup(topup_id: uuid.UUID, r: Request,
 # WARRANTY CLAIMS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/warranty-claims", response_model=ApiResponse[dict], summary="List warranty claims")
+@retired_warranty_router.get("/warranty-claims")
 async def list_claims(r: Request,
                        status: str | None = Query(None),
                        category: str | None = Query(None),
@@ -120,14 +121,14 @@ async def list_claims(r: Request,
     return ok(await s.list_claims(status, category, q, page, page_size, sort_by, sort_dir), _rid(r), ENGINE_ID)
 
 
-@router.get("/warranty-claims/summary", response_model=ApiResponse[dict], summary="Warranty claims summary cards")
+@retired_warranty_router.get("/warranty-claims/summary")
 async def claims_summary(r: Request,
                           u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
                           s: FinanceHubService = Depends(_svc)):
     return ok(await s.get_claims_summary(), _rid(r), ENGINE_ID)
 
 
-@router.get("/warranty-claims/export", response_model=ApiResponse[dict], summary="Export warranty claims")
+@retired_warranty_router.get("/warranty-claims/export")
 async def export_claims(r: Request, status: str | None = Query(None),
                          # FINAL-L5-05O: distinct export permission (was READ).
                          u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
@@ -136,14 +137,14 @@ async def export_claims(r: Request, status: str | None = Query(None),
     return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
 
 
-@router.get("/warranty-claims/{claim_id}", response_model=ApiResponse[dict], summary="Get warranty claim detail")
+@retired_warranty_router.get("/warranty-claims/{claim_id}")
 async def get_claim(claim_id: uuid.UUID, r: Request,
                      u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
                      s: FinanceHubService = Depends(_svc)):
     return ok(await s.get_claim_detail(claim_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/warranty-claims/{claim_id}/assign", response_model=ApiResponse[dict], summary="Assign a reviewer to a claim")
+@retired_warranty_router.post("/warranty-claims/{claim_id}/assign")
 async def assign_reviewer(claim_id: uuid.UUID, r: Request,
                            u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_ASSIGN)),
                            s: FinanceHubService = Depends(_svc)):
@@ -151,7 +152,7 @@ async def assign_reviewer(claim_id: uuid.UUID, r: Request,
     return ok(await s.assign_reviewer(claim_id, uuid.UUID(str(body["reviewer_id"]))), _rid(r), ENGINE_ID)
 
 
-@router.post("/warranty-claims/{claim_id}/request-documents", response_model=ApiResponse[dict], summary="Request additional documents")
+@retired_warranty_router.post("/warranty-claims/{claim_id}/request-documents")
 async def request_documents(claim_id: uuid.UUID, r: Request,
                              u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_ASSIGN)),
                              s: FinanceHubService = Depends(_svc)):
@@ -159,7 +160,7 @@ async def request_documents(claim_id: uuid.UUID, r: Request,
     return ok(await s.request_documents(claim_id, body.get("notes", "")), _rid(r), ENGINE_ID)
 
 
-@router.post("/warranty-claims/{claim_id}/approve", response_model=ApiResponse[dict], summary="Approve warranty claim")
+@retired_warranty_router.post("/warranty-claims/{claim_id}/approve")
 async def approve_claim(claim_id: uuid.UUID, r: Request,
                          u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_APPROVE)),
                          s: FinanceHubService = Depends(_svc)):
@@ -167,7 +168,7 @@ async def approve_claim(claim_id: uuid.UUID, r: Request,
     return ok(await s.approve_claim(claim_id, Decimal(str(body["amount_approved"])), body.get("admin_notes")), _rid(r), ENGINE_ID)
 
 
-@router.post("/warranty-claims/{claim_id}/reject", response_model=ApiResponse[dict], summary="Reject warranty claim")
+@retired_warranty_router.post("/warranty-claims/{claim_id}/reject")
 async def reject_claim(claim_id: uuid.UUID, r: Request,
                         u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_REJECT)),
                         s: FinanceHubService = Depends(_svc)):
@@ -175,7 +176,7 @@ async def reject_claim(claim_id: uuid.UUID, r: Request,
     return ok(await s.reject_claim(claim_id, body["rejection_reason"], body.get("admin_notes")), _rid(r), ENGINE_ID)
 
 
-@router.post("/warranty-claims/{claim_id}/settle", response_model=ApiResponse[dict], summary="Settle an approved warranty claim")
+@retired_warranty_router.post("/warranty-claims/{claim_id}/settle")
 async def settle_claim(claim_id: uuid.UUID, r: Request,
                         u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_SETTLE)),
                         s: FinanceHubService = Depends(_svc)):

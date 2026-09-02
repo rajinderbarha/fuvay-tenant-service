@@ -249,9 +249,7 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
     "TENANT_MEDIA_QUOTA_EXCEEDED":   {"status": 422, "title": "Storage Quota Exceeded"},
     "TENANT_MEDIA_INVALID_TYPE":     {"status": 422, "title": "Invalid Media File Type"},
     "TENANT_MEDIA_UPLOAD_FAILED":    {"status": 500, "title": "Media Upload Failed"},
-    # Security Deposit & Credit — Sprint 4
-    "SECURITY_DEPOSIT_NOT_FOUND":    {"status": 404, "title": "Security Deposit Record Not Found"},
-    "SECURITY_DEPOSIT_ALREADY_PAID": {"status": 409, "title": "Security Deposit Already Marked As Paid"},
+    # Usage credit
     "CREDIT_WALLET_NOT_FOUND":       {"status": 404, "title": "Credit Wallet Not Found"},
     "CREDIT_ADJUSTMENT_REASON_REQUIRED": {"status": 422, "title": "Adjustment Reason Is Required"},
     # Packages — Sprint 5
@@ -262,11 +260,6 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
     "PACKAGE_PURCHASE_FAILED":       {"status": 500, "title": "Package Purchase Failed"},
     "PACKAGE_TYPE_INVALID":          {"status": 422, "title": "Invalid Package Type"},
     "PACKAGE_PRICE_INVALID":         {"status": 422, "title": "Invalid Package Price or Amount"},
-    # Security Deposit — Sprint 5 additions
-    "SECURITY_DEPOSIT_REQUIRED":     {"status": 402, "title": "Security Deposit Required Before Proceeding"},
-    "SECURITY_DEPOSIT_PAYMENT_FAILED":  {"status": 500, "title": "Security Deposit Payment Failed"},
-    "SECURITY_DEPOSIT_REFUND_FAILED":   {"status": 422, "title": "Security Deposit Cannot Be Refunded"},
-    "SECURITY_DEPOSIT_FORFEIT_FAILED":  {"status": 422, "title": "Security Deposit Cannot Be Forfeited"},
     # Credit Wallet — Sprint 5
     "CREDIT_WALLET_INACTIVE":        {"status": 422, "title": "Credit Wallet Is Inactive"},
     "CREDIT_WALLET_INSUFFICIENT_BALANCE": {"status": 402, "title": "Insufficient Credit Wallet Balance"},
@@ -333,7 +326,6 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
     "RATE_LIMITED":            {"status": 429, "title": "Rate Limit Exceeded"},
     "PLAN_LIMIT_EXCEEDED":     {"status": 402, "title": "Plan Limit Exceeded"},
     "COMMISSION_WALLET_EMPTY": {"status": 402, "title": "Commission Wallet Insufficient"},
-    "SECURITY_DEPOSIT_REQUIRED":{"status": 402, "title": "Security Deposit Required"},
     # Serviceability — Customer Addresses
     "CUSTOMER_ADDRESS_NOT_FOUND":      {"status": 404, "title": "Customer Address Not Found"},
     "CUSTOMER_ADDRESS_ACCESS_DENIED":  {"status": 403, "title": "Customer Address Access Denied"},
@@ -531,8 +523,6 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
     "TENANT_SERVICE_ALREADY_ENABLED":      {"status": 409, "title": "Service Already Enabled For Tenant"},
     "TENANT_SERVICE_NOT_ENABLED":          {"status": 404, "title": "Service Not Enabled For Tenant"},
     "TENANT_SERVICE_OVERRIDE_NOT_ALLOWED": {"status": 422, "title": "Price Override Not Allowed For This Service"},
-    "TENANT_PRICE_BELOW_ADMIN_MIN":        {"status": 422, "title": "Tenant Price Below Admin Minimum"},
-    "TENANT_PRICE_ABOVE_ADMIN_MAX":        {"status": 422, "title": "Tenant Price Exceeds Admin Maximum"},
     # Job assignment (home services dispatch)
     "JOB_ASSIGNMENT_JOB_NOT_FOUND":        {"status": 404, "title": "Job Not Found"},
     "JOB_ASSIGNMENT_STAFF_NOT_FOUND":      {"status": 404, "title": "Staff Member Not Found"},

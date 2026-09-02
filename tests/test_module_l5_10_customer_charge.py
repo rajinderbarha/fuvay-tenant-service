@@ -36,7 +36,7 @@ def test_page_and_client_cover_the_customer_charge():
     api = open(os.path.join(root, "frontend", "super-admin", "lib", "api.ts"), encoding="utf-8").read()
     assert "setCategoryCustomerCharge" in api
     assert "customer_charge_pct" in api
-    page = open(os.path.join(root, "frontend", "super-admin", "app", "admin", "pricing",
-                "commission", "page.tsx"), encoding="utf-8").read()
-    assert "Customer Charge" in page
-    assert "Provider Commission" in page
+    page = open(os.path.join(root, "frontend", "super-admin", "app", "admin", "home-services",
+                "finance", "page.tsx"), encoding="utf-8").read()
+    assert "customer charge" in page.lower()
+    assert "provider commission" in page.lower()

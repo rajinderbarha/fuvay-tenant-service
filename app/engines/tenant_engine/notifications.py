@@ -42,6 +42,8 @@ async def notify_tenant_verification(
     title: str,
     body: str,
     severity: str = "warning",
+    action_url: str = _RESUBMIT_URL,
+    action_label: str = "Review and resubmit",
 ) -> int:
     """Notify the tenant owner(s) about a verification decision, with the
     real reason in the body so they know exactly what to fix before
@@ -57,8 +59,8 @@ async def notify_tenant_verification(
             notification_type=notification_type,
             title=title,
             body=body,
-            action_url=_RESUBMIT_URL,
-            action_label="Review and resubmit",
+            action_url=action_url,
+            action_label=action_label,
             source_record_type="tenants",
             source_record_id=tenant_id,
             severity=severity,

@@ -61,8 +61,9 @@ class TestFiles:
         src = _read(SERVICE_FILE)
         assert "_OPERATION_VERTICAL_RULES" in src
         for key in ["jobs_field_ops", "site_visits", "orders", "leads_crm", "appointments",
-                    "security_deposit", "usage_credits"]:
+                    "usage_credits"]:
             assert f'"{key}"' in src
+        assert '"security_deposit"' not in src
 
     def test_admin_layout_has_visibility_filter(self):
         src = _read(ADMIN_LAYOUT)
@@ -96,8 +97,9 @@ class TestEffectiveMenuResolver:
         assert "operation_visibility" in d
         assert "enabled_vertical_keys" in d
         for key in ["jobs_field_ops", "site_visits", "orders", "leads_crm", "appointments",
-                    "security_deposit", "usage_credits"]:
+                    "usage_credits"]:
             assert key in d["operation_visibility"]
+        assert "security_deposit" not in d["operation_visibility"]
 
     async def test_coaching_vertical_has_no_home_services_modules(self, client):
         """Coaching must not show Brands/Issue Types/Service Options — the literal complaint."""
@@ -126,14 +128,14 @@ class TestEffectiveMenuResolver:
         finally:
             await client.post("/v1/admin/verticals/real_estate/enable")
 
-    async def test_disabling_home_services_hides_finance_items(self, client):
+    async def test_disabling_home_services_hides_usage_credits(self, client):
         r0 = await client.post("/v1/admin/verticals/home_services/disable", json={"reason": "Navigation visibility regression test"})
         assert r0.status_code == 200, r0.text
         try:
             r = await client.get("/v1/admin/catalog/navigation/effective-menu")
             d = r.json()["data"]
-            assert d["operation_visibility"]["security_deposit"] is False
             assert d["operation_visibility"]["usage_credits"] is False
+            assert "security_deposit" not in d["operation_visibility"]
             assert "home_services" not in d["enabled_vertical_keys"]
         finally:
             await client.post("/v1/admin/verticals/home_services/enable")
@@ -142,6 +144,7 @@ class TestEffectiveMenuResolver:
         r = await client.get("/v1/admin/catalog/navigation/effective-menu")
         d = r.json()["data"]
         assert d["operation_visibility"]["site_visits"] is True
-        assert d["operation_visibility"]["security_deposit"] is True
+        assert d["operation_visibility"]["usage_credits"] is True
+        assert "security_deposit" not in d["operation_visibility"]
         assert "home_services" in d["enabled_vertical_keys"]
         assert "real_estate" in d["enabled_vertical_keys"]

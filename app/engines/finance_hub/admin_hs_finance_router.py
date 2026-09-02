@@ -52,6 +52,7 @@ canonical_router = APIRouter(
     tags=["Admin — Home Services Finance"],
     dependencies=[_hs_enabled, Depends(require_permission(P.FINANCE_READ))],
 )
+retired_warranty_router = APIRouter()
 ENGINE_ID = "home_services_finance"
 
 
@@ -253,7 +254,7 @@ async def hs_topup_detail(topup_id: uuid.UUID, r: Request, s: HomeServicesFinanc
 # down as commission, so there is no held balance to administer.
 
 
-@canonical_router.get("/warranty-claims", response_model=ApiResponse[dict])
+@retired_warranty_router.get("/warranty-claims")
 async def hs_warranty_claims(
     r: Request, status: str | None = Query(None), category: str | None = Query(None),
     q: str | None = Query(None), page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
@@ -264,12 +265,12 @@ async def hs_warranty_claims(
     ), _rid(r), ENGINE_ID)
 
 
-@canonical_router.get("/warranty-claims/summary", response_model=ApiResponse[dict])
+@retired_warranty_router.get("/warranty-claims/summary")
 async def hs_warranty_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_hs_warranty_claims_summary(), _rid(r), ENGINE_ID)
 
 
-@canonical_router.get("/warranty-claims/{claim_id}", response_model=ApiResponse[dict])
+@retired_warranty_router.get("/warranty-claims/{claim_id}")
 async def hs_warranty_detail(claim_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_hs_warranty_claim_detail(claim_id), _rid(r), ENGINE_ID)
 
@@ -310,23 +311,6 @@ async def direct_payments_summary(r: Request, date_from: str | None = Query(None
 )
 async def get_direct_payment(payment_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_direct_payment_detail(payment_id), _rid(r), ENGINE_ID)
-
-
-@router.post("/payments/{payment_id}/remind-customer", response_model=ApiResponse[dict],
-             summary="Send a confirmation reminder to the customer")
-async def remind_customer(
-    payment_id: uuid.UUID, r: Request,
-    u: UserContext = Depends(require_permission(P.DIRECT_PAYMENTS_REMIND_CUSTOMER)),
-                           db: AsyncSession = Depends(get_db)):
-    from app.engines.invoice_payment.direct_payments_service import DirectPaymentsService
-    from app.engines.invoice_payment.models import ServicePaymentRecord
-    pay = await db.get(ServicePaymentRecord, payment_id)
-    from app.exceptions import NotFoundException
-    if pay is None:
-        raise NotFoundException("ServicePaymentRecord", str(payment_id))
-    svc = DirectPaymentsService(db, pay.tenant_id, _rid(r))
-    data = await svc.remind_customer(payment_id=payment_id, actor_user_id=u.user_id)
-    return ok(data, _rid(r), ENGINE_ID)
 
 
 @canonical_router.get("/invoices", response_model=ApiResponse[dict])
@@ -409,22 +393,3 @@ async def hs_audit(
     s: HomeServicesFinanceService = Depends(_svc),
 ):
     return ok(await s.list_audit(page=page, page_size=page_size), _rid(r), ENGINE_ID)
-
-
-@router.post("/payments/{payment_id}/open-dispute", response_model=ApiResponse[dict],
-             summary="Open a payment dispute")
-async def open_dispute(payment_id: uuid.UUID, r: Request, payload: dict = Body(default={}),
-                        u: UserContext = Depends(require_permission(P.DIRECT_PAYMENTS_OPEN_DISPUTE)),
-                        db: AsyncSession = Depends(get_db)):
-    from app.engines.invoice_payment.direct_payments_service import DirectPaymentsService
-    from app.engines.invoice_payment.models import ServicePaymentRecord
-    pay = await db.get(ServicePaymentRecord, payment_id)
-    from app.exceptions import NotFoundException
-    if pay is None:
-        raise NotFoundException("ServicePaymentRecord", str(payment_id))
-    svc = DirectPaymentsService(db, pay.tenant_id, _rid(r))
-    data = await svc.open_dispute(
-        payment_id=payment_id, actor_user_id=u.user_id,
-        description=payload.get("description") or "Opened by platform admin for review.",
-    )
-    return ok(data, _rid(r), ENGINE_ID)

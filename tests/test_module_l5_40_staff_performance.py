@@ -16,6 +16,7 @@ confirmed the real /score endpoint returns exactly the corrected shape.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from pathlib import Path
 
@@ -26,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TP_API = ROOT / "frontend/tenant-portal/lib/api.ts"
 MOBILE_API = ROOT / "mobile/staff-app/src/lib/api.ts"
 TP_PAGE = ROOT / "frontend/tenant-portal/app/(tenant)/staff/[id]/page.tsx"
-MOBILE_PROFILE = ROOT / "mobile/staff-app/src/screens/ProfileScreen.tsx"
+MOBILE_PROFILE = ROOT / "mobile/staff-app/src/screens/profile/ProfileScreen.tsx"
 
 BASE = "http://localhost:8000"
 STAFF_EMAIL = "staff@serviceos.local"
@@ -57,12 +58,17 @@ def test_staff_performance_interface_matches_backend():
             assert dead not in block, f"{api}: still has {dead}"
 
 
-def test_consumers_use_real_fields():
-    for page in (TP_PAGE, MOBILE_PROFILE):
-        src = _live(page.read_text(encoding="utf-8"))
-        assert "signal_values" in src
-        for dead in (".on_time_rate", ".job_count", ".avg_rating", ".dispute_rate", ".signals"):
-            assert dead not in src, f"{page}: still references {dead}"
+def test_tenant_performance_consumer_uses_real_fields():
+    src = _live(TP_PAGE.read_text(encoding="utf-8"))
+    assert "signal_values" in src
+    for dead in (".on_time_rate", ".job_count", ".avg_rating", ".dispute_rate", ".signals"):
+        assert dead not in src
+
+
+def test_mobile_profile_does_not_fabricate_performance_fields():
+    src = _live(MOBILE_PROFILE.read_text(encoding="utf-8"))
+    for dead in (".on_time_rate", ".job_count", ".avg_rating", ".dispute_rate", ".signals"):
+        assert dead not in src
 
 
 async def _login(email):
@@ -71,6 +77,10 @@ async def _login(email):
         return r.json()["data"]["access_token"] if r.status_code == 200 else None
 
 
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+    reason="requires the API and PostgreSQL services to be running",
+)
 class TestLive:
     async def test_dead_route_404s_and_real_route_returns_the_shape(self):
         tok = await _login(STAFF_EMAIL)

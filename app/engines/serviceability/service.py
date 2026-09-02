@@ -39,6 +39,7 @@ from app.engines.serviceability.models import (
 from app.engines.tenant_engine.models import Tenant, TenantLimits
 from app.engines.service_catalog.models import ServiceCatalogItem
 from app.engines.auth.models import User
+from app.engines.provider_portal.bookability_query import latest_provider_bookable
 from app.exceptions import ServiceOSException, NotFoundException
 from app.core.audit import record_platform_audit
 
@@ -739,7 +740,10 @@ class ServiceabilityService:
         area = await self.get_service_area(area_id)
         rows = (await self.db.execute(
             select(TenantServiceAreaService)
-            .where(TenantServiceAreaService.tenant_service_area_id == area.id)
+            .where(
+                TenantServiceAreaService.tenant_service_area_id == area.id,
+                TenantServiceAreaService.is_available.is_(True),
+            )
             .order_by(TenantServiceAreaService.created_at.desc())
         )).scalars().all()
         return {"mappings": [m.to_dict() for m in rows], "total": len(rows)}
@@ -1291,6 +1295,17 @@ class ServiceabilityService:
             ServiceCatalogItem.service_type_id == service_type_id,
             TenantServiceAreaService.job_type == job_type,
         ]
+        # A Home Services coverage row is not customer availability by itself.
+        # The provider's latest canonical status must also be bookable. When a
+        # zipcode is present, fail closed to that exact zipcode instead of
+        # silently advertising a city-wide fallback.
+        home_services_ready = latest_provider_bookable(Tenant.id)
+        if strip_zip:
+            home_services_ready = and_(
+                home_services_ready,
+                TenantServiceArea.zipcode == strip_zip,
+            )
+        base_where.append(or_(Tenant.vertical != "home_services", home_services_ready))
         if filter_tenant_id is not None:
             base_where.append(Tenant.id == filter_tenant_id)
 
@@ -1544,6 +1559,13 @@ class ServiceabilityService:
 
         from app.engines.geo.models import ServiceZone
 
+        home_services_ready = latest_provider_bookable(Tenant.id)
+        if strip_zip:
+            home_services_ready = and_(
+                home_services_ready,
+                TenantServiceArea.zipcode == strip_zip,
+            )
+
         stmt = (
             select(
                 ServiceCatalogItem.service_type_id.label("service_type_id"),
@@ -1568,6 +1590,7 @@ class ServiceabilityService:
             .join(Tenant, Tenant.id == TenantServiceArea.tenant_id)
             .where(
                 Tenant.status == "active",
+                or_(Tenant.vertical != "home_services", home_services_ready),
                 ServiceCatalogItem.is_active.is_(True),
                 TenantServiceArea.is_active.is_(True),
                 TenantServiceAreaService.is_available.is_(True),

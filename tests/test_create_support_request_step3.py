@@ -9,6 +9,7 @@ config) silently ignores them rather than accepting and trusting them.
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -21,6 +22,11 @@ from app.dependencies.db import get_db
 from app.config import get_settings
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 _real_engine = create_async_engine(get_settings().DATABASE_URL, poolclass=NullPool)
 _real_sessionmaker = async_sessionmaker(_real_engine, expire_on_commit=False)

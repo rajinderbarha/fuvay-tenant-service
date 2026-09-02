@@ -173,7 +173,8 @@ class TestVersionSupersessionAndRollback:
     def test_one_active_version_per_key_scope_enforced_by_unique_index(self):
         src = _read(os.path.join(ROOT, "app", "engines", "settings_engine", "models.py"))
         idx = src.index("class ConfigurationValueVersion")
-        block = src[idx: idx + 1000]
+        next_class = src.find("\nclass ", idx + 1)
+        block = src[idx: next_class if next_class != -1 else len(src)]
         assert "ix_cvv_current" in block
         assert "status = 'active'" in block
 
@@ -188,8 +189,9 @@ class TestGlobalScopeNullSentinel:
 
     def test_model_column_is_not_nullable(self):
         src = _read(os.path.join(ROOT, "app", "engines", "settings_engine", "models.py"))
-        idx = src.index("scope_id:      Mapped[str]")
-        line = src[idx: idx + 120]
+        idx = src.index("scope_id:")
+        line = src[idx: idx + 160]
+        assert "Mapped[str]" in line
         assert "nullable=False" in line
 
 

@@ -22,6 +22,7 @@ from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.customer_home.intent import classify_intent
+from app.engines.provider_portal.bookability_query import latest_provider_bookable
 from app.engines.customer_home.merchandising import (
     HOME_COMPOSITION_SETTING_KEY,
     normalize_home_composition,
@@ -114,7 +115,10 @@ class CustomerHomeService:
         # rather than degrading this one section.
         quick_issues = await self._safe_call(
             self._get_quick_issues(
-                [cid for c in (categories or []) if (cid := (c or {}).get("category_id"))]
+                [
+                    sid for service in (master_services or [])
+                    if (sid := (service or {}).get("master_service_id"))
+                ]
             ),
             default=[],
         )
@@ -525,7 +529,10 @@ class CustomerHomeService:
 
         from sqlalchemy import or_, func as sa_func
         from app.engines.tenant_engine.models import Tenant
-        from app.engines.serviceability.models import TenantServiceArea
+        from app.engines.serviceability.models import (
+            TenantServiceArea,
+            TenantServiceAreaService,
+        )
         from app.engines.admin_catalog.models import MasterService, TenantService
         from app.engines.entitlement.service import entitlement_service
 
@@ -539,6 +546,7 @@ class CustomerHomeService:
                 Tenant.status == "active",
                 Tenant.vertical == "home_services",
                 Tenant.suspended_at.is_(None),
+                latest_provider_bookable(Tenant.id),
                 TenantServiceArea.is_active.is_(True),
                 TenantServiceArea.zipcode == strip_zip,
             )
@@ -551,9 +559,29 @@ class CustomerHomeService:
         rows = (await self.db.execute(
             select(TenantService.category_id, MasterService.service_group_id, TenantService.tenant_id)
             .join(MasterService, MasterService.id == TenantService.master_service_id)
+            .join(
+                TenantServiceArea,
+                and_(
+                    TenantServiceArea.tenant_id == TenantService.tenant_id,
+                    TenantServiceArea.zipcode == strip_zip,
+                    TenantServiceArea.is_active.is_(True),
+                ),
+            )
+            .join(
+                TenantServiceAreaService,
+                and_(
+                    TenantServiceAreaService.tenant_service_area_id == TenantServiceArea.id,
+                    TenantServiceAreaService.tenant_id == TenantService.tenant_id,
+                    TenantServiceAreaService.service_id == MasterService.id,
+                    TenantServiceAreaService.is_available.is_(True),
+                    TenantServiceAreaService.status == "ACTIVE",
+                ),
+            )
             .where(
                 TenantService.tenant_id.in_(tenant_ids),
                 TenantService.is_enabled.is_(True),
+                TenantService.is_active.is_(True),
+                TenantService.setup_status == "published",
                 TenantService.deleted_at.is_(None),
             )
         )).all()
@@ -624,6 +652,7 @@ class CustomerHomeService:
                 TenantService.deleted_at.is_(None),
                 Tenant.status == "active",
                 Tenant.suspended_at.is_(None),
+                latest_provider_bookable(Tenant.id),
             )
         )
         if zipcode:
@@ -720,6 +749,7 @@ class CustomerHomeService:
                 TenantService.deleted_at.is_(None),
                 Tenant.status == "active",
                 Tenant.suspended_at.is_(None),
+                latest_provider_bookable(Tenant.id),
             )
         )
         if zipcode:
@@ -1011,7 +1041,7 @@ class CustomerHomeService:
         svc = NotificationService()
         return await svc.get_unread_count(self.db, customer_id)
 
-    async def _get_quick_issues(self, category_ids: list) -> list[dict]:
+    async def _get_quick_issues(self, master_service_ids: list) -> list[dict]:
         """Specific problems a customer can tap straight into, e.g.
         "AC Not Cooling" or "Drain Blocked".
 
@@ -1020,18 +1050,18 @@ class CustomerHomeService:
         category AND the chosen issue into the Assistant, which then goes
         directly to the brand/detail questions.
 
-        Scoped to the categories already resolved as bookable at this ZIP, so
-        a shortcut can never lead somewhere the customer cannot book. No
-        price is returned: the issue's linked service does carry one, but a
-        single issue can map to different work at different prices once the
-        details are known, so a figure here would set an expectation the
-        booking flow may not honour.
+        Scoped to the exact Master Services already resolved as bookable at
+        this ZIP. Category-only filtering was too broad: one provider offering
+        only AC Repair caused installation and gas-refill issues from the same
+        Home Services category to appear. No price is returned because the
+        final figure still depends on answers not collected on Home.
         """
-        if not category_ids:
+        if not master_service_ids:
             return []
         from app.engines.admin_catalog.models import (
             MasterIssueType,
             ServiceCategory,
+            ServiceIssueMapping,
         )
 
         rows = (await self.db.execute(
@@ -1040,17 +1070,28 @@ class CustomerHomeService:
                 ServiceCategory.slug,
                 ServiceCategory.name,
             )
+            .join(
+                ServiceIssueMapping,
+                ServiceIssueMapping.issue_type_id == MasterIssueType.id,
+            )
             .join(ServiceCategory, ServiceCategory.id == MasterIssueType.category_id)
             .where(
-                MasterIssueType.category_id.in_(category_ids),
+                ServiceIssueMapping.master_service_id.in_(master_service_ids),
+                ServiceIssueMapping.status == "active",
+                ServiceIssueMapping.customer_visible.is_(True),
                 MasterIssueType.is_active.is_(True),
                 MasterIssueType.status == "active",
             )
             .order_by(MasterIssueType.display_order, MasterIssueType.name)
         )).all()
 
-        return [
-            {
+        result: list[dict] = []
+        seen_issue_ids: set[uuid.UUID] = set()
+        for issue, cat_slug, cat_name in rows:
+            if issue.id in seen_issue_ids:
+                continue
+            seen_issue_ids.add(issue.id)
+            result.append({
                 "issue_id": str(issue.id),
                 "label": issue.name,
                 "slug": issue.slug,
@@ -1063,6 +1104,5 @@ class CustomerHomeService:
                 # and the item simply appears in the general grids instead of
                 # being forced into the wrong group.
                 "intent": classify_intent(issue.name),
-            }
-            for issue, cat_slug, cat_name in rows
-        ]
+            })
+        return result

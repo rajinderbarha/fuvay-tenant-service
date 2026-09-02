@@ -18,16 +18,6 @@ COMMISSION_HEALTH_ADJUSTMENT: dict[str, Decimal] = {
     "critical": Decimal("10.00"),
 }
 
-# ── Security deposit amounts by plan (INR) ─────────────────────────────────
-SECURITY_DEPOSIT_AMOUNT: dict[str, Decimal] = {
-    "starter":    Decimal("5000.00"),
-    "growth":     Decimal("15000.00"),
-    "enterprise": Decimal("50000.00"),
-}
-
-# ── Credit package purchase: % of purchase price added to security deposit ─
-DEPOSIT_REPLENISHMENT_PCT = Decimal("0.05")  # 5%
-
 # ── Customer health bands ──────────────────────────────────────────────────
 CUSTOMER_HEALTH_BANDS = {
     "trusted":    (80, 100),
@@ -94,12 +84,6 @@ class TxnType:
     RESERVATION_CONFIRM    = "reservation_confirm"
 
 # ── Deposit transaction types ──────────────────────────────────────────────
-class DepositTxnType:
-    INITIAL_PAYMENT    = "initial_payment"
-    WARRANTY_DRAW      = "warranty_draw"
-    REPLENISHMENT      = "replenishment"
-    ADMIN_ADJUSTMENT   = "admin_adjustment"
-
 # ── Redis key prefixes ─────────────────────────────────────────────────────
 REDIS_WALLET_LOCK    = "serviceos:commerce:wallet_lock:{tenant_id}"
 REDIS_PREFLIGHT      = "serviceos:commerce:preflight:{tenant_id}"
@@ -107,7 +91,6 @@ REDIS_COMMISSION_RATE = "serviceos:commerce:commission_rate:{tenant_id}"
 REDIS_CUSTOMER_HEALTH = "serviceos:commerce:cust_health:{tenant_id}:{customer_id}"
 
 # ── Rate limits ────────────────────────────────────────────────────────────
-RATE_LIMIT_DEPOSIT_INITIATE  = (3600, 3)   # 3 per hour per tenant
 RATE_LIMIT_PURCHASE_INITIATE = (3600, 5)   # 5 per hour per tenant
 RATE_LIMIT_WARRANTY_CLAIM    = (86400, 3)  # 3 per day per customer per tenant
 RATE_LIMIT_PREFLIGHT         = (3600, 1000)

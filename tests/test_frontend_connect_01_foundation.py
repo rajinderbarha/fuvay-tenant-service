@@ -48,11 +48,6 @@ def test_tenant_context_helpers_exist_and_never_fabricate():
     assert "Tenant context missing" in src
 
 
-def test_tenant_modules_require_tenant_context():
-    src = read(TENANT / "lib" / "api-foundation" / "tenant-modules.ts")
-    assert "requireTenantContext" in src
-
-
 # ── request_id parsed from error response ────────────────────────────────────
 def test_error_model_parses_request_id_both_frontends():
     for base in (TENANT, ADMIN):
@@ -90,18 +85,6 @@ def test_admin_normalize_defines_safe_number_and_status():
 
 
 # ── admin/tenant API modules use central client ──────────────────────────────
-def test_admin_modules_do_not_use_direct_fetch():
-    src = strip_comments(read(ADMIN / "lib" / "api-foundation" / "admin-modules.ts"))
-    assert re.search(r"(?<![.\w])fetch\(", src) is None
-    assert 'from "../api"' in src
-
-
-def test_tenant_modules_do_not_use_direct_fetch():
-    src = strip_comments(read(TENANT / "lib" / "api-foundation" / "tenant-modules.ts"))
-    assert re.search(r"(?<![.\w])fetch\(", src) is None
-    assert 'from "../api"' in src
-
-
 # ── shared UI states ──────────────────────────────────────────────────────────
 def test_api_states_component_family_exists_both_frontends():
     for base in (TENANT, ADMIN):
@@ -115,29 +98,6 @@ def test_api_states_component_family_exists_both_frontends():
 
 
 # ── smoke pages render loading + error-with-request_id ──────────────────────
-def test_tenant_smoke_page_uses_new_error_and_loading_states():
-    # NOTE: this page later adopted the richer, per-section
-    # TenantStatusSectionError (title/message/requestId/section/onRetry per
-    # failing data source, not one generic top-level error) instead of the
-    # single-error ApiErrorState/ApiLoadingState pair -- a real design
-    # upgrade (see test_tenant_my_status_enterprise_ui.py's
-    # test_page_uses_section_error_component_for_each_major_section, which
-    # requires >=4 real per-section error states).
-    src = read(TENANT / "app" / "(tenant)" / "provider" / "status" / "page.tsx")
-    assert "TenantStatusSectionError" in src
-    assert "requestId" in src
-
-
-def test_admin_smoke_page_exists_and_uses_foundation():
-    p = ADMIN / "app" / "admin" / "home-services" / "overview" / "page.tsx"
-    src = read(p)
-    assert "ApiErrorState" in src
-    assert "ApiLoadingState" in src
-    assert "ApiEmptyState" in src
-    assert "getAdminHomeServicesOverview" in src
-    assert re.search(r"(?<![.\w])fetch\(", strip_comments(src)) is None
-
-
 # ── forbidden labels absent from foundation + smoke pages ───────────────────
 FORBIDDEN = [
     "Cash Wallet", "Wallet Balance", "Withdraw", "Withdrawable Balance",
@@ -153,17 +113,12 @@ def test_no_forbidden_labels_in_foundation_and_smoke_pages():
         TENANT / "lib" / "api-foundation" / "error-model.ts",
         TENANT / "lib" / "api-foundation" / "normalize.ts",
         TENANT / "lib" / "api-foundation" / "tenant-context.ts",
-        TENANT / "lib" / "api-foundation" / "tenant-modules.ts",
         TENANT / "lib" / "api-foundation" / "home-services-types.ts",
         TENANT / "components" / "shared" / "ApiStates.tsx",
-        TENANT / "app" / "(tenant)" / "provider" / "status" / "page.tsx",
         ADMIN / "lib" / "api-foundation" / "error-model.ts",
         ADMIN / "lib" / "api-foundation" / "normalize.ts",
-        ADMIN / "lib" / "api-foundation" / "admin-context.ts",
-        ADMIN / "lib" / "api-foundation" / "admin-modules.ts",
         ADMIN / "lib" / "api-foundation" / "home-services-types.ts",
         ADMIN / "components" / "shared" / "ApiStates.tsx",
-        ADMIN / "app" / "admin" / "home-services" / "overview" / "page.tsx",
     ]
     for f in files:
         src = read(f).lower()

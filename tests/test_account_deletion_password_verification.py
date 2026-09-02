@@ -8,6 +8,7 @@ atomic verify-then-create step, not a placeholder.
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -22,6 +23,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from app.engines.auth.utils import hash_password
 from app.engines.auth.models import User
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 _real_engine = create_async_engine(get_settings().DATABASE_URL, poolclass=NullPool)
 _real_sessionmaker = async_sessionmaker(_real_engine, expire_on_commit=False)

@@ -401,11 +401,9 @@ class TestRatingAggregateIntegrity:
 # ══════════════════════════════════════════════════════════════════
 
 class TestPreviousClosuresIntact:
-    def test_package_commerce_closure_intact(self):
-        from app.engines.package_commerce import tenant_router as pc
-        src = inspect.getsource(pc.tenant_purchase_package)
-        assert "require_tenant_owner_mutation" in src
-        assert "is_paid=False" in src
+    def test_retired_package_commerce_stays_absent(self):
+        from pathlib import Path
+        assert not Path("app/engines/package_commerce/tenant_router.py").exists()
 
     def test_compliance_closure_intact(self):
         from app.engines.compliance import provider_router as comp

@@ -1245,6 +1245,8 @@ class HomeServiceJobExecutionService:
         }
 
         booking = await db.get(ServiceBooking, job.booking_id)
+        from app.engines.final_records.warranty_certificate import issue_warranty_certificate
+        await issue_warranty_certificate(db, job, booking)
         offering_type_id = brand_id_for_deduction = None
         if booking:
             draft = await db.get(HomeServiceBookingDraft, booking.draft_id)

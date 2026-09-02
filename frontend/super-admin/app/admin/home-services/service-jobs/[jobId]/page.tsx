@@ -12,6 +12,7 @@ import { ChevronRight, Copy, ExternalLink } from "lucide-react";
 import { finalRecordsAdminApi, adminServiceJobAssignmentApi, adminExecutionApi } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { usePermissions } from "../../../../../hooks/usePermissions";
+import { ReviewFeedbackTab } from "../../../../../components/home-services/ReviewFeedbackTab";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -530,6 +531,12 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
               <Field label="Booking Number" value={d.booking?.booking_number} />
               <Field label="Booking Status" value={d.booking?.status} />
               <Field label="Booking ID" value={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{d.booking_id}</span>} />
+            </Section>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Section title="Review & Feedback">
+              <ReviewFeedbackTab jobId={d.id} jobStatus={d.status} />
             </Section>
           </div>
 

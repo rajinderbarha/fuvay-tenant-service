@@ -763,6 +763,9 @@ class TestProviderMatching:
         assert len(providers) >= 1
         assert providers[0]["business_name"] == "Rahul AC Services"
         assert providers[0]["is_bookable"] is True
+        compiled = str(db.execute.await_args.args[0].compile())
+        assert "provider_visibility_statuses" in compiled
+        assert "is_bookable" in compiled
 
     async def test_provider_without_area_excluded(self):
         """No matching provider rows → empty list."""
@@ -776,11 +779,16 @@ class TestProviderMatching:
             city="Timbuktu", zipcode="000000",
         )
         assert providers == []
+        # A supplied zipcode is authoritative. Do not run a second city-only
+        # query that could expose a provider outside the customer's zipcode.
+        assert db.execute.await_count == 1
 
     async def test_no_provider_available_raises(self):
         """No bookable providers → ERR_NO_PROVIDER_AVAILABLE."""
         customer_id = _id()
-        draft       = _make_draft(customer_id=customer_id, city="Timbuktu")
+        draft       = _make_draft(
+            customer_id=customer_id, city="Timbuktu", zipcode="000000",
+        )
 
         db = MagicMock()
         db.get     = AsyncMock(return_value=draft)
@@ -796,6 +804,7 @@ class TestProviderMatching:
         with pytest.raises(ServiceOSException) as exc_info:
             await svc.find_bookable_providers(draft_id=draft.id, customer_id=customer_id)
         assert exc_info.value.error_code == ERR_NO_PROVIDER_AVAILABLE
+        assert "ZIP code 000000" in exc_info.value.detail
 
     async def test_provider_fields_are_customer_safe(self):
         """Provider options must NOT include internal IDs or commission."""

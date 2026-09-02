@@ -289,7 +289,8 @@ class TestAdminVerifyEndpointStructure:
     def test_notification_fired_on_decision(self):
         c = self._read()
         assert 'f"document.{decision}"' in c
-        assert "NotificationService().fire_event(" in c
+        assert "notify_tenant_verification(" in c
+        assert 'action_url="/documents"' in c
 
 
 class TestTenantDocumentModelExtension:
@@ -344,6 +345,8 @@ class TestBookabilityDocumentGate:
     def test_blocking_statuses_match_activation_impact_policy(self):
         with open(os.path.join(BASE, "app/engines/provider_portal/router.py"), encoding="utf-8") as f:
             c = f.read()
-        # Must match _activation_impact's blocks_new_jobs set exactly --
-        # pending_review/changes_requested are a grace period, not a block.
-        assert 'document.status == "rejected" or expired' in c
+        # A replacement under review receives grace only when a still-valid
+        # verified predecessor exists. A first-ever pending upload must not
+        # make an unverified provider customer-bookable.
+        assert "valid_previous" in c
+        assert "replacement_in_review and valid_previous" in c

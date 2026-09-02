@@ -7,30 +7,6 @@ from pydantic import BaseModel, Field, model_validator
 
 
 # ── Deposit ───────────────────────────────────────────────────────────────────
-class DepositStatusResponse(BaseModel):
-    tenant_id: str
-    status: str
-    required_amount: Decimal
-    total_paid: Decimal
-    warranty_drawn: Decimal
-    replenishment_total: Decimal
-    current_balance: Decimal
-    is_unlocked: bool
-    paid_at: str | None
-
-class DepositInitiateRequest(BaseModel):
-    gateway: Literal["razorpay", "stripe"] = "razorpay"
-
-class DepositConfirmRequest(BaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
-
-class DepositAdminAdjustRequest(BaseModel):
-    amount: Decimal = Field(description="Positive=credit, negative=debit")
-    reason: str = Field(min_length=10, max_length=500)
-    category: Literal["goodwill", "dispute", "correction", "refund"]
-
 # ── Credit Packages ───────────────────────────────────────────────────────────
 class CreatePackageRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)

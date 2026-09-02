@@ -19,6 +19,11 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs", "workflow-rearchitecture")),
+    reason="retired point-in-time workflow reconciliation artifacts are intentionally absent",
+)
+
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CANON_CSV = os.path.join(
     REPO_ROOT, "docs", "workflow-rearchitecture", "phase-02a-slice-02f",

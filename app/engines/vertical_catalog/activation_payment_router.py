@@ -1,9 +1,7 @@
-"""HOME-SERVICES-ACTIVATION-PAYMENT-01 — tenant-facing order creation +
-gateway webhook confirmation for the online Razorpay activation-gate
-payment path (top-up plan: credit + technician seats). Sits alongside
-the existing ADMIN-ONLY offline `/verify-deposit` endpoint
-(vertical_catalog/admin_router.py) -- this is the path a tenant uses
-without needing an Admin to manually confirm anything.
+"""Tenant-facing activation order creation and Razorpay webhook confirmation.
+
+The top-up plan grants credit plus technician seats without needing an admin
+to manually confirm anything.
 
 tenant_id is always resolved server-side from the caller's JWT
 (UserContext.tenant_id), never accepted from the client, matching the

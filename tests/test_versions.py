@@ -72,7 +72,7 @@ def test_prometheus_version():
 
 # ── 2. Frontend portals ───────────────────────────────────────────────────────
 def test_super_admin_nextjs():
-    assert pkg("frontend/super-admin/package.json")["dependencies"]["next"] == "16.2.9"
+    assert pkg("frontend/super-admin/package.json")["dependencies"]["next"] == "^16.3.2"
 
 def test_super_admin_react():
     assert pkg("frontend/super-admin/package.json")["dependencies"]["react"] == "19.2.0"
@@ -81,10 +81,10 @@ def test_super_admin_typescript():
     assert pkg("frontend/super-admin/package.json")["devDependencies"]["typescript"] == "5.8.3"
 
 def test_tenant_portal_nextjs():
-    assert pkg("frontend/tenant-portal/package.json")["dependencies"]["next"] == "16.2.9"
+    assert pkg("frontend/tenant-portal/package.json")["dependencies"]["next"] == "^16.3.2"
 
 def test_tenant_portal_react():
-    assert pkg("frontend/tenant-portal/package.json")["dependencies"]["react"] == "19.2.0"
+    assert pkg("frontend/tenant-portal/package.json")["dependencies"]["react"] == "19.2.7"
 
 def test_e2e_playwright():
     assert pkg("e2e/package.json")["devDependencies"]["@playwright/test"] == "1.52.0"
@@ -95,15 +95,15 @@ def test_e2e_typescript():
 # ── 3. Mobile apps — Expo SDK 56 ─────────────────────────────────────────────
 def test_staff_expo_sdk():
     p = pkg("mobile/staff-app/package.json")
-    assert "56.0" in p["dependencies"]["expo"]
+    assert "54.0" in p["dependencies"]["expo"]
 
 def test_staff_react_native():
     p = pkg("mobile/staff-app/package.json")
-    assert p["dependencies"]["react-native"] == "0.85.0"
+    assert p["dependencies"]["react-native"] == "0.81.4"
 
 def test_staff_react():
     p = pkg("mobile/staff-app/package.json")
-    assert p["dependencies"]["react"] == "19.2.0"
+    assert p["dependencies"]["react"] == "19.1.0"
 
 def test_staff_react_navigation_v7():
     p = pkg("mobile/staff-app/package.json")
@@ -115,15 +115,15 @@ def test_staff_typescript():
 
 def test_customer_expo_sdk():
     p = pkg("mobile/customer-app/package.json")
-    assert "56.0" in p["dependencies"]["expo"]
+    assert "54.0" in p["dependencies"]["expo"]
 
 def test_customer_react_native():
     p = pkg("mobile/customer-app/package.json")
-    assert p["dependencies"]["react-native"] == "0.85.0"
+    assert p["dependencies"]["react-native"] == "0.81.5"
 
 def test_customer_react():
     p = pkg("mobile/customer-app/package.json")
-    assert p["dependencies"]["react"] == "19.2.0"
+    assert p["dependencies"]["react"] == "19.1.0"
 
 def test_customer_react_navigation_v7():
     p = pkg("mobile/customer-app/package.json")
@@ -132,12 +132,12 @@ def test_customer_react_navigation_v7():
 def test_staff_app_json_sdk_version():
     with open(f"{BASE}/mobile/staff-app/app.json", encoding="utf-8") as f:
         a = json.load(f)
-    assert a["expo"]["sdkVersion"] == "56.0.0"
+    assert a["expo"]["sdkVersion"] == "54.0.0"
 
 def test_customer_app_json_sdk_version():
     with open(f"{BASE}/mobile/customer-app/app.json", encoding="utf-8") as f:
         a = json.load(f)
-    assert a["expo"]["sdkVersion"] == "56.0.0"
+    assert a["expo"]["sdkVersion"] == "54.0.0"
 
 # ── 4. Docker images ──────────────────────────────────────────────────────────
 def test_dockerfile_python_313():

@@ -41,7 +41,7 @@ class TestRouterStructure:
         c = _read(ROUTER)
         # Every raw provider_team_members lookup must be tenant-scoped.
         assert "WHERE tenant_id=:tid AND deleted_at IS NULL" in c
-        assert "WHERE id=:sid AND tenant_id=:tid AND deleted_at IS NULL" in c
+        assert "WHERE tenant_id=:tid AND deleted_at IS NULL AND id=:sid" in c
 
     def test_capacity_uses_real_per_staff_field_not_a_fabricated_constant(self):
         c = _read(ROUTER)

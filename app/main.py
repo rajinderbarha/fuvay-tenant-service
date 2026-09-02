@@ -834,13 +834,12 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.complaints.provider_router import (
         provider_complaint_router, provider_rework_router, provider_refund_router,
     )
-    from app.engines.complaints.admin_router import (
-        admin_complaint_router, admin_rework_router, admin_refund_router, admin_cpolicy_router,
-    )
+    from app.engines.complaints.admin_router import admin_cpolicy_router
     for _r in [
         customer_complaint_router,
         provider_complaint_router, provider_rework_router, provider_refund_router,
-        admin_complaint_router, admin_rework_router, admin_refund_router, admin_cpolicy_router,
+        # Admin configures policy only; customer/provider own every case.
+        admin_cpolicy_router,
     ]:
         app.include_router(_r)
 
@@ -1040,6 +1039,14 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.vertical_monetization.admin_router import router as vertical_monetization_admin_router
     from app.engines.vertical_monetization.customer_router import router as vertical_monetization_customer_router
     from app.engines.vertical_directory.admin_router import router as vertical_directory_router
+    # Platform admins retain aggregate complaint analytics, but do not enter,
+    # message, decide, credit, or otherwise adjudicate customer/provider cases.
+    # Keep the reusable provider/staff/customer directory routes and retire the
+    # complaint workspace routes from the mounted router.
+    vertical_directory_router.routes = [
+        route for route in vertical_directory_router.routes
+        if "/complaints" not in getattr(route, "path", "")
+    ]
     from app.engines.tenant_engine.hs_customer_directory_router import router as hs_customer_directory_router
     from app.engines.tenant_engine.hs_provider_directory_router import router as hs_provider_directory_router
     from app.engines.tenant_engine.hs_dashboard_router import router as hs_dashboard_router
@@ -1070,6 +1077,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # both 404'd and no app could show a policy at all.
     from app.engines.legal_documents.admin_router import router as legal_admin_router
     from app.engines.legal_documents.public_router import router as legal_public_router
+    from app.engines.legal_documents.user_router import router as legal_user_router
     from app.engines.execution.home_services_dashboard_router import (
         router as hs_tenant_dashboard_router,
     )
@@ -1096,7 +1104,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         hs_finance_monetization_router, hs_topup_plan_router,
         hs_topup_plan_catalog_admin_router, hs_topup_plan_catalog_tenant_router,
         hs_tenant_dashboard_router,
-        legal_admin_router, legal_public_router,
+        legal_admin_router, legal_public_router, legal_user_router,
     ]:
         app.include_router(_unmounted)
 

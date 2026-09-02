@@ -127,28 +127,12 @@ def test_get_finance_summary_exists():
 def test_get_finance_overview_exists():
     src = _read(FINANCE_SERVICE)
     assert "async def get_finance_overview" in src
-    for key in ("wallet_health_distribution", "top_low_balance_tenants", "deposit_status_breakdown",
+    for key in ("wallet_health_distribution", "top_low_balance_tenants",
                 "top_commission_contributors", "recent_finance_activity", "pending_actions_queue", "at_risk_tenants"):
         assert key in src, f"get_finance_overview missing insight key: {key}"
 
 
 # ── Service — Deposits ────────────────────────────────────────────────────────
-
-def test_deposit_service_methods_exist():
-    src = _read(FINANCE_SERVICE)
-    for fn in ("list_deposits", "get_deposits_summary", "get_deposit_detail", "approve_deposit",
-               "reject_deposit", "record_offline_deposit", "refund_deposit", "adjust_deposit", "export_deposits"):
-        assert f"async def {fn}" in src, f"Missing deposit method: {fn}"
-
-
-def test_deposits_separated_from_wallet_credit():
-    """Deposit dict must not conflate escrow balance with spendable wallet credit_balance."""
-    src = _read(FINANCE_SERVICE)
-    idx = src.index("def _deposit_dict(")
-    snippet = src[idx:idx + 1500]
-    assert "TenantWallet" not in snippet
-    assert "credit_balance" not in snippet
-
 
 # ── Service — Top-ups ─────────────────────────────────────────────────────────
 
@@ -241,15 +225,6 @@ def test_router_overview_endpoints():
     assert '"/overview"' in src
 
 
-def test_router_deposits_endpoints():
-    src = _read(FINANCE_ROUTER)
-    for path in ("/deposits", "/deposits/summary", "/deposits/export",
-                 "/deposits/{deposit_id}/approve", "/deposits/{deposit_id}/reject",
-                 "/deposits/{deposit_id}/record-offline", "/deposits/{deposit_id}/refund",
-                 "/deposits/{deposit_id}/adjust"):
-        assert f'"{path}"' in src, f"Missing router path: {path}"
-
-
 def test_router_topups_endpoints():
     src = _read(FINANCE_ROUTER)
     for path in ("/topups", "/topups/summary", "/topups/export",
@@ -283,7 +258,7 @@ def test_router_wallets_and_audit_endpoints():
 
 def test_router_uses_finance_permissions():
     src = _read(FINANCE_ROUTER)
-    for perm in ("P.FINANCE_READ", "P.FINANCE_DEPOSITS_APPROVE", "P.FINANCE_TOPUPS_REFUND",
+    for perm in ("P.FINANCE_READ", "P.FINANCE_TOPUPS_REFUND",
                  "P.FINANCE_CLAIMS_SETTLE", "P.FINANCE_PAYOUTS_APPROVE", "P.FINANCE_WALLETS_READ",
                  "P.FINANCE_AUDIT_READ"):
         assert f"require_permission({perm})" in src, f"Missing permission guard: {perm}"
@@ -293,7 +268,7 @@ def test_router_uses_finance_permissions():
 
 def test_finance_permissions_exist():
     src = _read(PERMISSIONS_FILE)
-    for perm in ("FINANCE_READ", "FINANCE_EXPORT", "FINANCE_DEPOSITS_READ", "FINANCE_DEPOSITS_APPROVE",
+    for perm in ("FINANCE_READ", "FINANCE_EXPORT",
                  "FINANCE_TOPUPS_READ", "FINANCE_CLAIMS_ASSIGN", "FINANCE_CLAIMS_SETTLE",
                  "FINANCE_PAYOUTS_APPROVE", "FINANCE_PAYOUTS_COMPLETE", "FINANCE_WALLETS_ADJUST",
                  "FINANCE_AUDIT_READ"):
@@ -304,7 +279,7 @@ def test_finance_permissions_exist():
 
 def test_filter_registry_finance_resources_exist():
     src = _read(FILTER_REGISTRY)
-    for key in ("admin_finance_deposits", "admin_finance_topups", "admin_finance_claims",
+    for key in ("admin_finance_topups", "admin_finance_claims",
                 "admin_finance_payouts", "admin_finance_wallets"):
         assert f'"{key}"' in src, f"Missing enterprise_grid resource config: {key}"
 

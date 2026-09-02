@@ -272,7 +272,7 @@ def test_sg_page_has_labeled_action_menu():
     src = _read(SG_PAGE)
     assert "Actions" in src
     # Should have menu items with text labels
-    assert "View Details" in src or "Edit Group" in src
+    assert "View details" in src and "Edit group" in src
 
 def test_sg_page_has_durable_detail_route():
     src = _read(SG_PAGE)
@@ -301,10 +301,10 @@ def test_sg_page_has_advanced_filters():
 
 def test_sg_page_no_tailwind():
     src = _read(SG_PAGE)
-    # className= is forbidden except for "skeleton"
+    # Only shared global catalogue classes are permitted here.
     classnames = re.findall(r'className="([^"]+)"', src)
     for cn in classnames:
-        assert cn == "skeleton", f"Forbidden className found: '{cn}' — use CSS variables instead"
+        assert cn in ("skeleton", "catalog-admin-page")
 
 def test_sg_page_hierarchy_breadcrumb():
     src = _read(SG_DETAIL_PAGE)
@@ -352,7 +352,7 @@ def test_ms_page_shows_requirements_chips():
 def test_ms_page_has_labeled_action_menu():
     src = _read(MS_PAGE)
     assert "Actions" in src
-    assert "Edit Service" in src or "View Details" in src
+    assert "Edit service" in src and "View details" in src
 
 def test_ms_page_has_detail_drawer():
     src = _read(MS_PAGE)

@@ -256,6 +256,17 @@ class TestCoverageGate:
 
 
 class TestPublishValidation:
+    def test_coverage_membership_queries_are_bounded(self):
+        """A selected brand legitimately has one routing row plus one row
+        per selected type.  Membership is an existence check, so it must not
+        call ``scalar_one_or_none`` on an unbounded multi-row result."""
+        import inspect
+
+        type_source = inspect.getsource(TenantCatalogService.is_type_supported)
+        brand_source = inspect.getsource(TenantCatalogService.is_brand_supported)
+        assert ".limit(1)" in type_source
+        assert ".limit(1)" in brand_source
+
     @pytest.mark.asyncio
     async def test_simple_service_missing_price_and_visit_fee_fails_validation(self):
         ts = _make_ts(requires_type=False, requires_brand=False,

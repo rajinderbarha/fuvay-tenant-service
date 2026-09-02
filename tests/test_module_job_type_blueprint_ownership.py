@@ -43,6 +43,7 @@ def db_seq(*objects):
     for obj in objects:
         r = MagicMock()
         r.scalar_one_or_none.return_value = obj
+        r.scalars.return_value.all.return_value = []
         results.append(r)
     db = MagicMock()
     db.execute = AsyncMock(side_effect=results)
@@ -161,7 +162,8 @@ class TestMasterServiceOwnership:
         cat = make_category(is_active=True)
         group = MagicMock(spec=ServiceGroup)
         group.id = uuid.uuid4(); group.category_id = cat.id; group.status = "active"
-        db = db_seq(cat, group, None)  # category, group hierarchy, slug uniqueness
+        # category, group hierarchy, slug uniqueness, inherited type/brand mappings
+        db = db_seq(cat, group, None, None, None)
         svc = AdminCatalogService(db=db)
         result = await svc.create_master_service_canonical({
             "service_name": "Air Conditioner", "category_id": str(cat.id),
@@ -224,7 +226,7 @@ class TestJobTypeBlueprintWorkflow:
 
     async def test_set_workflow_accepts_structural_flags(self):
         ms_id, jt_id = uuid.uuid4(), uuid.uuid4()
-        db = db_seq(None)  # no existing row -> insert
+        db = db_seq(None, None)  # no existing row, then empty revision update
         svc = JobTypeBlueprintService(db=db)
         result = await svc.set_workflow(ms_id, jt_id, {
             "schedule_required": True, "address_required": True, "pricing_behavior": "inspection_required"})

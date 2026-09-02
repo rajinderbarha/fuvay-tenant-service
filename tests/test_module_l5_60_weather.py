@@ -311,6 +311,7 @@ class TestEligibilityEndpoint:
     async def _call(self, **kwargs):
         import uuid as _uuid
         from app.engines.home_service_assignment import provider_router as pr
+        from app.exceptions import ServiceOSException
 
         captured = {}
 
@@ -360,6 +361,7 @@ class TestEligibilityEndpoint:
     async def test_a_job_from_another_tenant_is_never_checked(self):
         import uuid as _uuid
         from app.engines.home_service_assignment import provider_router as pr
+        from app.exceptions import ServiceOSException
 
         job = self._job()
         job.tenant_id = "22222222-2222-2222-2222-222222222222"
@@ -370,8 +372,9 @@ class TestEligibilityEndpoint:
 
         with patch.object(pr, "HomeServiceJobAssignmentService", return_value=svc), \
              patch("app.engines.weather.scheduling.weather_reschedule_permitted") as permitted:
-            response = await pr.get_weather_reschedule_eligibility(
-                job_id=_uuid.uuid4(), r=self._request(), user=user, db=AsyncMock(),
-            )
+            with pytest.raises(ServiceOSException) as exc:
+                await pr.get_weather_reschedule_eligibility(
+                    job_id=_uuid.uuid4(), r=self._request(), user=user, db=AsyncMock(),
+                )
         permitted.assert_not_called()
-        assert response.data["success"] is False
+        assert exc.value.error_code == "JOB_ASSIGNMENT_JOB_NOT_FOUND"

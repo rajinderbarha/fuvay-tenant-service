@@ -252,7 +252,7 @@ class VerticalCatalogService:
                      "source": "Trust & Quality / Finance",
                      "action_href": "/admin/home-services/finance?tab=warranty",
                      "action_label": "Review remedies",
-                     "runtime_behaviour": "Providers own warranty response; admin compensation is funded from provider credits first and deposit second."},
+                     "runtime_behaviour": "Providers own warranty response; approved compensation is issued through the canonical customer-credit remedy flow."},
                 ]},
                 {"name": "Finance", "capabilities": [
                     {"name": "Usage Credits", "status": "enabled", "owner": "Platform",
@@ -265,11 +265,6 @@ class VerticalCatalogService:
                      "action_href": "/admin/home-services/finance?tab=monetization",
                      "action_label": "Manage monetization",
                      "runtime_behaviour": "Commission and completion-credit rules are configured once in Home Services Finance and resolved per job type."},
-                    {"name": "Provider deposits", "status": "enabled", "owner": "Admin policy",
-                     "source": "Home Services Finance",
-                     "action_href": "/admin/home-services/finance?tab=deposits",
-                     "action_label": "Open deposits",
-                     "runtime_behaviour": "Security deposit requirements protect platform risk and fund escalated point remedies when credits are insufficient."},
                 ]},
                 {"name": "AI", "capabilities": [
                     {"name": "AI-assisted booking", "status": "enabled", "owner": "Backend policy",
@@ -281,7 +276,7 @@ class VerticalCatalogService:
                 {"policy": "Business profile changes after activation", "owner": "Admin approval required"},
                 {"policy": "Business name changes", "owner": "Admin approval + document reverification"},
                 {"policy": "Service prices and visit fees", "owner": "Tenant-owned"},
-                {"policy": "Commission, completion credits and deposit rules", "owner": "Admin-controlled"},
+                {"policy": "Commission and completion-credit rules", "owner": "Admin-controlled"},
                 {"policy": "Warranty minimum", "owner": "Admin policy; provider can only extend"},
             ],
         }
@@ -598,9 +593,8 @@ class VerticalCatalogService:
         "orders": {"restaurant", "product_marketplace", "marketplace_products"},
         "leads_crm": {"coaching", "real_estate", "professional_services"},
         "appointments": {"coaching", "professional_services", "real_estate"},
-        # Home-Services-only finance concepts (usage credits / security deposit model —
-        # never real tenant payouts; see business rules in Trust & Quality / Tenant Detail work).
-        "security_deposit": {"home_services"},
+        # Home-Services-only usage-credit finance concept. Customer service
+        # payments still go directly to the provider.
         "usage_credits": {"home_services"},
     }
 

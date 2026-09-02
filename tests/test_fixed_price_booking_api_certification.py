@@ -28,6 +28,7 @@ from tests.test_booking_api_end_to_end_certification import (
     TECHNICIAN_USER_ID,
     _assert_ok,
     _context,
+    _provision_transactional_provider_capacity,
 )
 
 
@@ -53,6 +54,7 @@ async def test_fixed_price_maintenance_booking_to_completion_api_only():
         app.dependency_overrides[get_db] = override_db
         app.dependency_overrides[get_current_user] = lambda: active["user"]
         try:
+            await _provision_transactional_provider_capacity(connection)
             address_id = uuid.uuid4()
             await connection.execute(text(
                 "INSERT INTO customer_addresses "

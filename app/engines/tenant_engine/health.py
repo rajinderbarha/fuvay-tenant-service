@@ -73,6 +73,23 @@ async def _compute_usage_credit_health(db, tenant_id: uuid.UUID) -> tuple[float,
     }
 
 
+def _resolve_health_band(score: float) -> str:
+    """Resolve decimal scores without gaps between the configured bands.
+
+    ``HEALTH_BANDS`` is also used for human-readable integer ranges such as
+    75-89 and 90-100. Comparing a decimal score to both endpoints left values
+    such as 89.5 unmatched and incorrectly fell them back to ``at_risk``.
+    The lower bound is the actual policy threshold, so evaluate thresholds in
+    descending order and let the next band own every value below it.
+    """
+    for band_name, (lower_bound, _upper_bound) in sorted(
+        HEALTH_BANDS.items(), key=lambda item: item[1][0], reverse=True
+    ):
+        if score >= lower_bound:
+            return band_name
+    return "critical"
+
+
 async def compute_health_score(tenant_id: uuid.UUID, db=None) -> dict:
     """
     Compute health score. usage_credit_health is read live from
@@ -108,11 +125,24 @@ async def compute_health_score(tenant_id: uuid.UUID, db=None) -> dict:
     score = round(min(100.0, max(0.0, score)), 2)
 
     # Determine band
-    band = "at_risk"
-    for band_name, (lo, hi) in HEALTH_BANDS.items():
-        if lo <= score <= hi:
-            band = band_name
-            break
+    band = _resolve_health_band(score)
+
+    # ``tenants.health_score`` / ``health_band`` power the Admin tenant list,
+    # detail view, filters, exports and aggregate dashboard. Previously the
+    # live endpoint returned the newly calculated value but never updated that
+    # canonical projection, so Admin could show 100 while the same tenant saw
+    # 83.5. Persist in the caller's transaction whenever a real DB session is
+    # available; FastAPI's DB dependency commits only after a successful
+    # response, keeping the calculation and projection atomic.
+    if db is not None:
+        from sqlalchemy import update
+        from app.engines.tenant_engine.models import Tenant
+
+        await db.execute(
+            update(Tenant)
+            .where(Tenant.id == tenant_id)
+            .values(health_score=Decimal(str(score)), health_band=band)
+        )
 
     commission_adj = COMMISSION_ADJUSTMENT_BY_BAND.get(band, 0.0)
 

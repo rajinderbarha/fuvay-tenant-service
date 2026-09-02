@@ -27,13 +27,13 @@ def _read(path):
 
 
 class TestRevokeOtherSessionsPreservesCurrent:
-    def test_new_method_exists_and_excludes_current_session(self):
+    def test_logout_all_can_exclude_current_session(self):
         c = _read(SERVICE)
-        assert "async def revoke_other_sessions" in c
-        start = c.index("async def revoke_other_sessions")
+        start = c.index("async def logout_all")
         end = c.index("async def introspect_token")
         block = c[start:end]
-        assert "UserSession.id != uuid.UUID(current_session_id)" in block
+        assert "exclude_session_id" in block
+        assert "UserSession.id != exclude_session_id" in block
 
     def test_router_no_longer_calls_the_broken_logout_all_path(self):
         c = _read(ROUTER)
@@ -41,14 +41,14 @@ class TestRevokeOtherSessionsPreservesCurrent:
         end = c.index("@_me_security_router.get", start) if "@_me_security_router.get" in c[start:] else len(c)
         block = c[start:min(end, start + 600)]
         assert "svc.logout_all(user.user_id" not in block
-        assert "svc.revoke_other_sessions(user.user_id, user.session_id)" in block
+        assert "exclude_session_id=uuid.UUID(user.session_id)" in block
 
     def test_logout_all_itself_unchanged_still_revokes_everything(self):
         """logout_all is the REAL full-logout-everywhere primitive (a
         different, legitimate action) -- this fix must not weaken it."""
         c = _read(SERVICE)
         start = c.index("async def logout_all")
-        end = c.index("async def revoke_other_sessions")
+        end = c.index("async def introspect_token")
         block = c[start:end]
         assert "for session in sessions:" in block
         assert "session.revoked_at = utcnow()" in block

@@ -107,7 +107,11 @@ class TestJobTypesTableLive:
             assert by_key["installation"] == (False, False, True)
             assert by_key["uninstallation"] == (False, False, False)
 
-            for table in ("master_services", "service_pricing_rules", "tenant_services"):
+            # Master services are now job-type-neutral parents; canonical
+            # creation deliberately leaves their legacy job_type_id empty and
+            # stores one-or-more types in master_service_job_types. Runtime
+            # pricing/offering records must still be explicit.
+            for table in ("service_pricing_rules", "tenant_services"):
                 total = (await db.execute(text(f"SELECT count(*) FROM {table}"))).scalar()
                 mapped = (await db.execute(text(
                     f"SELECT count(*) FROM {table} WHERE job_type_id IS NOT NULL"))).scalar()

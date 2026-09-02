@@ -6,18 +6,14 @@ bounded fixes made this sprint are correct and self-consistent:
    ZERO domain-permission gating on create_export_job -- any authenticated
    role could export any resource, including Finance/Security-sensitive
    ones. Now gated via RESOURCE_EXPORT_PERMISSIONS for the sensitive subset.
-2. finance_hub's 4 export endpoints (deposits/topups/warranty-claims/
-   payouts) used a READ permission, violating "report read must not imply
+2. finance_hub's 3 retained export endpoints (topups/warranty-claims/
+   payouts) use a distinct export permission, preserving "report read must not imply
    export" -- now require the distinct FINANCE_EXPORT permission.
 3. Dashboard widgets were unreachable by ALL 4 non-super-admin roles (no
    role held the base DASHBOARD_READ gate at all) -- now each role holds
    the base + its own domain-specific dashboard read permissions, still
    with zero cross-domain leakage and zero export/mutation grants to
    Admin Read Only.
-4. Security Deposits page's mutation actions map to a different backend
-   permission domain (finance:deposits:*) than the page's own route guard
-   (finance.security_deposits.*) -- a pre-existing architecture mismatch;
-   Finance Admin is granted the real, correct permissions this sprint.
 
 Live cross-domain HTTP/Chromium evidence is captured separately in
 docs/final-l5-05/FINAL_L5_05O_LIVE_API_MATRIX.md and the Chromium spec.
@@ -44,7 +40,7 @@ class TestEnterpriseExportPermissionGate:
             assert EnterpriseFilterRegistry.resource_exists(key), f"{key} is not a registered resource"
 
     def test_finance_export_resources_require_finance_export_permission(self):
-        for key in ("admin_finance_deposits", "admin_finance_topups",
+        for key in ("admin_finance_topups",
                     "admin_finance_claims", "admin_finance_payouts", "admin_finance_wallets"):
             assert RESOURCE_EXPORT_PERMISSIONS[key] == P.FINANCE_EXPORT
 
@@ -73,15 +69,14 @@ class TestEnterpriseExportPermissionGate:
 
 
 class TestFinanceHubExportPermissionSeparation:
-    """REPORT_READ != REPORT_EXPORT (rule 9) for the 4 finance_hub exports."""
+    """REPORT_READ != REPORT_EXPORT for retained finance_hub exports."""
 
     def test_no_finance_hub_export_endpoint_uses_a_read_only_permission(self):
         src = _read("app/engines/finance_hub/admin_router.py")
-        assert 'async def export_deposits(' in src
         assert 'async def export_topups(' in src
         assert 'async def export_claims(' in src
         assert 'async def export_payouts(' in src
-        for fn in ("export_deposits", "export_topups", "export_claims", "export_payouts"):
+        for fn in ("export_topups", "export_claims", "export_payouts"):
             start = src.index(f"async def {fn}(")
             end = src.index("):\n", start)
             block = src[start:end]
@@ -171,38 +166,6 @@ class TestExportRoleSeparation:
             assert not permission_checker.has("admin_readonly", key), f"admin_readonly must not hold {key}"
 
 
-class TestSecurityDepositsActionPermissionArchitectureMismatch:
-    """Real, pre-existing finding: the frontend page's route guard uses
-    finance.security_deposits.read, but its mutation actions call backend
-    endpoints gated by an entirely different permission domain
-    (finance:deposits:*). Finance Admin is granted the real permissions
-    needed to actually use the page it's meant to own."""
-
-    def test_finance_admin_holds_the_real_deposits_mutation_permissions(self):
-        for perm in (P.FINANCE_DEPOSITS_READ, P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE, P.FINANCE_DEPOSITS_REFUND):
-            assert permission_checker.has("admin_finance", perm)
-
-    def test_admin_readonly_does_not_hold_deposits_mutation_permissions(self):
-        for perm in (P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE, P.FINANCE_DEPOSITS_REFUND):
-            assert not permission_checker.has("admin_readonly", perm)
-
-    def test_deposits_page_gates_every_mutation_action_by_the_real_backend_permission(self):
-        src = _read("frontend/super-admin/app/admin/finance/deposits/page.tsx")
-        assert 'usePermissions' in src
-        for label_fragment, perm_key in (
-            ("Approve Deposit", "finance:deposits:approve"),
-            ("Reject Deposit", "finance:deposits:approve"),
-            ("Record Offline Deposit", "finance:deposits:update"),
-            ("Initiate Refund", "finance:deposits:refund"),
-            ("Forfeit / Adjust", "finance:deposits:update"),
-        ):
-            idx = src.index(label_fragment)
-            # the perm.has(...) guard must appear on the same line/entry,
-            # immediately before the action's label in the array literal
-            window = src[max(0, idx - 120):idx]
-            assert f'perm.has("{perm_key}")' in window, f"{label_fragment} is missing its perm.has({perm_key!r}) guard"
-
-
 class TestDashboardRequestSuppression:
     """Part 5: restricted widget requests must not fire when denial is
     already known -- useApi gained an `enabled` option and the dashboard
@@ -216,13 +179,13 @@ class TestDashboardRequestSuppression:
     def test_dashboard_page_gates_every_sensitive_widget_with_enabled(self):
         src = _read("frontend/super-admin/app/admin/dashboard/page.tsx")
         for call, flag in (
-            ("dashboardApi.getFinanceSnapshot()", "financeAllowed"),
-            ("dashboardApi.getOperationsSnapshot()", "opsAllowed"),
-            ("dashboardApi.getLiveOperations(20)", "opsAllowed"),
+            ("dashboardApi.getFinanceSnapshot(period)", "financeAllowed"),
+            ('dashboardApi.getOperationsSnapshot("home_services")', "opsAllowed"),
+            ("dashboardApi.getLiveOperations(50)", "opsAllowed"),
             ("dashboardApi.getActionQueue(50)", "actionsAllowed"),
             ("dashboardApi.getEngineHealth()", "enginesAllowed"),
             ("dashboardApi.getComplianceSecurity()", "securityAllowed"),
-            ("dashboardApi.getActivityFeed(15)", "activityAllowed"),
+            ("dashboardApi.getActivityFeed(12)", "activityAllowed"),
         ):
             idx = src.index(call)
             line_end = src.index("\n", idx)
@@ -233,12 +196,12 @@ class TestDashboardRequestSuppression:
         src = _read("frontend/super-admin/app/admin/dashboard/page.tsx")
         idx = src.index("Export Snapshot")
         window = src[max(0, idx - 200):idx]
-        assert "exportAllowed ?" in window
+        assert "exportAllowed &&" in window
 
     def test_dashboard_quick_links_filter_by_destination_permission(self):
         src = _read("frontend/super-admin/app/admin/dashboard/page.tsx")
         assert ".filter(link =>" in src
-        assert 'perm.role === "super_admin"' in src
+        assert 'permissions.role === "super_admin"' in src
 
 
 class TestPermissionCatalogValidity:
@@ -255,8 +218,3 @@ class TestPermissionCatalogValidity:
         src = _read("frontend/super-admin/lib/permission-catalog.ts")
         for key in backend_keys:
             assert f'"{key}"' in src, f"{key} referenced by frontend but missing from permission-catalog.ts"
-
-    def test_all_new_finance_deposits_keys_exist_in_backend_registry(self):
-        for key in (P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE, P.FINANCE_DEPOSITS_REFUND):
-            src = _read("frontend/super-admin/lib/permission-catalog.ts")
-            assert f'"{key}"' in src

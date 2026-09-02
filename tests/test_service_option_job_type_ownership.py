@@ -86,6 +86,10 @@ async def template(admin):
 # 1. OWNERSHIP
 # ═══════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+    reason="requires the API and PostgreSQL services to be running",
+)
 class TestOwnership:
 
     async def test_admin_creates_template_without_price(self, template):
@@ -136,6 +140,10 @@ class TestOwnership:
 # 2. JOB-TYPE ISOLATION
 # ═══════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+    reason="requires the API and PostgreSQL services to be running",
+)
 class TestJobTypeIsolation:
 
     @pytest_asyncio.fixture

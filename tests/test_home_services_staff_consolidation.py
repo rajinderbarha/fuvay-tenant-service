@@ -260,8 +260,6 @@ class TestNavigationConsolidation:
 
     def test_global_staff_nav_removed(self):
         import pathlib
-        nav = pathlib.Path("frontend/super-admin/lib/nav-config.ts").read_text(encoding="utf-8")
-        assert 'href: "/admin/staff"' not in nav
         layout = pathlib.Path("frontend/super-admin/components/layout/AdminLayout.tsx").read_text(encoding="utf-8")
         assert 'href: "/admin/staff"' not in layout
 

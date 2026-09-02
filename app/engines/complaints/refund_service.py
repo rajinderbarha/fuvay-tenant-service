@@ -311,17 +311,31 @@ class RefundRequestService:
             raise ServiceOSException("REFUND_NOT_FOUND", "Refund request not found.", status_code=404)
         if refund.status not in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_REJECTED):
             raise ServiceOSException("REFUND_INVALID_STATE", f"Refund cannot be escalated from {refund.status}.", status_code=409)
-        if refund.status == REFUND_REJECTED and refund.resolution_method == "admin_rejected":
-            raise ServiceOSException("REFUND_INVALID_STATE", "The admin decision is final.", status_code=409)
+        missed_deadline = bool(
+            refund.provider_response_due_at
+            and refund.provider_response_due_at <= datetime.now(timezone.utc)
+            and refund.status in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW)
+        )
         if (refund.status == REFUND_REQUESTED and refund.provider_response_due_at
                 and refund.provider_response_due_at > datetime.now(timezone.utc)):
             raise ServiceOSException(
                 "PROVIDER_RESPONSE_WINDOW_ACTIVE", "The provider still has time to respond.", status_code=409,
                 context={"provider_response_due_at": refund.provider_response_due_at.isoformat()},
             )
-        refund.status = REFUND_ADMIN_REVIEW
+        if missed_deadline and refund.tenant_id:
+            from app.engines.usage_credits.service import UsageCreditService
+            from app.engines.tenant_engine.health import compute_health_score
+            await UsageCreditService(
+                db, actor_role="system", request_id=request_id,
+            ).charge_provider_response_sla_penalty(
+                tenant_id=refund.tenant_id, source_type="refund_request",
+                source_id=str(refund.id), amount=Decimal("50.00"),
+            )
+            await compute_health_score(refund.tenant_id, db=db)
+        refund.status = REFUND_PROVIDER_REVIEW
         refund.escalated_at = datetime.now(timezone.utc)
         refund.escalation_reason = reason
+        refund.provider_response_due_at = datetime.now(timezone.utc) + timedelta(hours=24)
         await db.commit()
         return refund
 
@@ -543,13 +557,7 @@ class RefundRequestService:
             "requested_amount": _money(r.requested_amount for r in needs_action),
             "approved_amount":  _money(r.approved_amount for r in approved),
             "recorded_amount":  _money(r.recorded_amount for r in settled),
-            # `security_deposit_deducted` is legacy: nothing writes it since the
-            # deposit was removed, but historical refunds settled against one and
-            # still carry the amount, so it stays in the exposure total.
-            "provider_exposure": _money(
-                [r.provider_credit_deducted for r in rows]
-                + [r.security_deposit_deducted for r in rows]
-            ),
+            "provider_exposure": _money(r.provider_credit_deducted for r in rows),
         }
 
     async def refund_filter_options(self, db: AsyncSession, tenant_id: uuid.UUID) -> dict:

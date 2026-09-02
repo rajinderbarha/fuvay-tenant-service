@@ -21,9 +21,15 @@ against the live 140412/Guramrit/AC-Gas-Refilling data -- no mocks -- since
 the bug only reproduces with genuine city-string formatting drift between
 two real tables.
 """
+import os
 import uuid
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 
 ZIPCODE_140412 = "140412"

@@ -46,6 +46,10 @@ CANON_CSV = os.path.join(
     REPO_ROOT, "docs", "workflow-rearchitecture", "phase-02a-slice-02f",
     "tenant-mutation-endpoint-inventory.csv",
 )
+REQUIRES_RETIRED_CANONICAL = pytest.mark.skipif(
+    not os.path.exists(CANON_CSV),
+    reason="retired point-in-time workflow inventory is not a runtime contract",
+)
 TOOL_DIR = os.path.join(REPO_ROOT, "scripts", "workflow_rearchitecture")
 
 
@@ -100,6 +104,7 @@ class TestFullApplicationExport:
 
 
 class TestNoMissingTenantMutations:
+    pytestmark = REQUIRES_RETIRED_CANONICAL
     def test_tenant_prefixed_routes_outside_canonical_csv_are_all_confirmed_false_positives(
         self, runtime_data,
     ):
@@ -118,6 +123,7 @@ class TestNoMissingTenantMutations:
 
 
 class TestNoDisconnectedCanonicalRows:
+    pytestmark = REQUIRES_RETIRED_CANONICAL
     def test_every_canonical_row_is_mounted_at_runtime(self, runtime_data):
         """Every canonical row must resolve to a mounted route.
 
@@ -165,6 +171,7 @@ class TestNoTenantDuplicates:
 
 
 class TestNoMisclassifiedNonTenantRows:
+    pytestmark = REQUIRES_RETIRED_CANONICAL
     def test_no_customer_admin_internal_path_in_canonical_csv(self):
         rows = _load_canonical_rows()
         bad = [r for r in rows
@@ -174,6 +181,7 @@ class TestNoMisclassifiedNonTenantRows:
 
 
 class TestGlobalCoverageConfirmed:
+    pytestmark = REQUIRES_RETIRED_CANONICAL
     def test_global_numerator_denominator_match_2f17_baseline(self):
         rows = _load_canonical_rows()
         total = len(rows)

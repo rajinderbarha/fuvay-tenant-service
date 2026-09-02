@@ -103,7 +103,6 @@ class TestMutationGuardCoverageSurvey:
     TENANT_ROUTER_FILES = [
         "app/engines/admin_catalog/tenant_router.py",
         "app/engines/analytics/provider_router.py",
-        "app/engines/brands/provider_router.py",
         "app/engines/complaints/provider_router.py",
         "app/engines/compliance/provider_router.py",
         "app/engines/customer_credits/provider_router.py",
@@ -113,7 +112,6 @@ class TestMutationGuardCoverageSurvey:
         "app/engines/home_service_assignment/provider_router.py",
         "app/engines/invoice_payment/provider_router.py",
         "app/engines/marketing_automation/provider_router.py",
-        "app/engines/package_commerce/tenant_router.py",
         "app/engines/platform_notifications/provider_router.py",
         "app/engines/quote_checklist/provider_router.py",
         "app/engines/trust_quality/provider_router.py",

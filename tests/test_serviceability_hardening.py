@@ -550,6 +550,21 @@ async def test_34_delete_service_mapping_soft_disables():
 
 
 @pytest.mark.asyncio
+async def test_34a_list_service_mappings_hides_soft_deleted_rows():
+    db = make_db()
+    tenant_id = uuid.uuid4()
+    area = _area(tenant_id)
+    db.get.return_value = area
+    db.execute.return_value = result(scalars_all=[])
+    svc = ServiceabilityService(db=db, actor_role="tenant_owner", actor_tenant_id=tenant_id)
+
+    out = await svc.list_service_mappings(area.id)
+    query = str(db.execute.await_args.args[0])
+    assert "tenant_service_area_services.is_available IS true" in query
+    assert out == {"mappings": [], "total": 0}
+
+
+@pytest.mark.asyncio
 async def test_35_service_mapping_cross_tenant_denied_as_not_found():
     db = make_db()
     own_tenant = uuid.uuid4()

@@ -12,12 +12,9 @@ export function parseCustomerSearchDto(raw: unknown): CustomerSearchResponseDto 
 }
 
 /**
- * `bookableCategoryIds` comes from the Home payload, which IS ZIP-filtered.
- * The search endpoint is not, so every result is reconciled against that set
- * here. Results that are not bookable are kept (so a search never looks
- * broken or silently empty) but flagged, letting the UI show them as
- * unavailable instead of offering a tap that dead-ends at "no provider
- * available" after several booking steps.
+ * The search endpoint is ZIP-filtered to exact provider-published services.
+ * `bookableCategoryIds` remains a defensive check against stale Home state;
+ * an unavailable service should no longer arrive in this DTO at all.
  */
 export function adaptCustomerSearch(
   dto: CustomerSearchResponseDto,

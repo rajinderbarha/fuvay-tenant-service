@@ -242,22 +242,71 @@ async def tenant_customer_price_preview_removed():
 async def tenant_matching_readiness(
     r: Request,
     master_service_id: uuid.UUID,
+    job_type_id: uuid.UUID | None = None,
+    zipcode: str | None = None,
     u: UserContext = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.engines.home_service_booking.matching_engine import _passes_full_eligibility_gate
+    from app.engines.admin_catalog.models import TenantService
 
     tid = _tenant_id(u)
-    passes = await _passes_full_eligibility_gate(
-        db, tenant_id=tid, offering_id=master_service_id, offering_type_id=None, brand_id=None,
-    )
+    # The canonical gate returns ``(eligible, reason_code)``.  This endpoint
+    # previously assigned that tuple to ``passes`` and then used it as a
+    # boolean.  A non-empty tuple is always truthy, so the API returned
+    # ``matching_ready: [false, "NO_VALID_PRICE_RULE"]`` while its message
+    # claimed the service was ready.  Resolve the exact published job-type
+    # children and unpack every result explicitly.
+    if job_type_id is not None:
+        job_type_ids: list[uuid.UUID | None] = [job_type_id]
+    else:
+        job_type_ids = list((await db.execute(
+            select(TenantService.job_type_id).where(
+                TenantService.tenant_id == tid,
+                TenantService.master_service_id == master_service_id,
+                TenantService.is_active.is_(True),
+                TenantService.is_enabled.is_(True),
+                TenantService.setup_status == "published",
+                TenantService.deleted_at.is_(None),
+            )
+        )).scalars().all())
+
+    if not job_type_ids:
+        return ok({
+            "matching_ready": False,
+            "reason_code": "OFFERING_NOT_PUBLISHED",
+            "message": "Publish this service before checking provider matching readiness.",
+            "job_type_results": [],
+        }, _rid(r), ENGINE_ID)
+
+    results: list[dict] = []
+    for resolved_job_type_id in job_type_ids:
+        eligible, reason_code = await _passes_full_eligibility_gate(
+            db,
+            tenant_id=tid,
+            offering_id=master_service_id,
+            offering_type_id=None,
+            brand_id=None,
+            zipcode=zipcode,
+            job_type_id=resolved_job_type_id,
+        )
+        results.append({
+            "job_type_id": str(resolved_job_type_id) if resolved_job_type_id else None,
+            "matching_ready": bool(eligible),
+            "reason_code": reason_code,
+        })
+
+    passes = all(item["matching_ready"] for item in results)
+    first_reason = next((item["reason_code"] for item in results if item["reason_code"]), None)
     return ok({
-        "matching_ready": passes,
+        "matching_ready": bool(passes),
+        "reason_code": first_reason,
+        "job_type_results": results,
         "message": (
             "Your business currently satisfies provider-matching eligibility for this service."
             if passes else
             "Your business does not currently satisfy all provider-matching eligibility checks "
-            "(coverage, technician, availability, pricing, package, credits, or deposit). "
+            "(coverage, technician, availability, pricing, seats, or credits). "
             "See Setup Checklist for details."
         ),
     }, _rid(r), ENGINE_ID)

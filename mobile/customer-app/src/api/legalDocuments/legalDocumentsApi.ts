@@ -1,5 +1,7 @@
 import { request } from "../client/httpClient";
+import { authenticatedRequest } from "../client/authenticatedClient";
 import { parseApiSuccess } from "../client/responseParser";
+import { z } from "zod";
 import {
   legalDocumentIndexSchema, legalDocumentSchema,
 } from "../contracts/legalDocuments";
@@ -35,4 +37,27 @@ export async function getLegalDocument(
     path: `${BASE}/${encodeURIComponent(docType)}?audience=${encodeURIComponent(audience)}`,
   });
   return parseApiSuccess(res.json, legalDocumentSchema);
+}
+
+const legalConsentStatusSchema = z.object({
+  requires_acceptance: z.boolean(),
+  documents: z.array(legalDocumentSchema),
+  document_ids: z.array(z.string().uuid()),
+  message: z.string(),
+});
+
+export type LegalConsentStatus = z.infer<typeof legalConsentStatusSchema>;
+
+export async function getLegalConsentStatus(): Promise<LegalConsentStatus> {
+  const res = await authenticatedRequest({ method: "GET", path: "/v1/legal/consent-status" });
+  return parseApiSuccess(res.json, legalConsentStatusSchema).data;
+}
+
+export async function acceptLegalDocuments(documentIds: string[]): Promise<LegalConsentStatus> {
+  const res = await authenticatedRequest({
+    method: "POST",
+    path: "/v1/legal/accept",
+    body: { accepted: true, document_ids: documentIds },
+  });
+  return parseApiSuccess(res.json, legalConsentStatusSchema).data;
 }

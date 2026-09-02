@@ -13,7 +13,7 @@ import structlog
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engines.platform_commerce.constants import TxnType, DepositTxnType
+from app.engines.platform_commerce.constants import TxnType
 from app.engines.platform_commerce.models import (
     TenantWallet, WalletTransaction,
     CustomerCreditBalance, CustomerTransaction,

@@ -19,7 +19,6 @@ const TYPE_ICON: Record<string, IconProps["name"]> = {
   "complaint.rejected": "shield-checkmark-outline",
   "complaint.resolved": "shield-checkmark-outline",
   "complaint.settlement_proposed": "shield-checkmark-outline",
-  "complaint.ai_settlement_proposed": "shield-checkmark-outline",
   "complaint.settlement_paid": "shield-checkmark-outline",
   "invoice.issued": "document-text-outline",
   "quote.sent": "receipt-outline",

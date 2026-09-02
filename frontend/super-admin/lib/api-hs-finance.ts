@@ -89,9 +89,9 @@ export const homeServicesFinanceApi = {
   // nothing to refund.
 
   // ── Direct payments (customer pays the provider directly) ───────────────
-  // These five endpoints were live and complete, but nothing in super-admin
-  // called any of them: the TENANT had a full direct-payments console while
-  // the platform admin had no view of the same money at all. Note the params
+  // Read-only operational evidence. Customer/provider actions deliberately
+  // stay in their own apps; the platform admin may only list and inspect.
+  // Note the params
   // here are the admin router's own (`q`, `pageSize`, `confirmed`), which do
   // NOT match the tenant queue's (`search`, `limit`, `method`).
   getDirectPaymentsSummary: <T = FinRow>() =>
@@ -102,13 +102,6 @@ export const homeServicesFinanceApi = {
   }) => apiFetch<T>(`/v1/admin/home-services/finance/payments${_q(params)}`),
   getDirectPayment: <T = FinRow>(paymentId: string) =>
     apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}`),
-  remindDirectPaymentCustomer: <T = FinRow>(paymentId: string) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}/remind-customer`, { method: "POST" }),
-  openDirectPaymentDispute: <T = FinRow>(paymentId: string, reason: string) =>
-    apiFetch<T>(`/v1/admin/home-services/finance/payments/${paymentId}/open-dispute`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-
   // ── Top-ups ─────────────────────────────────────────────────────────────
   listTopups: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/topups${_q({
     ...params,

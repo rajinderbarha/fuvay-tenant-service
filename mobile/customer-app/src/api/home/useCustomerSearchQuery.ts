@@ -10,10 +10,9 @@ const MIN_QUERY_LENGTH = 2;
 /**
  * Catalog search for the Home search box.
  *
- * `bookableCategoryIds` comes from the already-loaded Home payload, so
- * reconciling ZIP availability costs no extra request. Disabled until the
- * query is long enough, which also means an empty search box performs no
- * network calls at all.
+ * The backend filters exact provider-published services by `zipcode`;
+ * `bookableCategoryIds` remains a defensive presentation check. Disabled
+ * until the query is long enough, so an empty box performs no requests.
  */
 export function useCustomerSearchQuery(
   rawQuery: string,
@@ -25,7 +24,7 @@ export function useCustomerSearchQuery(
     queryKey: queryKeys.home.search(q, zipcode),
     enabled: q.length >= MIN_QUERY_LENGTH,
     queryFn: async () => {
-      const res = await searchCustomerCatalog(q);
+      const res = await searchCustomerCatalog(q, zipcode);
       const dto = parseCustomerSearchDto(res.data);
       return adaptCustomerSearch(dto, bookableCategoryIds);
     },

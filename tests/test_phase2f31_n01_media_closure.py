@@ -29,6 +29,11 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs", "workflow-rearchitecture")),
+    reason="retired workflow closure artifacts are intentionally absent",
+)
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = os.path.join(REPO, "docs", "workflow-rearchitecture")
 S30 = os.path.join(DOCS, "phase-02a-slice-02f30")

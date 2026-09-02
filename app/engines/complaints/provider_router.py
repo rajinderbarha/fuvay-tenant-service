@@ -18,6 +18,7 @@ from app.exceptions import ServiceOSException
 provider_complaint_router = APIRouter(prefix="/v1/provider/complaints", tags=["provider-complaints"])
 provider_rework_router    = APIRouter(prefix="/v1/provider/rework-requests", tags=["provider-rework"])
 provider_refund_router    = APIRouter(prefix="/v1/provider/refund-requests", tags=["provider-refunds"])
+retired_ai_router         = APIRouter()
 
 _complaint = ComplaintService()
 _rework    = ServiceReworkService()
@@ -321,7 +322,7 @@ class AIAnswersIn(BaseModel):
     answers: list[str]
 
 
-@provider_complaint_router.get("/{complaint_id}/ai-session")
+@retired_ai_router.get("/{complaint_id}/ai-session")
 async def get_ai_session(
     complaint_id: uuid.UUID,
     r: Request       = None,
@@ -343,7 +344,7 @@ async def get_ai_session(
     }, _rid(r), "provider.complaint.ai_session.get")
 
 
-@provider_complaint_router.post("/{complaint_id}/ai-session/answers")
+@retired_ai_router.post("/{complaint_id}/ai-session/answers")
 async def submit_ai_answers(
     complaint_id: uuid.UUID,
     body: AIAnswersIn,

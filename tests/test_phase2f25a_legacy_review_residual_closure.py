@@ -317,6 +317,10 @@ class TestCoverageQualification:
         _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
         "docs", "workflow-rearchitecture", "phase-02a-slice-02f",
         "tenant-mutation-endpoint-inventory.csv")
+    pytestmark = pytest.mark.skipif(
+        not _os.path.exists(CANON),
+        reason="retired point-in-time workflow inventory is not a runtime contract",
+    )
     VERIFIED = {
         "TENANT_MUTATION_PERMISSION_SCOPE_AWARE", "TENANT_MUTATION_ROLE_SCOPE_AWARE",
         "STAFF_EXECUTION_ROLE_SCOPE_AWARE", "PLATFORM_ADMIN_ONLY", "PUBLIC_NO_AUTH",

@@ -247,7 +247,7 @@ describe("an empty issue list", () => {
       },
     });
     expect(screen.getByText("Nothing to book here yet")).toBeTruthy();
-    expect(screen.getByText(/No Air Conditioning problems are available in 141001/)).toBeTruthy();
+    expect(screen.getByText("This service is not currently available in ZIP code 141001.")).toBeTruthy();
     expect(screen.getByText("Choose another service")).toBeTruthy();
   });
 

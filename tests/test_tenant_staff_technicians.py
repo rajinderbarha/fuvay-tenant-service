@@ -14,6 +14,16 @@ def _read(p):
 
 
 class TestRouterHardening:
+    def test_create_uses_authenticated_tenant_for_seat_gate(self):
+        """Technician creation must pass the route's authenticated tenant
+        variable to the seat gate instead of referencing an undefined name."""
+        c = _read(ROUTER)
+        start = c.index("async def create_team_member")
+        end = c.index('@router.get("/team-members/service-coverage")', start)
+        block = c[start:end]
+        assert "await assert_seat_available(db, tid)" in block
+        assert "await assert_seat_available(db, tenant_id)" not in block
+
     def test_create_login_no_longer_returns_null_credentials_stub(self):
         c = _read(ROUTER)
         assert 'return ok({"member_id": str(member_id), "credentials": None}' not in c
@@ -44,9 +54,10 @@ class TestRouterHardening:
     def test_member_type_validated_against_canonical_set(self):
         c = _read(ROUTER)
         assert 'VALID_MEMBER_TYPES = {"technician", "staff", "manager"}' in c
-        assert "tenant_manager" not in c
-        assert "tenant_finance" not in c
-        assert "dispatcher" not in c
+        declaration = c[c.index("VALID_MEMBER_TYPES"):c.index("DESIGNATIONS_BY_MEMBER_TYPE")]
+        assert "tenant_manager" not in declaration
+        assert "tenant_finance" not in declaration
+        assert "dispatcher" not in declaration
 
     def test_offering_ids_validated_against_real_tenant_services(self):
         c = _read(ROUTER)
@@ -100,6 +111,18 @@ class TestRouterHardening:
         assert "compute_service_coverage" in block
         assert 'ok({"coverage": coverage}' in block
 
+    def test_approval_setup_does_not_deadlock_on_optional_paid_seat(self):
+        setup = _read(os.path.join(BASE, "app/engines/vertical_catalog/home_services_setup_service.py"))
+        activation = _read(os.path.join(BASE, "app/engines/vertical_catalog/activation.py"))
+        assert "staff_required = False" in setup
+        assert '_add("staff_capacity", "Staff capacity", False,' in activation
+
+    def test_bookability_still_requires_real_technician_capacity(self):
+        c = _read(ROUTER)
+        assert '"code": "READY_TECHNICIAN_MISSING"' in c
+        assert "and staff_capacity_ready and seat_capacity_ready and not document_blockers" in c
+        assert '"code": "TECHNICIAN_SEATS_REQUIRED"' in c
+
 
 class TestReadinessCalculation:
     def test_readiness_states_are_specific_not_generic_active_flag(self):
@@ -107,6 +130,7 @@ class TestReadinessCalculation:
         assert 'f"needs_{headline}"' in c
         for reason in ("identity", "role", "service_assignment", "availability"):
             assert f'"{reason}"' in c
+        assert '"documents"' not in c
         assert '"access_disabled"' in c
         assert '"ready"' in c
 

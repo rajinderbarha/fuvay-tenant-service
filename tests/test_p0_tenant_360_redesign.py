@@ -61,13 +61,14 @@ class TestHeroCard:
 
 
 class TestKpiGrid:
-    def test_eight_kpi_cards(self):
+    def test_provider_kpi_cards(self):
         src = _read(PAGE)
         for label in [
-            "Usage Credit Balance", "Credits Deducted Lifetime", "Security Deposit Held",
+            "Usage Credit Balance", "Credits Deducted Lifetime",
             "Health Score", "Staff Members", "Average Rating", "Open Complaints", "Active Jobs",
         ]:
             assert f'label="{label}"' in src
+        assert 'label="Security Deposit Held"' not in src
 
     def test_kpi_grid_responsive_columns(self):
         src = _read(PAGE)

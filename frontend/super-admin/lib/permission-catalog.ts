@@ -65,6 +65,14 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "admin:jobs:force_close":               { key: "admin:jobs:force_close", label: "Force-close Job", domain: "operations", shape: "mutation" },
   "admin:jobs:void":                      { key: "admin:jobs:void", label: "Void Job", domain: "operations", shape: "mutation" },
   "staff:read":                           { key: "staff:read", label: "Read Staff", domain: "operations", shape: "read" },
+  "home_services:staff:view":             { key: "home_services:staff:view", label: "Read Home Services Staff", domain: "home_services", shape: "read" },
+  "home_services:staff:export":           { key: "home_services:staff:export", label: "Export Home Services Staff", domain: "home_services", shape: "export" },
+  "home_services:staff:audit":            { key: "home_services:staff:audit", label: "Read Home Services Staff Audit", domain: "home_services", shape: "read" },
+  "home_services:staff:request_changes":  { key: "home_services:staff:request_changes", label: "Request Home Services Staff Changes", domain: "home_services", shape: "mutation" },
+  "home_services:staff:verify":           { key: "home_services:staff:verify", label: "Verify Home Services Staff", domain: "home_services", shape: "mutation" },
+  "home_services:staff:restrict":         { key: "home_services:staff:restrict", label: "Restrict Home Services Staff", domain: "home_services", shape: "mutation" },
+  "home_services:staff:suspend":          { key: "home_services:staff:suspend", label: "Suspend Home Services Staff", domain: "home_services", shape: "mutation" },
+  "home_services:staff:reactivate":       { key: "home_services:staff:reactivate", label: "Reactivate Home Services Staff", domain: "home_services", shape: "mutation" },
   "analytics:dashboard:read":             { key: "analytics:dashboard:read", label: "Read Analytics/Reports", domain: "marketing", shape: "read" },
   "finance:hub:read":                     { key: "finance:hub:read", label: "Read Finance Hub", domain: "finance", shape: "read" },
   "finance.usage_credits.read":           { key: "finance.usage_credits.read", label: "Read Usage Credit Balance", domain: "finance", shape: "read" },
@@ -74,15 +82,7 @@ export const PERMISSION_CATALOG: Record<string, PermissionMeta> = {
   "finance:topups:read":                  { key: "finance:topups:read", label: "Read Credit Top-ups", domain: "finance", shape: "read" },
   "finance:topups:update":                { key: "finance:topups:update", label: "Approve/Retry Credit Top-up", domain: "finance", shape: "mutation" },
   "finance:topups:refund":                { key: "finance:topups:refund", label: "Refund Credit Top-up", domain: "finance", shape: "mutation" },
-  // FINAL-L5-05U: finance.security_deposits.* removed -- deprecated alias
-  // namespace (authorizes nothing; every live endpoint/nav item/route
-  // guard now uses finance:deposits:* below). See app/core/permissions.py
-  // and docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md.
   "finance.completed_job_deduction_rules.read": { key: "finance.completed_job_deduction_rules.read", label: "Read Completed Job Deduction Rules", domain: "finance", shape: "read" },
-  "finance:deposits:read":                { key: "finance:deposits:read", label: "Read Security Deposits", domain: "finance", shape: "read" },
-  "finance:deposits:approve":             { key: "finance:deposits:approve", label: "Approve/Reject Security Deposit", domain: "finance", shape: "mutation" },
-  "finance:deposits:update":              { key: "finance:deposits:update", label: "Record/Adjust Security Deposit", domain: "finance", shape: "mutation" },
-  "finance:deposits:refund":              { key: "finance:deposits:refund", label: "Refund Security Deposit", domain: "finance", shape: "mutation" },
   "security:read":                        { key: "security:read", label: "Read Security Overview", domain: "security", shape: "read" },
   "security:sessions:read":               { key: "security:sessions:read", label: "Read Sessions", domain: "security", shape: "read" },
   "security:sessions:revoke":             { key: "security:sessions:revoke", label: "Revoke Session", domain: "security", shape: "mutation" },

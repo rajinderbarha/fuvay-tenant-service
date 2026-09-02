@@ -12,12 +12,10 @@ REUSE POLICY (this module deliberately owns almost no business logic):
 Serves the tenant-facing Home Services finance console.
 
 LEDGER SEPARATION (spec section 6) is structural here, not cosmetic: the
-transactions projection tags every row with exactly one of
-usage_credits / security_deposit / cash_tax / adjustment, and only
-usage_credits rows ever carry a `usage_credit_balance_after`. Deposit and
-GST rows return null for that column so the UI can render "—" instead of a
-fabricated combined balance. Nothing in this module ever adds a deposit
-amount to a credit balance.
+transactions projection tags every row as usage_credits, cash_tax, or
+adjustment. Only usage-credit-moving rows carry a
+`usage_credit_balance_after`; tax rows return null so the UI renders "—"
+instead of fabricating a combined balance.
 """
 from __future__ import annotations
 
@@ -45,9 +43,6 @@ from app.engines.usage_credits.constants import DEFAULT_LOW_USAGE_CREDIT_THRESHO
 from app.engines.vertical_catalog.finance_policy_service import (
     resolve_published_policy, resolve_qualifying_technician_count, FinancePolicyResolutionError,
 )
-from app.engines.vertical_catalog.activation_payment_models import (
-    ActivationPaymentOrder, PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING, STATUS_CAPTURED,
-)
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.vertical_catalog.service import VerticalCatalogService
 
@@ -55,21 +50,18 @@ logger = structlog.get_logger("finance_hub.tenant_hs")
 ENGINE_ID = "finance_hub"
 utcnow = lambda: datetime.now(timezone.utc)
 
-# Ledger identifiers (spec section 6/14). Exactly four, never merged.
+# Ledger identifiers (spec section 6/14). These are never merged.
 LEDGER_USAGE_CREDITS = "usage_credits"
-LEDGER_SECURITY_DEPOSIT = "security_deposit"
 LEDGER_CASH_TAX = "cash_tax"
 LEDGER_ADJUSTMENT = "adjustment"
 
 LEDGER_LABELS = {
     LEDGER_USAGE_CREDITS: "Usage Credits",
-    LEDGER_SECURITY_DEPOSIT: "Security Deposit",
     LEDGER_CASH_TAX: "Cash / Tax Transaction",
     LEDGER_ADJUSTMENT: "Adjustment / Reconciliation",
 }
 
-# Jobs that are live obligations against the deposit (a refund cannot be
-# approved while these exist). Deliberately excludes the terminal states.
+# Jobs that are live tenant obligations. Deliberately excludes terminal states.
 ACTIVE_JOB_STATUSES = (
     "pending_assignment", "assigned", "accepted", "on_the_way",
     "in_progress", "quote_required", "quote_sent", "rework_required",
@@ -346,13 +338,8 @@ class TenantHomeServicesFinanceService:
         )).scalars().all()
         return sum((_d(r.credits_purchased) for r in rows), Decimal("0"))
 
-    # ── Security deposit (ledger B) ─────────────────────────────────────────
-
-    # get_security_deposit() was removed with the deposit itself
-    # (migration 317). Wallet state is served by get_wallet().
-
     async def get_liability_holds(self) -> list[dict]:
-        """Real obligations that block/reduce a deposit refund."""
+        """Real open obligations used by tenant finance health views."""
         holds: list[dict] = []
 
         active_jobs = (await self.db.execute(
@@ -387,7 +374,7 @@ class TenantHomeServicesFinanceService:
             {"tid": str(self.tenant_id)},
         )).fetchone()
         if wc_rows and wc_rows.n:
-            holds.append({"code": "WARRANTY_CLAIMS", "label": "Open warranty claims funded by deposit",
+            holds.append({"code": "WARRANTY_CLAIMS", "label": "Open warranty claim obligations",
                           "count": wc_rows.n, "amount": str(_d(wc_rows.amt)), "blocking": True})
 
         cust_refunds = (await self.db.execute(
@@ -447,16 +434,9 @@ class TenantHomeServicesFinanceService:
                 policy.completion_deduction_policy
                 or "Per-job usage-credit deduction resolved from the job's service pricing rule at completion"
             ),
-            "deposit_rule": (
-                f"₹{_d(policy.deposit_amount_per_technician)} per qualifying technician "
-                f"(minimum ₹{_d(policy.minimum_deposit)})"
-                if policy.deposit_required else "No security deposit required"
-            ),
-            "deposit_required": policy.deposit_required,
-            "deposit_calculation_mode": policy.deposit_calculation_mode,
-            "deposit_amount_per_technician": str(_d(policy.deposit_amount_per_technician)),
-            "minimum_deposit": str(_d(policy.minimum_deposit)),
-            "technician_count_policy": policy.technician_count_policy,
+            "credit_warning_threshold": str(_d(policy.credit_warning_threshold)),
+            "credit_booking_floor": str(_d(policy.credit_booking_floor)),
+            "seat_accrual_mode": policy.seat_accrual_mode,
             "gst_tax_rule": f"GST {gst_pct.normalize()}% on credit purchases. GST is platform tax revenue and is NEVER credited to the usable wallet.",
             "low_balance_policy": f"Low-balance warning below ₹{DEFAULT_LOW_USAGE_CREDIT_THRESHOLD} usable credits",
             "currency": policy.currency,
@@ -583,42 +563,7 @@ class TenantHomeServicesFinanceService:
                 "reversible": r.event_type == EVENT_COMPLETED_JOB_DEDUCTION,
             })
 
-        # ── (B) Security-deposit ledger ────────────────────────────────────
-        dep_rows = (await self.db.execute(
-            select(ActivationPaymentOrder).where(
-                ActivationPaymentOrder.tenant_id == self.tenant_id,
-                ActivationPaymentOrder.payment_kind.in_((PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_FUNDING)),
-            ).order_by(ActivationPaymentOrder.created_at.desc())
-        )).scalars().all()
-        for r in dep_rows:
-            captured = r.status == STATUS_CAPTURED
-            deposit_amount = _d(r.to_dict()["deposit_amount"])
-            if deposit_amount <= 0:
-                continue
-            rows.append({
-                "row_id": f"dep:{r.id}",
-                "occurred_at": (r.captured_at or r.created_at).isoformat() if (r.captured_at or r.created_at) else None,
-                "reference": r.gateway_order_id,
-                "ledger": LEDGER_SECURITY_DEPOSIT,
-                "ledger_label": LEDGER_LABELS[LEDGER_SECURITY_DEPOSIT],
-                "event_type": "security_deposit_payment",
-                # Historical only. The deposit was retired in migration 317;
-                # these rows remain so a past payment stays auditable.
-                "event_label": "Security deposit payment (retired)",
-                "description": f"Security deposit payment ({r.status}) — deposit since retired",
-                "debit": None,
-                "credit": str(deposit_amount) if captured else None,
-                # NEVER a usage-credit balance on a deposit row — UI renders "—".
-                "usage_credit_balance_after": None,
-                "status": "posted" if captured else ("failed" if r.status == "failed" else "pending"),
-                "related_job_id": None,
-                "related_transaction_ref": r.gateway_payment_id,
-                "receipt_available": captured,
-                "reversible": False,
-            })
-
-
-        # ── (C) Cash / tax transaction ledger ──────────────────────────────
+        # ── (B) Cash / tax transaction ledger ──────────────────────────────
         topup_rows = (await self.db.execute(
             select(CreditTopupOrder).where(CreditTopupOrder.tenant_id == self.tenant_id)
             .order_by(CreditTopupOrder.created_at.desc())
@@ -666,12 +611,8 @@ class TenantHomeServicesFinanceService:
                     "reversible": False,
                 })
 
-        # Activation-time TAX events only. The deposit/credit *capture* events
-        # are deliberately excluded: ActivationPaymentOrder above is already
-        # the one canonical row for each capture, and emitting the
-        # FinancialEvent twin as well double-counted the same ₹ in the
-        # security-deposit ledger totals (caught in live QA). GST has no
-        # ActivationPaymentOrder equivalent row, so it is sourced here.
+        # Activation-time tax events are sourced here; usable credit movement
+        # remains sourced exclusively from UsageCreditLedger above.
         fev_rows = (await self.db.execute(
             select(FinancialEvent).where(
                 FinancialEvent.tenant_id == self.tenant_id,
@@ -745,7 +686,7 @@ class TenantHomeServicesFinanceService:
                     "credit_total": str(sum((_d(r["credit"]) for r in filtered if r["ledger"] == k and r["credit"]), Decimal("0"))),
                 } for k in LEDGER_LABELS
             },
-            "never_combined_note": "Usage-credit and security-deposit balances are separate ledgers and are never summed.",
+            "never_combined_note": "Usage-credit balances are never combined with cash or tax transactions.",
         }
 
     # ── Direct customer payments summary (section 17, tenant-scoped) ────────
@@ -881,11 +822,6 @@ class TenantHomeServicesFinanceService:
 
     async def get_action_queue(self) -> list[dict]:
         wallet = await self.get_usage_credits()
-        # No deposit and no refund queue any more (migration 317): the tenant
-        # holds credit, which is spent rather than returned.
-        pending_refunds = 0
-        info_requested = 0
-
         reversals = (await self.db.execute(
             select(func.count(UsageCreditLedger.id)).where(
                 UsageCreditLedger.tenant_id == self.tenant_id,
@@ -912,13 +848,6 @@ class TenantHomeServicesFinanceService:
              "tab": "topups", "filter": {"status": "failed"}, "severity": "danger"},
             {"code": "PENDING_TOPUPS", "label": "Pending gateway confirmation", "count": wallet["pending_topups"],
              "tab": "topups", "filter": {"status": "initiated"}, "severity": "warning"},
-            {"code": "DEPOSIT_TOP_UP_DUE", "label": "Deposit top-up due",
-             "count": 0,
-             "tab": "security-deposit", "filter": {"focus": "top_up"}, "severity": "danger"},
-            {"code": "PENDING_REFUND_REQUESTS", "label": "Pending refund requests", "count": pending_refunds,
-             "tab": "security-deposit", "filter": {"focus": "refunds"}, "severity": "info"},
-            {"code": "INFO_REQUESTED", "label": "Information requested by Admin", "count": info_requested,
-             "tab": "security-deposit", "filter": {"focus": "refunds"}, "severity": "warning"},
             {"code": "CREDIT_REVERSALS", "label": "Credit reversals (30d)", "count": reversals,
              "tab": "topups", "filter": {"ledger": LEDGER_ADJUSTMENT}, "severity": "info"},
             {"code": "POLICY_UNRESOLVED", "label": "Policy unresolved", "count": policy_unresolved,

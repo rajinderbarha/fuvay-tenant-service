@@ -558,7 +558,8 @@ class TestTemplatesListPage(unittest.TestCase):
         self.assertIn("templates/${t.id}", self.src)
 
     def test_has_pagination(self):
-        self.assertIn("Page {page} of", self.src)
+        self.assertIn("<Pagination page={page}", self.src)
+        self.assertIn("total={total}", self.src)
 
     def test_no_hardcoded_template_names(self):
         self.assertNotIn("AC Repair Starter", self.src)

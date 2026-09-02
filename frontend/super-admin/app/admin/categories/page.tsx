@@ -42,7 +42,7 @@ const VERTICAL_LABELS: Record<string, string> = {
 };
 
 const FINANCE_LABELS: Record<string, string> = {
-  security_deposit_plus_credit_wallet: "Credit Wallet + Seats",  // backend enum key, unchanged
+  credit_wallet_only: "Credit Wallet + Seats",
   monthly_subscription: "Monthly Subscription",
   lead_credit: "Lead Credit",
   commission_wallet: "Commission + Wallet",

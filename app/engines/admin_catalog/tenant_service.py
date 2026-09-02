@@ -1317,7 +1317,7 @@ class TenantCatalogService:
         r = await self.db.execute(select(TenantServiceType.id).where(
             TenantServiceType.tenant_service_id == ts.id,
             TenantServiceType.service_type_id == service_type_id,
-            TenantServiceType.is_enabled == True))
+            TenantServiceType.is_enabled == True).limit(1))
         row_exists = r.scalar_one_or_none() is not None
         return (not row_exists) if ts.type_coverage_mode == "all_except" else row_exists
 
@@ -1327,7 +1327,7 @@ class TenantCatalogService:
         r = await self.db.execute(select(TenantServiceBrand.id).where(
             TenantServiceBrand.tenant_service_id == ts.id,
             TenantServiceBrand.brand_id == brand_id,
-            TenantServiceBrand.is_enabled == True))
+            TenantServiceBrand.is_enabled == True).limit(1))
         row_exists = r.scalar_one_or_none() is not None
         return (not row_exists) if ts.brand_coverage_mode == "all_except" else row_exists
 

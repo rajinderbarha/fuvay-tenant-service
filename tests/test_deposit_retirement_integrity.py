@@ -87,3 +87,27 @@ def test_database_cleanup_chain_is_present():
     assert (ROOT / "alembic/versions/318_dispute_settlement_credit_only.py").exists()
     assert (ROOT / "alembic/versions/330_remove_deposit_from_trust_health.py").exists()
     assert (ROOT / "alembic/versions/331_retire_deposit_admin_artifacts.py").exists()
+    assert (ROOT / "alembic/versions/334_remove_refund_deposit_artifact.py").exists()
+    assert (ROOT / "alembic/versions/335_retire_deposit_finance_model_key.py").exists()
+
+
+def test_public_category_configuration_has_no_legacy_deposit_finance_model():
+    sources = [
+        _read("app/engines/admin_catalog/service.py"),
+        _read("app/engines/settings_engine/admin_router.py"),
+        _read("frontend/super-admin/app/admin/categories/page.tsx"),
+    ]
+    for source in sources:
+        assert "security_deposit_plus_credit_wallet" not in source
+    assert '"credit_wallet_only"' in sources[0]
+
+
+def test_public_finance_and_refund_contracts_have_no_deposit_fields():
+    sources = [
+        _read("app/engines/analytics/platform_service.py"),
+        _read("app/engines/finance_hub/home_services_finance_service.py"),
+        _read("app/engines/complaints/models.py"),
+        _read("app/engines/complaints/refund_service.py"),
+    ]
+    for source in sources:
+        assert '"security_deposit' not in source

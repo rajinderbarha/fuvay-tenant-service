@@ -30,12 +30,13 @@ EVENT_CREDIT_REVERSAL = "credit_reversal"
 EVENT_MIGRATION_ADJUSTMENT = "migration_adjustment"
 EVENT_TOPUP_CREDIT_GRANTED = "topup_credit_granted"
 EVENT_TOPUP_CREDIT_REFUNDED = "topup_credit_refunded"
+EVENT_COMPLAINT_SLA_PENALTY = "complaint_sla_breach_penalty"
 
 VALID_EVENT_TYPES = {
     EVENT_MANUAL_CREDIT_ADDED, EVENT_MANUAL_CREDIT_REMOVED,
     EVENT_PACKAGE_CREDIT_GRANTED, EVENT_COMPLETED_JOB_DEDUCTION,
     EVENT_CREDIT_REVERSAL, EVENT_MIGRATION_ADJUSTMENT, EVENT_TOPUP_CREDIT_GRANTED,
-    EVENT_TOPUP_CREDIT_REFUNDED,
+    EVENT_TOPUP_CREDIT_REFUNDED, EVENT_COMPLAINT_SLA_PENALTY,
 }
 
 VALID_REASON_CODES = {
@@ -238,6 +239,34 @@ class UsageCreditService:
             reason_code="billing_dispute_resolution",
             reason=f"AI settlement fee — complaint {complaint_id}",
             idempotency_key=f"ai_settlement_fee:{complaint_id}",
+            allow_negative=True,
+        )
+
+    async def charge_complaint_sla_penalty(
+        self, *, tenant_id: uuid.UUID, complaint_id: uuid.UUID, amount: Decimal,
+    ) -> dict:
+        """Charge a provider exactly once for missing a complaint response SLA."""
+        return await self.charge_provider_response_sla_penalty(
+            tenant_id=tenant_id, source_type="customer_complaint",
+            source_id=str(complaint_id), amount=amount,
+        )
+
+    async def charge_provider_response_sla_penalty(
+        self, *, tenant_id: uuid.UUID, source_type: str, source_id: str,
+        amount: Decimal,
+    ) -> dict:
+        """Charge one idempotent provider-response penalty for any remedy case."""
+        if amount <= 0:
+            raise ServiceOSException(
+                "INVALID_CREDIT_AMOUNT", "Provider SLA penalty must be positive.", status_code=422,
+            )
+        return await self._post(
+            tenant_id=tenant_id, amount=-amount,
+            event_type=EVENT_COMPLAINT_SLA_PENALTY,
+            source_type=source_type, source_id=source_id,
+            reason_code="billing_dispute_resolution",
+            reason=f"Provider response SLA breached for {source_type} {source_id}",
+            idempotency_key=f"provider_response_sla_penalty:{source_type}:{source_id}",
             allow_negative=True,
         )
 

@@ -268,7 +268,7 @@ class TestRetiredDuplicateWorkflowSurface:
     async def test_workflow_templates_summary_is_gone(self, admin, pg):
         r = await admin.get("/v1/admin/workflow-templates/summary")
         assert r.status_code == 410, r.text
-        assert r.json()["error"]["code"] == "WORKFLOW_TEMPLATES_RETIRED"
+        assert r.json()["error_code"] == "WORKFLOW_TEMPLATES_RETIRED"
 
     def test_admin_page_redirects_to_canonical_catalog_workspace(self):
         root = os.path.join(os.path.dirname(__file__), "..")

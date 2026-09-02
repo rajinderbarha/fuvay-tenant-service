@@ -288,7 +288,15 @@ async def test_blueprint_version_stability_through_real_finalize_path_live():
         await db.commit()
 
         bp_svc = JobTypeBlueprintService(db)
-        v1 = await bp_svc.set_workflow(ms_id, jt_id, {"quote_approval_required": True})
+        v1 = await bp_svc.set_workflow(ms_id, jt_id, {
+            "quote_approval_required": True,
+            "steps": [{
+                "step_key": "estimate_approval", "step_name": "Estimate approval",
+                "maps_to_status": "quote_required", "owner_app": "customer_app",
+                "owner_role": "customer", "customer_visible": True,
+            }],
+            "transitions": [],
+        })
         assert v1["version_number"] == 1
 
         draft_a_id = uuid.uuid4()

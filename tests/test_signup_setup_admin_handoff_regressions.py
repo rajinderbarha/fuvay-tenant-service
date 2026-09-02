@@ -9,6 +9,105 @@ from app.engines.vertical_catalog.service import VerticalCatalogService
 from app.exceptions import ServiceOSException
 
 
+def test_signup_normalizes_indian_mobile_numbers_to_e164():
+    from app.engines.public_registration.service import _normalize_mobile
+
+    assert _normalize_mobile("9041624576") == "+919041624576"
+    assert _normalize_mobile("09041624576") == "+919041624576"
+    assert _normalize_mobile("91 90416 24576") == "+919041624576"
+    assert _normalize_mobile("+91 90416-24576") == "+919041624576"
+
+
+def test_signup_rejects_ambiguous_invalid_mobile_numbers():
+    from app.engines.public_registration.service import _normalize_mobile
+
+    with pytest.raises(ServiceOSException) as exc:
+        _normalize_mobile("12345")
+    assert exc.value.error_code == "INVALID_MOBILE"
+
+
+@pytest.mark.parametrize("status", [
+    "approved", "approved_pending_activation", "activation_requirements_pending", "activating",
+])
+def test_signup_status_projects_every_activation_stage(status):
+    from app.engines.public_registration.service import RegistrationService
+
+    tenant = SimpleNamespace(status="pending_activation")
+    enrollment = SimpleNamespace(status=status)
+    assert RegistrationService(db=MagicMock())._compute_stage(tenant, enrollment) == "approved_pending_activation"
+
+
+def test_signup_wizard_restores_refresh_safe_draft_without_passwords():
+    from pathlib import Path
+
+    source = Path("frontend/tenant-portal/app/register/page.tsx").read_text(encoding="utf-8")
+    assert "SIGNUP_DRAFT_KEY" in source
+    assert 'password: "", confirmPassword: ""' in source
+    assert "localStorage.removeItem(SIGNUP_DRAFT_KEY)" in source
+
+
+def test_signup_resend_reports_cooldown_and_success_feedback():
+    from pathlib import Path
+
+    service = Path("app/engines/public_registration/service.py").read_text(encoding="utf-8")
+    page = Path("frontend/tenant-portal/app/register/page.tsx").read_text(encoding="utf-8")
+    assert '"OTP_RESEND_COOLDOWN"' in service
+    assert "status_code=429" in service
+    assert "A new ${channel} code was sent." in page
+
+
+@pytest.mark.asyncio
+async def test_signup_resend_does_not_claim_success_during_cooldown():
+    from app.engines.public_registration.service import RegistrationService, utcnow
+
+    db = AsyncMock()
+    query_result = MagicMock()
+    query_result.scalar_one_or_none.return_value = SimpleNamespace(created_at=utcnow())
+    db.execute.return_value = query_result
+    service = RegistrationService(db=db)
+    pending = SimpleNamespace(id=uuid.uuid4(), mobile="+919876543210", email="owner@example.com")
+
+    with patch.object(service, "_get_pending", new=AsyncMock(return_value=pending)), \
+         patch.object(service, "_send_otps", new=AsyncMock()) as send:
+        with pytest.raises(ServiceOSException) as exc:
+            await service.resend_otp(pending.id, "mobile")
+
+    assert exc.value.error_code == "OTP_RESEND_COOLDOWN"
+    assert exc.value.status_code == 429
+    send.assert_not_awaited()
+
+
+def test_admin_approval_notifies_provider_with_correct_destination():
+    from pathlib import Path
+
+    source = Path("app/engines/provider_portal/admin_router.py").read_text(encoding="utf-8")
+    assert 'notification_type="tenant.verification_approved"' in source
+    assert '"/dashboard" if is_active else "/onboarding/activation-center"' in source
+
+
+def test_post_approval_ui_has_no_retired_deposit_copy():
+    from pathlib import Path
+
+    for relative in (
+        "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/review/page.tsx",
+        "frontend/tenant-portal/app/onboarding/application-status/page.tsx",
+        "frontend/tenant-portal/app/onboarding/activation-center/page.tsx",
+    ):
+        source = Path(relative).read_text(encoding="utf-8")
+        assert "Security deposit" not in source
+        assert "security_deposit" not in source
+
+
+def test_terminal_rejection_ui_does_not_offer_resubmission():
+    from pathlib import Path
+
+    review = Path("frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/review/page.tsx").read_text(encoding="utf-8")
+    overview = Path("frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/overview/page.tsx").read_text(encoding="utf-8")
+    assert 'status === "rejected"' in review
+    assert "Contact support if you believe this decision should be reviewed." in review
+    assert "make corrections, and resubmit" not in overview
+
+
 @pytest.mark.asyncio
 async def test_submit_for_review_syncs_admin_queue_and_enrollment():
     tenant_id = uuid.uuid4()

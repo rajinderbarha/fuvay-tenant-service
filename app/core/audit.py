@@ -13,6 +13,7 @@ don't take on a dependency on the security engine's full surface area.
 from __future__ import annotations
 import uuid
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.security.constants import HIGH_RISK_OPERATIONS
@@ -38,6 +39,11 @@ async def record_platform_audit(
     db.add(PlatformAuditLog(
         tenant_id=tenant_id, actor_id=actor_id, actor_role=actor_role, actor_ip=actor_ip,
         operation=operation, engine_id=engine_id, entity_type=entity_type, entity_id=entity_id,
-        before_state=before, after_state=after, request_id=request_id,
+        # SQL/result mappings commonly contain UUID, Decimal and datetime
+        # objects. PostgreSQL JSONB cannot serialize those Python objects
+        # directly, so normalize all audit snapshots at this shared boundary.
+        before_state=jsonable_encoder(before) if before is not None else None,
+        after_state=jsonable_encoder(after) if after is not None else None,
+        request_id=request_id,
         is_high_risk=operation in HIGH_RISK_OPERATIONS,
     ))

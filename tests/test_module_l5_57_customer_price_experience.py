@@ -28,7 +28,7 @@ class TestPriceExperienceRetired:
 
     def test_nav_and_clients_no_longer_link_preview_surfaces(self):
         combined = "\n".join([
-            self._read("frontend", "super-admin", "lib", "nav-config.ts"),
+            self._read("frontend", "super-admin", "components", "layout", "AdminLayout.tsx"),
             self._read("frontend", "super-admin", "lib", "api.ts"),
             self._read("frontend", "tenant-portal", "lib", "api.ts"),
         ])

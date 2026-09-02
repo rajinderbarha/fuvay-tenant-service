@@ -15,9 +15,11 @@ that flow never sets `preferred_date`.
 Exercised against the real live 140412/Barha auto store data (no mocks).
 """
 import datetime as dt
+import json
 import uuid
 
 import pytest
+import pytest_asyncio
 
 from app.engines.home_service_booking.provider_slot_service import (
     find_earliest_available_slot, list_available_slots, slot_has_capacity, _slots_from_rule,
@@ -37,6 +39,110 @@ async def _get_db():
     from app.database import get_session_factory, init_db
     await init_db()
     return get_session_factory()()
+
+
+@pytest_asyncio.fixture(scope="module", autouse=True)
+async def _transactional_capacity_fixture():
+    """Give this live-DB slot module isolated, reversible capacity.
+
+    The production tenant is correctly non-bookable until it buys seats and
+    its technician documents are verified. These tests certify slot mechanics,
+    so they provision a tagged entitlement and temporary verified evidence,
+    then restore every touched value when the module finishes.
+    """
+    db = await _get_db()
+    entitlement_id = uuid.uuid4()
+    inserted_document_ids: list[uuid.UUID] = []
+    required = ["technician_identity_proof", "technician_background_check"]
+    original_documents = []
+    original_status = None
+    inserted_status_id = None
+    try:
+        original_documents = (await db.execute(sa_text(
+            "SELECT id, status, expiry_date, verified_at, updated_at "
+            "FROM tenant_documents WHERE tenant_id=:tid AND staff_member_id=:sid "
+            "AND is_current=true AND doc_type = ANY(:types)"
+        ), {"tid": str(PROVIDER_TENANT_ID),
+            "sid": "65b43894-5006-4d71-9911-51ea40f14a88", "types": required})).fetchall()
+        await db.execute(sa_text(
+            "UPDATE tenant_documents SET status='verified', "
+            "expiry_date=now()+interval '1 year', verified_at=now(), updated_at=now() "
+            "WHERE tenant_id=:tid AND staff_member_id=:sid AND is_current=true "
+            "AND doc_type = ANY(:types)"
+        ), {"tid": str(PROVIDER_TENANT_ID),
+            "sid": "65b43894-5006-4d71-9911-51ea40f14a88", "types": required})
+        inserted_document_ids = [row.id for row in (await db.execute(sa_text(
+            "INSERT INTO tenant_documents "
+            "(id, tenant_id, staff_member_id, doc_type, label, file_url, version, "
+            " is_current, status, expiry_date, verified_at, created_at, updated_at) "
+            "SELECT gen_random_uuid(), :tid, CAST(:sid AS uuid), requirement.doc_type, "
+            "'Slot certification evidence', '', 1, true, 'verified', "
+            "now()+interval '1 year', now(), now(), now() "
+            "FROM unnest(CAST(:types AS text[])) AS requirement(doc_type) "
+            "WHERE NOT EXISTS (SELECT 1 FROM tenant_documents existing "
+            " WHERE existing.tenant_id=:tid AND existing.staff_member_id=CAST(:sid AS uuid) "
+            " AND existing.doc_type=requirement.doc_type AND existing.is_current=true) "
+            "RETURNING id"
+        ), {"tid": str(PROVIDER_TENANT_ID),
+            "sid": "65b43894-5006-4d71-9911-51ea40f14a88", "types": required})).fetchall()]
+        await db.execute(sa_text(
+            "INSERT INTO tenant_topup_entitlements "
+            "(id, tenant_id, seats, credit_granted, validity_days, expires_at, status, meta) "
+            "VALUES (:id, :tid, 10, 0, 0, NULL, 'active', "
+            "'{\"test_fixture\":\"provider_slot_promise\"}'::jsonb)"
+        ), {"id": str(entitlement_id), "tid": str(PROVIDER_TENANT_ID)})
+
+        original_status = (await db.execute(sa_text(
+            "SELECT id, is_visible, is_bookable, visibility_blockers, bookability_blockers "
+            "FROM provider_visibility_statuses WHERE tenant_id=:tid "
+            "ORDER BY created_at DESC LIMIT 1"
+        ), {"tid": str(PROVIDER_TENANT_ID)})).fetchone()
+        if original_status:
+            await db.execute(sa_text(
+                "UPDATE provider_visibility_statuses SET is_visible=true, is_bookable=true, "
+                "visibility_blockers='[]'::jsonb, bookability_blockers='[]'::jsonb "
+                "WHERE id=:id"
+            ), {"id": str(original_status.id)})
+        else:
+            inserted_status_id = uuid.uuid4()
+            await db.execute(sa_text(
+                "INSERT INTO provider_visibility_statuses "
+                "(id, tenant_id, is_visible, is_bookable, visibility_blockers, bookability_blockers) "
+                "VALUES (:id, :tid, true, true, '[]'::jsonb, '[]'::jsonb)"
+            ), {"id": str(inserted_status_id), "tid": str(PROVIDER_TENANT_ID)})
+        await db.commit()
+        yield
+    finally:
+        await db.rollback()
+        async with db.begin():
+            await db.execute(sa_text(
+                "DELETE FROM tenant_topup_entitlements WHERE id=:id"
+            ), {"id": str(entitlement_id)})
+            if inserted_document_ids:
+                await db.execute(sa_text(
+                    "DELETE FROM tenant_documents WHERE id = ANY(:ids)"
+                ), {"ids": [str(value) for value in inserted_document_ids]})
+            for document in original_documents:
+                await db.execute(sa_text(
+                    "UPDATE tenant_documents SET status=:status, expiry_date=:expiry, "
+                    "verified_at=:verified, updated_at=:updated WHERE id=:id"
+                ), {"id": str(document.id), "status": document.status,
+                    "expiry": document.expiry_date, "verified": document.verified_at,
+                    "updated": document.updated_at})
+            if original_status:
+                await db.execute(sa_text(
+                    "UPDATE provider_visibility_statuses SET is_visible=:visible, "
+                    "is_bookable=:bookable, visibility_blockers=CAST(:visibility AS jsonb), "
+                    "bookability_blockers=CAST(:bookability AS jsonb) WHERE id=:id"
+                ), {"id": str(original_status.id), "visible": original_status.is_visible,
+                    "bookable": original_status.is_bookable,
+                    "visibility": json.dumps(original_status.visibility_blockers or []),
+                    "bookability": json.dumps(original_status.bookability_blockers or [])})
+            elif inserted_status_id:
+                await db.execute(sa_text(
+                    "DELETE FROM provider_visibility_statuses WHERE id=:id"
+                ), {"id": str(inserted_status_id)})
+        await db.close()
 
 
 async def _insert_live_job(db, tenant_id, day, window) -> uuid.UUID:

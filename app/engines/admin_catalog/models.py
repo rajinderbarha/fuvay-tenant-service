@@ -1042,6 +1042,8 @@ class TenantService(ServiceOSBase):
     # is intentionally separate from the legacy identity blueprint version:
     # normalized per-job-type workflow/dimension edits are versioned here.
     setup_rules_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    admin_suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    admin_suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ── Tenant Service Types ──────────────────────────────────────────────────────

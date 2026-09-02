@@ -62,6 +62,13 @@ function adaptJob(dto: ServiceJobDto | null | undefined): CustomerActiveJob | nu
     warrantyDays: dto.warranty_days ?? null,
     warrantyExpiresAt: dto.warranty_expires_at ?? null,
     warrantyActive: dto.warranty_active ?? false,
+    warrantyCertificate: dto.warranty_certificate
+      ? {
+          certificateNumber: dto.warranty_certificate.certificate_number,
+          issuedAt: dto.warranty_certificate.issued_at,
+          downloadPath: dto.warranty_certificate.download_path,
+        }
+      : null,
   };
 }
 

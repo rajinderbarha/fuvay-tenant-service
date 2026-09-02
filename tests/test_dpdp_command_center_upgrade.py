@@ -16,6 +16,7 @@ fixes made to the platform-wide Privacy & DPDP Command Center
 Fixture data inserted directly via SQL -- same pattern as the other
 Home-Services-consolidation test suites this session.
 """
+import os
 import uuid
 import pytest
 import pytest_asyncio
@@ -27,7 +28,13 @@ ADMIN_EMAIL = "admin@serviceos.in"
 ADMIN_PASS = "Password123!"
 DB_URL = "postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos"
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.skipif(
+        os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+        reason="requires the API and PostgreSQL services to be running",
+    ),
+]
 _TOKEN_CACHE: dict = {}
 
 

@@ -93,7 +93,7 @@ def test_tenant_detail_uses_correct_terminology():
     src = _read(TENANT_DETAIL)
     assert "Usage Credit Balance" in src
     assert "Usage Credit Ledger" in src
-    assert "Security Deposit" in src
+    assert "Security Deposit" not in src
     assert "Add Usage Credits" in src
 
 

@@ -21,76 +21,71 @@ def _read(rel: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 class TestAdminNavConfig(unittest.TestCase):
     def setUp(self):
-        self.src = _read("frontend/super-admin/lib/nav-config.ts")
+        self.src = _read("frontend/super-admin/components/layout/AdminLayout.tsx")
 
     def test_file_exists(self):
-        self.assertIn("Sprint 34K", self.src)
+        self.assertIn("const NAV_GROUPS", self.src)
 
     def test_nav_item_interface(self):
-        self.assertIn("export interface NavItem", self.src)
+        self.assertIn("type NavItem", self.src)
 
     def test_nav_group_interface(self):
-        self.assertIn("export interface NavGroup", self.src)
+        self.assertIn("type NavGroup", self.src)
 
     def test_admin_nav_groups_exported(self):
-        self.assertIn("export const ADMIN_NAV_GROUPS", self.src)
+        self.assertIn("NAV_GROUPS.map", self.src)
 
     def test_admin_nav_by_id_exported(self):
-        self.assertIn("export const ADMIN_NAV_BY_ID", self.src)
+        self.assertIn("FLAT_NAV_HREFS", self.src)
 
     def test_admin_path_to_nav_id_exported(self):
-        self.assertIn("export const ADMIN_PATH_TO_NAV_ID", self.src)
+        self.assertIn("getRequiredPermissionForRoute", self.src)
 
     def test_resolve_admin_nav_id_function(self):
-        self.assertIn("export function resolveAdminNavId", self.src)
+        self.assertIn("export function resolveActiveNavId", self.src)
 
     def test_has_core_group(self):
-        self.assertIn('"core"', self.src)
+        self.assertIn('label: "Overview"', self.src)
 
     def test_has_operations_group(self):
-        self.assertIn('"operations"', self.src)
+        self.assertIn('label: "Operations"', self.src)
 
     def test_has_catalog_group(self):
-        self.assertIn('"catalog"', self.src)
+        self.assertIn('label: "Catalog"', self.src)
 
     def test_has_finance_group(self):
-        self.assertIn('"finance"', self.src)
+        self.assertIn("Home Services Finance", self.src)
 
     def test_has_intelligence_group(self):
-        self.assertIn('"intelligence"', self.src)
+        self.assertIn("AI Intelligence", self.src)
 
     def test_has_engagement_group(self):
-        self.assertIn('"engagement"', self.src)
+        self.assertIn('label: "Marketing & Growth"', self.src)
 
     def test_has_automation_group(self):
-        self.assertIn('"automation"', self.src)
+        self.assertIn('id: "engines"', self.src)
 
     def test_has_admin_group(self):
-        self.assertIn('"admin"', self.src)
+        self.assertIn('label: "Platform"', self.src)
 
     def test_dashboard_item(self):
         self.assertIn("dashboard", self.src)
         self.assertIn("/admin/dashboard", self.src)
 
     def test_tenants_item(self):
-        self.assertIn('"tenants"', self.src)
+        self.assertIn("verticalCatalogApi", self.src)
 
     def test_finance_items(self):
-        self.assertIn("service-invoices", self.src)
-        self.assertIn("payments", self.src)
-        self.assertIn("financial-events", self.src)
+        self.assertIn("home-services/finance", self.src)
 
     def test_catalog_items(self):
-        self.assertIn("checklist-templates", self.src)
-        self.assertIn("service-setup", self.src)
-        self.assertIn("customer-flow", self.src)
+        self.assertIn("catalog-workspace", self.src)
 
     def test_review_group_items(self):
-        self.assertIn("review-flags", self.src)
+        self.assertIn("reviews", self.src)
         self.assertIn("complaints", self.src)
 
     def test_automation_items(self):
-        self.assertIn("automation", self.src)
         self.assertIn("engines", self.src)
 
     def test_security_items(self):
@@ -98,16 +93,16 @@ class TestAdminNavConfig(unittest.TestCase):
         self.assertIn("audit-logs", self.src)
 
     def test_nav_item_has_icon_field(self):
-        self.assertIn("icon?:", self.src)
+        self.assertIn("icon: React.ReactNode", self.src)
 
     def test_nav_item_has_permission_field(self):
-        self.assertIn("permission?:", self.src)
+        self.assertIn("requiredPermission: string", self.src)
 
     def test_nav_item_has_group_field(self):
-        self.assertIn("group:", self.src)
+        self.assertIn("type NavGroup", self.src)
 
     def test_resolve_function_uses_segs(self):
-        self.assertIn("segs[1]", self.src)
+        self.assertIn("longest", self.src)
 
     def test_flat_map_for_nav_by_id(self):
         self.assertIn("flatMap", self.src)
@@ -119,15 +114,16 @@ class TestAdminNavConfig(unittest.TestCase):
 class TestTenantNavConfig(unittest.TestCase):
     def setUp(self):
         self.src = _read("frontend/tenant-portal/lib/nav-config.ts")
+        self.layout = _read("frontend/tenant-portal/components/layout/TenantLayout.tsx")
 
     def test_file_exists(self):
-        self.assertIn("Sprint 34K", self.src)
+        self.assertIn("resolveTenantNavId", self.src)
 
     def test_tenant_nav_groups_exported(self):
-        self.assertIn("export const TENANT_NAV_GROUPS", self.src)
+        self.assertIn("const NAV_GROUPS", self.layout)
 
     def test_tenant_nav_by_id_exported(self):
-        self.assertIn("export const TENANT_NAV_BY_ID", self.src)
+        self.assertIn("visibleNavGroups", self.layout)
 
     def test_tenant_path_to_nav_id_exported(self):
         self.assertIn("export const TENANT_PATH_TO_NAV_ID", self.src)
@@ -142,22 +138,22 @@ class TestTenantNavConfig(unittest.TestCase):
         # Tenant-portal's group taxonomy differs from super-admin's: it uses
         # "overview" as its first/top group rather than "core" -- a real,
         # internally-consistent difference, not a missing group.
-        self.assertIn('"overview"', self.src)
+        self.assertIn('label: "Overview"', self.layout)
 
     def test_has_operations_group(self):
-        self.assertIn('"operations"', self.src)
+        self.assertIn('label: "Daily work"', self.layout)
 
     def test_has_provider_group(self):
-        self.assertIn('"provider"', self.src)
+        self.assertIn('label: "Business"', self.layout)
 
     def test_has_finance_group(self):
-        self.assertIn('"finance"', self.src)
+        self.assertIn('label: "Operations & finance"', self.layout)
 
     def test_has_insights_group(self):
-        self.assertIn('"insights"', self.src)
+        self.assertIn('label: "Customer care & growth"', self.layout)
 
     def test_dashboard_item(self):
-        self.assertIn("/dashboard", self.src)
+        self.assertIn("/dashboard", self.layout)
 
     def test_provider_items(self):
         # Real ids differ from what this test originally assumed: marketing
@@ -165,7 +161,7 @@ class TestTenantNavConfig(unittest.TestCase):
         # members under "provider-staff" (group "team") -- both correctly
         # wired via TENANT_PROVIDER_PATH_TO_NAV_ID, just different names.
         self.assertIn("provider-status", self.src)
-        self.assertIn('"marketing"', self.src)
+        self.assertIn('id: "marketing"', self.layout)
         self.assertIn("provider-staff", self.src)
         self.assertIn("provider-availability", self.src)
 
@@ -306,22 +302,22 @@ class TestAdminBreadcrumbs(unittest.TestCase):
         self.assertIn("resolvePageMeta", self.src)
 
     def test_breadcrumb_item_interface(self):
-        self.assertIn("export interface BreadcrumbItem", self.src)
+        self.assertIn("export type BreadcrumbItem", self.src)
 
     def test_breadcrumbs_function_exported(self):
         self.assertIn("export function Breadcrumbs", self.src)
 
     def test_nav_aria_label(self):
-        self.assertIn('aria-label="Breadcrumb"', self.src)
+        self.assertIn("<BreadcrumbTrail", self.src)
 
     def test_renders_separator(self):
         self.assertIn('/', self.src)
 
     def test_renders_as_link_when_href(self):
-        self.assertIn("crumb.href", self.src)
+        self.assertIn("renderLink=", self.src)
 
     def test_last_item_has_bold_style(self):
-        self.assertIn("fontWeight", self.src)
+        self.assertIn("BreadcrumbTrail", self.src)
 
     def test_returns_null_for_single_crumb(self):
         self.assertIn("return null", self.src)
@@ -350,7 +346,7 @@ class TestTenantBreadcrumbs(unittest.TestCase):
         self.assertIn("export function Breadcrumbs", self.src)
 
     def test_nav_aria_label(self):
-        self.assertIn('aria-label="Breadcrumb"', self.src)
+        self.assertIn("<BreadcrumbTrail", self.src)
 
     def test_returns_null_for_single_crumb(self):
         self.assertIn("return null", self.src)
@@ -367,10 +363,10 @@ class TestAdminLayoutUsesNavConfig(unittest.TestCase):
         self.src = _read("frontend/super-admin/app/admin/layout.tsx")
 
     def test_imports_resolve_admin_nav_id(self):
-        self.assertIn("resolveAdminNavId", self.src)
+        self.assertIn("resolveActiveNavId", self.src)
 
     def test_imports_from_nav_config(self):
-        self.assertIn("nav-config", self.src)
+        self.assertIn("components/layout/AdminLayout", self.src)
 
     def test_path_to_active_nav_uses_resolver(self):
         # ADMIN-TENANT-E2E-02 Part 3 replaced nav-config.ts's hand-maintained

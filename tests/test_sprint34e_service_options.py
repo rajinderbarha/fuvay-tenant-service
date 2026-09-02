@@ -462,7 +462,7 @@ class TestMainPy:
         assert "svc_opt_grp_router" in self.src
 
     def test_svc_opt_router_registered(self):
-        assert "svc_opt_router" in self.src
+        assert "svc_opt_router" not in self.src
 
     def test_svc_iss_router_registered(self):
         assert "svc_iss_router" in self.src

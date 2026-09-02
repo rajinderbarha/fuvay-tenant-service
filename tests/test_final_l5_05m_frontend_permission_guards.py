@@ -172,5 +172,8 @@ class TestPermissionDeniedComponent:
         src = _read(FE / "components" / "shared" / "PermissionGate.tsx")
         idx = src.index("export function RequirePermission")
         body = src[idx:]
-        assert "if (loading || permissions === null)" in body
-        assert "<Skeleton" in body
+        # Authentication and permission hydration are intentionally separate:
+        # both unresolved states must withhold protected content.
+        assert "if (loading || authenticated === null)" in body
+        assert "if (permissions === null)" in body
+        assert body.count("<Skeleton") >= 2

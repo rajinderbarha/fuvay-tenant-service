@@ -212,8 +212,10 @@ class TestNavigationCentralization(unittest.TestCase):
         src = _read("frontend/tenant-portal/app/(tenant)/layout.tsx")
         self.assertNotIn('"team-members":     "provider-team-members"', src)
 
-    def test_admin_nav_config_exists(self):
-        self.assertTrue(_exists("frontend/super-admin/lib/nav-config.ts"))
+    def test_admin_nav_source_exists(self):
+        # AdminLayout owns the rendered, permission-gated navigation. The old
+        # parallel nav-config was removed because it drifted from the sidebar.
+        self.assertTrue(_exists("frontend/super-admin/components/layout/AdminLayout.tsx"))
 
     def test_tenant_nav_config_exists(self):
         self.assertTrue(_exists("frontend/tenant-portal/lib/nav-config.ts"))
@@ -231,14 +233,15 @@ class TestNavigationCentralization(unittest.TestCase):
         self.assertTrue(_exists("frontend/tenant-portal/components/layout/Breadcrumbs.tsx"))
 
     def test_admin_nav_has_customer_flow_entry(self):
-        src = _read("frontend/super-admin/lib/nav-config.ts")
+        src = _read("frontend/super-admin/components/layout/AdminLayout.tsx")
         self.assertIn("customer-flow", src)
 
     def test_admin_nav_has_all_finance_items(self):
-        src = _read("frontend/super-admin/lib/nav-config.ts")
-        self.assertIn("service-invoices", src)
-        self.assertIn("provider-wallets", src)
-        self.assertIn("commission-records", src)
+        src = _read("frontend/super-admin/components/layout/AdminLayout.tsx")
+        self.assertIn("home-services-finance", src)
+        self.assertNotIn('id: "service-invoices"', src)
+        self.assertNotIn('id: "provider-wallets"', src)
+        self.assertNotIn('id: "commission-records"', src)
 
     def test_admin_page_registry_has_audit_trail(self):
         src = _read("frontend/super-admin/lib/page-registry.ts")
@@ -540,7 +543,7 @@ class TestResponsiveAccessibility(unittest.TestCase):
 
     def test_breadcrumbs_has_aria_label(self):
         src = _read("frontend/super-admin/components/layout/Breadcrumbs.tsx")
-        self.assertIn('aria-label="Breadcrumb"', src)
+        self.assertIn("BreadcrumbTrail", src)
 
     def test_customer_flow_page_has_loading_state(self):
         src = _read("frontend/super-admin/app/admin/customer-flow/page.tsx")
@@ -587,7 +590,7 @@ class TestLargeDataPagination(unittest.TestCase):
         self.assertIn("page=page", src)
 
     def test_brand_list_has_limit(self):
-        src = _read("app/engines/brands/admin_router.py")
+        src = _read("app/engines/admin_catalog/brand_router.py")
         self.assertIn("limit", src)
 
 
@@ -672,7 +675,7 @@ class TestNavConfigCompleteness(unittest.TestCase):
     """Verify nav-config has all Sprint 34 pages mapped."""
 
     def setUp(self):
-        self.admin_nav = _read("frontend/super-admin/lib/nav-config.ts")
+        self.admin_nav = _read("frontend/super-admin/components/layout/AdminLayout.tsx")
         self.admin_registry = _read("frontend/super-admin/lib/page-registry.ts")
 
     def test_customer_flow_in_nav(self):
@@ -697,7 +700,7 @@ class TestNavConfigCompleteness(unittest.TestCase):
         self.assertIn("audit-logs", self.admin_nav)
 
     def test_resolve_function_exists_in_nav(self):
-        self.assertIn("resolveAdminNavId", self.admin_nav)
+        self.assertIn("resolveActiveNavId", self.admin_nav)
 
     def test_resolve_function_exists_in_registry(self):
         self.assertIn("resolvePageMeta", self.admin_registry)

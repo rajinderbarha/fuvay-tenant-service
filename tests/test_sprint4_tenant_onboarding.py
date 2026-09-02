@@ -96,6 +96,11 @@ def _make_db():
     db.flush = AsyncMock()
     db.execute = AsyncMock()
     db.commit = AsyncMock()
+    # AsyncSession.begin_nested() returns an async context manager directly;
+    # model that contract instead of AsyncMock's default coroutine return.
+    db.begin_nested = MagicMock()
+    db.begin_nested.return_value.__aenter__ = AsyncMock(return_value=None)
+    db.begin_nested.return_value.__aexit__ = AsyncMock(return_value=None)
     return db
 
 
@@ -577,6 +582,7 @@ async def test_staff_not_found():
 # ═══════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy tenant credit methods moved to the finance/credits engine")
 async def test_get_credit_wallet_not_found():
     from app.exceptions import ServiceOSException
     db = _make_db()
@@ -589,6 +595,7 @@ async def test_get_credit_wallet_not_found():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy tenant credit methods moved to the finance/credits engine")
 async def test_credit_topup():
     db = _make_db()
     tenant = _make_tenant()
@@ -603,6 +610,7 @@ async def test_credit_topup():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy tenant credit methods moved to the finance/credits engine")
 async def test_credit_adjust_requires_reason():
     from app.exceptions import ServiceOSException
     db = _make_db()
@@ -613,6 +621,7 @@ async def test_credit_adjust_requires_reason():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy tenant credit methods moved to the finance/credits engine")
 async def test_credit_adjust_negative():
     db = _make_db()
     tenant = _make_tenant()
@@ -758,12 +767,12 @@ def test_error_tenant_service_area_invalid():
     assert "TENANT_SERVICE_AREA_INVALID" in _get_all_error_codes()
 
 
-def test_error_security_deposit_not_found():
-    assert "SECURITY_DEPOSIT_NOT_FOUND" in _get_all_error_codes()
+def test_retired_security_deposit_not_found_error_is_absent():
+    assert "SECURITY_DEPOSIT_NOT_FOUND" not in _get_all_error_codes()
 
 
-def test_error_security_deposit_already_paid():
-    assert "SECURITY_DEPOSIT_ALREADY_PAID" in _get_all_error_codes()
+def test_retired_security_deposit_already_paid_error_is_absent():
+    assert "SECURITY_DEPOSIT_ALREADY_PAID" not in _get_all_error_codes()
 
 
 def test_error_credit_wallet_not_found():

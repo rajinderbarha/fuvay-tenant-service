@@ -31,16 +31,15 @@ def test_lifecycle_is_audited_recoverable_and_reasoned():
     assert '/service-groups/bulk-status' in router
 
 
-def test_inner_and_retired_pages_are_real_routes_with_connected_links():
+def test_detail_and_directory_pages_are_connected_without_retired_duplicate():
     detail = read("frontend/super-admin/app/admin/service-groups/[id]/page.tsx")
-    retired = read("frontend/super-admin/app/admin/service-groups/retired/page.tsx")
     directory = read("frontend/super-admin/app/admin/service-groups/page.tsx")
     assert "getServiceGroupAudit" in detail
     assert "/admin/master-services?service_group_id=" in detail
     assert "/admin/categories/" in detail
-    assert "restoreServiceGroup" in retired
+    assert not (ROOT / "frontend/super-admin/app/admin/service-groups/retired/page.tsx").exists()
     assert 'resourceKey="admin_service_groups"' in directory
-    assert "/admin/service-groups/retired" in directory
+    assert "/admin/service-groups/retired" not in directory
     assert "bulkServiceGroupStatus" in directory
 
 

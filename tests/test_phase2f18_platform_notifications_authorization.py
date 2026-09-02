@@ -315,10 +315,12 @@ class TestPreferenceValidation:
         from app.engines.platform_notifications.constants import ERR_NOTIF_INVALID_PREFERENCE
         svc = NotificationService()
         db = _db()
-        with pytest.raises(ValueError, match=ERR_NOTIF_INVALID_PREFERENCE):
+        from app.exceptions import ServiceOSException
+        with pytest.raises(ServiceOSException) as exc:
             await svc.update_preference(
                 db, uuid.uuid4(), uuid.uuid4(), "chat.new_message", "carrier_pigeon", True,
             )
+        assert exc.value.error_code == ERR_NOTIF_INVALID_PREFERENCE
         db.add.assert_not_called()
         db.commit.assert_not_called()
 
@@ -328,10 +330,12 @@ class TestPreferenceValidation:
         from app.engines.platform_notifications.constants import ERR_NOTIF_INVALID_PREFERENCE
         svc = NotificationService()
         db = _db()
-        with pytest.raises(ValueError, match=ERR_NOTIF_INVALID_PREFERENCE):
+        from app.exceptions import ServiceOSException
+        with pytest.raises(ServiceOSException) as exc:
             await svc.update_preference(
                 db, uuid.uuid4(), uuid.uuid4(), "not.a.real.event", "in_app", True,
             )
+        assert exc.value.error_code == ERR_NOTIF_INVALID_PREFERENCE
         db.add.assert_not_called()
         db.commit.assert_not_called()
 

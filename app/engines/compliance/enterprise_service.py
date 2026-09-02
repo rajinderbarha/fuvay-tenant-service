@@ -28,6 +28,7 @@ from app.engines.compliance.models import (
     ConsentRecord,
     DataRetentionPolicy,
     DPDPPolicyVersion,
+    DPDPSchedulerRun,
 )
 from app.engines.compliance.service import ComplianceService
 from app.exceptions import NotFoundException, ServiceOSException
@@ -95,6 +96,15 @@ DATA_MODULES = [
     {"module": "Consent Records",     "record_type": "consent_records",     "action": "retain",
      "exemption": "Legal compliance record — retain per DPDP Act 2023"},
 ]
+
+# Only modules with a proven, subject-scoped query belong here. Every other
+# module is disclosed as unwired instead of returning an ambiguous fake zero.
+CUSTOMER_DISCOVERY_QUERIES = {
+    "Customer Profile": "SELECT count(*) FROM users WHERE id = :subject_id",
+    "Reviews": "SELECT count(*) FROM customer_reviews WHERE customer_id = :subject_id",
+    "Complaints": "SELECT count(*) FROM customer_complaints WHERE customer_id = :subject_id",
+    "Consent Records": "SELECT count(*) FROM consent_records WHERE user_id = :subject_id",
+}
 
 
 class ComplianceEnterpriseService:
@@ -338,6 +348,12 @@ class ComplianceEnterpriseService:
             await self.db.delete(item)
         await self.db.flush()
 
+        discovery_queries = (
+            CUSTOMER_DISCOVERY_QUERIES if req.subject_type == "customer" else {}
+        )
+        counts_by_category: dict[str, int] = {}
+        categories_with_data: list[str] = []
+        unwired_modules: list[str] = []
         items = []
         for module in DATA_MODULES:
             action = module["action"]
@@ -348,11 +364,25 @@ class ComplianceEnterpriseService:
             elif action == "retain" and exemption:
                 pass  # keep retain + exemption as-is
 
+            query = discovery_queries.get(module["module"])
+            if query:
+                count_result = await self.db.execute(
+                    text(query), {"subject_id": req.subject_id})
+                record_count = int(count_result.scalar_one())
+                counts_by_category[module["module"]] = record_count
+                if record_count > 0:
+                    categories_with_data.append(module["module"])
+            else:
+                # The column remains non-null, while the API explicitly marks
+                # this module as not covered by automated discovery.
+                record_count = 0
+                unwired_modules.append(module["module"])
+
             item = ComplianceRequestItem(
                 request_id=request_id,
                 module_name=module["module"],
                 record_type=module["record_type"],
-                record_count=0,  # placeholder — real scan would query each module
+                record_count=record_count,
                 planned_action=action,
                 exemption_reason=exemption,
                 status="exempted" if action == "retain" else "pending",
@@ -366,10 +396,18 @@ class ComplianceEnterpriseService:
 
         await self._audit(req.subject_id, "request.data_scanned",
                           reference_id=str(request_id),
-                          meta={"modules_scanned": len(DATA_MODULES)})
+                          meta={
+                              "modules_scanned": len(DATA_MODULES),
+                              "modules_wired": len(discovery_queries),
+                              "categories_with_data": categories_with_data,
+                          })
         return {
             "request_id": str(request_id),
             "modules_scanned": len(DATA_MODULES),
+            "modules_wired_for_automated_discovery": list(discovery_queries),
+            "modules_not_wired_for_automated_discovery": unwired_modules,
+            "counts_by_category": counts_by_category,
+            "categories_with_data": categories_with_data,
             "items": [i.to_dict() for i in items],
         }
 
@@ -703,6 +741,83 @@ class ComplianceEnterpriseService:
     # ─────────────────────────────────────────────────────────────────────────
     # HEALTH SCORE
     # ─────────────────────────────────────────────────────────────────────────
+
+    async def list_dpdp_policy_versions(self) -> dict:
+        """Return published DPDP policy metadata newest-first.
+
+        The health calculation already resolves this table, so exposing the
+        same source lets the admin command center explain which policy and SLA
+        rules produced the displayed compliance state.
+        """
+        result = await self.db.execute(
+            select(DPDPPolicyVersion)
+            .order_by(
+                DPDPPolicyVersion.is_active.desc(),
+                DPDPPolicyVersion.effective_date.desc(),
+                DPDPPolicyVersion.created_at.desc(),
+            )
+        )
+        items = result.scalars().all()
+        return {
+            "items": [
+                {
+                    "id": str(policy.id),
+                    "policy_name": policy.policy_name,
+                    "policy_version": policy.policy_version,
+                    "publication_date": policy.publication_date.isoformat(),
+                    "effective_date": policy.effective_date.isoformat(),
+                    "enforcement_phase": policy.enforcement_phase,
+                    "applicable_request_types": policy.applicable_request_types or [],
+                    "sla_policy": policy.sla_policy or {},
+                    "retention_policy_version": policy.retention_policy_version,
+                    "evidence_requirements": policy.evidence_requirements or {},
+                    "last_policy_review": (
+                        policy.last_policy_review.isoformat()
+                        if policy.last_policy_review else None
+                    ),
+                    "approved_by": policy.approved_by,
+                    "superseded_version": policy.superseded_version,
+                    "is_active": policy.is_active,
+                    "source_reference": policy.source_reference,
+                }
+                for policy in items
+            ],
+            "total": len(items),
+        }
+
+    async def get_dpdp_scheduler_status(self) -> dict:
+        """Return health derived from the latest persisted evaluator run."""
+        result = await self.db.execute(
+            select(DPDPSchedulerRun)
+            .where(DPDPSchedulerRun.job_name == "dpdp_sla_evaluator")
+            .order_by(DPDPSchedulerRun.started_at.desc())
+            .limit(1)
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            return {
+                "status": "never_run",
+                "job_name": "dpdp_sla_evaluator",
+                "last_run_at": None,
+                "last_run_trigger": None,
+            }
+
+        health = "healthy" if run.status == "completed" else "failed"
+        return {
+            "status": health,
+            "job_name": run.job_name,
+            "scheduler_run_id": str(run.id),
+            "last_run_status": run.status,
+            "last_run_trigger": run.trigger,
+            "last_run_at": run.started_at.isoformat(),
+            "last_completed_at": (
+                run.completed_at.isoformat() if run.completed_at else None
+            ),
+            "requests_evaluated": run.requests_evaluated,
+            "due_soon_generated": run.due_soon_generated,
+            "breaches_generated": run.breaches_generated,
+            "error_message": run.error_message,
+        }
 
     async def get_health(self) -> dict:
         summary = await self.get_enterprise_summary()

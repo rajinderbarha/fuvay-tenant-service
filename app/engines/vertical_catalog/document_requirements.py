@@ -13,7 +13,7 @@ manifest below changes in a way that affects what's required.
 """
 from __future__ import annotations
 
-POLICY_VERSION = "2026-07-01"
+POLICY_VERSION = "2026-09-01"
 
 # Requirement keys are stable identifiers, never display text -- the display
 # label/description/examples can change without invalidating already-mapped
@@ -76,36 +76,18 @@ _VERTICAL_EXTRA_REQUIREMENTS: dict[str, list[dict]] = {
     ],
 }
 
-# Technician-level requirements, distinct from the business-level manifest
-# above -- resolved by vertical only (technician evidence isn't affected by
-# the tenant's own business_type). Same key/shape contract, so the
-# submit/review/versioning pipeline in the workspace router is identical
-# for both subjects, just scoped by staff_member_id.
+# Technician evidence is provider-owned. ServiceOS verifies the business that
+# joins the marketplace; the provider is legally and operationally responsible
+# for checking the people it sends to a customer's address. Optional skill
+# evidence may still be stored in the provider's private workspace, but it is
+# never a platform approval or assignment gate.
 _TECHNICIAN_BASE_REQUIREMENTS = [
     {
-        "key": "technician_identity_proof",
-        "label": "Identity proof",
-        "why": "Confirms the technician's identity before they are assigned jobs.",
-        "accepted_examples": ["Aadhaar", "PAN card", "Passport", "Driver's license"],
-        "required": True,
-        "requires_document_number": True,
-        "requires_expiry": True,
-    },
-    {
         "key": "technician_skill_certificate",
-        "label": "Skill certification",
-        "why": "Confirms the technician is trained for the services they perform.",
+        "label": "Skill certificate (optional, provider records only)",
+        "why": "Helps the provider keep its own training records. ServiceOS does not verify or require it.",
         "accepted_examples": ["ITI certificate", "Trade certificate", "Manufacturer training certificate"],
         "required": False,
-        "requires_document_number": False,
-        "requires_expiry": True,
-    },
-    {
-        "key": "technician_background_check",
-        "label": "Background verification",
-        "why": "Confirms the technician has no disqualifying history before entering customer homes.",
-        "accepted_examples": ["Police verification certificate"],
-        "required": True,
         "requires_document_number": False,
         "requires_expiry": True,
     },
@@ -120,7 +102,9 @@ def resolve_technician_requirements(*, vertical: str) -> list[dict]:
 
 
 def required_technician_keys(*, vertical: str) -> set[str]:
-    return {r["key"] for r in resolve_technician_requirements(vertical=vertical) if r["required"]}
+    # Deliberately empty: technician identity/background checks are the
+    # provider's responsibility and cannot block marketplace readiness.
+    return set()
 
 
 def resolve_requirements(*, vertical: str, business_type: str | None, country: str | None = "India") -> list[dict]:

@@ -22,8 +22,8 @@ import {
 import { useRazorpayCheckout } from "../../../hooks/useRazorpayCheckout";
 
 const GATE_ICON: Record<string, React.ReactNode> = {
-  security_deposit: <ShieldCheck size={16}/>,
   category_wallet: <Wallet size={16}/>,
+  technician_seats: <Users2 size={16}/>,
   approved_services: <Tag size={16}/>,
   coverage_availability: <MapPin size={16}/>,
   staff_capacity: <Users2 size={16}/>,
@@ -47,7 +47,6 @@ function gateBadge(state: ActivationGate["state"]): { label: string; variant: "s
 const ACTIVITY_LABEL: Record<string, string> = {
   "enrollment.approved_pending_activation": "Setup approved",
   "enrollment.activation_requirements_pending": "Activation requirements created",
-  "activation.deposit_verified": "Deposit verified",
   "enrollment.activating": "Activating",
   "enrollment.active": "Activated",
 };
@@ -106,7 +105,7 @@ export default function ActivationCenterPage() {
         currency: order.currency, name: "Fuvay — Home Services Activation",
         description: order.quote?.checkout_mode === "credits_only"
           ? "Starter usage credits"
-          : "Security deposit and starter credits",
+          : "Technician seats and usage credits",
       });
       await activationPaymentApi.confirmFunding(payment);
       setPaymentNotice("Payment confirmed. The activation checklist has been refreshed.");
@@ -172,7 +171,7 @@ export default function ActivationCenterPage() {
   const pct = totalRequired > 0 ? Math.round((readyCount / totalRequired) * 100) : 100;
   const isActive = data.status === "active";
   const fundingGateKey = gates.find(g =>
-    (g.key === "security_deposit" || g.key === "category_wallet") && g.state === "action_required"
+    g.key === "category_wallet" && g.state === "action_required"
   )?.key;
   const activityRows = data.review_activity.filter(a => a.action in ACTIVITY_LABEL || a.action.startsWith("enrollment.activ"));
 
@@ -261,7 +260,7 @@ export default function ActivationCenterPage() {
                       {payingGate === "funding" ? "Opening…" : (finance?.activation_requirements?.funding_quote?.checkout_label ?? "Complete funding")}
                     </Btn>
                   )}
-                  {canAct && g.key !== "security_deposit" && g.key !== "category_wallet" && (
+                  {canAct && g.key !== "category_wallet" && (
                     <Btn variant="secondary" size="sm" onClick={() => router.push("/help")}>Resolve</Btn>
                   )}
                 </div>
@@ -302,12 +301,8 @@ export default function ActivationCenterPage() {
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px" }}>Finance policy</p>
               <PolicyRow label="Revenue model" value={finance.policy.revenue_model}/>
               <PolicyRow label="Customer pays" value={finance.policy.customer_pays}/>
-              <PolicyRow label="Security deposit" value={
-                gates.find(g => g.key === "security_deposit")?.required ? "Required" : "Not required"
-              }/>
-              <PolicyRow label="Wallet" value={
-                gates.find(g => g.key === "category_wallet")?.state === "ready" ? "Created after verification" : "Created after deposit verification"
-              }/>
+              <PolicyRow label="Usage credits" value="Optional until the booking floor"/>
+              <PolicyRow label="Technician seats" value="Purchase before adding technicians"/>
               <PolicyRow label="Policy version" value={finance.policy.policy_version}/>
             </Card>
           )}

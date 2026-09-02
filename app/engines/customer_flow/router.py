@@ -103,6 +103,7 @@ async def list_customer_offerings(
     category_slug: str,
     r: Request,
     search: str | None = Query(None),
+    zipcode: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     svc: CustomerCategoryFlowService = Depends(_svc),
@@ -112,7 +113,8 @@ async def list_customer_offerings(
     Inactive offerings are hidden. Returns 404 if category is not visible.
     """
     data = await svc.list_customer_offerings(
-        slug_or_id=category_slug, search=search, page=page, page_size=page_size
+        slug_or_id=category_slug, search=search, zipcode=zipcode,
+        page=page, page_size=page_size,
     )
     return ok(data, _rid(r), "customer_flow")
 
@@ -127,12 +129,15 @@ async def get_customer_offering(
     category_slug: str,
     offering_slug: str,
     r: Request,
+    zipcode: str | None = Query(None),
     svc: CustomerCategoryFlowService = Depends(_svc),
 ):
     """
     Returns offering detail including required fields, flow hints, and price metadata.
     """
-    data = await svc.get_customer_offering_detail(category_slug, offering_slug)
+    data = await svc.get_customer_offering_detail(
+        category_slug, offering_slug, zipcode=zipcode,
+    )
     return ok(data, _rid(r), "customer_flow")
 
 
@@ -191,6 +196,7 @@ async def resolve_customer_flow(
 async def customer_search(
     r: Request,
     q: str = Query(..., min_length=1, description="Search query"),
+    zipcode: str | None = Query(None),
     category_id: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -200,5 +206,8 @@ async def customer_search(
     Searches categories and offerings. Returns only customer-visible results.
     """
     cat_id = uuid.UUID(category_id) if category_id else None
-    data = await svc.search(q=q, category_id=cat_id, page=page, page_size=page_size)
+    data = await svc.search(
+        q=q, category_id=cat_id, zipcode=zipcode,
+        page=page, page_size=page_size,
+    )
     return ok(data, _rid(r), "customer_flow")

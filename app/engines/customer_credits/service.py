@@ -233,11 +233,8 @@ class DisputeSettlementService:
                                  amount: Decimal, strategy: str) -> dict:
         """Show what a settlement will take from the tenant's credit balance.
 
-        Only two funding strategies remain real: take it from tenant credit,
-        or have the platform absorb it as goodwill. The deposit-backed
-        strategies went with the deposit (migration 318) and are normalised to
-        `tenant_wallet` rather than rejected, so an admin console still holding
-        the old value keeps working instead of 422-ing.
+        Only two funded strategies are real: take it from tenant credit, or
+        have the platform absorb it as goodwill.
 
         `tenant_wallet` deliberately does NOT cap the deduction at the current
         balance. The customer is owed the full settlement either way; capping
@@ -245,11 +242,15 @@ class DisputeSettlementService:
         balance is allowed to go negative, which puts the tenant below
         `credit_booking_floor` and stops new bookings until they top up.
         """
+        if strategy not in VALID_DEDUCTION_STRATEGIES:
+            raise ServiceOSException(
+                "VALIDATION_ERROR",
+                f"deduction_strategy must be one of: {sorted(VALID_DEDUCTION_STRATEGIES)}",
+                status_code=422,
+            )
+
         wallet = await self._get_wallet(tenant_id)
         wallet_balance = _two(wallet.credit_balance if wallet else Decimal("0"))
-
-        if strategy in ("security_deposit", "tenant_wallet_then_security_deposit"):
-            strategy = "tenant_wallet"
 
         wallet_deduct = Decimal("0")
         goodwill_amount = Decimal("0")

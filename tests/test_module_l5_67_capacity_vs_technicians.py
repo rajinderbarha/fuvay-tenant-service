@@ -1,8 +1,9 @@
-"""Slot capacity has one authority: active technicians on the roster.
+"""Slot capacity has one authority: funded, verified technicians.
 
 Legacy availability rows may still carry ``max_bookings_per_slot``, but the
-runtime deliberately ignores it. Capacity is HEADCOUNT -- one active technician
-creates one place in a slot; a missing or unreadable team creates none.
+runtime deliberately ignores it. Capacity is HEADCOUNT -- one verified active
+technician creates one place, capped by live purchased seats; a missing or
+unreadable team creates none.
 
 Neither the requested service nor the weekday narrows that count any more.
 They used to, which made slot capacity disagree with the seats a provider had
@@ -73,6 +74,10 @@ class TestCountingTheTeam:
         sql = str(db.execute.await_args.args[0])
         assert "provider_team_members" in sql
         assert "can_receive_assignment" in sql
+        assert "tenant_documents" in sql
+        assert "status = 'verified'" in sql
+        assert "tenant_topup_entitlements" in sql
+        assert "LEAST" in sql
         assert "staff_members" not in sql
 
     @pytest.mark.asyncio
@@ -97,6 +102,17 @@ class TestCountingTheTeam:
         assert "provider_availability_rules" not in sql
         assert "msid" not in params
         assert "dow" not in params
+
+    @pytest.mark.asyncio
+    async def test_required_document_manifest_is_passed_to_capacity_query(self):
+        db = self._db(1)
+        await assignable_technician_count(db, TENANT)
+        params = db.execute.await_args.args[1]
+        assert set(params["required_documents"]) == {
+            "technician_identity_proof",
+            "technician_background_check",
+        }
+        assert params["required_count"] == 2
 
     @pytest.mark.asyncio
     async def test_same_count_with_or_without_service_and_day(self):

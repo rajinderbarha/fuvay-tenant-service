@@ -151,7 +151,6 @@ class PlatformAnalyticsService:
             "pending_approvals": pending_approvals,
             "new_providers": new_providers,
             "customer_service_credits_issued": float(customer_service_credits_issued or 0),
-            "security_deposit_held": 0.0,
             "active_customers": active_customers,
         }
 
@@ -547,7 +546,6 @@ class PlatformAnalyticsService:
             "completed_job_deductions": float(completed_job_deductions or 0),
             "provider_direct_service_value": float(provider_direct_service_value or 0),
             "customer_service_credits_issued": float(customer_service_credits_issued or 0),
-            "security_deposits_held": 0.0,
             "failed_deductions": failed_deductions,
         }
 

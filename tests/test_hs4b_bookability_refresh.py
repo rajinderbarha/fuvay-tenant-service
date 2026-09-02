@@ -41,6 +41,10 @@ def _refresh_fn() -> str:
     return ROUTER_PY.split('async def refresh_provider_status')[1].split("@router.get(\"/status/offerings\")")[0]
 
 
+def _offering_status_fn() -> str:
+    return ROUTER_PY.split('async def get_offering_statuses')[1].split("@router.get(\"/onboarding/status\")")[0]
+
+
 # ── 1. Refresh is no longer a no-op ───────────────────────────────────────────
 def test_refresh_is_not_a_noop():
     fn = _refresh_fn()
@@ -108,10 +112,17 @@ def test_missing_usage_credits_blocks_bookable():
     assert "credit_balance > 0" in fn
 
 
-def test_missing_security_deposit_blocks_bookable():
+def test_missing_ready_technician_capacity_blocks_bookable():
     fn = _eval_fn()
-    assert "SECURITY_DEPOSIT_REQUIRED" in fn
-    assert "deposit_satisfied" in fn
+    assert "READY_TECHNICIAN_MISSING" in fn
+    assert "staff_capacity_ready" in fn
+
+
+def test_missing_or_over_limit_seats_block_bookable():
+    fn = _eval_fn()
+    assert "get_seat_usage" in fn
+    assert "TECHNICIAN_SEATS_REQUIRED" in fn
+    assert "seat_capacity_ready" in fn
 
 
 def test_suspended_tenant_blocks_bookable():
@@ -120,12 +131,33 @@ def test_suspended_tenant_blocks_bookable():
     assert "tenant_active" in fn
 
 
+def test_unapproved_tenant_blocks_visibility_and_bookability():
+    fn = _eval_fn()
+    assert 'tenant_row.status == "active"' in fn
+    assert 'tenant_row.verification_status in ("approved", "verified")' in fn
+
+
+def test_pending_first_document_has_no_replacement_grace():
+    fn = _eval_fn()
+    assert "valid_previous" in fn
+    assert "replacement_in_review and valid_previous" in fn
+
+
 def test_is_bookable_requires_all_critical_checks():
     fn = _eval_fn()
     # is_bookable must be a conjunction of every critical signal, not just
     # one or two checks
     assert "is_bookable = is_visible and priced_count > 0 and active_areas > 0" in fn
-    assert "availability_count > 0 and credit_balance > 0 and deposit_satisfied" in fn
+    assert "availability_count > 0 and credit_balance > 0" in fn
+    assert "staff_capacity_ready and seat_capacity_ready and not document_blockers" in fn
+
+
+def test_offering_statuses_project_canonical_tenant_services():
+    fn = _offering_status_fn()
+    assert "FROM tenant_services ts" in fn
+    assert "provider_offering_bookable_statuses" not in fn
+    assert "_evaluate_provider_bookability" in fn
+    assert "coverage_by_service" in fn
 
 
 # ── 4. Response shape matches the ticket's required fields ───────────────────

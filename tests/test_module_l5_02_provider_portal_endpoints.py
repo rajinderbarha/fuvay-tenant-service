@@ -1,10 +1,8 @@
 """MODULE-L5-02 — tenant-portal endpoint resilience.
 
-Live verification (as tenant_owner) of the tenant-portal found four endpoints
-returning 500 for the demo tenant: provider wallet (bare ValueError) and three
-that query un-provisioned tables (provider_onboarding_statuses,
-provider_onboarding_items, provider_package_purchases). All now degrade
-gracefully to a sensible default. These tests pin the source-level fixes.
+Live verification (as tenant_owner) found endpoints querying un-provisioned
+legacy tables. Onboarding is now projected from the canonical operational
+gates; the wallet still degrades safely when no row exists.
 """
 from pathlib import Path
 
@@ -19,22 +17,24 @@ def test_provider_wallet_handles_missing_wallet():
     assert "except ValueError" in body and '"current_balance": "0"' in body
 
 
-def _guarded(marker: str) -> bool:
-    idx = PROV_ROUTER.index(marker)
-    body = PROV_ROUTER[idx:idx + 1400]
-    return "except Exception" in body and "rollback" in body
+def test_onboarding_status_uses_live_canonical_gates():
+    helper = PROV_ROUTER[PROV_ROUTER.index("async def _build_live_provider_onboarding"):]
+    assert "_evaluate_provider_bookability" in helper
+    assert "provider_onboarding_statuses" not in helper
+    assert '"progress_percentage"' in helper
 
 
-def test_onboarding_status_guarded():
-    assert _guarded('async def get_onboarding_status(')
+def test_onboarding_items_are_actionable_not_an_empty_placeholder():
+    helper = PROV_ROUTER[PROV_ROUTER.index("async def _build_live_provider_onboarding"):]
+    for key in ("services_published", "service_area", "technician_ready", "technician_seats"):
+        assert key in helper
+    body = PROV_ROUTER[PROV_ROUTER.index("async def get_onboarding_items("):]
+    assert '_build_live_provider_onboarding' in body[:800]
 
 
-def test_onboarding_items_guarded():
-    assert _guarded('async def get_onboarding_items(')
-
-
-def test_packages_status_guarded():
-    assert _guarded('async def get_packages_status(')
+def test_retired_package_status_endpoint_is_absent():
+    assert 'async def get_packages_status(' not in PROV_ROUTER
+    assert "provider_package_purchases" not in PROV_ROUTER
 
 
 def test_bookability_price_range_counts_fixed_price_services():

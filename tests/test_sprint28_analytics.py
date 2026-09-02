@@ -207,7 +207,7 @@ def test_registry_admin_financial_has_extra_filters():
     from app.engines.analytics.report_definitions import ReportDefinitionRegistry
     from app.engines.analytics.constants import RPT_ADMIN_FINANCIAL
     defn = ReportDefinitionRegistry.get(RPT_ADMIN_FINANCIAL)
-    assert "payment_status" in defn.allowed_filters
+    assert defn.allowed_filters == ["date_from", "date_to"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -88,7 +88,7 @@ _reg(NotificationEventConfig(EVT_JOB_CREATED, "Job Created",
      "job.created.in_app"))
 
 _reg(NotificationEventConfig(EVT_JOB_ASSIGNED, "Technician Assigned",
-     "home_service", [CHANNEL_IN_APP], RECIP_CUSTOMER,
+     "home_service", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_CUSTOMER,
      "job.assigned.in_app", also_notify=[RECIP_STAFF]))
 
 _reg(NotificationEventConfig(EVT_JOB_ACCEPTED, "Job Accepted by Tech",
@@ -130,7 +130,7 @@ _reg(NotificationEventConfig(EVT_JOB_COMPLETED, "Job Completed",
 
 # ── Quote ─────────────────────────────────────────────────────────────────────
 _reg(NotificationEventConfig(EVT_QUOTE_SENT, "Quote Sent to Customer",
-     "quote_checklist", [CHANNEL_IN_APP], RECIP_CUSTOMER,
+     "quote_checklist", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_CUSTOMER,
      "quote.sent_to_customer.in_app"))
 
 _reg(NotificationEventConfig(EVT_QUOTE_APPROVED, "Quote Approved by Customer",
@@ -142,7 +142,7 @@ _reg(NotificationEventConfig(EVT_QUOTE_REJECTED, "Quote Rejected by Customer",
      "quote.customer_rejected.in_app", SEV_WARNING))
 
 _reg(NotificationEventConfig(EVT_QUOTE_REVISION, "Quote Revision Requested",
-     "quote_checklist", [CHANNEL_IN_APP], RECIP_PROVIDER,
+     "quote_checklist", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_PROVIDER,
      "quote.customer_rejected.in_app"))
 
 # ── Invoice / Payment ─────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ _reg(NotificationEventConfig(EVT_INVOICE_ISSUED, "Invoice Issued",
      "invoice.issued.in_app"))
 
 _reg(NotificationEventConfig(EVT_PAYMENT_COLLECTED, "Payment Collected",
-     "invoice_payment", [CHANNEL_IN_APP], RECIP_CUSTOMER,
+     "invoice_payment", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_CUSTOMER,
      "payment.collected.in_app", SEV_SUCCESS,
      also_notify=[RECIP_PROVIDER]))
 
@@ -263,7 +263,7 @@ _reg(NotificationEventConfig(EVT_COMPLAINT_RESOLVED, "Complaint Resolved",
 
 # ── System / Admin ────────────────────────────────────────────────────────────
 _reg(NotificationEventConfig(EVT_AUTH_LOGIN_FAILED, "Login Failed",
-     "auth", [CHANNEL_IN_APP], RECIP_ADMIN,
+     "auth", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_ADMIN,
      "tenant.suspended.in_app", SEV_WARNING))
 
 _reg(NotificationEventConfig(EVT_TENANT_VERIFIED, "Provider Verified",
@@ -271,7 +271,7 @@ _reg(NotificationEventConfig(EVT_TENANT_VERIFIED, "Provider Verified",
      "tenant.verified.in_app", SEV_SUCCESS))
 
 _reg(NotificationEventConfig(EVT_TENANT_SUSPENDED, "Provider Suspended",
-     "tenant_engine", [CHANNEL_IN_APP], RECIP_PROVIDER,
+     "tenant_engine", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_PROVIDER,
      "tenant.suspended.in_app", SEV_CRITICAL))
 
 _reg(NotificationEventConfig(EVT_CHAT_NEW_MESSAGE, "New Chat Message",
@@ -282,10 +282,10 @@ _reg(NotificationEventConfig(EVT_CHAT_NEW_MESSAGE, "New Chat Message",
 # Found missing during the "make it 100% working" pass -- registered to match
 # real templates/constants that already existed with no registry entry.
 _reg(NotificationEventConfig(EVT_LEAVE_APPROVED, "Leave Request Approved",
-     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "home_service_assignment", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_STAFF,
      "leave.approved.in_app", SEV_SUCCESS))
 _reg(NotificationEventConfig(EVT_LEAVE_REJECTED, "Leave Request Rejected",
-     "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,
+     "home_service_assignment", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_STAFF,
      "leave.rejected.in_app", SEV_WARNING))
 _reg(NotificationEventConfig(EVT_CORRECTION_APPROVED, "Employment Correction Approved",
      "home_service_assignment", [CHANNEL_IN_APP], RECIP_STAFF,

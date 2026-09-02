@@ -162,12 +162,13 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # Kept under the existing response key for API compatibility, but this is
     # now the count of genuinely ready members rather than active name-only rows.
     active_staff = int(team_summary["counts"]["ready"])
-    # Required only once at least one service is published (nothing to staff
-    # before then); optional_for_now is the honest state for a brand-new
-    # workspace, matching the real absence of any assignable work yet.
-    staff_required = published_count > 0
-    # Zero staff is not "complete". It is optional only until a service is
-    # published, then becomes required and incomplete until someone is ready.
+    # Technician seats are an optional top-up purchased after approval.  With
+    # zero starter seats, making this section required for review created an
+    # impossible loop: the tenant could not add a technician without a plan,
+    # but could not reach approval while it had no technician.  Keep readiness
+    # visible here, but gate customer bookability (where capacity matters)
+    # instead of business verification.
+    staff_required = False
     staff_ready = active_staff > 0 and all(
         row["ready_technician_count"] > 0 for row in service_coverage
     )
@@ -246,8 +247,10 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     _add("STAFF_TECHNICIANS", staff_required, staff_ready,
          "Staff & technicians", "Add the people who deliver services",
          extra={"active_staff": active_staff},
-         blocking_reasons=[] if staff_ready else
-         [{"code": "NO_READY_STAFF", "message": "Published services need at least one active technician."}])
+         blocking_reasons=[],
+         warnings=[] if staff_ready else
+         [{"code": "NO_READY_STAFF", "message":
+           "Buy a technician seat and add a ready technician before receiving bookings."}])
     _add("FINANCE_READINESS", True, finance_ready,
          "Finance readiness", "Top-up credit, technician seats and payment policy",
          extra={"entitled_seats": entitled_seats,

@@ -176,7 +176,7 @@ def test_service_valid_finance_models_has_7():
     idx = src.index("VALID_FINANCE_MODELS")
     segment = src[idx:idx + 500]
     expected = [
-        "security_deposit_plus_credit_wallet", "monthly_subscription", "lead_credit",
+        "credit_wallet_only", "monthly_subscription", "lead_credit",
         "commission_wallet", "product_order_commission", "free_listing", "hybrid",
     ]
     for v in expected:
@@ -380,15 +380,11 @@ def test_categories_page_no_hardcoded_cat_type_map():
 
 def test_pricing_page_no_hardcoded_categories():
     page = os.path.join(SA_PAGES, "pricing", "page.tsx")
-    src = _read(page)
-    # Old static CATEGORIES const with hardcoded verticals should be gone
-    assert "home_services" not in src or "catalogApi" in src  # if home_services still there, must be dynamic
-    assert "catalogApi" in src
+    assert not os.path.exists(page)
 
 def test_pricing_page_loads_categories_dynamically():
     page = os.path.join(SA_PAGES, "pricing", "page.tsx")
-    src = _read(page)
-    assert "listCategories" in src or "catalogApi" in src
+    assert not os.path.exists(page)
 
 def test_catalog_page_has_service_group_filter():
     # Master Services tab promoted to /admin/master-services; check there
@@ -398,13 +394,11 @@ def test_catalog_page_has_service_group_filter():
 
 def test_issue_types_page_has_category_filter():
     page = os.path.join(SA_PAGES, "issue-types", "page.tsx")
-    src = _read(page)
-    assert "categoryFilter" in src or "category_id" in src
+    assert not os.path.exists(page)
 
 def test_service_options_page_has_category_filter():
     page = os.path.join(SA_PAGES, "service-options", "page.tsx")
-    src = _read(page)
-    assert "categoryFilter" in src or "category_id" in src
+    assert not os.path.exists(page)
 
 
 # ── Admin Nav ──────────────────────────────────────────────────────────────────

@@ -843,12 +843,10 @@ class HomeServicesFinanceService:
                     "ledger": "usage_credit_ledger",
                 },
                 "active_usage_credit_balance": str(total_credit_balance),
-                "security_deposits_held": "0",  # deposits retired (migration 318)
             },
             "secondary": {
                 "low_credit_providers": low_balance_tenants,
                 "failed_charge_recoveries": charges["missing_charges"],
-                "deposit_return_requests": 0,  # deposits retired (migration 318)
                 "warranty_financial_exposure": warranty.get("open_exposure", "0"),
                 "finance_exceptions": payments["disputed"] + charges["missing_charges"],
             },

@@ -14,6 +14,15 @@ import pytest
 
 ZIPCODE_140412 = "140412"
 
+_ISSUES = [
+    {"id": "gas-refill", "label": "Gas Refill Needed"},
+    {"id": "new-installation", "label": "New AC Installation"},
+]
+
+
+async def _catalog(*_args, **_kwargs):
+    return {"category": "Air Conditioning", "issues": _ISSUES}
+
 
 async def _get_db():
     from app.database import get_session_factory, init_db
@@ -32,11 +41,10 @@ async def test_free_text_matches_the_correct_issue():
 
     db = await _get_db()
     try:
-        catalog = await list_serviceable_issues(db, "air-conditioning", ZIPCODE_140412)
-        gas = next(i for i in catalog["issues"] if i["label"] == "Gas Refill Needed")
+        gas = _ISSUES[0]
 
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(return_value=_deepseek_response({
                 "action": "match_option", "reply": "Gas refilling it is.",
@@ -58,7 +66,7 @@ async def test_invented_issue_id_is_rejected():
     db = await _get_db()
     try:
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(return_value=_deepseek_response({
                 "action": "match_option", "reply": "Sure!",
@@ -80,11 +88,10 @@ async def test_low_confidence_match_repeats_issue_prompt():
 
     db = await _get_db()
     try:
-        catalog = await list_serviceable_issues(db, "air-conditioning", ZIPCODE_140412)
-        install = next(i for i in catalog["issues"] if i["label"] == "New AC Installation")
+        install = _ISSUES[1]
 
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(return_value=_deepseek_response({
                 "action": "match_option", "reply": "Maybe installation?",
@@ -106,7 +113,7 @@ async def test_unrelated_message_is_redirected_to_issue_choices():
     db = await _get_db()
     try:
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(return_value=_deepseek_response({
                 "action": "out_of_scope",
@@ -130,7 +137,9 @@ async def test_out_of_area_zipcode_raises_instead_of_calling_deepseek():
     db = await _get_db()
     try:
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        async def empty_catalog(*_args, **_kwargs):
+            return {"category": "Air Conditioning", "issues": []}
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=empty_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(side_effect=AssertionError("DeepSeek must not be called with zero real issues")),
         ):
@@ -147,7 +156,7 @@ async def test_malformed_deepseek_output_fails_closed():
     db = await _get_db()
     try:
         svc = OfferingInterpretationService(db=db)
-        with patch(
+        with patch("app.engines.home_service_booking.offering_interpretation_service.list_serviceable_issues", new=_catalog), patch(
             "app.engines.ai_conversation.deepseek_client.DeepSeekClientService.chat",
             new=AsyncMock(return_value={"choices": [{"message": {"content": "not json"}}]}),
         ):

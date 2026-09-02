@@ -206,19 +206,22 @@ def test_intel_page_imports_kb_api():
 
 def test_intel_page_has_kb_wizard_modal():
     src = INTEL_PAGE.read_text(encoding="utf-8")
-    assert "KBWizardModal" in src
+    assert "Create knowledge base" in src
+    assert "Create &amp; configure" in src
 
 
 def test_intel_page_rag_tab_exists():
     src = INTEL_PAGE.read_text(encoding="utf-8")
-    assert "RagTab" in src
+    assert 'id: "rag"' in src
+    assert "Knowledge & RAG" in src
 
 
 def test_intel_page_has_8_wizard_steps():
     src = INTEL_PAGE.read_text(encoding="utf-8")
-    # WizardStep1..WizardStep8 should be referenced
-    for i in range(1, 9):
-        assert f"WizardStep{i}" in src, f"WizardStep{i} missing from intelligence page"
+    # Creation is intentionally short; detailed documents, access and
+    # indexing configuration continue in the new KB workspace.
+    assert "This creates the governed container" in src
+    assert "continue to its workspace" in src
 
 
 # ── 9. KB Detail Page ─────────────────────────────────────────────────────────

@@ -275,28 +275,27 @@ def test_catalog_types_brands_tab_has_brand_master_link():
 # CATALOG PAGE — SERVICESTAB BRAND MANAGEMENT
 # ══════════════════════════════════════════════════════════════════
 
-def test_catalog_services_tab_has_brand_management_modal():
-    # ServicesTab promoted to standalone /admin/master-services
+def test_master_services_page_does_not_duplicate_brand_management():
+    # Brand mappings now live in the dedicated Service Setup > Brands
+    # workspace. The master-services registry intentionally owns identity and
+    # lifecycle only.
     src = _read(MASTER_SVC_PAGE)
-    assert "brandMgmtService" in src
+    assert "brandMgmtService" not in src
 
 
-def test_catalog_services_tab_uses_list_brand_mappings():
-    # ServicesTab promoted to standalone /admin/master-services
+def test_master_services_page_does_not_fetch_brand_mappings():
     src = _read(MASTER_SVC_PAGE)
-    assert "listBrandMappings" in src
+    assert "listBrandMappings" not in src
 
 
-def test_catalog_services_tab_uses_map_brand_services():
-    # ServicesTab promoted to standalone /admin/master-services
+def test_master_services_page_does_not_mutate_brand_mappings():
     src = _read(MASTER_SVC_PAGE)
-    assert "mapBrandServices" in src
+    assert "mapBrandServices" not in src
 
 
-def test_catalog_services_tab_has_add_brand_picker():
-    # ServicesTab promoted to standalone /admin/master-services
+def test_master_services_page_has_no_brand_picker():
     src = _read(MASTER_SVC_PAGE)
-    assert "selectedBrandToAdd" in src
+    assert "selectedBrandToAdd" not in src
 
 
 # ══════════════════════════════════════════════════════════════════

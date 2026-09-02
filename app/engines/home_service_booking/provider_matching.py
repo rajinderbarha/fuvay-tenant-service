@@ -4,8 +4,9 @@ find_bookable_home_service_providers() queries real TenantServiceArea data
 and returns customer-safe provider options sorted by coverage quality.
 
 Rules:
-- Only returns active tenants
-- Only returns tenants with area covering city/zipcode
+- Only returns active tenants whose latest canonical status is bookable
+- When zipcode is supplied, only exact zipcode coverage is accepted
+- City coverage is used only when the customer supplied no zipcode
 - Only returns tenants whose category matches
 - Never exposes internal IDs, commission, credit balance
 """
@@ -14,8 +15,10 @@ import uuid
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.engines.provider_portal.bookability_query import latest_provider_bookable
 
 logger = structlog.get_logger("home_service.provider_matching")
 
@@ -67,8 +70,8 @@ async def find_bookable_home_service_providers(
             .where(
                 Tenant.status == "active",
                 Tenant.category_id == category_id,
+                latest_provider_bookable(Tenant.id),
                 TenantServiceArea.is_active.is_(True),
-                func.lower(TenantServiceArea.city) == norm_city,
                 TenantServiceArea.zipcode == strip_zip,
             )
             .order_by(Tenant.health_score.desc(), Tenant.rating_average.desc())
@@ -81,7 +84,7 @@ async def find_bookable_home_service_providers(
                 results.append(_make_option(row, match_type="zipcode"))
 
     # ── 2. City-only matches to fill remaining slots ──────────────────────────
-    if len(results) < limit:
+    if not strip_zip and len(results) < limit:
         remaining = limit - len(results)
         city_rows = (await db.execute(
             select(
@@ -98,6 +101,7 @@ async def find_bookable_home_service_providers(
             .where(
                 Tenant.status == "active",
                 Tenant.category_id == category_id,
+                latest_provider_bookable(Tenant.id),
                 TenantServiceArea.is_active.is_(True),
                 func.lower(TenantServiceArea.city) == norm_city,
             )

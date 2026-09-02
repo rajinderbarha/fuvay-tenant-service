@@ -122,7 +122,7 @@ def test_admin_nav_customers_present():
 
 def test_admin_nav_staff_present():
     src = admin_layout_src()
-    assert '"/admin/staff"' in src
+    assert '"/admin/home-services/staff"' in src
 
 
 def test_admin_nav_reviews_present():
@@ -167,7 +167,13 @@ def test_admin_nav_page_exists(href):
     # Strip /admin/ prefix to get relative path
     rel = href.replace("/admin/", "")
     page = os.path.join(ADMIN_APP, rel, "page.tsx")
-    assert os.path.exists(page), f"Missing page.tsx for nav href {href} (expected at {page})"
+    dynamic_rel = rel.split("/", 1)
+    dynamic_page = (
+        os.path.join(ADMIN_APP, "[vertical]", dynamic_rel[1], "page.tsx")
+        if len(dynamic_rel) == 2 else ""
+    )
+    assert os.path.exists(page) or (dynamic_page and os.path.exists(dynamic_page)), \
+        f"Missing static or vertical-dynamic page.tsx for nav href {href}"
 
 
 # ── Admin: no duplicate nav ids ───────────────────────────────────────────────
@@ -332,7 +338,7 @@ def test_admin_operations_group_order():
     block = _extract_group_block(src, "Operations")
     assert block, "Operations group not found"
     assert "/admin/customers" in block,  "Customers missing from Operations"
-    assert "/admin/staff" in block,      "Staff missing from Operations"
+    assert "/admin/home-services/staff" in block, "Staff missing from Operations"
     assert "/admin/home-services/complaints" in block, "Complaints missing from Operations"
     assert "/admin/home-services/bookings-jobs" in src, "Unified HS operations missing"
 

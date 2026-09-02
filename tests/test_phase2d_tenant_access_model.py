@@ -157,10 +157,10 @@ class TestTenantMutationPermissionCoverage:
         # 2F-38's full-backend-suite run first surfaced); 2F-39 updates
         # the literal per the docstring's own instruction ("further
         # growth is good news and should keep updating this count").
-        assert len(matches) == 26, (
-            f"Expected exactly 26 files calling require_tenant_mutation_permission "
-            f"(5 through Slice 2F-7, +21 from Slices 2F-35/36/37's app-wide "
-            f"mutation-authorization program), found {len(matches)}: {matches}. "
+        assert len(matches) == 28, (
+            f"Expected exactly 28 files calling require_tenant_mutation_permission "
+            f"(the current app-wide mutation-authorization coverage), "
+            f"found {len(matches)}: {matches}. "
             f"If this changed, update tenant-readonly-decision.md's conclusion."
         )
         assert any(p.name == "router.py" and p.parent.name == "tenant_engine" for p in matches)

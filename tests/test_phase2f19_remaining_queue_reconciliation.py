@@ -21,6 +21,11 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs", "workflow-rearchitecture", "phase-02a-slice-02f19")),
+    reason="retired point-in-time workflow reconciliation artifacts are intentionally absent",
+)
+
 DOCS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "docs", "workflow-rearchitecture",

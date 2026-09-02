@@ -40,7 +40,13 @@ provider-reset workflow deliberately replaces those rows.
 import uuid
 from datetime import date, timedelta
 
+import os
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 
 ZIPCODE_140412 = "140412"

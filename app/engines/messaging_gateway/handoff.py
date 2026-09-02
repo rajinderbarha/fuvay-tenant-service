@@ -1,30 +1,22 @@
-"""Chat -> web handoff.
+"""Chat -> web handoff — redemption only.
 
-Some booking steps are comparison UI, not conversation: choosing between
-matched providers, choosing a price option, picking a slot from a grid, and
-picking an offering type or brand from a list. Trying to run those in a
-WhatsApp thread reads as an interrogation and abandons badly.
+Every step that once needed a web screen — picking a type, a brand, a slot —
+is now asked and answered inside the chat itself (see `flow.py`), so nothing
+issues these links any more and there is no customer web surface to send
+anyone to. `redeem_link` remains so that a token minted before that change
+still burns correctly rather than 404ing.
 
-So the agent handles what is genuinely conversational and, the moment the draft
-reaches one of those steps, the customer gets ONE link into the web surface
-carrying their draft.
-
-The link is a single-use, short-lived, hashed token — deliberately the same
-shape as `media_signed_links`, which this codebase already uses for signed
-media access.
+The token is single-use, short-lived and hashed — deliberately the same shape
+as `media_signed_links`, which this codebase already uses for signed media
+access.
 """
 from __future__ import annotations
 
 import hashlib
-import secrets
-import uuid
-from datetime import datetime, timedelta, timezone
 
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -90,53 +82,6 @@ def detect_handoff(draft: dict | None) -> str | None:
         return REASON_SELECT_SLOT
 
     return None
-
-
-def _base_url() -> str:
-    """Where the customer web surface lives.
-
-    NOTE: that surface does not exist yet. Until it does this points at the
-    configured web origin and the link will 404 — which is why `issue_link`
-    returns None when nothing is configured, so the bot never sends a customer
-    a link to nowhere.
-    """
-    s = get_settings()
-    return str(getattr(s, "CUSTOMER_WEB_BASE_URL", "") or "").rstrip("/")
-
-
-async def issue_link(
-    db: AsyncSession,
-    *,
-    thread_id: uuid.UUID | None,
-    customer_id: uuid.UUID | None,
-    draft_id: uuid.UUID | None,
-    reason: str,
-    target_path: str = "/booking/resume",
-) -> str | None:
-    """Mint a single-use handoff URL, or None if the web surface is unconfigured."""
-    base = _base_url()
-    if not base:
-        logger.info("messaging_gateway.handoff.no_web_base_configured", reason=reason)
-        return None
-
-    token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    expires = datetime.now(timezone.utc) + timedelta(minutes=LINK_TTL_MINUTES)
-
-    await db.execute(text("""
-        INSERT INTO messaging_handoff_links
-            (token_hash, thread_id, customer_id, draft_id, reason, target_path, expires_at)
-        VALUES (:h, :thread, :customer, :draft, :reason, :path, :expires)
-    """), {
-        "h": token_hash,
-        "thread": str(thread_id) if thread_id else None,
-        "customer": str(customer_id) if customer_id else None,
-        "draft": str(draft_id) if draft_id else None,
-        "reason": reason,
-        "path": target_path,
-        "expires": expires,
-    })
-    return f"{base}{target_path}?t={token}"
 
 
 async def redeem_link(db: AsyncSession, token: str) -> dict | None:

@@ -28,7 +28,7 @@ from app.engines.vertical_catalog.finance_policy_service import (
     resolve_published_policy, resolve_qualifying_technician_count, FinancePolicyResolutionError,
 )
 from app.engines.vertical_catalog.activation_payment_models import (
-    ActivationPaymentOrder, PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING,
+    ActivationPaymentOrder, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING,
     STATUS_CREATED, STATUS_CAPTURED,
 )
 from app.engines.tenant_engine.models import TenantBilling
@@ -37,7 +37,6 @@ from app.engines.invoice_payment.models import FinancialEvent
 logger = structlog.get_logger("vertical_catalog.activation_payment")
 utcnow = lambda: datetime.now(timezone.utc)
 
-FEV_ACTIVATION_DEPOSIT_CAPTURED = "activation.security_deposit_captured"
 FEV_ACTIVATION_CREDIT_CAPTURED = "activation.credit_package_captured"
 FEV_ACTIVATION_CREDIT_GST = "activation.credit_package_gst_collected"
 
@@ -478,14 +477,7 @@ async def confirm_activation_payment_webhook(
 
     credited = Decimal("0.00")
     tax = Decimal("0.00")
-    if order_row.payment_kind == PAYMENT_KIND_DEPOSIT:
-        # A legacy deposit order captured after the deposit was retired.
-        # Rather than drop the money, the whole amount becomes wallet credit:
-        # a deposit and a top-up now serve the same purpose, and the tenant
-        # paid it either way.
-        credited = received_amount
-        tax = Decimal("0.00")
-    elif order_row.payment_kind == PAYMENT_KIND_CREDIT:
+    if order_row.payment_kind == PAYMENT_KIND_CREDIT:
         credited = _money(order_row.credited_amount if order_row.credited_amount is not None else received_amount)
         tax = _money(order_row.tax_amount)
     elif order_row.payment_kind == PAYMENT_KIND_FUNDING:

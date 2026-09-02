@@ -24,7 +24,7 @@ ADMIN_CATALOG_SERVICE = (ROOT / "app/engines/admin_catalog/service.py").read_tex
 # ── Hard gate: catalog query no longer points at the empty legacy table ─────
 def test_available_offerings_query_uses_master_services_not_master_offerings():
     idx = PROVIDER_ROUTER.index("async def list_available_offerings")
-    snippet = PROVIDER_ROUTER[idx: idx + 2600]
+    snippet = PROVIDER_ROUTER[idx: idx + 3600]
     assert "FROM master_services ms" in snippet
     assert "FROM master_offerings" not in snippet
     assert "sc.vertical_type = t.vertical" in snippet
@@ -33,20 +33,26 @@ def test_available_offerings_query_uses_master_services_not_master_offerings():
 def test_enabled_offerings_query_joins_master_services():
     idx = PROVIDER_ROUTER.index("async def list_enabled_offerings")
     snippet = PROVIDER_ROUTER[idx: idx + 800]
-    assert "master_services" in snippet
-    assert "provider_enabled_offering_id" in snippet
+    assert "_canonical_enabled_offering_rows" in snippet
+    helper = PROVIDER_ROUTER[PROVIDER_ROUTER.index("async def _canonical_enabled_offering_rows"):]
+    assert "FROM tenant_services ts" in helper
+    assert "JOIN master_services ms" in helper
 
 
 # ── Bug fix: ON CONFLICT matches the partial unique index ──────────────────
-def test_enable_offering_on_conflict_matches_partial_index():
+def test_enable_offering_writes_through_canonical_tenant_catalog_service():
     idx = PROVIDER_ROUTER.index("async def enable_offering")
-    snippet = PROVIDER_ROUTER[idx: idx + 900]
-    assert "ON CONFLICT (tenant_id, offering_id) WHERE deleted_at IS NULL" in snippet
+    snippet = PROVIDER_ROUTER[idx: idx + 2200]
+    assert "TenantCatalogService" in snippet
+    assert '"master_service_id": payload.get("offering_id")' in snippet
+    assert "provider_enabled_offerings" not in snippet
 
 
 # ── Bug fix: provider_enabled_offering_id aliased everywhere the frontend needs it
 def test_provider_enabled_offering_id_aliased_in_all_offering_reads():
-    assert PROVIDER_ROUTER.count("id AS provider_enabled_offering_id") >= 5
+    helper = PROVIDER_ROUTER[PROVIDER_ROUTER.index("async def _canonical_enabled_offering_rows"):]
+    assert "ts.id AS provider_enabled_offering_id" in helper
+    assert PROVIDER_ROUTER.count("_canonical_enabled_offering_rows") >= 7
 
 
 # ── New issue-type mapping endpoint (real gap found and filled) ────────────

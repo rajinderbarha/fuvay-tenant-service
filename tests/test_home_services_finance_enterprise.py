@@ -8,7 +8,7 @@ from pathlib import Path
 def test_workspace_client_uses_only_scoped_list_contracts():
     src = Path("frontend/super-admin/lib/api-hs-finance.ts").read_text(encoding="utf-8")
     for path in (
-        "provider-charges", "topups", "deposits", "warranty-claims",
+        "provider-charges", "topups", "warranty-claims",
         "invoices", "refunds", "financial-events", "audit",
     ):
         assert f"/v1/admin/finance/home-services/{path}" in src
@@ -28,7 +28,7 @@ def test_provider_charges_are_paginated_in_sql_not_memory():
 def test_large_summary_cards_use_aggregates_not_full_table_loads():
     from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
     for name in (
-        "get_credits_workspace_summary", "get_hs_deposits_summary",
+        "get_credits_workspace_summary",
         "get_hs_warranty_claims_summary", "get_invoices_summary",
         "get_hs_refunds_summary",
     ):
@@ -64,7 +64,6 @@ def test_finance_filters_and_pagination_are_reactive():
         "[query, chargeModel, status, page]), [query, chargeModel, status, page]",
         "[query, lowOnly, page, pageSize]), [query, lowOnly, page, pageSize]",
         "[query, status, dateFrom, dateTo, page, pageSize]), [query, status, dateFrom, dateTo, page, pageSize]",
-        "[query, status, page]), [query, status, page]",
         "[query, status, paymentStatus, page]), [query, status, paymentStatus, page]",
         "[query, status, refundTypeQuery, page]), [query, status, refundTypeQuery, page]",
         "[query, status, claimTypeQuery, page]), [query, status, claimTypeQuery, page]",
@@ -127,8 +126,9 @@ def test_direct_payment_oversight_uses_the_canonical_finance_client():
         assert name not in client
         assert name not in page
     assert "function DirectPaymentsTab" in page
-    for name in ("listDirectPayments", "getDirectPaymentsSummary", "openDirectPaymentDispute"):
+    for name in ("listDirectPayments", "getDirectPaymentsSummary"):
         assert f"homeServicesFinanceApi.{name}" in page
+    assert "openDirectPaymentDispute" not in page
 
 
 def test_sensitive_finance_actions_have_dedicated_permissions():
@@ -136,8 +136,8 @@ def test_sensitive_finance_actions_have_dedicated_permissions():
     from app.engines.vertical_monetization import home_services_finance_router
     src = inspect.getsource(admin_hs_finance_router)
     monetization_src = inspect.getsource(home_services_finance_router)
-    assert "P.DIRECT_PAYMENTS_REMIND_CUSTOMER" in src
-    assert "P.DIRECT_PAYMENTS_OPEN_DISPUTE" in src
+    assert "P.DIRECT_PAYMENTS_REMIND_CUSTOMER" not in src
+    assert "P.DIRECT_PAYMENTS_OPEN_DISPUTE" not in src
     assert "P.FINANCE_AUDIT_READ" in src
     assert 'home_services:finance_monetization:{action}' in monetization_src
     assert '_require_hs_action("draft")' in monetization_src

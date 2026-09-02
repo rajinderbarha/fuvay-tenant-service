@@ -257,20 +257,20 @@ def test_route_at_correct_path():
 # ── 33. Old provider/availability redirects ───────────────────────────────────
 def test_provider_availability_redirects_to_new_route():
     src = read(REDIRECT)
-    assert "/tenant/setup/availability" in src
+    assert "/business/coverage-hours" in src
     assert "replace" in src or "redirect" in src.lower() or "Redirect" in src
 
 
 # ── 34. Nav item points to new route ─────────────────────────────────────────
 def test_nav_item_points_to_new_route():
     src = read(LAYOUT)
-    assert "/tenant/setup/availability" in src
+    assert "/business/coverage-hours" in src
 
 
 # ── 35. Nav label updated to Business Hours ──────────────────────────────────
 def test_nav_label_business_hours():
     src = read(LAYOUT)
-    assert "Business Hours" in src
+    assert "Coverage & Hours" in src
 
 
 # ── 36. Preset confirmation modal ─────────────────────────────────────────────

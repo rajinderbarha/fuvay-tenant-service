@@ -20,6 +20,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.provider_portal.bookability_query import latest_provider_bookable
+
 
 async def _resolve_category(db: AsyncSession, category_slug: str):
     from app.engines.admin_catalog.models import ServiceCategory
@@ -74,6 +76,7 @@ def _publisher_filter(zipcode: str | None):
                 TenantService.is_enabled == True,  # noqa: E712
                 TenantService.is_active == True,  # noqa: E712
                 TenantService.setup_status == "published",
+                latest_provider_bookable(TenantService.tenant_id),
             )
         )
     return MasterService.id.in_(
@@ -90,6 +93,7 @@ def _publisher_filter(zipcode: str | None):
                     TenantService.is_enabled == True,  # noqa: E712
                     TenantService.is_active == True,  # noqa: E712
                     TenantService.setup_status == "published",
+                    latest_provider_bookable(TenantService.tenant_id),
                 )
             ),
         )

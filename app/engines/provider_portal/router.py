@@ -281,7 +281,7 @@ async def create_team_member(
     from app.engines.home_service_assignment.eligibility import is_technician_role
 
     if is_technician_role(payload.get("designation"), payload.get("member_type")):
-        await assert_seat_available(db, tenant_id)
+        await assert_seat_available(db, tid)
 
     new_id = str(uuid.uuid4())
     # profile_photo_url / max_concurrent_jobs / reports_to_* were previously
@@ -1511,12 +1511,21 @@ async def list_available_offerings(
             NULL::numeric AS admin_lead_fee,
             NULL::text AS primary_engine_key,
             NULL::text AS customer_flow_type,
-            peo.id AS provider_enabled_offering_id,
-            (peo.id IS NOT NULL) AS is_already_enabled
+            COALESCE(canonical.id, peo.id) AS provider_enabled_offering_id,
+            COALESCE(canonical.is_enabled, peo.is_enabled, false) AS is_already_enabled,
+            ms.job_type_id AS job_type_id
         FROM master_services ms
         JOIN service_categories sc ON sc.id = ms.category_id
         JOIN tenants t ON t.id = :tid
         LEFT JOIN service_groups sg ON sg.id = ms.service_group_id
+        LEFT JOIN LATERAL (
+            SELECT ts.id, ts.is_enabled
+            FROM tenant_services ts
+            WHERE ts.master_service_id = ms.id AND ts.tenant_id = :tid
+              AND ts.deleted_at IS NULL
+            ORDER BY ts.is_enabled DESC, ts.created_at
+            LIMIT 1
+        ) canonical ON true
         LEFT JOIN provider_enabled_offerings peo
             ON peo.offering_id = ms.id AND peo.tenant_id = :tid AND peo.deleted_at IS NULL
         WHERE ms.is_active = true AND ms.deleted_at IS NULL
@@ -1528,6 +1537,112 @@ async def list_available_offerings(
     return ok({"offerings": rows, "count": len(rows)}, request_id=rid)
 
 
+async def _canonical_enabled_offering_rows(
+    db: AsyncSession,
+    tid: uuid.UUID,
+    tenant_service_id: uuid.UUID | None = None,
+) -> list[dict]:
+    """Project canonical tenant setup into the older offering API contract.
+
+    The Home Services wizard writes ``tenant_services``.  The provider and
+    admin offering consoles historically read ``provider_enabled_offerings``,
+    which is empty in the live system.  This adapter keeps those screens on
+    the same source of truth used by setup, matching and booking.
+    """
+    params = {"tid": str(tid)}
+    id_filter = ""
+    if tenant_service_id is not None:
+        params["service_id"] = str(tenant_service_id)
+        id_filter = " AND ts.id=:service_id"
+    result = await db.execute(text(f"""
+        SELECT
+            ts.id AS provider_enabled_offering_id,
+            ts.master_service_id AS offering_id,
+            COALESCE(ts.tenant_display_name, ms.service_name) AS offering_name,
+            ts.job_type AS offering_type,
+            CASE
+                WHEN ts.admin_suspended_at IS NOT NULL THEN 'suspended'
+                WHEN NOT ts.is_enabled OR NOT ts.is_active THEN 'inactive'
+                WHEN ts.setup_status='published' THEN 'active'
+                ELSE 'draft'
+            END AS status,
+            ts.tenant_display_name AS provider_display_name,
+            ts.tenant_description AS provider_description,
+            COALESCE((
+                SELECT jsonb_agg(DISTINCT tst.service_type_id::text)
+                FROM tenant_service_types tst
+                WHERE tst.tenant_service_id=ts.id AND tst.is_enabled=true
+            ), '[]'::jsonb) AS supported_type_ids,
+            COALESCE((
+                SELECT jsonb_agg(DISTINCT tsb.brand_id::text)
+                FROM tenant_service_brands tsb
+                WHERE tsb.tenant_service_id=ts.id AND tsb.is_enabled=true
+            ), '[]'::jsonb) AS supported_brand_ids,
+            (ts.tenant_emergency_surcharge IS NOT NULL) AS supports_emergency,
+            ts.tenant_base_price AS provider_price_override,
+            ts.tenant_min_price AS provider_min_price,
+            ts.tenant_max_price AS provider_max_price,
+            ts.tenant_visit_fee AS provider_visit_fee,
+            NULL::numeric AS provider_appointment_fee,
+            NULL::numeric AS provider_lead_fee,
+            ts.published_at AS activated_at,
+            ts.admin_suspended_at AS suspended_at,
+            ts.admin_suspension_reason AS suspension_reason,
+            ts.is_enabled,
+            ts.is_active,
+            ts.created_at,
+            ts.updated_at
+        FROM tenant_services ts
+        JOIN master_services ms ON ms.id=ts.master_service_id
+        WHERE ts.tenant_id=:tid AND ts.deleted_at IS NULL{id_filter}
+        ORDER BY ms.display_order, ms.service_name, ts.created_at
+    """), params)
+    rows = result.fetchall()
+
+    provider = await _evaluate_provider_bookability(db, tid)
+    coverage = {
+        str(item["offering_id"]): int(item["ready_technician_count"])
+        for item in provider["service_coverage"]
+    }
+    projected: list[dict] = []
+    for row in rows:
+        item = dict(row._mapping)
+        item_id = str(item["provider_enabled_offering_id"])
+        blockers: list[dict] = []
+        if item["status"] == "suspended":
+            blockers.append({
+                "code": "OFFERING_SUSPENDED",
+                "message": item["suspension_reason"] or "This service is suspended by the platform administrator.",
+                "route": "/support",
+            })
+        elif item["status"] == "inactive":
+            blockers.append({
+                "code": "OFFERING_INACTIVE",
+                "message": "Activate this service before it can receive bookings.",
+                "route": "/tenant/home-services/setup/services-pricing",
+            })
+        elif item["status"] == "draft":
+            blockers.append({
+                "code": "OFFERING_NOT_PUBLISHED",
+                "message": "Complete and publish this service setup before it can receive bookings.",
+                "route": "/tenant/home-services/setup/services-pricing",
+            })
+        else:
+            blockers.extend(dict(value) for value in provider["bookability_blockers"])
+            if coverage.get(item_id, 0) <= 0 and not any(
+                value.get("code") == "READY_TECHNICIAN_MISSING" for value in blockers
+            ):
+                blockers.append({
+                    "code": "READY_TECHNICIAN_MISSING",
+                    "message": "Assign a fully ready technician to this service.",
+                    "route": "/business/team",
+                })
+        item["readiness_blockers"] = blockers
+        item["readiness_status"] = "ready" if not blockers else "not_ready"
+        projected.append(item)
+    return projected
+
+
 @router.get("/offerings/enabled")
 async def list_enabled_offerings(
     request: Request,
@@ -1536,16 +1651,7 @@ async def list_enabled_offerings(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(text("""
-        SELECT peo.*, peo.id AS provider_enabled_offering_id,
-               ms.service_name as offering_name, ms.slug as offering_slug,
-               ms.pricing_model as offering_pricing_model, ms.job_type as offering_type
-        FROM provider_enabled_offerings peo
-        LEFT JOIN master_services ms ON ms.id = peo.offering_id
-        WHERE peo.tenant_id = :tid AND peo.deleted_at IS NULL
-        ORDER BY peo.created_at DESC
-    """), {"tid": str(tid)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
+    rows = await _canonical_enabled_offering_rows(db, tid)
     return ok({"offerings": rows, "count": len(rows)}, request_id=rid)
 
 
@@ -1557,22 +1663,37 @@ async def enable_offering(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    new_id = str(uuid.uuid4())
-    await db.execute(text("""
-        INSERT INTO provider_enabled_offerings
-            (id, tenant_id, offering_id, category_id, is_enabled, status, readiness_status)
-        VALUES (:id, :tid, :offering_id, :cat_id, true, 'pending_approval', 'pending')
-        ON CONFLICT (tenant_id, offering_id) WHERE deleted_at IS NULL
-        DO UPDATE SET is_enabled=true, status='pending_approval', updated_at=now()
-    """), {
-        "id": new_id, "tid": str(tid),
-        "offering_id": payload.get("offering_id"),
-        "cat_id": payload.get("category_id"),
-    })
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+
+    service = TenantCatalogService(
+        db=db, request_id=rid,
+        actor_id=uuid.UUID(user.user_id) if user.user_id else None,
+        actor_role=user.role, actor_tenant_id=tid,
+    )
+    created = await service.enable_service({
+        "master_service_id": payload.get("offering_id"),
+        "job_type_id": payload.get("job_type_id"),
+        "tenant_display_name": payload.get("provider_display_name"),
+        "tenant_description": payload.get("provider_description"),
+        "tenant_base_price": payload.get("provider_price_override"),
+        "tenant_min_price": payload.get("provider_min_price"),
+        "tenant_max_price": payload.get("provider_max_price"),
+        "tenant_visit_fee": payload.get("provider_visit_fee"),
+    }, tid)
+    service_id = uuid.UUID(created["id"])
+    if payload.get("supported_type_ids") is not None:
+        await service.set_tenant_service_types(service_id, payload["supported_type_ids"])
+    if payload.get("supported_brand_ids") is not None:
+        await service.set_tenant_service_brands(service_id, payload["supported_brand_ids"])
+    if "supports_emergency" in payload:
+        await service.update_enabled_service(service_id, {
+            "tenant_emergency_surcharge": 0 if payload.get("supports_emergency") else None,
+        })
+    if payload.get("activate_if_ready"):
+        await service.publish_service(service_id)
     await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE tenant_id=:tid AND offering_id=:oid"), {"tid": str(tid), "oid": payload.get("offering_id")})
-    r = row.fetchone()
-    return ok(dict(r._mapping) if r else {}, request_id=rid)
+    rows = await _canonical_enabled_offering_rows(db, tid, service_id)
+    return ok(rows[0], request_id=rid)
 
 
 @router.get("/offerings/enabled/{offering_id}")
@@ -1583,11 +1704,10 @@ async def get_enabled_offering(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    r = row.fetchone()
-    if not r:
+    rows = await _canonical_enabled_offering_rows(db, tid, offering_id)
+    if not rows:
         raise HTTPException(404, "Offering not found")
-    return ok(dict(r._mapping), request_id=rid)
+    return ok(rows[0], request_id=rid)
 
 
 @router.put("/offerings/enabled/{offering_id}")
@@ -1598,20 +1718,37 @@ async def update_enabled_offering(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    allowed = {"provider_display_name", "provider_description", "provider_price_override",
-                "provider_min_price", "provider_max_price", "provider_visit_fee",
-                "provider_appointment_fee", "supported_type_ids", "supported_brand_ids"}
-    sets = ", ".join(f"{k}=:{k}" for k in payload if k in allowed)
-    if sets:
-        params = {k: v for k, v in payload.items() if k in allowed}
-        params.update({"id": str(offering_id), "tid": str(tid)})
-        await db.execute(text(f"UPDATE provider_enabled_offerings SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
-        await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    fetched = row.fetchone()
-    if fetched is None:
-        raise HTTPException(404, "Offering not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+
+    service = TenantCatalogService(
+        db=db, request_id=rid,
+        actor_id=uuid.UUID(user.user_id) if user.user_id else None,
+        actor_role=user.role, actor_tenant_id=tid,
+    )
+    mapped = {
+        target: payload[source]
+        for source, target in {
+            "provider_display_name": "tenant_display_name",
+            "provider_description": "tenant_description",
+            "provider_price_override": "tenant_base_price",
+            "provider_min_price": "tenant_min_price",
+            "provider_max_price": "tenant_max_price",
+            "provider_visit_fee": "tenant_visit_fee",
+        }.items()
+        if source in payload
+    }
+    if "supports_emergency" in payload:
+        mapped["tenant_emergency_surcharge"] = 0 if payload.get("supports_emergency") else None
+    await service.update_enabled_service(offering_id, mapped)
+    if payload.get("supported_type_ids") is not None:
+        await service.set_tenant_service_types(offering_id, payload["supported_type_ids"])
+    if payload.get("supported_brand_ids") is not None:
+        await service.set_tenant_service_brands(offering_id, payload["supported_brand_ids"])
+    if payload.get("activate_if_ready"):
+        await service.publish_service(offering_id)
+    await db.commit()
+    rows = await _canonical_enabled_offering_rows(db, tid, offering_id)
+    return ok(rows[0], request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/activate")
@@ -1622,13 +1759,22 @@ async def activate_offering(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    await db.execute(text("UPDATE provider_enabled_offerings SET is_enabled=true, is_active=true, status='active', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    fetched = row.fetchone()
-    if fetched is None:
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+    service = TenantCatalogService(
+        db=db, request_id=rid,
+        actor_id=uuid.UUID(user.user_id) if user.user_id else None,
+        actor_role=user.role, actor_tenant_id=tid,
+    )
+    updated = await db.execute(text(
+        "UPDATE tenant_services SET is_enabled=true, is_active=true, updated_at=now() "
+        "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL RETURNING id"
+    ), {"id": str(offering_id), "tid": str(tid)})
+    if updated.fetchone() is None:
         raise HTTPException(404, "Offering not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    await service.publish_service(offering_id)
+    await db.commit()
+    rows = await _canonical_enabled_offering_rows(db, tid, offering_id)
+    return ok(rows[0], request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/deactivate")
@@ -1639,13 +1785,15 @@ async def deactivate_offering(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    await db.execute(text("UPDATE provider_enabled_offerings SET is_enabled=false, is_active=false, status='inactive', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    fetched = row.fetchone()
-    if fetched is None:
+    updated = await db.execute(text(
+        "UPDATE tenant_services SET is_enabled=false, updated_at=now() "
+        "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL RETURNING id"
+    ), {"id": str(offering_id), "tid": str(tid)})
+    if updated.fetchone() is None:
         raise HTTPException(404, "Offering not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    await db.commit()
+    rows = await _canonical_enabled_offering_rows(db, tid, offering_id)
+    return ok(rows[0], request_id=rid)
 
 
 @router.post("/offerings/enabled/{offering_id}/refresh-readiness")
@@ -1656,13 +1804,10 @@ async def refresh_offering_readiness(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    await db.execute(text("UPDATE provider_enabled_offerings SET readiness_status='pending', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    await db.commit()
-    row = await db.execute(text("SELECT *, id AS provider_enabled_offering_id FROM provider_enabled_offerings WHERE id=:id AND tenant_id=:tid"), {"id": str(offering_id), "tid": str(tid)})
-    fetched = row.fetchone()
-    if fetched is None:
+    rows = await _canonical_enabled_offering_rows(db, tid, offering_id)
+    if not rows:
         raise HTTPException(404, "Offering not found")
-    return ok(dict(fetched._mapping), request_id=rid)
+    return ok(rows[0], request_id=rid)
 
 
 # ── Provider Status (Sprint 12) ────────────────────────────────────────────────
@@ -1701,8 +1846,8 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
       is_bookable requires ALL critical checks to pass: tenant not
       suspended/rejected, at least one published service with a
       configured provider price range, at least one active service area,
-      at least one availability rule, sufficient usage credits, and the
-      security deposit requirement satisfied if one is configured.
+      at least one availability rule, sufficient usage credits, and at
+      least one ready technician who covers every published offering.
       is_visible is a lighter bar: tenant not suspended/rejected, business
       profile complete, and at least one service published — a tenant can
       be visible (discoverable) before being fully bookable.
@@ -1718,8 +1863,9 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
     visibility_blockers: list[dict] = []
     bookability_blockers: list[dict] = []
 
-    tenant_active = bool(tenant_row) and tenant_row.status not in ("suspended", "rejected") \
-        and tenant_row.verification_status != "rejected" and tenant_row.suspended_at is None
+    tenant_active = bool(tenant_row) and tenant_row.status == "active" \
+        and tenant_row.verification_status in ("approved", "verified") \
+        and tenant_row.suspended_at is None
     if tenant_active:
         passed.append("tenant_active_not_suspended")
     else:
@@ -1740,7 +1886,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "severity": "critical", "route": "/profile"})
 
     # Required business-document state is part of the same bookability
-    # decision as pricing, coverage, capacity, credits, and deposit.  The
+      # decision as pricing, coverage, capacity, and credits. The
     # previous implementation omitted it, so a provider could remain
     # customer-bookable after a required document was rejected or expired.
     # A replacement that is under review (or has changes requested) keeps
@@ -1755,15 +1901,18 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             country=(tenant_row.country if tenant_row else "India"),
         ) if item["required"]
     }
-    current_documents = (await db.execute(
+    relevant_documents = (await db.execute(
         select(TenantDocument).where(
             TenantDocument.tenant_id == tid,
             TenantDocument.staff_member_id.is_(None),
-            TenantDocument.is_current.is_(True),
             TenantDocument.doc_type.in_(required_document_types),
         )
     )).scalars().all()
-    documents_by_type = {document.doc_type: document for document in current_documents}
+    documents_by_type = {
+        document.doc_type: document
+        for document in relevant_documents
+        if document.is_current
+    }
     document_blockers: list[str] = []
     now = datetime.now(timezone.utc)
     for document_type in sorted(required_document_types):
@@ -1772,7 +1921,19 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             document_blockers.append(document_type)
             continue
         expired = bool(document.expiry_date and document.expiry_date < now)
-        if document.status == "rejected" or expired:
+        current_verified = document.status == "verified" and not expired
+        # A pending replacement may use a still-valid previously verified
+        # version. A first-ever pending upload has no such grace and cannot
+        # make an unverified provider customer-bookable.
+        valid_previous = any(
+            candidate.doc_type == document_type
+            and not candidate.is_current
+            and candidate.status == "verified"
+            and (candidate.expiry_date is None or candidate.expiry_date >= now)
+            for candidate in relevant_documents
+        )
+        replacement_in_review = document.status in ("pending_review", "changes_requested")
+        if not current_verified and not (replacement_in_review and valid_previous):
             document_blockers.append(document_type)
 
     if not document_blockers:
@@ -1852,6 +2013,52 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "message": "Set at least one open availability slot to receive bookings.",
             "severity": "critical", "route": "/home-services/availability"})
 
+    # Business approval is intentionally allowed before an optional seat
+    # top-up, but customer bookability must still fail closed until every
+    # enabled offering has a genuinely ready technician.  Matching already
+    # enforces this per request; exposing the same truth here prevents the
+    # dashboard from claiming that an unstaffed provider is bookable.
+    from app.engines.home_service_assignment.team_readiness_service import (
+        compute_service_coverage,
+        compute_team_summary,
+    )
+    team_summary = await compute_team_summary(db, tid)
+    service_coverage = await compute_service_coverage(db, tid, team_summary)
+    staff_capacity_ready = bool(service_coverage) and all(
+        row["ready_technician_count"] > 0 for row in service_coverage
+    )
+    if staff_capacity_ready:
+        passed.append("ready_technician_capacity")
+    else:
+        bookability_blockers.append({
+            "code": "READY_TECHNICIAN_MISSING",
+            "message": "Complete a technician's service assignments and availability before receiving bookings.",
+            "severity": "critical", "route": "/business/team"})
+
+    # Approval and setup do not require payment, but bookable capacity must be
+    # backed by a live seat entitlement.  The roster can contain pre-created
+    # technicians while the provider decides on a plan; it must never turn
+    # those unpaid rows into customer-facing capacity.
+    from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
+
+    seat_usage = await get_seat_usage(db, tid)
+    seat_capacity_ready = (
+        seat_usage["entitled_seats"] > 0 and not seat_usage["over_limit"]
+    )
+    if seat_capacity_ready:
+        passed.append("technician_seats_funded")
+    else:
+        bookability_blockers.append({
+            "code": "TECHNICIAN_SEATS_REQUIRED",
+            "message": (
+                "Buy technician seats or deactivate technicians above your live seat limit "
+                "before receiving bookings."
+            ),
+            "severity": "critical",
+            "route": "/home-services/finance?tab=topups",
+            "seat_usage": seat_usage,
+        })
+
     # `security_deposit_paid` / `security_deposit_amount` were dropped with the
     # deposit (migration 317/318). Selecting them raised UndefinedColumnError,
     # so recomputing bookability 500'd and a provider's visible/bookable state
@@ -1869,14 +2076,10 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "message": "Add usage credits to your account to receive bookings.",
             "severity": "critical", "route": "/home-services/finance?tab=usage-credits"})
 
-    # The deposit no longer exists, so it can no longer block bookability. The
-    # credit balance checked just above is what stands in its place.
-    deposit_satisfied = True
-
     is_visible = tenant_active and profile_complete and published_count > 0
     is_bookable = is_visible and priced_count > 0 and active_areas > 0 \
-        and availability_count > 0 and credit_balance > 0 and deposit_satisfied \
-        and not document_blockers
+        and availability_count > 0 and credit_balance > 0 \
+        and staff_capacity_ready and seat_capacity_ready and not document_blockers
 
     status_label = "bookable" if is_bookable else ("visible_not_bookable" if is_visible else "not_visible")
 
@@ -1886,6 +2089,9 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         "passed_checks": passed,
         "visibility_blockers": visibility_blockers,
         "bookability_blockers": bookability_blockers,
+        # Reused by the per-service status projection so it cannot drift from
+        # the provider-level decision.
+        "service_coverage": service_coverage,
     }
 
 
@@ -2108,12 +2314,139 @@ async def get_offering_statuses(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    result = await db.execute(text("SELECT * FROM provider_offering_bookable_statuses WHERE tenant_id=:tid ORDER BY created_at DESC"), {"tid": str(tid)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
-    return ok({"statuses": rows, "count": len(rows)}, request_id=rid)
+    # The legacy status table is not populated by the canonical Home Services
+    # setup flow. Project each published TenantService from the same live
+    # provider/team checks used by matching instead of returning a false zero.
+    provider = await _evaluate_provider_bookability(db, tid)
+    coverage_by_service = {
+        str(row["offering_id"]): int(row["ready_technician_count"])
+        for row in provider["service_coverage"]
+    }
+    service_rows = (await db.execute(text(
+        "SELECT ts.id::text AS tenant_service_id, "
+        "       ts.master_service_id::text AS master_service_id "
+        "FROM tenant_services ts "
+        "WHERE ts.tenant_id=:tid AND ts.is_enabled=true AND ts.is_active=true "
+        "  AND ts.setup_status='published' AND ts.deleted_at IS NULL "
+        "ORDER BY ts.created_at, ts.id"
+    ), {"tid": str(tid)})).fetchall()
+
+    evaluated_at = datetime.now(timezone.utc)
+    statuses: list[dict] = []
+    for service in service_rows:
+        tenant_service_id = str(service.tenant_service_id)
+        blockers = [dict(item) for item in provider["bookability_blockers"]]
+        ready_count = coverage_by_service.get(tenant_service_id, 0)
+        if ready_count <= 0 and not any(
+            item.get("code") == "READY_TECHNICIAN_MISSING" for item in blockers
+        ):
+            blockers.append({
+                "code": "READY_TECHNICIAN_MISSING",
+                "message": "Assign a fully ready technician to this service.",
+                "severity": "critical",
+                "route": "/business/team",
+            })
+        statuses.append({
+            "id": tenant_service_id,
+            "tenant_id": str(tid),
+            "provider_enabled_offering_id": tenant_service_id,
+            "offering_id": str(service.master_service_id),
+            "is_bookable": bool(provider["is_bookable"] and ready_count > 0),
+            "blockers": blockers,
+            "last_evaluated_at": evaluated_at,
+        })
+    return ok({"statuses": statuses, "count": len(statuses)}, request_id=rid)
 
 
 # ── Onboarding Status (Sprint 10) ─────────────────────────────────────────────
+
+async def _build_live_provider_onboarding(db: AsyncSession, tid: uuid.UUID) -> dict:
+    """Project the canonical operational gates as provider onboarding."""
+    provider = await _evaluate_provider_bookability(db, tid)
+    passed = set(provider["passed_checks"])
+    category = (await db.execute(text("""
+        SELECT sc.id, sc.name, sc.vertical_type
+        FROM tenant_services ts
+        JOIN service_categories sc ON sc.id=ts.category_id
+        WHERE ts.tenant_id=:tid AND ts.deleted_at IS NULL
+        ORDER BY ts.created_at LIMIT 1
+    """), {"tid": str(tid)})).fetchone()
+    definitions = [
+        ("business_approved", "Business approved", "provider_verification",
+         "tenant_active_not_suspended", "/onboarding/application-status",
+         "Your business must be approved and active."),
+        ("business_profile", "Business profile complete", "provider_profile",
+         "business_profile_complete", "/profile",
+         "Add your business name and complete address."),
+        ("business_documents", "Business documents verified", "provider_verification",
+         "required_documents_current", "/business/verification-documents",
+         "Upload valid required business documents."),
+        ("services_published", "Services published", "provider_enabled_offerings",
+         "service_setup_published", "/tenant/home-services/setup/services-pricing",
+         "Complete and publish at least one service."),
+        ("pricing_ready", "Service pricing configured", "provider_enabled_offerings",
+         "provider_price_range_configured", "/tenant/home-services/setup/services-pricing",
+         "Configure an allowed provider price or visit fee."),
+        ("service_area", "Service area configured", "provider_service_areas",
+         "service_area_configured", "/business/coverage-hours",
+         "Add at least one active service area."),
+        ("availability", "Availability configured", "provider_appointment_slots",
+         "availability_configured", "/home-services/availability",
+         "Set at least one open availability period."),
+          ("technician_ready", "Technician ready", "provider_staff",
+           "ready_technician_capacity", "/business/team",
+           "Complete a technician's login, role, service assignments, and availability."),
+        ("technician_seats", "Technician seats funded", "provider_monetization",
+         "technician_seats_funded", "/home-services/finance?tab=topups",
+         "Buy enough live technician seats for the active roster."),
+        ("usage_credits", "Usage credits available", "provider_monetization",
+         "usage_credits_available", "/home-services/finance?tab=usage-credits",
+         "Add usage credits before receiving bookings."),
+    ]
+    items: list[dict] = []
+    for order, (key, title, source, check, route, blocked_reason) in enumerate(definitions, 1):
+        completed = check in passed
+        items.append({
+            "id": key, "checklist_key": key, "title": title,
+            "description": blocked_reason, "item_type": "system_check",
+            "completion_source": source,
+            "status": "completed" if completed else "blocked",
+            "is_required": True, "is_blocking": not completed,
+            "allows_admin_override": False,
+            "provider_action_label": None if completed else "Fix now",
+            "provider_action_route": None if completed else route,
+            "blocked_reason": None if completed else blocked_reason,
+            "completed_at": None, "display_order": order,
+        })
+    incomplete = [item for item in items if item["status"] != "completed"]
+    completed_count = len(items) - len(incomplete)
+    progress = round((completed_count / len(items)) * 100) if items else 0
+    next_item = incomplete[0] if incomplete else None
+    status = {
+        "tenant_id": str(tid),
+        "category_id": str(category.id) if category else None,
+        "category_name": category.name if category else None,
+        "category_type": category.vertical_type if category else None,
+        "total_items": len(items), "required_items": len(items),
+        "completed_items": completed_count, "pending_items": len(incomplete),
+        "blocked_items": len(incomplete), "overridden_items": 0,
+        "progress_percent": progress, "progress_percentage": progress,
+        "onboarding_ready": not incomplete,
+        "blockers": [{
+            "code": item["checklist_key"].upper(),
+            "message": item["blocked_reason"],
+            "route": item["provider_action_route"],
+        } for item in incomplete],
+        "next_action": ({
+            "title": next_item["title"],
+            "description": next_item["blocked_reason"],
+            "route": next_item["provider_action_route"],
+            "action_label": "Fix now",
+        } if next_item else None),
+        "last_refreshed_at": datetime.now(timezone.utc),
+    }
+    return {"status": status, "items": items}
+
 
 @router.get("/onboarding/status")
 async def get_onboarding_status(
@@ -2123,25 +2456,8 @@ async def get_onboarding_status(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    # MODULE-L5-02: provider_onboarding_statuses is not provisioned in all
-    # environments; fall back to the not-started default instead of a 500.
-    try:
-        row = await db.execute(text("SELECT * FROM provider_onboarding_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"), {"tid": str(tid)})
-        r = row.fetchone()
-    except Exception:
-        await db.rollback()
-        r = None
-    if r:
-        data = dict(r._mapping)
-    else:
-        data = {
-            "tenant_id": str(tid), "category_id": None,
-            "total_items": 0, "required_items": 0, "completed_items": 0,
-            "pending_items": 0, "blocked_items": 0, "overridden_items": 0,
-            "progress_percent": 0, "onboarding_ready": False,
-            "blockers": [], "next_action": None, "last_refreshed_at": None,
-        }
-    return ok(data, request_id=rid)
+    live = await _build_live_provider_onboarding(db, tid)
+    return ok(live["status"], request_id=rid)
 
 
 @router.get("/onboarding/items")
@@ -2152,22 +2468,8 @@ async def get_onboarding_items(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    # MODULE-L5-02: provider_onboarding_items may not be provisioned; fall back
-    # to an empty list instead of a 500.
-    try:
-        result = await db.execute(text("""
-            SELECT poi.*, oct.title, oct.description as template_description, oct.item_type,
-                   oct.is_required as template_required, oct.completion_source
-            FROM provider_onboarding_items poi
-            LEFT JOIN onboarding_checklist_templates oct ON oct.id = poi.template_id
-            WHERE poi.tenant_id = :tid
-            ORDER BY oct.display_order, poi.checklist_key
-        """), {"tid": str(tid)})
-        rows = [dict(r._mapping) for r in result.fetchall()]
-    except Exception:
-        await db.rollback()
-        rows = []
-    return ok({"items": rows, "count": len(rows)}, request_id=rid)
+    live = await _build_live_provider_onboarding(db, tid)
+    return ok({"items": live["items"], "count": len(live["items"])}, request_id=rid)
 
 
 @router.post("/onboarding/refresh")
@@ -2177,7 +2479,8 @@ async def refresh_onboarding(
     user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    return ok({"refreshed": True}, request_id=rid)
+    live = await _build_live_provider_onboarding(db, _tid(user))
+    return ok(live["status"], request_id=rid)
 
 
 # ── Packages Status (Sprint 9) ────────────────────────────────────────────────

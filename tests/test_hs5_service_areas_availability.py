@@ -37,13 +37,13 @@ def test_availability_route_exists():
 
 
 def test_setup_menu_has_service_areas_and_availability():
-    # Externally renamed since this test was written: "Availability" ->
-    # "Business Hours", route moved /provider/availability ->
-    # /tenant/setup/availability. Same feature, new label/route.
-    setup_block = LAYOUT.split('label: "Setup"')[1].split('label: "Team"')[0]
-    assert "Service Areas" in setup_block
-    assert "Business Hours" in setup_block
-    assert "/tenant/setup/availability" in setup_block
+    # Coverage pincodes and availability are intentionally consolidated into
+    # one workspace, linked from the secondary Business setup navigation.
+    assert 'label: "Coverage & Hours"' in LAYOUT
+    assert 'href: "/business/coverage-hours"' in LAYOUT
+    combined_page = (FRONTEND / "app/(onboarding)/tenant/home-services/setup/coverage-availability/page.tsx").read_text(encoding="utf-8-sig")
+    assert "Coverage pincodes" in combined_page
+    assert "Weekly business hours" in combined_page
 
 
 def test_no_old_pricing_bargain_menu_items():

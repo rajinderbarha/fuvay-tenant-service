@@ -9,6 +9,7 @@ convention in this repo). Covers:
   - safety indicators are read-only (never accepted from the draft payload)
 """
 import os
+import pytest
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 POLICY_SERVICE = os.path.join(ROOT, "app", "engines", "platform_notifications", "policy_service.py")
@@ -54,8 +55,8 @@ class TestProviderReadinessBlocker:
 
 
 class TestChannelStatusHonesty:
-    def test_stub_channels_never_report_available(self):
-        import asyncio
+    @pytest.mark.asyncio
+    async def test_stub_channels_never_report_available(self):
         from unittest.mock import AsyncMock, MagicMock
         from app.engines.platform_notifications.provider_status_service import ProviderStatusService
 
@@ -63,15 +64,15 @@ class TestChannelStatusHonesty:
         aggregate_result = MagicMock()
         aggregate_result.all.return_value = []
         db.execute = AsyncMock(return_value=aggregate_result)
-        items = asyncio.get_event_loop().run_until_complete(ProviderStatusService().list_channel_status(db))
+        items = await ProviderStatusService().list_channel_status(db)
         by_channel = {i["channel"]: i for i in items}
         assert by_channel["in_app"]["state"] == "Available"
         for ch in ("email", "sms", "whatsapp", "push"):
             assert by_channel[ch]["state"] != "Available"
             assert by_channel[ch]["credential_reference"] is None
 
-    def test_channel_status_uses_one_grouped_outbox_query(self):
-        import asyncio
+    @pytest.mark.asyncio
+    async def test_channel_status_uses_one_grouped_outbox_query(self):
         from unittest.mock import AsyncMock, MagicMock
         from app.engines.platform_notifications.provider_status_service import ProviderStatusService
 
@@ -79,7 +80,7 @@ class TestChannelStatusHonesty:
         aggregate_result = MagicMock()
         aggregate_result.all.return_value = []
         db.execute = AsyncMock(return_value=aggregate_result)
-        asyncio.get_event_loop().run_until_complete(ProviderStatusService().list_channel_status(db))
+        await ProviderStatusService().list_channel_status(db)
         assert db.execute.await_count == 1
 
     def test_channel_status_never_returns_credentials(self):

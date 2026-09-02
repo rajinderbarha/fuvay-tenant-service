@@ -28,7 +28,7 @@ def test_planner_contract_has_real_server_filters_and_pagination():
 def test_capability_filter_uses_stable_service_id_and_not_selected_member_data():
     filters = source(FILTERS)
     page = source(PAGE)
-    assert "value={c.id}" in filters
+    assert "value: item.id" in filters
     assert "available_filters.capabilities" in page
     assert "/team/${selectedStaffId}/overview" not in page
 

@@ -67,6 +67,8 @@ class CustomerComplaint(Base):
     admin_escalation_at             = Column(DateTime(timezone=True), nullable=True)
     settlement_status               = Column(String(40),  nullable=True)
     ai_session_id                   = Column(UUID(as_uuid=True), nullable=True)
+    provider_sla_penalty_charged    = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    provider_sla_penalized_at       = Column(DateTime(timezone=True), nullable=True)
     created_at                      = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at                      = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
 
@@ -109,7 +111,10 @@ class CustomerComplaint(Base):
             "ai_escalation_at":     self.ai_escalation_at.isoformat() if self.ai_escalation_at else None,
             "admin_escalation_at":  self.admin_escalation_at.isoformat() if self.admin_escalation_at else None,
             "settlement_status":    self.settlement_status,
-            "ai_session_id":        str(self.ai_session_id) if self.ai_session_id else None,
+            "provider_sla_penalty_charged": (float(self.provider_sla_penalty_charged)
+                                               if self.provider_sla_penalty_charged is not None else 0.0),
+            "provider_sla_penalized_at": (self.provider_sla_penalized_at.isoformat()
+                                            if self.provider_sla_penalized_at else None),
         }
 
     def to_customer_dict(self) -> dict:
@@ -364,7 +369,6 @@ class RefundRequest(Base):
     resolution_method   = Column(String(40), nullable=True)
     customer_credit_id  = Column(UUID(as_uuid=True), nullable=True)
     provider_credit_deducted = Column(Numeric(12,2), nullable=True)
-    security_deposit_deducted = Column(Numeric(12,2), nullable=True)
     created_at          = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at          = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
 
@@ -402,7 +406,6 @@ class RefundRequest(Base):
             "resolution_method":   self.resolution_method,
             "customer_credit_id":  str(self.customer_credit_id) if self.customer_credit_id else None,
             "provider_credit_deducted": str(self.provider_credit_deducted) if self.provider_credit_deducted is not None else None,
-            "security_deposit_deducted": str(self.security_deposit_deducted) if self.security_deposit_deducted is not None else None,
             "created_at":          self.created_at.isoformat() if self.created_at else None,
             "updated_at":          self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -428,18 +431,20 @@ class ComplaintPolicy(Base):
     allow_duplicate_open_complaints = Column(Boolean, nullable=False, default=False)
     allow_rework                 = Column(Boolean, nullable=False, default=True)
     allow_refund_request         = Column(Boolean, nullable=False, default=True)
-    require_admin_review         = Column(Boolean, nullable=False, default=True)
+    require_admin_review         = Column(Boolean, nullable=False, default=False)
     require_provider_response    = Column(Boolean, nullable=False, default=True)
     default_provider_response_hours = Column(Integer, nullable=False, default=24)
     default_resolution_hours     = Column(Integer, nullable=False, default=72)
+    provider_sla_breach_penalty  = Column(Numeric(12, 2), nullable=False, default=Decimal("50.00"))
 
     # ── AI settlement rule (migration 138) — admin sets this; the rest is automatic ──
     # The AI takes over only once the PROVIDER has failed to solve the complaint,
     # may offer at most `ai_settlement_max_pct` of the job value, and pays in
     # CREDIT POINTS — never real money. A case that warrants more than the cap is
     # escalated to admin manual review rather than settled by the AI.
-    ai_settlement_enabled            = Column(Boolean, nullable=False, default=True)
-    ai_auto_start_on_provider_failure = Column(Boolean, nullable=False, default=True)
+    # Historical schema compatibility only; complaint AI routes are retired.
+    ai_settlement_enabled            = Column(Boolean, nullable=False, default=False)
+    ai_auto_start_on_provider_failure = Column(Boolean, nullable=False, default=False)
     ai_settlement_max_pct            = Column(Numeric(5, 2), nullable=False, default=Decimal("25.00"))
     ai_settlement_allowed_remedies   = Column(JSONB, nullable=True)
     settlement_payout_in_credits_only = Column(Boolean, nullable=False, default=True)
@@ -464,6 +469,8 @@ class ComplaintPolicy(Base):
             "require_provider_response":    self.require_provider_response,
             "default_provider_response_hours": self.default_provider_response_hours,
             "default_resolution_hours":     self.default_resolution_hours,
+            "provider_sla_breach_penalty": (float(self.provider_sla_breach_penalty)
+                                               if self.provider_sla_breach_penalty is not None else 0.0),
             # The AI settlement rule (migration 138) — without these the admin UI
             # could set the rule but never read it back.
             "ai_settlement_enabled":             self.ai_settlement_enabled,

@@ -291,10 +291,13 @@ async def audit_trail(
              summary="Manually trigger compliance SLA job (sla_check + expire_exports)",
              response_model=ApiResponse[dict])
 async def run_compliance_jobs(r: Request,
-                              u = Depends(require_super_admin)) -> ApiResponse[dict]:
+                              u: UserContext = Depends(require_super_admin)) -> ApiResponse[dict]:
     """Triggers run_all() immediately. Safe to call repeatedly (idempotent)."""
     from app.jobs.compliance_sla import run_all
-    result = await run_all()
+    result = await run_all(
+        trigger="manual",
+        triggered_by_user_id=uuid.UUID(u.user_id),
+    )
     return ok(result, _rid(r), "compliance_admin")
 
 
@@ -319,6 +322,26 @@ async def run_expire_exports_only(r: Request,
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
+
+@router.get("/dpdp/policies",
+            summary="List published DPDP policy versions",
+            response_model=ApiResponse[dict])
+async def list_dpdp_policies(
+        r: Request,
+        u: UserContext = Depends(require_super_admin),
+        s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.list_dpdp_policy_versions(), _rid(r), "compliance_admin")
+
+
+@router.get("/dpdp/scheduler-status",
+            summary="Authoritative status of the DPDP SLA evaluator",
+            response_model=ApiResponse[dict])
+async def dpdp_scheduler_status(
+        r: Request,
+        u: UserContext = Depends(require_super_admin),
+        s: ComplianceEnterpriseService = Depends(_svc)) -> ApiResponse[dict]:
+    return ok(await s.get_dpdp_scheduler_status(), _rid(r), "compliance_admin")
+
 
 @router.get("/dpdp/health",
             summary="Compliance health score with top risks and recommendations",

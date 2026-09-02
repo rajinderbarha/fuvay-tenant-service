@@ -53,7 +53,7 @@ export default function ProviderMatchingPage() {
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px" }}>
           When more than one provider is eligible, Fuvay ranks them using this weighted score.
           Provider eligibility itself is a hard gate (bookable, coverage, technician, availability,
-          pricing, package, credits, deposit) — only eligible providers are ever scored.
+          pricing, credits, and account health) — only eligible providers are ever scored.
         </p>
         {policy.loading ? <Skeleton height={112}/> : policy.error ? (
           <SectionError title="Couldn't load matching policy" message={policy.error} requestId={policy.requestId} onRetry={policy.refetch}/>

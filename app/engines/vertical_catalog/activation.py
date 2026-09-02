@@ -87,10 +87,10 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
 
     # BUG FIX: this used to count EVERY active provider_team_members row
     # (owners/managers/dispatchers included) as a "technician" for both the
-    # staff-readiness gate AND the deposit-scaling formula. Kept
+    # staff-readiness gate AND the legacy capacity calculation. Kept
     # `active_staff` (broad headcount) for the pre-existing staff_ready gate
-    # (any operational person counts for "is someone staffed"), but deposit
-    # scaling now uses resolve_qualifying_technician_count(), which is
+    # (any operational person counts for "is someone staffed"), while
+    # capacity uses resolve_qualifying_technician_count(), which is
     # role-filtered to real technicians only (see finance_policy_service.py).
     active_staff = (await db.execute(
         text("SELECT count(*) FROM provider_team_members WHERE tenant_id=:tid "
@@ -107,8 +107,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
     # happened to already have a tenant_billing row, which conflates "does a
     # POLICY exist to resolve against" with "has this tenant's own billing
     # record been created yet" (a separate, per-tenant concern already
-    # handled -- correctly failing closed -- by the deposit/credit gates
-    # below via configured_deposit_amount/credit_balance defaulting to 0).
+    # handled -- correctly failing closed -- by the billing/credit checks).
     # The finance_policy gate's actual job is "can we resolve a published
     # Home Services activation finance policy at all" -- root-caused and
     # fixed to call resolve_published_policy(), which fails closed with a
@@ -160,8 +159,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
          blocking_reason=None if vertical_enabled else "Home Services is currently disabled platform-wide.",
          tenant_visible_message=None if vertical_enabled else "Home Services is temporarily unavailable. Contact support.")
 
-    # The security deposit gate was removed in migration 317; the seat gate that
-    # replaced it no longer BLOCKS activation either. Buying capacity is an
+    # Buying capacity no longer blocks activation. It is an
     # offer made during onboarding, not a toll on getting started: revenue is
     # commission on completed work, so a provider who cannot reach their first
     # job earns nothing for anyone. The gate stays in the list to advertise the
@@ -175,8 +173,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
          blocking_reason=None,
          retryable=False,
          tenant_visible_message="Verified" if _seats_covered
-             else (f"{FREE_STARTER_SEATS} free seat(s) included — buy a top-up plan to add "
-                   f"more technicians or add credit"),
+             else "No seat is needed for approval. Buy a top-up plan before adding a technician.",
          evidence={"entitled_seats": entitled_seats,
                    "free_starter_seats": FREE_STARTER_SEATS,
                    "qualifying_technicians": qualifying_technician_count})
@@ -210,11 +207,15 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
          tenant_visible_message=f"{active_areas} pincode(s) and weekly hours validated" if coverage_ready
              else "Coverage or schedule missing")
 
-    _add("staff_capacity", "Staff capacity", staff_required,
-         "ready" if staff_ready else "blocked", "system", None,
-         blocking_reason=None if staff_ready else "No ready technician for a published, technician-required service.",
+    # Staff capacity cannot be a hidden payment gate: starter seats are zero
+    # and seats are explicitly an optional post-approval top-up.  Activation
+    # therefore succeeds without staff; provider bookability remains blocked
+    # until a real ready technician exists.
+    _add("staff_capacity", "Staff capacity", False,
+         "ready" if staff_ready else "not_required", "system", None,
+         blocking_reason=None,
          tenant_visible_message=f"{active_staff} technician(s) available for required services" if staff_ready
-             else "No ready technician")
+             else "Add a technician seat and ready technician before receiving bookings")
 
     _add("finance_policy", "Finance policy", True,
          "ready" if finance_ready else "blocked", "system", None,
@@ -234,8 +235,8 @@ def gates_all_clear(gates: list[dict]) -> bool:
 async def try_auto_activate(db: AsyncSession, tenant_id: uuid.UUID,
                               vertical_key: str = HOME_SERVICES_VERTICAL_KEY,
                               actor_id: uuid.UUID | None = None) -> dict:
-    """Idempotent: safe to call repeatedly (after approval, after a deposit is
-    verified, on a manual admin retry). No-ops unless the enrollment is
+    """Idempotent: safe to call repeatedly (after approval, after funding or
+    capacity changes, on a manual admin retry). No-ops unless the enrollment is
     currently sitting in an activatable, gate-pending state."""
     svc = VerticalCatalogService()
     enrollment = await svc.get_or_create_enrollment(db, tenant_id, vertical_key)

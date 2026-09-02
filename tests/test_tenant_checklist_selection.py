@@ -11,8 +11,8 @@ to a job type PLATFORM-wide, so every provider ran the identical authored list
 and there was no way for one to run a chosen subset. `_instance_items` handed
 technicians everything the admin wrote.
 
-Exercised against real live Guramrit data with a real authored template (no
-mocks), because the rules being proven are enforced by a real UNIQUE
+Exercised against any current tenant/service fixture with a real authored
+template (no mocks), because the rules being proven are enforced by a real UNIQUE
 constraint and by walking the real master_service -> job_type -> mapping ->
 published version -> section -> item chain.
 """
@@ -27,8 +27,6 @@ from app.engines.checklist_catalog import constants as c
 from app.engines.checklist_catalog import service as svc
 from app.exceptions import ServiceOSException
 
-GURAMRIT_TENANT_ID = uuid.UUID("244beeec-fedc-452e-8054-317e45557d4d")
-
 ITEM_LABELS = [
     "Check gas pressure", "Clean filters", "Test cooling output",
     "Inspect drainage", "Check electrical connections",
@@ -42,13 +40,20 @@ async def _get_db():
     return get_session_factory()()
 
 
-async def _ac_service_and_job_type(db):
-    sid = (await db.execute(sa_text(
-        "SELECT id FROM master_services WHERE service_name='AC Service'"))).scalar()
-    jt = (await db.execute(sa_text(
-        "SELECT id FROM master_service_job_types WHERE master_service_id=:s LIMIT 1"),
-        {"s": str(sid)})).scalar()
-    return sid, jt
+async def _current_tenant_service_and_job_type(db):
+    """Use current platform configuration, never a deleted demo tenant/catalog."""
+    row = (await db.execute(sa_text("""
+        SELECT t.id AS tenant_id, ms.id AS service_id, jt.id AS job_type_id
+        FROM tenants t
+        CROSS JOIN master_services ms
+        JOIN master_service_job_types jt ON jt.master_service_id = ms.id
+        WHERE t.terminated_at IS NULL AND t.archived_at IS NULL
+        ORDER BY t.created_at, ms.created_at
+        LIMIT 1
+    """))).fetchone()
+    if not row:
+        pytest.skip("current database has no tenant plus service/job-type fixture")
+    return row.tenant_id, row.service_id, row.job_type_id
 
 
 async def _author_published_checklist(db, job_type_id, *, item_count: int = 7):
@@ -109,12 +114,12 @@ async def test_nothing_authored_is_reported_as_an_admin_gap_not_a_tenant_failure
     admin has published no checklist for the service, that is distinguishable."""
     db = await _get_db()
     try:
-        sid, _ = await _ac_service_and_job_type(db)
+        tenant_id, sid, _ = await _current_tenant_service_and_job_type(db)
         await db.execute(sa_text(
             "DELETE FROM tenant_service_checklist_items WHERE tenant_id=:t"),
-            {"t": str(GURAMRIT_TENANT_ID)})
+            {"t": str(tenant_id)})
         await db.commit()
-        readiness = await svc.tenant_selection_readiness(db, GURAMRIT_TENANT_ID, sid)
+        readiness = await svc.tenant_selection_readiness(db, tenant_id, sid)
         if readiness["selectable_total"] == 0:
             assert readiness["nothing_authored"] is True
             assert readiness["satisfied"] is False
@@ -127,7 +132,7 @@ async def test_selection_rules_against_a_real_authored_checklist():
     db = await _get_db()
     tpl_id = ver_id = map_id = None
     try:
-        sid, jt = await _ac_service_and_job_type(db)
+        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
         assert jt is not None, "AC Service must have a job type to map a checklist to"
         tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
 
@@ -141,7 +146,7 @@ async def test_selection_rules_against_a_real_authored_checklist():
 
         # Below the minimum is refused, and the message carries the real count.
         with pytest.raises(ServiceOSException) as exc:
-            await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, ids[:4],
+            await svc.set_tenant_selection(db, tenant_id, sid, ids[:4],
                                            selected_by_user_id=None)
         assert exc.value.error_code == c.ERR_CHECKLIST_SELECTION_TOO_SMALL
 
@@ -149,26 +154,27 @@ async def test_selection_rules_against_a_real_authored_checklist():
         # the count would otherwise pass.
         with pytest.raises(ServiceOSException) as exc:
             await svc.set_tenant_selection(
-                db, GURAMRIT_TENANT_ID, sid, ids[:4] + [uuid.uuid4()],
+                db, tenant_id, sid, ids[:4] + [uuid.uuid4()],
                 selected_by_user_id=None)
         assert exc.value.error_code == c.ERR_CHECKLIST_ITEM_NOT_SELECTABLE
 
         # Duplicates must not be counted as distinct points -- otherwise the
         # same tick six times would satisfy a five-point requirement.
         with pytest.raises(ServiceOSException) as exc:
-            await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, [ids[0]] * 6,
+            await svc.set_tenant_selection(db, tenant_id, sid, [ids[0]] * 6,
                                            selected_by_user_id=None)
         assert exc.value.error_code == c.ERR_CHECKLIST_SELECTION_TOO_SMALL
 
         # Exactly the minimum is accepted.
-        readiness = await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, ids[:5],
+        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[:5],
                                                     selected_by_user_id=None)
         await db.commit()
         assert readiness["satisfied"] is True
         assert readiness["selected_count"] == 5
         assert readiness["shortfall"] == 0
     finally:
-        await _cleanup(db, GURAMRIT_TENANT_ID, tpl_id, ver_id, map_id)
+        if 'tenant_id' in locals():
+            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
         await db.close()
 
 
@@ -180,14 +186,14 @@ async def test_changing_the_selection_deactivates_rather_than_deletes():
     db = await _get_db()
     tpl_id = ver_id = map_id = None
     try:
-        sid, jt = await _ac_service_and_job_type(db)
+        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
         tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
         ids = [uuid.UUID(i["id"]) for i in await svc.selectable_items_for_service(db, sid)]
 
-        await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, ids[:5], selected_by_user_id=None)
+        await svc.set_tenant_selection(db, tenant_id, sid, ids[:5], selected_by_user_id=None)
         await db.commit()
         # Swap two points out for two others.
-        readiness = await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, ids[2:7],
+        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[2:7],
                                                     selected_by_user_id=None)
         await db.commit()
 
@@ -195,22 +201,23 @@ async def test_changing_the_selection_deactivates_rather_than_deletes():
         rows = dict((bool(a), int(n)) for a, n in (await db.execute(sa_text(
             "SELECT is_active, count(*) FROM tenant_service_checklist_items "
             "WHERE tenant_id=:t AND master_service_id=:s GROUP BY is_active"),
-            {"t": str(GURAMRIT_TENANT_ID), "s": str(sid)})).fetchall())
+            {"t": str(tenant_id), "s": str(sid)})).fetchall())
         assert rows.get(True) == 5, "five points active after the swap"
         assert rows.get(False) == 2, "the two dropped points are retained, deactivated"
 
         # Re-selecting a deactivated point reactivates the same row.
-        readiness = await svc.set_tenant_selection(db, GURAMRIT_TENANT_ID, sid, ids[:5],
+        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[:5],
                                                     selected_by_user_id=None)
         await db.commit()
         assert readiness["selected_count"] == 5
         total = (await db.execute(sa_text(
             "SELECT count(*) FROM tenant_service_checklist_items "
             "WHERE tenant_id=:t AND master_service_id=:s"),
-            {"t": str(GURAMRIT_TENANT_ID), "s": str(sid)})).scalar()
+            {"t": str(tenant_id), "s": str(sid)})).scalar()
         assert total == 7, "no duplicate rows created by re-selecting"
     finally:
-        await _cleanup(db, GURAMRIT_TENANT_ID, tpl_id, ver_id, map_id)
+        if 'tenant_id' in locals():
+            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
         await db.close()
 
 
@@ -221,7 +228,7 @@ async def test_a_draft_version_is_never_offerable_to_a_tenant():
     db = await _get_db()
     tpl_id = ver_id = map_id = None
     try:
-        sid, jt = await _ac_service_and_job_type(db)
+        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
         tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
         mine = {i["label"] for i in await svc.selectable_items_for_service(db, sid)}
         assert set(ITEM_LABELS) <= mine, "this fixture's points start out offerable"
@@ -236,5 +243,6 @@ async def test_a_draft_version_is_never_offerable_to_a_tenant():
         assert not (set(ITEM_LABELS) & after), \
             "a DRAFT version's points must vanish from the tenant's selectable list"
     finally:
-        await _cleanup(db, GURAMRIT_TENANT_ID, tpl_id, ver_id, map_id)
+        if 'tenant_id' in locals():
+            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
         await db.close()

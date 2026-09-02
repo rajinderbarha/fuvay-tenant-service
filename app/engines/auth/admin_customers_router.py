@@ -28,6 +28,10 @@ from app.schemas.base import ok
 
 logger = structlog.get_logger("auth.admin_customers_router")
 router = APIRouter(prefix="/v1/admin/customers", tags=["Admin Customers"])
+# Customer/provider remedy case details are intentionally not mounted for
+# platform admins. Aggregate risk counts remain available for account-health
+# oversight without giving the platform an adjudication workspace.
+retired_case_router = APIRouter(prefix="/v1/admin/customers", include_in_schema=False)
 
 
 def _rid(r: Request) -> str:
@@ -617,7 +621,7 @@ async def get_admin_customer(
 # Customer Users Enterprise Upgrade — detail-tab sub-resources
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/{customer_id}/complaints", response_model=None, summary="Customer complaints & disputes")
+@retired_case_router.get("/{customer_id}/complaints", response_model=None)
 async def customer_complaints(r: Request, customer_id: uuid.UUID,
                                status: Optional[str] = Query(None),
                                u: UserContext = Depends(require_permission(P.CUSTOMERS_VIEW_DETAIL)),
@@ -625,7 +629,7 @@ async def customer_complaints(r: Request, customer_id: uuid.UUID,
     return ok(await s.list_complaints(customer_id, status), _rid(r), "customers")
 
 
-@router.get("/{customer_id}/service-credits", response_model=None, summary="Customer service credits")
+@retired_case_router.get("/{customer_id}/service-credits", response_model=None)
 async def customer_service_credits(r: Request, customer_id: uuid.UUID,
                                     status: Optional[str] = Query(None),
                                     u: UserContext = Depends(require_permission(P.CUSTOMERS_SERVICE_CREDITS_READ)),
@@ -641,7 +645,7 @@ class IssueCreditBody(BaseModel):
     validity_days: Optional[int] = None
 
 
-@router.post("/{customer_id}/service-credits", response_model=None, summary="Issue customer service credit")
+@retired_case_router.post("/{customer_id}/service-credits", response_model=None)
 async def issue_customer_service_credit(r: Request, customer_id: uuid.UUID, body: IssueCreditBody,
                                          u: UserContext = Depends(require_permission(P.CUSTOMERS_SERVICE_CREDITS_CREATE)),
                                          s: CustomerAdminService = Depends(_svc)):

@@ -18,6 +18,57 @@ TECHNICIAN_DESIGNATIONS = {"technician"}
 VALID_MEMBER_TYPES = {"technician", "staff", "manager"}
 
 
+async def members_with_verified_required_documents(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    member_ids: list[str] | None = None,
+) -> set[str]:
+    """Compatibility helper for the retired platform document gate.
+
+    Technician screening is provider-owned, so every requested roster member
+    passes this platform check. Keeping the helper avoids breaking historical
+    callers while making the policy boundary explicit.
+    """
+    from app.engines.vertical_catalog.document_requirements import required_technician_keys
+
+    required = sorted(required_technician_keys(vertical="home_services"))
+    if not required:
+        return set(member_ids or [])
+
+    where_members = ""
+    params: dict = {
+        "tid": str(tenant_id),
+        "required": required,
+        "required_count": len(required),
+    }
+    if member_ids is not None:
+        if not member_ids:
+            return set()
+        where_members = "AND staff_member_id = ANY(CAST(:member_ids AS uuid[])) "
+        params["member_ids"] = [str(member_id) for member_id in member_ids]
+
+    rows = (await db.execute(text(
+        "SELECT staff_member_id::text AS staff_member_id "
+        "FROM tenant_documents "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND staff_member_id IS NOT NULL "
+        "AND is_current=true AND status='verified' "
+        "AND (expiry_date IS NULL OR expiry_date > now()) "
+        "AND doc_type = ANY(CAST(:required AS text[])) "
+        + where_members +
+        "GROUP BY staff_member_id "
+        "HAVING count(DISTINCT doc_type) = :required_count"
+    ), params)).fetchall()
+    return {str(row.staff_member_id) for row in rows}
+
+
+async def member_has_verified_required_documents(
+    db: AsyncSession, tenant_id: uuid.UUID, member_id: uuid.UUID
+) -> bool:
+    return str(member_id) in await members_with_verified_required_documents(
+        db, tenant_id, [str(member_id)]
+    )
+
+
 async def compute_member_readiness(db: AsyncSession, tenant_id: uuid.UUID, member: dict) -> dict:
     """Returns {status, missing: [...]}. `status` is the single readiness
     value the roster/coverage card render — never a bare `active` boolean."""

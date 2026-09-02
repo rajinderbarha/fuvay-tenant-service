@@ -115,10 +115,11 @@ async def test_in_app_provider_creates_notification(user_id, tenant_id):
 
 @pytest.mark.asyncio
 async def test_email_stub_returns_not_configured():
-    from app.engines.platform_notifications.channel_providers import EmailNotificationProviderStub
+    from app.engines.platform_notifications.channel_providers import EmailNotificationProvider
     from app.engines.platform_notifications.constants import DELIVERY_PROVIDER_NOT_CONFIGURED
-    stub = EmailNotificationProviderStub()
-    result = await stub.deliver()
+    stub = EmailNotificationProvider()
+    with patch("app.engines.platform_notifications.channel_providers.channel_config_service.get_active", AsyncMock(return_value=None)):
+        result = await stub.deliver(db=_db(), user_id=uuid.uuid4(), title="Test", body="Test")
     assert result.success is False
     assert result.status == DELIVERY_PROVIDER_NOT_CONFIGURED
     assert result.failure_code == "PROVIDER_NOT_CONFIGURED"
@@ -126,20 +127,22 @@ async def test_email_stub_returns_not_configured():
 
 @pytest.mark.asyncio
 async def test_sms_stub_returns_not_configured():
-    from app.engines.platform_notifications.channel_providers import SmsNotificationProviderStub
+    from app.engines.platform_notifications.channel_providers import TwilioNotificationProvider
     from app.engines.platform_notifications.constants import DELIVERY_PROVIDER_NOT_CONFIGURED
-    stub = SmsNotificationProviderStub()
-    result = await stub.deliver()
+    stub = TwilioNotificationProvider("sms")
+    with patch("app.engines.platform_notifications.channel_providers.channel_config_service.get_active", AsyncMock(return_value=None)):
+        result = await stub.deliver(db=_db(), user_id=uuid.uuid4(), body="Test")
     assert result.success is False
     assert result.status == DELIVERY_PROVIDER_NOT_CONFIGURED
 
 
 @pytest.mark.asyncio
 async def test_push_stub_returns_not_configured():
-    from app.engines.platform_notifications.channel_providers import PushNotificationProviderStub
+    from app.engines.platform_notifications.channel_providers import ExpoPushNotificationProvider
     from app.engines.platform_notifications.constants import DELIVERY_PROVIDER_NOT_CONFIGURED
-    stub = PushNotificationProviderStub()
-    result = await stub.deliver()
+    stub = ExpoPushNotificationProvider()
+    with patch("app.engines.platform_notifications.channel_providers.channel_config_service.get_active", AsyncMock(return_value=None)):
+        result = await stub.deliver(db=_db(), user_id=uuid.uuid4(), title="Test", body="Test")
     assert result.success is False
     assert result.status == DELIVERY_PROVIDER_NOT_CONFIGURED
 
@@ -256,8 +259,10 @@ async def test_notification_service_retry_outbox_exceeds_max_raises(user_id):
     r.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=outbox)))
     db.execute = AsyncMock(return_value=r)
 
-    with pytest.raises(ValueError, match=ERR_NOTIF_RETRY_NOT_ALLOWED):
+    from app.exceptions import ServiceOSException
+    with pytest.raises(ServiceOSException) as exc:
         await svc.retry_outbox(db, outbox.id)
+    assert exc.value.error_code == ERR_NOTIF_RETRY_NOT_ALLOWED
 
 
 @pytest.mark.asyncio
@@ -271,8 +276,10 @@ async def test_notification_service_outbox_not_found_raises():
     r.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=None)))
     db.execute = AsyncMock(return_value=r)
 
-    with pytest.raises(ValueError, match=ERR_NOTIF_OUTBOX_NOT_FOUND):
+    from app.exceptions import ServiceOSException
+    with pytest.raises(ServiceOSException) as exc:
         await svc.get_outbox_record(db, uuid.uuid4())
+    assert exc.value.error_code == ERR_NOTIF_OUTBOX_NOT_FOUND
 
 
 @pytest.mark.asyncio

@@ -180,33 +180,34 @@ def test_router_engine_id_is_ai_chat():
 
 # ── 6. Customer app integration ───────────────────────────────────────────────
 def test_ai_chat_api_in_customer_lib():
-    with open(f"{CUSTOMER}/lib/api.ts", encoding="utf-8") as f: c = f.read()
-    assert "aiChatApi" in c
+    with open(f"{CUSTOMER}/api/assistant/assistantApi.ts", encoding="utf-8") as f: c = f.read()
+    assert "sendAssistantMessage" in c
 
 def test_ai_chat_api_calls_v1_ai_chat():
-    with open(f"{CUSTOMER}/lib/api.ts", encoding="utf-8") as f: c = f.read()
-    assert '"/v1/ai/chat"' in c
+    with open(f"{CUSTOMER}/api/assistant/assistantApi.ts", encoding="utf-8") as f: c = f.read()
+    assert '"/v1/customer/ai-chat/sessions"' in c
+    assert '"/v1/ai/chat"' not in c
 
 def test_ai_chat_screen_exists():
-    assert os.path.exists(f"{CUSTOMER}/screens/AIChatScreen.tsx")
+    assert os.path.exists(f"{CUSTOMER}/screens/bookingChat/BookingChatScreen.tsx")
 
 def test_ai_chat_screen_uses_aiChatApi():
-    with open(f"{CUSTOMER}/screens/AIChatScreen.tsx", encoding="utf-8") as f: c = f.read()
-    assert "aiChatApi" in c or "aiConversationApi" in c
+    with open(f"{CUSTOMER}/screens/bookingChat/BookingChatScreen.tsx", encoding="utf-8") as f: c = f.read()
+    assert "useAssistantController" in c
 
 def test_ai_chat_screen_has_quick_prompts():
-    with open(f"{CUSTOMER}/screens/AIChatScreen.tsx", encoding="utf-8") as f: c = f.read()
-    assert "QUICK_PROMPTS" in c or "quick" in c.lower()
+    with open(f"{CUSTOMER}/screens/bookingChat/BookingChatScreen.tsx", encoding="utf-8") as f: c = f.read()
+    assert "quick" in c.lower() or "Option" in c
 
 def test_ai_chat_screen_shows_tool_usage():
-    with open(f"{CUSTOMER}/screens/AIChatScreen.tsx", encoding="utf-8") as f: c = f.read()
-    assert "tools_called" in c or "toolsUsed" in c
+    with open(f"{CUSTOMER}/components/assistant/AssistantActivity.tsx", encoding="utf-8") as f: c = f.read()
+    assert "stage" in c and "resolveActivityLabel" in c
 
 def test_tab_navigator_has_ai_tab():
-    with open(f"{CUSTOMER}/navigation/TabNavigator.tsx", encoding="utf-8") as f: c = f.read()
-    assert "AIChatScreen" in c or "AIAssistant" in c
+    with open(f"{CUSTOMER}/navigation/CustomerTabs.tsx", encoding="utf-8") as f: c = f.read()
+    assert 'name="Assistant"' in c and "BookingChatScreen" in c
 
 def test_ai_chat_screen_has_no_hardcoded_api_key():
-    with open(f"{CUSTOMER}/screens/AIChatScreen.tsx", encoding="utf-8") as f: c = f.read()
+    with open(f"{CUSTOMER}/screens/bookingChat/BookingChatScreen.tsx", encoding="utf-8") as f: c = f.read()
     assert "sk-" not in c
     assert "DEEPSEEK" not in c, "API key must be backend-only"

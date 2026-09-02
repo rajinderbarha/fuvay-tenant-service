@@ -152,13 +152,11 @@ class TestMappingValidation:
 # ── Version immutability / draft lifecycle ───────────────────────────────
 
 class TestVersionLifecycle:
-    def test_publish_rejects_non_draft(self):
+    @pytest.mark.asyncio
+    async def test_publish_rejects_non_draft(self):
         version = MagicMock(status=c.VERSION_PUBLISHED)
         with pytest.raises(ServiceOSException):
-            import asyncio
-            asyncio.get_event_loop().run_until_complete(
-                svc.publish_version(AsyncMock(), version, published_by=None)
-            )
+            await svc.publish_version(AsyncMock(), version, published_by=None)
 
     @pytest.mark.asyncio
     async def test_publish_rejects_empty_version(self, monkeypatch):

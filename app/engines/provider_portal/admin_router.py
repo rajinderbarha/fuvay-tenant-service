@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from app.dependencies.auth import require_super_admin, get_current_user, UserContext
 from app.core.permissions import require_permission, P
@@ -16,6 +17,7 @@ from app.schemas.base import ok
 from app.engine_registry.registry import registry
 
 admin_router = APIRouter(prefix="/v1/admin", tags=["Admin — Provider Management"])
+logger = structlog.get_logger("provider_portal.admin_router")
 
 
 # ── Providers Summary / Directory ─────────────────────────────────────────────
@@ -29,13 +31,6 @@ async def get_providers_summary(
     """All-providers summary counts for the enterprise directory page."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     row = await db.execute(text("""
-        WITH pkg_latest AS (
-            SELECT DISTINCT ON (tenant_id)
-                tenant_id, status AS pkg_status
-            FROM tenant_package_assignments
-            WHERE deleted_at IS NULL
-            ORDER BY tenant_id, created_at DESC
-        )
         SELECT
             COUNT(*)                                                         AS total,
             SUM(CASE WHEN t.status = 'active'
@@ -49,11 +44,8 @@ async def get_providers_summary(
             SUM(CASE WHEN t.verification_status = 'changes_requested'
                                                                    THEN 1 ELSE 0 END) AS changes_requested,
             SUM(CASE WHEN t.verification_status = 'rejected'
-                     OR  t.status = 'rejected'                     THEN 1 ELSE 0 END) AS rejected,
-            SUM(CASE WHEN lp.pkg_status IN ('selected','paid_pending_approval')
-                                                                   THEN 1 ELSE 0 END) AS package_pending_approval
+                     OR  t.status = 'rejected'                     THEN 1 ELSE 0 END) AS rejected
         FROM tenants t
-        LEFT JOIN pkg_latest lp ON lp.tenant_id = t.id
         WHERE t.terminated_at IS NULL AND t.archived_at IS NULL
     """))
     r = row.fetchone()
@@ -65,20 +57,12 @@ async def get_providers_summary(
         "pending_review":          int(r[4] or 0),
         "changes_requested":       int(r[5] or 0),
         "rejected":                int(r[6] or 0),
-        "package_pending_approval":int(r[7] or 0),
     }, request_id=rid)
 
 
 # ── New Business Requests ─────────────────────────────────────────────────────
 
 _NEW_REQUESTS_CTE = """
-WITH latest_pkg AS (
-    SELECT DISTINCT ON (tenant_id)
-        tenant_id, status AS pkg_status, package_id
-    FROM tenant_package_assignments
-    WHERE deleted_at IS NULL
-    ORDER BY tenant_id, created_at DESC
-)
 SELECT
     t.id                                        AS tenant_id,
     COALESCE(t.business_name, t.tenant_name)    AS business_name,
@@ -92,8 +76,6 @@ SELECT
     t.verification_status,
     t.status                                    AS tenant_status,
     t.created_at, t.updated_at,
-    sp.name                                     AS package_name,
-    lp.pkg_status                               AS package_status,
     (
         CASE WHEN t.business_name   IS NOT NULL THEN 20 ELSE 0 END +
         CASE WHEN t.vertical        IS NOT NULL THEN 20 ELSE 0 END +
@@ -104,8 +86,6 @@ SELECT
 FROM tenants t
 LEFT JOIN users u            ON u.id  = t.owner_user_id
 LEFT JOIN service_categories sc ON sc.id = t.category_id
-LEFT JOIN latest_pkg lp      ON lp.tenant_id = t.id
-LEFT JOIN service_packages   sp ON sp.id = lp.package_id
 WHERE t.terminated_at IS NULL
   AND t.archived_at   IS NULL
   AND t.verification_status = 'not_started'
@@ -121,19 +101,8 @@ async def get_new_requests_summary(
     """Summary counts for the New Business Requests page."""
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     row = await db.execute(text("""
-        WITH latest_pkg AS (
-            SELECT DISTINCT ON (tenant_id)
-                tenant_id, status AS pkg_status
-            FROM tenant_package_assignments
-            WHERE deleted_at IS NULL
-            ORDER BY tenant_id, created_at DESC
-        )
         SELECT
             COUNT(*)                                                              AS total,
-            SUM(CASE WHEN lp.pkg_status IS NOT NULL               THEN 1 ELSE 0 END) AS with_package,
-            SUM(CASE WHEN lp.pkg_status IS NULL                   THEN 1 ELSE 0 END) AS without_package,
-            SUM(CASE WHEN lp.pkg_status IN ('selected',
-                     'paid_pending_approval')                      THEN 1 ELSE 0 END) AS package_selected,
             SUM(CASE WHEN (
                 CASE WHEN t.business_name  IS NOT NULL THEN 20 ELSE 0 END +
                 CASE WHEN t.vertical       IS NOT NULL THEN 20 ELSE 0 END +
@@ -142,7 +111,6 @@ async def get_new_requests_summary(
                 CASE WHEN t.owner_user_id  IS NOT NULL THEN 20 ELSE 0 END
             ) >= 80 THEN 1 ELSE 0 END)                                           AS profile_near_complete
         FROM tenants t
-        LEFT JOIN latest_pkg lp ON lp.tenant_id = t.id
         WHERE t.terminated_at IS NULL
           AND t.archived_at   IS NULL
           AND t.verification_status = 'not_started'
@@ -150,10 +118,7 @@ async def get_new_requests_summary(
     r = row.fetchone()
     return ok({
         "total":                int(r[0] or 0),
-        "with_package":         int(r[1] or 0),
-        "without_package":      int(r[2] or 0),
-        "package_selected":     int(r[3] or 0),
-        "profile_near_complete":int(r[4] or 0),
+        "profile_near_complete":int(r[1] or 0),
     }, request_id=rid)
 
 
@@ -163,7 +128,6 @@ async def list_new_requests(
     q: Optional[str] = Query(None),
     vertical_type: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
-    has_package: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     sort_by: str = Query("created_at"),
@@ -187,11 +151,6 @@ async def list_new_requests(
     if city:
         filters += " AND LOWER(t.city) LIKE :city"
         params["city"] = f"%{city.lower()}%"
-    if has_package is True:
-        filters += " AND lp.pkg_status IS NOT NULL"
-    elif has_package is False:
-        filters += " AND lp.pkg_status IS NULL"
-
     full_q = base + filters
     count_res = await db.execute(text(f"SELECT COUNT(*) FROM ({full_q}) _c"), params)
     total = int(count_res.scalar() or 0)
@@ -318,15 +277,6 @@ _QUEUE_BASE_WHERE = """
 """
 
 _QUEUE_CTE = """
-WITH latest_pkg AS (
-    SELECT DISTINCT ON (tenant_id)
-        tenant_id,
-        status      AS pkg_status,
-        package_id
-    FROM tenant_package_assignments
-    WHERE deleted_at IS NULL
-    ORDER BY tenant_id, created_at DESC
-)
 SELECT
     t.id                                                            AS tenant_id,
     COALESCE(t.business_name, t.tenant_name)                       AS business_name,
@@ -344,8 +294,6 @@ SELECT
     t.status                                                        AS tenant_status,
     t.created_at,
     t.updated_at,
-    sp.name                                                         AS selected_package_name,
-    lp.pkg_status                                                   AS package_status,
     (
         CASE WHEN t.business_name IS NOT NULL THEN 20 ELSE 0 END +
         CASE WHEN t.vertical     IS NOT NULL THEN 20 ELSE 0 END +
@@ -356,8 +304,6 @@ SELECT
 FROM tenants t
 LEFT JOIN users u            ON u.id  = t.owner_user_id
 LEFT JOIN service_categories sc ON sc.id = t.category_id
-LEFT JOIN latest_pkg lp      ON lp.tenant_id = t.id
-LEFT JOIN service_packages   sp ON sp.id = lp.package_id
 WHERE """ + _QUEUE_BASE_WHERE
 
 
@@ -762,6 +708,54 @@ async def review_provider_onboarding_document(
         before=before,
         after={"status": document.status, "doc_type": document.doc_type},
     )
+    # A per-document decision must reach the business owner immediately. The
+    # previous flow changed Admin state silently, so owners only discovered a
+    # rejection by repeatedly reopening the setup screen. Keep notification
+    # delivery best-effort so an ancillary notification failure never loses
+    # the authoritative review decision.
+    document_label = document.label or document.doc_type.replace("_", " ").title()
+    notification_copy = {
+        "verified": (
+            "Document verified",
+            f"Your {document_label} has been verified.",
+            "success",
+            "View documents",
+        ),
+        "changes_requested": (
+            "Document changes requested",
+            f"Changes are required for your {document_label}: {reason}",
+            "warning",
+            "Review and resubmit",
+        ),
+        "rejected": (
+            "Document rejected",
+            f"Your {document_label} was rejected: {reason}",
+            "warning",
+            "Review and resubmit",
+        ),
+    }
+    title, body, severity, action_label = notification_copy[decision]
+    try:
+        from app.engines.tenant_engine.notifications import notify_tenant_verification
+        async with db.begin_nested():
+            await notify_tenant_verification(
+                db,
+                tenant_id,
+                notification_type=f"document.{decision}",
+                title=title,
+                body=body,
+                severity=severity,
+                action_url="/documents",
+                action_label=action_label,
+            )
+    except Exception as exc:
+        logger.warning(
+            "provider_document_review.notify_failed",
+            tenant_id=str(tenant_id),
+            document_id=str(document.id),
+            decision=decision,
+            error=str(exc),
+        )
     await db.commit()
     await db.refresh(document)
     return ok(
@@ -827,6 +821,25 @@ async def approve_provider_onboarding(
                 {"tid": str(tenant_id)},
             )
             result["status"] = "pending_activation"
+    try:
+        from app.engines.tenant_engine.notifications import notify_tenant_verification
+        is_active = bool(vertical_result and vertical_result.get("status") == "active")
+        async with db.begin_nested():
+            await notify_tenant_verification(
+                db, tenant_id,
+                notification_type="tenant.verification_approved",
+                title="Business verification approved",
+                body=(
+                    "Your business is approved and Home Services is active."
+                    if is_active else
+                    "Your business is approved. Complete the remaining activation requirements to start receiving bookings."
+                ),
+                severity="success" if is_active else "info",
+                action_url="/dashboard" if is_active else "/onboarding/activation-center",
+                action_label="Open dashboard" if is_active else "Continue activation",
+            )
+    except Exception as exc:
+        logger.warning("provider_approval.notify_failed", tenant_id=str(tenant_id), error=str(exc))
     await db.commit()
     return ok(result, request_id=rid)
 
@@ -1077,7 +1090,17 @@ async def override_visibility(
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     override = bool((payload or {}).get("override"))
-    reason = (payload or {}).get("reason") or None
+    reason = str((payload or {}).get("reason") or "").strip() or None
+    # An override is an emergency hold, never a way around approval,
+    # compliance, coverage, availability, or account-health gates. A
+    # positive override would make an otherwise ineligible provider visible.
+    if override:
+        raise HTTPException(
+            status_code=400,
+            detail="Positive visibility override is prohibited. Re-evaluate the provider after fixing the blockers.",
+        )
+    if not reason:
+        raise HTTPException(status_code=400, detail="A reason is required to apply an Admin Hold.")
     before = await _get_or_create_visibility_row(db, tenant_id)
     await db.execute(text("""
         UPDATE provider_visibility_statuses
@@ -1131,7 +1154,16 @@ async def override_bookability(
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     override = bool((payload or {}).get("override"))
-    reason = (payload or {}).get("reason") or None
+    reason = str((payload or {}).get("reason") or "").strip() or None
+    # Eligibility is derived from the real provider checks. Admins may stop
+    # bookings while an issue is investigated, but may not bypass those checks.
+    if override:
+        raise HTTPException(
+            status_code=400,
+            detail="Positive bookability override is prohibited. Re-evaluate the provider after fixing the blockers.",
+        )
+    if not reason:
+        raise HTTPException(status_code=400, detail="A reason is required to apply an Admin Hold.")
     before = await _get_or_create_visibility_row(db, tenant_id)
     await db.execute(text("""
         UPDATE provider_visibility_statuses

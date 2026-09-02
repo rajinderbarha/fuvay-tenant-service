@@ -402,12 +402,12 @@ class ComplaintService:
         resolution = await self._get_resolution(db, resolution_id, complaint_id=complaint_id)
         # Slice 2F-10: same ordering fix as customer_accept_resolution --
         # validate the transition before mutating resolution.status.
-        if STATUS_UNDER_ADMIN_REVIEW not in ALLOWED_TRANSITIONS_EXT.get(complaint.status, set()):
+        if STATUS_AWAITING_PROVIDER not in ALLOWED_TRANSITIONS.get(complaint.status, set()):
             raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {STATUS_UNDER_ADMIN_REVIEW}")
 
         resolution.status = RES_CUSTOMER_REJECTED
         await db.flush()
-        await self._transition(db, complaint, STATUS_UNDER_ADMIN_REVIEW, ACTOR_CUSTOMER, customer_id,
+        await self._transition(db, complaint, STATUS_AWAITING_PROVIDER, ACTOR_CUSTOMER, customer_id,
                                reason=reason, request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_RESOLUTION_REJECTED, None, None, None, {"reason": reason}, request_id=request_id)
@@ -1054,8 +1054,8 @@ class ComplaintService:
                 # bug #30b: complaint.status was never advanced, so a fully
                 # dual-accepted settlement left the complaint 'open' forever.
                 complaint.status = STATUS_SETTLED
-                # Pay the customer in CREDIT POINTS, funded from the PROVIDER's
-                # credit wallet and then their security deposit. Never money.
+                # Pay the customer in CREDIT POINTS, funded from the provider's
+                # canonical usage-credit balance. Never money.
                 await self._execute_settlement_payout(db, complaint, proposal, customer_id)
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
@@ -1219,8 +1219,8 @@ class ComplaintService:
         """MODULE-L5-02 — pay out a dual-accepted settlement.
 
         The customer is compensated in CREDIT POINTS, never money, and those
-        credits are funded by deducting from the PROVIDER's credit wallet,
-        falling back to their security deposit. Remedies that carry no amount
+        credits are funded by deducting from the provider's canonical
+        usage-credit balance. Remedies that carry no amount
         (rework / callback / apology / no_action) move no value and are skipped.
 
         Never fatal: a payout problem must not undo the parties' agreement — the
@@ -1289,7 +1289,7 @@ class ComplaintService:
         # Slice 2F-9: previously a caller who had already proven ownership of
         # `complaint_id` could still supply an unrelated (or foreign-tenant)
         # `proposal_id` -- tenant_respond_to_settlement can trigger a real
-        # credit-wallet/security-deposit payout on dual acceptance, so a
+        # usage-credit payout on dual acceptance, so a
         # mismatched proposal could be manipulated against the wrong
         # complaint/tenant/customer. Fail closed the same way a genuinely
         # missing proposal would.

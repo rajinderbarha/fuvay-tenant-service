@@ -71,8 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operations",
     items: [
       { id: "customers",  href: "/admin/customers",  label: "Customers", icon: <UserCheck size={16}/>,    requiredPermission: SUPER_ADMIN_ONLY                },
-      { id: "staff",      href: "/admin/staff",      label: "Staff",     icon: <IdCard size={16}/>,       requiredPermission: "staff:read"                    },
-      { id: "complaints", href: "/admin/home-services/complaints", label: "Complaints", icon: <AlertOctagon size={16}/>, requiredPermission: "home_services:complaints:view" },
+      { id: "staff",      href: "/admin/home-services/staff", label: "Staff", icon: <IdCard size={16}/>, requiredPermission: "home_services:staff:view" },
       // Support requests raised by providers from the tenant portal. The queue
       // and its detail page were built and are live, but nothing linked to
       // them, so a provider could raise a request no admin would ever see.
@@ -90,6 +89,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "verticals",       href: "/admin/verticals",       label: "Verticals",      icon: <Globe size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
       { id: "categories",      href: "/admin/categories",      label: "Categories",     icon: <Layers size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Booking-flow configuration and abandoned-draft review are operational
+      // catalog tools. Both pages were live but had no sidebar route, leaving
+      // admins dependent on a bookmarked URL to manage the customer journey.
+      { id: "customer-flow",   href: "/admin/customer-flow",   label: "Customer Flow",  icon: <FolderTree size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -115,6 +118,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Platform",
     items: [
+      // Recommendation rules/results are managed from this workspace. Keep a
+      // single parent entry; longest-prefix matching highlights it on nested
+      // rule and result pages as well.
+      { id: "automation",         href: "/admin/automation",         label: "Automation", icon: <Zap size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
       { id: "engines",            href: "/admin/engines",            label: "Engines",    icon: <Cpu size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
       { id: "security",           href: "/admin/security",           label: "Security",   icon: <Shield size={16}/>,     requiredPermission: "security:read" },
       // Moved out of a standalone "Finance" nav group 2026-08-05 -- it's DPDP

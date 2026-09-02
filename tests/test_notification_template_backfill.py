@@ -15,6 +15,7 @@ MIGRATION_205 = os.path.join(BASE, "alembic/versions/205_chat_notification_templ
 MIGRATION_206 = os.path.join(BASE, "alembic/versions/206_invoice_issued_template.py")
 MIGRATION_213 = os.path.join(BASE, "alembic/versions/213_leave_notification_templates.py")
 MIGRATION_216 = os.path.join(BASE, "alembic/versions/216_correction_notification_templates.py")
+MIGRATION_333 = os.path.join(BASE, "alembic/versions/333_job_delayed_notification_template.py")
 EVENT_REGISTRY = os.path.join(BASE, "app/engines/platform_notifications/event_registry.py")
 
 
@@ -57,6 +58,7 @@ class TestEveryRegistryTemplateKeyIsNowSeeded:
         seeded_206 = _read(MIGRATION_206)
         seeded_213 = _read(MIGRATION_213)
         seeded_216 = _read(MIGRATION_216)
+        seeded_333 = _read(MIGRATION_333)
         # Pre-existing (migration 202 and earlier) real templates confirmed
         # live in this environment before this pass.
         pre_existing = {
@@ -77,5 +79,6 @@ class TestEveryRegistryTemplateKeyIsNowSeeded:
                 continue
             assert (key in pre_existing or f'"{key}"' in seeded_204
                     or f"'{key}'" in seeded_205 or f"'{key}'" in seeded_206
-                    or f'"{key}"' in seeded_213 or f'"{key}"' in seeded_216), \
+                    or f'"{key}"' in seeded_213 or f'"{key}"' in seeded_216
+                    or f"'{key}'" in seeded_333), \
                 f"template_key {key!r} is not seeded anywhere"

@@ -6,15 +6,15 @@ automatic:
   * AI settlement is not started by hand. It starts automatically once the
     PROVIDER has failed to solve the complaint — no response within the SLA, or
     the customer rejected the resolution they offered.
-  * Starting a session CHARGES THE PROVIDER a fee (default 20 credits), taken
-    from their credit wallet and falling back to their security deposit.
+  * Starting a session CHARGES THE PROVIDER a fee (default 20 credits) from
+    their canonical usage-credit balance.
   * The AI may offer at most a capped share of the job's value (default 25%).
   * If the case is strong enough to warrant MORE than the cap, the AI does NOT
     settle it — the complaint goes to admin manual review.
   * Compensation is paid in CREDIT POINTS, never real money. Every monetary
     remedy is rejected in code, regardless of what the model returns.
-  * The customer's credits are funded by deducting from the PROVIDER's credit
-    wallet, falling back to their security deposit.
+  * Customer credits are funded by deducting from the provider's canonical
+    usage-credit balance.
 """
 from __future__ import annotations
 
@@ -221,8 +221,6 @@ async def charge_ai_settlement_fee(
     return {
         "fee": float(AI_SETTLEMENT_FEE_CREDITS),
         "charged_from_wallet": float(AI_SETTLEMENT_FEE_CREDITS),
-        "charged_from_deposit": 0.0,
-        "uncovered": 0.0,
         "balance_after": result["balance_after"],
         "idempotent": result["idempotent"],
     }

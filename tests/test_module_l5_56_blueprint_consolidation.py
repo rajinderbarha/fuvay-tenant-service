@@ -87,22 +87,14 @@ class TestStandalonePageRetirement:
 
     def test_service_options_page_is_retired_notice(self):
         path = os.path.join(self._frontend_root(), "app", "admin", "service-options", "page.tsx")
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-        assert "Retired" in content
-        assert "catalog-workspace" in content
-        # Must not still contain the old KPI-dashboard/enterprise library markup.
-        assert "activeNav=\"service-options\"" not in content
+        assert not os.path.exists(path)
 
     def test_issue_types_page_is_retired_notice(self):
         path = os.path.join(self._frontend_root(), "app", "admin", "issue-types", "page.tsx")
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-        assert "Retired" in content
-        assert "catalog-workspace" in content
+        assert not os.path.exists(path)
 
     def test_nav_config_no_longer_lists_service_options_or_issue_types(self):
-        path = os.path.join(self._frontend_root(), "lib", "nav-config.ts")
+        path = os.path.join(self._frontend_root(), "components", "layout", "AdminLayout.tsx")
         with open(path, encoding="utf-8") as f:
             content = f.read()
         assert 'href: "/admin/service-options"' not in content

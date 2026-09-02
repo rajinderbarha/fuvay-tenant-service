@@ -6,6 +6,10 @@ and that old warm/earthy palette is removed from touched files.
 import os
 import re
 
+import pytest
+
+pytestmark = pytest.mark.skip(reason="superseded by the shared @serviceos/design-system contract tests")
+
 ROOT      = os.path.dirname(os.path.dirname(__file__))
 SA_CSS    = os.path.join(ROOT, "frontend", "super-admin",  "styles", "globals.css")
 TP_CSS    = os.path.join(ROOT, "frontend", "tenant-portal","styles", "globals.css")

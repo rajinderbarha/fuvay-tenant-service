@@ -141,7 +141,6 @@ class Settings(BaseSettings):
     # Origin of the customer web surface, used to build chat -> web handoff
     # links. Empty means no handoff link is ever sent: the bot keeps the
     # conversation in chat rather than handing a customer a URL to nowhere.
-    CUSTOMER_WEB_BASE_URL: str = ""
 
     # ── Weather ────────────────────────────────────────────────────
     # weatherapi.com. Empty means no weather source, and every dependent feature

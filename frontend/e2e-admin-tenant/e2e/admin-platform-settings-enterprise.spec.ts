@@ -30,7 +30,7 @@ const settings = [
 
 const categories = [{
   id: '11111111-1111-4111-8111-111111111111', name: 'Home Cleaning', slug: 'home-cleaning',
-  vertical_type: 'home_services', finance_model: 'security_deposit_plus_credit_wallet',
+  vertical_type: 'home_services', finance_model: 'credit_wallet_only',
   provider_business_model: 'marketplace', monetization_model: 'commission', is_active: true,
   is_customer_visible: true, pricing_supported: true, payment_collection_enabled: false,
   tenant_payouts_enabled: false,

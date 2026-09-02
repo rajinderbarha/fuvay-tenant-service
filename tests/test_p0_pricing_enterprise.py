@@ -250,9 +250,8 @@ def test_build_rule_candidates_returns_labeled_levels():
 
 def test_router_tiers_summary_export_detail_endpoints():
     src = _read(ADMIN_ROUTER)
-    assert '"/tiers/summary"' in src
-    assert '"/tiers/export"' in src
-    assert '"/tiers/{tier_id}/detail"' in src
+    for retired in ('"/tiers/summary"', '"/tiers/export"', '"/tiers/{tier_id}/detail"'):
+        assert retired not in src
 
 
 def test_router_tier_locations_enterprise_endpoints():
@@ -260,22 +259,22 @@ def test_router_tier_locations_enterprise_endpoints():
     for path in ("/tier-locations/summary", "/tier-locations/export",
                  "/tier-locations/import/preview", "/tier-locations/import/confirm",
                  "/tier-locations/imports/{batch_id}"):
-        assert f'"{path}"' in src, f"Missing router path: {path}"
+        assert f'"{path}"' not in src
 
 
 def test_router_pricing_rules_enterprise_endpoints():
     src = _read(ADMIN_ROUTER)
-    assert '"/pricing-rules/summary"' in src
-    assert '"/pricing-rules/export"' in src
-    assert '"/pricing-rules/{rule_id}/conflicts"' in src
+    assert '"/pricing-rules/summary"' not in src
+    assert '"/pricing-rules/export"' not in src
+    assert '"/pricing-rules/{rule_id}/conflicts"' not in src
 
 
 def test_router_uses_catalog_permissions():
     src = _read(ADMIN_ROUTER)
     assert "require_permission(P.CATALOG_TIERS_READ)" in src
     assert "require_permission(P.CATALOG_TIERS_WRITE)" in src
-    assert "require_permission(P.CATALOG_PRICING_READ)" in src
-    assert "require_permission(P.CATALOG_PRICING_WRITE)" in src
+    assert "require_permission(P.CATALOG_PRICING_READ)" not in src
+    assert "require_permission(P.CATALOG_PRICING_WRITE)" not in src
 
 
 # ── Enterprise Grid registry ─────────────────────────────────────────────────

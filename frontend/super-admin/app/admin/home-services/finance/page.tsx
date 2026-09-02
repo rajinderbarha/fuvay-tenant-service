@@ -46,7 +46,7 @@ function useToasts() {
 
 type TabKey =
   | "overview" | "monetization" | "provider-charges" | "credits"
-  | "invoices" | "customer-refunds" | "warranty-claims" | "financial-events" | "direct-payments";
+  | "invoices" | "customer-refunds" | "financial-events" | "direct-payments";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -56,7 +56,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "direct-payments", label: "Direct Payments" },
   { key: "invoices", label: "Invoices" },
   { key: "customer-refunds", label: "Customer Refunds" },
-  { key: "warranty-claims", label: "Warranty Claims" },
   { key: "financial-events", label: "Financial Events" },
 ];
 const TAB_KEYS = new Set<TabKey>(TABS.map(item => item.key));
@@ -140,7 +139,6 @@ function HomeServicesFinanceWorkspace() {
       {tab === "direct-payments" && <DirectPaymentsTab />}
       {tab === "invoices" && <InvoicesTab />}
       {tab === "customer-refunds" && <CustomerRefundsTab />}
-      {tab === "warranty-claims" && <WarrantyClaimsTab />}
       {tab === "financial-events" && <FinancialEventsTab />}
 
       <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Audit Trail" size="lg">
@@ -174,7 +172,6 @@ function ExportButton({ tab }: { tab: TabKey }) {
     else if (tab === "credits") rows = (await homeServicesFinanceApi.listTopups({ pageSize: 200 })).items;
     else if (tab === "invoices") rows = (await homeServicesFinanceApi.listInvoices({ pageSize: 200 })).items;
     else if (tab === "customer-refunds") rows = (await homeServicesFinanceApi.listRefunds({ pageSize: 200 })).items;
-    else if (tab === "warranty-claims") rows = (await homeServicesFinanceApi.listWarrantyClaims({ pageSize: 200 })).items;
     else if (tab === "financial-events") rows = (await homeServicesFinanceApi.listFinancialEvents({ pageSize: 200 })).items;
     else { const ov = await homeServicesFinanceApi.getOverview(); rows = [ov as Record<string, unknown>]; }
 
@@ -293,7 +290,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         <SummaryCard label="Low-Credit Providers" value={sec.low_credit_providers} tone={sec.low_credit_providers > 0 ? "warning" : undefined} onClick={() => onNavigate("credits")} />
         <SummaryCard label="Failed Charge Recoveries" value={sec.failed_charge_recoveries} tone={sec.failed_charge_recoveries > 0 ? "danger" : undefined} onClick={() => onNavigate("provider-charges")} />
-        <SummaryCard label="Warranty Financial Exposure" value={money(sec.warranty_financial_exposure)} onClick={() => onNavigate("warranty-claims")} />
+        <SummaryCard label="Provider Warranty Exposure" value={money(sec.warranty_financial_exposure)} />
         <SummaryCard label="Finance Exceptions" value={sec.finance_exceptions} tone={sec.finance_exceptions > 0 ? "danger" : undefined}
           onClick={() => onNavigate("financial-events")} />
       </div>
@@ -2400,9 +2397,9 @@ function KeyValueGrid({ data }: { data: unknown }) {
  *
  * Home-services customers pay the PROVIDER directly, so ServiceOS only records
  * the declaration and the customer's confirmation of it. The tenant has had a
- * full console for this at /home-services/direct-payments; these five admin
- * endpoints were live the whole time with no caller, so an admin investigating
- * a payment dispute had no screen at all.
+ * full console for this at /home-services/direct-payments. The admin view is
+ * deliberately read-only: it supplies evidence, never customer interaction
+ * or dispute adjudication.
  *
  * The admin list params are the admin router's own -- `q`, `pageSize`,
  * `confirmed` -- and deliberately NOT the tenant queue's `search`/`limit`/
@@ -2414,9 +2411,6 @@ function DirectPaymentsTab() {
   const [q, setQ] = useState("");
   const [qDraft, setQDraft] = useState("");
   const [page, setPage] = useState(1);
-  const [dispute, setDispute] = useState<Record<string, unknown> | null>(null);
-  const [reason, setReason] = useState("");
-  const { toasts, push, remove } = useToasts();
 
   const summary = useApi(useCallback(
     () => homeServicesFinanceApi.getDirectPaymentsSummary(), []), []);
@@ -2425,37 +2419,16 @@ function DirectPaymentsTab() {
       status: status || undefined, q: q || undefined, page, pageSize: 20,
     }), [status, q, page]), [status, q, page]);
 
-  const remind = useAction(useCallback(
-    (id: string) => homeServicesFinanceApi.remindDirectPaymentCustomer(id), []));
-  const openDispute = useAction(useCallback(
-    (id: string, why: string) => homeServicesFinanceApi.openDirectPaymentDispute(id, why), []));
-
   const rows = (list.data?.items ?? []) as unknown as Record<string, unknown>[];
   const sum = (summary.data ?? {}) as Record<string, unknown>;
-
-  async function sendReminder(row: Record<string, unknown>) {
-    const res = await remind.execute(String(row.payment_id ?? row.id));
-    if (res) { push("Reminder sent to the customer."); list.refetch(); }
-  }
-
-  async function submitDispute() {
-    if (!dispute || !reason.trim()) return;
-    const res = await openDispute.execute(String(dispute.payment_id ?? dispute.id), reason.trim());
-    if (res) {
-      push("Dispute opened.");
-      setDispute(null); setReason("");
-      list.refetch(); summary.refetch();
-    }
-  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-          ServiceOS does not collect, hold or settle this money -- the customer pays the provider
-          directly and both sides confirm the amount here. Use this view to investigate a
-          disputed or unconfirmed declaration; the provider works the same records in their own
-          portal.
+          ServiceOS does not collect, hold, settle, or adjudicate this money. This is read-only
+          operational evidence; the customer and provider handle confirmation and any dispute
+          directly in their own apps.
         </p>
       </Card>
 
@@ -2518,35 +2491,12 @@ function DirectPaymentsTab() {
                 },
               },
               { key: "declared_at", label: "Declared at", render: v => v ? String(v).slice(0, 10) : "—" },
-              {
-                key: "actions", label: "", render: (_v, row) => (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn size="sm" variant="secondary" onClick={() => sendReminder(row)}>Remind</Btn>
-                    <Btn size="sm" variant="ghost" onClick={() => setDispute(row)}>Dispute</Btn>
-                  </div>
-                ),
-              },
             ]}
           />
           <Pagination page={page} pageSize={20} total={Number(list.data.total ?? 0)} onPage={setPage} />
         </>
       )}
 
-      <Modal open={!!dispute} onClose={() => setDispute(null)} title="Open a dispute" size="md">
-        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-          Opening a dispute freezes the declaration and notifies both the customer and the
-          provider. Explain what does not match.
-        </p>
-        <Input value={reason} placeholder="Reason" onChange={v => setReason(v)} />
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <Btn variant="secondary" onClick={() => setDispute(null)}>Cancel</Btn>
-          <Btn onClick={submitDispute} disabled={!reason.trim() || openDispute.loading}>
-            {openDispute.loading ? "Opening…" : "Open dispute"}
-          </Btn>
-        </div>
-      </Modal>
-
-      <Toaster toasts={toasts} onRemove={remove} />
     </div>
   );
 }

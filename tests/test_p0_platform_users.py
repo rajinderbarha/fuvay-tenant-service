@@ -429,7 +429,8 @@ class TestFrontendPage:
         assert "const [page, setPage]" in src
         assert "const [pageSize, setPageSize]" in src
         assert "page, limit: pageSize" in src
-        assert "Page {page} of {totalPages}" in src
+        assert "<Pagination page={page}" in src
+        assert "pageCount={totalPages}" in src
         assert "limit: 100" not in src
 
     def test_page_fetches_current_admin_for_self_guard(self):

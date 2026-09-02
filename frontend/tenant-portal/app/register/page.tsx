@@ -37,6 +37,7 @@ const VERTICAL_ICONS: Record<string, React.ElementType> = {
 };
 
 type StepId = "account" | "verify" | "identity" | "vertical" | "review";
+const SIGNUP_DRAFT_KEY = "serviceos_provider_signup_draft";
 const STEPS: { id: StepId; label: string; desc: string }[] = [
   { id: "account",  label: "Owner Account",   desc: "Secure your login" },
   { id: "verify",   label: "Verify Contact",  desc: "Mobile and email verification" },
@@ -122,6 +123,7 @@ export default function RegisterPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [devOtps, setDevOtps] = useState<Record<string, string> | null>(null);
@@ -130,6 +132,7 @@ export default function RegisterPage() {
   const [mobileOtp, setMobileOtp] = useState("");
   const [emailOtp, setEmailOtp] = useState("");
   const [otpBusy, setOtpBusy] = useState<"mobile" | "email" | null>(null);
+  const [otpNotice, setOtpNotice] = useState<Partial<Record<"mobile" | "email", string>>>({});
   const [verticals, setVerticals] = useState<SignupVertical[]>([]);
   const [verticalsLoaded, setVerticalsLoaded] = useState(false);
 
@@ -145,6 +148,33 @@ export default function RegisterPage() {
     setError("");
     setForm(f => ({ ...f, [k]: v }));
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SIGNUP_DRAFT_KEY) || "null");
+      if (saved?.registrationId) {
+        setRegistrationId(saved.registrationId);
+        setStepIndex(Math.min(Math.max(Number(saved.stepIndex) || 0, 0), STEPS.length - 1));
+        setMobileVerified(Boolean(saved.mobileVerified));
+        setEmailVerified(Boolean(saved.emailVerified));
+        if (saved.form) {
+          setForm(current => ({ ...current, ...saved.form, password: "", confirmPassword: "" }));
+        }
+      }
+    } catch {
+      localStorage.removeItem(SIGNUP_DRAFT_KEY);
+    } finally {
+      setDraftLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoaded || !registrationId) return;
+    const safeForm = { ...form, password: "", confirmPassword: "" };
+    localStorage.setItem(SIGNUP_DRAFT_KEY, JSON.stringify({
+      registrationId, stepIndex, mobileVerified, emailVerified, form: safeForm,
+    }));
+  }, [draftLoaded, registrationId, stepIndex, mobileVerified, emailVerified, form]);
 
   const step = STEPS[stepIndex];
   const pct = Math.round(((stepIndex + 1) / STEPS.length) * 100);
@@ -264,11 +294,13 @@ export default function RegisterPage() {
   async function resendOtp(channel: "mobile" | "email") {
     if (!registrationId) return;
     setOtpBusy(channel); setError("");
+    setOtpNotice(current => ({ ...current, [channel]: undefined }));
     try {
       const res = await publicSignupApi.resendOtp(registrationId, channel);
       if (res.dev_otp) {
         setDevOtps(current => ({ ...(current ?? {}), [channel]: res.dev_otp as string }));
       }
+      setOtpNotice(current => ({ ...current, [channel]: `A new ${channel} code was sent.` }));
     } catch (e) {
       setError(e instanceof Error ? e.message : `Couldn't resend the ${channel} code.`);
     } finally {
@@ -288,6 +320,7 @@ export default function RegisterPage() {
       if (res.refresh_token) localStorage.setItem("serviceos_tenant_refresh", res.refresh_token);
       localStorage.setItem("serviceos_tenant_id", res.tenant_id);
       localStorage.setItem("serviceos_tenant_vertical", res.vertical_key);
+      localStorage.removeItem(SIGNUP_DRAFT_KEY);
       // Only the home_services vertical has a built setup wizard today; any
       // other vertical lands on the dashboard rather than a fabricated wizard.
       window.location.href = res.vertical_key === "home_services"
@@ -522,6 +555,11 @@ export default function RegisterPage() {
                             <RefreshCw size={13} /> Resend
                           </button>
                         </div>
+                      )}
+                      {!row.verified && otpNotice[row.channel] && (
+                        <p role="status" style={{ margin: "8px 0 0", fontSize: 12, color: "var(--success-text)" }}>
+                          {otpNotice[row.channel]}
+                        </p>
                       )}
                     </div>
                   ))}

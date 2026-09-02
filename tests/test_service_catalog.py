@@ -44,7 +44,7 @@ async def test_create_item_rejects_invalid_service_type():
     db = make_db()
     no_dup_result = MagicMock(); no_dup_result.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup_result)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_item(uuid.uuid4(), example_item_data(service_type="haircut"))
@@ -57,7 +57,7 @@ async def test_create_item_rejects_max_price_below_base_price():
     db = make_db()
     no_dup_result = MagicMock(); no_dup_result.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup_result)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_item(uuid.uuid4(), example_item_data(
@@ -73,7 +73,7 @@ async def test_create_item_rejects_duplicate_service_type_id_for_same_tenant():
     dup_result = MagicMock(); dup_result.scalar_one_or_none.return_value = existing
     db = make_db()
     db.execute = AsyncMock(return_value=dup_result)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_item(tid, example_item_data())
@@ -91,7 +91,7 @@ async def test_create_item_succeeds_with_valid_data():
         obj.created_at = datetime.now(timezone.utc)
     db.add = MagicMock(side_effect=fake_add)
 
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
     result = await svc.create_item(uuid.uuid4(), example_item_data())
     assert result["name"] == "AC Not Cooling"
     assert result["service_type"] == JobType.REPAIR
@@ -107,7 +107,7 @@ async def test_fixed_price_service_example():
     no_dup_result = MagicMock(); no_dup_result.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup_result)
     db.add = MagicMock(side_effect=lambda o: setattr(o, "created_at", datetime.now(timezone.utc)))
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     result = await svc.create_item(uuid.uuid4(), example_item_data(
         service_type_id="ac_annual_service", name="AC Annual Service",
@@ -128,7 +128,7 @@ async def test_consultation_fixed_consult_fee_example():
     no_dup_result = MagicMock(); no_dup_result.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup_result)
     db.add = MagicMock(side_effect=lambda o: setattr(o, "created_at", datetime.now(timezone.utc)))
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     result = await svc.create_item(uuid.uuid4(), example_item_data(
         service_type_id="ac_inspection", name="AC Inspection",
@@ -163,8 +163,9 @@ async def test_convert_to_job_uses_catalog_job_type_when_present():
     )
     no_job_result = MagicMock(); no_job_result.scalar_one_or_none.return_value = None
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
+    customer_origin_result = MagicMock(); customer_origin_result.scalar_one_or_none.return_value = uuid.uuid4()
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, customer_origin_result])
 
     # Capture objects added to db
     added_objects = []
@@ -218,8 +219,9 @@ async def test_convert_to_job_falls_back_gracefully_with_no_catalog_entry():
     )
     no_job_result = MagicMock(); no_job_result.scalar_one_or_none.return_value = None
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
+    customer_origin_result = MagicMock(); customer_origin_result.scalar_one_or_none.return_value = uuid.uuid4()
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, customer_origin_result])
 
     added_objects = []
     db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))

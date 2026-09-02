@@ -22,10 +22,10 @@ ROOT      = Path(__file__).parent.parent
 ROUTER    = ROOT / "app" / "engines" / "compliance" / "customer_router.py"
 MAIN      = ROOT / "app" / "main.py"
 API_TS    = ROOT / "frontend" / "tenant-portal" / "lib" / "api.ts"
-PRIV_PAGE = ROOT / "frontend" / "tenant-portal" / "app" / "(tenant)" / "account" / "privacy" / "page.tsx"
-REQ_PAGE  = ROOT / "frontend" / "tenant-portal" / "app" / "(tenant)" / "account" / "privacy" / "requests" / "page.tsx"
-DETAIL_PAGE = ROOT / "frontend" / "tenant-portal" / "app" / "(tenant)" / "account" / "privacy" / "requests" / "[id]" / "page.tsx"
-NAV_CFG   = ROOT / "frontend" / "tenant-portal" / "lib" / "nav-config.ts"
+PRIV_PAGE = ROOT / "frontend" / "tenant-portal" / "app" / "(tenant)" / "provider" / "compliance" / "page.tsx"
+REQ_PAGE  = PRIV_PAGE
+DETAIL_PAGE = ROOT / "frontend" / "tenant-portal" / "app" / "(tenant)" / "provider" / "compliance" / "requests" / "[id]" / "page.tsx"
+NAV_CFG   = ROOT / "frontend" / "tenant-portal" / "components" / "layout" / "TenantLayout.tsx"
 
 
 def r(p: Path) -> str:
@@ -359,7 +359,7 @@ class TestFrontendPages:
         assert DETAIL_PAGE.exists()
 
     def test_privacy_page_imports_customer_compliance_api(self):
-        assert "customerComplianceApi" in r(PRIV_PAGE)
+        assert "providerComplianceApi" in r(PRIV_PAGE)
 
     def test_privacy_page_shows_consents(self):
         assert "listConsents" in r(PRIV_PAGE)
@@ -390,11 +390,11 @@ class TestFrontendPages:
         assert "rejection_reason" in r(DETAIL_PAGE)
 
     def test_privacy_page_links_to_requests_page(self):
-        assert "/account/privacy/requests" in r(PRIV_PAGE)
+        assert '"my-requests"' in r(PRIV_PAGE)
 
     def test_nav_config_has_privacy_item(self):
-        assert "privacy" in r(NAV_CFG)
-        assert "/account/privacy" in r(NAV_CFG)
+        assert "Compliance" in r(NAV_CFG)
+        assert "/provider/compliance" in r(NAV_CFG)
 
 
 # ── K. Audit Logging ──────────────────────────────────────────────────────────

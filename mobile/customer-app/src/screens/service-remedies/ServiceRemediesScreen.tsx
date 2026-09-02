@@ -73,7 +73,7 @@ export function ServiceRemediesScreen() {
     if (!activeRecord) return null;
     if (activeRecord.status === "provider_action_required" || activeRecord.status === "requested") return "Waiting for provider response";
     if (activeRecord.status === "provider_in_progress" || activeRecord.status === "provider_review") return "Provider is working on this";
-    if (activeRecord.status === "admin_review") return "Escalated for admin review";
+    if (activeRecord.status === "admin_review") return "Returned to provider for review";
     if (activeRecord.status === "credit_issued" || activeRecord.status === "verified") return "Service points issued / resolution verified";
     return activeRecord.status.replace(/_/g, " ");
   }, [activeRecord]);
@@ -101,7 +101,7 @@ export function ServiceRemediesScreen() {
       if (mode === "refund" && refund) await escalateRefundRequest(refund.id, reason);
       await refreshRecords();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to escalate this request.");
+      setError(e instanceof Error ? e.message : "Unable to ask the provider to review this request again.");
     } finally { setBusy(false); }
   }
 
@@ -124,20 +124,20 @@ export function ServiceRemediesScreen() {
           <AppText variant="bodySmall" color="secondary">
             Warranty: {details.job.warrantyDays ?? 5} days{details.job.warrantyExpiresAt ? ` · until ${new Date(details.job.warrantyExpiresAt).toLocaleDateString()}` : ""}
           </AppText>
-          <AppText variant="caption" color="tertiary">The provider must respond first. Admin intervenes only after escalation or timeout.</AppText>
+          <AppText variant="caption" color="tertiary">The provider reviews the issue and works directly with you on rework, refund, credit, or another mutually agreed resolution.</AppText>
         </AppCard>
         {loadingRecords ? <LoadingState label="Checking existing requests" /> : activeRecord ? (
           <AppCard style={{ gap: theme.spacing.sm }}>
             <AppText variant="bodyStrong">{statusCopy}</AppText>
             {deadline ? <AppText variant="bodySmall" color="secondary">Provider response due {deadline.toLocaleString()}</AppText> : null}
             {"provider_resolution" in activeRecord && typeof activeRecord.provider_resolution === "string" ? <AppText variant="bodySmall">{activeRecord.provider_resolution}</AppText> : null}
-            {canEscalate ? <AppButton label="Escalate unresolved request" tone="destructive" onPress={escalate} loading={busy} fullWidth /> : null}
+            {canEscalate ? <AppButton label="Ask provider to review again" tone="secondary" onPress={escalate} loading={busy} fullWidth /> : null}
           </AppCard>
         ) : (
           <AppCard style={{ gap: theme.spacing.sm }}>
             {warrantyUnavailable ? <AppText variant="bodySmall" color="danger">The provider warranty period has expired.</AppText> : null}
             <AppInput label="What went wrong?" value={description} onChangeText={setDescription} multiline maxLength={2000} style={{ minHeight: 104, textAlignVertical: "top" }} />
-            <AppInput label={mode === "refund" ? "Requested amount" : "Requested service points (optional)"} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
+            <AppInput label={mode === "refund" ? "Requested amount" : "Requested settlement amount (optional)"} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
             <AppButton label={mode === "warranty" ? "Send warranty claim" : "Send refund request"} onPress={submit} loading={busy} disabled={!canSubmit || warrantyUnavailable} fullWidth />
           </AppCard>
         )}

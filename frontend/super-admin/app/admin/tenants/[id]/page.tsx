@@ -22,7 +22,6 @@ import {
   type AdminTenantEnabledOffering, type AdminTenantServiceArea,
   type AdminTenantTeamMember, type AdminTenantAvailabilityRule,
   type ProviderVisibilityStatus, type BookabilityAuditLog,
-  type DisputeSettlement,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { useViewport } from "../../../../hooks/useViewport";
@@ -30,7 +29,7 @@ import { usePermissions } from "../../../../hooks/usePermissions";
 import { SUPER_ADMIN_ONLY } from "../../../../lib/permission-catalog";
 import { EntitlementsTab } from "../../../../components/enterprise/EntitlementsTab";
 import {
-  Building, CreditCard, Banknote, ClipboardCheck,
+  Building, CreditCard, ClipboardCheck,
   Zap, RefreshCw, Star, Clock, CheckCircle2, Users, CalendarCheck, MapPin,
   Camera, Briefcase, Tag, ClipboardList, AlertCircle, ChevronRight,
   ShieldOff, Play,
@@ -38,7 +37,7 @@ import {
 
 type Tab =
   | "overview" | "staff" | "users" | "service-areas" | "enabled-services"
-  | "pricing" | "wallet" | "disputes" | "settlements" | "risk-health"
+  | "pricing" | "wallet" | "risk-health"
   | "media" | "jobs" | "bookings"
   | "reviews" | "audit" | "onboarding"
   | "provider-offerings" | "provider-areas" | "provider-team" | "provider-availability"
@@ -53,8 +52,6 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "enabled-services", label: "Enabled Services",  icon: <Zap/>             },
   { id: "pricing",          label: "Pricing",           icon: <Tag/>             },
   { id: "wallet",           label: "Usage Credit Ledger",   icon: <CreditCard/>      },
-  { id: "disputes",         label: "Complaints & Disputes", icon: <AlertCircle/> },
-  { id: "settlements",      label: "Customer Credit Settlements", icon: <Banknote/> },
   { id: "risk-health",      label: "Risk & Health",     icon: <Zap/>             },
   { id: "media",            label: "Media / Photos",    icon: <Camera/>          },
   { id: "jobs",             label: "Jobs",              icon: <Briefcase/>       },
@@ -78,8 +75,8 @@ const TAB_GROUPS: { key: string; label: string; tabs: Tab[] }[] = [
     "provider-offerings", "provider-areas", "provider-team", "provider-availability",
     "entitlements",
   ] },
-  { key: "operations", label: "Operations",     tabs: ["jobs", "bookings", "disputes", "reviews", "bookability"] },
-  { key: "finance",    label: "Finance",        tabs: ["wallet", "settlements"] },
+  { key: "operations", label: "Operations",     tabs: ["jobs", "bookings", "reviews", "bookability"] },
+  { key: "finance",    label: "Finance",        tabs: ["wallet"] },
   { key: "trust",      label: "Trust & Quality", tabs: ["risk-health"] },
   { key: "media",      label: "Media",          tabs: ["media"] },
   { key: "audit",      label: "Audit",          tabs: ["audit"] },
@@ -1120,7 +1117,6 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
   // txns reuses the same authoritative ledger fetch (see `wallet` above) instead of the
   // legacy commerceApi.walletTransactions(id) which read the disconnected tenant_wallets ledger.
   const txns        = useApi(useCallback(() => usageCreditsAdminApi.getTenantLedger(id),    [id]));
-  const settlements = useApi(useCallback(() => financeApi.listSettlements({ tenantId: id, limit: 50 }), [id]), [id]);
   const penalties   = useApi(useCallback(() => financeApi.listPenalties({ tenantId: id, limit: 50 }),   [id]), [id]);
   const media       = useApi(useCallback(() => mediaApi.listFiles(id, { limit: 50 }),       [id]));
   const mediaQuota  = useApi(useCallback(() => mediaApi.getQuota(id),                       [id]));
@@ -2291,95 +2287,12 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
 
       {/* ════════════════════ PACKAGES & USAGE CREDITS ════════════════════ */}
       {/* ════════════════════ COMPLAINTS & DISPUTES ════════════════════ */}
-      {tab === "disputes" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <Card padding={0}>
-            <div style={{ padding:"14px 20px", borderBottom:"1px solid var(--border)" }}>
-              <h3 style={{ fontSize:14, fontWeight:600, margin:0 }}>Dispute Settlements</h3>
-            </div>
-            {settlements.loading ? (
-              <div style={{ padding:16, display:"flex", flexDirection:"column", gap:8 }}>{[...Array(3)].map((_,i) => <Skeleton key={i} height={36}/>)}</div>
-            ) : (settlements.data?.settlements ?? []).length === 0 ? (
-              <p style={{ padding:"32px 20px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13, margin:0 }}>No disputes for this provider.</p>
-            ) : (settlements.data?.settlements ?? []).map((s: DisputeSettlement, i, arr) => (
-              <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 20px",
-                borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:12, fontWeight:500, color:"var(--text-primary)", margin:0 }}>{s.settlement_type?.replace(/_/g," ") ?? "Settlement"}</p>
-                  <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"2px 0 0" }}>{s.admin_decision_reason ?? "—"}</p>
-                </div>
-                <Badge variant={s.settlement_status === "executed" ? "success" : s.settlement_status === "cancelled" ? "muted" : "warning"} size="sm">{s.settlement_status}</Badge>
-                <span style={{ fontSize:12, fontWeight:600, minWidth:70, textAlign:"right" }}>{fmt(s.settlement_amount)}</span>
-              </div>
-            ))}
-          </Card>
-          <Card padding={0}>
-            <div style={{ padding:"14px 20px", borderBottom:"1px solid var(--border)" }}>
-              <h3 style={{ fontSize:14, fontWeight:600, margin:0 }}>Tenant Penalties</h3>
-            </div>
-            {penalties.loading ? (
-              <div style={{ padding:16, display:"flex", flexDirection:"column", gap:8 }}>{[...Array(3)].map((_,i) => <Skeleton key={i} height={36}/>)}</div>
-            ) : (penalties.data?.penalties ?? []).length === 0 ? (
-              <p style={{ padding:"32px 20px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13, margin:0 }}>No penalties recorded.</p>
-            ) : (penalties.data?.penalties ?? []).map((p, i, arr) => (
-              <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 20px",
-                borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:12, fontWeight:500, color:"var(--text-primary)", margin:0 }}>{p.reason ?? "Penalty"}</p>
-                </div>
-                <Badge variant={p.status === "active" ? "danger" : "muted"} size="sm">{p.status}</Badge>
-                <span style={{ fontSize:12, fontWeight:600, minWidth:70, textAlign:"right" }}>{fmt(p.amount)}</span>
-              </div>
-            ))}
-          </Card>
-        </div>
-      )}
-
-      {/* ════════════════════ CUSTOMER SERVICE CREDIT SETTLEMENTS ════════════════════ */}
-      {tab === "settlements" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:"var(--radius-md)" }}>
-            <p style={{ fontSize:12, color:"var(--info-text)", margin:0 }}>
-              Customer service credit is platform credit issued to a customer, not a cash refund. Deduction is sourced from this
-              provider&apos;s usage credits, which may take the balance negative and pause new bookings until cleared.
-            </p>
-          </div>
-          <Card padding={0}>
-            <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
-              <thead>
-                <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                  {["Settlement", "Status", "Credit Issued", "Usage Credit Deducted", "Created"].map(h => (
-                    <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700,
-                      color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(settlements.data?.settlements ?? []).filter((s: DisputeSettlement) => s.settlement_status === "executed").map((s: DisputeSettlement) => (
-                  <tr key={s.id} style={{ borderBottom:"1px solid var(--border)" }}>
-                    <td style={{ padding:"10px 14px", fontSize:12 }}>{s.id.slice(0, 8)}…</td>
-                    <td style={{ padding:"10px 14px" }}><Badge variant="success" size="sm">{s.settlement_status}</Badge></td>
-                    <td style={{ padding:"10px 14px", fontSize:12, fontWeight:600 }}>{fmt(s.settlement_amount)}</td>
-                    <td style={{ padding:"10px 14px", fontSize:12 }}>{fmt(s.tenant_wallet_deduction_amount ?? 0)}</td>
-                    <td style={{ padding:"10px 14px", fontSize:11, color:"var(--text-tertiary)" }}>{s.created_at ? new Date(s.created_at).toLocaleDateString("en-IN") : "—"}</td>
-                  </tr>
-                ))}
-                {(settlements.data?.settlements ?? []).filter((s: DisputeSettlement) => s.settlement_status === "executed").length === 0 && (
-                  <tr><td colSpan={6} style={{ padding:"32px 20px", textAlign:"center", color:"var(--text-tertiary)", fontSize:13 }}>No executed settlements yet.</td></tr>
-                )}
-              </tbody>
-            </TableSurface>
-          </Card>
-        </div>
-      )}
-
-      {/* ════════════════════ RISK & HEALTH ════════════════════ */}
+      {/* Dispute and settlement adjudication belongs to the customer and provider. */}
       {tab === "risk-health" && (
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:14 }}>
             <StatCard label="Health Score" value={Math.round(t?.health_score ?? 0)} icon={<Zap/>} trend="neutral"/>
             <StatCard label="Health Band" value={t?.health_band?.replace(/_/g," ") ?? "—"} icon={<CheckCircle2/>} trend="neutral"/>
-            <StatCard label="Open Complaints / Disputes" value={(settlements.data?.settlements ?? []).filter((s: DisputeSettlement) => s.settlement_status !== "executed" && s.settlement_status !== "cancelled").length} icon={<AlertCircle/>} trend="neutral"/>
           </div>
           <Card padding={20}>
             <p style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)", margin:"0 0 12px" }}>Health Factors</p>

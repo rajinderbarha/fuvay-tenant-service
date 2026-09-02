@@ -10,8 +10,17 @@ import { resetStateFor } from "./navigationReset";
 import { navigationRef } from "./navigationRef";
 import { useNavigationSnapshot } from "./useNavigationSnapshot";
 import { RootDestination } from "./guards/types";
+import { LegalReacceptanceGate } from "../components/legal/LegalReacceptanceGate";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function CustomerAppWithLegalGate() {
+  return (
+    <LegalReacceptanceGate>
+      <CustomerAppNavigator />
+    </LegalReacceptanceGate>
+  );
+}
 
 /**
  * Root of the navigation tree (spec section 2/6). Renders exactly one of
@@ -58,7 +67,7 @@ export function RootNavigator() {
         component={PublicNavigator}
         initialParams={initialDestination.tree === "PublicStack" ? { screen: initialDestination.screen } : undefined}
       />
-      <Stack.Screen name="CustomerAppStack" component={CustomerAppNavigator} />
+      <Stack.Screen name="CustomerAppStack" component={CustomerAppWithLegalGate} />
       <Stack.Screen
         name="ExceptionalStateStack"
         component={ExceptionalStateNavigator}

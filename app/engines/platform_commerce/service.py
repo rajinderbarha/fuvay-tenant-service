@@ -165,9 +165,7 @@ class CommerceService:
     async def list_packages(self, tid=None):
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.is_active == True)
             .order_by(CreditPackage.sort_order, CreditPackage.price_inr))
-        # Compatibility field retained for older clients; deposits no longer
-        # gate package visibility or purchase (migrations 317/318).
-        return {"packages": [self._pkg_dict(p) for p in r.scalars().all()], "security_deposit_required": False}
+        return {"packages": [self._pkg_dict(p) for p in r.scalars().all()]}
 
     async def get_package(self, pid):
         r = await self.db.execute(select(CreditPackage).where(CreditPackage.id == pid))
@@ -721,6 +719,10 @@ class CommerceService:
             raise NotFoundException("WarrantyClaim", str(claim_id))
         if c.status not in ("provider_action_required", "provider_in_progress", "provider_resolved"):
             raise ServiceOSException("WARRANTY_INVALID_STATE", f"Claim cannot be escalated from {c.status}.", status_code=409)
+        missed_deadline = bool(
+            owns_customer and not c.provider_responded_at and c.provider_response_due_at
+            and c.provider_response_due_at <= utcnow()
+        )
         # A customer gives the provider its response window unless the provider
         # has already answered. A provider may explicitly concede immediately.
         if owns_customer and not c.provider_responded_at and c.provider_response_due_at and c.provider_response_due_at > utcnow():
@@ -729,9 +731,20 @@ class CommerceService:
                 "The provider still has time to respond to this warranty claim.", status_code=409,
                 context={"provider_response_due_at": c.provider_response_due_at.isoformat()},
             )
-        c.status = "admin_review"
+        if missed_deadline and c.tenant_id:
+            from app.engines.usage_credits.service import UsageCreditService
+            from app.engines.tenant_engine.health import compute_health_score
+            await UsageCreditService(
+                self.db, actor_role="system", request_id="warranty:provider_sla"
+            ).charge_provider_response_sla_penalty(
+                tenant_id=c.tenant_id, source_type="warranty_claim",
+                source_id=str(c.id), amount=Decimal("50.00"),
+            )
+            await compute_health_score(c.tenant_id, db=self.db)
+        c.status = "provider_action_required"
         c.escalated_at = utcnow()
         c.escalation_reason = reason
+        c.provider_response_due_at = utcnow() + timedelta(hours=24)
         await self._publish("warranty_claim.escalated", str(c.tenant_id), str(c.id), {"reason": reason})
         return self._claim_dict(c)
 
@@ -936,8 +949,7 @@ class CommerceService:
                 .where(CommissionRecord.deducted_at >= since))
             return float(r.scalar_one_or_none() or 0)
         return {"commission": {"today": await _csum(today), "week": await _csum(today-timedelta(days=7)),
-                "month": await _csum(today-timedelta(days=30))},
-                "deposits_held": 0.0}
+                "month": await _csum(today-timedelta(days=30))}}
 
     async def get_at_risk_tenants(self):
         from app.engines.tenant_engine.models import Tenant

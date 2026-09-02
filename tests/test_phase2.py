@@ -292,6 +292,26 @@ async def test_health_score_computation():
     assert health["signals"]["usage_credit_health"]["detail"]["has_billing_record"] is False
     assert "commission_adjustment_pct" in health
     assert "signals" in health
+    assert db.execute.await_count == 2
+    persisted = str(db.execute.await_args_list[-1].args[0])
+    assert "UPDATE tenants SET health_score" in persisted
+
+
+@pytest.mark.parametrize(
+    ("score", "expected"),
+    [
+        (100, "platinum"), (90, "platinum"),
+        (89.99, "gold"), (75, "gold"),
+        (74.99, "silver"), (60, "silver"),
+        (59.99, "bronze"), (40, "bronze"),
+        (39.99, "at_risk"), (20, "at_risk"),
+        (19.99, "critical"), (0, "critical"),
+    ],
+)
+def test_health_band_boundaries_have_no_decimal_gaps(score, expected):
+    from app.engines.tenant_engine.health import _resolve_health_band
+
+    assert _resolve_health_band(score) == expected
 
 
 @pytest.mark.asyncio

@@ -36,8 +36,8 @@ def test_catalog_page_redirects_categories_tab():
 
 def test_catalog_page_redirects_tiers_tab():
     src = Path("frontend/super-admin/app/admin/catalog/page.tsx").read_text(encoding="utf-8")
-    assert "/admin/pricing-tiers" in src, \
-        "catalog/page.tsx must redirect ?tab=tiers to /admin/pricing-tiers"
+    assert 'router.replace("/admin/master-services")' in src
+    assert "/admin/pricing-tiers" not in src
 
 
 def test_catalog_page_no_tiers_tab():
@@ -66,8 +66,7 @@ def test_catalog_page_keeps_types_brands():
 
 def test_catalog_page_keeps_pricing_rules():
     # Pricing Rules promoted to /admin/pricing-rules
-    assert Path("frontend/super-admin/app/admin/pricing-rules/page.tsx").exists(), \
-        "Pricing Rules standalone page must exist at /admin/pricing-rules"
+    assert not Path("frontend/super-admin/app/admin/pricing-rules/page.tsx").exists()
 
 
 def test_catalog_page_valid_tabs_excludes_categories():

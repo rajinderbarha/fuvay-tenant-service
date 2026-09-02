@@ -128,8 +128,8 @@ FIXED_BADGE_CATALOG: tuple[dict, ...] = (
         "tone": "staff-gold",
     },
     {
-        "badge_key": "verified_technician", "name": "Verified Technician",
-        "description": "Technician identity and required documents are verified.",
+        "badge_key": "verified_technician", "name": "Provider-Approved Technician",
+        "description": "The provider confirms this technician is active and eligible under its own screening process.",
         "target_type": "technician", "level": 1, "customer_visible": True,
         "tenant_visible": True, "icon": "badge-check", "color": "#2563eb",
         "tone": "tech-blue",
@@ -1404,8 +1404,8 @@ class TrustQualityService:
             verified = bool((await self.db.execute(
                 text("SELECT is_verified FROM users WHERE id = :t"),
                 {"t": str(target_id)})).scalar_one_or_none())
-            m["document_verified"] = verified
-            m["document_verification_score"] = 100.0 if verified else 0.0
+            m["account_verified"] = verified
+            m["account_verification_score"] = 100.0 if verified else 0.0
 
         return m
 
@@ -1823,7 +1823,7 @@ _DEFAULT_BADGE_RULES = [
     {
         "rule_key": "rule_verified_staff", "badge_key": "verified_staff", "target_type": "staff",
         "rule_type": "verification_based",
-        "criteria": [{"metric_key": "document_verified", "operator": "equals", "value": True}],
+        "criteria": [{"metric_key": "account_verified", "operator": "equals", "value": True}],
     },
     {
         "rule_key": "rule_punctual_staff", "badge_key": "punctual_staff", "target_type": "staff",
@@ -1849,7 +1849,7 @@ _DEFAULT_BADGE_RULES = [
     {
         "rule_key": "rule_verified_technician", "badge_key": "verified_technician", "target_type": "technician",
         "rule_type": "verification_based",
-        "criteria": [{"metric_key": "document_verified", "operator": "equals", "value": True}],
+        "criteria": [{"metric_key": "account_verified", "operator": "equals", "value": True}],
     },
     {
         "rule_key": "rule_precision_technician", "badge_key": "precision_technician", "target_type": "technician",
@@ -1923,7 +1923,7 @@ _DEFAULT_HEALTH_FORMULAS = [
             {"metric_key": "rating_score", "weight_percent": 25},
             {"metric_key": "on_time_arrival_rate", "weight_percent": 20},
             {"metric_key": "complaint_dispute_score", "weight_percent": 15, "direction": "negative"},
-            {"metric_key": "document_verification_score", "weight_percent": 10},
+            {"metric_key": "account_verification_score", "weight_percent": 10},
         ],
         "bands": [
             {"band_key": "excellent", "band_name": "Excellent", "min_score": 90, "max_score": 100},

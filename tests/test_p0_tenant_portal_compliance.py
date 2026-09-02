@@ -28,7 +28,7 @@ ROOT = Path("G:/serviceos")
 ROUTER_FILE  = ROOT / "app/engines/compliance/provider_router.py"
 MAIN_FILE    = ROOT / "app/main.py"
 API_TS       = ROOT / "frontend/tenant-portal/lib/api.ts"
-NAV_FILE     = ROOT / "frontend/tenant-portal/lib/nav-config.ts"
+NAV_FILE     = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
 DASH_PAGE    = ROOT / "frontend/tenant-portal/app/(tenant)/provider/compliance/page.tsx"
 DETAIL_PAGE  = ROOT / "frontend/tenant-portal/app/(tenant)/provider/compliance/requests/[id]/page.tsx"
 
@@ -721,7 +721,7 @@ class TestFrontendDashboardPage:
 
     def test_section_header_uses_subtitle(self):
         src = _read(DASH_PAGE)
-        assert "subtitle=" in src
+        assert "description=" in src
 
     def test_no_color_prop_on_badge(self):
         src = _read(DASH_PAGE)
@@ -825,7 +825,7 @@ class TestFrontendDetailPage:
         assert "expired" in src.lower()
 
     def test_section_header_subtitle(self):
-        assert "subtitle=" in _read(DETAIL_PAGE)
+        assert "description=" in _read(DETAIL_PAGE)
 
     def test_import_path_six_levels(self):
         src = _read(DETAIL_PAGE)
@@ -847,16 +847,14 @@ class TestNavConfig:
         assert '"Compliance"' in src or "'Compliance'" in src
 
     def test_compliance_in_provider_group(self):
-        # NOTE: this taxonomy has no literal "provider" group (groups are
-        # overview/setup/team/finance/more/operations/engagement/insights);
-        # the original assertion coincidentally matched resolveTenantNavId's
-        # `section === "provider"` branch, not a real group. The compliance
-        # item lives in the "more" group -- verify it's actually there.
+        # Compliance is an occasional business-setup destination in the
+        # consolidated provider navigation.
         src = _read(NAV_FILE)
-        more_group_pos = src.find('id: "more"')
+        secondary_pos = src.find("const SECONDARY_NAV_GROUPS")
+        setup_pos = src.find('label: "Business setup"', secondary_pos)
         compliance_pos = src.find('id: "provider-compliance"')
-        assert more_group_pos != -1 and compliance_pos != -1
-        assert more_group_pos < compliance_pos
+        assert secondary_pos != -1 and setup_pos != -1 and compliance_pos != -1
+        assert secondary_pos < setup_pos < compliance_pos
 
     def test_path_mapping_compliance(self):
         assert "compliance" in _read(NAV_FILE)

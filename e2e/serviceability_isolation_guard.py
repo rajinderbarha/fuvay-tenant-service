@@ -44,9 +44,12 @@ def check() -> list[str]:
     # _get_mapping (which assert ownership). Fail if a raw db.get on the area
     # table appears outside those two methods.
     for m2 in re.finditer(r'db\.get\(TenantServiceArea,', text):
-        # allowed only inside get_service_area
-        ctx = text[max(0, m2.start() - 400):m2.start()]
-        if "async def get_service_area(" not in ctx:
+        # Tenant-facing reads go through get_service_area. Platform lifecycle
+        # methods may load directly after their explicit admin gate.
+        method_start = text.rfind("\n    async def ", 0, m2.start())
+        method_body_before_load = text[method_start:m2.start()]
+        if ("async def get_service_area(" not in method_body_before_load
+                and "self._assert_admin()" not in method_body_before_load):
             findings.append("raw db.get(TenantServiceArea, ...) outside get_service_area "
                             "(possible unscoped area load)")
             break

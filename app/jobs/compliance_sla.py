@@ -252,16 +252,60 @@ async def run_expire_exports() -> dict:
 # TASK 3 — RUN ALL
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def run_all() -> dict:
-    """Run both tasks sequentially. Safe to call repeatedly (idempotent)."""
+async def run_all(*, trigger: str = "scheduled",
+                  triggered_by_user_id: uuid.UUID | None = None) -> dict:
+    """Run both tasks and persist an authoritative scheduler execution log."""
+    from sqlalchemy import select
+    from app.database import get_session_factory
+    from app.engines.compliance.models import DPDPSchedulerRun
+
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        async with db.begin():
+            scheduler_run = DPDPSchedulerRun(
+                trigger=trigger,
+                triggered_by_user_id=triggered_by_user_id,
+                status="running",
+                started_at=utcnow(),
+            )
+            db.add(scheduler_run)
+            await db.flush()
+            scheduler_run_id = scheduler_run.id
+
     log.info("jobs.compliance_sla.start")
-    sla_result    = await run_sla_check()
-    expire_result = await run_expire_exports()
+    try:
+        sla_result = await run_sla_check()
+        expire_result = await run_expire_exports()
+    except Exception as exc:
+        async with session_factory() as db:
+            async with db.begin():
+                result = await db.execute(
+                    select(DPDPSchedulerRun).where(
+                        DPDPSchedulerRun.id == scheduler_run_id))
+                failed_run = result.scalar_one()
+                failed_run.status = "failed"
+                failed_run.completed_at = utcnow()
+                failed_run.error_message = str(exc)[:4000]
+        raise
+
+    async with session_factory() as db:
+        async with db.begin():
+            result = await db.execute(
+                select(DPDPSchedulerRun).where(
+                    DPDPSchedulerRun.id == scheduler_run_id))
+            completed_run = result.scalar_one()
+            completed_run.status = "completed"
+            completed_run.completed_at = utcnow()
+            completed_run.requests_evaluated = sla_result["checked"]
+            completed_run.due_soon_generated = sla_result["newly_at_risk"]
+            completed_run.breaches_generated = sla_result["newly_breached"]
+
     log.info("jobs.compliance_sla.done",
              breached=sla_result["newly_breached"],
              at_risk=sla_result["newly_at_risk"],
              expired=expire_result["expired"])
     return {
+        "scheduler_run_id": str(scheduler_run_id),
         "sla_check":      sla_result,
         "expire_exports": expire_result,
         "run_at":         utcnow().isoformat(),

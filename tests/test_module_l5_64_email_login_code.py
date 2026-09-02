@@ -65,7 +65,13 @@ def _user(**overrides):
     user.tenant_id = None
     user.is_active = True
     user.is_verified = False
+    user.is_mfa_enabled = False
+    user.mfa_required = False
+    user.force_password_change = False
+    user.password_reset_required = False
+    user.temporary_password_active = False
     user.email = "raj@example.com"
+    user.role = "customer"
     for key, value in overrides.items():
         setattr(user, key, value)
     return user

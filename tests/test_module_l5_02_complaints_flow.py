@@ -57,16 +57,16 @@ def test_reschedule_request_validates_required_fields():
 
 def test_proposed_resolution_can_be_accepted_or_rejected():
     """MODULE-L5-02 bug #27: after a resolution is proposed the customer responds
-    via accept (-> resolved) or reject (-> under_admin_review), but neither was a
+        via accept (-> resolved) or reject (-> awaiting_provider_response), but neither was a
     permitted transition from resolution_proposed, so every proposed resolution
     stalled forever. Proven live: accept -> 200, complaint status 'resolved'."""
     from app.engines.complaints.constants import (
         ALLOWED_TRANSITIONS, STATUS_RESOLUTION_PROPOSED, STATUS_RESOLVED,
-        STATUS_UNDER_ADMIN_REVIEW,
+        STATUS_AWAITING_PROVIDER,
     )
     allowed = ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]
     assert STATUS_RESOLVED in allowed
-    assert STATUS_UNDER_ADMIN_REVIEW in allowed
+    assert STATUS_AWAITING_PROVIDER in allowed
 
 
 def test_accepting_rework_resolution_creates_rework_request():

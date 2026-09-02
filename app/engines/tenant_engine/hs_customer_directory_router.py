@@ -17,6 +17,9 @@ from app.engines.tenant_engine.hs_customer_directory_service import HomeServices
 from app.schemas.base import ApiResponse, ok
 
 router = APIRouter(prefix="/v1/admin/home-services/customers", tags=["Home Services Customer Directory"])
+retired_case_router = APIRouter(
+    prefix="/v1/admin/home-services/customers", include_in_schema=False,
+)
 ENGINE_ID = "hs_customer_directory"
 
 
@@ -77,7 +80,7 @@ async def hs_customer_jobs(customer_id: uuid.UUID, r: Request,
     return ok(await s.get_customer_jobs(customer_id, page=page, page_size=page_size), _rid(r), ENGINE_ID)
 
 
-@router.get("/{customer_id}/complaints", response_model=ApiResponse[dict], summary="Home Services customer complaints (Customer 360 tab)")
+@retired_case_router.get("/{customer_id}/complaints", response_model=ApiResponse[dict])
 async def hs_customer_complaints(customer_id: uuid.UUID, r: Request,
                                   page: int = Query(1, ge=1),
                                   page_size: int = Query(20, ge=1, le=100),

@@ -23,11 +23,17 @@ the real ServiceBooking/ServiceJob rows it creates. Test data is cleaned
 up in a `finally` block so this is safe to re-run against a real dev
 database without leaving artifacts behind.
 """
+import os
 import uuid
 from datetime import date, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 
 ZIPCODE_140412 = "140412"

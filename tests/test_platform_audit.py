@@ -5,6 +5,8 @@ tenant lifecycle changes, high-risk auth actions, platform-tier settings,
 and admin wallet credits must all be searchable from one place.
 """
 import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,6 +20,24 @@ def make_db():
     db = MagicMock()
     db.add = MagicMock()
     return db
+
+
+@pytest.mark.asyncio
+async def test_platform_audit_normalizes_database_values_for_jsonb():
+    from app.core.audit import record_platform_audit
+
+    db = make_db()
+    value_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    await record_platform_audit(
+        db, operation="provider_offering.suspended", engine_id="tenant_engine",
+        before={"id": value_id, "price": Decimal("299.00"), "at": now},
+        after={"status": "suspended"},
+    )
+    entry = db.add.call_args.args[0]
+    assert entry.before_state == {
+        "id": str(value_id), "price": 299.0, "at": now.isoformat(),
+    }
 
 
 @pytest.mark.asyncio

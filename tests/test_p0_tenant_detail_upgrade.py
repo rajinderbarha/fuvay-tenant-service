@@ -87,8 +87,8 @@ class TestFrontendLabeling:
 
     def test_security_deposit_is_separate_tab(self):
         src = _read(PAGE)
-        assert '"deposit"' in src
-        assert "Security Deposit Held" in src
+        assert '"deposit"' not in src
+        assert "Security Deposit Held" not in src
 
     def test_complaints_disputes_tab_exists(self):
         src = _read(PAGE)

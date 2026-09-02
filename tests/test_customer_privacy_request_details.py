@@ -9,6 +9,7 @@ an admin-only route the customer could never call).
 """
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -19,8 +20,15 @@ from app.main import app
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.config import get_settings
+from app.engines.auth.models import User
+from app.engines.auth.utils import hash_password
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 _real_engine = create_async_engine(get_settings().DATABASE_URL, poolclass=NullPool)
 _real_sessionmaker = async_sessionmaker(_real_engine, expire_on_commit=False)
@@ -53,24 +61,39 @@ def _admin_ctx():
                         tenant_id=None, full_name="Demo Admin", is_verified=True)
 
 
+async def _make_customer_with_password(password: str) -> uuid.UUID:
+    user_id = uuid.uuid4()
+    async with _real_sessionmaker() as db:
+        db.add(User(
+            id=user_id, email=f"{user_id}@privacy-test.example", phone=None,
+            hashed_password=hash_password(password), role="customer",
+            full_name="Demo Customer", is_active=True, is_verified=True,
+        ))
+        await db.commit()
+    return user_id
+
+
 async def _cleanup(*user_ids):
     async with _real_sessionmaker() as db:
         for uid in user_ids:
             await db.execute(text("DELETE FROM compliance_exports WHERE subject_id=:uid"), {"uid": uid})
             await db.execute(text("DELETE FROM compliance_audit_logs WHERE actor_id=:uid"), {"uid": uid})
             await db.execute(text("DELETE FROM compliance_requests WHERE subject_id=:uid"), {"uid": uid})
+            await db.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": uid})
         await db.commit()
 
 
 @pytest.mark.asyncio
 async def test_get_detail_own_request_returns_safe_fields_and_audit_trail():
-    user_id = uuid.uuid4()
+    password = "privacy-test-password"
+    user_id = await _make_customer_with_password(password)
     headers = {"Authorization": "Bearer x"}
     try:
         app.dependency_overrides[get_current_user] = lambda: _customer_ctx(user_id)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             submit = await client.post("/v1/me/compliance/requests", headers=headers, json={
                 "request_type": "right_to_erasure", "reason": "test", "confirm_understanding": True,
+                "password": password,
             })
             assert submit.status_code == 201
             request_id = submit.json()["data"]["request_id"]
@@ -263,13 +286,15 @@ async def test_deletion_request_submission_alone_does_not_revoke_session():
     (real erasure execution), never on mere submission -- confirmed by
     audit; this proves the customer's own auth context still works
     immediately after filing a right_to_erasure request."""
-    user_id = uuid.uuid4()
+    password = "privacy-test-password"
+    user_id = await _make_customer_with_password(password)
     headers = {"Authorization": "Bearer x"}
     try:
         app.dependency_overrides[get_current_user] = lambda: _customer_ctx(user_id)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             submit = await client.post("/v1/me/compliance/requests", headers=headers, json={
                 "request_type": "right_to_erasure", "reason": "test", "confirm_understanding": True,
+                "password": password,
             })
             assert submit.status_code == 201
             # Same authenticated context still works right after submission.

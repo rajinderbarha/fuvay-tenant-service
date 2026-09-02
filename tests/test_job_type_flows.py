@@ -218,6 +218,14 @@ async def test_consultation_quote_approval_spawns_repair_job_with_inherited_data
     svc = FieldOpsService(db=db, actor_id=customer_id, actor_role="customer")
     svc._write_history = AsyncMock()
     svc._publish = AsyncMock()
+    svc.create_job = AsyncMock(return_value={
+        "job_id": str(uuid.uuid4()),
+        "job_type": JobType.REPAIR,
+        "parent_job_id": str(job.id),
+        "findings": job.findings,
+        "recommendation": job.recommendation,
+        "quoted_price": float(quote.amount),
+    })
 
     result = await svc.respond_to_quote(quote.id, customer_id, True)
 
@@ -236,3 +244,8 @@ async def test_consultation_quote_approval_spawns_repair_job_with_inherited_data
     assert spawned["findings"] == "Leaking compressor"
     assert spawned["recommendation"] == "Full replacement needed"
     assert spawned["quoted_price"] == 3000.0
+    create_tenant_id, create_data = svc.create_job.await_args.args
+    assert create_tenant_id == job.tenant_id
+    assert create_data["customer_id"] == str(job.customer_id)
+    assert create_data["service_type_id"] == job.service_type_id
+    assert create_data["address"] == job.address

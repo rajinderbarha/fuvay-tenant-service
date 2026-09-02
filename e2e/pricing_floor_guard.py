@@ -27,10 +27,10 @@ def check() -> list[str]:
     findings = []
     text = TS.read_text(encoding="utf-8")
 
-    # The validator must exist and enforce all three invariants.
+    # The validator must exist and enforce provider-owned amount invariants.
     if "_validate_price_overrides" not in text:
         return ["_validate_price_overrides helper missing from tenant_service.py"]
-    for marker in ("TENANT_PRICE_BELOW_ADMIN_MIN", "TENANT_PRICE_ABOVE_ADMIN_MAX", "TENANT_PRICE_NEGATIVE"):
+    for marker in ("TENANT_PRICE_NEGATIVE", "TENANT_PRICE_INVALID", "INVALID_PRICE_RANGE"):
         if marker not in text:
             findings.append(f"validator missing invariant: {marker}")
 
@@ -46,8 +46,10 @@ def check() -> list[str]:
         if "_validate_price_overrides" not in body:
             findings.append(f"'{meth}' does not call _validate_price_overrides — platform floor bypassable")
 
-    # The floor check must use `is not None`, not truthiness (the original bug).
-    if re.search(r'if tenant_min and svc\.min_price and', text):
+    # Admin catalogue prices are not hidden provider floors/ceilings.
+    for hidden_marker in ("TENANT_PRICE_BELOW_ADMIN_MIN", "TENANT_PRICE_ABOVE_ADMIN_MAX"):
+        if hidden_marker not in text:
+            continue
         findings.append("floor check uses truthiness (`if tenant_min and ...`) — Decimal('0') bypass")
     return findings
 

@@ -19,26 +19,21 @@ def _validator():
     return inst._validate_price_overrides
 
 
-def test_zero_below_floor_is_rejected():
-    """The original bug: Decimal('0') is falsy and skipped the floor check."""
+def test_zero_non_fee_price_is_rejected():
     v = _validator()
     with pytest.raises(ServiceOSException) as e:
         v(_svc(min_price=Decimal("100")), None, Decimal("0"), None, None)
-    assert e.value.error_code == "TENANT_PRICE_BELOW_ADMIN_MIN"
+    assert e.value.error_code == "TENANT_PRICE_INVALID"
 
 
-def test_below_floor_is_rejected():
+def test_legacy_admin_min_does_not_constrain_provider_price():
     v = _validator()
-    with pytest.raises(ServiceOSException) as e:
-        v(_svc(min_price=Decimal("100")), None, Decimal("50"), None, None)
-    assert e.value.error_code == "TENANT_PRICE_BELOW_ADMIN_MIN"
+    v(_svc(min_price=Decimal("100")), None, Decimal("50"), None, None)
 
 
-def test_above_ceiling_is_rejected():
+def test_legacy_admin_max_does_not_constrain_provider_price():
     v = _validator()
-    with pytest.raises(ServiceOSException) as e:
-        v(_svc(max_price=Decimal("100")), None, None, Decimal("150"), None)
-    assert e.value.error_code == "TENANT_PRICE_ABOVE_ADMIN_MAX"
+    v(_svc(max_price=Decimal("100")), None, None, Decimal("150"), None)
 
 
 def test_negative_is_rejected():
@@ -52,6 +47,13 @@ def test_valid_at_or_above_floor_passes():
     v = _validator()
     v(_svc(min_price=Decimal("100"), max_price=Decimal("500")),
       Decimal("200"), Decimal("100"), Decimal("500"), Decimal("0"))  # equal-to-floor min ok; 0 visit fee ok (no floor)
+
+
+def test_inverted_provider_range_is_rejected():
+    v = _validator()
+    with pytest.raises(ServiceOSException) as e:
+        v(_svc(), None, Decimal("500"), Decimal("100"), None)
+    assert e.value.error_code == "INVALID_PRICE_RANGE"
 
 
 def test_guard_passes_on_real_repo():

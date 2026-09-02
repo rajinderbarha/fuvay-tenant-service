@@ -101,6 +101,7 @@ class TestTenantUpdateRequiredDetection:
         latest = _make_version(id=latest_id, version_number=2)
 
         db = MagicMock()
+        db.get = AsyncMock(return_value=None)
         db.execute = AsyncMock(return_value=_scalar(latest))
         svc = TenantCatalogService(db=db, actor_tenant_id=None, actor_role="super_admin")
         svc._load_tenant_service = AsyncMock(return_value=ts)
@@ -119,6 +120,7 @@ class TestTenantUpdateRequiredDetection:
         latest = _make_version(version_number=3)
 
         db = MagicMock()
+        db.get = AsyncMock(return_value=None)
         db.execute = AsyncMock(return_value=_scalar(latest))
         svc = TenantCatalogService(db=db, actor_tenant_id=None, actor_role="super_admin")
         svc._load_tenant_service = AsyncMock(return_value=ts)
@@ -148,6 +150,7 @@ class TestTenantUpdateRequiredDetection:
             return r
 
         db = MagicMock()
+        db.get = AsyncMock(return_value=None)
         db.execute = mock_execute
         svc = TenantCatalogService(db=db, actor_tenant_id=None, actor_role="super_admin")
         svc._load_tenant_service = AsyncMock(return_value=ts)
@@ -168,6 +171,7 @@ class TestTenantUpdateRequiredDetection:
         ts.blueprint_version_id = None
 
         db = MagicMock()
+        db.get = AsyncMock(return_value=None)
         db.execute = AsyncMock(return_value=_scalar(None))  # no versions at all
         svc = TenantCatalogService(db=db, actor_tenant_id=None, actor_role="super_admin")
         svc._load_tenant_service = AsyncMock(return_value=ts)

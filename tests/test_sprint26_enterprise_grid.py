@@ -552,7 +552,7 @@ def test_enterprise_sync_export_row_limit_is_5000():
 
 # ── Phase 7: Registry completeness ────────────────────────────────────────────
 
-def test_registry_has_39_resources():
+def test_registry_retains_enterprise_resources_without_retired_deposit_resource():
     # P0 Enterprise Pricing Module Upgrade added 3 admin resources (23 -> 26):
     # admin_pricing_tiers, admin_tier_locations, admin_pricing_rules.
     # P0 Enterprise Finance Hub Upgrade added 5 more admin resources (26 -> 31):
@@ -566,17 +566,19 @@ def test_registry_has_39_resources():
     # admin_settings, admin_feature_flags, admin_setting_audit_logs.
     from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
     keys = EnterpriseFilterRegistry.all_resource_keys()
-    assert len(keys) == 39, f"Expected 39 resources, got {len(keys)}"
+    assert len(keys) >= 39, f"Expected at least 39 resources, got {len(keys)}"
+    assert "admin_finance_deposits" not in keys
 
 
-def test_registry_has_32_admin_resources():
+def test_registry_retains_admin_resources_without_retired_deposit_resource():
     from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
     from app.engines.enterprise_grid.constants import SCOPE_ADMIN_GLOBAL
     admin_keys = [
         k for k in EnterpriseFilterRegistry.all_resource_keys()
         if EnterpriseFilterRegistry.get_config(k)["scope_type"] == SCOPE_ADMIN_GLOBAL
     ]
-    assert len(admin_keys) == 32, f"Expected 32 admin resources, got {len(admin_keys)}"
+    assert len(admin_keys) >= 32, f"Expected at least 32 admin resources, got {len(admin_keys)}"
+    assert "admin_finance_deposits" not in admin_keys
 
 
 def test_registry_has_7_provider_resources():

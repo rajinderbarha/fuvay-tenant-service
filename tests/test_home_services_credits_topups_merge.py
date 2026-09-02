@@ -12,6 +12,9 @@ import pytest
 import pytest_asyncio
 from decimal import Decimal
 from httpx import AsyncClient
+from sqlalchemy import text
+
+from app.database import create_test_engine
 
 BASE = "http://localhost:8000"
 ADMIN_EMAIL = "admin@serviceos.in"
@@ -44,6 +47,60 @@ async def _hs_tenant_id(admin) -> str:
     if items:
         return items[0]["tenant_id"]
     pytest.skip("No Home Services tenant with a credit account exists in this environment.")
+
+
+async def _remove_test_adjustment(
+    *, tenant_id: str, ledger_id: str, balance_before: Decimal, balance_after: Decimal,
+) -> None:
+    """Restore the shared certification account after the write-path probe.
+
+    These tests exercise a running server backed by the developer database,
+    rather than a transaction owned by pytest. The cleanup is deliberately
+    guarded by the exact post-adjustment balance so it cannot overwrite a
+    concurrent real balance movement.
+    """
+    engine = create_test_engine()
+    try:
+        async with engine.begin() as db:
+            current = (
+                await db.execute(
+                    text(
+                        "SELECT credit_balance FROM tenant_billing "
+                        "WHERE tenant_id=:tenant_id FOR UPDATE"
+                    ),
+                    {"tenant_id": tenant_id},
+                )
+            ).scalar_one()
+            assert Decimal(str(current)) == balance_after, (
+                "Refusing test cleanup because the tenant balance changed "
+                "after the test adjustment."
+            )
+            await db.execute(
+                text(
+                    "DELETE FROM platform_audit_logs "
+                    "WHERE entity_type='usage_credit_ledger' AND entity_id=:ledger_id"
+                ),
+                {"ledger_id": ledger_id},
+            )
+            deleted = await db.execute(
+                text(
+                    "DELETE FROM usage_credit_ledger "
+                    "WHERE id=:ledger_id AND tenant_id=:tenant_id "
+                    "AND event_type='manual_credit_adjustment' "
+                    "AND reason='test coverage adjustment'"
+                ),
+                {"ledger_id": ledger_id, "tenant_id": tenant_id},
+            )
+            assert deleted.rowcount == 1
+            await db.execute(
+                text(
+                    "UPDATE tenant_billing SET credit_balance=:balance, updated_at=now() "
+                    "WHERE tenant_id=:tenant_id"
+                ),
+                {"balance": balance_before, "tenant_id": tenant_id},
+            )
+    finally:
+        await engine.dispose()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -215,11 +272,19 @@ class TestLedgerAndAdjustments:
         })
         assert r.status_code == 200, r.text
         entry = r.json()["data"]
-        assert entry["event_type"] == "manual_credit_adjustment"
-        assert Decimal(str(entry["credit_delta"])) == Decimal("5")
+        try:
+            assert entry["event_type"] == "manual_credit_adjustment"
+            assert Decimal(str(entry["credit_delta"])) == Decimal("5")
 
-        after = await admin.get(f"/v1/admin/finance/home-services/credit-ledger?tenant_id={tenant_id}&event_type=manual_credit_adjustment")
-        assert after.json()["data"]["total"] == before_count + 1
+            after = await admin.get(f"/v1/admin/finance/home-services/credit-ledger?tenant_id={tenant_id}&event_type=manual_credit_adjustment")
+            assert after.json()["data"]["total"] == before_count + 1
+        finally:
+            await _remove_test_adjustment(
+                tenant_id=tenant_id,
+                ledger_id=entry["ledger_id"],
+                balance_before=Decimal(str(entry["balance_before"])),
+                balance_after=Decimal(str(entry["balance_after"])),
+            )
 
     async def test_adjustment_requires_valid_reason_code(self, admin):
         tenant_id = await _hs_tenant_id(admin)

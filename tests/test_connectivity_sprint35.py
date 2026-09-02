@@ -202,10 +202,10 @@ class TestServiceOptionsDoubleUnwrapFix(unittest.TestCase):
         self.assertNotIn('}).data;', self.src)
 
     def test_uses_direct_items(self):
-        self.assertIn('d.items', self.src)
+        self.assertIn('result.items', self.src)
 
     def test_uses_direct_total(self):
-        self.assertIn('d.total', self.src)
+        self.assertIn('result.total', self.src)
 
 
 class TestIssueTypesDoubleUnwrapFix(unittest.TestCase):
@@ -221,10 +221,10 @@ class TestIssueTypesDoubleUnwrapFix(unittest.TestCase):
         self.assertNotIn('}).data;', self.src)
 
     def test_uses_direct_items(self):
-        self.assertIn('d.items', self.src)
+        self.assertIn('result.items', self.src)
 
     def test_uses_direct_total(self):
-        self.assertIn('d.total', self.src)
+        self.assertIn('result.total', self.src)
 
 
 class TestAuditLogsEndpointFix(unittest.TestCase):
@@ -240,7 +240,7 @@ class TestAuditLogsEndpointFix(unittest.TestCase):
         self.assertIn('/v1/security/audit-log', self.src)
 
     def test_auth_audit_uses_correct_path(self):
-        self.assertIn('/v1/auth/audit-log', self.src)
+        self.assertIn('/v1/admin/audit-logs/login-events', self.src)
 
     def test_no_wrong_engine_audit_path(self):
         self.assertNotIn('/v1/engines/audit-logs', self.src)

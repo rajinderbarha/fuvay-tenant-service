@@ -122,12 +122,12 @@ async def test_documents_full_lifecycle_live():
             headers = {"Authorization": "Bearer x"}
             app.dependency_overrides[get_current_user] = lambda: _tech_ctx(str(tenant_id), user_id=str(staff_user_id))
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                # 1. Initial projection: required manifest, nothing complete yet.
+                # 1. Technician screening is provider-owned: no platform-required docs.
                 initial = (await client.get("/v1/staff/me/documents", headers=headers)).json()["data"]
-                assert initial["readiness"]["required"] == 2  # technician_identity_proof + technician_background_check
+                assert initial["readiness"]["required"] == 0
                 assert initial["readiness"]["complete"] == 0
                 req_codes = {r["code"] for r in initial["requirements"]}
-                assert "technician_identity_proof" in req_codes
+                assert req_codes == {"technician_skill_certificate"}
 
                 # 2. Reject an unknown doc_type.
                 bad_submit = await client.post(
@@ -139,14 +139,14 @@ async def test_documents_full_lifecycle_live():
                 # 3. Submit a real requirement -- becomes pending_review, never Verified.
                 submit_resp = await client.post(
                     "/v1/staff/me/documents", headers=headers,
-                    json={"doc_type": "technician_identity_proof", "media_asset_id": str(media_id)},
+                    json={"doc_type": "technician_skill_certificate", "media_asset_id": str(media_id)},
                 )
                 assert submit_resp.status_code == 200
                 doc_id = submit_resp.json()["data"]["id"]
                 assert submit_resp.json()["data"]["status"] == "pending_review"
 
                 after_submit = (await client.get("/v1/staff/me/documents", headers=headers)).json()["data"]
-                identity_req = next(r for r in after_submit["requirements"] if r["code"] == "technician_identity_proof")
+                identity_req = next(r for r in after_submit["requirements"] if r["code"] == "technician_skill_certificate")
                 assert identity_req["review_status"] == "pending_review"
                 assert identity_req["current_version"] == 1
 
@@ -177,8 +177,8 @@ async def test_documents_full_lifecycle_live():
             app.dependency_overrides[get_current_user] = lambda: _tech_ctx(str(tenant_id), user_id=str(staff_user_id))
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 after_verify = (await client.get("/v1/staff/me/documents", headers=headers)).json()["data"]
-                assert after_verify["readiness"]["complete"] == 1
-                identity_req2 = next(r for r in after_verify["requirements"] if r["code"] == "technician_identity_proof")
+                assert after_verify["readiness"]["complete"] == 0
+                identity_req2 = next(r for r in after_verify["requirements"] if r["code"] == "technician_skill_certificate")
                 assert identity_req2["review_status"] == "verified"
 
                 # 8. Replace the verified document -- new version created, old preserved.
@@ -194,21 +194,21 @@ async def test_documents_full_lifecycle_live():
 
                 replace_resp = await client.post(
                     "/v1/staff/me/documents", headers=headers,
-                    json={"doc_type": "technician_identity_proof", "media_asset_id": str(media_id_2)},
+                    json={"doc_type": "technician_skill_certificate", "media_asset_id": str(media_id_2)},
                 )
                 new_doc_id = replace_resp.json()["data"]["id"]
                 assert new_doc_id != doc_id
                 assert replace_resp.json()["data"]["version"] == 2
                 assert replace_resp.json()["data"]["status"] == "pending_review"
 
-                history = (await client.get("/v1/staff/me/documents/technician_identity_proof/history", headers=headers)).json()["data"]["versions"]
+                history = (await client.get("/v1/staff/me/documents/technician_skill_certificate/history", headers=headers)).json()["data"]["versions"]
                 assert len(history) == 2
                 old_version = next(v for v in history if v["id"] == doc_id)
                 assert old_version["is_current"] is False
 
                 # 9. A PENDING replacement does not falsely make the requirement Verified.
                 after_replace = (await client.get("/v1/staff/me/documents", headers=headers)).json()["data"]
-                identity_req3 = next(r for r in after_replace["requirements"] if r["code"] == "technician_identity_proof")
+                identity_req3 = next(r for r in after_replace["requirements"] if r["code"] == "technician_skill_certificate")
                 assert identity_req3["review_status"] == "pending_review"
         finally:
             app.dependency_overrides.pop(get_current_user, None)
@@ -262,7 +262,7 @@ async def test_reject_requires_reason_and_cross_tenant_denied():
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 submit_resp = await client.post(
                     "/v1/staff/me/documents", headers={"Authorization": "Bearer x"},
-                    json={"doc_type": "technician_background_check", "media_asset_id": str(media_id)},
+                    json={"doc_type": "technician_skill_certificate", "media_asset_id": str(media_id)},
                 )
                 doc_id = submit_resp.json()["data"]["id"]
 

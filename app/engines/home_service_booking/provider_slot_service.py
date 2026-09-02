@@ -225,34 +225,53 @@ async def assignable_technician_count(
     master_service_id: uuid.UUID | None = None,
     day: dt.date | None = None,
 ) -> int:
-    """Count technicians who contribute one place to a slot.
+    """Count funded, verified technicians who contribute one place to a slot.
 
-    Capacity is HEADCOUNT: every active, assignment-enabled technician on the
-    roster contributes exactly one place. Availability is published by the
-    provider (`provider_availability_rules` with `scope_type='provider'`) and
-    is what the customer picks a slot from; team members have no schedule of
-    their own, only an active/inactive state.
+    Capacity is headcount, capped by the tenant's live purchased seats. A
+    technician contributes capacity only after all required identity and
+    background documents are current and verified. Activation can therefore
+    finish before payment, while customer booking still fails closed.
 
-    `master_service_id` and `day` are accepted so existing callers keep
-    working, but deliberately no longer narrow the count. They used to demand
-    a supported offering for the service AND a per-staff weekday rule, which
-    made slot capacity disagree with the seats the provider had bought — a
-    technician with no personal availability row sold no slots despite
-    consuming a seat and passing the activation gate. Skills stay advisory at
-    assignment time (a warning, never a block), so they cannot silently
-    withdraw capacity here either.
+    `master_service_id` and `day` remain accepted for existing callers but do
+    not narrow this provider-level count. Service coverage is enforced by the
+    matching/assignment gates; provider availability defines the offered day.
 
     Returns -1 (not 0) when the roster cannot be read, so callers can tell
     "unknown" apart from "genuinely nobody" and fail closed.
     """
     try:
+        from app.engines.vertical_catalog.document_requirements import (
+            required_technician_keys,
+        )
+
+        required_documents = sorted(required_technician_keys(vertical="home_services"))
         row = (await db.execute(
             text(
-                "SELECT count(*) FROM provider_team_members ptm "
-                "WHERE ptm.tenant_id = CAST(:tid AS uuid) AND "
-                + active_technician_sql("ptm")
+                "WITH ready AS ("
+                " SELECT ptm.id FROM provider_team_members ptm "
+                " WHERE ptm.tenant_id = CAST(:tid AS uuid) AND "
+                + active_technician_sql("ptm") +
+                " AND (:required_count = 0 OR ("
+                "   SELECT count(DISTINCT td.doc_type) FROM tenant_documents td "
+                "   WHERE td.tenant_id = ptm.tenant_id "
+                "     AND td.staff_member_id = ptm.id "
+                "     AND td.is_current = true AND td.status = 'verified' "
+                "     AND (td.expiry_date IS NULL OR td.expiry_date > now()) "
+                "     AND td.doc_type = ANY(CAST(:required_documents AS text[]))"
+                " ) = :required_count)"
+                "), funded AS ("
+                " SELECT COALESCE(SUM(e.seats), 0)::bigint AS seats "
+                " FROM tenant_topup_entitlements e "
+                " WHERE e.tenant_id = CAST(:tid AS uuid) AND e.status = 'active' "
+                "   AND (e.expires_at IS NULL OR e.expires_at > now())"
+                ") SELECT LEAST((SELECT count(*) FROM ready), "
+                "               (SELECT seats FROM funded))"
             ),
-            {"tid": str(tenant_id)},
+            {
+                "tid": str(tenant_id),
+                "required_documents": required_documents,
+                "required_count": len(required_documents),
+            },
         )).first()
         return int(row[0]) if row and row[0] is not None else 0
     except Exception:  # noqa: BLE001 -- fail closed rather than inventing capacity

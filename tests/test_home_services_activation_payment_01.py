@@ -1,6 +1,6 @@
-"""HOME-SERVICES-ACTIVATION-PAYMENT-01 — real online Razorpay collection for
-the security-deposit + starter-credit-package Home Services activation
-gates (app.engines.vertical_catalog.activation_payment_service /
+"""HOME-SERVICES-ACTIVATION-PAYMENT-01 — Razorpay collection for optional
+usage-credit top-ups during Home Services onboarding
+(app.engines.vertical_catalog.activation_payment_service /
 activation_payment_router).
 
 Focused tests (time-boxed pass) proving:
@@ -11,22 +11,8 @@ Focused tests (time-boxed pass) proving:
      already-captured order -- a retried webhook cannot double-post.
   3. Credit-package webhook confirmation posts EXACTLY the base amount to
      credit_balance and records the GST as a separate FinancialEvent.
-  4. Regression test for a real bug this slice found and fixed in
-     activation.py: evaluate_activation_gates used to compare the tenant's
-     USABLE credit_balance (which only ever receives the base amount)
-     against the GST-INCLUSIVE gross required_credit_amount -- making the
-     gate mathematically impossible to satisfy even after a fully correct
-     payment. Fixed to compare against the base amount.
-
-Live DB-integration proof (captured in this session's transcript, not
-re-run here): real Razorpay test-mode orders were created
-(order_TJHDZ3O21PjnoD deposit ₹2000, order_TJHDaBj3lgvdyb credit ₹1180),
-simulated webhook confirmations posted tenant_billing.credit_balance=1000.00
-(not 1180) and security_deposit_paid=true/amount=2000.00, retried webhooks
-returned idempotent:true with no balance change, and tenant Guramrit
-(244beeec-fedc-452e-8054-317e45557d4d) transitioned
-activation_requirements_pending -> active via try_auto_activate once this
-gate-math bug was fixed and all other gates were already ready.
+  4. The activation quote and payment APIs expose only the current top-up
+     model and do not revive removed security-deposit fields or gates.
 """
 from __future__ import annotations
 
@@ -37,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.engines.vertical_catalog.activation_payment_models import (
-    ActivationPaymentOrder, PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING,
+    ActivationPaymentOrder, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING,
     STATUS_CAPTURED, STATUS_CREATED,
 )
 from app.engines.vertical_catalog import activation_payment_service as svc
@@ -49,53 +35,77 @@ def _mock_scalar(row):
     return result
 
 
-def _make_policy(version=1, deposit_per_tech="2000", minimum_deposit="2000",
-                  credit_base="1000", credit_gst="18"):
+def _mock_scalars(rows):
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = rows
+    return result
+
+
+def _mock_value(value):
+    result = MagicMock()
+    result.scalar.return_value = value
+    return result
+
+
+def _make_policy(version=1, credit_base="1000", credit_gst="18"):
     p = MagicMock()
     p.version_number = version
-    p.deposit_amount_per_technician = Decimal(deposit_per_tech)
-    p.minimum_deposit = Decimal(minimum_deposit)
     p.credit_package_base_amount = Decimal(credit_base)
     p.credit_package_gst_percent = Decimal(credit_gst)
-    p.deposit_required = True
+    p.credit_booking_floor = Decimal("100")
+    p.credit_warning_threshold = Decimal("250")
     return p
+
+
+def _make_plan(seats=2, base="1000", gst="18"):
+    plan_id = uuid.uuid4()
+    total = Decimal(base) * (Decimal("1") + Decimal(gst) / Decimal("100"))
+    plan = MagicMock()
+    plan.seats = seats
+    plan.is_default = True
+    plan.to_dict.return_value = {
+        "id": str(plan_id), "name": "Starter", "seats": seats,
+        "base_amount": float(Decimal(base)), "credited_amount": float(Decimal(base)),
+        "gst_amount": float(total - Decimal(base)), "total_amount": float(total),
+    }
+    return plan
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "technicians,deposit_held,credit_balance,mode,deposit_due,credit_gross,total",
+    "technicians,entitled_seats,credit_balance,mode,total",
     [
-        (1, "0", "0", "deposit_and_credits", 2000.0, 1180.0, 3180.0),
-        (2, "2000", "0", "deposit_and_credits", 2000.0, 1180.0, 3180.0),
-        (2, "4000", "0", "credits_only", 0.0, 1180.0, 1180.0),
-        (2, "4000", "1000", "funded", 0.0, 0.0, 0.0),
+        (1, 0, "0", "topup_plan", 1180.0),
+        (2, 1, "1000", "seats_only", 1180.0),
+        (1, 1, "0", "credits_only", 1180.0),
+        (1, 1, "1000", "funded", 0.0),
     ],
 )
-async def test_funding_quote_scales_deposit_and_only_charges_live_shortfalls(
-    technicians, deposit_held, credit_balance, mode, deposit_due, credit_gross, total,
+async def test_funding_quote_uses_topup_plan_for_live_seat_and_credit_shortfalls(
+    technicians, entitled_seats, credit_balance, mode, total,
 ):
     tenant_id = uuid.uuid4()
     vertical = MagicMock(id=uuid.uuid4())
     policy = _make_policy()
     billing = MagicMock()
-    billing.security_deposit_amount = Decimal(deposit_held)
+    billing.entitled_seats = entitled_seats
     billing.credit_balance = Decimal(credit_balance)
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=_mock_scalars([_make_plan()]))
 
     with patch.object(svc, "_resolve_vertical_and_policy", new=AsyncMock(return_value=(vertical, policy))), \
          patch.object(svc, "_get_billing_row", new=AsyncMock(return_value=billing)), \
          patch.object(svc, "resolve_qualifying_technician_count", new=AsyncMock(return_value=technicians)):
-        quote = await svc.resolve_activation_funding_quote(AsyncMock(), tenant_id)
+        quote = await svc.resolve_activation_funding_quote(db, tenant_id)
 
-    assert quote["deposit_required"] == technicians * 2000.0
-    assert quote["deposit_shortfall"] == deposit_due
-    assert quote["credit_gross"] == credit_gross
     assert quote["total_due"] == total
     assert quote["checkout_mode"] == mode
-    assert quote["separate_ledger_allocations"] is True
+    assert "deposit_required" not in quote
+    assert "deposit_shortfall" not in quote
 
 
 @pytest.mark.asyncio
-async def test_combined_order_uses_server_quote_and_persists_allocation_split():
+async def test_topup_order_uses_server_quote_and_snapshots_credit_and_seats():
     tenant_id = uuid.uuid4()
     vertical = MagicMock(id=uuid.uuid4())
     policy = _make_policy(version=7)
@@ -103,25 +113,26 @@ async def test_combined_order_uses_server_quote_and_persists_allocation_split():
     db.execute = AsyncMock(return_value=_mock_scalar(None))
     db.add = MagicMock()
     db.commit = AsyncMock()
-    quote = {
-        "total_due": 3180.0, "deposit_shortfall": 2000.0,
-        "credit_purchase_base": 1000.0, "credit_tax": 180.0,
-        "checkout_mode": "deposit_and_credits",
-    }
+    plan_id = uuid.uuid4()
+    quote = {"total_due": 1180.0, "checkout_mode": "topup_plan", "suggested_plan": {
+        "id": str(plan_id), "seats": 2, "credited_amount": 1000.0, "gst_amount": 180.0,
+    }}
 
     with patch.object(svc, "_resolve_vertical_and_policy", new=AsyncMock(return_value=(vertical, policy))), \
          patch.object(svc, "resolve_activation_funding_quote", new=AsyncMock(return_value=quote)), \
          patch("app.integrations.razorpay_client.create_order", new=AsyncMock(
-             return_value={"id": "order_bundle", "amount": 318000, "currency": "INR"})):
+             return_value={"id": "order_topup", "amount": 118000, "currency": "INR"})):
         result = await svc.create_activation_funding_order(db, tenant_id)
 
     record = db.add.call_args[0][0]
     assert record.payment_kind == PAYMENT_KIND_FUNDING
-    assert record.amount == Decimal("3180.00")
+    assert record.amount == Decimal("1180.00")
     assert record.credited_amount == Decimal("1000.00")
     assert record.tax_amount == Decimal("180.00")
-    assert result["deposit_amount"] == 2000.0
-    assert result["amount_paise"] == 318000
+    assert record.topup_plan_id == plan_id
+    assert record.seats_granted == 2
+    assert result["amount_paise"] == 118000
+    assert "deposit_amount" not in result
 
 
 @pytest.mark.asyncio
@@ -199,6 +210,8 @@ async def test_webhook_posts_base_credit_and_separate_gst_event_not_blended():
     order_row.amount = Decimal("1180")
     order_row.credited_amount = Decimal("1000")
     order_row.tax_amount = Decimal("180.00")
+    order_row.seats_granted = 0
+    order_row.topup_plan_id = None
     order_row.to_dict.return_value = {"status": STATUS_CAPTURED}
 
     billing = MagicMock()
@@ -234,36 +247,41 @@ async def test_webhook_posts_base_credit_and_separate_gst_event_not_blended():
 
 
 @pytest.mark.asyncio
-async def test_bundle_webhook_posts_deposit_and_credit_as_separate_allocations():
+async def test_topup_webhook_posts_credit_and_grants_technician_seats():
     tenant_id = uuid.uuid4()
     order_row = MagicMock(spec=ActivationPaymentOrder)
     order_row.id = uuid.uuid4()
     order_row.tenant_id = tenant_id
     order_row.status = STATUS_CREATED
     order_row.payment_kind = PAYMENT_KIND_FUNDING
-    order_row.amount = Decimal("3180")
+    order_row.amount = Decimal("1180")
     order_row.credited_amount = Decimal("1000")
     order_row.tax_amount = Decimal("180")
+    order_row.seats_granted = 2
+    order_row.topup_plan_id = uuid.uuid4()
     order_row.to_dict.return_value = {"status": STATUS_CAPTURED}
     billing = MagicMock()
     billing.credit_balance = Decimal("0")
 
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=[
-        _mock_scalar(order_row), _mock_scalar(None), _mock_scalar(billing),
+        _mock_scalar(order_row), _mock_scalar(None), _mock_scalar(billing), _mock_value(30),
     ])
     db.add = MagicMock()
     db.commit = AsyncMock()
+    db.refresh = AsyncMock()
 
-    with patch.object(svc, "_post_security_deposit", new=AsyncMock()) as post_deposit, \
+    with patch("app.engines.vertical_catalog.topup_entitlement_service.grant", new=AsyncMock()) as grant, \
          patch("app.engines.vertical_catalog.activation.try_auto_activate",
                new=AsyncMock(return_value={"status": "activation_requirements_pending"})):
         await svc.confirm_activation_payment_webhook(
-            db, gateway_order_id="order_bundle", gateway_payment_id="pay_bundle",
-            amount=Decimal("3180"), status_="captured", raw_payload={},
+            db, gateway_order_id="order_topup", gateway_payment_id="pay_topup",
+            amount=Decimal("1180"), status_="captured", raw_payload={},
         )
 
-    assert post_deposit.await_args.kwargs["amount"] == Decimal("2000.00")
+    assert grant.await_args.kwargs["seats"] == 2
+    assert grant.await_args.kwargs["credit_granted"] == Decimal("1000.00")
+    assert grant.await_args.kwargs["validity_days"] == 30
     assert billing.credit_balance == Decimal("1000.00")
     event_types = [call.args[0].event_type for call in db.add.call_args_list
                    if hasattr(call.args[0], "event_type")]

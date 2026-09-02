@@ -421,7 +421,7 @@ def _seed_registry() -> None:
         EngineDefinition(
             engine_id="platform_commerce",
             name="Platform Commerce Engine",
-            description="Tenant security deposit · credit packages · wallet · auto commission deduction · tenant health score · customer health · badges · warranty.",
+            description="Usage-credit top-ups · technician seats · automatic job deductions · tenant health · customer credits · badges · warranty.",
             engine_type="core",
             version="1.0.0",
             dependencies=["auth", "tenant", "payment"],
@@ -518,11 +518,11 @@ def _seed_registry() -> None:
         EngineDefinition(
             engine_id="complaint_dispute",
             name="Complaint & Remedy Engine",
-            description="Customer complaints, provider response, rework, refunds, warranty remedies and admin escalation.",
+            description="Customer complaints, provider response, direct rework, refunds and warranty remedies without platform adjudication.",
             engine_type="plugin",
             version="1.0.0",
             dependencies=["auth", "notification", "field_ops", "platform_commerce"],
-            api_prefix="/v1/admin/complaints",
+            api_prefix="/v1/customer/complaints + /v1/provider/complaints",
             endpoint_count=24,
             category="quality",
             is_enabled_by_default=False,

@@ -18,7 +18,7 @@ const STATUS_BADGE: Record<string, "success" | "warning" | "danger" | "info" | "
   pending_confirmation: "warning", cancelled: "danger", void: "muted",
 };
 
-type Tab = "overview" | "bookings" | "complaints" | "credits" | "addresses" | "sessions" | "privacy";
+type Tab = "overview" | "bookings" | "addresses" | "sessions" | "privacy";
 
 function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
   return (
@@ -37,9 +37,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
   const [tab, setTab] = useState<Tab>("overview");
   const [reasonModal, setReasonModal] = useState<null | "block" | "unblock" | "suspend" | "reactivate" | "revoke_sessions">(null);
   const [reason, setReason] = useState("");
-  const [creditModal, setCreditModal] = useState(false);
-  const [creditAmount, setCreditAmount] = useState("");
-  const [creditReason, setCreditReason] = useState("");
 
   const customerFetch = useApi(
     useCallback(() => adminCustomersApi.get(customerId), [customerId]), [customerId],
@@ -56,12 +53,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
     (bookingsFetch.data as unknown as { data?: BookingsData } | null)?.data;
   const bookings = bookingsData?.bookings ?? [];
   const bookingsMeta = bookingsData?.meta;
-
-  const complaintsFetch = useApi(useCallback(() => adminCustomersApi.complaints(customerId), [customerId]), [customerId]);
-  const complaints = (complaintsFetch.data as unknown as { data?: { complaints: any[] } } | null)?.data?.complaints ?? [];
-
-  const creditsFetch = useApi(useCallback(() => adminCustomersApi.serviceCredits(customerId), [customerId]), [customerId]);
-  const creditsData = (creditsFetch.data as unknown as { data?: { credits: any[]; summary: any } } | null)?.data;
 
   const addressesFetch = useApi(useCallback(() => adminCustomersApi.addresses(customerId), [customerId]), [customerId]);
   const addresses = (addressesFetch.data as unknown as { data?: { addresses: any[] } } | null)?.data?.addresses ?? [];
@@ -80,10 +71,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
   const suspendAction = useAction(useCallback((r: string) => adminCustomersApi.suspend(customerId, r), [customerId]));
   const reactivateAction = useAction(useCallback((r: string) => adminCustomersApi.reactivate(customerId, r), [customerId]));
   const revokeSessionsAction = useAction(useCallback((r: string) => adminCustomersApi.revokeAllSessions(customerId, r), [customerId]));
-  const issueCreditAction = useAction(useCallback(
-    (amount: number, issued_reason: string) => adminCustomersApi.issueServiceCredit(customerId, { amount, issued_reason }),
-    [customerId]));
-
   async function confirmReasonAction() {
     if (!reasonModal || !reason) return;
     const map = { block: blockAction, unblock: unblockAction, suspend: suspendAction,
@@ -93,13 +80,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
       setReasonModal(null); setReason("");
       customerFetch.refetch(); sessionsFetch.refetch();
     }
-  }
-
-  async function handleIssueCredit() {
-    const amt = parseFloat(creditAmount);
-    if (!amt || !creditReason) return;
-    const result = await issueCreditAction.execute(amt, creditReason);
-    if (result) { setCreditModal(false); setCreditAmount(""); setCreditReason(""); creditsFetch.refetch(); }
   }
 
   const bookingColumns = [
@@ -241,10 +221,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
               <button style={tabStyle("bookings")} onClick={() => setTab("bookings")}>
                 Bookings {bookingsMeta?.total != null ? `(${bookingsMeta.total})` : ""}
               </button>
-              <button style={tabStyle("complaints")} onClick={() => setTab("complaints")}>
-                Complaints & Disputes {complaints.length ? `(${complaints.length})` : ""}
-              </button>
-              <button style={tabStyle("credits")} onClick={() => setTab("credits")}>Service Credits</button>
               <button style={tabStyle("addresses")} onClick={() => setTab("addresses")}>Addresses</button>
               <button style={tabStyle("sessions")} onClick={() => setTab("sessions")}>Sessions & Login History</button>
               <button style={tabStyle("privacy")} onClick={() => setTab("privacy")}>Privacy / DPDP</button>
@@ -291,48 +267,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
                     Showing page 1 of {bookingsMeta.total_pages} ({bookingsMeta.total} total bookings)
                   </div>
                 )}
-              </div>
-            )}
-
-            {tab === "complaints" && (
-              <div style={{ padding: complaints.length ? 0 : 20 }}>
-                {complaintsFetch.loading ? <EmptyState title="Loading…" /> : complaints.length === 0 ? (
-                  <EmptyState title="No complaints or disputes for this customer." />
-                ) : complaints.map((c: any) => (
-                  <div key={c.id} style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{c.complaint_number}</span>
-                      <Badge variant={c.status === "open" ? "danger" : c.status === "resolved" ? "success" : "muted"} size="sm">{c.status}</Badge>
-                      <Badge variant="muted" size="sm">{c.priority}</Badge>
-                      {c.settlement_status && <Badge variant="info" size="sm">{c.settlement_status}</Badge>}
-                    </div>
-                    <p style={{ fontSize: 12, color: "var(--muted-text)", margin: 0 }}>{c.description}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {tab === "credits" && (
-              <div style={{ padding: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  {creditsData?.summary && (
-                    <div style={{ display: "flex", gap: 20, fontSize: 13 }}>
-                      <span><strong>{creditsData.summary.active_credits}</strong> active</span>
-                      <span>Balance: <strong>₹{creditsData.summary.active_credit_balance.toFixed(2)}</strong></span>
-                    </div>
-                  )}
-                  <Btn variant="primary" size="sm" onClick={() => setCreditModal(true)}>Issue Service Credit</Btn>
-                </div>
-                {creditsFetch.loading ? <EmptyState title="Loading…" /> : (creditsData?.credits.length ?? 0) === 0 ? (
-                  <EmptyState title="No service credits issued to this customer." />
-                ) : creditsData!.credits.map((c: any) => (
-                  <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{c.credit_number}</span>
-                    <Badge variant={c.status === "active" ? "success" : "muted"} size="sm">{c.status}</Badge>
-                    <span style={{ fontSize: 12, color: "var(--muted-text)", flex: 1 }}>{c.issued_reason}</span>
-                    <span style={{ fontFamily: "monospace", fontSize: 13 }}>₹{c.remaining_amount} / ₹{c.amount}</span>
-                  </div>
-                ))}
               </div>
             )}
 
@@ -407,16 +341,6 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
         </div>
       </Modal>
 
-      <Modal open={creditModal} onClose={() => setCreditModal(false)} title="Issue Service Credit">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Input label="Amount (₹)" placeholder="500" value={creditAmount} onChange={setCreditAmount} required />
-          <Input label="Reason (required)" placeholder="Why is this credit being issued?" value={creditReason} onChange={setCreditReason} required />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Btn variant="ghost" size="sm" onClick={() => setCreditModal(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" disabled={!creditAmount || !creditReason} onClick={handleIssueCredit}>Issue Credit</Btn>
-          </div>
-        </div>
-      </Modal>
     </>
   );
 }

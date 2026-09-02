@@ -22,10 +22,10 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
-API_TS = Path("mobile/staff-app/src/lib/api.ts")
-SCREEN = Path("mobile/staff-app/src/screens/NotificationsScreen.tsx")
-HOME = Path("mobile/staff-app/src/screens/HomeScreen.tsx")
-NAV = Path("mobile/staff-app/src/navigation/AppNavigator.tsx")
+API_TS = Path("mobile/staff-app/src/services/notifications/notificationsApi.ts")
+SCREEN = Path("mobile/staff-app/src/screens/notifications/NotificationsScreen.tsx")
+HOME = Path("mobile/staff-app/src/screens/home/TechnicianHomeScreen.tsx")
+NAV = Path("mobile/staff-app/src/navigation/AppTabs.tsx")
 
 BASE = "http://localhost:8000"
 STAFF_EMAIL = "staff@serviceos.local"
@@ -34,23 +34,23 @@ PASSWORD = "Password123!"
 
 def test_notifications_api_targets_the_real_staff_endpoints():
     src = API_TS.read_text(encoding="utf-8")
-    block = src.split("export const notificationsApi")[1].split("\n};")[0]
-    assert "/v1/staff/notifications" in block
-    for fn in ("list:", "unreadCount:", "markRead:", "markAllRead:"):
-        assert fn in block
+    assert "/v1/staff/mobile-notifications" in src
+    assert "/v1/staff/notifications" in src
+    for fn in ("getNotifications", "getUnreadCount", "markNotificationRead", "markAllNotificationsRead"):
+        assert fn in src
 
 
 def test_home_screen_shows_unread_bell_and_routes_to_notifications():
     src = HOME.read_text(encoding="utf-8")
-    assert "notificationsApi.unreadCount" in src
+    assert "unread_notification_count" in src
     assert 'navigation.navigate("Notifications"' in src
 
 
 def test_notifications_screen_deep_links_job_assignments():
     src = SCREEN.read_text(encoding="utf-8")
     # assignment notifications carry source_record_type "service_jobs"
-    assert '"service_jobs"' in src
-    assert 'navigation.navigate("JobDetail"' in src
+    assert 'dest.type === "job"' in src
+    assert 'screen: "JobDetail"' in src
 
 
 def test_notifications_route_registered():

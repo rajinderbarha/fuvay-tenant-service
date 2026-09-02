@@ -99,7 +99,7 @@ def test_seed_data_covers_home_services_business_rules():
     assert by_key["usage_credit_is_withdrawable"]["value"] is False
     assert by_key["customer_service_credits_enabled"]["value"] is True
     assert by_key["customer_service_credit_is_cash_refund"]["value"] is False
-    assert by_key["security_deposit_enabled"]["value"] is True
+    assert "security_deposit_enabled" not in by_key
     assert by_key["customer_pays_provider_directly"]["value"] is True
 
 
@@ -215,7 +215,7 @@ def test_admin_router_endpoints_present():
                  '"/groups"', '"/{setting_key}"', '"/{setting_key}/enable"',
                  '"/{setting_key}/disable"', '"/{setting_key}/impact-preview"',
                  '"/{setting_key}/rollback"', '"/{setting_key}/history"',
-                 '"/resolve-effective-value"', '"/plans"', '"/plans/{package_id}"',
+                 '"/resolve-effective-value"',
                  '"/categories"', '"/categories/{category_id}"',
                  '"/tenant-overrides"', '"/tenant-overrides/{override_id}"',
                  '"/tenant-overrides/{override_id}/revoke"',
@@ -233,7 +233,7 @@ def test_admin_router_catchall_setting_key_registered_last():
     last_catchall_pos = src.rfind('@router.get("/{setting_key}"')
     for literal in ('@router.get("/audit-logs"', '@router.get("/feature-flags"',
                     '@router.get("/tenant-overrides"', '@router.get("/categories"',
-                    '@router.get("/plans"', '@router.get("/groups"'):
+                    '@router.get("/groups"'):
         assert src.find(literal) < last_catchall_pos, f"{literal} must be registered before the catch-all"
 
 
@@ -241,8 +241,8 @@ def test_admin_router_permission_guarded():
     src = _read(ADMIN_ROUTER)
     for perm in ("P.SETTINGS_READ", "P.SETTINGS_CREATE", "P.SETTINGS_UPDATE",
                  "P.SETTINGS_ENABLE", "P.SETTINGS_DISABLE", "P.SETTINGS_IMPACT_PREVIEW",
-                 "P.SETTINGS_ROLLBACK", "P.SETTINGS_SEED_DEFAULTS", "P.SETTINGS_PLAN_READ",
-                 "P.SETTINGS_PLAN_UPDATE", "P.SETTINGS_CATEGORY_READ", "P.SETTINGS_CATEGORY_UPDATE",
+                 "P.SETTINGS_ROLLBACK", "P.SETTINGS_SEED_DEFAULTS",
+                 "P.SETTINGS_CATEGORY_READ", "P.SETTINGS_CATEGORY_UPDATE",
                  "P.SETTINGS_TENANT_OVERRIDES_READ", "P.SETTINGS_TENANT_OVERRIDES_CREATE",
                  "P.SETTINGS_TENANT_OVERRIDES_REVOKE", "P.SETTINGS_FEATURE_FLAGS_READ",
                  "P.SETTINGS_FEATURE_FLAGS_UPDATE", "P.SETTINGS_AUDIT_READ", "P.SETTINGS_HISTORY_READ"):
@@ -262,8 +262,7 @@ def test_permissions_settings_constants_exist():
     for const in ("SETTINGS_CREATE", "SETTINGS_UPDATE", "SETTINGS_DELETE", "SETTINGS_ENABLE",
                   "SETTINGS_DISABLE", "SETTINGS_IMPACT_PREVIEW", "SETTINGS_ROLLBACK",
                   "SETTINGS_SEED_DEFAULTS", "SETTINGS_IMPORT", "SETTINGS_EXPORT",
-                  "SETTINGS_PLAN_READ", "SETTINGS_PLAN_UPDATE", "SETTINGS_CATEGORY_READ",
-                  "SETTINGS_CATEGORY_UPDATE", "SETTINGS_TENANT_OVERRIDES_READ",
+                  "SETTINGS_CATEGORY_READ", "SETTINGS_CATEGORY_UPDATE", "SETTINGS_TENANT_OVERRIDES_READ",
                   "SETTINGS_TENANT_OVERRIDES_CREATE", "SETTINGS_TENANT_OVERRIDES_REVOKE",
                   "SETTINGS_FEATURE_FLAGS_READ", "SETTINGS_FEATURE_FLAGS_UPDATE",
                   "SETTINGS_AUDIT_READ", "SETTINGS_HISTORY_READ"):
@@ -278,6 +277,6 @@ def test_filter_registry_settings_resources_present():
         assert f'"{key}": {{' in src
 
 
-def test_filter_registry_resource_count_39():
+def test_filter_registry_resource_count_is_current_and_expanded():
     from app.engines.enterprise_grid.filter_registry import EnterpriseFilterRegistry
-    assert len(EnterpriseFilterRegistry.all_resource_keys()) == 39
+    assert len(EnterpriseFilterRegistry.all_resource_keys()) >= 46

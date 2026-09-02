@@ -197,7 +197,8 @@ def test_service_create_passes_hourly_fields():
     src = _read(SVC)
     idx = src.find("async def create_master_service")
     assert idx != -1
-    block = src[idx:idx+2500]
+    end = src.find("\n    async def ", idx + 1)
+    block = src[idx:end]
     assert "hourly_rate" in block
 
 
@@ -205,7 +206,8 @@ def test_service_update_handles_new_fields():
     src = _read(SVC)
     idx = src.find("async def update_master_service")
     assert idx != -1
-    block = src[idx:idx+1200]
+    end = src.find("\n    async def ", idx + 1)
+    block = src[idx:end if end != -1 else None]
     assert "hourly_rate" in block
     assert "customer_note" in block
 
@@ -258,15 +260,15 @@ def test_catalog_job_types_has_cleaning():
     assert '"cleaning"' in src
 
 
-def test_catalog_pricing_model_help_exists():
+def test_catalog_create_uses_canonical_job_type_agnostic_api():
     src = _read(CATALOG_PG)
-    assert "PRICING_MODEL_HELP" in src
+    assert "catalogApi.createMasterServiceV2" in src
 
 
-def test_catalog_pricing_model_help_has_post_assessment():
+def test_catalog_guides_pricing_to_job_type_blueprint():
     src = _read(CATALOG_PG)
-    assert "post_assessment" in src
-    assert "inspection" in src.lower() or "assessment" in src.lower()
+    assert "configured after creation, per job type" in src
+    assert "Job-Type Blueprint" in src
 
 
 # ── HS0 cleanup note ──────────────────────────────────────────────────────────

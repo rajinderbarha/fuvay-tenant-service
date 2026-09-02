@@ -38,6 +38,11 @@ export const serviceJobDtoSchema = z.object({
   warranty_days: z.number().nullable().optional(),
   warranty_expires_at: z.string().nullable().optional(),
   warranty_active: z.boolean().optional(),
+  warranty_certificate: z.object({
+    certificate_number: z.string(),
+    issued_at: z.string().nullable(),
+    download_path: z.string(),
+  }).nullable().optional(),
   completion: z.object({
     work_summary: z.string().nullable(),
     collected_amount: z.number().nullable(),

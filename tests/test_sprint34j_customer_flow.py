@@ -561,7 +561,7 @@ class TestDraftDetailPage(unittest.TestCase):
         self.assertIn("final_lead_id", self.src)
 
     def test_shows_status_badge(self):
-        self.assertIn("STATUS_COLORS", self.src)
+        self.assertIn("<Badge variant=", self.src)
         self.assertIn("draft.status", self.src)
 
     def test_shows_timestamps(self):

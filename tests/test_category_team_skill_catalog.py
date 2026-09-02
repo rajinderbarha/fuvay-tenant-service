@@ -10,6 +10,8 @@ ADMIN_CATEGORY = (ROOT / "frontend/super-admin/app/admin/categories/[id]/page.ts
 TEAM_DIRECTORY = (ROOT / "frontend/tenant-portal/app/(tenant)/provider/team-members/page.tsx").read_text(encoding="utf-8")
 TEAM_DETAIL = (ROOT / "frontend/tenant-portal/app/(tenant)/home-services/team/[[...staffId]]/page.tsx").read_text(encoding="utf-8")
 TEAM_SETUP = (ROOT / "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/staff/page.tsx").read_text(encoding="utf-8")
+ACTION_MENU = (ROOT / "frontend/packages/design-system/src/components/ActionMenu.tsx").read_text(encoding="utf-8")
+DESIGN_THEME = (ROOT / "frontend/packages/design-system/src/theme.css").read_text(encoding="utf-8")
 READINESS = (ROOT / "app/engines/home_service_assignment/team_readiness_service.py").read_text(encoding="utf-8")
 TENANT_CATALOG = (ROOT / "app/engines/admin_catalog/tenant_service.py").read_text(encoding="utf-8")
 
@@ -80,7 +82,9 @@ def test_admin_category_page_exposes_enterprise_skill_management():
     assert "categoryRuntimeApi.createSkill" in ADMIN_CATEGORY
     assert "categoryRuntimeApi.retireSkill" in ADMIN_CATEGORY
     assert "categoryRuntimeApi.restoreSkill" in ADMIN_CATEGORY
-    assert "Page {data?.page ?? page} of {data?.pages ?? 1}" in ADMIN_CATEGORY
+    assert "<Pagination page={data?.page ?? page}" in ADMIN_CATEGORY
+    assert 'pageCount={data?.pages}' in ADMIN_CATEGORY
+    assert 'onPage={setPage} itemLabel="skills" alwaysShow' in ADMIN_CATEGORY
 
 
 def test_email_can_be_added_later_before_login_invitation():
@@ -98,7 +102,9 @@ def test_pending_invitation_is_not_mislabeled_as_disabled_access():
 
 def test_roster_action_menu_is_not_clipped_by_its_container():
     assert 'overflow: "visible", position: "relative"' in TEAM_SETUP
-    assert "zIndex: 1000" in TEAM_SETUP
+    assert "<ActionMenu" in TEAM_SETUP
+    assert "createPortal(" in ACTION_MENU and "document.body" in ACTION_MENU
+    assert "z-index: var(--z-popover, 10000)" in DESIGN_THEME
 
 
 def test_team_service_selector_uses_canonical_names_and_groups_job_types():

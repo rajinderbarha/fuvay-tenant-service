@@ -12,7 +12,8 @@ from app.engines.customer_reviews.constants import (
     FLAG_STATUS_OPEN, FLAG_STATUS_RESOLVED,
     ACTOR_CUSTOMER, ACTOR_PROVIDER, ACTOR_ADMIN, ACTOR_SYSTEM,
     EVT_REVIEW_SUBMITTED, EVT_REVIEW_EDITED, EVT_REVIEW_APPROVED,
-    EVT_REVIEW_REJECTED, EVT_REVIEW_HIDDEN, EVT_REVIEW_DELETED,
+    EVT_REVIEW_REJECTED, EVT_REVIEW_HIDDEN, EVT_REVIEW_RESTORED,
+    EVT_REVIEW_ESCALATED, EVT_REVIEW_DELETED,
     EVT_REPLY_SUBMITTED, EVT_REPLY_APPROVED, EVT_REPLY_REJECTED,
     EVT_FLAG_CREATED, EVT_FLAG_RESOLVED,
     ERR_REVIEW_NOT_FOUND, ERR_REVIEW_ALREADY_EXISTS, ERR_REVIEW_NOT_ELIGIBLE,
@@ -230,6 +231,86 @@ class ReviewService:
         await db.commit()
         await self._trigger_aggregation(db, review)
         return review
+
+    async def restore_review(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        request_id: str = "—",
+    ) -> CustomerReview:
+        """Restore a moderated review to the public approved state."""
+        review = await self._get_review(db, review_id)
+        old_status = review.status
+        review.status = STATUS_APPROVED
+        review.visibility = VISIBILITY_PUBLIC
+        review.moderation_reason = None
+        review.hidden_at = None
+        review.approved_at = review.approved_at or datetime.now(timezone.utc)
+        await db.flush()
+        await self._log_event(
+            db, review.id, review.tenant_id, ACTOR_ADMIN, admin_user_id,
+            EVT_REVIEW_RESTORED, {"status": old_status},
+            {"status": STATUS_APPROVED}, request_id,
+        )
+        await db.commit()
+        await self._trigger_aggregation(db, review)
+        return review
+
+    async def escalate_review(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        reason: str,
+        request_id: str = "—",
+    ) -> CustomerReview:
+        """Move a review into the exception queue with an audited reason."""
+        review = await self._get_review(db, review_id)
+        old_status = review.status
+        review.status = STATUS_FLAGGED
+        review.moderation_reason = reason
+        await db.flush()
+        await self._log_event(
+            db, review.id, review.tenant_id, ACTOR_ADMIN, admin_user_id,
+            EVT_REVIEW_ESCALATED, {"status": old_status},
+            {"status": STATUS_FLAGGED, "reason": reason}, request_id,
+        )
+        await db.commit()
+        return review
+
+    async def admin_flag_review(
+        self,
+        db: AsyncSession,
+        review_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        reason: str,
+        request_id: str = "—",
+    ) -> ReviewFlag:
+        """Create an admin-origin flag without weakening customer/provider scope."""
+        review = await self._get_review(db, review_id)
+        old_status = review.status
+        flag = ReviewFlag(
+            review_id=review.id,
+            tenant_id=review.tenant_id,
+            flagged_by_user_id=admin_user_id,
+            flagged_by_type=ACTOR_ADMIN,
+            reason_code="other",
+            reason_text=reason,
+            status=FLAG_STATUS_OPEN,
+        )
+        db.add(flag)
+        review.status = STATUS_FLAGGED
+        review.moderation_reason = reason
+        await db.flush()
+        await self._log_event(
+            db, review.id, review.tenant_id, ACTOR_ADMIN, admin_user_id,
+            EVT_FLAG_CREATED, {"status": old_status},
+            {"status": STATUS_FLAGGED, "reason_code": "other", "reason": reason},
+            request_id,
+        )
+        await db.commit()
+        return flag
 
     # ── Admin: edit review ────────────────────────────────────────────────────
     # Distinct from the customer's own edit_review above: no ownership check,

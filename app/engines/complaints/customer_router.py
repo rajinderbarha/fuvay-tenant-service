@@ -16,6 +16,9 @@ from app.engines.complaints.refund_service import RefundRequestService
 from app.exceptions import ServiceOSException
 
 customer_complaint_router = APIRouter(prefix="/v1/customer/complaints", tags=["customer-complaints"])
+# Historical AI handlers stay importable for old migrations/tests, but this
+# router is intentionally never mounted. No AI complaint route is reachable.
+retired_ai_router = APIRouter()
 
 _eligibility = ComplaintEligibilityService()
 _complaint   = ComplaintService()
@@ -251,7 +254,7 @@ class AIAnswersIn(BaseModel):
     answers: list[str]
 
 
-@customer_complaint_router.get("/{complaint_id}/ai-session")
+@retired_ai_router.get("/{complaint_id}/ai-session")
 async def get_ai_session(
     complaint_id: uuid.UUID,
     r: Request       = None,
@@ -275,7 +278,7 @@ async def get_ai_session(
     }, rid, "complaint.ai_session.get")
 
 
-@customer_complaint_router.post("/{complaint_id}/ai-session/answers")
+@retired_ai_router.post("/{complaint_id}/ai-session/answers")
 async def submit_ai_answers(
     complaint_id: uuid.UUID,
     body: AIAnswersIn,

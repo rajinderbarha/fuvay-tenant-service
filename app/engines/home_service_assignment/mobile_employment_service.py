@@ -116,8 +116,8 @@ class MobileEmploymentService:
         }
 
     async def _skills(self, db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> list[dict]:
-        # Catalog assignments are canonical. The older free-text verification
-        # rows are retained only as an optional verification overlay so staff
+        # Catalog assignments are canonical. Older free-text verification rows
+        # remain visible when no matching catalog assignment exists, so staff
         # created before the catalog migration do not lose historical proof.
         rows = (await db.execute(text("""
             SELECT cs.id::text, cs.code, cs.name, cs.requires_verification,
@@ -129,7 +129,21 @@ class MobileEmploymentService:
                 ON ssr.tenant_id=a.tenant_id AND ssr.staff_member_id=a.staff_member_id
                AND lower(ssr.skill_name)=lower(cs.name)
              WHERE a.tenant_id=:tid AND a.staff_member_id=:sid
-             ORDER BY cs.display_order, cs.name
+            UNION ALL
+            SELECT ssr.id::text, NULL AS code, ssr.skill_name AS name,
+                   true AS requires_verification, ssr.verification_status,
+                   ssr.verified_at, ssr.expires_at
+              FROM staff_skill_records ssr
+             WHERE ssr.tenant_id=:tid AND ssr.staff_member_id=:sid
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM provider_team_member_skills a
+                     JOIN category_skills cs ON cs.id=a.skill_id
+                    WHERE a.tenant_id=ssr.tenant_id
+                      AND a.staff_member_id=ssr.staff_member_id
+                      AND lower(cs.name)=lower(ssr.skill_name)
+               )
+             ORDER BY name
         """), {"tid": str(tenant_id), "sid": str(staff_id)})).mappings().all()
         return [{
             "id": row["id"], "code": row["code"], "name": row["name"],

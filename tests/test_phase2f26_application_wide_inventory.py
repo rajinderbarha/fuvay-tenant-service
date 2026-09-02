@@ -23,6 +23,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs", "workflow-rearchitecture")),
+    reason="retired workflow inventory and deposit-model audit are intentionally absent",
+)
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "docs", "workflow-rearchitecture", "phase-02a-slice-02f26")
 CANON = os.path.join(REPO, "docs", "workflow-rearchitecture", "phase-02a-slice-02f",

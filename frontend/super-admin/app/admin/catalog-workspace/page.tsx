@@ -255,7 +255,8 @@ export default function AdminCatalogWorkspacePage() {
           )}
           <Pagination page={servicePage} pageSize={servicePageSize} total={listApi.data?.total ?? 0}
             navigationMode="adjacent" onPage={setServicePage} pageSizes={[25, 50, 100]}
-            onPageSize={size => { setServicePageSize(size); setServicePage(1); }} itemLabel="services" />
+            onPageSize={size => { setServicePageSize(size); setServicePage(1); }}
+            itemLabel="services" pageSizeLabel="Services per page" />
         </div>
 
         {/* ── Column 2: Service Workspace ──────────────────────────────────── */}

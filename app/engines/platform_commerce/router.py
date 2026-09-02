@@ -1,4 +1,4 @@
-"""Platform Commerce Engine — FastAPI Router (41 endpoints). Zero inline imports. Zero business logic."""
+"""Platform Commerce Engine — FastAPI Router. Zero inline imports. Zero business logic."""
 import uuid
 from decimal import Decimal
 
@@ -12,7 +12,6 @@ from app.dependencies.auth import get_current_user, UserContext, require_super_a
 from app.dependencies.db import get_db
 from app.engine_registry.registry import registry
 from app.engines.platform_commerce.schemas import (
-    DepositInitiateRequest, DepositConfirmRequest, DepositAdminAdjustRequest,
     CreatePackageRequest, UpdatePackageRequest,
     PurchaseInitiateRequest, PurchaseConfirmRequest, ManualCreditRequest,
     CommissionDeductRequest, UpdateHealthSignalRequest, HealthOverrideRequest,
@@ -25,6 +24,7 @@ from app.schemas.base import ApiResponse, Meta, Links, Link, ok
 
 logger = structlog.get_logger("commerce.router")
 router = APIRouter(prefix="/v1/commerce", tags=["Platform Commerce"])
+retired_admin_warranty_router = APIRouter()
 ENGINE_ID = "platform_commerce"
 
 
@@ -46,7 +46,7 @@ def _svc_open(r: Request, db: AsyncSession = Depends(get_db)) -> CommerceService
 @router.get("/meta", summary="Platform Commerce engine introspection", tags=["Engine Registry"])
 async def engine_meta() -> dict:
     return {"engine_id": ENGINE_ID, "name": "Platform Commerce Engine", "version": "3.0.0",
-            "endpoint_count": 41, "status": "active",
+            "endpoint_count": 48, "status": "active",
             "capabilities": ["credit_packages","tenant_wallet","commission",
                              "customer_health","credit_reservations","warranty_claims","badges","preflight"]}
 
@@ -56,7 +56,7 @@ async def engine_meta() -> dict:
 # down as commission, so there is no held balance to administer.
 
 
-@router.get("/packages", summary="List credit packages (empty if deposit unpaid)", response_model=ApiResponse[dict])
+@router.get("/packages", summary="List available credit packages", response_model=ApiResponse[dict])
 async def list_packages(r: Request, tenant_id: uuid.UUID | None = Query(None),
                          u: UserContext = Depends(get_current_user),
                          s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
@@ -116,7 +116,7 @@ async def initiate_purchase(tenant_id: uuid.UUID, body: PurchaseInitiateRequest,
     data = await s.initiate_purchase(tenant_id, body.package_id, body.gateway)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/tenants/{tenant_id}/wallet/purchase/confirm", summary="Confirm purchase — atomic wallet credit + deposit replenishment", response_model=ApiResponse[dict])
+@router.post("/tenants/{tenant_id}/wallet/purchase/confirm", summary="Confirm purchase — atomic usage-credit grant", response_model=ApiResponse[dict])
 async def confirm_purchase(tenant_id: uuid.UUID, body: PurchaseConfirmRequest, r: Request,
                             s: CommerceService = Depends(_svc_open)) -> ApiResponse[dict]:
     data = await s.confirm_purchase(tenant_id, body.package_id, body.razorpay_order_id,
@@ -368,12 +368,11 @@ async def submit_claim(body: WarrantyClaimRequest, r: Request,
 async def get_claim(claim_id: uuid.UUID, r: Request,
                      u: UserContext = Depends(get_current_user),
                      s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    platform_role = u.role in ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
     data = await s.get_claim(
         claim_id,
         customer_id=uuid.UUID(u.user_id) if u.role == "customer" else None,
         tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None,
-        is_admin=platform_role,
+        is_admin=False,
     )
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
@@ -384,8 +383,7 @@ async def list_tenant_claims(tenant_id: uuid.UUID, r: Request,
                               cursor: str | None = Query(None),
                               u: UserContext = Depends(get_current_user),
                               s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    platform_role = u.role in ("super_admin", "admin_operations", "admin_finance", "admin_security", "admin_readonly")
-    if not platform_role and (not u.tenant_id or str(u.tenant_id) != str(tenant_id)):
+    if not u.tenant_id or str(u.tenant_id) != str(tenant_id):
         raise ServiceOSException("NOT_FOUND", "Warranty claims not found.", status_code=404)
     data = await s.list_tenant_claims(tenant_id, status_filter, limit, cursor)
     return ok(data, _meta(r).request_id, ENGINE_ID)
@@ -422,7 +420,7 @@ async def escalate_claim(claim_id: uuid.UUID, body: WarrantyEscalationRequest, r
     )
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.get("/warranty/claims", summary="[Admin] Platform-wide warranty claims queue", response_model=ApiResponse[dict])
+@retired_admin_warranty_router.get("/warranty/claims")
 async def list_all_claims(r: Request,
                            status_filter: str | None = Query(None, alias="status"),
                            limit: int = Query(50, ge=1, le=200),
@@ -432,14 +430,14 @@ async def list_all_claims(r: Request,
     data = await s.list_all_claims(status_filter, limit, cursor)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/warranty/claims/{claim_id}/approve", summary="[Admin] Issue provider-funded service points after escalation", response_model=ApiResponse[dict])
+@retired_admin_warranty_router.post("/warranty/claims/{claim_id}/approve")
 async def approve_claim(claim_id: uuid.UUID, body: ClaimResolveRequest, r: Request,
                          u: UserContext = Depends(require_super_admin),
                          s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.approve_claim(claim_id, body.amount_approved or Decimal("0"), body.admin_notes)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
-@router.post("/warranty/claims/{claim_id}/reject", summary="[Admin] Reject warranty claim", response_model=ApiResponse[dict])
+@retired_admin_warranty_router.post("/warranty/claims/{claim_id}/reject")
 async def reject_claim(claim_id: uuid.UUID, body: ClaimResolveRequest, r: Request,
                         u: UserContext = Depends(require_super_admin),
                         s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:

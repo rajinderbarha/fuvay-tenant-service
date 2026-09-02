@@ -76,11 +76,10 @@ def test_zero_value_job_permits_no_credit():
 
 
 def test_admin_cannot_configure_money_back_in():
-    """The admin sets the rule — but not their way around the no-money rule."""
+    """Retired AI-settlement fields are not part of the policy contract."""
     from app.engines.complaints.admin_router import PolicyIn
-    PolicyIn(ai_settlement_allowed_remedies=["credit_points", "rework"])   # fine
-    with pytest.raises(Exception):
-        PolicyIn(ai_settlement_allowed_remedies=["credit_points", "refund"])
+    parsed = PolicyIn(ai_settlement_allowed_remedies=["credit_points", "refund"])
+    assert "ai_settlement_allowed_remedies" not in parsed.model_dump()
 
 
 def test_provider_is_charged_for_the_ai_settlement():
@@ -90,7 +89,8 @@ def test_provider_is_charged_for_the_ai_settlement():
     assert "UsageCreditService" in src
     assert "charge_ai_settlement_fee" in src
     assert "TenantWallet" not in src
-    assert '"charged_from_deposit": 0.0' in src
+    assert '"balance_after"' in src
+    assert "charged_from_deposit" not in src
 
 
 def test_payout_is_credits_funded_by_the_provider():

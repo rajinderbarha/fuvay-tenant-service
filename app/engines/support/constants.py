@@ -91,7 +91,7 @@ SUBCATEGORY_SUGGESTIONS: dict[str, list[str]] = {
     "dispatch":          ["Technician not assignable", "Availability wrong", "Auto-dispatch not matching"],
     "services_pricing":  ["Price not applying", "Service option missing", "Cannot publish service"],
     "coverage":          ["Area not bookable", "Pincode missing", "Coverage saved but not live"],
-    "finance_credits":   ["Usage credit not credited", "Security deposit question", "Invoice looks wrong"],
+    "finance_credits":   ["Usage credit not credited", "Top-up or seat issue", "Invoice looks wrong"],
     "direct_payments":   ["Cash record not reconciling", "Payment record rejected"],
     "notifications":     ["Not receiving notifications", "Duplicate notifications"],
     "integrations":      ["Webhook failing", "API errors"],
@@ -106,7 +106,7 @@ PRODUCT_AREAS: list[dict] = [
     {"key": "bookings_jobs",    "label": "Bookings & jobs",     "icon": "wrench",   "description": "Booking flow, job lifecycle, dispatch and completion.", "href": "/help-support?tab=knowledge&area=bookings_jobs"},
     {"key": "team_access",      "label": "Team & access",       "icon": "users",    "description": "Invite staff, roles, permissions and technician access.","href": "/help-support?tab=knowledge&area=team_access"},
     {"key": "services_pricing", "label": "Services & pricing",  "icon": "tag",      "description": "Service catalogue, options, pricing rules and coverage.","href": "/help-support?tab=knowledge&area=services_pricing"},
-    {"key": "finance_credits",  "label": "Finance & credits",   "icon": "wallet",   "description": "Usage credits, security deposit, payouts and invoices.", "href": "/help-support?tab=knowledge&area=finance_credits"},
+    {"key": "finance_credits",  "label": "Finance & credits",   "icon": "wallet",   "description": "Usage credits, top-up plans, technician seats and invoices.", "href": "/help-support?tab=knowledge&area=finance_credits"},
     {"key": "account_security", "label": "Account & security",  "icon": "shield",   "description": "Sign-in, notifications, integrations and data safety.",  "href": "/help-support?tab=knowledge&area=account_security"},
 ]
 

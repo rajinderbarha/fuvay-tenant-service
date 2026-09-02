@@ -27,6 +27,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 
 BASE = "http://localhost:8000"
@@ -51,6 +52,35 @@ def test_cancellable_statuses_stop_before_real_work_begins():
 
 
 class TestCancelRescheduleLive:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _cleanup_seeded_records(self):
+        """Keep live-DB certification rows out of the retained tenant."""
+        self._seeded_records = []
+        yield
+        if not self._seeded_records:
+            return
+        import asyncpg
+        job_ids = [uuid.UUID(item["job_id"]) for item in self._seeded_records]
+        booking_ids = [uuid.UUID(item["booking_id"]) for item in self._seeded_records]
+        c = await asyncpg.connect("postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos")
+        try:
+            for table in (
+                "service_job_execution_events", "service_job_assignment_events",
+                "service_job_quotes", "customer_platform_fee_charges",
+            ):
+                await c.execute(
+                    f"DELETE FROM {table} WHERE job_id=ANY($1::uuid[]) OR booking_id=ANY($2::uuid[])",
+                    job_ids, booking_ids,
+                )
+            await c.execute(
+                "DELETE FROM in_app_notifications WHERE source_record_id=ANY($1::uuid[]) "
+                "OR source_record_id=ANY($2::uuid[])", job_ids, booking_ids,
+            )
+            await c.execute("DELETE FROM service_jobs WHERE id=ANY($1::uuid[])", job_ids)
+            await c.execute("DELETE FROM service_bookings WHERE id=ANY($1::uuid[])", booking_ids)
+        finally:
+            await c.close()
+
     async def _seed_cancellable(self):
         """A fresh pending_assignment job/booking for a real customer."""
         import asyncpg
@@ -79,7 +109,9 @@ class TestCancelRescheduleLive:
                    VALUES ($1,$2,$3,$4,$5,$6,$7,'pending_assignment','unassigned',now(),now())""",
                 jid, f"JOB-L5T-{uuid.uuid4().hex[:6]}", bid, tmpl["customer_id"],
                 tmpl["tenant_id"], tmpl["category_id"], tmpl["offering_id"])
-            return {"booking_id": str(bid), "job_id": str(jid), "email": email, "owner_id": owner}
+            record = {"booking_id": str(bid), "job_id": str(jid), "email": email, "owner_id": owner}
+            self._seeded_records.append(record)
+            return record
         finally:
             await c.close()
 

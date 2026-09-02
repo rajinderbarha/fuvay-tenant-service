@@ -43,8 +43,9 @@ def test_reporting_range_is_sent_to_real_apis():
 
 def test_finance_uses_canonical_terminology():
     for label in ("Platform Revenue", "Provider Direct Service Value",
-                  "Completed Job Deductions", "Security Deposits Held"):
+                  "Completed Job Deductions"):
         assert label in PAGE
+    assert "Security Deposits Held" not in PAGE
     for banned in ("Payout", "Cash Wallet", "Withdraw", "Escrow"):
         assert banned not in PAGE
 

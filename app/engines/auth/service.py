@@ -1497,14 +1497,19 @@ class AuthService:
         except Exception:
             pass
 
-        from app.engines.platform_notifications.push_device_models import StaffPushDevice
-        await self.db.execute(
-            update(StaffPushDevice)
-            .where(StaffPushDevice.user_id == requesting_user_id,
-                   StaffPushDevice.device_id == session.device_id,
-                   StaffPushDevice.revoked_at.is_(None))
-            .values(revoked_at=utcnow())
-        )
+        # Web and legacy sessions do not necessarily have an associated push
+        # device.  Revoking the authentication session must still succeed;
+        # only revoke a push registration when a concrete device is linked.
+        session_device_id = getattr(session, "device_id", None)
+        if session_device_id:
+            from app.engines.platform_notifications.push_device_models import StaffPushDevice
+            await self.db.execute(
+                update(StaffPushDevice)
+                .where(StaffPushDevice.user_id == requesting_user_id,
+                       StaffPushDevice.device_id == session_device_id,
+                       StaffPushDevice.revoked_at.is_(None))
+                .values(revoked_at=utcnow())
+            )
 
         await self._audit("session.revoked", "success", actor_id=requesting_user_id,
                           target_id=session_id, target_type="session")

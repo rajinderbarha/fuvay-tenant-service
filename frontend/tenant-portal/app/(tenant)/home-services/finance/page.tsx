@@ -49,7 +49,6 @@ type TabKey = typeof TABS[number]["key"];
 
 const LEDGER_VARIANT: Record<string, "default" | "info" | "warning" | "muted"> = {
   usage_credits: "default",
-  security_deposit: "info",
   cash_tax: "warning",
   adjustment: "muted",
 };
@@ -709,9 +708,9 @@ export default function HomeServicesFinancePage() {
               </div>
               <Row label="Seats purchased" value={data.kpis?.entitled_seats ?? 0} />
               <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 10 }}>
-                The security deposit was retired. Your credit balance is what covers a
-                penalty or settlement, and bookings pause if it falls below the floor —
-                so keeping it topped up is what keeps work coming in.
+                Your credit balance covers completed-job deductions, penalties, and
+                settlements. New bookings pause below the configured floor, so keeping
+                credits topped up keeps your business bookable.
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                 <Btn size="sm" variant="primary" icon={<CreditCard size={13} />} onClick={openBuy}>Buy a top-up plan</Btn>
@@ -947,7 +946,7 @@ export default function HomeServicesFinancePage() {
           <Card padding={0}>
             <div style={{ padding: "18px 18px 0" }}>
               <SectionTitle icon={<Receipt size={16} />} title="Financial activity"
-                subtitle="All four ledgers, tagged and never merged"
+                subtitle="Usage credits, cash/tax, and adjustments are clearly separated"
                 actions={
                   <>
                     <select className="fh-input" style={{ width: 200 }} value={txnLedger}

@@ -22,9 +22,6 @@ CANONICAL_ADMIN_ROLES = {"admin_operations", "admin_finance", "admin_security", 
 FINANCE_MUTATION_PERMISSIONS = {
     P.FINANCE_USAGE_CREDITS_TOP_UP, P.FINANCE_USAGE_CREDITS_ADJUST,
     P.FINANCE_TOPUPS_UPDATE, P.FINANCE_TOPUPS_REFUND,
-    P.FINANCE_SECURITY_DEPOSITS_CONFIG_UPDATE, P.FINANCE_SECURITY_DEPOSITS_CREATE,
-    P.FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED, P.FINANCE_SECURITY_DEPOSITS_HOLD,
-    P.FINANCE_SECURITY_DEPOSITS_RELEASE, P.FINANCE_SECURITY_DEPOSITS_ADJUST,
     P.FINANCE_SETTINGS_UPDATE,
 }
 
@@ -105,9 +102,6 @@ class TestOperationsAdminScope:
 
     def test_operations_admin_cannot_approve_topup(self):
         assert not permission_checker.has("admin_operations", P.FINANCE_TOPUPS_UPDATE)
-
-    def test_operations_admin_cannot_adjust_security_deposit(self):
-        assert not permission_checker.has("admin_operations", P.FINANCE_SECURITY_DEPOSITS_ADJUST)
 
     def test_operations_admin_can_force_close_job(self):
         assert permission_checker.has("admin_operations", P.ADMIN_JOBS_FORCE_CLOSE)

@@ -9,12 +9,15 @@ interface Props {
   warrantyDays: number | null;
   warrantyExpiresAt: string | null;
   warrantyActive: boolean;
+  certificateNumber?: string | null;
+  onDownloadWarranty?: () => void;
   onClaimWarranty: () => void;
   onRequestRefund: () => void;
 }
 
 export function ServiceProtectionCard({
-  warrantyDays, warrantyExpiresAt, warrantyActive, onClaimWarranty, onRequestRefund,
+  warrantyDays, warrantyExpiresAt, warrantyActive, certificateNumber,
+  onDownloadWarranty, onClaimWarranty, onRequestRefund,
 }: Props) {
   const { theme } = useTheme();
   const expiry = warrantyExpiresAt ? new Date(warrantyExpiresAt).toLocaleDateString() : null;
@@ -28,9 +31,12 @@ export function ServiceProtectionCard({
             : "The provider warranty period has ended."}
         </AppText>
         <AppText variant="caption" color="tertiary">
-          Your provider responds first. If they do not resolve the issue, you can escalate it for service points.
+          Your provider is responsible for inspection and resolution. Rework, refund, credit, or another settlement requires your agreement with the provider.
         </AppText>
       </View>
+      {warrantyActive && certificateNumber ? (
+        <AppButton label={`Download warranty · ${certificateNumber}`} tone="secondary" onPress={onDownloadWarranty!} fullWidth />
+      ) : null}
       {warrantyActive ? <AppButton label="Claim warranty" onPress={onClaimWarranty} fullWidth /> : null}
       <AppButton label="Request refund" tone="secondary" onPress={onRequestRefund} fullWidth />
     </AppCard>

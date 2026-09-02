@@ -173,6 +173,9 @@ class ServiceJob(ServiceOSBase):
     # warranty after the customer bought it.
     warranty_days_snapshot: Mapped[int | None]       = mapped_column(Integer, nullable=True)
     warranty_expires_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    warranty_certificate_number: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True)
+    warranty_certificate_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    warranty_certificate_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # CANCEL-RESCHEDULE-FOUNDATION (migration 224) -- count of customer-
     # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
     # in home_service_assignment.constants. Never decremented.
@@ -207,6 +210,9 @@ class ServiceJob(ServiceOSBase):
             "completion_data":       self.completion_data,
             "warranty_days":         self.warranty_days_snapshot,
             "warranty_expires_at":   self.warranty_expires_at.isoformat() if self.warranty_expires_at else None,
+            "warranty_certificate_number": self.warranty_certificate_number,
+            "warranty_certificate_issued_at": (self.warranty_certificate_issued_at.isoformat()
+                                                if self.warranty_certificate_issued_at else None),
             "reschedule_count":      self.reschedule_count,
             "created_at":            self.created_at.isoformat() if self.created_at else None,
             "updated_at":            self.updated_at.isoformat() if self.updated_at else None,

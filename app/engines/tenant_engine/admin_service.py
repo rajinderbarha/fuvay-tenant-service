@@ -1,10 +1,10 @@
 """Sprint 4 — AdminTenantService.
 
 Handles all admin-driven tenant operations:
-  • Atomic tenant onboarding (creates tenant + owner user + wallet + settings + deposit in one transaction)
+  • Atomic tenant onboarding (creates tenant + owner user + credit account + settings in one transaction)
   • Tenant CRUD with Sprint 4 fields (category, verification, address, contact)
   • Tenant 360 sub-resources: users, staff, service areas, catalog proxy, pricing, packages, media
-  • Security deposit mark-paid, credit top-up/adjustment
+  • Credit top-up/adjustment
 
 Pattern: __init__(db, request_id, actor_id, actor_role)
 All writes flush within the same session; the router's db middleware commits on success.
@@ -163,7 +163,7 @@ class AdminTenantService:
     # ═══════════════════════════════════════════════════════════════
 
     async def onboard_tenant(self, data: dict) -> dict:
-        """Atomically create tenant + owner user + wallet + settings + security deposit."""
+        """Atomically create a tenant, owner user, credit account, and settings."""
         biz = data.get("business", {})
         owner = data.get("owner", {})
         commercial = data.get("commercial", {})
@@ -460,7 +460,14 @@ class AdminTenantService:
 
     async def get_tenant(self, tenant_id: uuid.UUID) -> dict:
         t = await self._get_tenant(tenant_id)
+        # Admin detail must reflect the same live calculation as the tenant
+        # health endpoint. compute_health_score also refreshes the stored
+        # projection used by list filters, exports and aggregate dashboards.
+        from app.engines.tenant_engine.health import compute_health_score
+        live_health = await compute_health_score(tenant_id, db=self.db)
         result = self._tenant_dict(t)
+        result["health_score"] = live_health["score"]
+        result["health_band"] = live_health["band"]
         # include settings
         r = await self.db.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))
         ts = r.scalar_one_or_none()
@@ -791,13 +798,16 @@ class AdminTenantService:
         # never told to the provider -- they had no way to know what to fix.
         try:
             from app.engines.tenant_engine.notifications import notify_tenant_verification
-            await notify_tenant_verification(
-                self.db, tenant_id,
-                notification_type="tenant.verification_rejected",
-                title="Verification rejected",
-                body=f"Your business verification was rejected: {reason}. Please correct this and resubmit.",
-                severity="danger",
-            )
+            async with self.db.begin_nested():
+                await notify_tenant_verification(
+                    self.db, tenant_id,
+                    notification_type="tenant.verification_rejected",
+                    title="Verification rejected",
+                    body=f"Your business verification was rejected: {reason}. Contact support if you believe this decision should be reviewed.",
+                    severity="danger",
+                    action_url="/onboarding/application-status",
+                    action_label="View decision",
+                )
         except Exception as exc:
             logger.warning("reject_verification.notify_failed", tenant_id=str(tenant_id), error=str(exc))
 
@@ -1374,13 +1384,14 @@ class AdminTenantService:
         # stalled with no one aware they needed to act.
         try:
             from app.engines.tenant_engine.notifications import notify_tenant_verification
-            await notify_tenant_verification(
-                self.db, tenant_id,
-                notification_type="tenant.verification_changes_requested",
-                title="Changes requested on your verification",
-                body=f"Please make the following changes and resubmit: {reason}",
-                severity="warning",
-            )
+            async with self.db.begin_nested():
+                await notify_tenant_verification(
+                    self.db, tenant_id,
+                    notification_type="tenant.verification_changes_requested",
+                    title="Changes requested on your verification",
+                    body=f"Please make the following changes and resubmit: {reason}",
+                    severity="warning",
+                )
         except Exception as exc:
             logger.warning("request_changes.notify_failed", tenant_id=str(tenant_id), error=str(exc))
         return {"tenant_id": str(tenant_id), "verification_status": "changes_requested", "reason": reason}

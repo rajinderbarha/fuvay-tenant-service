@@ -122,7 +122,7 @@ async def onboard_tenant(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ) -> dict:
-    """Atomically onboard a new tenant with owner user, wallet, and security deposit."""
+    """Atomically onboard a new tenant with an owner, settings, and credit account."""
     svc = _svc(db, request, user)
     return await svc.onboard_tenant(payload)
 
@@ -668,7 +668,7 @@ async def update_staff_photo(
 # (app/engines/serviceability/router.py).
 
 # ═══════════════════════════════════════════════════════════════
-# PHASE 11 — SECURITY DEPOSIT + CREDIT WALLET
+# PHASE 11 — CREDIT ACCOUNT
 # ═══════════════════════════════════════════════════════════════
 
 # NOTE: GET /{tenant_id}/security-deposit and POST .../security-deposit/mark-paid
@@ -776,60 +776,17 @@ async def admin_list_offerings(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ):
-    result = await db.execute(text("""
-        SELECT peo.id as provider_enabled_offering_id,
-               peo.offering_id,
-               mo.name as offering_name,
-               mo.offering_class as offering_type,
-               peo.status,
-               peo.readiness_status,
-               peo.supported_type_ids,
-               peo.supported_brand_ids,
-               peo.supports_emergency,
-               peo.provider_price_override,
-               peo.readiness_blockers,
-               peo.activated_at,
-               peo.suspended_at,
-               peo.suspension_reason,
-               peo.is_enabled,
-               peo.is_active,
-               peo.created_at
-        FROM provider_enabled_offerings peo
-        JOIN master_offerings mo ON mo.id = peo.offering_id
-        WHERE peo.tenant_id = :tid AND peo.deleted_at IS NULL
-        ORDER BY mo.name
-    """), {"tid": str(tenant_id)})
-    rows = [dict(r._mapping) for r in result.fetchall()]
+    from app.engines.provider_portal.router import _canonical_enabled_offering_rows
+    rows = await _canonical_enabled_offering_rows(db, tenant_id)
     return ok({"offerings": rows, "count": len(rows)}, _rid(request))
 
 
 async def _fetch_offering_row(db: AsyncSession, tenant_id: uuid.UUID, offering_id: uuid.UUID) -> dict[str, Any]:
-    result = await db.execute(text("""
-        SELECT peo.id as provider_enabled_offering_id,
-               peo.offering_id,
-               mo.name as offering_name,
-               mo.offering_class as offering_type,
-               peo.status,
-               peo.readiness_status,
-               peo.supported_type_ids,
-               peo.supported_brand_ids,
-               peo.supports_emergency,
-               peo.provider_price_override,
-               peo.readiness_blockers,
-               peo.activated_at,
-               peo.suspended_at,
-               peo.suspension_reason,
-               peo.is_enabled,
-               peo.is_active,
-               peo.created_at
-        FROM provider_enabled_offerings peo
-        JOIN master_offerings mo ON mo.id = peo.offering_id
-        WHERE peo.tenant_id = :tid AND peo.id = :oid AND peo.deleted_at IS NULL
-    """), {"tid": str(tenant_id), "oid": str(offering_id)})
-    row = result.fetchone()
-    if row is None:
+    from app.engines.provider_portal.router import _canonical_enabled_offering_rows
+    rows = await _canonical_enabled_offering_rows(db, tenant_id, offering_id)
+    if not rows:
         raise NotFoundException("Enabled offering", str(offering_id), str(tenant_id))
-    return dict(row._mapping)
+    return rows[0]
 
 
 @router.post("/{tenant_id}/offerings/enabled/{offering_id}/suspend", summary="Admin: suspend a provider offering")
@@ -850,10 +807,10 @@ async def admin_suspend_offering(
         )
     before = await _fetch_offering_row(db, tenant_id, offering_id)
     await db.execute(text("""
-        UPDATE provider_enabled_offerings
-        SET status = 'suspended', is_active = false, suspended_at = now(),
-            suspension_reason = :reason, updated_at = now()
-        WHERE id = :oid AND tenant_id = :tid
+        UPDATE tenant_services
+        SET is_active = false, admin_suspended_at = now(),
+            admin_suspension_reason = :reason, updated_at = now()
+        WHERE id = :oid AND tenant_id = :tid AND deleted_at IS NULL
     """), {"oid": str(offering_id), "tid": str(tenant_id), "reason": reason})
     row = await _fetch_offering_row(db, tenant_id, offering_id)
     # FINAL-L5-05Q Part 27: this direct-SQL mutation previously wrote no
@@ -879,10 +836,10 @@ async def admin_reactivate_offering(
 ):
     before = await _fetch_offering_row(db, tenant_id, offering_id)
     await db.execute(text("""
-        UPDATE provider_enabled_offerings
-        SET status = 'active', is_active = true, suspended_at = NULL,
-            suspension_reason = NULL, updated_at = now()
-        WHERE id = :oid AND tenant_id = :tid
+        UPDATE tenant_services
+        SET is_active = true, is_enabled = true, admin_suspended_at = NULL,
+            admin_suspension_reason = NULL, updated_at = now()
+        WHERE id = :oid AND tenant_id = :tid AND deleted_at IS NULL
     """), {"oid": str(offering_id), "tid": str(tenant_id)})
     row = await _fetch_offering_row(db, tenant_id, offering_id)
     await record_platform_audit(
@@ -903,18 +860,9 @@ async def admin_refresh_offerings_readiness(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_super_admin),
 ):
-    result = await db.execute(text("""
-        UPDATE provider_enabled_offerings
-        SET readiness_status = CASE
-                WHEN provider_price_override IS NOT NULL THEN 'ready'
-                ELSE 'not_ready'
-            END,
-            updated_at = now()
-        WHERE tenant_id = :tid AND deleted_at IS NULL
-        RETURNING id
-    """), {"tid": str(tenant_id)})
-    refreshed = len(result.fetchall())
-    await db.commit()
+    from app.engines.provider_portal.router import _canonical_enabled_offering_rows
+    rows = await _canonical_enabled_offering_rows(db, tenant_id)
+    refreshed = len(rows)
     return ok({"refreshed": refreshed}, _rid(request))
 
 

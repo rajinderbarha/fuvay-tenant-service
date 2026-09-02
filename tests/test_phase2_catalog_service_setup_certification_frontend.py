@@ -72,9 +72,11 @@ def test_8_bulk_wizard_page_renders_and_calls_real_api():
 
 
 def test_9_sidebar_has_no_duplicate_brands_or_pricing():
-    assert ADMIN_LAYOUT.count('label: "Pricing Tiers"') == 1
-    assert ADMIN_LAYOUT.count('label: "City/Zip Mapping"') == 1
-    assert ADMIN_LAYOUT.count('label: "Pricing Rules"') == 1
+    # Retired admin-owned pricing tiers/rules and city pricing must not return
+    # to navigation; provider pricing now lives with provider offerings.
+    assert 'label: "Pricing Tiers"' not in ADMIN_LAYOUT
+    assert 'label: "City/Zip Mapping"' not in ADMIN_LAYOUT
+    assert 'label: "Pricing Rules"' not in ADMIN_LAYOUT
     assert 'label: "Brands"' not in ADMIN_LAYOUT
     assert 'label: "Brand Requests"' not in ADMIN_LAYOUT
 

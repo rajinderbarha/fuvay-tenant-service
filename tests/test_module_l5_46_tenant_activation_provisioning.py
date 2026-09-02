@@ -61,8 +61,8 @@ def test_activate_tenant_creates_a_tenant_settings_row():
 
 
 def test_public_registration_creates_a_tenant_settings_row():
-    import app.engines.public_registration.router as pub_router
-    src = inspect.getsource(pub_router)
+    from app.engines.public_registration import service as registration_service
+    src = inspect.getsource(registration_service.RegistrationService.complete)
     assert "TenantSettings(tenant_id=tenant.id)" in src
 
 

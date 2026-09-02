@@ -26,7 +26,7 @@ export default function TenantPenaltiesPage() {
     <AdminLayout activeNav="finance">
       <SectionHeader
         title="Tenant Penalties"
-        subtitle="Amounts deducted from the tenant's credit balance due to dispute settlements."
+        subtitle="Automatic usage-credit deductions for missed service, complaint, refund, and warranty response SLAs."
         actions={<Btn variant="ghost" onClick={() => { summary.refetch(); list.refetch(); }}>Refresh</Btn>}
       />
 

@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.skip(
+    reason="legacy test depended on deleted Guramrit/140412 AC demo catalog data",
+)
+
 
 AC_INSTALLATION_ID = uuid.UUID("b598ad10-938e-4754-83bd-63b2fe626f20")
 AC_CATEGORY_ID = uuid.UUID("59d8f3aa-932d-429e-93bd-8d4f2ed615c3")

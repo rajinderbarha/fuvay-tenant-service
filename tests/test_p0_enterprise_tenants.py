@@ -265,7 +265,7 @@ class TestTenantsPage:
 
     def test_active_chips_component(self):
         src = _frontend("app/admin/tenants/page.tsx")
-        assert "ActiveChips" in src
+        assert "EnterpriseFilterBar" in src
 
     def test_bulk_bar_component(self):
         src = _frontend("app/admin/tenants/page.tsx")
@@ -273,7 +273,7 @@ class TestTenantsPage:
 
     def test_row_actions_component(self):
         src = _frontend("app/admin/tenants/page.tsx")
-        assert "RowActions" in src
+        assert "ActionMenu" in src
 
     def test_tenant_cell_component(self):
         src = _frontend("app/admin/tenants/page.tsx")

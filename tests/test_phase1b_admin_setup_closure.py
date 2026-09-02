@@ -103,7 +103,8 @@ def test_permissions_are_paginated_for_admin_scale():
     assert '"meta": {' in SERVICE
     assert '"total_pages"' in SERVICE
     assert "page, limit: pageSize" in PERMISSIONS_PAGE
-    assert "Page {page} of {totalPages}" in PERMISSIONS_PAGE
+    assert "<Pagination page={page}" in PERMISSIONS_PAGE
+    assert "pageCount={totalPages}" in PERMISSIONS_PAGE
 
 
 def test_top_level_roles_and_permissions_routes_exist():

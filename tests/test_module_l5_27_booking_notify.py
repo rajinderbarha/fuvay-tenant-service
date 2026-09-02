@@ -12,6 +12,7 @@ import inspect
 import uuid
 
 import pytest
+import pytest_asyncio
 
 
 def test_finalize_notifies_both_parties_in_source():
@@ -38,6 +39,44 @@ def test_notify_is_best_effort():
 
 
 class TestBookingConfirmNotifyLive:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _cleanup_created_booking(self):
+        self._draft_ids = []
+        yield
+        if not self._draft_ids:
+            return
+        import asyncpg
+        c = await asyncpg.connect("postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos")
+        try:
+            booking_ids = await c.fetch(
+                "SELECT id FROM service_bookings WHERE draft_id=ANY($1::uuid[])", self._draft_ids,
+            )
+            bids = [row["id"] for row in booking_ids]
+            jobs = await c.fetch(
+                "SELECT id FROM service_jobs WHERE booking_id=ANY($1::uuid[])", bids,
+            ) if bids else []
+            jids = [row["id"] for row in jobs]
+            if bids or jids:
+                for table in (
+                    "service_job_execution_events", "service_job_assignment_events",
+                    "service_job_quotes", "customer_platform_fee_charges",
+                ):
+                    await c.execute(
+                        f"DELETE FROM {table} WHERE job_id=ANY($1::uuid[]) OR booking_id=ANY($2::uuid[])",
+                        jids, bids,
+                    )
+                await c.execute(
+                    "DELETE FROM in_app_notifications WHERE source_record_id=ANY($1::uuid[]) "
+                    "OR source_record_id=ANY($2::uuid[])", jids, bids,
+                )
+                await c.execute("DELETE FROM service_jobs WHERE id=ANY($1::uuid[])", jids)
+                await c.execute("DELETE FROM service_bookings WHERE id=ANY($1::uuid[])", bids)
+            await c.execute(
+                "DELETE FROM home_service_booking_drafts WHERE id=ANY($1::uuid[])", self._draft_ids,
+            )
+        finally:
+            await c.close()
+
     @pytest.mark.asyncio
     async def test_finalizing_a_booking_notifies_customer_and_provider(self):
         import json
@@ -59,6 +98,7 @@ class TestBookingConfirmNotifyLive:
             if not tmpl:
                 pytest.skip("no booking template with an owner")
             did = uuid.uuid4()
+            self._draft_ids.append(did)
             await c.execute(
                 """INSERT INTO home_service_booking_drafts
                    (id, customer_id, category_id, offering_id, selected_tenant_id, job_type_id,

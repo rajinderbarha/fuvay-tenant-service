@@ -16,6 +16,7 @@ WORKSPACE = (
     FRONTEND / "app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
 ).read_text(encoding="utf-8-sig")
 NAV = (FRONTEND / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
+LAYOUT = (FRONTEND / "components/layout/TenantLayout.tsx").read_text(encoding="utf-8-sig")
 PROVIDER_OPTION_ROUTER = (
     ROOT / "app/engines/admin_catalog/service_option_provider_router.py"
 ).read_text(encoding="utf-8-sig")
@@ -31,7 +32,7 @@ def test_deprecated_duplicate_is_redirect_only():
 
 
 def test_navigation_uses_canonical_services_workspace():
-    assert 'href: "/home-services/services"' in NAV
+    assert 'href: "/home-services/services"' in LAYOUT
     assert 'href: "/provider/service-setup"' not in NAV
     assert 'href: "/tenant/setup/services"' not in NAV
 

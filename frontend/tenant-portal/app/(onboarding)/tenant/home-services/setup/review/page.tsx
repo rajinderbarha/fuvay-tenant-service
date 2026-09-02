@@ -190,10 +190,6 @@ export default function ReviewSubmitPage() {
 
   const completedRequired = overview.progress.completed_required;
   const requiredCount = overview.progress.total_required;
-  const financeSection = overview.sections.find(s => s.key === "FINANCE_READINESS");
-  const depositAmount = (financeSection?.security_deposit_amount as number | undefined) ?? 0;
-  const depositDueAfterApproval = !!financeSection?.security_deposit_due_after_approval;
-
   // sections_ready never depends on declaration-checkbox state, unlike the
   // server's combined can_submit -- allChecked (this page's own local
   // checkbox state) is the up-to-date signal for declarations, so the
@@ -239,7 +235,9 @@ export default function ReviewSubmitPage() {
               {applicationReason}
             </p>
             <p style={{ fontSize: 12, margin: "6px 0 0", color: "var(--text-secondary)" }}>
-              Correct the issue below, then submit again for review.
+              {status === "rejected"
+                ? "Contact support if you believe this decision should be reviewed."
+                : "Correct the issue below, then submit again for review."}
             </p>
           </div>
         </div>
@@ -346,7 +344,6 @@ export default function ReviewSubmitPage() {
         <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, margin: "0 0 14px" }}>
           Your current setup will be locked and sent to Super Admin for review. You won&apos;t be able to freely edit
           it while it&apos;s under review. Admin may approve it, reject it, or request changes.
-          {depositAmount > 0 && depositDueAfterApproval && " If approved, a security deposit may be required before activation."}
         </p>
         <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", marginBottom: 18 }}>
           <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
@@ -375,7 +372,6 @@ function SectionRow({ section, expanded, onToggle, onRetryPublish, retryingPubli
   onRetryPublish?: () => void; retryingPublish?: boolean;
 }) {
   const isReviewRow = section.key === "REVIEW_SUBMIT";
-  const afterApproval = section.key === "FINANCE_READINESS" && section.security_deposit_due_after_approval;
   const warnings = (section.warnings as { message: string }[] | undefined) ?? [];
 
   let statusBadge: { variant: "success" | "warning" | "danger" | "muted"; label: string; icon: React.ReactNode };
@@ -413,10 +409,8 @@ function SectionRow({ section, expanded, onToggle, onRetryPublish, retryingPubli
           <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{label}</p>
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{summary}</p>
         </div>
-        <Badge variant={afterApproval ? "warning" : statusBadge.variant} size="sm">
-          {afterApproval ? "After approval" : (
-            <>{statusBadge.icon}{statusBadge.label}</>
-          )}
+        <Badge variant={statusBadge.variant} size="sm">
+          <>{statusBadge.icon}{statusBadge.label}</>
         </Badge>
         {onRetryPublish && (
           <button onClick={onRetryPublish} disabled={retryingPublish}
@@ -465,7 +459,7 @@ function sectionSummary(section: HomeServicesSetupSection): string {
     case "STAFF_TECHNICIANS":
       return `${section.active_staff ?? 0} ready technician(s)`;
     case "FINANCE_READINESS":
-      return section.security_deposit_amount ? "Security deposit and usage wallet are handled after approval" : "Direct customer payment configured";
+      return "Payment methods, usage credits and technician seats configured";
     case "REVIEW_SUBMIT":
       return section.status === "complete" ? "Submitted"
         : section.blocking_reasons.length === 0 ? "All required sections are complete — submit below"

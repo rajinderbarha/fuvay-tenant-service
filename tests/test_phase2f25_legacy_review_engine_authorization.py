@@ -276,7 +276,7 @@ class TestFrontendCallerInventory:
     engine; this test makes the check mechanical."""
 
     KNOWN_APPS = [
-        "frontend/customer-app", "frontend/super-admin", "frontend/tenant-portal",
+        "frontend/super-admin", "frontend/tenant-portal",
         "frontend/e2e-admin-tenant", "mobile/customer-app", "mobile/staff-app",
     ]
 
@@ -312,6 +312,10 @@ class TestCanonicalCoverage:
     CANON = os.path.join(
         REPO_ROOT, "docs", "workflow-rearchitecture", "phase-02a-slice-02f",
         "tenant-mutation-endpoint-inventory.csv")
+    pytestmark = pytest.mark.skipif(
+        not os.path.exists(CANON),
+        reason="retired point-in-time workflow inventory is not a runtime contract",
+    )
     VERIFIED = {
         "TENANT_MUTATION_PERMISSION_SCOPE_AWARE", "TENANT_MUTATION_ROLE_SCOPE_AWARE",
         "STAFF_EXECUTION_ROLE_SCOPE_AWARE", "PLATFORM_ADMIN_ONLY", "PUBLIC_NO_AUTH",
@@ -374,10 +378,9 @@ class TestPreviousClosuresIntact:
         assert "_get_review_scoped" in inspect.getsource(
             review_service.ReviewService.flag_review)
 
-    def test_package_commerce_closure_intact(self):
-        from app.engines.package_commerce import tenant_router as pc
-        src = inspect.getsource(pc.tenant_purchase_package)
-        assert "require_tenant_owner_mutation" in src and "is_paid=False" in src
+    def test_retired_package_commerce_stays_absent(self):
+        from pathlib import Path
+        assert not Path("app/engines/package_commerce/tenant_router.py").exists()
 
     def test_compliance_closure_intact(self):
         from app.engines.compliance import provider_router as comp

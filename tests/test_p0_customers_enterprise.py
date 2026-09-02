@@ -61,7 +61,7 @@ def test_router_health_band_filter_uses_outer_alias_not_inner_columns():
     subquery) in the OUTER query where only `sq.*` columns are visible — fifth bug found
     live, broke both /?health_band= and /export?health_band=. Must filter on sq.health_band."""
     src = _read(ROUTER)
-    assert 'hb_cond = "AND sq.health_band = :health_band"' in src
+    assert 'outer_conditions.append("sq.health_band = :health_band")' in src
 
 
 # ── admin_customers_service.py ───────────────────────────────────────────────

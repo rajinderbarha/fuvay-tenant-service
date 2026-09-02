@@ -17,6 +17,7 @@ the certified engine's own idempotency/atomicity guarantees hold.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from decimal import Decimal
 
@@ -31,6 +32,8 @@ from sqlalchemy import text
 
 @pytest_asyncio.fixture
 async def db_session():
+    if os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1":
+        pytest.skip("requires PostgreSQL integration database")
     from app.database import get_session_factory, init_db
     await init_db()
     factory = get_session_factory()
@@ -332,21 +335,7 @@ class TestVerticalIsolation:
         assert summary["completed_jobs"] >= 1
 
 
-class TestSecurityDepositWorkspaceContract:
-    async def test_hs_deposit_detail_checks_nested_deposit_vertical(self):
-        """The shared detail service returns an envelope containing
-        `deposit`, `ledger` and `audit_log`; valid HS deposits must not be
-        rejected by checking for `vertical` on the outer envelope."""
-        from unittest.mock import AsyncMock, MagicMock
+class TestRetiredSecurityDepositWorkspaceContract:
+    def test_hs_finance_service_exposes_no_deposit_detail(self):
         from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
-
-        deposit_id = uuid.uuid4()
-        expected = {
-            "deposit": {"deposit_id": str(deposit_id), "vertical": "home_services"},
-            "ledger": [],
-            "audit_log": [],
-        }
-        svc = HomeServicesFinanceService(db=MagicMock())
-        svc._fh.get_deposit_detail = AsyncMock(return_value=expected)
-
-        assert await svc.get_hs_deposit_detail(deposit_id) == expected
+        assert not hasattr(HomeServicesFinanceService, "get_hs_deposit_detail")

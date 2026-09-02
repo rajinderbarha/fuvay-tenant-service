@@ -45,6 +45,13 @@ class TestRouterStructure:
         assert "credit_balance" in c
         assert "security_deposit" not in c
 
+    def test_projection_uses_current_topup_quote_contract(self):
+        c = _read(ROUTER)
+        assert 'funding_quote["credit_tax"]' not in c
+        assert 'funding_quote["credit_gross"]' not in c
+        assert '.get("gst_amount", 0.0)' in c
+        assert 'funding_quote.get("can_pay")' in c
+
     def test_no_payout_or_settlement_fields_exposed(self):
         c = _read(ROUTER)
         for forbidden in (

@@ -564,7 +564,7 @@ async def resolve_feature_flag(tenant_id: uuid.UUID, flag_key: str, request: Req
 
 # 35. Billing summary
 @router.get("/{tenant_id}/billing",
-            summary="Get billing summary — credits, subscription, security deposit",
+            summary="Get billing summary — usage credits, top-ups and technician seats",
             response_model=ApiResponse[dict])
 async def get_billing(tenant_id: uuid.UUID, request: Request,
                        user: UserContext = Depends(require_permission(P.TENANT_BILLING_READ)),

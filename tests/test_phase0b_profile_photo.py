@@ -190,7 +190,7 @@ def test_tenant_provider_profile_page_exists():
 # capability where it is actually implemented rather than pinning one call name to one
 # file -- which is what made these fail when the profile page was recomposed from its
 # design components, despite nothing about uploading having broken.
-MEDIA_TAB = TENANT / "components/business-profile/MediaTab.tsx"
+MEDIA_TAB = TENANT / "app/(onboarding)/tenant/home-services/setup/business-profile/page.tsx"
 
 
 def test_tenant_provider_profile_page_has_business_logo_uploader():
@@ -210,8 +210,8 @@ def test_media_tab_is_reachable_from_the_profile_page():
     """Guards the failure mode that hid all of this: the component existing but being
     imported by nothing, so the uploaders were unreachable in the running product."""
     page = (TENANT / "app/(tenant)/profile/page.tsx").read_text(encoding="utf-8")
-    assert "components/business-profile/MediaTab" in page
-    assert "<MediaTab" in page
+    assert "BusinessProfileWorkspace" in page
+    assert 'router.push("/profile?mode=edit")' in page
 
 
 # ── 9. Topbar / layout updates ────────────────────────────────────────────────

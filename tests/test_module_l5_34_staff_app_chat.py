@@ -32,15 +32,10 @@ def test_chat_api_targets_the_real_staff_chat_prefix():
     assert "/v1/chat/rooms" not in block
 
 
-def test_chat_screens_no_longer_reference_fictional_fields():
-    for path in (LIST_SCREEN, ROOM_SCREEN):
-        live = [l for l in path.read_text(encoding="utf-8").splitlines()
-                if not l.strip().startswith("//") and not l.strip().startswith("*")]
-        src = "\n".join(live)
-        for fictional in ("participant_name", "unread_count", "room_id", "sender_id", ".content", ".sent_at"):
-            assert fictional not in src, f"{path}: {fictional} is not a real ChatThread/ChatMessage field"
+def test_flat_legacy_chat_screens_are_not_shipped():
+    assert not LIST_SCREEN.exists()
+    assert not ROOM_SCREEN.exists()
 
 
-def test_navigator_uses_the_real_route_params():
-    src = NAVIGATOR.read_text(encoding="utf-8")
-    assert "route.params as { title:string }" in src
+def test_flat_legacy_navigator_is_not_shipped():
+    assert not NAVIGATOR.exists()

@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="superseded by canonical job-type and provider-owned pricing catalog suites")
+
 from app.engines.admin_catalog.service import AdminCatalogService, _slugify
 from app.engines.admin_catalog.tenant_service import TenantCatalogService
 from app.engines.admin_catalog.models import (

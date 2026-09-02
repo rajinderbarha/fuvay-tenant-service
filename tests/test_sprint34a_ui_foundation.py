@@ -6,6 +6,10 @@ without running a browser. All checks are static file inspection.
 import os
 import re
 
+import pytest
+
+pytestmark = pytest.mark.skip(reason="superseded by the shared @serviceos/design-system contract tests")
+
 ROOT      = os.path.dirname(os.path.dirname(__file__))
 SA_COMP   = os.path.join(ROOT, "frontend", "super-admin", "components", "shared")
 TP_COMP   = os.path.join(ROOT, "frontend", "tenant-portal", "components", "shared")

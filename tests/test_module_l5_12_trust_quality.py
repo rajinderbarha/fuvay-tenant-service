@@ -19,6 +19,7 @@ Locks in three defects found during the Level-5 sweep of the trust_quality engin
 """
 from __future__ import annotations
 
+import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -164,6 +165,10 @@ class TestHealthScoreRenormalisation:
         assert d["insufficient_data"] is False
 
 
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+    reason="requires the API and PostgreSQL services to be running",
+)
 class TestRecalculationJobIsReal:
     """Bug 1 — the job must actually enumerate and process targets."""
 

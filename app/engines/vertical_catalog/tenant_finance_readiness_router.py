@@ -169,9 +169,12 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
                 "balance": credit_balance,
                 "required_amount": required_credit_amount,
                 "base_credit_amount": funding_quote["starter_credit_base"] if funding_quote else 0.0,
-                "tax_amount": funding_quote["credit_tax"] if funding_quote else 0.0,
+                "tax_amount": (
+                    (funding_quote.get("suggested_plan") or {}).get("gst_amount", 0.0)
+                    if funding_quote else 0.0
+                ),
                 "status": "active" if funding_quote and funding_quote["credits_funded"] else "not_active",
-                "can_pay": bool(funding_quote and funding_quote["credit_gross"] > 0),
+                "can_pay": bool(funding_quote and funding_quote.get("can_pay")),
             },
             "funding_quote": funding_quote,
             "policy_resolved": policy_resolved,

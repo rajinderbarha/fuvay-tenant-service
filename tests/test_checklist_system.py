@@ -35,7 +35,7 @@ async def test_checklist_required_without_template_is_rejected():
     db = make_db()
     no_dup = MagicMock(); no_dup.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     with pytest.raises(ServiceOSException) as exc:
         await svc.create_item(uuid.uuid4(), dict(
@@ -51,7 +51,7 @@ async def test_checklist_template_persists_and_returns_in_order():
     db = make_db()
     no_dup = MagicMock(); no_dup.scalar_one_or_none.return_value = None
     db.execute = AsyncMock(return_value=no_dup)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     result = await svc.create_item(uuid.uuid4(), dict(
         service_type_id="ac_annual_service", name="AC Annual Service", service_type=JobType.SERVICE,
@@ -69,7 +69,7 @@ async def test_update_item_cannot_clear_template_while_checklist_required():
     result = MagicMock(); result.scalar_one_or_none.return_value = item
     db = make_db()
     db.execute = AsyncMock(return_value=result)
-    svc = ServiceCatalogService(db=db)
+    svc = ServiceCatalogService(db=db, actor_role="super_admin")
 
     with pytest.raises(ServiceOSException):
         await svc.update_item(item.id, {"checklist_template": []})
@@ -94,9 +94,10 @@ async def test_convert_to_job_seeds_checklist_from_catalog_template():
                          sla_minutes=None, tags=None, booking_number="BK-001")
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
     no_job_result  = MagicMock(); no_job_result.scalar_one_or_none.return_value  = None
+    customer_origin_result = MagicMock(); customer_origin_result.scalar_one_or_none.return_value = uuid.uuid4()
     db = make_db()
-    # 1st execute → fetch booking; 2nd execute → FieldJob duplicate check
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    # Fetch booking, verify no duplicate job, then prove customer-origin provenance.
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, customer_origin_result])
 
     svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
                          actor_tenant_id=tid)
@@ -144,8 +145,9 @@ async def test_convert_to_job_no_checklist_key_when_template_empty():
                          sla_minutes=None, tags=None, booking_number="BK-002")
     booking_result = MagicMock(); booking_result.scalar_one_or_none.return_value = booking
     no_job_result  = MagicMock(); no_job_result.scalar_one_or_none.return_value  = None
+    customer_origin_result = MagicMock(); customer_origin_result.scalar_one_or_none.return_value = uuid.uuid4()
     db = make_db()
-    db.execute = AsyncMock(side_effect=[booking_result, no_job_result])
+    db.execute = AsyncMock(side_effect=[booking_result, no_job_result, customer_origin_result])
 
     svc = BookingService(db=db, actor_id=uuid.uuid4(), actor_role="tenant_owner",
                          actor_tenant_id=tid)

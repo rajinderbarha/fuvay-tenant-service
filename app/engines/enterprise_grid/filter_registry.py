@@ -57,7 +57,6 @@ def col(key: str, label: str, order: int, visible: bool = True, width: int = 160
 #     own tenant's data -- exact fit for provider/tenant self-service
 #     exports).
 RESOURCE_EXPORT_PERMISSIONS: dict[str, str] = {
-    "admin_finance_deposits":     "finance:hub:export",
     "admin_finance_topups":       "finance:hub:export",
     "admin_finance_claims":       "finance:hub:export",
     "admin_finance_payouts":      "finance:hub:export",
@@ -590,25 +589,6 @@ _RESOURCE_CONFIGS: dict[str, dict] = {
         "sensitive_fields": [],
         "allowed_export_fields": ["rule_name", "rule_code", "pricing_model", "base_price",
                                   "bargain_floor", "priority", "effective_from", "effective_to", "is_active"],
-    },
-
-    "admin_finance_deposits": {
-        "scope_type": SCOPE_ADMIN_GLOBAL,
-        "allowed_filters": ["status", "vertical", "state", "city", "q"],
-        "allowed_sort_fields": ["created_at", "required_amount"],
-        "default_sort": {"sort_by": "created_at", "sort_direction": "desc"},
-        "search_fields": ["tenant_name"],
-        "available_columns": [
-            col("tenant_name", "Tenant", 1),
-            col("required_amount", "Required Amount", 2, width=140),
-            col("received_amount", "Received Amount", 3, width=140),
-            col("pending_amount", "Pending Amount", 4, width=140),
-            col("status", "Status", 5, width=140),
-            col("hold_state", "Hold State", 6, width=120),
-            col("created_at", "Created", 7, width=140),
-        ],
-        "sensitive_fields": [],
-        "allowed_export_fields": ["tenant_name", "required_amount", "received_amount", "status", "created_at"],
     },
 
     "admin_finance_topups": {

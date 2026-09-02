@@ -267,6 +267,7 @@ class TestSprint24ReviewService:
              patch.object(svc, "_get_policy", AsyncMock(return_value=None)), \
              patch.object(svc, "_log_event", AsyncMock()), \
              patch.object(svc, "_trigger_aggregation", AsyncMock()), \
+             patch("app.engines.customer_reviews.notifications.notify_provider_new_review", AsyncMock()), \
              patch("app.engines.customer_reviews.review_service.CustomerReview") as MockCR:
             instance = MagicMock()
             instance.status = "pending"
@@ -358,9 +359,10 @@ class TestSprint24ReviewService:
         db  = _make_db(scalar_value=None)
         review = _make_review(status="approved")
 
-        with patch.object(svc, "_get_review", AsyncMock(return_value=review)), \
+        with patch.object(svc, "_get_review_scoped", AsyncMock(return_value=review)), \
              patch.object(svc, "_get_policy", AsyncMock(return_value=None)), \
-             patch.object(svc, "_log_event", AsyncMock()):
+             patch.object(svc, "_log_event", AsyncMock()), \
+             patch("app.engines.customer_reviews.notifications.notify_customer_review_reply", AsyncMock()):
             # Don't patch ReviewReply class — let a real instance be created
             result = await svc.submit_reply(db, review.id, review.tenant_id, _uuid(), "Great service!")
             # A real ReviewReply is created and added to db
@@ -372,7 +374,7 @@ class TestSprint24ReviewService:
         from app.engines.customer_reviews.constants import ERR_REVIEW_NOT_FOUND
         svc = self._svc()
         db  = _make_db()
-        with patch.object(svc, "_get_review", AsyncMock(side_effect=ValueError(ERR_REVIEW_NOT_FOUND))):
+        with patch.object(svc, "_get_review_scoped", AsyncMock(side_effect=ValueError(ERR_REVIEW_NOT_FOUND))):
             with pytest.raises(ValueError, match=ERR_REVIEW_NOT_FOUND):
                 await svc.flag_review(db, _uuid(), _uuid(), "customer", "spam")
 

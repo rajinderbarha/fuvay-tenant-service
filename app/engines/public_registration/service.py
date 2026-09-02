@@ -26,7 +26,7 @@ from app.engines.auth.utils import (
 )
 from app.engines.auth.models import UserSession, RefreshToken, RefreshTokenFamily
 from app.engines.auth.constants import OTP_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
-from app.engines.tenant_engine.models import Tenant, TenantBusinessProfile, TenantAuditLog
+from app.engines.tenant_engine.models import Tenant, TenantBusinessProfile, TenantSettings, TenantAuditLog
 from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment, VerticalAuditLog
 from app.engines.compliance.models import ConsentRecord, DPDPPolicyVersion
 from app.engines.public_registration.models import PendingTenantRegistration
@@ -50,10 +50,30 @@ def _normalize_email(email: str) -> str:
 
 
 def _normalize_mobile(mobile: str) -> str:
-    m = mobile.strip().replace(" ", "")
-    if not m.startswith("+"):
-        m = "+" + m.lstrip("0")
-    return m
+    raw = re.sub(r"[\s()\-]", "", mobile.strip())
+    if raw.startswith("+"):
+        normalized = "+" + re.sub(r"\D", "", raw[1:])
+    else:
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) == 10:
+            normalized = "+91" + digits
+        elif len(digits) == 11 and digits.startswith("0"):
+            normalized = "+91" + digits[1:]
+        elif len(digits) == 12 and digits.startswith("91"):
+            normalized = "+" + digits
+        else:
+            raise ServiceOSException(
+                "INVALID_MOBILE",
+                "Enter a valid 10-digit Indian mobile number or include the country code, for example +919876543210.",
+                status_code=422,
+            )
+    if not re.fullmatch(r"\+[1-9]\d{7,14}", normalized):
+        raise ServiceOSException(
+            "INVALID_MOBILE",
+            "Enter a valid mobile number with country code.",
+            status_code=422,
+        )
+    return normalized
 
 
 class RegistrationService:
@@ -267,10 +287,28 @@ class RegistrationService:
 
     async def resend_otp(self, registration_id: uuid.UUID, channel: str) -> dict:
         pending = await self._get_pending(registration_id)
+        purpose = MOBILE_OTP_PURPOSE if channel == "mobile" else EMAIL_OTP_PURPOSE
+        recipient = pending.mobile if channel == "mobile" else pending.email
+        recent = (await self.db.execute(
+            select(OTPRecord).where(
+                OTPRecord.purpose == purpose,
+                OTPRecord.recipient_hash == hash_recipient(recipient),
+                OTPRecord.is_used == False,  # noqa: E712
+            ).order_by(OTPRecord.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if recent and recent.created_at:
+            elapsed = (utcnow() - recent.created_at).total_seconds()
+            if elapsed < RESEND_COOLDOWN_SECONDS:
+                retry_after = max(1, int(RESEND_COOLDOWN_SECONDS - elapsed + 0.999))
+                raise ServiceOSException(
+                    "OTP_RESEND_COOLDOWN",
+                    f"Please wait {retry_after} seconds before requesting another code.",
+                    status_code=429,
+                    context={"retry_after_seconds": retry_after, "channel": channel},
+                )
         dev_codes = await self._send_otps(pending, channels=(channel,))
         await self._audit(f"registration.{channel}_otp_resent", "success", target_id=pending.id)
         result = {"registration_id": str(pending.id), "channel": channel, "resent": True}
-        purpose = MOBILE_OTP_PURPOSE if channel == "mobile" else EMAIL_OTP_PURPOSE
         if dev_codes.get(purpose):
             result["dev_otp"] = dev_codes[purpose]
         return result
@@ -453,6 +491,12 @@ class RegistrationService:
                 employee_count=pending.employee_count,
                 website_url=pending.website_url, description=pending.description,
             ))
+            # Every tenant-creation path must provision the operational
+            # settings row. Workspace settings, commission resolution and
+            # notification preferences all depend on it; leaving it absent
+            # makes a self-signup behave differently from an admin-created
+            # tenant after approval.
+            self.db.add(TenantSettings(tenant_id=tenant.id))
 
             # draft_setup transition rule: created here at signup completion,
             # BEFORE any setup-wizard content exists. It advances to `draft`
@@ -673,6 +717,9 @@ class RegistrationService:
             "under_review": "submitted",
             "changes_requested": "changes_requested",
             "approved": "approved_pending_activation",
+            "approved_pending_activation": "approved_pending_activation",
+            "activation_requirements_pending": "approved_pending_activation",
+            "activating": "approved_pending_activation",
             "active": "active",
             "rejected": "rejected",
             "suspended": "suspended",

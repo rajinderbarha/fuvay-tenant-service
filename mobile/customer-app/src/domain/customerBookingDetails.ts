@@ -53,6 +53,11 @@ export interface CustomerActiveJob {
   warrantyDays: number | null;
   warrantyExpiresAt: string | null;
   warrantyActive: boolean;
+  warrantyCertificate?: {
+    certificateNumber: string;
+    issuedAt: string | null;
+    downloadPath: string;
+  } | null;
 }
 
 export interface CustomerBookingDetails {

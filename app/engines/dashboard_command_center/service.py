@@ -218,7 +218,6 @@ class DashboardCommandCenterService:
             "platform_revenue": float(topups or 0), "usage_credit_topups": float(topups or 0),
             "completed_job_deductions": float(deductions or 0),
             "customer_service_credits_issued": float(credits_issued or 0),
-            "security_deposits_held": 0.0,
             "failed_deductions": missing_deductions,
             "provider_direct_service_value": float(provider_direct_value or 0),
         }

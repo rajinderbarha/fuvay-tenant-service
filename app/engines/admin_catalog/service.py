@@ -82,7 +82,7 @@ VALID_VERTICAL_TYPES = {
     "repair_services", "cleaning_services", "laundry", "marketplace_products", "other",
 }
 VALID_FINANCE_MODELS = {
-    "security_deposit_plus_credit_wallet", "monthly_subscription", "lead_credit",
+    "credit_wallet_only", "monthly_subscription", "lead_credit",
     "commission_wallet", "product_order_commission", "free_listing", "hybrid",
 }
 VALID_CUSTOMER_FLOW_TYPES = {
@@ -1543,7 +1543,6 @@ class AdminCatalogService:
                     "The selected service group does not belong to the selected category.",
                     status_code=422,
                 )
-            svc.service_group_id = group_id
 
         _validate_pricing_config(model, data)
 

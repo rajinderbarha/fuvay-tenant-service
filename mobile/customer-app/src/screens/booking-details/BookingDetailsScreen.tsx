@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../design-system/theme";
 import { AppScreen } from "../../components/AppScreen";
@@ -37,6 +37,7 @@ import { useBookingReviewQuery, useSubmitBookingRatingMutation } from "../../api
 import { useCustomerClosureQueries } from "../../api/customerClosure/useCustomerClosureQueries";
 import { CompletionConfirmationCard } from "../../components/booking-details/CompletionConfirmationCard";
 import { ServiceProtectionCard } from "../../components/booking-details/ServiceProtectionCard";
+import { downloadWarrantyCertificate } from "../../api/customerBookings/downloadWarrantyCertificate";
 
 type Route = RouteProp<CustomerAppStackParamList, "BookingDetails">;
 
@@ -172,6 +173,13 @@ export function BookingDetailsScreen() {
             warrantyDays={details.job?.warrantyDays ?? 5}
             warrantyExpiresAt={details.job?.warrantyExpiresAt ?? null}
             warrantyActive={details.job?.warrantyActive ?? false}
+            certificateNumber={details.job?.warrantyCertificate?.certificateNumber ?? null}
+            onDownloadWarranty={() => {
+              const certificate = details.job?.warrantyCertificate;
+              if (!certificate) return;
+              void downloadWarrantyCertificate(certificate.downloadPath, certificate.certificateNumber)
+                .catch(error => Alert.alert("Download failed", error instanceof Error ? error.message : "Please try again."));
+            }}
             onClaimWarranty={() => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate("ServiceRemedies", { bookingId, mode: "warranty" })}
             onRequestRefund={() => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate("ServiceRemedies", { bookingId, mode: "refund" })}
           />

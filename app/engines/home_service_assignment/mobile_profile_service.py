@@ -13,7 +13,9 @@ import uuid
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-REQUIRED_DOCUMENT_TYPES = ["identity_document", "address_proof", "certification"]
+# Technician screening belongs to the provider. Documents remain available as
+# optional private records, but none are a ServiceOS readiness requirement.
+REQUIRED_DOCUMENT_TYPES: list[str] = []
 
 
 def _mask_phone(phone: str | None) -> str | None:
@@ -68,7 +70,6 @@ class MobileProfileService:
             "has_photo": bool(staff.profile_photo_url) if staff else False,
             "has_assigned_service": bool(staff.supported_offering_ids) if staff else False,
             "has_working_hours": working_hours_count > 0,
-            "required_documents_verified": required_verified == required_total and required_total > 0,
         }
         completed = sum(1 for v in completeness_checks.values() if v)
         total = len(completeness_checks)
@@ -77,7 +78,6 @@ class MobileProfileService:
             {"code": "PHOTO_MISSING", "label": "Add a profile photo", "destination": "edit_profile"} if not completeness_checks["has_photo"] else None,
             {"code": "NO_ASSIGNED_SERVICE", "label": "No services assigned yet", "destination": "employment"} if not completeness_checks["has_assigned_service"] else None,
             {"code": "NO_WORKING_HOURS", "label": "Working hours not configured", "destination": "availability"} if not completeness_checks["has_working_hours"] else None,
-            {"code": "DOCUMENTS_INCOMPLETE", "label": "Verify remaining required documents", "destination": "documents"} if not completeness_checks["required_documents_verified"] else None,
         ]
         missing = [m for m in missing if m]
 

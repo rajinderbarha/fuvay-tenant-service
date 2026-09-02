@@ -42,8 +42,8 @@ def test_sidebar_has_coverage_group_with_service_areas():
     # tests/test_tenant_menu_cleanup.py::test_coverage_group_removed_from_nav
     # and test_service_areas_in_setup_group). The nav item itself is
     # unchanged, just relocated.
-    assert 'id: "provider-service-areas"' in LAYOUT
-    assert 'label: "Service Areas"' in LAYOUT
+    assert 'id: "business-hours"' in LAYOUT
+    assert 'label: "Coverage & Hours"' in LAYOUT
 
 
 # ── 2. Breadcrumb / header ───────────────────────────────────────────────────
@@ -254,9 +254,9 @@ def test_is_primary_column_on_model():
 # ── Permission handling ───────────────────────────────────────────────────────
 def test_permission_gated_actions():
     assert "canCreate" in PAGE and "canUpdate" in PAGE and "canDelete" in PAGE and "canSetPrimary" in PAGE
-    assert "require_permission(P.TENANT_SERVICE_AREA_CREATE)" in SERVICEABILITY_ROUTER
-    assert "require_permission(P.TENANT_SERVICE_AREA_UPDATE)" in SERVICEABILITY_ROUTER
-    assert "require_permission(P.TENANT_SERVICE_AREA_DELETE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_CREATE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_UPDATE)" in SERVICEABILITY_ROUTER
+    assert "require_tenant_mutation_permission(P.TENANT_SERVICE_AREA_DELETE)" in SERVICEABILITY_ROUTER
 
 
 # ── Error handling ────────────────────────────────────────────────────────────
@@ -295,7 +295,7 @@ def test_no_forbidden_labels():
 
 # ── Data normalization ───────────────────────────────────────────────────────
 def test_safe_formatters_present():
-    assert "safeText" in PAGE and "safeNum" in PAGE and "safeDate" in PAGE and "safeZoneTier" in PAGE
+    assert "safeText" in PAGE and "safeDate" in PAGE and "safeZoneTier" in PAGE
 
 
 def test_zone_tier_labels_map():

@@ -348,6 +348,17 @@ class P:
     HOME_SERVICES_CUSTOMERS_VIEW       = "home_services:customers:view"
     HOME_SERVICES_PROVIDERS_VIEW       = "home_services:providers:view"
     HOME_SERVICES_PROVIDERS_EXPORT     = "home_services:providers:export"
+    # Vertical Directory Framework permissions.  These keys are assembled
+    # dynamically by require_vertical_domain_scope(), so every router action
+    # must still be declared and granted explicitly here.
+    HOME_SERVICES_STAFF_VIEW            = "home_services:staff:view"
+    HOME_SERVICES_STAFF_EXPORT          = "home_services:staff:export"
+    HOME_SERVICES_STAFF_AUDIT           = "home_services:staff:audit"
+    HOME_SERVICES_STAFF_REQUEST_CHANGES = "home_services:staff:request_changes"
+    HOME_SERVICES_STAFF_VERIFY          = "home_services:staff:verify"
+    HOME_SERVICES_STAFF_RESTRICT        = "home_services:staff:restrict"
+    HOME_SERVICES_STAFF_SUSPEND         = "home_services:staff:suspend"
+    HOME_SERVICES_STAFF_REACTIVATE      = "home_services:staff:reactivate"
     HOME_SERVICES_COMPLAINTS_VIEW          = "home_services:complaints:view"
     HOME_SERVICES_COMPLAINTS_EXPORT        = "home_services:complaints:export"
     HOME_SERVICES_COMPLAINTS_ASSIGN        = "home_services:complaints:assign"
@@ -383,10 +394,6 @@ class P:
     # ── Finance Hub (P0 Enterprise Finance Upgrade) ───────────────────────────
     FINANCE_READ              = "finance:hub:read"
     FINANCE_EXPORT            = "finance:hub:export"
-    FINANCE_DEPOSITS_READ     = "finance:deposits:read"
-    FINANCE_DEPOSITS_UPDATE   = "finance:deposits:update"
-    FINANCE_DEPOSITS_APPROVE  = "finance:deposits:approve"
-    FINANCE_DEPOSITS_REFUND   = "finance:deposits:refund"
     FINANCE_TOPUPS_READ       = "finance:topups:read"
     FINANCE_TOPUPS_UPDATE     = "finance:topups:update"
     FINANCE_TOPUPS_REFUND     = "finance:topups:refund"
@@ -450,8 +457,6 @@ class P:
     TENANT_FINANCE_POLICY_READ            = "tenant_finance:policy:read"
     TENANT_FINANCE_TRANSACTIONS_READ      = "tenant_finance:transactions:read"
     TENANT_FINANCE_RECEIPTS_DOWNLOAD      = "tenant_finance:receipts:download"
-    TENANT_FINANCE_DEPOSIT_READ           = "tenant_finance:deposit:read"
-    TENANT_FINANCE_DEPOSIT_REFUND_REQUEST = "tenant_finance:deposit:refund_request"
     TENANT_FINANCE_BUY_CREDITS            = "tenant_finance:buy_credits"
     # Customer Credits + Dispute Settlement (migration 080)
     FINANCE_SETTLEMENTS_READ    = "finance:settlements:read"
@@ -467,38 +472,12 @@ class P:
 
     # ── Packages / Plans (Phase 4) ────────────────────────────────────────────
 
-    # ── Provider Usage Credits / Security Deposits (Phase 4) ──────────────────
+    # ── Provider Usage Credits (Phase 4) ──────────────────────────────────────
     FINANCE_USAGE_CREDITS_READ         = "finance.usage_credits.read"
     FINANCE_USAGE_CREDITS_TOP_UP       = "finance.usage_credits.top_up"
     FINANCE_USAGE_CREDITS_ADJUST       = "finance.usage_credits.adjust"
     FINANCE_USAGE_CREDITS_LEDGER_READ  = "finance.usage_credits.ledger.read"
     FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ = "finance.completed_job_deduction_rules.read"
-    # FINAL-L5-05U DEPRECATED (mission rule 27: no deprecated alias may grant
-    # access after migration). This was a second, parallel Security Deposit
-    # permission namespace, independent of the canonical `FINANCE_DEPOSITS_*`
-    # family above -- a live audit found the frontend nav item, the page's
-    # RequirePermission route guard, and the permission catalog all checked
-    # THIS namespace's `.read` key while the page's own action menu and every
-    # backend endpoint it calls checked the canonical `finance:deposits:*`
-    # family instead, so no role could ever both see AND successfully use the
-    # page without holding both namespaces simultaneously. The 4 endpoints
-    # these keys used to gate (package_commerce.admin_router's
-    # `/v1/admin/tenants/{tenant_id}/security-deposit*`) are now blocked
-    # (410); CONFIG_UPDATE/CREATE/HOLD/AUDIT_READ were never wired to any
-    # endpoint at all (confirmed via `git grep` -- zero non-permissions.py
-    # references). The constants remain defined (never deleted -- Part 13
-    # requires an explicit, not silent, disposition) but are no longer
-    # assigned to any role bundle and are pinned by an automated guard so
-    # they cannot silently re-authorize anything. See
-    # docs/final-l5-05/FINAL_L5_05U_ADR_SECURITY_DEPOSIT_CANONICAL_PERMISSION.md.
-    FINANCE_SECURITY_DEPOSITS_READ           = "finance.security_deposits.read"            # DEPRECATED — use FINANCE_DEPOSITS_READ
-    FINANCE_SECURITY_DEPOSITS_CONFIG_UPDATE  = "finance.security_deposits.config.update"    # DEPRECATED — never wired to any endpoint
-    FINANCE_SECURITY_DEPOSITS_CREATE         = "finance.security_deposits.create"           # DEPRECATED — never wired to any endpoint
-    FINANCE_SECURITY_DEPOSITS_MARK_RECEIVED  = "finance.security_deposits.mark_received"    # DEPRECATED — use FINANCE_DEPOSITS_UPDATE
-    FINANCE_SECURITY_DEPOSITS_HOLD           = "finance.security_deposits.hold"             # DEPRECATED — never wired to any endpoint
-    FINANCE_SECURITY_DEPOSITS_RELEASE        = "finance.security_deposits.release"          # DEPRECATED — use FINANCE_DEPOSITS_REFUND
-    FINANCE_SECURITY_DEPOSITS_ADJUST         = "finance.security_deposits.adjust"           # DEPRECATED — use FINANCE_DEPOSITS_UPDATE
-    FINANCE_SECURITY_DEPOSITS_AUDIT_READ     = "finance.security_deposits.audit.read"       # DEPRECATED — never wired to any endpoint
     FINANCE_SETTINGS_READ    = "finance.settings.read"
     FINANCE_SETTINGS_UPDATE  = "finance.settings.update"
 
@@ -690,7 +669,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # Home Services finance workspace (/v1/tenant/home-services/finance).
         P.TENANT_FINANCE_READ, P.TENANT_FINANCE_EXPORT, P.TENANT_FINANCE_POLICY_READ,
         P.TENANT_FINANCE_TRANSACTIONS_READ, P.TENANT_FINANCE_RECEIPTS_DOWNLOAD,
-        P.TENANT_FINANCE_DEPOSIT_READ, P.TENANT_FINANCE_DEPOSIT_REFUND_REQUEST,
         P.TENANT_FINANCE_BUY_CREDITS,
     ],
 
@@ -784,6 +762,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.HOME_SERVICES_COMPLAINTS_ESCALATE, P.HOME_SERVICES_COMPLAINTS_RESOLVE,
         P.HOME_SERVICES_COMPLAINTS_REOPEN, P.HOME_SERVICES_COMPLAINTS_CREDIT_ISSUE,
         P.HOME_SERVICES_COMPLAINTS_CREDIT_ADJUST,
+        P.HOME_SERVICES_STAFF_VIEW, P.HOME_SERVICES_STAFF_EXPORT,
+        P.HOME_SERVICES_STAFF_AUDIT, P.HOME_SERVICES_STAFF_REQUEST_CHANGES,
+        P.HOME_SERVICES_STAFF_VERIFY, P.HOME_SERVICES_STAFF_RESTRICT,
+        P.HOME_SERVICES_STAFF_SUSPEND, P.HOME_SERVICES_STAFF_REACTIVATE,
         # FINAL-L5-05O: dashboard-widget read permissions, distinct from the
         # underlying domain read permissions above (Part 3/4's separation of
         # concerns) — Operations Admin sees the base + operations-domain
@@ -810,16 +792,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.FINANCE_HOME_SERVICES_LEDGER_VIEW,
         P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ,
         P.FINANCE_TOPUPS_READ, P.FINANCE_TOPUPS_UPDATE, P.FINANCE_TOPUPS_REFUND,
-        # FINAL-L5-05U: the canonical Security Deposit permission family is
-        # finance:deposits:* (backs the live /admin/finance/deposits page's
-        # nav, route guard, and every action on it -- confirmed via a live
-        # audit). FINAL-L5-05O's own bounded fix granted both this namespace
-        # AND the now-deprecated FINANCE_SECURITY_DEPOSITS_* one; the
-        # deprecated one is removed this sprint (it authorized nothing --
-        # zero endpoints still check it -- see the P class definition for
-        # the full removal rationale).
-        P.FINANCE_DEPOSITS_READ, P.FINANCE_DEPOSITS_APPROVE, P.FINANCE_DEPOSITS_UPDATE,
-        P.FINANCE_DEPOSITS_REFUND,
         P.FINANCE_SETTINGS_READ, P.FINANCE_AUDIT_READ, P.FINANCE_EXPORT,
         P.TENANT_READ, P.TENANT_BILLING_READ, P.TENANT_HEALTH_READ,
         # FINAL-L5-05O: base dashboard read (Finance Admin already had the
@@ -875,19 +847,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.FINANCE_HOME_SERVICES_CREDITS_VIEW,
         P.FINANCE_HOME_SERVICES_TOPUPS_VIEW,
         P.FINANCE_HOME_SERVICES_LEDGER_VIEW,
-        # FINAL-L5-05U: was P.FINANCE_SECURITY_DEPOSITS_READ (deprecated
-        # alias that authorized nothing -- zero live endpoints check it,
-        # so Read Only held a "read" grant that couldn't actually read the
-        # live /admin/finance/deposits page, which checks finance:deposits:read).
-        # Migrated to the canonical key so this role's existing read-only
-        # intent actually works end-to-end.
-        P.FINANCE_TOPUPS_READ, P.FINANCE_DEPOSITS_READ,
+        P.FINANCE_TOPUPS_READ,
         P.FINANCE_COMPLETED_JOB_DEDUCTION_RULES_READ, P.FINANCE_AUDIT_READ,
         P.SECURITY_READ, P.SECURITY_SESSIONS_READ, P.SECURITY_AUDIT_READ,
         P.PLATFORM_ROLES_READ, P.PLATFORM_PERMISSIONS_READ,
         P.AUTH_USERS_READ,
         P.ANALYTICS_READ,
         P.HOME_SERVICES_COMPLAINTS_VIEW,
+        P.HOME_SERVICES_STAFF_VIEW,
         # FINAL-L5-05O: base dashboard read only -- deliberately NOT granted
         # any of DASHBOARD_FINANCE_READ / DASHBOARD_OPERATIONS_READ /
         # DASHBOARD_SECURITY_READ / DASHBOARD_ACTION_QUEUE_MANAGE / export,

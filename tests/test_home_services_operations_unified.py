@@ -136,7 +136,13 @@ class TestUnifiedFeedLive:
         # not from the page of records — sanity: page_size=1 still returns
         # the same summary values on a second /summary call.
         r3 = await admin.get("/v1/admin/home-services/operations/summary")
-        assert r3.json()["data"] == summary
+        second = r3.json()["data"]
+        # Cache provenance may legitimately change computed -> fresh between
+        # calls; the business metrics must remain pagination-independent.
+        metadata = {"freshness", "computed_at"}
+        assert {k: v for k, v in second.items() if k not in metadata} == {
+            k: v for k, v in summary.items() if k not in metadata
+        }
 
     async def test_no_row_exposes_admin_catalog_price(self, admin):
         r = await admin.get("/v1/admin/home-services/operations", params={"page_size": 50})

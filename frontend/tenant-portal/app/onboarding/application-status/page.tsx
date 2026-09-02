@@ -301,16 +301,16 @@ export default function ApplicationStatusPage() {
             </div>
           </Card>
 
-          {(data.status === "approved" || data.status === "active") && (
+          {["approved", "approved_pending_activation", "activation_requirements_pending", "activating", "active"].includes(data.status) && (
             <Card>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Activation</h3>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 8 }}>
-                <span style={{ color: "var(--text-tertiary)" }}>Security deposit</span>
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Not required</span>
+                <span style={{ color: "var(--text-tertiary)" }}>Usage credits</span>
+                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Optional until the booking floor</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                <span style={{ color: "var(--text-tertiary)" }}>Usage wallet</span>
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Not required</span>
+                <span style={{ color: "var(--text-tertiary)" }}>Technician seats</span>
+                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Purchase before adding technicians</span>
               </div>
             </Card>
           )}

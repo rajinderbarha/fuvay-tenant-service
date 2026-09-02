@@ -239,9 +239,9 @@ def _category_to_dict(c) -> dict:
         "is_customer_visible": c.is_customer_visible, "pricing_supported": c.pricing_supported,
         # Derived Home-Services-style rule flags — computed from finance_model, not stored directly
         "payment_collection_enabled": c.finance_model not in
-            ("security_deposit_plus_credit_wallet", "credit_wallet_only", None),
+            ("credit_wallet_only", None),
         "tenant_payouts_enabled": c.finance_model not in
-            ("security_deposit_plus_credit_wallet", "credit_wallet_only", None),
+            ("credit_wallet_only", None),
     }
 
 

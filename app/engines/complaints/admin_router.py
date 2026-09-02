@@ -102,41 +102,20 @@ class PolicyIn(BaseModel):
     allow_duplicate_open_complaints: Optional[bool] = None
     allow_rework:                  Optional[bool] = None
     allow_refund_request:          Optional[bool] = None
-    require_admin_review:          Optional[bool] = None
     require_provider_response:     Optional[bool] = None
     default_provider_response_hours: Optional[int] = None
     default_resolution_hours:      Optional[int]  = None
+    provider_sla_breach_penalty:   Optional[Decimal] = None
     is_active:                     Optional[bool] = None
 
-    # ── The AI settlement rule — this is the ONLY thing the admin sets ─────────
-    # Everything downstream is automatic: the AI takes over when the provider has
-    # failed, offers at most `ai_settlement_max_pct` of the job value in credit
-    # points, and hands anything bigger to a human.
-    ai_settlement_enabled:             Optional[bool]    = None
-    ai_auto_start_on_provider_failure: Optional[bool]    = None
-    ai_settlement_max_pct:             Optional[Decimal] = None
-    ai_settlement_allowed_remedies:    Optional[list[str]] = None
-    settlement_payout_in_credits_only: Optional[bool]    = None
+    # Admin configures response windows and the provider-funded SLA penalty;
+    # dispute adjudication and AI settlement are not platform features.
 
-    @field_validator("ai_settlement_max_pct")
+    @field_validator("provider_sla_breach_penalty")
     @classmethod
-    def _pct_range(cls, v):
-        if v is not None and not (Decimal("0") <= v <= Decimal("100")):
-            raise ValueError("ai_settlement_max_pct must be between 0 and 100")
-        return v
-
-    @field_validator("ai_settlement_allowed_remedies")
-    @classmethod
-    def _no_money(cls, v):
-        """The platform never settles a dispute with real money — an admin cannot
-        configure their way around that."""
-        if v:
-            bad = [r for r in v if r.lower() in MONETARY_REMEDIES]
-            if bad:
-                raise ValueError(
-                    f"Settlements are paid in credit points, never money. "
-                    f"Remedies not allowed: {', '.join(bad)}"
-                )
+    def _penalty_range(cls, v):
+        if v is not None and not (Decimal("0") <= v <= Decimal("100000")):
+            raise ValueError("provider_sla_breach_penalty must be between 0 and 100000")
         return v
 
 

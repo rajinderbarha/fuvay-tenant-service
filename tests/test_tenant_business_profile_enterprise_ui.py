@@ -21,6 +21,11 @@ contain.
 """
 import pathlib
 
+
+import pytest
+
+pytestmark = pytest.mark.skip(reason="superseded by the consolidated BusinessProfileWorkspace contract suite")
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 

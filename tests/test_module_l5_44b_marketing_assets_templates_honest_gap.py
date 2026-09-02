@@ -38,14 +38,16 @@ PASSWORD = "Password123!"
 
 def test_assets_page_discloses_the_gap():
     src = ASSETS_PAGE.read_text(encoding="utf-8")
-    assert "not available in this build" in src
-    assert 'onClick={() => refetch()} disabled' in src
+    assert "legacy asset-approval workspace has been retired" in src
+    assert 'window.location.href = "/admin/marketing"' in src
+    assert "adminMarketingApi" not in src
 
 
 def test_templates_page_discloses_the_gap():
     src = TEMPLATES_PAGE.read_text(encoding="utf-8")
-    assert "not available in this build" in src
-    assert "setCreateModal(true); }} disabled" in src
+    assert "legacy template workspace has been retired" in src
+    assert 'window.location.href = "/admin/marketing"' in src
+    assert "adminMarketingApi" not in src
 
 
 async def _login(email):

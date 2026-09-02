@@ -2,7 +2,7 @@
 import inspect
 
 
-def test_all_four_primitives_guard_the_amount():
+def test_wallet_primitives_guard_the_amount_and_deposit_primitives_are_retired():
     """debit_wallet / credit_wallet / debit_deposit / credit_deposit had no
     amount validation. A non-positive amount passes the balance check
     (balance < negative is False) and then runs `balance -= negative`, INFLATING
@@ -11,7 +11,9 @@ def test_all_four_primitives_guard_the_amount():
     did not, so any unguarded caller could invert a money movement. Guard added
     at the source."""
     from app.engines.platform_commerce import ledger
-    for name in ("debit_wallet", "credit_wallet", "debit_deposit", "credit_deposit"):
+    for name in ("debit_wallet", "credit_wallet"):
         src = inspect.getsource(getattr(ledger, name))
         assert 'amount <= Decimal("0")' in src, name
         assert "INVALID_LEDGER_AMOUNT" in src, name
+    assert not hasattr(ledger, "debit_deposit")
+    assert not hasattr(ledger, "credit_deposit")

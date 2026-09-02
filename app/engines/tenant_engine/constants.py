@@ -28,8 +28,6 @@ PLAN_LIMITS = {
 
 PLAN_COMMISSION_BASE = {"starter": 10.0, "growth": 7.0, "enterprise": 5.0}
 
-SECURITY_DEPOSIT_BY_PLAN = {"starter": 5000, "growth": 15000, "enterprise": 50000}
-
 TRIAL_DAYS = {"starter": 14, "growth": 30, "enterprise": 60}
 
 GRACE_PERIOD_DAYS = {"starter": 7, "growth": 14, "enterprise": 30}

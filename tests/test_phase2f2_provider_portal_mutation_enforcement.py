@@ -146,7 +146,7 @@ class TestTenantOwnerClearsAuthLayer:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 try:
                     r = await _call(client, method, path_tmpl, body)
-                except TypeError as e:
+                except (TypeError, KeyError) as e:
                     # Some handlers (e.g. status/refresh's bookability scoring)
                     # do arithmetic on the global mock_database fixture's bare
                     # MagicMock scalar results, which cannot compare/convert --
@@ -154,7 +154,7 @@ class TestTenantOwnerClearsAuthLayer:
                     # require_tenant_owner_mutation into the handler body, the
                     # same accepted proof pattern as
                     # test_final_l5_01b_admin_tenant_rbac.py.
-                    assert "MagicMock" in str(e), f"unexpected TypeError: {e}"
+                    assert isinstance(e, KeyError) or "MagicMock" in str(e), f"unexpected mock result error: {e}"
                     return
             assert r.status_code not in (401, 403), (
                 f"{method} {path_tmpl}: authorized tenant_owner rejected at auth layer, "

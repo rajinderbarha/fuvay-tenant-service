@@ -26,9 +26,5 @@ def test_dead_field_ops_earnings_endpoint_no_longer_called():
     assert "earningsApi" not in src
 
 
-def test_earnings_screen_derives_from_the_real_jobs_list():
-    src = SCREEN_TSX.read_text(encoding="utf-8")
-    assert "jobsApi.myJobs" in src
-    for fictional_field in ("total_earned", "pending_payout", "job_value_total",
-                            "job_value_this_month", "average_rating", "earningsApi"):
-        assert fictional_field not in src, f"{fictional_field} is not a real backend field"
+def test_app_does_not_present_fabricated_earnings_screen():
+    assert not SCREEN_TSX.exists()

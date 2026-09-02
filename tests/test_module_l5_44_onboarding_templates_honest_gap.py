@@ -36,8 +36,10 @@ PASSWORD = "Password123!"
 
 def test_tab_honestly_discloses_the_gap():
     src = PAGE.read_text(encoding="utf-8")
-    assert "not available in this build" in src
-    assert "onClick={openCreate} disabled" in src
+    # The obsolete tab was removed entirely in the consolidated category
+    # workspace, so no dead onboarding-template action is rendered or called.
+    assert "/v1/admin/onboarding/templates" not in src
+    assert "OnboardingChecklistTemplate" not in src
 
 
 async def _login(email):

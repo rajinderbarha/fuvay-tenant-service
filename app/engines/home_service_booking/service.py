@@ -856,9 +856,10 @@ class HomeServiceChatbotBookingService:
         await self.db.refresh(draft)
 
         if not providers:
+            location = f"ZIP code {draft.zipcode}" if draft.zipcode else draft.city
             raise ServiceOSException(
                 ERR_NO_PROVIDER_AVAILABLE,
-                f"No providers available in {draft.city}. Try a nearby city.",
+                f"No service is currently available in {location}.",
                 status_code=422,
             )
         return {"providers": providers, "draft_status": draft.status}
@@ -961,9 +962,10 @@ class HomeServiceChatbotBookingService:
         )
 
         if not match or not match.get("signals"):
+            location = f"ZIP code {zipcode}" if zipcode else city
             raise ServiceOSException(
                 ERR_NO_PROVIDER_AVAILABLE,
-                f"No eligible providers available in {city}. Try a nearby city.",
+                f"No service is currently available in {location}.",
                 status_code=422,
             )
 

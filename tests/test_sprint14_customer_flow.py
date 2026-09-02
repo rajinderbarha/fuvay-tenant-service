@@ -16,7 +16,12 @@ from app.engines.customer_flow.service import (
     ERR_CAT_FLOW_MISSING, ERR_OFFERING_NOT_FOUND, ERR_OFFERING_INACTIVE,
     ERR_FLOW_INVALID, ERR_FLOW_COMPONENT,
 )
-from app.engines.admin_catalog.models import ServiceCategory, MasterOffering, CustomerFlowConfig
+from app.engines.admin_catalog.models import (
+    CustomerFlowConfig,
+    MasterOffering,
+    MasterService,
+    ServiceCategory,
+)
 from app.exceptions import ServiceOSException
 
 utcnow = lambda: datetime.now(timezone.utc)
@@ -119,6 +124,27 @@ def _offering(cat_id, name="AC Repair", slug="ac-repair", status="active", is_ac
     o.default_appointment_fee = Decimal("0")
     o.display_order = 1
     return o
+
+
+def _master_service(cat_id, name="AC Repair", slug="ac-repair", is_active=True):
+    service = MagicMock(spec=MasterService)
+    service.id = _id()
+    service.category_id = cat_id
+    service.service_name = name
+    service.slug = slug
+    service.description = "desc"
+    service.pricing_model = "fixed"
+    service.base_price = Decimal("500")
+    service.min_price = Decimal("450")
+    service.visit_fee = Decimal("100")
+    service.is_type_required = True
+    service.is_brand_required = True
+    service.requires_address = True
+    service.requires_schedule = True
+    service.is_active = is_active
+    service.deleted_at = None
+    service.display_order = 1
+    return service
 
 
 # ─── 1. list_customer_categories ─────────────────────────────────────────────
@@ -297,6 +323,24 @@ async def test_list_customer_offerings_category_not_found():
     assert exc.value.error_code == ERR_CAT_NOT_FOUND
 
 
+async def test_list_customer_offerings_falls_back_to_master_services():
+    cat = _cat()
+    service = _master_service(cat.id)
+    flow = _flow_cfg(cat.id)
+    db = db_seq(
+        _scalar(cat),
+        _scalar(1),
+        _scalars([]),
+        _scalars([service]),
+        _scalar(flow),
+    )
+    result = await CustomerCategoryFlowService(db=db).list_customer_offerings("plumbing")
+    assert result["total"] == 1
+    assert result["items"][0]["id"] == str(service.id)
+    assert result["items"][0]["name"] == "AC Repair"
+    assert result["items"][0]["requires_slot"] is True
+
+
 # ─── 6. get_customer_offering_detail ─────────────────────────────────────────
 
 async def test_get_offering_detail_returns_fields():
@@ -327,11 +371,24 @@ async def test_get_offering_detail_inactive_offering():
 
 async def test_get_offering_detail_not_found():
     cat = _cat()
-    db = db_seq(_scalar(cat), _scalar(None))
+    db = db_seq(_scalar(cat), _scalar(None), _scalar(None))
     svc = CustomerCategoryFlowService(db=db)
     with pytest.raises(ServiceOSException) as exc:
         await svc.get_customer_offering_detail("plumbing", "nonexistent")
     assert exc.value.error_code == ERR_OFFERING_NOT_FOUND
+
+
+async def test_get_offering_detail_falls_back_to_master_service():
+    cat = _cat()
+    service = _master_service(cat.id)
+    flow = _flow_cfg(cat.id)
+    db = db_seq(_scalar(cat), _scalar(None), _scalar(service), _scalar(flow))
+    result = await CustomerCategoryFlowService(db=db).get_customer_offering_detail(
+        "plumbing", "ac-repair"
+    )
+    assert result["id"] == str(service.id)
+    assert result["name"] == "AC Repair"
+    assert result["required_fields"]["requires_slot"] is True
 
 
 # ─── 7. validate_category_customer_access ────────────────────────────────────
@@ -378,7 +435,7 @@ async def test_validate_offering_access_inactive():
     cat = _cat()
     o = _offering(cat.id, is_active=False)
     # is_active=False on offering - the query will return None from the DB filter
-    db = db_seq(_scalar(cat), _scalar(None))
+    db = db_seq(_scalar(cat), _scalar(None), _scalar(None))
     svc = CustomerCategoryFlowService(db=db)
     result = await svc.validate_offering_customer_access("plumbing", "ac-repair")
     assert result["valid"] is False

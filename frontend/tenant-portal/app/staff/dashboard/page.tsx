@@ -109,7 +109,7 @@ function StaffDashboardContent() {
                 Bookable: <DsStatusBadge status={bookable ? "active" : "pending"} size="sm"/>
               </div>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-                Package, usage credits, and security deposit status are managed by your tenant owner/admin — you can view but not change them.
+                Top-up plans, technician seats, and usage credits are managed by your tenant owner/admin — you can view but not change them.
               </p>
             </div>
           )}

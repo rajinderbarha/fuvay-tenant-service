@@ -79,6 +79,7 @@ interface DrawerProps {
 
 const BLANK_FORM: EnableOfferingPayload = {
   offering_id: "",
+  job_type_id: null,
   provider_display_name: "",
   provider_description: "",
   supported_type_ids: null,
@@ -173,7 +174,7 @@ function EnableDrawer({ open, onClose, offering, existing, categoryType, onSaved
       setSelectedTypeIds(existing.supported_type_ids ?? []);
       setSelectedBrandIds(existing.supported_brand_ids ?? []);
     } else if (offering) {
-      setForm({ ...BLANK_FORM, offering_id: offering.offering_id });
+      setForm({ ...BLANK_FORM, offering_id: offering.offering_id, job_type_id: offering.job_type_id });
       setSelectedTypeIds([]); setSelectedBrandIds([]);
     }
   }, [open, existing, offering]);

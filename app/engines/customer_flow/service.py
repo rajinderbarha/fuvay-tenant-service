@@ -19,11 +19,11 @@ from decimal import Decimal
 from typing import Optional
 
 import structlog
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
-    ServiceCategory, MasterOffering, CustomerFlowConfig,
+    ServiceCategory, MasterOffering, MasterService, CustomerFlowConfig,
 )
 from app.engines.customer_flow.constants import (
     VALID_FLOW_TYPES, VALID_COMPONENT_KEYS, FLOW_COMPONENT_MAP, FLOW_ENGINE_MAP,
@@ -141,11 +141,12 @@ class CustomerCategoryFlowService:
         self,
         slug_or_id: str,
         search: str | None = None,
+        zipcode: str | None = None,
         page: int = 1,
         page_size: int = 30,
     ) -> dict:
         cat = await self._load_visible_category(slug_or_id)
-        stmt = (
+        legacy_stmt = (
             select(MasterOffering)
             .where(
                 MasterOffering.category_id == cat.id,
@@ -155,15 +156,56 @@ class CustomerCategoryFlowService:
             .order_by(MasterOffering.display_order, MasterOffering.name)
         )
         if search:
-            stmt = stmt.where(MasterOffering.name.ilike(f"%{search}%"))
+            legacy_stmt = legacy_stmt.where(MasterOffering.name.ilike(f"%{search}%"))
 
-        total: int = (await self.db.execute(
-            select(func.count()).select_from(stmt.subquery())
-        )).scalar_one()
-
-        offerings = (await self.db.execute(
-            stmt.offset((page - 1) * page_size).limit(page_size)
+        legacy_total = (
+            0 if zipcode else await self._count_offerings(cat.id, search=search)
+        )
+        # Legacy MasterOffering rows have no provider publication/ZIP mapping,
+        # so they cannot be advertised as bookable when a customer supplied a
+        # ZIP. Keep them only for the location-less compatibility endpoint.
+        offerings = [] if zipcode else (await self.db.execute(
+            legacy_stmt.offset((page - 1) * page_size).limit(page_size)
         )).scalars().all()
+
+        # ``master_offerings`` is the legacy universal-catalog table.  Home
+        # Services is authored and published from ``master_services``; this
+        # deployment legitimately has zero MasterOffering rows.  Falling back
+        # here keeps the public category catalog connected to the same 18
+        # services the booking assistant, admin console, and tenant setup use.
+        # Legacy rows remain authoritative when a category actually has them,
+        # avoiding duplicate cards during a gradual catalog migration.
+        master_services: list[MasterService] = []
+        master_total = 0
+        if not offerings:
+            from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
+            master_filters = [
+                MasterService.category_id == cat.id,
+                MasterService.is_active.is_(True),
+                MasterService.deleted_at.is_(None),
+            ]
+            if zipcode:
+                master_filters.append(_publisher_filter(zipcode))
+            master_stmt = (
+                select(MasterService)
+                .where(*master_filters)
+                .order_by(MasterService.display_order, MasterService.service_name)
+            )
+            if search:
+                master_stmt = master_stmt.where(MasterService.service_name.ilike(f"%{search}%"))
+            if zipcode:
+                master_total = int((await self.db.execute(
+                    select(func.count()).select_from(master_stmt.order_by(None).subquery())
+                )).scalar_one() or 0)
+            master_services = list((await self.db.execute(
+                master_stmt.offset((page - 1) * page_size).limit(page_size)
+            )).scalars().all())
+
+        total = (
+            master_total if zipcode
+            else legacy_total
+        )
 
         flow_cfg = await self._load_flow_config_for_cat(cat.id)
 
@@ -174,7 +216,11 @@ class CustomerCategoryFlowService:
                 "slug": cat.slug,
                 "customer_flow_type": cat.customer_flow_type,
             },
-            "items": [self._customer_offering_summary(o, flow_cfg) for o in offerings],
+            "items": (
+                [self._customer_offering_summary(o, flow_cfg) for o in offerings]
+                if offerings else
+                [self._customer_master_service_summary(s, flow_cfg) for s in master_services]
+            ),
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -182,21 +228,41 @@ class CustomerCategoryFlowService:
 
     # ── 6. Get customer offering detail ──────────────────────────────────────
     async def get_customer_offering_detail(
-        self, category_slug_or_id: str, offering_slug_or_id: str
+        self, category_slug_or_id: str, offering_slug_or_id: str,
+        zipcode: str | None = None,
     ) -> dict:
         cat = await self._load_visible_category(category_slug_or_id)
         offering = await self._load_active_offering(offering_slug_or_id, cat.id)
+        if zipcode and isinstance(offering, MasterService):
+            from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
+            is_bookable_here = (await self.db.execute(
+                select(MasterService.id).where(
+                    MasterService.id == offering.id,
+                    _publisher_filter(zipcode),
+                )
+            )).scalar_one_or_none()
+            if is_bookable_here is None:
+                raise ServiceOSException(
+                    ERR_OFFERING_NOT_FOUND,
+                    f"This service is not currently available in ZIP code {zipcode}.",
+                    status_code=404,
+                )
         flow_cfg = await self._load_flow_config_for_cat(cat.id)
+        is_master_service = isinstance(offering, MasterService)
         return {
-            **self._customer_offering_summary(offering, flow_cfg),
+            **(
+                self._customer_master_service_summary(offering, flow_cfg)
+                if is_master_service else self._customer_offering_summary(offering, flow_cfg)
+            ),
             "category": {"id": str(cat.id), "name": cat.name, "slug": cat.slug},
             "required_fields": {
                 "requires_type":           offering.is_type_required,
                 "requires_brand":          offering.is_brand_required,
                 "requires_address":        offering.requires_address,
-                "requires_slot":           offering.requires_slot,
-                "requires_photo_upload":   offering.requires_photo_upload,
-                "requires_customer_notes": offering.requires_customer_notes,
+                "requires_slot":           (offering.requires_schedule if is_master_service else offering.requires_slot),
+                "requires_photo_upload":   (False if is_master_service else offering.requires_photo_upload),
+                "requires_customer_notes": (False if is_master_service else offering.requires_customer_notes),
             },
         }
 
@@ -215,11 +281,15 @@ class CustomerCategoryFlowService:
         try:
             cat = await self._load_visible_category(category_slug_or_id)
             offering = await self._load_active_offering(offering_slug_or_id, cat.id)
+            is_master_service = isinstance(offering, MasterService)
             return {
                 "valid": True,
                 "offering_id": str(offering.id),
-                "name": offering.name,
-                "customer_flow_type": offering.customer_flow_type or cat.customer_flow_type,
+                "name": offering.service_name if is_master_service else offering.name,
+                "customer_flow_type": (
+                    cat.customer_flow_type if is_master_service
+                    else offering.customer_flow_type or cat.customer_flow_type
+                ),
             }
         except ServiceOSException as e:
             return {"valid": False, "error_code": e.error_code, "detail": e.detail}
@@ -241,19 +311,27 @@ class CustomerCategoryFlowService:
         category_id: uuid.UUID,
         offering_id: uuid.UUID | None = None,
         city: str | None = None,
+        zipcode: str | None = None,
     ) -> dict:
         try:
-            from sqlalchemy import text
+            from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
             if offering_id:
-                res = await self.db.execute(text(
-                    "SELECT COUNT(*) FROM provider_offering_bookable_statuses "
-                    "WHERE offering_id = :oid AND is_bookable = true"
-                ), {"oid": offering_id})
+                stmt = select(func.count(MasterService.id)).where(
+                    MasterService.id == offering_id,
+                    MasterService.category_id == category_id,
+                    MasterService.is_active.is_(True),
+                    MasterService.deleted_at.is_(None),
+                    _publisher_filter(zipcode),
+                )
             else:
-                res = await self.db.execute(text(
-                    "SELECT COUNT(*) FROM provider_visibility_statuses "
-                    "WHERE category_id = :cid AND is_bookable = true"
-                ), {"cid": category_id})
+                stmt = select(func.count(MasterService.id)).where(
+                    MasterService.category_id == category_id,
+                    MasterService.is_active.is_(True),
+                    MasterService.deleted_at.is_(None),
+                    _publisher_filter(zipcode),
+                )
+            res = await self.db.execute(stmt)
             count = res.scalar_one() or 0
         except Exception:
             count = 0
@@ -279,14 +357,19 @@ class CustomerCategoryFlowService:
         offering_data: dict | None = None
         if offering_slug:
             offering = await self._load_active_offering(offering_slug, cat.id)
+            is_master_service = isinstance(offering, MasterService)
             offering_data = {
                 "id": str(offering.id),
                 "slug": offering.slug,
-                "name": offering.name,
-                "customer_flow_type": offering.customer_flow_type or flow_cfg.customer_flow_type,
+                "name": offering.service_name if is_master_service else offering.name,
+                "customer_flow_type": (
+                    flow_cfg.customer_flow_type if is_master_service
+                    else offering.customer_flow_type or flow_cfg.customer_flow_type
+                ),
             }
         availability = await self.get_category_provider_availability_summary(
-            cat.id, uuid.UUID(offering_data["id"]) if offering_data else None, city
+            cat.id, uuid.UUID(offering_data["id"]) if offering_data else None,
+            city, zipcode,
         )
         return {
             "category": {"id": str(cat.id), "slug": cat.slug, "name": cat.name},
@@ -302,8 +385,11 @@ class CustomerCategoryFlowService:
 
     # ── Search (Phase 11) ─────────────────────────────────────────────────────
     async def search(
-        self, q: str, category_id: uuid.UUID | None = None, page: int = 1, page_size: int = 20
+        self, q: str, category_id: uuid.UUID | None = None,
+        zipcode: str | None = None, page: int = 1, page_size: int = 20,
     ) -> dict:
+        from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
         # Category results
         cat_stmt = (
             select(ServiceCategory)
@@ -314,6 +400,16 @@ class CustomerCategoryFlowService:
             )
             .limit(5)
         )
+        if zipcode:
+            cat_stmt = cat_stmt.where(
+                ServiceCategory.id.in_(
+                    select(MasterService.category_id).where(
+                        MasterService.is_active.is_(True),
+                        MasterService.deleted_at.is_(None),
+                        _publisher_filter(zipcode),
+                    )
+                )
+            )
         cat_rows = (await self.db.execute(cat_stmt)).scalars().all()
 
         # Offering results
@@ -328,7 +424,10 @@ class CustomerCategoryFlowService:
         if category_id:
             off_stmt = off_stmt.where(MasterOffering.category_id == category_id)
         off_stmt = off_stmt.limit(page_size)
-        off_rows = (await self.db.execute(off_stmt)).scalars().all()
+        # Legacy offerings cannot be connected to a provider's exact
+        # publication and ZIP coverage, so they are hidden for ZIP-aware
+        # customer search instead of being optimistically marked bookable.
+        off_rows = [] if zipcode else (await self.db.execute(off_stmt)).scalars().all()
 
         offerings = [self._customer_offering_summary(o, None) for o in off_rows]
 
@@ -343,7 +442,9 @@ class CustomerCategoryFlowService:
         #
         # Both tables are searched and merged rather than swapped, so a
         # deployment that does populate master_offerings keeps working.
-        offerings.extend(await self._search_master_services(q, category_id, page_size))
+        offerings.extend(await self._search_master_services(
+            q, category_id, page_size, zipcode=zipcode,
+        ))
 
         return {
             "query": q,
@@ -352,7 +453,8 @@ class CustomerCategoryFlowService:
         }
 
     async def _search_master_services(
-        self, q: str, category_id: uuid.UUID | None, limit: int
+        self, q: str, category_id: uuid.UUID | None, limit: int,
+        zipcode: str | None = None,
     ) -> list[dict]:
         """Search the real service catalog (`master_services`).
 
@@ -363,6 +465,7 @@ class CustomerCategoryFlowService:
         as "not configured" rather than free, and null when nothing is set.
         """
         from app.engines.admin_catalog.models import MasterService
+        from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
 
         # Joined to the category and gated on the SAME visibility rules the
         # category search above uses. Without this the results included 8
@@ -371,15 +474,18 @@ class CustomerCategoryFlowService:
         # "ac-623969"), plus services under an inactive E2E test vertical --
         # none of which a customer can book. Every result is now guaranteed to
         # belong to a live, customer-visible category.
+        filters = [
+            MasterService.is_active == True,
+            MasterService.service_name.ilike(f"%{q}%"),
+            ServiceCategory.is_active == True,
+            ServiceCategory.is_customer_visible == True,
+        ]
+        if zipcode:
+            filters.append(_publisher_filter(zipcode))
         stmt = (
             select(MasterService)
             .join(ServiceCategory, ServiceCategory.id == MasterService.category_id)
-            .where(
-                MasterService.is_active == True,
-                MasterService.service_name.ilike(f"%{q}%"),
-                ServiceCategory.is_active == True,
-                ServiceCategory.is_customer_visible == True,
-            )
+            .where(*filters)
         )
         if category_id:
             stmt = stmt.where(MasterService.category_id == category_id)
@@ -550,7 +656,9 @@ class CustomerCategoryFlowService:
             )
         return cat
 
-    async def _load_active_offering(self, slug_or_id: str, category_id: uuid.UUID) -> MasterOffering:
+    async def _load_active_offering(
+        self, slug_or_id: str, category_id: uuid.UUID
+    ) -> MasterOffering | MasterService:
         stmt = select(MasterOffering).where(
             MasterOffering.category_id == category_id,
             MasterOffering.slug == slug_or_id,
@@ -565,17 +673,42 @@ class CustomerCategoryFlowService:
             pass
 
         offering = (await self.db.execute(stmt)).scalar_one_or_none()
-        if not offering:
+        if offering and (not offering.is_active or offering.status != "active"):
+            raise ServiceOSException(
+                ERR_OFFERING_INACTIVE, f"Offering '{offering.name}' is inactive.", status_code=404
+            )
+        if offering:
+            return offering
+
+        # Home Services' canonical records live in master_services rather than
+        # master_offerings.  Resolve the same slug/id there before declaring a
+        # customer-visible service missing.
+        service_stmt = select(MasterService).where(
+            MasterService.category_id == category_id,
+            MasterService.slug == slug_or_id,
+        )
+        try:
+            uid = uuid.UUID(slug_or_id)
+            service_stmt = select(MasterService).where(
+                MasterService.id == uid,
+                MasterService.category_id == category_id,
+            )
+        except ValueError:
+            pass
+        service = (await self.db.execute(service_stmt)).scalar_one_or_none()
+        if not service:
             raise ServiceOSException(
                 ERR_OFFERING_NOT_FOUND,
                 f"Offering '{slug_or_id}' not found in this category.",
                 status_code=404,
             )
-        if not offering.is_active or offering.status != "active":
+        if not service.is_active or service.deleted_at is not None:
             raise ServiceOSException(
-                ERR_OFFERING_INACTIVE, f"Offering '{offering.name}' is inactive.", status_code=404
+                ERR_OFFERING_INACTIVE,
+                f"Offering '{service.service_name}' is inactive.",
+                status_code=404,
             )
-        return offering
+        return service
 
     async def _load_flow_config_for_cat(
         self, category_id: uuid.UUID
@@ -598,14 +731,27 @@ class CustomerCategoryFlowService:
         )
         return res.scalar_one_or_none()
 
-    async def _count_offerings(self, category_id: uuid.UUID) -> int:
-        res = await self.db.execute(
-            select(func.count()).where(
-                MasterOffering.category_id == category_id,
-                MasterOffering.is_active == True,
-                MasterOffering.status == "active",
-            )
+    async def _count_offerings(self, category_id: uuid.UUID, search: str | None = None) -> int:
+        legacy_count = select(func.count(MasterOffering.id)).where(
+            MasterOffering.category_id == category_id,
+            MasterOffering.is_active.is_(True),
+            MasterOffering.status == "active",
         )
+        service_count = select(func.count(MasterService.id)).where(
+            MasterService.category_id == category_id,
+            MasterService.is_active.is_(True),
+            MasterService.deleted_at.is_(None),
+        )
+        if search:
+            legacy_count = legacy_count.where(MasterOffering.name.ilike(f"%{search}%"))
+            service_count = service_count.where(MasterService.service_name.ilike(f"%{search}%"))
+        # Prefer a populated legacy catalog; otherwise use the canonical Home
+        # Services catalog.  This mirrors list_customer_offerings and prevents
+        # duplicate counts while both schemas coexist during migration.
+        res = await self.db.execute(select(case(
+            (legacy_count.scalar_subquery() > 0, legacy_count.scalar_subquery()),
+            else_=service_count.scalar_subquery(),
+        )))
         return res.scalar_one() or 0
 
     def _customer_cat_summary(
@@ -664,6 +810,35 @@ class CustomerCategoryFlowService:
             "requires_photo_upload": o.requires_photo_upload,
             "is_available":          True,
             "display_order":         o.display_order,
+        }
+
+    def _customer_master_service_summary(
+        self,
+        service: MasterService,
+        flow_cfg: CustomerFlowConfig | None,
+    ) -> dict:
+        candidates = [service.min_price, service.base_price, service.visit_fee]
+        configured = [float(value) for value in candidates if value is not None and float(value) > 0]
+        return {
+            "id":                    str(service.id),
+            "name":                  service.service_name,
+            "slug":                  service.slug,
+            "description":           service.description,
+            "offering_class":        "service",
+            "customer_flow_type":    (flow_cfg.customer_flow_type if flow_cfg else "service_booking"),
+            "primary_engine_key":    (flow_cfg.primary_engine_key if flow_cfg else "booking_engine"),
+            "pricing_model":         service.pricing_model,
+            "starting_price":        min(configured) if configured else None,
+            "visit_fee":             float(service.visit_fee or 0),
+            "appointment_fee":       0.0,
+            "requires_type":         service.is_type_required,
+            "requires_brand":        service.is_brand_required,
+            "requires_address":      service.requires_address,
+            "requires_slot":         service.requires_schedule,
+            "requires_photo_upload": False,
+            "is_available":          True,
+            "display_order":         service.display_order,
+            "category_id":           str(service.category_id),
         }
 
     def _flow_config_dict(self, cfg: CustomerFlowConfig) -> dict:

@@ -116,8 +116,8 @@ async def test_direct_payment_full_lifecycle_live():
         ), {"id": tenant_id, "slug": f"mobile-{tenant_id.hex[:8]}", "code": f"MF{tenant_id.hex[:6]}"})
         await db.execute(text(
             "INSERT INTO tenant_billing (id, tenant_id, billing_cycle, subscription_status, credit_balance, "
-            "security_deposit_paid, security_deposit_amount, vertical_key, created_at, updated_at) "
-            "VALUES (:id, :tid, 'monthly', 'active', 500, false, 0, 'home_services', now(), now())"
+            "vertical_key, created_at, updated_at) "
+            "VALUES (:id, :tid, 'monthly', 'active', 500, 'home_services', now(), now())"
         ), {"id": uuid.uuid4(), "tid": tenant_id})
 
         await db.execute(text(

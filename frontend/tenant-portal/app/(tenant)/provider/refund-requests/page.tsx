@@ -27,7 +27,7 @@ type RemedyMode = "refunds" | "rework" | "warranty";
 type ActionKind =
   | "refund_review" | "refund_approve" | "refund_reject" | "refund_record"
   | "rework_schedule" | "rework_start" | "rework_complete"
-  | "warranty_respond" | "warranty_resolve" | "warranty_escalate";
+  | "warranty_respond" | "warranty_resolve";
 interface PendingAction { kind: ActionKind; row: Record<string, unknown> }
 
 const money = (v: unknown) => (v != null && v !== "" ? `₹${Number(v).toLocaleString("en-IN")}` : "—");
@@ -79,7 +79,6 @@ const REFUND_FILTERS: FilterDef[] = [
     { value: "approved", label: "Approved" },
     { value: "recorded", label: "Paid / recorded" },
     { value: "verified", label: "Verified" },
-    { value: "admin_review", label: "Escalated to admin" },
     { value: "rejected", label: "Rejected" },
     { value: "cancelled", label: "Cancelled" },
   ] },
@@ -108,7 +107,6 @@ const WARRANTY_FILTERS: FilterDef[] = [
     { value: "provider_action_required", label: "Provider action required" },
     { value: "provider_in_progress", label: "Provider in progress" },
     { value: "provider_resolved", label: "Provider resolved" },
-    { value: "admin_review", label: "Admin escalation" },
     { value: "credit_issued", label: "Service points issued" },
     { value: "rejected", label: "Rejected" },
   ] },
@@ -218,7 +216,6 @@ export default function ProviderCustomerRemediesPage() {
       return [open,
         { label: "Respond / update", onClick: () => setAction({ kind: "warranty_respond", row }) },
         { label: "Mark resolved", onClick: () => setAction({ kind: "warranty_resolve", row }) },
-        { label: "Escalate to admin", danger: true, onClick: () => setAction({ kind: "warranty_escalate", row }) },
       ];
     }
 
@@ -282,8 +279,6 @@ export default function ProviderCustomerRemediesPage() {
           await financeApi.respondWarrantyClaim(id, notes.trim(), false); break;
         case "warranty_resolve":
           await financeApi.respondWarrantyClaim(id, notes.trim(), true); break;
-        case "warranty_escalate":
-          await financeApi.escalateWarrantyClaim(id, notes.trim()); break;
       }
       closeAction();
       setRevision(v => v + 1);
@@ -322,9 +317,9 @@ export default function ProviderCustomerRemediesPage() {
           <Kpi label="Needs your action" value={summary.needs_action} sub={money(summary.requested_amount)} tone={summary.needs_action > 0 ? "warning" : "default"}/>
           <Kpi label="Approved" value={summary.approved} sub={money(summary.approved_amount)} tone="default"/>
           <Kpi label="Paid out" value={summary.settled} sub={money(summary.recorded_amount)} tone="success"/>
-          <Kpi label="Escalated" value={summary.escalated} tone={summary.escalated > 0 ? "danger" : "default"}/>
+          <Kpi label="Overdue" value={summary.escalated} tone={summary.escalated > 0 ? "danger" : "default"}/>
           <Kpi label="Rejected" value={summary.rejected} tone="default"/>
-          <Kpi label="Recovered from you" value={money(summary.provider_exposure)} sub="credit + deposit" tone={Number(summary.provider_exposure) > 0 ? "danger" : "default"}/>
+          <Kpi label="Provider-funded remedies" value={money(summary.provider_exposure)} sub="usage-credit ledger" tone={Number(summary.provider_exposure) > 0 ? "danger" : "default"}/>
         </div>
       )}
 
@@ -361,7 +356,7 @@ export default function ProviderCustomerRemediesPage() {
           <div style={{ width: "min(520px,100%)", background: "var(--surface-elevated)", border: "1px solid var(--border-default)", borderRadius: 16, padding: 22, boxShadow: "var(--shadow-lg)" }}>
             <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>{ACTION_TITLES[action.kind]}</h2>
             <p style={{ margin: "0 0 18px", color: "var(--text-tertiary)", fontSize: 13 }}>
-              Providers own the first response. Escalate only when you cannot provide a satisfactory resolution.
+              The provider reviews the evidence and works directly with the customer on rework, refund, credit, or another mutually agreed resolution.
             </p>
             {needsAmount && (
               <label style={{ display: "grid", gap: 6, marginBottom: 12, fontSize: 12 }}>Amount (₹)
@@ -412,7 +407,6 @@ const ACTION_TITLES: Record<ActionKind, string> = {
   rework_complete: "Complete rework visit",
   warranty_respond: "Respond to warranty claim",
   warranty_resolve: "Resolve warranty claim",
-  warranty_escalate: "Escalate warranty claim",
 };
 
 /** `btn-secondary` / `btn-primary` were used throughout this page but are not
@@ -470,7 +464,6 @@ function DetailDrawer({ row, mode, onClose }: { row: Record<string, unknown>; mo
       ["Recorded", money(row.recorded_amount)],
       ["Method", words(row.refund_method) || "—"],
       ["Credit recovered from you", money(row.provider_credit_deducted)],
-      ["Deposit recovered from you", money(row.security_deposit_deducted)],
       ["Response due", dtl(row.provider_response_due_at)],
       ["Escalated", dtl(row.escalated_at)],
     ] : mode === "rework" ? [
@@ -488,7 +481,6 @@ function DetailDrawer({ row, mode, onClose }: { row: Record<string, unknown>; mo
       ["Warranty ends", dt(row.warranty_expires_at)],
       ["Response due", dtl(row.provider_response_due_at)],
       ["Credit recovered from you", money(row.provider_credit_deducted)],
-      ["Deposit recovered from you", money(row.security_deposit_deducted)],
     ];
 
   const longText = mode === "refunds"

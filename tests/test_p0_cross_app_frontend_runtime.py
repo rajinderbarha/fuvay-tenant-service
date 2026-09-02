@@ -67,9 +67,10 @@ def test_tenant_finance_ledger_labels_completed_job_deduction():
     # platform's no-wallet/no-payout business rules). The real page
     # showing Completed Job Deduction / Usage Credit Ledger labels is
     # the dedicated ledger page.
-    src = _read("frontend/tenant-portal/app/(tenant)/finance/usage-credit-ledger/page.tsx")
-    assert "Completed Job Deduction" in src
-    assert "Usage Credit" in src
+    redirect = _read("frontend/tenant-portal/app/(tenant)/finance/usage-credit-ledger/page.tsx")
+    assert "/home-services/finance?tab=usage-credits" in redirect
+    src = _read("frontend/tenant-portal/app/(tenant)/home-services/finance/page.tsx")
+    assert "Usage Credits" in src
 
 
 def test_tenant_api_types_have_payment_breakdown_fields():
@@ -118,18 +119,18 @@ def test_admin_api_types_have_payment_breakdown_fields():
 # action, which takes work_summary + collected_amount together.
 
 def test_staff_app_has_payment_recording_form():
-    src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
-    # the collected amount is captured in the Complete modal
-    assert "Amount Collected" in src
-    assert "collectedAmount" in src
-    assert "Complete Job" in src
+    src = _read("mobile/staff-app/src/screens/directPayment/DirectPaymentScreen.tsx")
+    assert "Payment received by provider" in src
+    assert "Submit payment record" in src
+    assert "Complete job" in src
     assert "Payout" not in src and "Withdraw" not in src and "Cash Wallet" not in src
 
 
 def test_staff_app_completion_records_work_summary_and_amount():
-    src = _read("mobile/staff-app/src/screens/JobDetailScreen.tsx")
-    assert "Work summary and amount collected are both required" in src
-    assert "handleComplete" in src
+    src = _read("mobile/staff-app/src/screens/directPayment/DirectPaymentScreen.tsx")
+    assert "Completion proof" in src
+    assert "Customer payment confirmation" in src
+    assert "handleFinalize" in src
 
 
 def test_staff_app_api_client_has_complete_action():
@@ -143,23 +144,21 @@ def test_staff_app_api_client_has_complete_action():
 # ── Customer app (React Native) ─────────────────────────────────────────────
 
 def test_customer_app_booking_detail_shows_credit_and_direct_payment():
-    src = _read("mobile/customer-app/src/screens/BookingDetailScreen.tsx")
-    assert "ServiceOS Credit Used" in src
-    assert "Paid Directly To Provider" in src
-    assert "pay the remaining amount directly to the provider" in src
+    src = _read("mobile/customer-app/src/components/booking-details/WorkCompletedCard.tsx")
+    assert "Final service amount" in src
+    assert "Payment is made directly to the provider" in src
 
 
 def test_customer_app_does_not_show_provider_deduction_language():
-    src = _read("mobile/customer-app/src/screens/BookingDetailScreen.tsx")
+    src = _read("mobile/customer-app/src/components/booking-details/WorkCompletedCard.tsx")
     forbidden = ["commission", "Commission", "usage credit balance", "wallet"]
     for term in forbidden:
         assert term not in src, f"Customer app must not show '{term}'"
 
 
 def test_customer_app_api_types_have_credit_applied_and_payable_amount():
-    src = _read("mobile/customer-app/src/lib/api.ts")
-    assert "credit_applied?:number" in src
-    assert "payable_amount?:number" in src
+    src = _read("mobile/customer-app/src/api/contracts/customerQuote.ts")
+    assert "customer_payable_amount" in src
 
 
 # ── Forbidden-term scan on all fixed job-completion-facing pages ────────────
@@ -176,8 +175,8 @@ def test_no_forbidden_labels_on_job_completion_facing_pages():
         "frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx",
         "frontend/super-admin/app/admin/bookings/[id]/page.tsx",
         "frontend/super-admin/app/admin/operations/[jobId]/page.tsx",
-        "mobile/staff-app/src/screens/JobDetailScreen.tsx",
-        "mobile/customer-app/src/screens/BookingDetailScreen.tsx",
+        "mobile/staff-app/src/screens/directPayment/DirectPaymentScreen.tsx",
+        "mobile/customer-app/src/components/booking-details/WorkCompletedCard.tsx",
     ]
     for page in pages:
         src = _read(page)

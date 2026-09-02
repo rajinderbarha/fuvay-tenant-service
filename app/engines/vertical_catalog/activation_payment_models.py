@@ -1,8 +1,6 @@
-"""HOME-SERVICES-ACTIVATION-PAYMENT-01 — real online Razorpay collection for
-the two Home Services activation gates (security deposit + starter credit
-package). Alongside the existing ADMIN-ONLY offline verify-deposit path
-(vertical_catalog/admin_router.py), this is the ONLINE, tenant-initiated
-path: tenant creates a Razorpay order for the exact policy-resolved amount,
+"""Real online Razorpay collection for Home Services activation funding.
+
+The tenant creates a Razorpay order for the exact policy-resolved amount,
 pays via Razorpay Checkout, and only a server-verified webhook call (never
 a client-reported "success") posts money into tenant_billing.
 
@@ -23,10 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import ServiceOSBase
 
-PAYMENT_KIND_DEPOSIT = "security_deposit"
 PAYMENT_KIND_CREDIT = "credit_package"
 PAYMENT_KIND_FUNDING = "activation_funding"
-VALID_PAYMENT_KINDS = (PAYMENT_KIND_DEPOSIT, PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING)
+VALID_PAYMENT_KINDS = (PAYMENT_KIND_CREDIT, PAYMENT_KIND_FUNDING)
 
 STATUS_CREATED = "created"
 STATUS_CAPTURED = "captured"
@@ -48,8 +45,7 @@ class ActivationPaymentOrder(ServiceOSBase):
     gateway:            Mapped[str]             = mapped_column(String(20), nullable=False, default="razorpay")
     gateway_order_id:   Mapped[str]             = mapped_column(String(100), nullable=False)
     gateway_payment_id: Mapped[str | None]      = mapped_column(String(100), nullable=True)
-    # Gross amount the order was created for (== required_deposit_amount, or
-    # required_credit_amount incl. GST for credit_package).
+    # Gross amount the order was created for, including GST where applicable.
     amount:             Mapped[Numeric]         = mapped_column(Numeric(12, 2), nullable=False)
     # For credit_package and activation_funding: the split actually posted on capture --
     # credited_amount goes to tenant_billing.credit_balance, tax_amount is
@@ -73,11 +69,6 @@ class ActivationPaymentOrder(ServiceOSBase):
     def to_dict(self) -> dict:
         credited = Decimal(str(self.credited_amount or 0))
         tax = Decimal(str(self.tax_amount or 0))
-        deposit_allocation = (
-            Decimal(str(self.amount)) - credited - tax
-            if self.payment_kind == PAYMENT_KIND_FUNDING else
-            (Decimal(str(self.amount)) if self.payment_kind == PAYMENT_KIND_DEPOSIT else Decimal("0"))
-        )
         return {
             "id": str(self.id), "tenant_id": str(self.tenant_id),
             "payment_kind": self.payment_kind, "gateway": self.gateway,
@@ -86,7 +77,6 @@ class ActivationPaymentOrder(ServiceOSBase):
             "amount": float(self.amount),
             "credited_amount": float(self.credited_amount) if self.credited_amount is not None else None,
             "tax_amount": float(self.tax_amount) if self.tax_amount is not None else None,
-            "deposit_amount": float(deposit_allocation),
             "topup_plan_id": str(self.topup_plan_id) if self.topup_plan_id else None,
             "seats_granted": self.seats_granted,
             "currency": self.currency, "status": self.status,

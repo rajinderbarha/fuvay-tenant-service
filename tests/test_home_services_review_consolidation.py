@@ -10,6 +10,7 @@ Fixture data inserted directly via SQL (this environment's seed data is not
 persistent across sessions) -- same pattern as
 test_vertical_directory_framework.py / test_home_services_staff_consolidation.py.
 """
+import os
 import uuid
 import pytest
 import pytest_asyncio
@@ -21,7 +22,13 @@ ADMIN_EMAIL = "admin@serviceos.in"
 ADMIN_PASS = "Password123!"
 DB_URL = "postgresql://serviceos:serviceos@127.0.0.1:5432/serviceos"
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.skipif(
+        os.getenv("RUN_LIVE_SERVER_TESTS") != "1",
+        reason="requires a separately running local API; set RUN_LIVE_SERVER_TESTS=1",
+    ),
+]
 _TOKEN_CACHE: dict = {}
 
 
@@ -289,15 +296,14 @@ class TestNavigationConsolidation:
 
     def test_global_reviews_nav_removed(self):
         import pathlib
-        nav = pathlib.Path("frontend/super-admin/lib/nav-config.ts").read_text(encoding="utf-8")
-        assert 'href: "/admin/reviews"' not in nav
         layout = pathlib.Path("frontend/super-admin/components/layout/AdminLayout.tsx").read_text(encoding="utf-8")
         assert 'href: "/admin/reviews"' not in layout
 
-    def test_legacy_reviews_route_is_redirect(self):
+    def test_unlinked_global_reviews_route_remains_operational(self):
         import pathlib
         src = pathlib.Path("frontend/super-admin/app/admin/reviews/page.tsx").read_text(encoding="utf-8")
-        assert "router.replace(" in src
+        assert "adminReviewApi.list" in src
+        assert '<AdminLayout activeNav="reviews">' in src
 
     def test_job_360_has_review_tab(self):
         import pathlib

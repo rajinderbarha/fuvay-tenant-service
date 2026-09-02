@@ -75,8 +75,7 @@ async def test_platform_summary_loads():
         "active_tenants", "total_jobs", "platform_revenue",
         "completed_job_deductions", "provider_direct_service_value",
         "avg_job_rating", "complaint_rate", "pending_approvals",
-        "new_providers", "customer_service_credits_issued",
-        "security_deposit_held", "active_customers",
+        "new_providers", "customer_service_credits_issued", "active_customers",
     ]
     for k in required_keys:
         assert k in result, f"Missing key: {k}"
@@ -158,9 +157,9 @@ async def test_finance_summary_loads():
     assert isinstance(result, dict)
     for k in ["platform_revenue", "provider_direct_service_value",
               "usage_credit_topups", "completed_job_deductions",
-              "customer_service_credits_issued", "security_deposits_held",
-              "failed_deductions"]:
+              "customer_service_credits_issued", "failed_deductions"]:
         assert k in result, f"Missing finance key: {k}"
+    assert "security_deposits_held" not in result
 
 
 # ── 8. provider_direct_service_value separate from platform_revenue ───────────

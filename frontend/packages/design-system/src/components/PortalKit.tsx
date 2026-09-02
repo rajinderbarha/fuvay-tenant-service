@@ -907,7 +907,7 @@ export function JobStatusBadge({ status }: { status: string }) {
 export function Pagination({
   page, total, pageSize = 20, onPage, alwaysShow = false,
   pageCount, hasNext, hasPrevious, pageSizes, onPageSize,
-  itemLabel = "results", navigationMode = "full",
+  itemLabel = "results", pageSizeLabel = "Rows per page", navigationMode = "full",
 }: {
   page: number;
   total?: number;
@@ -920,6 +920,7 @@ export function Pagination({
   pageSizes?: number[];
   onPageSize?: (size: number) => void;
   itemLabel?: string;
+  pageSizeLabel?: string;
   navigationMode?: "full" | "adjacent";
 }) {
   const knownTotal = typeof total === "number";
@@ -942,8 +943,8 @@ export function Pagination({
         </p>
         {onPageSize && pageSizes && pageSizes.length > 0 && (
           <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", fontSize: 12, color: "var(--text-secondary)" }}>
-            Rows
-            <select aria-label="Rows per page" value={pageSize} onChange={event => onPageSize(Number(event.target.value))} style={{
+            {pageSizeLabel}
+            <select aria-label={pageSizeLabel} value={pageSize} onChange={event => onPageSize(Number(event.target.value))} style={{
               height: 30, padding: "0 28px 0 9px", border: "1px solid var(--border)",
               borderRadius: "var(--radius-md)", background: "var(--surface)", color: "var(--text-primary)",
               font: "inherit", cursor: "pointer",

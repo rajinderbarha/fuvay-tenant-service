@@ -23,7 +23,7 @@ type FinPayload = any;
 
 export type HsFinanceOverview = FinPayload;
 export type HsFinanceTxnRow = FinPayload;
-/** One composed row across all four ledgers. */
+/** One composed row across the usage-credit, cash/tax, and adjustment ledgers. */
 export interface HsFinanceTxnRowFull {
   row_id: string;
   ledger: string;

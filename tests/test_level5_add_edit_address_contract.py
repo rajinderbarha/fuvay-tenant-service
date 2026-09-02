@@ -40,6 +40,7 @@ from app.exceptions import ServiceOSException
 def _exec_result(*, scalar=None, scalars_all=None, scalars_first=None):
     res = MagicMock()
     res.scalar_one = MagicMock(return_value=scalar)
+    res.scalar_one_or_none = MagicMock(return_value=scalar)
     scalars = MagicMock()
     scalars.all = MagicMock(return_value=scalars_all or [])
     scalars.first = MagicMock(return_value=scalars_first)
@@ -116,7 +117,10 @@ class TestCreateAddress:
     @pytest.mark.asyncio
     async def test_label_is_persisted_distinct_from_recipient_name(self):
         svc, db = _svc()
-        db.execute.return_value = _exec_result(scalar=0)
+        db.execute.side_effect = [
+            _exec_result(scalar=None),  # no active address with this label
+            _exec_result(scalar=0),     # first address for this customer
+        ]
 
         result = await svc.create_address(uuid.uuid4(), None, {
             "label": "Work", "name": "Rajinder Singh",

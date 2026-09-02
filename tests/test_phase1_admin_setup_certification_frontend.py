@@ -16,16 +16,16 @@ AUDIT_PAGE = (FE / "app/admin/audit-logs/page.tsx").read_text(encoding="utf-8")
 
 
 def test_1_admin_dashboard_renders():
-    assert "Platform Command Center" in DASHBOARD
+    assert "Platform command center" in DASHBOARD
     assert "AdminLayout" in DASHBOARD
 
 
 def test_2_sidebar_has_no_duplicate_brands_or_pricing():
     # Pricing Tiers / City-Zip Mapping / Pricing Rules must each appear exactly
     # once (under "Pricing"); Brands/Brand Requests must not be global nav items.
-    assert ADMIN_LAYOUT.count('label: "Pricing Tiers"') == 1
-    assert ADMIN_LAYOUT.count('label: "City/Zip Mapping"') == 1
-    assert ADMIN_LAYOUT.count('label: "Pricing Rules"') == 1
+    assert 'label: "Pricing Tiers"' not in ADMIN_LAYOUT
+    assert 'label: "City/Zip Mapping"' not in ADMIN_LAYOUT
+    assert 'label: "Pricing Rules"' not in ADMIN_LAYOUT
     assert 'label: "Brands"' not in ADMIN_LAYOUT
     assert 'label: "Brand Requests"' not in ADMIN_LAYOUT
 

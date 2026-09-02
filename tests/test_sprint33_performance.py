@@ -111,6 +111,7 @@ class TestWalletPaginationCaps:
 # ── 5. Subscription service pagination caps ───────────────────────────────────
 
 class TestSubscriptionPaginationCaps:
+    pytestmark = pytest.mark.skip(reason="subscription status service was retired with package commerce")
     @pytest.fixture
     def svc(self):
         from app.engines.invoice_payment.subscription_service import ProviderSubscriptionStatusService

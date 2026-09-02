@@ -7,9 +7,15 @@ for "Brand appears before any real issue selection"). Exercised against
 real live 140412/Guramrit data (no mocks) so the exact zipcode-isolation
 and draft-resume rules that matter in production are actually verified.
 """
+import os
 import uuid
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DATABASE_INTEGRATION_TESTS") != "1",
+    reason="requires PostgreSQL integration database",
+)
 
 
 CUSTOMER_ID = uuid.UUID("fa198861-455b-43f2-a426-47da0a8811af")

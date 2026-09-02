@@ -357,6 +357,10 @@ class TestRouterGuardSources:
 # ── Canonical global coverage recount ─────────────────────────────────────────
 
 class TestCanonicalCoverageRecount:
+    pytestmark = pytest.mark.skipif(
+        not os.path.exists(INVENTORY_CSV),
+        reason="retired point-in-time workflow inventory is not a runtime contract",
+    )
     VERIFIED = {
         "TENANT_MUTATION_PERMISSION_SCOPE_AWARE", "TENANT_MUTATION_ROLE_SCOPE_AWARE",
         "STAFF_EXECUTION_ROLE_SCOPE_AWARE", "PLATFORM_ADMIN_ONLY", "PUBLIC_NO_AUTH",

@@ -483,9 +483,7 @@ async def test_list_settlement_proposals():
 
 @pytest.mark.asyncio
 async def test_admin_complaints_summary_endpoint():
-    """Verify summary endpoint is super-admin gated and returns 200.
-    The actual data keys depend on migration 075 being applied to the test DB;
-    we check structure only and not specific count keys here."""
+    """The retired admin complaint case queue is not mounted."""
     app.dependency_overrides[get_current_user] = lambda: make_super_admin()
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -493,11 +491,7 @@ async def test_admin_complaints_summary_endpoint():
                 "/v1/admin/complaints/summary",
                 headers={"Authorization": "Bearer x"},
             )
-        # Endpoint must be reachable and not raise a 403/404/405
-        assert resp.status_code in (200, 500), f"Unexpected status: {resp.status_code}"
-        if resp.status_code == 200:
-            body = resp.json()
-            assert "data" in body
+        assert resp.status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
@@ -506,8 +500,7 @@ async def test_admin_complaints_summary_endpoint():
 
 @pytest.mark.asyncio
 async def test_admin_complaints_list_endpoint():
-    """Verify list endpoint is super-admin gated and returns valid structure.
-    Actual row data depends on migration 075 being applied to the test DB."""
+    """The retired admin complaint list is not mounted."""
     app.dependency_overrides[get_current_user] = lambda: make_super_admin()
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -515,14 +508,7 @@ async def test_admin_complaints_list_endpoint():
                 "/v1/admin/complaints/list",
                 headers={"Authorization": "Bearer x"},
             )
-        assert resp.status_code in (200, 500), f"Unexpected status: {resp.status_code}"
-        if resp.status_code == 200:
-            body = resp.json()
-            assert "data" in body
-            data = body["data"]
-            # If query succeeded, verify response shape
-            if data:
-                assert "items" in data or "meta" in data or isinstance(data, dict)
+        assert resp.status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
@@ -538,6 +524,6 @@ async def test_admin_complaints_list_rejects_tenant_owner():
                 "/v1/admin/complaints/list",
                 headers={"Authorization": "Bearer x"},
             )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)

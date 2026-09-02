@@ -58,8 +58,12 @@ def test_page_uses_real_response_fields():
     src = "\n".join(l for l in PAGE.read_text(encoding="utf-8").splitlines()
                     if not l.strip().startswith("//"))
     assert "available_qty" in src
-    assert "current_qty" in src
-    assert "deficit" in src
+    # The consolidated workspace expresses low stock through each inventory
+    # row's real below_minimum state; the standalone low-stock DTO still uses
+    # current_qty/deficit in the API contract.
+    api = API_TS.read_text(encoding="utf-8")
+    assert "current_qty" in api and "deficit" in api
+    assert "below_minimum" in src
     for dead in (".current_quantity", ".shortfall", "balance.data.available "):
         assert dead not in src, f"page still uses dead field: {dead}"
 

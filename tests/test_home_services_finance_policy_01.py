@@ -96,14 +96,10 @@ def test_gst_split_base_1000_plus_18_percent_gst_180_payable_1180():
 @pytest.mark.asyncio
 async def test_qualifying_technician_count_excludes_non_technician_roles():
     db = AsyncMock()
-    rows = [
-        MagicMock(designation="",            member_type="owner"),       # excluded
-        MagicMock(designation="manager",     member_type="staff"),       # excluded
-        MagicMock(designation="dispatcher",  member_type="staff"),       # excluded
-        MagicMock(designation="technician",  member_type=""),            # included (designation match)
-        MagicMock(designation="",            member_type="technician"),  # included (member_type match) — real Guramrit shape
-    ]
-    db.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=rows)))
+    db.execute = AsyncMock(return_value=MagicMock(scalar=MagicMock(return_value=2)))
 
     count = await resolve_qualifying_technician_count(db, uuid.uuid4())
     assert count == 2
+    sql = str(db.execute.await_args.args[0])
+    assert "member_type" in sql and "designation" in sql
+    assert "status = 'active'" in sql

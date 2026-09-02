@@ -207,7 +207,7 @@ class TestMutationRouteInventoryScript:
         from app.main import app
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.tenant_engine.router"]
-        assert len(routes) == 27
+        assert len(routes) == 23
         unverified = [r for r in routes if r["guard_status"] not in mod.ACCEPTED_GUARD_STATUSES]
         assert unverified == [], f"tenant_engine.router regressed, now has unverified routes: {unverified}"
 

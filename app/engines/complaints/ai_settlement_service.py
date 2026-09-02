@@ -102,9 +102,8 @@ class AISettlementService:
         await db.flush()
 
         # Running an AI settlement is a paid platform service: the PROVIDER is
-        # charged for it, from their credit wallet and falling back to their
-        # security deposit. Never fatal — a provider who cannot cover the fee
-        # still gets the settlement; the shortfall is recorded for finance.
+        # charged from the canonical usage-credit balance. Never fatal: a
+        # billing problem must not prevent the dispute from being handled.
         from app.engines.complaints.settlement_rules import charge_ai_settlement_fee
         try:
             fee = await charge_ai_settlement_fee(
@@ -116,9 +115,8 @@ class AISettlementService:
                 actor_user_id = None,
                 event_type    = "ai_settlement_fee_charged",
                 reason        = (f"AI settlement fee {fee['fee']} charged to provider "
-                                 f"(wallet {fee['charged_from_wallet']}, "
-                                 f"deposit {fee['charged_from_deposit']}, "
-                                 f"uncovered {fee['uncovered']})"),
+                                 f"(usage credits {fee['charged_from_wallet']}, "
+                                 f"balance after {fee['balance_after']})"),
                 new_value     = fee,
                 request_id    = request_id,
             ))

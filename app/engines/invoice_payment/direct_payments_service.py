@@ -711,7 +711,6 @@ class DirectPaymentsService:
                 "payout_created": False,
                 "settlement_created": False,
                 "wallet_credit_posted": False,
-                "security_deposit_posted": False,
                 "platform_revenue_recognised": False,
                 "serviceos_collected_amount": "0",
             },

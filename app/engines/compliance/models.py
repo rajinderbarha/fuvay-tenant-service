@@ -37,6 +37,35 @@ class DPDPPolicyVersion(ServiceOSBase):
     source_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
+class DPDPSchedulerRun(ServiceOSBase):
+    """Authoritative execution log for the DPDP SLA evaluator."""
+    __tablename__ = "dpdp_scheduler_runs"
+    __table_args__ = (
+        Index("ix_dpdp_scheduler_job", "job_name"),
+        Index("ix_dpdp_scheduler_started", "started_at"),
+    )
+
+    job_name: Mapped[str] = mapped_column(
+        String(60), nullable=False, default="dpdp_sla_evaluator")
+    trigger: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="scheduled")
+    triggered_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="running")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    requests_evaluated: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0)
+    due_soon_generated: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0)
+    breaches_generated: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ConsentRecord(ServiceOSBase):
     """PROVEN: immutable — one row per consent event.
     Consent history is a full ledger of every grant/withdraw/update.

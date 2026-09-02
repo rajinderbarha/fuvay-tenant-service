@@ -400,8 +400,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             if t not in out:
                 continue
             verified = bool(row["is_verified"])
-            out[t]["document_verified"] = verified
-            out[t]["document_verification_score"] = 100.0 if verified else 0.0
+            out[t]["account_verified"] = verified
+            out[t]["account_verification_score"] = 100.0 if verified else 0.0
 
         rows = (await db.execute(text(
             "SELECT staff_member_id AS target_key, "

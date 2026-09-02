@@ -80,7 +80,7 @@ export default function FinanceHubPage() {
               { label: "Commission Earned", value: fmt(s.commission_earned) },
             ]}/>
             <SummaryCardsRow cards={[
-              { label: "Pending Warranty Claims", value: s.pending_warranty_claims, onClick: () => router.push("/admin/finance/claims") },
+              { label: "Open Provider Warranty Claims", value: s.pending_warranty_claims },
               { label: "Pending Payouts", value: s.pending_payouts, onClick: () => router.push("/admin/finance/payouts") },
               { label: "At-Risk Tenants", value: s.at_risk_tenants, accent: s.at_risk_tenants > 0 },
             ]}/>
@@ -153,7 +153,6 @@ export default function FinanceHubPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { label: "Payout Pending Approval", value: o.pending_actions_queue.payout_pending_approval, href: "/admin/finance/payouts?status=pending" },
-                { label: "Warranty Claim Pending Review", value: o.pending_actions_queue.warranty_claim_pending_review, href: "/admin/finance/claims?status=pending" },
                 { label: "Failed Top-up Payments", value: o.pending_actions_queue.failed_topup_payment, href: "/admin/finance/topups?payment_status=failed" },
               ].map(q => (
                 <div key={q.label} onClick={() => router.push(q.href)} style={{

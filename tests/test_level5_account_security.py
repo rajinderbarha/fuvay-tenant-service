@@ -195,7 +195,7 @@ class TestConfirmPasswordReset:
                 email="nobody@example.com", phone=None, reset_token="000000", new_password="X1234567!",
             )
 
-        assert missing_exc.value.error_code == "UNAUTHORIZED"
+        assert missing_exc.value.error_code == "PASSWORD_RESET_CODE_INVALID"
         assert missing_exc.value.status_code != 500
 
     @pytest.mark.asyncio
@@ -216,7 +216,7 @@ class TestConfirmPasswordReset:
                 email=user.email, phone=None, reset_token="999999", new_password="X1234567!",
             )
 
-        assert exc_info.value.error_code == "UNAUTHORIZED"
+        assert exc_info.value.error_code == "PASSWORD_RESET_CODE_INVALID"
         assert otp_record.is_used is False
 
     @pytest.mark.asyncio

@@ -552,7 +552,7 @@ function BookingChatConversation({
                       Nothing to book here yet
                     </BotText>
                     <BotText style={{ fontSize: 13, color: BOT.textMuted, marginTop: 4 }}>
-                      {`No ${c.offeringChoice.categoryName} problems are available in ${entryContext.zipcode} right now.`}
+                      {`This service is not currently available in ZIP code ${entryContext.zipcode}.`}
                     </BotText>
                     <View style={{ marginTop: 12 }}>
                       <BotPrimaryButton label="Choose another service" onPress={() => navigation.goBack()} />

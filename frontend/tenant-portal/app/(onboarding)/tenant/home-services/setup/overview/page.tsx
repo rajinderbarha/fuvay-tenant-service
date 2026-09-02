@@ -134,7 +134,7 @@ export default function HomeServicesSetupOverviewPage() {
   const description = isRejected
     ? (overview.vertical.rejection_reason
         ? `Your Home Services setup was rejected: ${overview.vertical.rejection_reason}`
-        : "Your Home Services setup was rejected. Review the sections below, make corrections, and resubmit.")
+        : "Your Home Services setup was rejected. Contact support if you believe this decision should be reviewed.")
     : isSuspended
     ? (overview.vertical.suspend_reason
         ? `Home Services is suspended: ${overview.vertical.suspend_reason}`
