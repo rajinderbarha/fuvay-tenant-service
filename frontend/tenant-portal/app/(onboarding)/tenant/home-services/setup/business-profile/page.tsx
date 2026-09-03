@@ -448,21 +448,9 @@ function BusinessProfileWorkspace() {
               })}
               onRemoved={() => patchProfileMedia({ business_logo_media_id: null, logo_url: null })}
             />
-            <div style={{ height: 1, background: "var(--border)", margin: "16px 0" }}/>
-            <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 8px" }}>Cover image (optional)</p>
-            <ProfilePhotoUploader
-              ownerType="provider_shop"
-              currentMediaId={profile.shop_photo_media_id}
-              currentPreviewUrl={profile.shop_photo_url}
-              displayName={profile.business_name}
-              size="lg"
-              disabled={readOnly}
-              onUploaded={(asset: MediaAsset) => patchProfileMedia({
-                shop_photo_media_id: asset.id,
-                shop_photo_url: asset.preview_url ?? asset.public_url ?? null,
-              })}
-              onRemoved={() => patchProfileMedia({ shop_photo_media_id: null, shop_photo_url: null })}
-            />
+            {/* The optional cover/shop image was removed from this step at
+                explicit request (2026-09-03). The logo is the only identity
+                image a provider sets here. */}
           </Card>
         </div>
       </div>

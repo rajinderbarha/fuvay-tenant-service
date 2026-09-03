@@ -9,7 +9,6 @@ import {
   Clock3,
   Globe2,
   IdCard,
-  Image as ImageIcon,
   Mail,
   MapPin,
   Pencil,
@@ -142,7 +141,9 @@ function BusinessProfileReadOnly() {
 
   useEffect(() => { load(); }, [load]);
 
-  const coverUrl = resolveMediaUrl(profile?.shop_photo_url);
+  // The cover/shop image was removed from the product (2026-09-03): providers
+  // no longer set one in Business Profile, so the band below is purely the
+  // branded gradient defined in .profile-read-cover.
   const logoUrl = resolveMediaUrl(profile?.logo_url);
   const verifiedLocked = !!profile && ["verified", "approved", "active", "changes_pending_review"].includes(profile.verification_status);
 
@@ -165,8 +166,6 @@ function BusinessProfileReadOnly() {
         .profile-read-cover { height: 224px; position: relative; overflow: hidden; background:
           radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--brand) 28%, transparent), transparent 34%),
           linear-gradient(135deg, var(--surface-sunken), var(--surface), color-mix(in srgb, var(--brand) 12%, var(--surface-sunken))); }
-        .profile-read-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .profile-read-cover-shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 20%, rgba(0,0,0,.42)); }
         .profile-read-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: end; padding: 0 24px 24px; margin-top: -46px; position: relative; z-index: 1; }
         .profile-read-logo { width: 96px; height: 96px; border-radius: 20px; overflow: hidden; border: 4px solid var(--surface); background: var(--brand); color: white; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 800; box-shadow: var(--shadow-md); }
         .profile-read-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -244,8 +243,6 @@ function BusinessProfileReadOnly() {
 
           <Card padding={0} style={{ overflow: "hidden" }}>
             <div className="profile-read-cover">
-              {coverUrl ? <img src={coverUrl} alt="" /> : <ImageIcon size={38} style={{ position: "absolute", right: 28, top: 28, color: "var(--text-tertiary)", opacity: .55 }}/>}
-              <div className="profile-read-cover-shade"/>
             </div>
             <div className="profile-read-identity">
               <div className="profile-read-logo">
