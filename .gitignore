@@ -77,6 +77,7 @@ frontend/customer-app/tsconfig.tsbuildinfo
 # Browser-only customer portal was retired; customer and staff experiences are native apps.
 frontend/customer-web/
 backup_job_data_before_purge.sql
+db/backup_*.sql
 
 # Browser profile / scratch output from local reference captures (190MB+).
 .artifacts/
