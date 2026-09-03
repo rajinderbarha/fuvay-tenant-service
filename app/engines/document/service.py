@@ -167,11 +167,22 @@ class DocumentService:
         if not d: raise NotFoundException("Document", str(document_id))
         return self._doc_dict(d)
 
-    async def list_by_entity(self, tenant_id: uuid.UUID, entity_type: str,
-                              entity_id: str, limit: int, cursor: str | None) -> dict:
-        q = select(Document).where(Document.tenant_id == tenant_id,
-                                    Document.entity_type == entity_type,
-                                    Document.entity_id == entity_id)            .order_by(Document.created_at.desc())
+    async def list_by_entity(self, tenant_id: uuid.UUID, entity_type: str | None,
+                              entity_id: str | None, limit: int, cursor: str | None,
+                              status: str | None = None) -> dict:
+        # entity_type/entity_id are optional: the tenant portal's Documents
+        # page lists a whole tenant's documents with a status filter, which
+        # this endpoint could not express (it 422'd on every load). Callers
+        # that pass an entity still get the entity-scoped list unchanged.
+        tenant_id = self._require_trusted_tenant(tenant_id) or tenant_id
+        q = select(Document).where(Document.tenant_id == tenant_id)
+        if entity_type:
+            q = q.where(Document.entity_type == entity_type)
+        if entity_id:
+            q = q.where(Document.entity_id == entity_id)
+        if status:
+            q = q.where(Document.status == status)
+        q = q.order_by(Document.created_at.desc())
         if cursor:
             try:
                 c = decode_cursor(cursor)

@@ -45,14 +45,16 @@ async def generate_doc(r: Request, u: UserContext=Depends(require_tenant_mutatio
 async def get_doc(document_id: uuid.UUID, r: Request, u: UserContext=Depends(get_current_user),
                    s: DocumentService=Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_document(document_id), _rid(r), ENGINE_ID)
-@router.get("", summary="List documents by entity (job, booking, customer)",
+@router.get("", summary="List a tenant's documents, optionally scoped to one entity (job, booking, customer)",
             response_model=ApiResponse[dict])
 async def list_by_entity(r: Request, tenant_id: uuid.UUID=Query(...),
-                          entity_type: str=Query(...), entity_id: str=Query(...),
+                          entity_type: str|None=Query(None), entity_id: str|None=Query(None),
+                          status: str|None=Query(None),
                           limit: int=Query(20,ge=1,le=100), cursor: str|None=Query(None),
                           u: UserContext=Depends(get_current_user),
                           s: DocumentService=Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.list_by_entity(tenant_id, entity_type, entity_id, limit, cursor), _rid(r), ENGINE_ID)
+    return ok(await s.list_by_entity(tenant_id, entity_type, entity_id, limit, cursor, status),
+              _rid(r), ENGINE_ID)
 @router.post("/{document_id}/send",
              summary="Send for signature — generates cryptographic signed URL with 24h expiry",
              response_model=ApiResponse[dict])
