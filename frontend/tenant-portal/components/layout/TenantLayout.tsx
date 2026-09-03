@@ -571,7 +571,11 @@ function TenantShellInner({ children, activeNav }: {
       }}>
         {/* Logo */}
         <div style={{ height: 64, padding: sidebarCollapsed ? "0 14px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          <FuvayLogo compact={sidebarCollapsed} height={34}/>
+          {/* The provider sidebar is navy in both themes now (globals.css
+              scopes --sidebar-bg to #101A31 under [data-theme="light"], the
+              same as super-admin), so it always needs the white-wordmark
+              artwork rather than the theme swap. */}
+          <FuvayLogo compact={sidebarCollapsed} height={34} tone="onDark"/>
           {!sidebarCollapsed && (
             <div style={{ minWidth: 0 }}>
               <p style={{ color: "var(--sidebar-text-active)", fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
@@ -1047,6 +1051,7 @@ function SidebarItem({ item, active, collapsed, isLast }: { item: NavItem; activ
   return (
     <Link href={item.href} id={`nav-${item.id}`} aria-current={active ? "page" : undefined}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      className="provider-nav-item"
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "8px 10px",

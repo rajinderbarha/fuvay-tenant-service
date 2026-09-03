@@ -53,6 +53,8 @@ uploads/
 
 # Private export files (runtime data, not source — FINAL-L5-05S)
 var/exports/
+var/*.log
+var/*.png
 
 # Local database backups (may contain data, never commit)
 .backups/

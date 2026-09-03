@@ -10,49 +10,60 @@
 
 /* ─── LIGHT MODE — Pure White, Blue Accent ────────────────────────────────── */
 :root, [data-theme="light"] {
+  /* Palette is intentionally IDENTICAL to super-admin's light theme
+     (frontend/super-admin/styles/globals.css). Admin and provider share one
+     light palette; keep the two blocks in sync when either changes. */
+  color-scheme: light;
+
   /* ── Backgrounds ── */
-  --bg:               #FFFFFF;
-  --bg-soft:          #F8F9FB;
-  --bg-muted:         #F1F3F8;
-  --bg-gradient:      radial-gradient(circle at top left, rgba(59, 111, 237, 0.05), transparent 34%),
-                      radial-gradient(circle at top right, rgba(91, 141, 239, 0.04), transparent 38%),
-                      linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 100%);
+  --bg:               #F4F7FB;
+  --bg-soft:          #F7F9FC;
+  --bg-muted:         #EDF2F8;
+  --bg-gradient:      radial-gradient(circle at 82% -12%, rgba(59, 111, 237, 0.10), transparent 32%), linear-gradient(145deg, #F8FAFD 0%, #F2F6FB 52%, #EEF3F9 100%);
 
   /* ── Surfaces ── */
   --surface:          #FFFFFF;
   --surface-elevated: #FFFFFF;
-  --surface-sunken:   #F3F4F8;
+  --surface-sunken:   #F3F6FA;
+  /* Alias — many pages use --card-bg for form controls (select/input
+     backgrounds); was previously undefined, silently falling back to the
+     browser's default white for native <select> popups in dark mode. */
+  --card-bg:          var(--surface);
 
   /* ── Borders ── */
-  --border:           rgba(15, 23, 42, 0.08);
-  --border-strong:    rgba(15, 23, 42, 0.16);
-  --border-focus:     #3B6FED;
+  --border:           #DDE5F0;
+  --border-strong:    #BFCBDC;
+  --border-focus:     #315FCE;
 
   /* ── Text ── */
-  --text-primary:     #0F172A;
-  --text-secondary:   #475569;
-  --text-tertiary:    #94A3B8;
-  --text-link:        #3B6FED;
+  --text-primary:     #132038;
+  --text-secondary:   #4B5E78;
+  --text-tertiary:    #7C8DA5;
+  --text-link:        #2857C5;
+  /* Aliases — some pages use --text / --muted-text instead of the canonical
+     --text-primary / --text-tertiary names above; were previously undefined. */
+  --text:             var(--text-primary);
+  --muted-text:       var(--text-tertiary);
   --text-on-brand:    #FFFFFF;
 
   /* ── Brand / Primary — blue ── */
-  --brand:            #3B6FED;
-  --brand-hover:      #2F5BD1;
-  --primary-gradient: linear-gradient(135deg, #3B6FED 0%, #5B8DEF 100%);
+  --brand:            #315FCE;
+  --brand-hover:      #244BAA;
+  --primary-gradient: linear-gradient(135deg, #315FCE 0%, #477CE5 100%);
 
-  /* ── Accent ── */
-  --accent:           #5B8DEF;
-  --accent-hover:     #3B6FED;
-  --accent-muted:     #EAF0FE;
+  /* ── Accent — blue ── */
+  --accent:           #3D73DF;
+  --accent-hover:     #315FCE;
+  --accent-muted:     #E8EFFD;
 
   /* ── Sidebar — white, theme-aware (see dark block) ── */
-  --sidebar-bg:           #FFFFFF;
-  --sidebar-text:         #475569;
-  --sidebar-text-active:  #3B6FED;
-  --sidebar-active:       #EAF0FE;
-  --sidebar-hover:        #F3F6FE;
-  --sidebar-border:       #E7EBF3;
-  --sidebar-category:     #94A3B8;
+  --sidebar-bg:           #F8FAFD;
+  --sidebar-text:         #52647C;
+  --sidebar-text-active:  #244FAF;
+  --sidebar-active:       #E5EDFC;
+  --sidebar-hover:        #EDF3FB;
+  --sidebar-border:       #D9E3EF;
+  --sidebar-category:     #7B8CA4;
 
   /* ── Semantic — Success ── */
   --success:          #16A34A;
@@ -78,23 +89,24 @@
   --info-border:      #BAE6FD;
   --info-text:        #075985;
 
-  /* ── Golden ── */
+  /* ── Golden accent (tier badges, highlights) ── */
   --golden:           #D97706;
   --golden-bg:        #FFFBEB;
   --golden-border:    #FDE68A;
   --golden-text:      #92400E;
 
-  /* ── Terra — kept as a distinct decorative accent, unrelated to brand ── */
+  /* ── Terra accent (CTAs, nav counters) — kept as a distinct decorative
+       accent, unrelated to the brand hue */
   --terra:            #C2410C;
   --terra-bg:         #FFF7ED;
   --terra-border:     #FED7AA;
   --terra-text:       #9A3412;
 
   /* ── Shadows — neutral slate tint ── */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow:    0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.09);
-  --shadow-lg: 0 30px 80px rgba(15, 23, 42, 0.11);
+  --shadow-sm: 0 1px 2px rgba(31, 52, 82, 0.05), 0 1px 4px rgba(31, 52, 82, 0.04);
+  --shadow:    0 2px 4px rgba(31, 52, 82, 0.05), 0 10px 28px rgba(31, 52, 82, 0.07);
+  --shadow-md: 0 6px 18px rgba(31, 52, 82, 0.09), 0 14px 36px rgba(31, 52, 82, 0.07);
+  --shadow-lg: 0 12px 34px rgba(31, 52, 82, 0.13), 0 28px 56px rgba(31, 52, 82, 0.09);
 }
 
 /* ─── DARK MODE (near-black navy, blue accent) ────────────────────────────── */
@@ -219,9 +231,117 @@ a { color: inherit; text-decoration: none; }
 
 .pulse-dot { animation: pulse 2s ease-in-out infinite; }
 
+
+/* ─── LIGHT SHELL — mirrors super-admin's light enterprise shell ────────────
+ * Ported verbatim from frontend/super-admin/styles/globals.css, with the
+ * admin-* shell classes mapped to their provider-* equivalents, so the two
+ * consoles read as one product in light mode. Deliberately light-only: the
+ * dark theme already matched and keeps its own palette and surfaces.
+ */
+[data-theme="light"] body { background: var(--bg-gradient); }
+[data-theme="light"] .provider-app-shell {
+  background: #EDF2F8 !important;
+  /* The shared package defines generic fallback elevation after this app's
+     stylesheet is loaded. Re-scope the light elevation here so every
+     descendant component gets the palette without affecting dark rendering. */
+  --shadow-sm: 0 1px 2px rgba(31, 52, 82, 0.05), 0 1px 4px rgba(31, 52, 82, 0.04);
+  --shadow: 0 2px 4px rgba(31, 52, 82, 0.05), 0 10px 28px rgba(31, 52, 82, 0.07);
+  --shadow-md: 0 6px 18px rgba(31, 52, 82, 0.09), 0 14px 36px rgba(31, 52, 82, 0.07);
+  --shadow-lg: 0 12px 34px rgba(31, 52, 82, 0.13), 0 28px 56px rgba(31, 52, 82, 0.09);
+  --sidebar-bg: #101A31;
+  --sidebar-text: #B8C5D9;
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-active: rgba(91, 141, 239, 0.22);
+  --sidebar-hover: rgba(255, 255, 255, 0.075);
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+  --sidebar-category: #71819C;
+}
+[data-theme="light"] .provider-sidebar {
+  box-shadow: 12px 0 36px rgba(15, 28, 51, 0.12);
+  background-image: radial-gradient(circle at 10% 0%, rgba(78, 124, 226, 0.20), transparent 25%), linear-gradient(180deg, #111D36 0%, #0D172B 100%) !important;
+}
+[data-theme="light"] .provider-topbar {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: #D9E3EF !important;
+  box-shadow: 0 1px 0 rgba(31, 52, 82, 0.04), 0 8px 30px rgba(31, 52, 82, 0.04) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+}
+[data-theme="light"] .provider-main {
+  background: radial-gradient(circle at 92% 0%, rgba(72, 121, 225, 0.12), transparent 27%), linear-gradient(150deg, #F8FAFD 0%, #F1F5FA 48%, #EDF2F8 100%) !important;
+}
+[data-theme="light"] .provider-content { animation: providerContentIn 180ms cubic-bezier(0.2, 0, 0, 1); }
+[data-theme="light"] .card,
+[data-theme="light"] .modal { border-color: var(--border); box-shadow: var(--shadow-sm); }
+[data-theme="light"] .ds-surface-card,
+[data-theme="light"] .ds-metric-card,
+[data-theme="light"] .ds-summary-card,
+[data-theme="light"] .ds-simple-table {
+  border-color: #D8E2EE !important;
+  box-shadow: 0 1px 2px rgba(31, 52, 82, 0.04), 0 8px 24px rgba(31, 52, 82, 0.045) !important;
+}
+[data-theme="light"] .ds-surface-card {
+  background: linear-gradient(145deg, #FFFFFF 0%, #FCFDFE 100%) !important;
+}
+[data-theme="light"] .ds-metric-card,
+[data-theme="light"] .ds-summary-card {
+  background: var(--surface) !important;
+}
+[data-theme="light"] .ds-section-header h1 {
+  color: #101D33 !important;
+  font-size: 24px !important;
+  letter-spacing: -0.025em !important;
+}
+[data-theme="light"] .ds-section-header::after {
+  content: "";
+  flex-basis: 100%;
+  height: 1px;
+  margin-top: 2px;
+  background: linear-gradient(90deg, var(--border), transparent 75%);
+}
+[data-theme="light"] .ds-simple-table thead tr { background: #F0F4F9 !important; }
+[data-theme="light"] .ds-simple-table tbody tr:hover { background: #F5F8FC !important; }
+[data-theme="light"] .pk-btn {
+  letter-spacing: -0.005em;
+  box-shadow: 0 1px 2px rgba(31, 52, 82, 0.06);
+}
+[data-theme="light"] .pk-btn:not(:disabled):active { transform: translateY(1px); }
+[data-theme="light"] .pk-input,
+[data-theme="light"] .pk-select { background: #FBFCFE !important; }
+[data-theme="light"] .pk-badge { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35); }
+[data-theme="light"] .provider-nav-item { border-radius: 10px !important; }
+[data-theme="light"] .provider-nav-item[aria-current="page"] {
+  box-shadow: inset 3px 0 0 #75A3FF, 0 4px 14px rgba(0,0,0,0.10);
+}
+[data-theme="light"] .provider-global-search input {
+  background: #F5F8FC !important;
+  border-color: #D5DFEC !important;
+}
+[data-theme="light"] .provider-global-search:focus-within input {
+  background: #FFFFFF !important;
+  box-shadow: 0 0 0 4px rgba(49, 95, 206, 0.09), 0 8px 24px rgba(31, 52, 82, 0.08) !important;
+}
+[data-theme="light"] .data-table th { background: #F1F5FA; color: #62748E; }
+[data-theme="light"] .data-table tbody tr:hover td { background: #F5F8FC; }
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="light"] textarea,
+[data-theme="light"] select { box-shadow: inset 0 1px 1px rgba(31, 52, 82, 0.025); }
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):hover,
+[data-theme="light"] textarea:hover,
+[data-theme="light"] select:hover { border-color: var(--border-strong) !important; }
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):focus,
+[data-theme="light"] textarea:focus,
+[data-theme="light"] select:focus {
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(49, 95, 206, 0.12) !important;
+}
+@keyframes providerContentIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Provider shell structure
  *
- * Admin and provider keep independent palettes, but use one structural
+ * Admin and provider now share ONE light palette AND one structural
  * contract: fixed application frame, 58px command bar, 1440px content rail,
  * and the same responsive content gutters. These classes are shared by the
  * operational TenantLayout and the onboarding shell so providers do not feel
