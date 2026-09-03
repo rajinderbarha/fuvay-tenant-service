@@ -104,16 +104,12 @@ def test_backend_tenant_endpoints_are_read_only():
 
 
 def test_feature_flag_defaults_match_business_decision():
-    from app.core.feature_flags import (
-        AUTO_PRICE_OPTIONS_ENABLED,
-        DEFAULTS,
-        MANUAL_BARGAIN_RULES_ENABLED,
-        PROVIDER_FIRST_MATCHING_ENABLED,
-    )
+    from app.core.feature_flags import DEFAULTS, PROVIDER_FIRST_MATCHING_ENABLED
 
-    assert DEFAULTS[MANUAL_BARGAIN_RULES_ENABLED] is False
-    assert DEFAULTS[AUTO_PRICE_OPTIONS_ENABLED] is True
     assert DEFAULTS[PROVIDER_FIRST_MATCHING_ENABLED] is True
+    flags_source = (ROOT / "app/core/feature_flags.py").read_text(encoding="utf-8")
+    assert "MANUAL_BARGAIN_RULES_ENABLED" not in flags_source
+    assert "AUTO_PRICE_OPTIONS_ENABLED" not in flags_source
 
 
 def test_no_forbidden_finance_labels_in_remaining_ui():

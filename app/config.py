@@ -45,6 +45,9 @@ class Settings(BaseSettings):
         "http://localhost:19006",  # Expo web
     ]
     RATE_LIMIT_PER_MINUTE: int = 100
+    # Run periodic schedulers in exactly one process. Production API workers
+    # disable this and the dedicated worker service enables it.
+    BACKGROUND_JOBS_ENABLED: bool = True
 
     # Public-edge abuse protection. Proxy headers are only trusted when the
     # socket peer belongs to one of these networks; otherwise clients could
@@ -238,6 +241,22 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if production environment has dev/placeholder secrets."""
+        if self.MASKED_CALLING_PROVIDER:
+            if self.MASKED_CALLING_PROVIDER not in {"exotel", "http"}:
+                raise ValueError("MASKED_CALLING_PROVIDER must be 'exotel', 'http', or empty")
+            missing = [
+                name for name, value in (
+                    ("MASKED_CALLING_API_BASE", self.MASKED_CALLING_API_BASE),
+                    ("MASKED_CALLING_API_KEY", self.MASKED_CALLING_API_KEY),
+                    ("MASKED_CALLING_API_SECRET", self.MASKED_CALLING_API_SECRET),
+                    ("MASKED_CALLING_CALLER_ID", self.MASKED_CALLING_CALLER_ID),
+                    ("MASKED_CALLING_WEBHOOK_SECRET", self.MASKED_CALLING_WEBHOOK_SECRET),
+                ) if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "Masked calling is enabled but missing: " + ", ".join(missing)
+                )
         if self.APP_ENV == "production":
             errors: list[str] = []
             if self.DEBUG:

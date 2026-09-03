@@ -36,11 +36,9 @@ test.describe('ADMIN-TENANT-E2E-04 matching/operations/deduction', () => {
       // service_jobs pipeline.
       '/admin/home-services/bookings-jobs',
       '/admin/operations',
-      // Was /admin/home-services/overview, a page.tsx that was deleted
-      // (5994b63, predates this session). Its nav entry has since been
-      // repointed to the real replacement (commit 4c73201) -- smoke-test
-      // THAT route, not the one the menu no longer even links to.
-      '/admin/home-services/dashboard',
+      // The Home Services Overview page (/admin/home-services/dashboard)
+      // was deleted outright at product request along with its nav entry,
+      // so there is nothing to smoke-test here anymore.
       '/admin/finance/usage-credits',
     ];
     for (const route of routes) {

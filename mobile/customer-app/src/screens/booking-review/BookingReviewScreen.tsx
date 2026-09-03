@@ -150,7 +150,7 @@ export function BookingReviewScreen() {
             <ReviewStatusStrip zipcode={c.summary.address.zipcode} />
             <ServiceSummaryCard summary={c.summary} onEditAnswers={goBackToAssistant} />
             <ServiceAddressCard address={c.summary.address} onChange={goBackToAssistant} />
-            <PricingReviewCard priceState={c.summary.priceState} inspection={c.summary.inspection} bargainAvailable={c.summary.bargainAvailable} />
+            <PricingReviewCard priceState={c.summary.priceState} inspection={c.summary.inspection} />
             <ProviderAssignmentCard provider={c.summary.provider} />
 
             {/* WHEN the service actually happens -- shown before the customer

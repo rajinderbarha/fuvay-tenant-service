@@ -34,8 +34,12 @@ def test_notification_loop_registered_in_lifespan():
     src = open(os.path.join(os.path.dirname(__file__), "..", "app", "main.py"),
                encoding="utf-8").read()
     assert "from app.jobs.notifications import background_loop" in src
-    assert "_notif_task = asyncio.create_task" in src
-    assert "_notif_task.cancel()" in src     # cancelled on shutdown
+    assert "if settings.BACKGROUND_JOBS_ENABLED" in src
+    assert '("notifications", notifications_loop)' in src
+    assert "background_tasks.append(asyncio.create_task" in src
+    assert "for task in background_tasks" in src
+    assert "task.cancel()" in src            # cancelled on shutdown
+    assert "await asyncio.gather(*background_tasks" in src
 
 
 def test_no_broken_asyncsessionlocal_import():

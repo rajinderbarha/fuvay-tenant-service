@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, fireEvent } from "@testing-library/react-native";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { BookingDetailsScreen } from "../BookingDetailsScreen";
 import * as detailsQueryModule from "../../../api/customerBookings/useCustomerBookingDetailsQuery";
@@ -12,6 +12,9 @@ import * as partsQueriesModule from "../../../api/customerParts/useCustomerParts
 import { CustomerPartsRequestList } from "../../../domain/customerParts";
 import * as reviewQueriesModule from "../../../api/customerReview/useCustomerReviewQueries";
 import { CustomerReview } from "../../../domain/customerReview";
+import * as bookingActionsApi from "../../../api/customerBookings/customerBookingsApi";
+
+jest.mock("../../../api/customerBookings/customerBookingsApi");
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
@@ -129,7 +132,20 @@ function render() {
 }
 
 describe("BookingDetailsScreen", () => {
-  beforeEach(() => { mockQuoteHooks(undefined); mockPartsHooks(undefined); mockReviewHooks(null); });
+  beforeEach(() => {
+    mockQuoteHooks(undefined);
+    mockPartsHooks(undefined);
+    mockReviewHooks(null);
+    (bookingActionsApi.getBookingActionEligibility as jest.Mock).mockResolvedValue({
+      data: {
+        can_cancel: false,
+        can_reschedule: false,
+        allowed_cancellation_reasons: [],
+        cancellation_reasons_requiring_detail: [],
+        version: 1,
+      },
+    });
+  });
   // Unmount before restoring hook spies. Provider hydration can otherwise
   // re-render a still-mounted screen after the mocked query hook has been
   // restored, producing a false hook-order violation and leaking timers into
@@ -169,12 +185,20 @@ describe("BookingDetailsScreen", () => {
     expect(queryByText(/\bETA\b|technician|provider name|call now/i)).toBeNull();
   });
 
-  it("never renders Cancel or Reschedule actions", () => {
+  it("renders only the booking changes currently allowed by the server", async () => {
+    (bookingActionsApi.getBookingActionEligibility as jest.Mock).mockResolvedValue({
+      data: {
+        can_cancel: true,
+        can_reschedule: true,
+        allowed_cancellation_reasons: ["change_of_plan"],
+        cancellation_reasons_requiring_detail: [],
+        version: 2,
+      },
+    });
     mockQuery({ kind: "found", details: details() });
-    const { queryByText, getByText } = render();
-    expect(queryByText("Cancel booking")).toBeNull();
-    expect(queryByText("Reschedule")).toBeNull();
-    expect(getByText("Cancellation and rescheduling are not available in the app yet.")).toBeTruthy();
+    const { getByText } = render();
+    await waitFor(() => expect(getByText("Cancel booking")).toBeTruthy());
+    expect(getByText("Choose a new date")).toBeTruthy();
   });
 
   it("shows real finalized service, address, and booking reference", () => {

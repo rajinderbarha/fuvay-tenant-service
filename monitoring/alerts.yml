@@ -1,0 +1,34 @@
+groups:
+  - name: fuvay-production
+    rules:
+      - alert: FuvayApiDown
+        expr: up{job="serviceos-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Fuvay API is unavailable"
+          description: "Prometheus has failed to scrape the API for two minutes."
+      - alert: FuvayHighServerErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Fuvay API 5xx rate is above 5%"
+      - alert: FuvayPostgresDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL exporter is unavailable"
+      - alert: FuvayRedisDown
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis exporter is unavailable"
+      - alert: FuvayHostDiskLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host disk space is below 15%"

@@ -487,7 +487,6 @@ function WizardModal({
                 onChange={e => update({ pricing: { ...wiz.pricing, model: e.target.value } })}>
                 <option value="fixed">Fixed</option>
                 <option value="range">Range</option>
-                <option value="bargain">Bargain</option>
                 <option value="platform_controlled">Platform Controlled</option>
               </select>
             </div>

@@ -51,7 +51,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Home Services", href: "/admin/home-services/providers" },
       { label: "Finance" },
     ],
   },
@@ -60,7 +60,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Home Services", href: "/admin/home-services/providers" },
       { label: "Bookings & Jobs" },
     ],
   },
@@ -69,38 +69,20 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [
       { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Home Services", href: "/admin/home-services/providers" },
       { label: "Providers" },
     ],
   },
-  "/admin/home-services/settings": {
-    title: "Home Services Settings",
-    section: "operations",
-    breadcrumbs: [
-      { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
-      { label: "Settings" },
-    ],
-  },
-  "/admin/home-services/customers": {
+    "/admin/home-services/customers": {
     title: "Customers",
     section: "operations",
     breadcrumbs: [
       { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
+      { label: "Home Services", href: "/admin/home-services/providers" },
       { label: "Customers" },
     ],
   },
-  "/admin/home-services/dashboard": {
-    title: "Dashboard",
-    section: "operations",
-    breadcrumbs: [
-      { label: "Operations" },
-      { label: "Home Services" },
-      { label: "Dashboard" },
-    ],
-  },
-  "/admin/catalog-workspace": {
+    "/admin/catalog-workspace": {
     title: "Catalog Workspace",
     section: "operations",
     breadcrumbs: [{ label: "Catalog", href: "/admin/categories" }, { label: "Workspace" }],
@@ -120,21 +102,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [{ label: "Operations" }, { label: "Coaching" }],
   },
-  "/admin/bookability": {
-    title: "Bookability",
-    section: "operations",
-    breadcrumbs: [{ label: "Bookability" }],
-  },
-  "/admin/bookability/providers": {
-    title: "Provider Bookability",
-    section: "operations",
-    breadcrumbs: [
-      { label: "Operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
-      { label: "Provider Bookability" },
-    ],
-  },
-  "/admin/onboarding": {
+      "/admin/onboarding": {
     title: "Onboarding",
     section: "operations",
     breadcrumbs: [{ label: "Onboarding" }],
@@ -175,18 +143,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
       { label: "Runs" },
     ],
   },
-  "/admin/customer-flow": {
-    title: "Customer Flow",
-    section: "catalog",
-    breadcrumbs: [{ label: "Customer Flow" }],
-    description: "Manage customer booking flow configs",
-  },
-  "/admin/customer-flow/drafts": {
-    title: "Booking Drafts",
-    section: "catalog",
-    breadcrumbs: [{ label: "Customer Flow", href: "/admin/customer-flow" }, { label: "Drafts" }],
-  },
-  "/admin/finance": {
+      "/admin/finance": {
     title: "Finance",
     section: "finance",
     breadcrumbs: [{ label: "Finance" }],
@@ -264,22 +221,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Reviews" }],
   },
-  "/admin/automation": {
-    title: "Automation",
-    section: "automation",
-    breadcrumbs: [{ label: "Automation" }],
-  },
-  "/admin/automation/recommendation-rules": {
-    title: "Recommendation Rules",
-    section: "automation",
-    breadcrumbs: [{ label: "Automation", href: "/admin/automation" }, { label: "Recommendation Rules" }],
-  },
-  "/admin/automation/recommendation-results": {
-    title: "Recommendation Results",
-    section: "automation",
-    breadcrumbs: [{ label: "Automation", href: "/admin/automation" }, { label: "Results" }],
-  },
-  "/admin/engines": {
+        "/admin/engines": {
     title: "Engine Management",
     section: "automation",
     breadcrumbs: [{ label: "Engines" }],
@@ -341,7 +283,6 @@ const ROUTE_LABELS: Record<string, string> = {
   "bulk-runs": "Bulk Runs",
   "bulk-wizard": "Bulk Wizard",
   "catalog-workspace": "Catalog Workspace",
-  "customer-flow": "Customer Flow",
   "direct-payments": "Direct Payments",
   "financial-events": "Financial Events",
   "home-services": "Home Services",

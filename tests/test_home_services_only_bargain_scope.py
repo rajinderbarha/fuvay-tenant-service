@@ -1,6 +1,6 @@
-"""Home Services Only — Provider-First Matching + Bargain Scope Guard.
+"""Home Services Only — Provider-First Booking Scope Guard.
 
-The provider-first matching + Low/Mid/High bargain flow (and the
+The provider-first matching and booking flow (and the
 "customer pays provider directly" / Completed Job Deduction model it implies)
 must apply ONLY to the Home Services vertical. Other verticals (CA/professional
 services, IELTS/coaching, restaurants, real estate, education, listing/menu/
@@ -50,22 +50,22 @@ def test_none_vertical_rejected():
         assert_home_services_vertical(None)
 
 
-def test_ca_services_cannot_use_home_services_bargain_endpoint():
+def test_ca_services_cannot_use_home_services_booking_flow():
     with pytest.raises(VerticalFlowNotSupported):
         assert_home_services_vertical("professional_services")
 
 
-def test_ielts_cannot_use_home_services_bargain_endpoint():
+def test_ielts_cannot_use_home_services_booking_flow():
     with pytest.raises(VerticalFlowNotSupported):
         assert_home_services_vertical("coaching")
 
 
-def test_restaurant_cannot_use_home_services_bargain_endpoint():
+def test_restaurant_cannot_use_home_services_booking_flow():
     with pytest.raises(VerticalFlowNotSupported):
         assert_home_services_vertical("restaurant")
 
 
-def test_real_estate_cannot_use_home_services_bargain_endpoint():
+def test_real_estate_cannot_use_home_services_booking_flow():
     with pytest.raises(VerticalFlowNotSupported):
         assert_home_services_vertical("real_estate")
 
@@ -95,5 +95,5 @@ def test_unsupported_vertical_error_context_matches_ticket_shape():
         assert e.context == {
             "supported": False,
             "vertical": "restaurant",
-            "reason": "Provider-first bargain flow is only available for Home Services.",
+            "reason": "Provider-first booking flow is only available for Home Services.",
         }

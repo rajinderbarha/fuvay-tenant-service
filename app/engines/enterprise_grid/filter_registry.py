@@ -580,7 +580,6 @@ _RESOURCE_CONFIGS: dict[str, dict] = {
             col("rule_name", "Rule", 1),
             col("pricing_model", "Pricing Model", 2, width=140),
             col("base_price", "Price", 3, width=120),
-            col("bargain_floor", "Bargain Floor", 4, width=130),
             col("priority", "Priority", 5, width=100),
             col("effective_to", "Validity", 6, width=140),
             col("is_active", "Status", 7, width=100),
@@ -588,7 +587,7 @@ _RESOURCE_CONFIGS: dict[str, dict] = {
         ],
         "sensitive_fields": [],
         "allowed_export_fields": ["rule_name", "rule_code", "pricing_model", "base_price",
-                                  "bargain_floor", "priority", "effective_from", "effective_to", "is_active"],
+                                  "priority", "effective_from", "effective_to", "is_active"],
     },
 
     "admin_finance_topups": {

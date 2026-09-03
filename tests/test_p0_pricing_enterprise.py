@@ -95,8 +95,9 @@ def test_service_pricing_rule_enterprise_columns():
     src = _read(MODELS_FILE)
     idx = src.index("class ServicePricingRule(")
     snippet = src[idx:idx + 4000]
-    for col in ("rule_name", "rule_code", "bargain_floor", "source", "district", "state", "zone"):
+    for col in ("rule_name", "rule_code", "source", "district", "state", "zone"):
         assert col in snippet, f"ServicePricingRule missing column: {col}"
+    assert "bargain_floor" not in snippet
 
 
 def test_location_import_batch_model_exists():
@@ -210,34 +211,36 @@ def test_generate_rule_code_exists():
     assert "_generate_rule_code" in _read(SERVICE_FILE)
 
 
-def test_create_pricing_rule_validates_bargain_floor():
+def test_create_pricing_rule_has_no_retired_bargain_floor():
     src = _read(SERVICE_FILE)
     idx = src.index("async def create_pricing_rule(")
     snippet = src[idx:idx + 3000]
-    assert "INVALID_BARGAIN_FLOOR" in snippet
+    assert "BARGAIN" not in snippet.upper()
 
 
-def test_update_pricing_rule_validates_bargain_floor():
+def test_update_pricing_rule_has_no_retired_bargain_floor():
     src = _read(SERVICE_FILE)
     idx = src.index("async def update_pricing_rule(")
     snippet = src[idx:idx + 2000]
-    assert "INVALID_BARGAIN_FLOOR" in snippet
+    assert "BARGAIN" not in snippet.upper()
 
 
 def test_rule_dict_includes_new_fields():
     src = _read(SERVICE_FILE)
     idx = src.index("def _rule_dict(")
     snippet = src[idx:idx + 1600]
-    for field in ("bargain_floor", "rule_name", "rule_code", "source"):
+    for field in ("rule_name", "rule_code", "source"):
         assert field in snippet, f"_rule_dict missing field: {field}"
+    assert "bargain_floor" not in snippet
 
 
 # ── Pricing Engine ────────────────────────────────────────────────────────────
 
 def test_resolve_service_price_returns_enterprise_fields():
     src = _read(PRICING_ENGINE)
-    for field in ("resolution_path", "matched_rule_name", "bargain_floor", "warnings"):
+    for field in ("resolution_path", "matched_rule_name", "warnings"):
         assert f'"{field}"' in src, f"resolve_service_price response missing '{field}'"
+    assert '"bargain_floor"' not in src
 
 
 def test_build_rule_candidates_returns_labeled_levels():

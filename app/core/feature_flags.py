@@ -12,13 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 
-MANUAL_BARGAIN_RULES_ENABLED = "manual_bargain_rules_enabled"
-AUTO_PRICE_OPTIONS_ENABLED = "auto_price_options_enabled"
 PROVIDER_FIRST_MATCHING_ENABLED = "provider_first_matching_enabled"
 
 DEFAULTS = {
-    MANUAL_BARGAIN_RULES_ENABLED: False,
-    AUTO_PRICE_OPTIONS_ENABLED: True,
     PROVIDER_FIRST_MATCHING_ENABLED: True,
 }
 
@@ -33,8 +29,6 @@ async def _flag_enabled(db: AsyncSession, flag_key: str) -> bool:
 
 async def get_home_services_pricing_flags(db: AsyncSession) -> dict:
     return {
-        MANUAL_BARGAIN_RULES_ENABLED: await _flag_enabled(db, MANUAL_BARGAIN_RULES_ENABLED),
-        AUTO_PRICE_OPTIONS_ENABLED: await _flag_enabled(db, AUTO_PRICE_OPTIONS_ENABLED),
         PROVIDER_FIRST_MATCHING_ENABLED: await _flag_enabled(db, PROVIDER_FIRST_MATCHING_ENABLED),
         "home_services_only": True,
     }

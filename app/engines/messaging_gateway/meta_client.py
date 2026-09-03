@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -66,6 +67,69 @@ class InboundMessage:
     #: verified the signed, draft-bound flow token.
     flow_response: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DeliveryStatusEvent:
+    channel: str
+    provider_message_id: str
+    status: str
+    recipient_id: str | None
+    business_id: str | None
+    occurred_at: datetime
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+def parse_delivery_statuses(
+    payload: dict[str, Any], *, expected_channel: str | None = None,
+) -> list[DeliveryStatusEvent]:
+    """Normalize WhatsApp and Instagram delivery/read callbacks.
+
+    These callbacks are never passed into the booking conversation, but they
+    are persisted so operations can distinguish sent, delivered, read and
+    failed messages instead of treating a successful API request as delivery.
+    """
+    channel = expected_channel or (
+        CHANNEL_INSTAGRAM if payload.get("object") == "instagram" else CHANNEL_WHATSAPP
+    )
+    events: list[DeliveryStatusEvent] = []
+    if channel == CHANNEL_INSTAGRAM:
+        for entry in payload.get("entry") or []:
+            business_id = str(entry.get("id") or "") or None
+            for envelope in entry.get("messaging") or []:
+                recipient = str((envelope.get("recipient") or {}).get("id") or "") or None
+                for status_key in ("delivery", "read"):
+                    detail = envelope.get(status_key)
+                    if not isinstance(detail, dict):
+                        continue
+                    timestamp = int(detail.get("watermark") or envelope.get("timestamp") or 0)
+                    occurred = datetime.fromtimestamp(timestamp / 1000, timezone.utc) if timestamp else datetime.now(timezone.utc)
+                    mids = detail.get("mids") or [f"watermark:{timestamp}"]
+                    for mid in mids:
+                        events.append(DeliveryStatusEvent(
+                            channel=channel, provider_message_id=str(mid), status=status_key,
+                            recipient_id=recipient, business_id=business_id,
+                            occurred_at=occurred, raw=envelope,
+                        ))
+        return events
+
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            business_id = str(((value.get("metadata") or {}).get("phone_number_id") or entry.get("id") or "")) or None
+            for status in value.get("statuses") or []:
+                raw_timestamp = int(status.get("timestamp") or 0)
+                events.append(DeliveryStatusEvent(
+                    channel=channel,
+                    provider_message_id=str(status.get("id") or ""),
+                    status=str(status.get("status") or "unknown"),
+                    recipient_id=str(status.get("recipient_id") or "") or None,
+                    business_id=business_id,
+                    occurred_at=(datetime.fromtimestamp(raw_timestamp, timezone.utc)
+                                 if raw_timestamp else datetime.now(timezone.utc)),
+                    raw=status,
+                ))
+    return [event for event in events if event.provider_message_id]
 
 
 def _cfg(name: str, default: str = "") -> str:

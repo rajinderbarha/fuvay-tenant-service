@@ -65,7 +65,6 @@ const READY_SUMMARY = {
   address: { city: "Ludhiana", zipcode: "141002", lines: [], serviceable: true, serviceabilityStatus: null },
   priceState: { kind: "inspection_based" },
   inspection: null,
-  bargainAvailable: false,
   provider: null,
   photoCount: 0,
   photoUrls: [],

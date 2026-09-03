@@ -10,7 +10,7 @@ function rawHome(overrides: Partial<Record<string, unknown>> = {}) {
     bookable_categories: [{ category_id: "cat-1", name: "AC & Cooling", code: "ac", icon_url: null }],
     active_booking: null,
     unread_notification_count: 2,
-    capabilities: { bargain_available: true, photo_attach_available: true, chatbot_language_selectable: true },
+    capabilities: { photo_attach_available: true, chatbot_language_selectable: true },
     ...overrides,
   };
 }

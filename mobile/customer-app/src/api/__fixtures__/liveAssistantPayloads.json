@@ -614,7 +614,6 @@
       }
     ],
     "capabilities": {
-      "bargain_available": true,
       "photo_attach_available": true,
       "chatbot_language_selectable": true
     }
@@ -716,9 +715,7 @@
       "price_status": "pending",
       "provider_match_status": "matched",
       "price_snapshot": {
-        "price_options": null,
-        "standard_price": 300.0,
-        "bargain_available": false
+        "standard_price": 300.0
       },
       "provider_options": [],
       "selected_provider_snapshot": {
@@ -827,9 +824,7 @@
         },
         "preferred_date": null,
         "price_estimate": {
-          "price_options": null,
-          "standard_price": 300.0,
-          "bargain_available": false
+          "standard_price": 300.0
         },
         "service_due_at": "2026-08-10T17:00:00",
         "serviceability": {

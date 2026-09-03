@@ -153,6 +153,7 @@ class ComplaintService:
 
         if tenant_id is None:
             tenant_id = await self._resolve_tenant_for_record(db, record_type, record_id)
+        is_safety_concern = complaint_type == "safety_concern"
         complaint = CustomerComplaint(
             customer_id          = customer_id,
             tenant_id            = tenant_id,
@@ -165,7 +166,8 @@ class ComplaintService:
             title                = title,
             description          = description,
             status               = STATUS_OPEN,
-            priority             = "normal",
+            priority             = "critical" if is_safety_concern else "normal",
+            severity             = "critical" if is_safety_concern else "medium",
         )
         # FK convenience
         from app.engines.complaints.constants import (
@@ -189,7 +191,7 @@ class ComplaintService:
 
         # SLA deadlines
         now = datetime.now(timezone.utc)
-        complaint.tenant_first_response_due_at = now + timedelta(hours=24)
+        complaint.tenant_first_response_due_at = now + timedelta(hours=1 if is_safety_concern else 24)
         complaint.sla_status = SLA_ON_TIME
 
         db.add(complaint)
@@ -209,7 +211,7 @@ class ComplaintService:
                 title=f"New complaint — {complaint.complaint_number}",
                 body=(complaint.title or complaint.complaint_type.replace("_", " ")).strip()
                      + " — please respond.",
-                severity="warning",
+                severity="critical" if is_safety_concern else "warning",
             )
         except Exception:
             pass

@@ -1,8 +1,6 @@
 """Regression coverage for the intentionally dormant API-key product."""
 from app.config import get_settings
 from app.core.feature_flags import (
-    AUTO_PRICE_OPTIONS_ENABLED,
-    MANUAL_BARGAIN_RULES_ENABLED,
     PROVIDER_FIRST_MATCHING_ENABLED,
 )
 from app.engines.auth.router import router as auth_router
@@ -20,7 +18,5 @@ def test_api_key_routes_are_not_registered() -> None:
         assert not any("/api-keys" in path for path in paths)
 
 
-def test_existing_pricing_feature_flags_remain_available() -> None:
-    assert MANUAL_BARGAIN_RULES_ENABLED == "manual_bargain_rules_enabled"
-    assert AUTO_PRICE_OPTIONS_ENABLED == "auto_price_options_enabled"
+def test_provider_first_matching_flag_remains_available() -> None:
     assert PROVIDER_FIRST_MATCHING_ENABLED == "provider_first_matching_enabled"

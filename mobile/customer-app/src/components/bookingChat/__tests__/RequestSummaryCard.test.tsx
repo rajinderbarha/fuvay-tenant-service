@@ -26,7 +26,6 @@ function summary(overrides: Partial<BookingReviewSummary> = {}): BookingReviewSu
     },
     priceState: { kind: "inspection_based" },
     inspection: null,
-    bargainAvailable: false,
     provider: null,
     photoCount: 2,
     photoUrls: ["https://cdn.test/a.jpg", "https://cdn.test/b.jpg"],

@@ -1036,9 +1036,9 @@ class HomeServiceChatbotBookingService:
         ))
 
         # Inspection-first offerings (pricing_model == visit_fee_plus_quote)
-        # must NEVER have a fixed/bargain "standard_price" computed for them
+        # must NEVER have a fixed "standard_price" computed for them
         # at all -- real defect fixed here: this function previously ran the
-        # ServicePricingRule/BargainRule lookup unconditionally for every
+        # provider-neutral pricing lookup unconditionally for every
         # offering, so Guramrit's AC Gas Refilling (inspection-mode) got a
         # `standard_price` of literally ₹0.00 from an unrelated, tenant-
         # agnostic global pricing rule, which then reached the customer-
@@ -1049,13 +1049,11 @@ class HomeServiceChatbotBookingService:
         pricing_model = await self._effective_pricing_model(offering, job_type_id)
         inspection_mode = pricing_model == PRICING_MODEL_VISIT_FEE
 
-        bargain_available = False
-        price_options: dict | None = None
         standard_price: Decimal | None = None
 
         if not inspection_mode:
-            # Provider-owned pricing only. The retired BargainRule/Low-Mid-High
-            # tier path and tenant-agnostic admin ServicePricingRule fallback are
+            # Provider-owned pricing only. Retired tier choices and the
+            # tenant-agnostic admin ServicePricingRule fallback are
             # intentionally bypassed here. The selected provider's published
             # TenantService price is the only fixed-price authority; customer
             # charges are added later by the Home Services Finance policy in the
@@ -1111,12 +1109,8 @@ class HomeServiceChatbotBookingService:
         result = {
             "selected_provider": selected_provider_public,
             "pricing_mode": "inspection" if inspection_mode else "fixed",
-            "bargain_available": bargain_available,
-            "selected_provider_price_options": price_options,
-            # Present only when bargain_available is False — the ordinary,
-            # server-authoritative, fee-inclusive price the customer may book
-            # at directly. Never present alongside price_options, and never
-            # present at all under inspection mode (None, not 0 -- the
+            # Server-authoritative, fee-inclusive price the customer may book
+            # directly. It is never present under inspection mode (None, not 0 -- the
             # inspection-mode visit fee/requires_inspection_estimate already
             # resolved earlier in draft.price_snapshot is what Review shows).
             "standard_price": float(standard_price) if standard_price is not None else None,
@@ -1141,13 +1135,11 @@ class HomeServiceChatbotBookingService:
             # shown before booking. The corrected provider-first endpoint is
             # called directly by the customer flow, so it cannot assume the
             # older /price-estimate endpoint ran first. Doing so left the
-            # snapshot with three null bargain fields and made every
+            # snapshot without a usable price and made every
             # inspection booking impossible to confirm.
             base_snapshot = await self._compute_price_snapshot(draft, offering)
             draft.price_snapshot = {
                 **base_snapshot,
-                "bargain_available": bargain_available,
-                "price_options": price_options,
                 "standard_price": float(standard_price) if standard_price is not None else None,
             }
             # Return the exact persisted customer-safe pricing contract as
@@ -1198,8 +1190,7 @@ class HomeServiceChatbotBookingService:
             raise ServiceOSException("INVALID_PRICE_TIER",
                 "'standard' is only valid for fixed-price bookings with a resolved price.",
                 status_code=422)
-        customer_offer = Decimal(str(draft.price_snapshot["standard_price"]))
-        allowed_min = allowed_max = float(customer_offer)
+        agreed_price = Decimal(str(draft.price_snapshot["standard_price"]))
         platform_fee_amount = float(draft.price_snapshot.get("platform_fee") or 0)
 
         # HS7 fix: matching_score_snapshot (internal per-signal scoring) was
@@ -1214,18 +1205,15 @@ class HomeServiceChatbotBookingService:
             "selected_provider_name": (draft.selected_provider_snapshot or {}).get("provider_name"),
             "selected_zipcode": draft.zipcode,
             "selected_price_tier": price_tier,
-            "bargain_available": False,
-            "customer_offer": float(customer_offer),
-            "allowed_offer_min": allowed_min,
-            "allowed_offer_max": allowed_max,
+            "agreed_price": float(agreed_price),
             "platform_fee_amount": platform_fee_amount,
             "payment_mode": "customer_pays_provider_directly",
         }
         draft.updated_at = utcnow()
         await self._emit_event(
             draft_id=draft.id, actor_type=ACTOR_CUSTOMER, event_type=EVENT_PRICE_ESTIMATED,
-            new_value={"price_tier": price_tier, "customer_offer": float(customer_offer)},
-            message=f"Customer chose {price_tier} price: {customer_offer}",
+            new_value={"price_tier": price_tier, "agreed_price": float(agreed_price)},
+            message=f"Customer confirmed fixed price: {agreed_price}",
         )
         await self.db.commit()
         await self.db.refresh(draft)
@@ -1244,7 +1232,7 @@ class HomeServiceChatbotBookingService:
 
         HS7 fixes:
         1. This previously *overwrote* draft.booking_summary wholesale,
-           destroying the selected_price_tier/customer_offer that
+           destroying the selected_price_tier/agreed_price that
            confirm_price_choice had just written there — a real bug that
            would make the later /confirm call fail with
            INVALID_SELECTED_PRICE_OPTION even after the customer legitimately
@@ -1292,8 +1280,8 @@ class HomeServiceChatbotBookingService:
         job_type_error = await self._validate_job_type_context(draft)
 
         # Pricing readiness has two genuinely different, mutually exclusive
-        # shapes: a fixed/bargain offering is ready once the customer has
-        # picked a price tier (`confirm_price_choice`); an inspection-first
+        # shapes: a fixed-price offering is ready once the customer has
+        # confirmed the standard price; an inspection-first
         # offering has no tier to pick at all -- the frontend controller
         # correctly never calls `confirm_price_choice` when `standard_price`
         # is null (see useBookingReviewController.ts), so requiring
@@ -1650,12 +1638,12 @@ class HomeServiceChatbotBookingService:
 
         # A draft may have reached a genuinely priced, matched state through
         # TWO distinct paths -- standard fixed-price ("standard_price" in the
-        # snapshot, bargain_available: False), or inspection-first (no tier at all;
+        # snapshot), or inspection-first (no fixed price at all;
         # `requires_inspection_estimate` + a real positive `visit_fee` is
         # the whole story -- see `_compute_price_snapshot`/`match_provider_
         # and_price`). Only a draft with NONE of the three has genuinely not
         # been through provider matching / pricing yet. Requiring
-        # `standard_price` or `price_options` unconditionally previously
+        # `standard_price` unconditionally previously
         # made confirm() permanently reject every inspection-mode offering,
         # since match_provider_and_price correctly never computes a
         # standard_price for one.
@@ -2103,7 +2091,7 @@ class HomeServiceChatbotBookingService:
         a tenant may configure their own `tenant_visit_fee`, which takes
         precedence over the offering's admin-default `visit_fee` -- never
         the tenant's `tenant_min_price`/`tenant_max_price` range, which is
-        fixed/bargain-mode pricing and must never be surfaced as a number
+        fixed-price configuration and must never be surfaced as a number
         under inspection mode (see `_compute_price_snapshot`)."""
         if not draft.selected_tenant_id:
             return None
@@ -2209,7 +2197,7 @@ class HomeServiceChatbotBookingService:
         # so an inspection-first offering (visit_fee_plus_quote) whose
         # selected tenant had ALSO configured a tenant_min_price/max_price
         # (e.g. Guramrit's AC Gas Refilling: 500/700, likely left over from
-        # a bargain-style config) got silently reclassified as a fixed,
+        # an old range-style config) got silently reclassified as a fixed,
         # numeric price -- the exact customer-facing ₹0/wrong-number defect
         # this fix closes. Inspection mode is checked FIRST and always wins;
         # tenant/admin numeric prices are only ever used to fill in the

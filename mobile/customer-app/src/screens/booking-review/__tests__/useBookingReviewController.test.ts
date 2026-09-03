@@ -43,7 +43,7 @@ function summaryDto(overrides: Partial<Record<string, unknown>> = {}) {
       booking_summary: {
         offering_name: "AC Repair", issue_summary: "Not cooling", address: { line1: "Model Town" },
         city: "Ludhiana", zipcode: "141002", preferred_date: null, preferred_time_window: null,
-        price_estimate: { requires_inspection_estimate: true, visit_fee: 299, customer_message: null, bargain_available: false },
+        price_estimate: { requires_inspection_estimate: true, visit_fee: 299, customer_message: null },
         selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [{ name: "Verified", icon: "shield-check", color: "#3b82f6" }], rating: 4.5 },
         serviceability: { serviceable: true, status: "serviceable" },
         ready_for_confirmation: true, missing: [], errors: [],
@@ -59,7 +59,7 @@ beforeEach(() => {
   (questionFlowApi.getQuestionFlow as jest.Mock).mockResolvedValue(completeEnvelope());
   (reviewApi.checkServiceability as jest.Mock).mockResolvedValue({ data: { serviceable: true, message: "ok", draft_status: "serviceability_checked" } });
   (reviewApi.matchAndPrice as jest.Mock).mockResolvedValue({
-    data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [{ name: "Verified", icon: "shield-check", color: "#3b82f6" }] }, bargain_available: false, selected_provider_price_options: null, standard_price: 499, price_snapshot: { requires_inspection_estimate: false, standard_price: 499 } },
+    data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [{ name: "Verified", icon: "shield-check", color: "#3b82f6" }] }, standard_price: 499, price_snapshot: { requires_inspection_estimate: false, standard_price: 499 } },
   });
   (reviewApi.confirmPriceChoice as jest.Mock).mockResolvedValue({ data: { booking_summary: {}, draft_status: "provider_matched" } });
   (reviewApi.getDraft as jest.Mock).mockResolvedValue(draftDto());
@@ -123,11 +123,11 @@ describe("useBookingReviewController", () => {
     expect(reviewApi.matchAndPrice).not.toHaveBeenCalled();
   });
 
-  it("does NOT auto-confirm a price tier when bargaining is available, and surfaces pricing_unavailable", async () => {
+  it("surfaces pricing_unavailable when a non-inspection booking has no fixed price", async () => {
     (reviewApi.matchAndPrice as jest.Mock).mockResolvedValue({
-      data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [] }, bargain_available: true, selected_provider_price_options: { low: 1 }, standard_price: null },
+      data: { selected_provider: { tenant_id: "t-1", provider_name: "CoolFix", public_badges: [] }, standard_price: null },
     });
-    (reviewApi.buildBookingSummary as jest.Mock).mockResolvedValue(summaryDto({ price_estimate: { requires_inspection_estimate: false, bargain_available: true, standard_price: null }, ready_for_confirmation: false }));
+    (reviewApi.buildBookingSummary as jest.Mock).mockResolvedValue(summaryDto({ price_estimate: { requires_inspection_estimate: false, standard_price: null }, ready_for_confirmation: false }));
     const { result } = renderHook(() => useBookingReviewController(draftId));
     await waitFor(() => expect(result.current.uiState).toBe("ready"));
     expect(reviewApi.confirmPriceChoice).not.toHaveBeenCalled();
@@ -218,10 +218,10 @@ describe("useBookingReviewController", () => {
     // apply, and the summary already carries ready_for_confirmation=true
     // without any selected_price_tier.
     (reviewApi.matchAndPrice as jest.Mock).mockResolvedValue({
-      data: { selected_provider: { tenant_id: "t-1", provider_name: "Guramrit", public_badges: [] }, bargain_available: false, selected_provider_price_options: null, standard_price: null },
+      data: { selected_provider: { tenant_id: "t-1", provider_name: "Guramrit", public_badges: [] }, standard_price: null },
     });
     (reviewApi.buildBookingSummary as jest.Mock).mockResolvedValue(summaryDto({
-      price_estimate: { requires_inspection_estimate: true, visit_fee: 299, customer_message: null, bargain_available: false, standard_price: null },
+      price_estimate: { requires_inspection_estimate: true, visit_fee: 299, customer_message: null, standard_price: null },
       ready_for_confirmation: true,
     }));
     const { result } = renderHook(() => useBookingReviewController(draftId));

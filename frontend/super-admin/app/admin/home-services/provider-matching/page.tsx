@@ -27,7 +27,7 @@ export default function ProviderMatchingPage() {
   const policy = useApi(useCallback(() => autoPriceOptionsApi.getMatchingPolicy(), []));
 
   return (
-    <AdminLayout activeNav="bookability">
+    <AdminLayout>
       <SectionHeader
         title="Booking Match Policy"
         subtitle="Fuvay selects the best eligible Home Services provider from tenant-owned service areas, bookability, availability, finance, and Trust & Quality signals."

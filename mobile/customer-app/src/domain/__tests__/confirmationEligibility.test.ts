@@ -10,7 +10,6 @@ function baseInput(overrides: Partial<ConfirmationEligibilityInput> = {}): Confi
     serviceable: true,
     hasSelectedProvider: true,
     priceState: VALID_PRICE,
-    bargainAvailable: false,
     readyForConfirmation: true,
     requestInFlight: false,
     ...overrides,
@@ -40,11 +39,6 @@ describe("resolveConfirmationEligibility", () => {
   it("blocks with no_provider when no provider was matched", () => {
     expect(resolveConfirmationEligibility(baseInput({ hasSelectedProvider: false })))
       .toEqual({ allowed: false, reason: "no_provider" });
-  });
-
-  it("blocks with pricing_unavailable when bargaining is available (out of scope this phase)", () => {
-    expect(resolveConfirmationEligibility(baseInput({ bargainAvailable: true })))
-      .toEqual({ allowed: false, reason: "pricing_unavailable" });
   });
 
   it("blocks with pricing_unavailable when the price state is unavailable", () => {

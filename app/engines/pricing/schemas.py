@@ -17,7 +17,6 @@ class CityTierCreateRequest(BaseModel):
     max_price: Decimal | None = Field(None, ge=0, description="Service-level maximum shown to customer.")
     default_estimate: Decimal | None = Field(None, ge=0, description="Default estimate shown in range pricing.")
     visit_fee: Decimal | None = Field(None, ge=0)
-    bargain_floor: Decimal | None = Field(None, ge=0, description="Minimum price after customer negotiation.")
     provider_override_allowed: bool = Field(True, description="Whether provider can set prices above the min.")
     notes: str | None = None
 
@@ -27,7 +26,6 @@ class CityTierUpdateRequest(BaseModel):
     max_price: Decimal | None = Field(None, ge=0)
     default_estimate: Decimal | None = Field(None, ge=0)
     visit_fee: Decimal | None = Field(None, ge=0)
-    bargain_floor: Decimal | None = Field(None, ge=0)
     provider_override_allowed: bool | None = None
     is_active: bool | None = None
     notes: str | None = None

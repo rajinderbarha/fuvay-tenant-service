@@ -41,7 +41,7 @@ def test_tenant_service_brand_has_service_type_id():
 
 
 def test_service_pricing_rule_has_unique_constraint():
-    block = MODELS.split("class ServicePricingRule(ServiceOSBase)")[1].split("# ── Bargain Rules")[0]
+    block = MODELS.split("class ServicePricingRule(ServiceOSBase)")[1].split("# ── Location Import Batches")[0]
     assert "uq_spr_service_type_brand_tier" in block
 
 

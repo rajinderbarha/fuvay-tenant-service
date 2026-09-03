@@ -28,7 +28,6 @@ function summary(overrides: Partial<BookingReviewSummary> = {}): BookingReviewSu
         ifDeclined: "visit_fee_only",
       },
     },
-    bargainAvailable: false,
     provider: {
       tenantId: "t1", providerName: "Guramrit", publicBadges: [], rating: null,
       facts: {

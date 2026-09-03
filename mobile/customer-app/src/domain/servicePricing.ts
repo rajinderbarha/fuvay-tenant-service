@@ -96,21 +96,18 @@ export interface InspectionPricing {
  * Confirmed via direct source read of `HomeServiceChatbotBookingService`:
  * `resolve_price_estimate` (draft.price_snapshot.requires_inspection_estimate
  * / visit_fee / customer_message) and `match_provider_and_price`
- * (bargain_available / standard_price / price_options) both merge INTO the
+ * (`standard_price`) both merge INTO the
  * same `draft.price_snapshot` (match-and-price spreads the existing
  * snapshot rather than replacing it), so `build_booking_summary`'s
  * `price_estimate` field carries every one of these keys together by the
- * time Review loads. Bargain/Low-Mid-High tier selection is explicitly out
- * of scope for this phase (mission statement: "Do not build ... bargaining
- * ... in this phase") -- a bargain-available draft is surfaced as
- * `quote_required` here rather than a fabricated single price.
+ * time Review loads. Inspection quotes remain an approval-gated workflow;
+ * they are never inferred from an absent fixed price.
  */
 export function classifyReviewPricing(input: {
   requiresInspectionEstimate: boolean;
   visitFeeRaw: number | null;
   feeAdjustmentNote: string | null;
   visitFeePolicy?: InspectionPricing["visitFeePolicy"];
-  bargainAvailable: boolean;
   standardPriceRaw: number | null;
   currency?: string;
 }): { state: ServicePriceState; inspection: InspectionPricing | null } {
@@ -127,9 +124,6 @@ export function classifyReviewPricing(input: {
       };
     }
     return { state: { kind: "unavailable" }, inspection: null };
-  }
-  if (input.bargainAvailable) {
-    return { state: { kind: "quote_required" }, inspection: null };
   }
   if (input.standardPriceRaw != null && input.standardPriceRaw > 0) {
     return {

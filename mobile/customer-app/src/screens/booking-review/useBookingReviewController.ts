@@ -144,11 +144,9 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
       }
       if (generation !== generationRef.current) return;
 
-      // Auto-resolve the single-value 'standard' tier when bargaining is
-      // unavailable -- the only path this phase drives (mission
-      // statement: no bargaining UI this phase). A bargain-available
-      // draft is left unresolved and surfaces as pricing_unavailable.
-      if (!matchResult.data.bargain_available && matchResult.data.standard_price != null) {
+      // Auto-resolve the provider's one fixed price. Inspection bookings
+      // intentionally skip this step because they require a later quote.
+      if (matchResult.data.standard_price != null) {
         await reviewApi.confirmPriceChoice(draftId, "standard");
         if (generation !== generationRef.current) return;
       }
@@ -199,7 +197,6 @@ export function useBookingReviewController(draftId: string): BookingReviewContro
         serviceable: summary.address.serviceable,
         hasSelectedProvider: !!summary.provider,
         priceState: summary.priceState,
-        bargainAvailable: summary.bargainAvailable,
         readyForConfirmation: summary.readyForConfirmation,
         requestInFlight: uiState === "confirming",
       })

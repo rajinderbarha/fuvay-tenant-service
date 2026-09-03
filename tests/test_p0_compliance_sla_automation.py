@@ -241,15 +241,18 @@ class TestLifespanWiring:
         assert "asyncio.create_task" in self._src()
 
     def test_task_cancelled_on_shutdown(self):
-        assert "_compliance_sla_task.cancel()" in self._src()
+        src = self._src()
+        assert '("compliance_sla", compliance_sla_loop)' in src
+        assert "for task in background_tasks" in src
+        assert "task.cancel()" in src
 
     def test_cancelled_error_awaited(self):
         src = self._src()
-        assert "await _compliance_sla_task" in src
-        assert "CancelledError" in src
+        assert "await asyncio.gather(*background_tasks" in src
+        assert "return_exceptions=True" in src
 
     def test_loop_started_log(self):
-        assert "compliance_sla_loop.started" in self._src()
+        assert "background_jobs.started" in self._src()
 
 
 # ── G. Admin Router Job Endpoints ─────────────────────────────────────────────

@@ -88,8 +88,9 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
 # (see RateLimiter.check) -- production and staging always use RATE_LIMITS
 # unchanged.
 DEV_RATE_LIMIT_OVERRIDES: dict[str, tuple[int, int]] = {
-    "auth:login":       (900, 500),
-    "auth:login_phone": (3600, 100),
+    "auth:login":         (900, 500),
+    "auth:login_account": (900, 200),
+    "auth:login_phone":   (3600, 100),
     "auth:otp_send":    (3600, 100),
     "auth:otp_send_ip": (3600, 500),
     "auth:otp_send_source": (3600, 500),

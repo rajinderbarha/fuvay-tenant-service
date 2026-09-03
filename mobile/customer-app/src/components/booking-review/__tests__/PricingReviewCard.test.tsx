@@ -19,12 +19,11 @@ describe("PricingReviewCard", () => {
       requiresInspectionEstimate: true,
       visitFeeRaw: 299,
       feeAdjustmentNote: null,
-      bargainAvailable: false,
       standardPriceRaw: null,
     });
 
     const { getByText, queryByText } = renderWithProviders(
-      <PricingReviewCard priceState={state} inspection={inspection} bargainAvailable={false} />,
+      <PricingReviewCard priceState={state} inspection={inspection} />,
     );
 
     expect(getByText("Inspection required")).toBeTruthy();
@@ -42,12 +41,11 @@ describe("PricingReviewCard", () => {
       requiresInspectionEstimate: false,
       visitFeeRaw: null,
       feeAdjustmentNote: null,
-      bargainAvailable: false,
       standardPriceRaw: 1200,
     });
 
     const { getByText, queryByText } = renderWithProviders(
-      <PricingReviewCard priceState={state} inspection={inspection} bargainAvailable={false} />,
+      <PricingReviewCard priceState={state} inspection={inspection} />,
     );
 
     expect(getByText("₹1,200.00")).toBeTruthy();
@@ -61,12 +59,11 @@ describe("PricingReviewCard", () => {
       requiresInspectionEstimate: false,
       visitFeeRaw: null,
       feeAdjustmentNote: null,
-      bargainAvailable: false,
       standardPriceRaw: 0,
     });
 
     const { getByText, queryByText } = renderWithProviders(
-      <PricingReviewCard priceState={state} inspection={inspection} bargainAvailable={false} />,
+      <PricingReviewCard priceState={state} inspection={inspection} />,
     );
 
     expect(getByText("Pricing is currently unavailable for this service")).toBeTruthy();
@@ -79,12 +76,11 @@ describe("PricingReviewCard", () => {
       requiresInspectionEstimate: false,
       visitFeeRaw: null,
       feeAdjustmentNote: null,
-      bargainAvailable: false,
       standardPriceRaw: null,
     });
 
     const { getByText, queryByText } = renderWithProviders(
-      <PricingReviewCard priceState={state} inspection={inspection} bargainAvailable={false} />,
+      <PricingReviewCard priceState={state} inspection={inspection} />,
     );
 
     expect(getByText("Pricing is currently unavailable for this service")).toBeTruthy();
@@ -97,12 +93,11 @@ describe("PricingReviewCard", () => {
       requiresInspectionEstimate: true,
       visitFeeRaw: 0,
       feeAdjustmentNote: null,
-      bargainAvailable: false,
       standardPriceRaw: null,
     });
 
     const { getByText, queryByText } = renderWithProviders(
-      <PricingReviewCard priceState={state} inspection={inspection} bargainAvailable={false} />,
+      <PricingReviewCard priceState={state} inspection={inspection} />,
     );
 
     expect(getByText("Pricing is currently unavailable for this service")).toBeTruthy();

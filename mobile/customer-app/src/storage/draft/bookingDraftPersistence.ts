@@ -49,9 +49,6 @@ export interface LocalBookingDraft {
    * server; this field existing is what "promotes" local-only input into
    * a synced draft. */
   serverDraftId?: BookingDraftId;
-  /** Set only if/when a future bargain flow creates one -- see capability
-   * registry `pricing.bargainSubmitOffer` (currently MISSING). */
-  bargainSessionId?: string;
 }
 
 const STORAGE_KEY_PREFIX = "customer_app_booking_draft_v1_";

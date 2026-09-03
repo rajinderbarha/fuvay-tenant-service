@@ -66,7 +66,7 @@ describe("classifyReviewPricing", () => {
   it("classifies a valid inspection visit fee as inspection_based with the real amount", () => {
     const result = classifyReviewPricing({
       requiresInspectionEstimate: true, visitFeeRaw: 299, feeAdjustmentNote: null,
-      bargainAvailable: false, standardPriceRaw: null,
+      standardPriceRaw: null,
     });
     expect(result.state).toEqual({ kind: "inspection_based" });
     expect(result.inspection?.visitFee).toEqual({ minorUnits: 29900, currency: "INR" });
@@ -75,24 +75,16 @@ describe("classifyReviewPricing", () => {
   it("classifies a zero/missing inspection visit fee as unavailable, never a fabricated fee", () => {
     const result = classifyReviewPricing({
       requiresInspectionEstimate: true, visitFeeRaw: 0, feeAdjustmentNote: null,
-      bargainAvailable: false, standardPriceRaw: null,
+      standardPriceRaw: null,
     });
     expect(result.state).toEqual({ kind: "unavailable" });
     expect(result.inspection).toBeNull();
   });
 
-  it("classifies a bargain-available draft as quote_required (Low/Mid/High selection is out of scope this phase)", () => {
-    const result = classifyReviewPricing({
-      requiresInspectionEstimate: false, visitFeeRaw: null, feeAdjustmentNote: null,
-      bargainAvailable: true, standardPriceRaw: null,
-    });
-    expect(result.state).toEqual({ kind: "quote_required" });
-  });
-
   it("classifies a real standard price as valid", () => {
     const result = classifyReviewPricing({
       requiresInspectionEstimate: false, visitFeeRaw: null, feeAdjustmentNote: null,
-      bargainAvailable: false, standardPriceRaw: 499,
+      standardPriceRaw: 499,
     });
     expect(result.state).toEqual({ kind: "valid", amount: { minorUnits: 49900, currency: "INR" } });
   });
@@ -100,7 +92,7 @@ describe("classifyReviewPricing", () => {
   it("classifies a zero standard price as unavailable, never ₹0 or Free", () => {
     const result = classifyReviewPricing({
       requiresInspectionEstimate: false, visitFeeRaw: null, feeAdjustmentNote: null,
-      bargainAvailable: false, standardPriceRaw: 0,
+      standardPriceRaw: 0,
     });
     expect(result.state).toEqual({ kind: "unavailable" });
   });

@@ -3783,7 +3783,7 @@ export interface PricingRule {
   district?:string|null; state?:string|null; zone?:string|null;
   pricing_model:string; base_price:number; min_price?:number|null; max_price?:number|null; visit_fee:number;
   platform_fee_percent:number; commission_percent:number; tax_percent:number;
-  bargain_floor?:number|null; completed_job_deduction_credits?:number; rule_name?:string|null; rule_code?:string|null; source?:string;
+  completed_job_deduction_credits?:number; rule_name?:string|null; rule_code?:string|null; source?:string;
   effective_from?:string|null; effective_to?:string|null; priority:number; is_active:boolean;
   has_conflict?:boolean; validity_status?:string;
 }
@@ -3795,100 +3795,19 @@ export interface PricingRulesSummary {
 export interface PricingPreviewResult {
   matched_rule_id:string|null; matched_rule_name?:string|null; source:string; pricing_model:string; base_price:number;
   min_price?:number|null; max_price?:number|null; visit_fee:number; commission_percent:number;
-  tax_percent:number; bargain_floor?:number|null; completed_job_deduction_credits?:number;
+  tax_percent:number; completed_job_deduction_credits?:number;
   payment_collection_mode?:string; final_customer_estimate?:number; message?:string;
   tier_matched:{ matched_by:string|null; tier:PricingTier|null };
   resolution_path?:string[]; warnings?:string[];
 }
 
-// â”€â”€ Bargain Rules + Provider Pricing Overrides (Phase 3 / 3B / 3C) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export interface BargainRule {
-  id: string; vertical_key?: string | null; category_id?: string | null;
-  master_service_id?: string | null; pricing_rule_id?: string | null;
-  rule_name?: string | null; rule_code?: string | null;
-  bargain_enabled: boolean; floor_type: string; floor_amount: number;
-  below_floor_action: string; provider_approval_required: boolean;
-  max_attempts?: number | null; status: string;
-  created_at?: string; updated_at?: string;
-  // enriched fields (Phase 3B)
-  category_name?: string | null; master_service_name?: string | null;
-  base_price?: number | null; min_price?: number | null; max_price?: number | null;
-  currency?: string; pricing_source?: string | null;
-  readiness?: "ready" | "missing_pricing_rule" | "invalid_floor" | "inactive" | "conflict";
-  warning?: string | null;
-  // Customer Range + Platform Fee Floor Fix â€” customer-facing display/negotiation
-  // range and fee used to derive the real bargain floor (bargain_floor =
-  // customer_min_price * (1 + platform_fee_percent/100) + platform_fee_fixed_amount).
-  // floor_amount above is still populated (computed from these when set) for
-  // backward compatibility with older rules that predate this fix.
-  customer_min_price?: number | null; customer_max_price?: number | null;
-  platform_fee_percent?: number | null; platform_fee_fixed_amount?: number;
-}
-export interface BargainRulesSummary {
-  total_bargain_rules: number; active_rules: number; inactive_rules: number;
-  bargain_enabled_services: number; below_floor_rejections: number;
-  provider_approval_required: number; avg_accepted_offer: number | null;
-  validation_issues: number;
-}
-export interface BargainRuleValidation {
-  rule_id: string; valid: boolean;
-  checks: {
-    floor_gte_min_price: boolean; floor_lte_max_price: boolean;
-    active_pricing_rule_exists: boolean; no_duplicate_active_bargain_rule: boolean;
-    provider_approval_rule_valid: boolean;
-  };
-}
 export interface AuditEntry {
-  id: string; action: string; actor_user_id: string | null;
-  change_summary: string | null; request_id: string | null; created_at: string | null;
-}
-export interface BargainEvaluationResult {
-  service_name?: string | null; currency?: string;
-  accepted: boolean; eligible: boolean; decision: "accepted" | "rejected" | "provider_approval_required";
-  reason: string;
-  // legacy/back-compat (still populated)
-  base_price?: number | null; min_price?: number | null; max_price?: number | null;
-  minimum_allowed_offer: number | null;
-  // Customer Range + Platform Fee Floor Fix â€” the real, authoritative fields.
-  admin_min_price?: number | null; admin_max_price?: number | null; admin_base_price?: number | null;
-  customer_min_price?: number | null; customer_max_price?: number | null;
-  platform_fee_percent?: number | null; platform_fee_amount?: number | null;
-  bargain_floor: number | null;
-  allowed_offer_min?: number | null; allowed_offer_max?: number | null;
-  customer_offer?: number;
-  payment_mode?: string;
-  provider_approval_required?: boolean;
-  pricing_source?: string | null; rule_used?: string | null;
-}
-export interface ProviderPricingOverride {
-  id: string; tenant_id: string; vertical_key?: string | null; category_id?: string | null;
-  master_service_id: string; service_type_id?: string | null; brand_id?: string | null;
-  issue_type_id?: string | null; zipcode?: string | null; tier_id?: string | null;
-  override_price: number; currency: string; approval_status: string; status: string;
-  reason?: string | null; rejection_reason?: string | null;
-  approved_by_user_id?: string | null; approved_at?: string | null;
-  created_at?: string; updated_at?: string;
-  // enriched fields (Phase 3B)
-  tenant_name?: string | null; tenant_code?: string | null;
-  master_service_name?: string | null; category_name?: string | null;
-  service_type_name?: string | null; brand_name?: string | null;
-  issue_type_name?: string | null; tier_name?: string | null;
-  platform_min_price?: number | null; platform_max_price?: number | null;
-  platform_base_price?: number | null; delta_from_base?: number | null;
-}
-export interface ProviderOverridesSummary {
-  total_overrides: number; active_overrides: number; pending_approval: number;
-  rejected_overrides: number; out_of_range_attempts: number;
-  avg_override_price: number | null; tenants_with_overrides: number; validation_issues: number;
-}
-export interface OverrideValidationError {
-  error_code: string; message: string;
-  platform_min_price?: number; platform_max_price?: number; override_price?: number;
-  existing_override_id?: string;
-}
-export interface OverrideValidationResult {
-  valid: boolean; errors: OverrideValidationError[];
-  platform_min_price: number | null; platform_max_price: number | null; platform_base_price: number | null;
+  id: string;
+  action: string;
+  actor_user_id: string | null;
+  change_summary: string | null;
+  request_id: string | null;
+  created_at: string | null;
 }
 
 export interface NotifTemplateList { templates:NotifTemplate[]; total:number; }
@@ -7560,190 +7479,6 @@ export const bulkSetupApi = {
     apiFetch<BulkSetupRun>(`/v1/admin/bulk-setup/runs/${runId}`),
 };
 
-// â”€â”€ Sprint 34I â€” Recommendation Rules Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export interface RecommendationRule {
-  id: string;
-  code: string;
-  name: string;
-  description?: string;
-  rule_type: string;
-  scope: string;
-  vertical_type?: string;
-  category_id?: string;
-  service_id?: string;
-  tenant_id?: string;
-  location_id?: string;
-  priority: number;
-  status: string;
-  condition_json: Record<string, unknown>;
-  recommendation_json: Record<string, unknown>;
-  explanation_template?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface RecommendationResult {
-  id: string;
-  request_id?: string;
-  actor_user_id?: string;
-  tenant_id?: string;
-  customer_id?: string;
-  context_type: string;
-  context_id?: string;
-  rule_id?: string;
-  rule_type?: string;
-  recommended_entity_type?: string;
-  recommended_entity_id?: string;
-  recommended_payload_json?: Record<string, unknown>;
-  confidence_score?: number;
-  explanation?: string;
-  status: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface RecommendationItem {
-  entity_type: string;
-  entity_id?: string;
-  entity_code?: string;
-  name: string;
-  confidence_score?: number;
-  explanation?: string;
-  rule_id?: string;
-  rule_code?: string;
-}
-
-export interface RecommendationEvalResult {
-  recommendations: RecommendationItem[];
-  warnings: string[];
-  rule_count: number;
-  context_type: string;
-}
-
-export interface SimulateResult {
-  success: boolean;
-  data: {
-    rule_id: string;
-    rule_code: string;
-    matched: boolean;
-    recommendations: RecommendationItem[];
-    warnings: string[];
-    note: string;
-  };
-}
-
-export const recommendationApi = {
-  // Rule CRUD
-  listRules: (params?: {
-    status?: string; rule_type?: string; scope?: string;
-    vertical_type?: string; page?: number; page_size?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set("status", params.status);
-    if (params?.rule_type) qs.set("rule_type", params.rule_type);
-    if (params?.scope) qs.set("scope", params.scope);
-    if (params?.vertical_type) qs.set("vertical_type", params.vertical_type);
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.page_size) qs.set("page_size", String(params.page_size));
-    return apiFetch<{ items: RecommendationRule[]; total: number }>(
-      `/v1/admin/recommendation-rules?${qs}`
-    );
-  },
-
-  createRule: (data: Partial<RecommendationRule>) =>
-    apiFetch<RecommendationRule>("/v1/admin/recommendation-rules", {
-      method: "POST", body: JSON.stringify(data),
-    }),
-
-  getRule: (ruleId: string) =>
-    apiFetch<RecommendationRule>(`/v1/admin/recommendation-rules/${ruleId}`),
-
-  updateRule: (ruleId: string, data: Partial<RecommendationRule>) =>
-    apiFetch<RecommendationRule>(`/v1/admin/recommendation-rules/${ruleId}`, {
-      method: "PUT", body: JSON.stringify(data),
-    }),
-
-  deleteRule: (ruleId: string) =>
-    apiFetch<{ deleted: boolean; id: string }>(`/v1/admin/recommendation-rules/${ruleId}`, {
-      method: "DELETE",
-    }),
-
-  // Lifecycle
-  activateRule: (ruleId: string) =>
-    apiFetch<RecommendationRule>(`/v1/admin/recommendation-rules/${ruleId}/activate`, {
-      method: "POST",
-    }),
-
-  deactivateRule: (ruleId: string) =>
-    apiFetch<RecommendationRule>(`/v1/admin/recommendation-rules/${ruleId}/deactivate`, {
-      method: "POST",
-    }),
-
-  archiveRule: (ruleId: string) =>
-    apiFetch<RecommendationRule>(`/v1/admin/recommendation-rules/${ruleId}/archive`, {
-      method: "POST",
-    }),
-
-  // Simulate
-  simulateRule: (ruleId: string, context: Record<string, unknown>) =>
-    apiFetch<SimulateResult>(`/v1/admin/recommendation-rules/${ruleId}/simulate`, {
-      method: "POST", body: JSON.stringify(context),
-    }),
-
-  // Results
-  listResults: (params?: { context_type?: string; status?: string; page?: number; page_size?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.context_type) qs.set("context_type", params.context_type);
-    if (params?.status) qs.set("status", params.status);
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.page_size) qs.set("page_size", String(params.page_size));
-    return apiFetch<{ items: RecommendationResult[]; total: number }>(
-      `/v1/admin/recommendation-rules/results/list?${qs}`
-    );
-  },
-
-  // Engine â€” evaluate
-  evaluate: (context: Record<string, unknown>) =>
-    apiFetch<RecommendationEvalResult>("/v1/recommendations/evaluate", {
-      method: "POST", body: JSON.stringify(context),
-    }),
-
-  validateEntity: (entityType: string, entityId: string) =>
-    apiFetch<{ valid: boolean; entity_type: string }>("/v1/recommendations/validate", {
-      method: "POST", body: JSON.stringify({ entity_type: entityType, entity_id: entityId }),
-    }),
-
-  acceptResult: (resultId: string) =>
-    apiFetch<RecommendationResult>(`/v1/recommendations/${resultId}/accept`, {
-      method: "POST",
-    }),
-
-  rejectResult: (resultId: string, reason?: string) =>
-    apiFetch<RecommendationResult>(`/v1/recommendations/${resultId}/reject`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-
-  // AI recommendations
-  aiRecommendations: (context: Record<string, unknown>) =>
-    apiFetch<{ success: boolean; data: { recommendations: RecommendationItem[]; allowed_next_steps: string[]; warnings: string[] } }>(
-      "/v1/ai/recommendations",
-      { method: "POST", body: JSON.stringify(context) }
-    ),
-
-  // Context-specific
-  bulkSetupRecommendations: (draftId: string, context?: Record<string, unknown>) =>
-    apiFetch<RecommendationEvalResult>(
-      `/v1/admin/bulk-setup/drafts/${draftId}/recommendations`,
-      { method: "POST", body: JSON.stringify(context ?? {}) }
-    ),
-
-  providerSetupRecommendations: (context?: Record<string, unknown>) =>
-    apiFetch<RecommendationEvalResult>("/v1/provider/setup/recommendations", {
-      method: "POST", body: JSON.stringify(context ?? {}),
-    }),
-};
-
 // â”€â”€ Sprint 34J â€” Customer Flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CustomerBookingDraft {
@@ -9810,8 +9545,6 @@ export const rolesPermissionsApi = {
 
 // Home Services matching flags and diagnostics
 export interface HomeServicesPricingConfig {
-  manual_bargain_rules_enabled: boolean;
-  auto_price_options_enabled: boolean;
   provider_first_matching_enabled: boolean;
   home_services_only: boolean;
 }

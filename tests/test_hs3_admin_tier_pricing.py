@@ -6,9 +6,6 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ADMIN = ROOT / "frontend/super-admin"
-BARGAIN_ENGINE = (
-    ROOT / "app/engines/admin_catalog/bargain_engine.py"
-).read_text(encoding="utf-8-sig")
 MATCHING = (
     ROOT / "app/engines/home_service_booking/matching_engine.py"
 ).read_text(encoding="utf-8-sig")
@@ -26,13 +23,17 @@ def test_retired_admin_pricing_pages_are_deleted():
 
 
 def test_tier_computation_is_absent_from_runtime_engines():
-    combined = BARGAIN_ENGINE + MATCHING
     for marker in (
         "compute_symmetric_customer_price_tiers",
         "compute_price_tiers",
         "PRICE_TIER_TO_FIELD",
     ):
-        assert marker not in combined
+        assert marker not in MATCHING
+
+
+def test_retired_bargain_engine_is_deleted():
+    assert not (ROOT / "app/engines/admin_catalog/bargain_engine.py").exists()
+    assert not (ROOT / "app/engines/admin_catalog/bargain_schemas.py").exists()
 
 
 def test_admin_navigation_has_no_tier_or_bargain_surface():

@@ -32,12 +32,6 @@ describe("customer capability registry", () => {
     expect(partsApproval?.evidence).toBe("ROLE_BLOCKED");
   });
 
-  it("marks all bargain-submission capabilities MISSING (no customer route exists)", () => {
-    const bargain = capabilitiesByEvidence("MISSING").filter(c => c.group === "Pricing and bargaining");
-    expect(bargain.length).toBeGreaterThan(0);
-    for (const c of bargain) expect(c.exposableInUi).toBe(false);
-  });
-
   it("flags the legacy /v1/bookings engine as DISCONNECTED and not exposable", () => {
     const legacy = getCapability("bookings.legacyBookingEngineWarning");
     expect(legacy?.evidence).toBe("DISCONNECTED");

@@ -7,7 +7,7 @@ Every entry becomes one PlatformSetting row keyed by `key`.
 CATEGORY_GENERAL = "general_platform"
 CATEGORY_ONBOARDING = "tenant_onboarding"
 CATEGORY_BOOKING = "booking_and_jobs"
-CATEGORY_PRICING = "pricing_and_bargain"
+CATEGORY_PRICING = "pricing"
 CATEGORY_CREDITS = "packages_and_usage_credits"
 CATEGORY_DISPUTES = "disputes_and_customer_credits"
 CATEGORY_MEDIA = "media_and_storage"
@@ -47,6 +47,9 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     _s("default_timezone", "Default Timezone", "Asia/Kolkata", CATEGORY_GENERAL, "string"),
     _s("supported_languages", "Supported Languages", ["en", "hi", "pa"], CATEGORY_GENERAL, "list"),
     _s("customer_login_required", "Customer Login Required", True, CATEGORY_GENERAL),
+    _s("customer_min_supported_version", "Customer App Minimum Version", "1.0.0", CATEGORY_GENERAL, "string", risk="high"),
+    _s("customer_ios_store_url", "Customer iOS Store URL", "", CATEGORY_GENERAL, "string"),
+    _s("customer_android_store_url", "Customer Android Store URL", "", CATEGORY_GENERAL, "string"),
     _s("tenant_signup_enabled", "Tenant Signup Enabled", True, CATEGORY_GENERAL),
     _s("maintenance_mode_enabled", "Maintenance Mode Enabled", False, CATEGORY_MAINTENANCE,
        risk="critical", requires_approval=True, requires_restart=True),
@@ -79,14 +82,9 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     _s("allow_reschedule", "Allow Reschedule", True, CATEGORY_BOOKING),
     _s("allow_customer_photo_upload", "Allow Customer Photo Upload", True, CATEGORY_BOOKING),
 
-    # ── G4. Pricing & Bargain ────────────────────────────────────────────────
+    # ── G4. Pricing ──────────────────────────────────────────────────────────
     _s("zone_pricing_enabled", "Zone Pricing Enabled", True, CATEGORY_PRICING),
     _s("zipcode_tier_mapping_enabled", "Zipcode Tier Mapping Enabled", True, CATEGORY_PRICING),
-    _s("provider_price_below_platform_min_blocked", "Block Price Below Platform Min", True, CATEGORY_PRICING, risk="medium"),
-    _s("bargain_enabled", "Bargain Enabled", True, CATEGORY_PRICING),
-    _s("bargain_floor_enforced", "Bargain Floor Enforced", True, CATEGORY_PRICING, risk="medium"),
-    _s("bargain_floor_formula", "Bargain Floor Formula", "platform_min_price_plus_fee", CATEGORY_PRICING, "enum",
-       allowed_values=["platform_min_price_plus_fee", "platform_min_price"]),
 
     # ── G5. Packages & Usage Credits ─────────────────────────────────────────
     _s("provider_usage_credits_enabled", "Provider Usage Credits Enabled", True, CATEGORY_CREDITS),

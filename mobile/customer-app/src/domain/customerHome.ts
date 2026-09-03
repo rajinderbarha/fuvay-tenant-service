@@ -120,7 +120,6 @@ export interface HomeServiceability {
 }
 
 export interface HomeCapabilities {
-  bargainAvailable: boolean;
   photoAttachAvailable: boolean;
   chatbotLanguageSelectable: boolean;
 }

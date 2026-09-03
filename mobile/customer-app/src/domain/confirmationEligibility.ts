@@ -20,10 +20,6 @@ export interface ConfirmationEligibilityInput {
   serviceable: boolean;
   hasSelectedProvider: boolean;
   priceState: ServicePriceState;
-  /** Low/Mid/High tier selection is out of scope this phase (mission
-   * statement) -- a bargain-available draft can never reach `allowed:
-   * true` here regardless of price state, until that phase exists. */
-  bargainAvailable: boolean;
   /** Backend's own `booking_summary.ready_for_confirmation` -- the single
    * authoritative signal this resolver ultimately defers to once every
    * client-visible precondition above has already passed. */
@@ -44,7 +40,6 @@ export function resolveConfirmationEligibility(input: ConfirmationEligibilityInp
   if (!input.hasAddress) return { allowed: false, reason: "address_required" };
   if (!input.serviceable) return { allowed: false, reason: "unserviceable" };
   if (!input.hasSelectedProvider) return { allowed: false, reason: "no_provider" };
-  if (input.bargainAvailable) return { allowed: false, reason: "pricing_unavailable" };
   if (input.priceState.kind === "unavailable") return { allowed: false, reason: "pricing_unavailable" };
   if (!input.readyForConfirmation) return { allowed: false, reason: "stale_review" };
   return { allowed: true };

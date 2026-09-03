@@ -62,137 +62,49 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("serviceos.ready", prefix=settings.API_V1_PREFIX)
 
-    # 5. Compliance SLA background loop (runs every 15 min)
-    from app.jobs.compliance_sla import background_loop as _compliance_sla_loop
-    _compliance_sla_task = asyncio.create_task(_compliance_sla_loop())
-    logger.info("compliance_sla_loop.started")
+    background_tasks: list[asyncio.Task] = []
+    if settings.BACKGROUND_JOBS_ENABLED:
+        # Production runs these schedulers in one dedicated worker process,
+        # preventing duplicate reminders, penalties and export claims.
+        from app.jobs.compliance_sla import background_loop as compliance_sla_loop
+        from app.jobs.export_worker import background_loop as export_worker_loop
+        from app.jobs.complaint_sla import background_loop as complaint_sla_loop
+        from app.jobs.notifications import background_loop as notifications_loop
+        from app.jobs.expire_drafts import background_loop as expire_drafts_loop
+        from app.jobs.trust_quality_worker import background_loop as trust_quality_loop
+        from app.jobs.expire_topup_entitlements import background_loop as topup_expiry_loop
+        from app.jobs.sla_breach import background_loop as sla_breach_loop
+        from app.jobs.media_retention import background_loop as media_retention_loop
+        from app.jobs.credit_reminders import background_loop as credit_reminders_loop
+        from app.jobs.platform_status import background_loop as platform_status_loop
 
-    # 6. Export worker background loop (FINAL-L5-05S) — claims and
-    # processes enterprise_export_jobs, plus periodic expiry/orphan cleanup.
-    from app.jobs.export_worker import background_loop as _export_worker_loop
-    _export_worker_task = asyncio.create_task(_export_worker_loop())
-    logger.info("export_worker_loop.started")
-
-    # 7. Complaint SLA background loop (MODULE-L5-02 bug #32) — nothing ever
-    # evaluates provider response deadlines, applies the configured usage-credit
-    # penalty, and refreshes provider account health after a breach.
-    from app.jobs.complaint_sla import background_loop as _complaint_sla_loop
-    _complaint_sla_task = asyncio.create_task(_complaint_sla_loop())
-    logger.info("complaint_sla_loop.started")
-
-    # 8. Notification dispatch/retry loop (MODULE-L5-11) — the notification
-    # outbox worker was CLI-only, so a transiently-failed (PENDING) notification
-    # was never retried without external cron. Runs the same dispatch/retry the
-    # docstring intends every minute.
-    from app.jobs.notifications import background_loop as _notif_loop
-    _notif_task = asyncio.create_task(_notif_loop())
-    logger.info("notifications_loop.started")
-
-    # 9. Draft-expiry housekeeping loop (MODULE-L5-11) — the draft-expiry job was
-    # CLI-only, so abandoned lead/booking/appointment drafts were never cleaned
-    # up without external cron.
-    from app.jobs.expire_drafts import background_loop as _expire_loop
-    _expire_task = asyncio.create_task(_expire_loop())
-    logger.info("expire_drafts_loop.started")
-
-    # 10. Trust & Quality recalculation worker — the platform-wide badge/health/
-    # risk sweep used to run inline in the admin's HTTP request, which cannot
-    # survive a large provider base. The endpoint now enqueues and this claims.
-    from app.jobs.trust_quality_worker import background_loop as _tq_loop
-    _tq_task = asyncio.create_task(_tq_loop())
-    logger.info("trust_quality_worker_loop.started")
-
-    # 11. Top-up entitlement expiry — a plan's validity has to be acted on by
-    # something. Seats stop counting on read the moment they lapse; this is
-    # what withdraws unspent plan credit and settles the cached seat count.
-    from app.jobs.expire_topup_entitlements import background_loop as _tte_loop
-    _tte_task = asyncio.create_task(_tte_loop())
-    logger.info("topup_entitlement_expiry_loop.started")
-
-    # 12. SLA breach: cancel jobs that ran out of time so the customer can
-    # rebook, charge the admin-set penalty, and reinstate providers whose
-    # health suspension has served its time.
-    from app.jobs.sla_breach import background_loop as _sla_loop
-    _job_sla_task = asyncio.create_task(_sla_loop())
-    logger.info("sla_breach_loop.started")
-
-    # 13. Media retention: delete the customer's photos once a job is done, and
-    # completion proofs once the warranty they defend has expired.
-    from app.jobs.media_retention import background_loop as _media_loop
-    _media_task = asyncio.create_task(_media_loop())
-    logger.info("media_retention_loop.started")
-
-    # 14. Credit reminders: nudge a provider whose balance is running out, at a
-    # cadence matched to severity rather than a fixed drip.
-    from app.jobs.credit_reminders import background_loop as _reminder_loop
-    _reminder_task = asyncio.create_task(_reminder_loop())
-    logger.info("credit_reminders_loop.started")
-
-    # 15. Live platform-status evidence for Help & Support. Without a producer,
-    # the correctly fail-closed banner stayed "Status unavailable" forever.
-    from app.jobs.platform_status import background_loop as _platform_status_loop
-    _platform_status_task = asyncio.create_task(_platform_status_loop())
-    logger.info("platform_status_loop.started")
+        loops = (
+            ("compliance_sla", compliance_sla_loop),
+            ("export_worker", export_worker_loop),
+            ("complaint_sla", complaint_sla_loop),
+            ("notifications", notifications_loop),
+            ("expire_drafts", expire_drafts_loop),
+            ("trust_quality", trust_quality_loop),
+            ("topup_expiry", topup_expiry_loop),
+            ("sla_breach", sla_breach_loop),
+            ("media_retention", media_retention_loop),
+            ("credit_reminders", credit_reminders_loop),
+            ("platform_status", platform_status_loop),
+        )
+        for name, loop in loops:
+            background_tasks.append(asyncio.create_task(loop(), name=f"fuvay:{name}"))
+        logger.info("background_jobs.started", count=len(background_tasks))
+    else:
+        logger.info("background_jobs.disabled_for_process")
 
     yield  # ── Application is running ──────────────────────────────
 
     # ── Shutdown ───────────────────────────────────────────────────
     logger.info("serviceos.shutting_down")
-    _compliance_sla_task.cancel()
-    _media_task.cancel()
-    _reminder_task.cancel()
-    _export_worker_task.cancel()
-    _complaint_sla_task.cancel()
-    _tte_task.cancel()
-    _job_sla_task.cancel()
-    _platform_status_task.cancel()
-    try:
-        await _job_sla_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _compliance_sla_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _platform_status_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _export_worker_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _complaint_sla_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _media_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _reminder_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await _tte_task
-    except asyncio.CancelledError:
-        pass
-    _notif_task.cancel()
-    try:
-        await _notif_task
-    except asyncio.CancelledError:
-        pass
-    _expire_task.cancel()
-    try:
-        await _expire_task
-    except asyncio.CancelledError:
-        pass
-    _tq_task.cancel()
-    try:
-        await _tq_task
-    except asyncio.CancelledError:
-        pass
+    for task in background_tasks:
+        task.cancel()
+    if background_tasks:
+        await asyncio.gather(*background_tasks, return_exceptions=True)
     await close_redis()
     await close_db()
     logger.info("serviceos.stopped")
@@ -248,6 +160,8 @@ All errors return `application/problem+json` with machine-readable `error_code`.
 
     # ── Routers ───────────────────────────────────────────────────
     _mount_routers(app, settings.API_V1_PREFIX)
+    from app.engines.public_app_config.router import router as public_app_config_router
+    app.include_router(public_app_config_router)
 
     # ── Static files for local media storage ──────────────────────
     import pathlib
@@ -465,7 +379,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         admin_router as sst_admin_router,
         provider_router as sst_provider_router,
     )
-    # Deactivate Manual Bargain Module — Automatic Customer Price Options
+    # Automatic customer price options
     from app.engines.admin_catalog.auto_price_options_router import (
         admin_router as auto_price_admin_router,
         tenant_router as auto_price_tenant_router,
@@ -493,19 +407,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     # Sprint 34H — Admin Bulk Setup Wizard
     from app.engines.admin_catalog.bulk_setup_router import router as bulk_setup_router
     app.include_router(bulk_setup_router)
-
-    # Sprint 34I — Recommendation Rules Engine
-    from app.engines.admin_catalog.recommendation_router import (
-        admin_router    as rec_admin_router,
-        shared_router   as rec_shared_router,
-        ai_router       as rec_ai_router,
-        ctx_admin_router as rec_ctx_admin_router,
-        ctx_provider_router as rec_ctx_provider_router,
-        ctx_customer_router as rec_ctx_customer_router,
-    )
-    for _r in [rec_admin_router, rec_shared_router, rec_ai_router,
-               rec_ctx_admin_router, rec_ctx_provider_router, rec_ctx_customer_router]:
-        app.include_router(_r)
 
     # Sprint 34J — Customer Flow Simplification
     from app.engines.admin_catalog.customer_flow_router import (

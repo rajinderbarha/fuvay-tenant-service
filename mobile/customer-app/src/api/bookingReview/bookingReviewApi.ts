@@ -54,10 +54,8 @@ export async function matchAndPrice(draftId: string) {
   return parseApiSuccess(res.json, matchAndPriceResponseSchema);
 }
 
-/** `tier` must be 'standard' when `bargain_available` is false (the only
- * path this phase drives automatically -- see useBookingReviewController).
- * Low/Mid/High tier selection UI is out of scope this phase. */
-export async function confirmPriceChoice(draftId: string, tier: "standard" | "low" | "mid" | "high") {
+/** Fixed-price bookings have one server-authoritative `standard` choice. */
+export async function confirmPriceChoice(draftId: string, tier: "standard") {
   const res = await authenticatedRequest({
     method: "POST", path: `${base(draftId)}/confirm-price-choice`, body: { price_tier: tier },
   });

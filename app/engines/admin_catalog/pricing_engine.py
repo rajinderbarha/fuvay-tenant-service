@@ -187,7 +187,6 @@ async def resolve_service_price(
         source        = "pricing_rule"
         matched_rule_id = str(matched_rule.id)
         matched_rule_name = matched_rule.rule_name or matched_rule.rule_code or f"Rule for {svc.service_name}"
-        bargain_floor = float(matched_rule.bargain_floor) if matched_rule.bargain_floor is not None else None
         completed_job_deduction_credits = matched_rule.completed_job_deduction_credits
     else:
         base_price    = float(svc.base_price)
@@ -201,7 +200,6 @@ async def resolve_service_price(
         source        = "master_service_default"
         matched_rule_id = None
         matched_rule_name = None
-        bargain_floor = None
         completed_job_deduction_credits = 0
 
     customer_estimate = _compute_customer_estimate(
@@ -226,7 +224,6 @@ async def resolve_service_price(
         "platform_fee_percent": platform_pct,
         "commission_percent": comm_pct,
         "tax_percent": tax_pct,
-        "bargain_floor": bargain_floor,
         "completed_job_deduction_credits": completed_job_deduction_credits,
         "payment_collection_mode": "customer_pays_provider_directly",
         "final_customer_estimate": customer_estimate,

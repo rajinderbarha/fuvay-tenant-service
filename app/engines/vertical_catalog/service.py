@@ -225,9 +225,9 @@ class VerticalCatalogService:
                      "runtime_behaviour": "Providers configure prices within the published admin blueprint."},
                 ]},
                 {"name": "Customer experience", "capabilities": [
-                    {"name": "Low / Mid / High price options", "status": "enabled", "owner": "Backend policy",
+                    {"name": "Provider-published fixed pricing", "status": "enabled", "owner": "Tenant + Backend policy",
                      "source": "Customer booking API",
-                     "runtime_behaviour": "Deterministic backend policy derives choices; no platform fee is added here."},
+                     "runtime_behaviour": "The customer confirms one server-resolved provider price; inspection jobs disclose the visit fee and quote process."},
                     {"name": "Customer provider selection", "status": "disabled", "owner": "Code-controlled",
                      "source": "Matching engine",
                      "runtime_behaviour": "The matching engine selects the eligible provider."},

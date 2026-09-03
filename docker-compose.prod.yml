@@ -12,6 +12,7 @@ services:
       APP_ENV:       production
       LOG_LEVEL:     info
       ENABLE_METRICS: "true"
+      BACKGROUND_JOBS_ENABLED: "false"
       # Four workers are fixed by the image command. With the defaults below,
       # one API container can use at most 60 DB connections (4 * (10 + 5)).
       # Recalculate against the managed DB limit before scaling replicas.
@@ -39,6 +40,22 @@ services:
       restart_policy:
         condition: on-failure
         max_attempts: 3
+
+  worker:
+    image: ghcr.io/${GITHUB_REPOSITORY}/serviceos-api:${IMAGE_TAG:-latest}
+    restart: always
+    command: ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001", "--workers", "1", "--log-level", "info"]
+    env_file: ${SERVICEOS_ENV_FILE:-.env.production}
+    environment:
+      APP_ENV: production
+      BACKGROUND_JOBS_ENABLED: "true"
+      ENABLE_METRICS: "false"
+      DATABASE_POOL_SIZE: 10
+      DATABASE_MAX_OVERFLOW: 5
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [serviceos_net]
 
   # ── Nginx reverse proxy + TLS termination ───────────────────────────────
   nginx:
@@ -91,11 +108,68 @@ services:
     restart: always
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=30d
       - --web.enable-lifecycle
+    networks: [serviceos_net]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: always
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    networks: [serviceos_net]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [serviceos_net]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.72.1
+    restart: always
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [serviceos_net]
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: always
+    command: ["--path.rootfs=/host"]
+    volumes:
+      - /:/host:ro,rslave
+    networks: [serviceos_net]
+
+  postgres-backup:
+    image: pgvector/pgvector:pg17
+    restart: always
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+          pg_dump -h postgres -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc -f "/backups/fuvay-$${stamp}.dump"
+          find /backups -type f -name 'fuvay-*.dump' -mtime +${BACKUP_RETENTION_DAYS:-14} -delete
+          sleep 86400
+        done
+    volumes:
+      - postgres_backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
     networks: [serviceos_net]
 
   # ── Grafana ──────────────────────────────────────────────────────────────
@@ -117,6 +191,7 @@ volumes:
   prometheus_data:
   grafana_data:
   nginx_logs:
+  postgres_backups:
 
 networks:
   serviceos_net:

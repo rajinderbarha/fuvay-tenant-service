@@ -193,7 +193,6 @@ class CustomerHomeService:
             # app release; they can never ship arbitrary executable UI.
             "sections": sections,
             "capabilities": {
-                "bargain_available": True,
                 "photo_attach_available": True,
                 "chatbot_language_selectable": True,
             },

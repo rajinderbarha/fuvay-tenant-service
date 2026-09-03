@@ -33,7 +33,6 @@ export function adaptBookingReceipt(dto: ServiceBookingDto): BookingReceipt {
     // Historical snapshots predate `visit_fee_policy`; asserting the
     // guarantee here would be claiming something this record never carried.
     visitFeePolicy: null,
-    bargainAvailable: !!priceSnapshot.bargain_available,
     standardPriceRaw: typeof priceSnapshot.standard_price === "number" ? priceSnapshot.standard_price : null,
   });
 

@@ -995,6 +995,10 @@ class HomeServiceJobAssignmentService:
         job.scheduled_date = scheduled_date
         job.scheduled_time_window = scheduled_time_window
         job.reschedule_count = (job.reschedule_count or 0) + 1
+        # The new appointment gets its own reminders. Existing delivery
+        # markers belong to the previous schedule and must not suppress them.
+        job.reminder_24h_sent_at = None
+        job.reminder_1h_sent_at = None
         job.updated_at = _utcnow()
         booking.preferred_date = scheduled_date
         booking.preferred_time_window = scheduled_time_window

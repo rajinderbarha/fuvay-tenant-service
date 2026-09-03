@@ -4413,7 +4413,7 @@ export const tenantPricingApi = {
     return apiFetch<Record<string, unknown>>(`/v1/pricing/tenants/${tid}/prices?limit=${limit}`);
   },
   // Preview price for a specific service/context — returns base_price, min_price, max_price,
-  // bargain_floor, completed_job_deduction_credits, payment_collection_mode
+  // completed_job_deduction_credits, payment_collection_mode
   previewPrice: (data: {
     service_type_id: string;
     service_category: string;

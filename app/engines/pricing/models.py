@@ -32,7 +32,6 @@ class CityTierConfig(ServiceOSBase):
     max_price:                Mapped[Decimal|None]  = mapped_column(Numeric(10,2), nullable=True)
     default_estimate:         Mapped[Decimal|None]  = mapped_column(Numeric(10,2), nullable=True)
     visit_fee:                Mapped[Decimal|None]  = mapped_column(Numeric(10,2), nullable=True)
-    bargain_floor:            Mapped[Decimal|None]  = mapped_column(Numeric(10,2), nullable=True)
     provider_override_allowed:Mapped[bool]          = mapped_column(Boolean, default=True, nullable=False)
     currency:                 Mapped[str]           = mapped_column(String(5), default="INR", nullable=False)
     is_active:                Mapped[bool]          = mapped_column(Boolean, default=True, nullable=False)

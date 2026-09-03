@@ -221,7 +221,7 @@ class HomeServiceFinalCreationService:
         booking_price_snapshot = {
             **(draft.price_snapshot or {}),
             "selected_price_option": draft_summary.get("selected_price_tier"),
-            "selected_price_amount": draft_summary.get("customer_offer"),
+            "selected_price_amount": draft_summary.get("agreed_price", draft_summary.get("customer_offer")),
             "payment_mode":          "customer_pays_provider_directly",
         }
 
@@ -522,7 +522,7 @@ class HomeServiceFinalCreationService:
             "confirmation_id":             str(confirmation.id),
             "selected_provider_tenant_id": str(draft.selected_tenant_id) if draft.selected_tenant_id else None,
             "selected_price_option":       booking_summary.get("selected_price_tier"),
-            "selected_price_amount":       booking_summary.get("customer_offer"),
+            "selected_price_amount":       booking_summary.get("agreed_price", booking_summary.get("customer_offer")),
             "payment_mode":                "customer_pays_provider_directly",
         }
 

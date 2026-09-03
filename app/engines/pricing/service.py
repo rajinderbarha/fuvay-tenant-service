@@ -83,7 +83,6 @@ class PricingService:
             "max_price": float(c.max_price) if c.max_price is not None else None,
             "default_estimate": float(c.default_estimate) if c.default_estimate is not None else None,
             "visit_fee": float(c.visit_fee) if c.visit_fee is not None else None,
-            "bargain_floor": float(c.bargain_floor) if c.bargain_floor is not None else None,
             "provider_override_allowed": c.provider_override_allowed,
             "currency": c.currency, "is_active": c.is_active, "notes": c.notes,
             "created_at": c.created_at.isoformat(),
@@ -178,7 +177,6 @@ class PricingService:
             floor_price=Decimal(str(data["floor_price"])),
             min_price=_d("min_price"), max_price=_d("max_price"),
             default_estimate=_d("default_estimate"), visit_fee=_d("visit_fee"),
-            bargain_floor=_d("bargain_floor"),
             provider_override_allowed=data.get("provider_override_allowed", True),
             notes=data.get("notes"), set_by=self.actor_id,
         )
@@ -197,7 +195,7 @@ class PricingService:
         if not c: raise NotFoundException("CityTierConfig", str(config_id))
         if "floor_price" in data and data["floor_price"]:
             c.floor_price = Decimal(str(data["floor_price"]))
-        for field in ("min_price", "max_price", "default_estimate", "visit_fee", "bargain_floor"):
+        for field in ("min_price", "max_price", "default_estimate", "visit_fee"):
             if field in data:
                 setattr(c, field, Decimal(str(data[field])) if data[field] is not None else None)
         if "provider_override_allowed" in data and data["provider_override_allowed"] is not None:

@@ -87,6 +87,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/super-admin/package-lock.json
+      - run: npm ci
+        working-directory: frontend/super-admin
+      - run: npm run test && npm run typecheck && npm run build
+        working-directory: frontend/super-admin
       - uses: actions/setup-python@v5
         with: { python-version: "${{ env.PYTHON_VERSION }}" }
       - run: pip install pytest
@@ -98,6 +107,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/tenant-portal/package-lock.json
+      - run: npm ci
+        working-directory: frontend/tenant-portal
+      - run: npm run test && npm run typecheck && npm run build
+        working-directory: frontend/tenant-portal
       - uses: actions/setup-python@v5
         with: { python-version: "${{ env.PYTHON_VERSION }}" }
       - run: pip install pytest
@@ -109,22 +127,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            mobile/customer-app/package-lock.json
+            mobile/staff-app/package-lock.json
+      - run: npm ci && npm run typecheck && npm test -- --runInBand --silent --forceExit
+        working-directory: mobile/customer-app
+      - run: npm ci && npm run typecheck && npm test -- --runInBand --silent --forceExit
+        working-directory: mobile/staff-app
       - uses: actions/setup-python@v5
         with: { python-version: "${{ env.PYTHON_VERSION }}" }
       - run: pip install pytest
       - run: python -m pytest mobile/staff-app/tests/ mobile/customer-app/tests/ -v -q
 
   # ── AI Chat engine tests ───────────────────────────────────────────────────
-  ai-chat:
-    name: AI Chat (Phase 22)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "${{ env.PYTHON_VERSION }}" }
-      - run: pip install pytest
-      - run: python -m pytest tests/test_phase22_ai_chat.py -v -q
-
   # ── E2E Test suite validator ───────────────────────────────────────────────
   e2e-validator:
     name: E2E Suite Validator
@@ -137,9 +156,23 @@ jobs:
       - run: python -m pytest tests/test_phase21_e2e.py -v -q
 
   # ── Full suite gate ────────────────────────────────────────────────────────
+  public-site:
+    name: Public Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run typecheck --workspace=fuvay-public-site
+      - run: npm run build --workspace=fuvay-public-site
+
   all-pass:
     name: All Tests Gate
-    needs: [backend, design-system, super-admin, tenant-portal, mobile-apps, ai-chat, e2e-validator]
+    needs: [backend, design-system, super-admin, tenant-portal, mobile-apps, public-site, e2e-validator]
     runs-on: ubuntu-latest
     steps:
       - run: echo "✅ All test suites passed"

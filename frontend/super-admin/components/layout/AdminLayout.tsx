@@ -23,11 +23,11 @@ import {
   LayoutDashboard, Building2, Settings2, Banknote,
   Shield, ClipboardCheck, Brain, Users, Star, Bell,
   Settings, Sun, Moon, ChevronRight,
-  Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
+  Search, LogOut, Tag, CalendarDays, UserCheck, Wrench, Cpu, Layers, FolderTree,
   Megaphone, Package, ScrollText, ListChecks, BarChart3,
   HelpCircle, Image, AlertOctagon, Globe,
   FileText as FileTextIcon,
-  IdCard, UserCog, KeyRound, CalendarCheck, MessageCircle,
+  IdCard, UserCog, KeyRound, MessageCircle,
 } from "lucide-react";
 import { verticalCatalogApi, type EffectiveMenu } from "../../lib/api";
 import { useTheme } from "../../hooks/useTheme";
@@ -86,10 +86,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "verticals",       href: "/admin/verticals",       label: "Verticals",      icon: <Globe size={16}/>,  requiredPermission: SUPER_ADMIN_ONLY },
       { id: "categories",      href: "/admin/categories",      label: "Categories",     icon: <Layers size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // Booking-flow configuration and abandoned-draft review are operational
-      // catalog tools. Both pages were live but had no sidebar route, leaving
-      // admins dependent on a bookmarked URL to manage the customer journey.
-      { id: "customer-flow",   href: "/admin/customer-flow",   label: "Customer Flow",  icon: <FolderTree size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+      // Customer Flow (booking-flow configs + abandoned booking drafts) was
+      // DELETED at explicit user request (2026-09-03) -- nav entry and pages
+      // are gone, not hidden. Do not re-add it here.
     ],
   },
   {
@@ -110,10 +109,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      // Recommendation rules/results are managed from this workspace. Keep a
-      // single parent entry; longest-prefix matching highlights it on nested
-      // rule and result pages as well.
-      { id: "automation",         href: "/admin/automation",         label: "Automation", icon: <Zap size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
+      // Automation (the Sprint 34I recommendation rules/results workspace)
+      // was DELETED at explicit user request (2026-09-03): the engine had
+      // zero rules, zero results and no caller. Do not re-add it here.
       { id: "engines",            href: "/admin/engines",            label: "Engines",    icon: <Cpu size={16}/>,        requiredPermission: SUPER_ADMIN_ONLY },
       { id: "security",           href: "/admin/security",           label: "Security",   icon: <Shield size={16}/>,     requiredPermission: "security:read" },
       // Moved out of a standalone "Finance" nav group 2026-08-05 -- it's DPDP
@@ -146,9 +144,9 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 // Home Services' bespoke admin pages -- NOW real registered catalog modules
-// (CatalogModuleDefinition + VerticalCatalogModule rows, keys hs_overview /
+// (CatalogModuleDefinition + VerticalCatalogModule rows, keys
 // hs_service_catalog / hs_provider_matching / hs_matching_diagnostics /
-// hs_completed_job_deduction / hs_settings / hs_bookability) that arrive
+// hs_completed_job_deduction) that arrive
 // through GET /v1/admin/catalog/navigation/effective-menu's `modules[]` like
 // every other vertical's pages -- VerticalCatalogSection no longer special-
 // cases `vertical_key === "home_services"` to render these (that hardcoded
@@ -157,14 +155,11 @@ const NAV_GROUPS: NavGroup[] = [
 // since permission requirements aren't part of the backend module payload yet
 // -- a genuine remaining gap, not a rendering shortcut.
 const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
-  // Repointed from /admin/home-services/overview -> /dashboard. The
-  // `overview` page was deleted in 5994b63 but this nav entry was left
-  // behind, so the Home Services "Overview" menu item led to a hard 404
-  // (confirmed live and in Playwright evidence: status=404, len=33,
-  // hasSidebar=0). /admin/home-services/dashboard is the real, live
-  // equivalent -- vertical-gated, and its Customer Intelligence cards reuse
-  // HomeServicesCustomerDirectoryService.get_summary() verbatim.
-  { id: "hs-overview", href: "/admin/home-services/dashboard", label: "Overview", icon: <LayoutGrid size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Overview (/admin/home-services/dashboard), Home Services Settings and
+  // Provider Bookability were DELETED at explicit user request (2026-09-03) --
+  // nav entries, catalog-module registrations and the page files themselves
+  // are gone, not hidden. Do not re-add them here.
+  //
   // Bookings/Jobs/Reviews/Pricing Tiers/City-Zip Mapping/Provider Pricing
   // Overrides/Category Rates/Usage Credits/Warranty Claims/Service Invoices/
   // Commission Records/Security Deposits/Credit Top-ups/Provider Wallets
@@ -180,19 +175,9 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // Matching is a backend booking engine fed by tenant service areas,
   // bookability, finance, availability and Trust & Quality. It is not a
   // separate admin setup page.
-  // "Service Areas / Zones" removed alongside Pricing Tiers/City-Zip
-  // Mapping/Provider Pricing Overrides -- its own page description says it
-  // scopes Home Services pricing rules by admin-defined city tier, the same
-  // deprecated concept. Providers already declare their own mandatory city/
-  // zipcode Service Area (see hooks/useSetupStatus.ts), which this page
-  // itself calls out as the separate, real per-tenant mechanism.
-  { id: "hs-settings", href: "/admin/home-services/settings", label: "Home Services Settings", icon: <Settings size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-  // Phase 2A Slice 2 nav reconciliation: page existed and was fully built
-  // (adminBookabilityApi-backed) but had zero sidebar entry â€” confirmed
-  // orphaned in the Phase 1 frontend audit and still true.
-  { id: "bookability", href: "/admin/bookability/providers", label: "Provider Bookability", icon: <CalendarCheck size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  // Providers declare their own mandatory city/zipcode service areas; there
+  // is no second admin-owned service-area pricing surface.
 ];
-
 // Verticals whose operational model is "field-ops style" (booking -> assigned
 // job -> completed job, priced-per-job commission, deposit+credit wallet) --
 // the same set the backend's jobs_field_ops/security_deposit/usage_credits
@@ -212,8 +197,7 @@ const FIELD_OPS_VERTICALS = new Set(["home_services", "repair_services", "cleani
 const FIELD_OPS_SHARED_ITEMS: NavItem[] = [
   // Provider 360 directory (HomeServicesProviderDirectoryService) -- added
   // here because the page existed (built for the provider-detail rebuild)
-  // but had zero sidebar entry, same orphaned-page pattern as
-  // "bookability" above. Only reachable via direct URL until this line.
+  // but had zero sidebar entry. Only reachable via direct URL until this line.
   { id: "home-services-providers", href: "/admin/home-services/providers", label: "Providers", icon: <Building2 size={16}/>, requiredPermission: "admin:jobs:read" },
   // HOME-SERVICES-OPERATIONS unified workspace (canonical service_bookings +
   // service_jobs pipeline only). The former booking-drafts list now routes
@@ -341,7 +325,7 @@ export function getRequiredPermissionForRoute(pathname: string): string {
 // are injected by VerticalCatalogSection, which already filters on
 // `v.is_enabled`, so a disabled vertical contributes no menu of its own.
 const OPERATION_SCOPED_NAV: Record<string, keyof EffectiveMenu["operation_visibility"]> = {
-  bookability: "jobs_field_ops",
+  // (empty -- the only entry, "bookability", was deleted with its page.)
 };
 
 function isNavItemVisible(itemId: string, effectiveMenu: EffectiveMenu | null): boolean {

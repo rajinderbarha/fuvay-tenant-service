@@ -11,7 +11,7 @@ eligible providers and picked one manually. The correct flow:
        TenantService price plus Home Services Finance charges.
     5. Customer confirms the single server-resolved price contract.
 
-Two layers, matching the pure/DB-aware split used for bargain_engine.py:
+Two layers keep pure scoring separate from database-aware eligibility:
   - Pure functions (compute_provider_score) — independently
     unit-testable, no DB.
   - DB-aware functions (select_best_provider, get_area_market_comparison) — real
@@ -43,22 +43,22 @@ HOME_SERVICES_VERTICAL = "home_services"
 
 
 class VerticalFlowNotSupported(ServiceOSException):
-    """Raised when the Home-Services-only provider-first bargain flow is
+    """Raised when the Home-Services-only provider-first booking flow is
     invoked for a non-Home-Services vertical. Inherits ServiceOSException so
     it automatically becomes a proper 4xx API error via the global handler."""
     def __init__(self, vertical: str | None):
         self.vertical = vertical
         super().__init__(
             "VERTICAL_FLOW_NOT_SUPPORTED",
-            "Provider-first bargain flow is available only for Home Services.",
+            "Provider-first booking flow is available only for Home Services.",
             status_code=422,
             context={"supported": False, "vertical": vertical,
-                     "reason": "Provider-first bargain flow is only available for Home Services."},
+                     "reason": "Provider-first booking flow is only available for Home Services."},
         )
 
 
 def assert_home_services_vertical(vertical: str | None) -> None:
-    """Hard guard — call at the top of every Home Services matching/bargain
+    """Hard guard — call at the top of every Home Services matching
     entry point. Raises VerticalFlowNotSupported for anything else."""
     if vertical != HOME_SERVICES_VERTICAL:
         raise VerticalFlowNotSupported(vertical)

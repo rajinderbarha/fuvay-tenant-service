@@ -21,7 +21,7 @@ export interface PriceProviderCardProps {
  * useBookingReviewController's proven load sequence (checkServiceability
  * -> matchAndPrice -> confirmPriceChoice), just
  * restyled into the chat's dark card language. Nothing here is invented:
- * a bargain-available or unresolved price renders its own honest message
+ * an unresolved price renders its own honest message
  * instead of a fabricated total.
  */
 export function PriceProviderCard({ summary, confirming, onConfirm, confirmDisabledReason }: PriceProviderCardProps) {

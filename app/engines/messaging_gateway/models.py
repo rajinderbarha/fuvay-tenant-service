@@ -139,3 +139,35 @@ class MessagingInboundMessage(ServiceOSBase):
             "failure_reason": self.failure_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class MessagingDeliveryEvent(ServiceOSBase):
+    """Provider callback proving outbound delivery, read or failure state."""
+
+    __tablename__ = "messaging_delivery_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "channel", "provider_message_id", "status", "occurred_at",
+            name="uq_msg_delivery_event",
+        ),
+        Index("ix_msg_delivery_provider_id", "provider_message_id"),
+        Index("ix_msg_delivery_created", "created_at"),
+    )
+
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_message_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    recipient_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    business_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id), "channel": self.channel,
+            "provider_message_id": self.provider_message_id,
+            "status": self.status, "recipient_id": self.recipient_id,
+            "business_id": self.business_id,
+            "occurred_at": self.occurred_at.isoformat(),
+            "created_at": self.created_at.isoformat(),
+        }

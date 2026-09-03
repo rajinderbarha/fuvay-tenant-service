@@ -84,7 +84,6 @@ export interface BookingReviewSummary {
   address: ReviewAddress;
   priceState: ServicePriceState;
   inspection: InspectionPricing | null;
-  bargainAvailable: boolean;
   provider: ReviewProvider | null;
   photoCount: number;
   /** The attached photo URLs themselves, so the review screen can show

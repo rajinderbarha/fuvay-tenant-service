@@ -29,7 +29,6 @@ export const priceSnapshotDtoSchema = z.object({
     if_declined: z.string(),
   }).passthrough().nullable().optional(),
   pricing_model: z.string().nullable().optional(),
-  bargain_available: z.boolean().optional(),
   standard_price: z.number().nullable().optional(),
 }).passthrough();
 
@@ -90,8 +89,6 @@ export const reviewProviderDtoSchema = z.object({
 
 export const matchAndPriceResponseSchema = z.object({
   selected_provider: reviewProviderDtoSchema,
-  bargain_available: z.boolean(),
-  selected_provider_price_options: z.record(z.string(), z.unknown()).nullable(),
   standard_price: z.number().nullable(),
   // The provider-owned price contract persisted by the same atomic match.
   // This replaces the legacy pre-match /price-estimate dependency.

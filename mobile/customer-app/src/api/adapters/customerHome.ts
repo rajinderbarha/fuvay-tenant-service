@@ -155,7 +155,6 @@ export function adaptCustomerHome(dto: CustomerHomeResponseDto): CustomerHome {
     seasonLabel: dto.season_label ?? null,
     unreadNotificationCount: dto.unread_notification_count,
     capabilities: {
-      bargainAvailable: dto.capabilities.bargain_available,
       photoAttachAvailable: dto.capabilities.photo_attach_available,
       chatbotLanguageSelectable: dto.capabilities.chatbot_language_selectable,
     },

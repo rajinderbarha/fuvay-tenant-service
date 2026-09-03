@@ -9,6 +9,7 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
 
 from app.dependencies.db import get_db
 from app.exceptions import ServiceOSException
@@ -27,6 +28,38 @@ router = APIRouter(prefix="/v1/messaging/meta", tags=["Messaging Gateway"])
 
 def _rid(r: Request) -> str:
     return getattr(r.state, "request_id", None) or r.headers.get("X-Request-ID", "—")
+
+
+async def _record_delivery_statuses(db: AsyncSession, payload: dict, channel: str) -> int:
+    from app.engines.messaging_gateway.models import MessagingDeliveryEvent
+
+    events = meta_client.parse_delivery_statuses(payload, expected_channel=channel)
+    accepted = 0
+    for event in events:
+        if not await messaging_channel_config_service.accepts_business_id(
+            db, channel, event.business_id,
+        ):
+            logger.warning(
+                "messaging_gateway.delivery.business_id_rejected",
+                channel=channel,
+                business_id=event.business_id,
+            )
+            continue
+        await db.execute(
+            insert(MessagingDeliveryEvent).values(
+                channel=event.channel,
+                provider_message_id=event.provider_message_id,
+                status=event.status,
+                recipient_id=event.recipient_id,
+                business_id=event.business_id,
+                occurred_at=event.occurred_at,
+                raw_payload=event.raw,
+            ).on_conflict_do_nothing(constraint="uq_msg_delivery_event")
+        )
+        accepted += 1
+    if accepted:
+        await db.commit()
+    return accepted
 
 
 @router.get("/webhook", summary="Meta webhook subscription handshake")
@@ -111,10 +144,11 @@ async def receive_webhook(
     if not active:
         return ok({"received": 0, "results": [], "disabled": True}, _rid(r), ENGINE_ID)
 
+    status_count = await _record_delivery_statuses(db, payload, channel)
     messages = meta_client.parse_inbound(payload, expected_channel=channel)
     if not messages:
         # Delivery/read receipts and echoes land here — expected, not an error.
-        return ok({"received": 0, "results": []}, _rid(r), ENGINE_ID)
+        return ok({"received": 0, "delivery_statuses": status_count, "results": []}, _rid(r), ENGINE_ID)
 
     accepted = [
         message for message in messages
@@ -136,7 +170,7 @@ async def receive_webhook(
                            provider_message_id=msg.provider_message_id, error=str(exc))
             results.append({"status": "failed", "reply_sent": False})
 
-    return ok({"received": len(accepted), "results": results}, _rid(r), ENGINE_ID)
+    return ok({"received": len(accepted), "delivery_statuses": status_count, "results": results}, _rid(r), ENGINE_ID)
 
 
 @router.post("/webhook/{channel}", summary="Channel-specific Meta inbound webhook")
@@ -166,6 +200,7 @@ async def receive_channel_webhook(
         payload = await r.json()
     except Exception:
         return ok({"received": 0, "results": []}, _rid(r), ENGINE_ID)
+    status_count = await _record_delivery_statuses(db, payload, channel)
     messages = meta_client.parse_inbound(payload, expected_channel=channel)
     accepted = [
         message for message in messages
@@ -191,7 +226,7 @@ async def receive_channel_webhook(
         except Exception as exc:
             logger.warning("messaging_gateway.inbound.failed", provider_message_id=msg.provider_message_id, error=str(exc))
             results.append({"status": "failed", "reply_sent": False})
-    return ok({"received": len(accepted), "results": results}, _rid(r), ENGINE_ID)
+    return ok({"received": len(accepted), "delivery_statuses": status_count, "results": results}, _rid(r), ENGINE_ID)
 
 
 @router.post("/handoff/redeem", summary="Redeem a chat -> web handoff link")

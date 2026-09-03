@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.feature_flags import get_home_services_pricing_flags
-from app.core.permissions import P, require_permission
 from app.dependencies.auth import get_current_user, UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.home_service_booking.matching_engine import (
@@ -33,7 +32,7 @@ def _rid(r: Request) -> str:
 
 
 @admin_router.get("/config", response_model=ApiResponse[dict],
-                   summary="Get Home Services pricing feature-flag status (manual bargain vs. automatic price options)")
+                   summary="Get Home Services provider-first matching status")
 async def get_home_services_config(
     r: Request,
     u: UserContext = Depends(require_super_admin),
@@ -47,7 +46,7 @@ async def get_home_services_config(
                    summary="Read-only, code-controlled provider-matching policy manifest -- no admin edit path exists")
 async def get_matching_policy(
     r: Request,
-    u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
+    u: UserContext = Depends(require_super_admin),
 ):
     from app.engines.home_service_booking.matching_engine import get_policy_manifest
     return ok(get_policy_manifest(), _rid(r), ENGINE_ID)
@@ -105,7 +104,7 @@ def _attach_provider_level(provider: dict | None) -> dict | None:
                     summary="Run provider-first matching for given parameters and show full diagnostics (admin-only score breakdown)")
 async def admin_matching_diagnostics(
     r: Request,
-    u: UserContext = Depends(require_permission(P.PRICING_BARGAIN_EVALUATE_PREVIEW)),
+    u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
     body = await r.json()

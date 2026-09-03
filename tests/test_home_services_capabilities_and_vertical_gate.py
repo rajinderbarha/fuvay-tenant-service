@@ -92,8 +92,8 @@ class TestLegacyFlagsNotEditable:
         on this flag (grounded in the audit — grep confirmed zero call
         sites outside the flag's own definition)."""
         import inspect
-        from app.engines.admin_catalog import bargain_engine
-        src = inspect.getsource(bargain_engine)
+        from app.engines.home_service_booking import matching_engine
+        src = inspect.getsource(matching_engine)
         assert "auto_price_options_enabled" not in src
 
 
@@ -116,12 +116,11 @@ class TestCapabilityRegistry:
         pricing = next(c for c in groups["Provider setup"] if c["name"] == "Tenant-owned pricing")
         assert pricing["owner"] == "Tenant"
 
-    async def test_low_mid_high_owner_is_backend_policy_not_admin(self, admin):
+    async def test_fixed_price_confirmation_is_server_authoritative(self, admin):
         r = await admin.get("/v1/admin/verticals/home_services/capabilities")
         groups = {g["name"]: g["capabilities"] for g in r.json()["data"]["groups"]}
-        preview = next(c for c in groups["Customer experience"] if "Low / Mid / High" in c["name"])
-        assert preview["owner"] == "Backend policy"
-        assert "platform fee" not in preview["runtime_behaviour"].lower() or "no platform fee" in preview["runtime_behaviour"].lower()
+        names = [c["name"] for c in groups["Customer experience"]]
+        assert all("Low / Mid / High" not in name for name in names)
 
     async def test_customer_provider_selection_is_disabled(self, admin):
         r = await admin.get("/v1/admin/verticals/home_services/capabilities")

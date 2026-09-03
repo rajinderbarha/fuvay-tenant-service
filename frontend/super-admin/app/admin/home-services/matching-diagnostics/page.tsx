@@ -60,7 +60,7 @@ export default function MatchingDiagnosticsPage() {
   }
 
   return (
-    <AdminLayout activeNav="bookability">
+    <AdminLayout>
       <SectionHeader
         title="Booking Match Diagnostics"
         subtitle="Run provider-first matching for any service/area combination and see exactly why a provider was selected — or why nobody was eligible."

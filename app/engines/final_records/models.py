@@ -180,6 +180,8 @@ class ServiceJob(ServiceOSBase):
     # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
     # in home_service_assignment.constants. Never decremented.
     reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    reminder_24h_sent_at:   Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_1h_sent_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     # Copied from the booking at creation so the provider's dashboard can sort
     # urgent work first without joining back to the booking on every query.
     is_emergency:           Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)

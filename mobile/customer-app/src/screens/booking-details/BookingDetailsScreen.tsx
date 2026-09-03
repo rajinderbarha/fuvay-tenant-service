@@ -38,6 +38,7 @@ import { useCustomerClosureQueries } from "../../api/customerClosure/useCustomer
 import { CompletionConfirmationCard } from "../../components/booking-details/CompletionConfirmationCard";
 import { ServiceProtectionCard } from "../../components/booking-details/ServiceProtectionCard";
 import { downloadWarrantyCertificate } from "../../api/customerBookings/downloadWarrantyCertificate";
+import { BookingManageActions } from "../../components/booking-details/BookingManageActions";
 
 type Route = RouteProp<CustomerAppStackParamList, "BookingDetails">;
 
@@ -276,6 +277,7 @@ export function BookingDetailsScreen() {
         ) : (
           <BookingUpdatesCard capability={details.notifications} />
         )}
+        <BookingManageActions bookingId={bookingId} onChanged={() => { void query.refetch(); }} />
         <BookingDetailsActions
           onRefresh={() => query.refetch()} refreshing={query.isRefetching}
           onContactSupport={() => (navigation as unknown as { navigate: (name: string, params?: object) => void })

@@ -139,7 +139,6 @@ export const homeServiceabilityDtoSchema = z.object({
 }).nullable();
 
 export const homeCapabilitiesDtoSchema = z.object({
-  bargain_available: z.boolean(),
   photo_attach_available: z.boolean(),
   chatbot_language_selectable: z.boolean(),
 });

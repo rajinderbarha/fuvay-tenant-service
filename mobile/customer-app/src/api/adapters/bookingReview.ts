@@ -57,7 +57,6 @@ export function adaptBookingReviewSummary(
           ifDeclined: priceEstimate.visit_fee_policy.if_declined,
         }
       : null,
-    bargainAvailable: !!priceEstimate.bargain_available,
     standardPriceRaw: priceEstimate.standard_price ?? null,
   });
 
@@ -100,7 +99,6 @@ export function adaptBookingReviewSummary(
     emergencySurchargePreview: parseSurcharge(summaryDto.emergency_surcharge_preview),
     priceState: state,
     inspection,
-    bargainAvailable: !!priceEstimate.bargain_available,
     provider: summaryDto.selected_provider
       ? {
           tenantId: summaryDto.selected_provider.tenant_id,

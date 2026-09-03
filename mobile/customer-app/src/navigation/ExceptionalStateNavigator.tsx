@@ -12,6 +12,8 @@ import { VerticalUnavailableScreen } from "../screens/exceptional/VerticalUnavai
 import { InvalidAccessScreen } from "../screens/exceptional/InvalidAccessScreen";
 import { navigationRef } from "./navigationRef";
 import { openHelpAndSupport, resetToPublicStack } from "./navigationActions";
+import { Linking } from "react-native";
+import { getCustomerStoreUrl } from "../api/appConfig/publicAppConfig";
 
 const Stack = createNativeStackNavigator<ExceptionalStateStackParamList>();
 
@@ -44,7 +46,10 @@ export function ExceptionalStateNavigator() {
         )}
       </Stack.Screen>
       <Stack.Screen name="UpdateRequired">
-        {() => <UpdateRequiredScreen onUpdate={() => { /* no store URL exists yet -- see Phase D appConfig.minSupportedVersion = MISSING */ }} />}
+        {() => <UpdateRequiredScreen onUpdate={() => {
+          const url = getCustomerStoreUrl() ?? "https://fuvay.com/contact/";
+          void Linking.openURL(url);
+        }} />}
       </Stack.Screen>
       <Stack.Screen name="Maintenance">
         {() => <MaintenanceScreen onTryAgain={() => { /* Phase F wires a real retry against bootstrap config */ }} />}

@@ -30,7 +30,7 @@ const TABS: Array<{ key: Tab; label: string; description: string; icon: React.Re
 
 const CATEGORY_LABELS: Record<string, string> = {
   general_platform: "General Platform", tenant_onboarding: "Tenant Onboarding",
-  booking_and_jobs: "Booking & Jobs", pricing_and_bargain: "Pricing & Bargain",
+  booking_and_jobs: "Booking & Jobs", pricing: "Pricing",
   packages_and_usage_credits: "Packages & Usage Credits",
   disputes_and_customer_credits: "Disputes & Customer Credits", media_and_storage: "Media & Storage",
   notifications: "Notifications", compliance_dpdp: "Compliance / DPDP", security: "Security",

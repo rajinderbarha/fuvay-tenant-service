@@ -12,7 +12,7 @@ from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
 from app.engines.messaging_gateway.config_service import messaging_channel_config_service
 from app.engines.messaging_gateway.constants import VALID_CHANNELS
-from app.engines.messaging_gateway.models import MessagingInboundMessage, MessagingThread
+from app.engines.messaging_gateway.models import MessagingDeliveryEvent, MessagingInboundMessage, MessagingThread
 from app.exceptions import ServiceOSException
 from app.schemas.base import ok
 
@@ -174,3 +174,18 @@ async def recent_messages(
         .limit(limit)
     )).scalars().all()
     return ok({"items": [row.to_dict() for row in rows]}, _rid(request), "admin.messaging_messages.list")
+
+
+@router.get("/delivery-events/recent", summary="List recent Meta delivery and read callbacks")
+async def recent_delivery_events(
+    request: Request,
+    limit: int = Query(50, ge=1, le=200),
+    user: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (await db.execute(
+        select(MessagingDeliveryEvent)
+        .order_by(MessagingDeliveryEvent.occurred_at.desc())
+        .limit(limit)
+    )).scalars().all()
+    return ok({"items": [row.to_dict() for row in rows]}, _rid(request), "admin.messaging_delivery.list")

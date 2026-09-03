@@ -74,7 +74,7 @@ function fullHome(): CustomerHome {
     unreadNotificationCount: 0,
     season: "monsoon",
     seasonLabel: "Monsoon picks",
-    capabilities: { bargainAvailable: true, photoAttachAvailable: true, chatbotLanguageSelectable: true },
+    capabilities: { photoAttachAvailable: true, chatbotLanguageSelectable: true },
   };
 }
 

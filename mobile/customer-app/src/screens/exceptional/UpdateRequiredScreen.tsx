@@ -2,10 +2,6 @@ import React from "react";
 import { ExceptionalStateLayout } from "./ExceptionalStateLayout";
 
 export interface UpdateRequiredScreenProps {
-  /** Store-URL resolution is not implemented this phase -- see Phase D
-   * `appConfig.minSupportedVersion` = MISSING. `onUpdate` is a typed action
-   * the caller can no-op or safely handle until real configuration
-   * exists; this component never fabricates a store URL. */
   onUpdate: () => void;
 }
 

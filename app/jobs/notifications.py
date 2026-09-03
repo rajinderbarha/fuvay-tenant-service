@@ -83,6 +83,8 @@ async def run_all() -> None:
     log.info("jobs.notifications.start")
     await dispatch_pending()
     await retry_failed()
+    from app.jobs.booking_reminders import send_due_reminders
+    await send_due_reminders()
     log.info("jobs.notifications.done")
 
 
@@ -108,8 +110,10 @@ async def background_loop(interval: int = LOOP_INTERVAL_SECONDS) -> None:
         try:
             d = await dispatch_pending()
             f = await retry_failed()
+            from app.jobs.booking_reminders import send_due_reminders
+            reminders = await send_due_reminders()
             log.info("jobs.notifications.loop_tick",
-                     dispatched=d.get("processed"), retried=f.get("requeued"))
+                     dispatched=d.get("processed"), retried=f.get("requeued"), **reminders)
         except asyncio.CancelledError:
             log.info("jobs.notifications.loop_cancelled")
             raise

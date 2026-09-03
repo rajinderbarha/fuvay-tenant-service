@@ -11,7 +11,6 @@ import { formatMoney } from "../../domain/money";
 export interface PricingReviewCardProps {
   priceState: ServicePriceState;
   inspection: InspectionPricing | null;
-  bargainAvailable: boolean;
 }
 
 /**
@@ -19,7 +18,7 @@ export interface PricingReviewCardProps {
  * every branch here maps 1:1 to a `ServicePriceState.kind`, no numeric
  * fallback is ever synthesized.
  */
-export function PricingReviewCard({ priceState, inspection, bargainAvailable }: PricingReviewCardProps) {
+export function PricingReviewCard({ priceState, inspection }: PricingReviewCardProps) {
   const { theme } = useTheme();
 
   if (inspection) {
@@ -63,17 +62,6 @@ export function PricingReviewCard({ priceState, inspection, bargainAvailable }: 
         <AppText variant="labelStrong" color="secondary">Price</AppText>
         <AppText variant="title" style={{ marginTop: theme.spacing.xxs }}>{formatMoney(priceState.amount)}</AppText>
         <AppText variant="caption" color="tertiary">{display.label}</AppText>
-      </AppCard>
-    );
-  }
-
-  if (bargainAvailable || priceState.kind === "quote_required") {
-    return (
-      <AppCard>
-        <AppText variant="bodyStrong">Price selection coming soon</AppText>
-        <AppText variant="bodySmall" color="secondary" style={{ marginTop: theme.spacing.xxs }}>
-          This service supports flexible pricing that isn't available in the app yet.
-        </AppText>
       </AppCard>
     );
   }
