@@ -181,7 +181,16 @@ export function ProfilePhotoUploader({
       onRemoved?.();
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string };
-      setError(friendlyError(e.code, e.message));
+      // The asset is already gone (stale tab, or it was removed elsewhere).
+      // Reporting that as a failure leaves the image on screen with a Remove
+      // button that can never succeed -- treat it as removed instead.
+      if (e.code === "NOT_FOUND") {
+        setPreviewUrl(null);
+        setMediaId(null);
+        onRemoved?.();
+      } else {
+        setError(friendlyError(e.code, e.message));
+      }
     } finally {
       setLoading(false);
     }

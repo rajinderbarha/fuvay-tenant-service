@@ -553,13 +553,23 @@ class MediaAssetService:
         return result
 
     async def remove_tenant_business_logo(self, media_id: uuid.UUID) -> dict:
-        """Soft-delete the specified business logo and clear tenant logo references."""
+        """Soft-delete the specified business logo and clear tenant logo references.
+
+        A missing asset row is treated as already-removed rather than a 404: a
+        stale browser tab (or an asset purged out of band) would otherwise leave
+        the tenant pointing at an id that can never be deleted, so Remove failed
+        forever and the logo could not be cleared. The tenant reference is what
+        matters here, and it is always cleared.
+        """
         from app.engines.tenant_engine.models import Tenant
         if not self.actor.tenant_id:
             raise ServiceOSException("MEDIA_ACCESS_DENIED", "No tenant context.")
         tenant_id = uuid.UUID(self.actor.tenant_id)
 
-        result = await self.delete_asset(media_id)
+        try:
+            result = await self.delete_asset(media_id)
+        except NotFoundException:
+            result = {"id": str(media_id), "deleted": True, "already_absent": True}
 
         t_r = await self.db.execute(select(Tenant).where(Tenant.id == tenant_id))
         tenant = t_r.scalar_one_or_none()
