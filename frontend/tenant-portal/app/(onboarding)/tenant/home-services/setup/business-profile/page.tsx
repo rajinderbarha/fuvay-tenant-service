@@ -8,7 +8,8 @@ import { ProfilePhotoUploader } from "../../../../../../components/shared/Profil
 import { Card, Input, Select, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
 import {
   businessProfileApi, homeServicesSetupOverviewApi, ServiceOSError,
-  type BusinessProfile, type BusinessProfileOptions, type UpdateBusinessProfilePayload,
+  type BusinessProfile, type BusinessProfileOptions, type MediaAsset,
+  type UpdateBusinessProfilePayload,
 } from "../../../../../../lib/api";
 
 const SETUP_STEPS = [
@@ -94,6 +95,19 @@ function BusinessProfileWorkspace() {
   }, [workspace]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Logo/cover uploads used to call load(), which re-fetched the profile and
+  // rebuilt `form` from the server copy -- so picking a logo after typing threw
+  // away every field that had not been saved yet, and flipped the whole page
+  // back to its loading skeleton. The uploader already persists the image on
+  // its own (POST /v1/provider/profile/logo writes tenant.logo_url +
+  // business_logo_media_id, and the DELETE clears them), and those fields are
+  // not part of UpdateBusinessProfilePayload, so nothing else has to be
+  // re-read: patch only the image fields on `profile` and leave `form` --
+  // everything the user typed -- untouched for the single Save at the end.
+  const patchProfileMedia = useCallback((patch: Partial<BusinessProfile>) => {
+    setProfile(p => (p ? { ...p, ...patch } : p));
+  }, []);
 
   const changePending = profile?.verification_status === "changes_pending_review";
   const readOnly = changePending || (!workspace && verticalStatus !== null && !EDITABLE_STATUSES.has(verticalStatus));
@@ -428,8 +442,11 @@ function BusinessProfileWorkspace() {
               currentPreviewUrl={profile.logo_url}
               displayName={profile.business_name}
               disabled={readOnly}
-              onUploaded={() => load()}
-              onRemoved={() => load()}
+              onUploaded={(asset: MediaAsset) => patchProfileMedia({
+                business_logo_media_id: asset.id,
+                logo_url: asset.preview_url ?? asset.public_url ?? null,
+              })}
+              onRemoved={() => patchProfileMedia({ business_logo_media_id: null, logo_url: null })}
             />
             <div style={{ height: 1, background: "var(--border)", margin: "16px 0" }}/>
             <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", margin: "0 0 8px" }}>Cover image (optional)</p>
@@ -440,8 +457,11 @@ function BusinessProfileWorkspace() {
               displayName={profile.business_name}
               size="lg"
               disabled={readOnly}
-              onUploaded={() => load()}
-              onRemoved={() => load()}
+              onUploaded={(asset: MediaAsset) => patchProfileMedia({
+                shop_photo_media_id: asset.id,
+                shop_photo_url: asset.preview_url ?? asset.public_url ?? null,
+              })}
+              onRemoved={() => patchProfileMedia({ shop_photo_media_id: null, shop_photo_url: null })}
             />
           </Card>
         </div>
