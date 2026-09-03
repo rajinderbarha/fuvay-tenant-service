@@ -1,5 +1,5 @@
-﻿/**
- * ServiceOS Super Admin â€” API Client
+/**
+ * Fuvay Super Admin â€” API Client
  * PROVEN LEVEL 5:
  *   âœ… ALL API calls go through this file â€” no inline fetch() anywhere else
  *   âœ… Every call has typed response + error handling
@@ -49,6 +49,7 @@ function getRefreshToken(): string | null {
   return localStorage.getItem("serviceos_admin_refresh");
 }
 let sessionCleared = false;
+const inFlightReads = new Map<string, Promise<unknown>>();
 export function clearSession() {
   if (sessionCleared) return;
   sessionCleared = true;
@@ -62,7 +63,7 @@ export function clearSession() {
 // â”€â”€ Core fetch wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /** Exported so extracted API-client modules (lib/api-*.ts) can share the
  * exact same auth/refresh/envelope behaviour instead of forking it. */
-export async function apiFetch<T>(
+async function apiFetchOnce<T>(
   path: string,
   options: RequestInit = {},
   skipAuth = false,
@@ -132,6 +133,33 @@ export async function apiFetch<T>(
   return (json && typeof json === "object" && "data" in json)
     ? (json as ApiResponse<T>).data
     : (json as T);
+}
+
+/**
+ * Share identical reads that are already in flight. React Strict Mode and
+ * nested permission guards can ask for the same resource in the same render
+ * pass; sending every copy created state races where one browser-level failure
+ * replaced a successful response. Mutations and customised requests are never
+ * coalesced.
+ */
+export function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+  skipAuth = false,
+): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const canShare = method === "GET" && !options.body && !options.headers && !options.signal;
+  if (!canShare) return apiFetchOnce<T>(path, options, skipAuth);
+
+  const key = `${skipAuth ? "public" : getToken() ?? "anonymous"}:${path}`;
+  const existing = inFlightReads.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const request = apiFetchOnce<T>(path, options, skipAuth);
+  inFlightReads.set(key, request);
+  const clear = () => { if (inFlightReads.get(key) === request) inFlightReads.delete(key); };
+  request.then(clear, clear);
+  return request;
 }
 
 // FINAL-L5-03: shared generic paginated-list fetch for EnterpriseDataGrid-style
@@ -908,23 +936,6 @@ export const adminCustomersApi = {
   },
 
   // â”€â”€ Customer Users Enterprise Upgrade â€” detail tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  complaints: (id: string, status?: string) => {
-    const qs = new URLSearchParams();
-    if (status) qs.set("status", status);
-    return apiFetch<{ complaints: CustomerComplaintRow[]; total: number }>(
-      `/v1/admin/customers/${id}/complaints?${qs}`).then(data => ({ data }));
-  },
-  serviceCredits: (id: string, status?: string) => {
-    const qs = new URLSearchParams();
-    if (status) qs.set("status", status);
-    return apiFetch<{ credits: CustomerServiceCreditRow[]; meta: AdminCustomerMeta; summary: CustomerCreditSummary }>(
-      `/v1/admin/customers/${id}/service-credits?${qs}`).then(data => ({ data }));
-  },
-  issueServiceCredit: (id: string, data: {
-    amount: number; credit_type?: string; issued_reason: string;
-    customer_message?: string; validity_days?: number;
-  }) => apiFetch<CustomerServiceCreditRow>(`/v1/admin/customers/${id}/service-credits`,
-    { method: "POST", body: JSON.stringify(data) }).then(data => ({ data })),
   addresses: (id: string) =>
     apiFetch<{ addresses: CustomerAddressRow[]; total: number }>(`/v1/admin/customers/${id}/addresses`).then(data => ({ data })),
   sessions: (id: string) =>
@@ -954,21 +965,6 @@ export const adminCustomersApi = {
       { method: "POST", body: JSON.stringify({ reason }) }).then(data => ({ data })),
 };
 
-export interface CustomerComplaintRow {
-  id: string; complaint_number: string; complaint_type: string; priority: string; status: string;
-  title: string | null; description: string; settlement_status: string | null;
-  booking_id: string | null; tenant_id: string | null;
-  created_at: string | null; resolved_at: string | null; closed_at: string | null;
-}
-export interface CustomerServiceCreditRow {
-  id: string; credit_number: string; amount: string; remaining_amount: string; currency: string;
-  credit_type: string; source: string; status: string; issued_reason: string;
-  valid_from: string | null; expires_at: string | null; created_at: string | null;
-}
-export interface CustomerCreditSummary {
-  total_credits: number; active_credits: number; used_credits: number; expired_credits: number;
-  cancelled_credits: number; active_credit_balance: number; credits_from_disputes: number;
-}
 export interface CustomerAddressRow {
   id: string; name: string | null; phone: string | null;
   address_line_1: string; address_line_2: string | null; landmark: string | null;
@@ -2769,7 +2765,7 @@ export interface Booking {
   created_at: string; allowed_transitions: string[]; is_terminal: boolean;
 }
 // Shared payment-breakdown shapes â€” Home Services rule: customer pays the
-// provider directly on-site, ServiceOS never collects the service payment.
+// provider directly on-site, Fuvay never collects the service payment.
 // Kept separate from Booking/Job so any page can render a typed subset
 // (e.g. a summary card) without depending on the full entity shape.
 export type BookingPaymentBreakdown = {
@@ -6345,135 +6341,10 @@ export const adminRatingApi = {
 };
 
 // â”€â”€ Sprint 25: Complaint types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export interface ComplaintRecord {
-  id: string; complaint_number?: string; customer_id: string;
-  tenant_id?: string; category_id?: string;
-  record_type: string; record_id: string;
-  complaint_type: string; requested_resolution?: string;
-  title?: string; description: string;
-  status: string; priority: string;
-  internal_admin_notes?: string;
-  assigned_admin_user_id?: string;
-  resolved_at?: string; closed_at?: string; created_at?: string; updated_at?: string;
-}
-export interface ComplaintResolutionRecord {
-  id: string; complaint_id: string; status: string;
-  resolution_type: string; description: string;
-  customer_visible_notes?: string; internal_notes?: string;
-  proposed_by_type: string; created_at?: string;
-}
-export interface ReworkRecord {
-  id: string; complaint_id: string; status: string;
-  rework_reason: string; admin_notes?: string;
-  scheduled_date?: string; completed_at?: string; created_at?: string;
-}
-export interface RefundRecord {
-  id: string; complaint_id: string; status: string;
-  refund_type: string; requested_amount?: string;
-  approved_amount?: string; recorded_amount?: string;
-  reason: string; rejection_reason?: string;
-  approved_at?: string; recorded_at?: string; verified_at?: string; created_at?: string;
-}
-export interface ComplaintPolicyRecord {
-  id: string; policy_key: string; policy_name?: string; category_id?: string; tenant_id?: string;
-  complaint_window_hours: number; allow_duplicate_open_complaints: boolean;
-  // NOTE: the model column is `allow_rework` â€” `allow_rework_request` never
-  // applied to anything (MODULE-L5-02 bug #39).
-  allow_rework?: boolean; allow_rework_request?: boolean; allow_refund_request: boolean;
-  require_admin_review: boolean; is_active: boolean;
-  created_at?: string;
-
-  // â”€â”€ The AI settlement rule â€” the only thing the admin sets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // AI settlement takes over automatically once the PROVIDER has failed to solve
-  // the complaint; it may offer at most `ai_settlement_max_pct` of the job value,
-  // in CREDIT POINTS only (never money), funded from the provider's credit wallet
-  // and then their credit balance. A case warranting more than the cap is
-  // escalated to admin manual review instead of being settled.
-  ai_settlement_enabled?: boolean;
-  ai_auto_start_on_provider_failure?: boolean;
-  ai_settlement_max_pct?: number;
-  ai_settlement_allowed_remedies?: string[];
-  settlement_payout_in_credits_only?: boolean;
-}
-export interface ComplaintEventRecord {
-  id: string; complaint_id: string; event_type: string;
-  actor_type: string; old_status?: string; new_status?: string;
-  reason?: string; created_at?: string;
-}
-
 // â”€â”€ Sprint 25: Admin complaints API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const adminComplaintApi = {
-  list: (p?: { tenant_id?: string; status?: string; priority?: string; record_type?: string }) => {
-    const qs = new URLSearchParams(Object.entries(p ?? {}).filter(([,v]) => v) as [string,string][]);
-    return apiFetch<ComplaintRecord[]>(`/v1/admin/complaints${qs.toString() ? `?${qs}` : ""}`);
-  },
-  get:       (id: string) => apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}`),
-  assign:    (id: string, assignee_id: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/assign`, { method: "POST", body: JSON.stringify({ assignee_id }) }),
-  priority:  (id: string, priority: string, reason?: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/priority`, { method: "POST", body: JSON.stringify({ priority, reason }) }),
-  requestProviderResponse: (id: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/request-provider-response`, { method: "POST" }),
-  addMessage: (id: string, message_text: string, visibility?: string) =>
-    apiFetch<Record<string,unknown>>(`/v1/admin/complaints/${id}/messages`, { method: "POST", body: JSON.stringify({ message_text, visibility }) }),
-  messages:   (id: string) =>
-    apiFetch<Record<string,unknown>[]>(`/v1/admin/complaints/${id}/messages`),
-  proposeResolution: (id: string, body: { resolution_type: string; description: string; customer_visible_notes?: string; internal_notes?: string }) =>
-    apiFetch<ComplaintResolutionRecord>(`/v1/admin/complaints/${id}/propose-resolution`, { method: "POST", body: JSON.stringify(body) }),
-  resolutions: (id: string) =>
-    apiFetch<ComplaintResolutionRecord[]>(`/v1/admin/complaints/${id}/resolutions`),
-  reject:    (id: string, reason: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-  resolve:   (id: string, reason?: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/resolve`, { method: "POST", body: JSON.stringify({ reason }) }),
-  close:     (id: string, reason?: string) =>
-    apiFetch<ComplaintRecord>(`/v1/admin/complaints/${id}/close`, { method: "POST", body: JSON.stringify({ reason }) }),
-  events:    (id: string) =>
-    apiFetch<ComplaintEventRecord[]>(`/v1/admin/complaints/${id}/events`),
-};
-
 // â”€â”€ Sprint 25: Admin rework API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const adminReworkApi = {
-  list:    (tenant_id?: string, status?: string) => {
-    const p = new URLSearchParams();
-    if (tenant_id) p.set("tenant_id", tenant_id);
-    if (status)    p.set("status", status);
-    const q = p.toString();
-    return apiFetch<ReworkRecord[]>(`/v1/admin/rework-requests${q ? `?${q}` : ""}`);
-  },
-  approve: (id: string, admin_notes?: string) =>
-    apiFetch<ReworkRecord>(`/v1/admin/rework-requests/${id}/approve`, { method: "POST", body: JSON.stringify({ admin_notes }) }),
-  reject:  (id: string, reason: string) =>
-    apiFetch<ReworkRecord>(`/v1/admin/rework-requests/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-  assign:  (id: string, staff_member_id: string) =>
-    apiFetch<ReworkRecord>(`/v1/admin/rework-requests/${id}/assign`, { method: "POST", body: JSON.stringify({ staff_member_id }) }),
-};
-
 // â”€â”€ Sprint 25: Admin refund API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const adminRefundApi = {
-  list:    (p?: { tenant_id?: string; status?: string }) => {
-    const qs = new URLSearchParams(Object.entries(p ?? {}).filter(([,v]) => v) as [string,string][]);
-    return apiFetch<RefundRecord[]>(`/v1/admin/refund-requests${qs.toString() ? `?${qs}` : ""}`);
-  },
-  approve: (id: string, approved_amount?: string) =>
-    apiFetch<RefundRecord>(`/v1/admin/refund-requests/${id}/approve`, { method: "POST", body: JSON.stringify({ approved_amount }) }),
-  reject:  (id: string, reason: string) =>
-    apiFetch<RefundRecord>(`/v1/admin/refund-requests/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
-  record:  (id: string, recorded_amount: string, proof_media_url?: string) =>
-    apiFetch<RefundRecord>(`/v1/admin/refund-requests/${id}/record`, { method: "POST", body: JSON.stringify({ recorded_amount, proof_media_url }) }),
-  verify:  (id: string) =>
-    apiFetch<RefundRecord>(`/v1/admin/refund-requests/${id}/verify`, { method: "POST" }),
-};
-
 // â”€â”€ Sprint 25: Admin complaint policy API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const adminComplaintPolicyApi = {
-  list:   () => apiFetch<ComplaintPolicyRecord[]>("/v1/admin/complaint-policies"),
-  create: (body: Partial<ComplaintPolicyRecord>) =>
-    apiFetch<ComplaintPolicyRecord>("/v1/admin/complaint-policies", { method: "POST", body: JSON.stringify(body) }),
-  update: (id: string, body: Partial<ComplaintPolicyRecord>) =>
-    apiFetch<ComplaintPolicyRecord>(`/v1/admin/complaint-policies/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-};
-
 // â”€â”€ Sprint 26: Enterprise Grid types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface EnterprisePagination {
   page: number; page_size: number; total_items: number;
@@ -8293,118 +8164,6 @@ export const trustQualityApi = {
       method: "POST", body: JSON.stringify({ metrics }) }),
 };
 
-export const complaintsApi = {
-  filterOptions: () => apiFetch<{
-    tenants: { value: string; label: string }[];
-    complaint_types: { value: string; label: string }[];
-    record_types: { value: string; label: string }[];
-    severities: { value: string; label: string }[];
-  }>("/v1/admin/complaints/filters"),
-  adminSummary: (tenantId?: string) => {
-    const qs = tenantId ? `?tenant_id=${tenantId}` : "";
-    return apiFetch<Record<string, number>>(`/v1/admin/complaints/summary${qs}`);
-  },
-
-  adminList: (params?: {
-    q?: string; status?: string; sla_status?: string; priority?: string;
-    severity?: string; record_type?: string; complaint_type?: string;
-    tenant_id?: string; date_from?: string; date_to?: string;
-    sort_by?: string; sort_dir?: string; page?: number; page_size?: number;
-  }) => {
-    const cleaned: Record<string, string> = {};
-    for (const [k, v] of Object.entries(params ?? {})) {
-      if (v != null && v !== "" && v !== undefined) cleaned[k] = String(v);
-    }
-    const qs = new URLSearchParams(cleaned).toString();
-    return apiFetch<{ items: Record<string, unknown>[]; meta: Record<string, unknown> }>(
-      `/v1/admin/complaints/list${qs ? `?${qs}` : ""}`
-    );
-  },
-
-  exportUrl: (params?: Record<string, string>) => {
-    const qs = new URLSearchParams(params ?? {}).toString();
-    return `/v1/admin/complaints/export${qs ? `?${qs}` : ""}`;
-  },
-  get: (tenantId: string) =>
-    apiFetch<AdminOnboardingProviderListItem>(`/v1/admin/onboarding/providers/${tenantId}`),
-
-  adminGet: (id: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}`),
-
-  startAISettlement: (id: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/start-ai-settlement`, { method: "POST" }),
-
-  finalizeSettlement: (id: string, decision: string, notes?: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/finalize-settlement`, {
-      method: "POST", body: JSON.stringify({ decision, notes }),
-    }),
-
-  createSettlementProposal: (id: string, body: {
-    proposal_type: string; description: string; proposal_amount?: number; conditions?: string;
-  }) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/settlement-proposals`, {
-      method: "POST", body: JSON.stringify(body),
-    }),
-
-  listSettlementProposals: (id: string) =>
-    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/settlement-proposals`),
-
-  getAISession: (id: string) =>
-    apiFetch<Record<string, unknown> | null>(`/v1/admin/complaints/${id}/ai-session`),
-
-  getTimeline: (id: string) =>
-    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/timeline`),
-
-  adminAssign: (id: string, assigneeId: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/assign`, {
-      method: "POST", body: JSON.stringify({ assignee_id: assigneeId }),
-    }),
-
-  adminReject: (id: string, reason: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/reject`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-
-  // MODULE-L5-02 bug #36: the complaints list has always linked to
-  // /admin/complaints/{id}, but that page did not exist â€” so most of the admin
-  // complaint API had no client and no UI at all. These back the new detail page.
-  listMessages: (id: string) =>
-    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/messages`),
-
-  addMessage: (id: string, messageText: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/messages`, {
-      method: "POST", body: JSON.stringify({ message_text: messageText }),
-    }),
-
-  listResolutions: (id: string) =>
-    apiFetch<Record<string, unknown>[]>(`/v1/admin/complaints/${id}/resolutions`),
-
-  proposeResolution: (id: string, body: { resolution_type: string; description: string }) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/propose-resolution`, {
-      method: "POST", body: JSON.stringify(body),
-    }),
-
-  setPriority: (id: string, priority: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/priority`, {
-      method: "POST", body: JSON.stringify({ priority }),
-    }),
-
-  requestProviderResponse: (id: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/request-provider-response`, {
-      method: "POST", body: JSON.stringify({}),
-    }),
-
-  adminResolve: (id: string, notes?: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/resolve`, {
-      method: "POST", body: JSON.stringify({ notes }),
-    }),
-
-  adminClose: (id: string, notes?: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/admin/complaints/${id}/close`, {
-      method: "POST", body: JSON.stringify({ notes }),
-    }),
-};
-
 // â”€â”€ Finance Hub (P0 Enterprise Finance Upgrade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface FinanceSummary {
   active_wallets: number; low_balance_wallets: number; credits_issued: number;
@@ -8422,32 +8181,6 @@ export interface FinanceOverview {
   };
   at_risk_tenants: { tenant_id: string; tenant_name: string; health_band: string; health_score: number }[];
 }
-export interface FinanceTopup {
-  topup_id: string; tenant_id: string; tenant_name?: string | null;
-  credit_package_id?: string | null; order_ref?: string | null;
-  credits_purchased: number; bonus_credits: number; amount_paid: number; currency: string;
-  payment_method?: string | null; payment_status: string; wallet_credit_status: string;
-  wallet_transaction_id?: string | null; gateway_order_id?: string | null; gateway_payment_id?: string | null;
-  failure_reason?: string | null; refunded_amount?: number | null;
-  created_at?: string | null; updated_at?: string | null;
-}
-export interface FinanceTopupsSummary {
-  total_topups: number; total_topup_value: number; pending_topups: number;
-  failed_topups: number; refunded_topups: number; topup_value_this_month: number;
-}
-export interface FinanceClaim {
-  claim_id: string; tenant_id: string; tenant_name?: string | null; customer_id: string;
-  job_id: string; claim_type: string; description: string; amount_requested: number;
-  amount_approved?: number | null; status: string; assigned_reviewer_id?: string | null;
-  admin_notes?: string | null; rejection_reason?: string | null;
-  settled_at?: string | null; settled_amount?: number | null;
-  documents_requested_at?: string | null; documents_requested_notes?: string | null;
-  resolved_at?: string | null; created_at?: string | null; updated_at?: string | null;
-}
-export interface FinanceClaimsSummary {
-  total_claims: number; pending_review: number; investigation_ongoing: number;
-  approved_claims: number; rejected_claims: number; settled_value: number;
-}
 export interface FinancePayout {
   payout_id: string; payout_number?: string | null; tenant_id: string; tenant_name?: string | null;
   payout_type: string; requested_amount: number; approved_amount?: number | null;
@@ -8460,61 +8193,12 @@ export interface FinancePayoutsSummary {
   pending_payouts: number; approved_payouts: number; processing: number;
   failed_payouts: number; completed_payouts: number; total_payout_value: number;
 }
-export interface FinanceWallet {
-  wallet_id: string; tenant_id: string; tenant_name: string;
-  available_balance: number; reserved_balance: number;
-  low_balance_threshold?: number | null; last_transaction_at?: string | null;
-  health_band: string; is_active: boolean;
-}
 export interface FinanceAuditEntry {
   id: string; operation: string; engine_id: string; actor_id?: string | null;
   actor_role?: string | null; before?: Record<string, unknown> | null; after?: Record<string, unknown> | null;
   created_at?: string | null;
 }
 
-// Customer Service Credit + Dispute Settlement interfaces (migration 080)
-export interface DisputeSettlement {
-  id: string; settlement_number: string; dispute_id: string;
-  booking_id?: string | null; customer_id: string; tenant_id: string;
-  settlement_type: string; settlement_status: string; settlement_amount: number;
-  currency: string; deduction_source: string;
-  tenant_wallet_deduction_amount: number;
-  platform_goodwill_amount: number; customer_credit_id?: string | null;
-  tenant_penalty_id?: string | null; admin_decision_reason: string;
-  customer_message?: string | null; tenant_message?: string | null;
-  created_at: string; approved_at?: string | null; executed_at?: string | null;
-  cancelled_at?: string | null;
-}
-export interface DisputeSettlementSummary {
-  total_settlements: number; pending_approval: number; executed_settlements: number;
-  failed_cancelled: number; customer_credits_issued: number;
-  tenant_wallet_deducted: number;
-}
-export interface DeductionPreview {
-  tenant_id: string; settlement_amount: number; strategy: string;
-  wallet_balance: number; wallet_deduction: number; wallet_balance_after: number;
-  platform_goodwill_amount: number; uncovered_amount: number; can_fully_cover: boolean;
-}
-export interface CustomerServiceCredit {
-  id: string; credit_number: string; customer_id: string;
-  tenant_id?: string | null; booking_id?: string | null; dispute_id?: string | null;
-  settlement_id?: string | null; amount: number; remaining_amount: number;
-  currency: string; credit_type: string; source: string; status: string;
-  issued_reason: string; customer_message?: string | null;
-  valid_from: string; expires_at?: string | null; used_at?: string | null;
-  cancelled_at?: string | null; cancel_reason?: string | null;
-  created_at: string;
-}
-export interface CustomerCreditSummary {
-  total_credits: number; active_credits: number; used_credits: number;
-  expired_credits: number; cancelled_credits: number;
-  active_credit_balance: number; credits_from_disputes: number;
-}
-export interface CreditLedgerEntry {
-  id: string; transaction_type: string; amount: number; balance_after: number;
-  description: string; reference_type?: string | null; booking_id?: string | null;
-  created_at: string;
-}
 export interface TenantPenalty {
   id: string; penalty_number: string; tenant_id: string;
   booking_id?: string | null; dispute_id?: string | null; settlement_id?: string | null;
@@ -8605,75 +8289,6 @@ export const financeApi = {
   // The Deposits client went with the deposit itself (migrations 317/318):
   // every /v1/admin/finance/deposits* route was removed server-side.
 
-  // Top-ups
-  listTopups: (params?: {
-    tenantId?: string; paymentStatus?: string; q?: string;
-    page?: number; pageSize?: number; sortBy?: string; sortDir?: string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.tenantId) qs.set("tenant_id", params.tenantId);
-    if (params?.paymentStatus) qs.set("payment_status", params.paymentStatus);
-    if (params?.q) qs.set("q", params.q);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    qs.set("sort_by", params?.sortBy ?? "created_at");
-    qs.set("sort_dir", params?.sortDir ?? "desc");
-    return apiFetch<{ items: FinanceTopup[]; pagination: GridPagination }>(`/v1/admin/finance/topups?${qs.toString()}`);
-  },
-  getTopupsSummary: () => apiFetch<FinanceTopupsSummary>("/v1/admin/finance/topups/summary"),
-  exportTopups: (filters?: { paymentStatus?: string }) => {
-    const qs = new URLSearchParams();
-    if (filters?.paymentStatus) qs.set("payment_status", filters.paymentStatus);
-    return apiFetch<{ rows: FinanceTopup[]; count: number }>(`/v1/admin/finance/topups/export?${qs.toString()}`);
-  },
-  getTopupDetail: (topupId: string) =>
-    apiFetch<{ topup: FinanceTopup; package: { package_id: string; name: string } | null;
-      ledger_entry: Record<string, unknown> | null; audit_log: FinanceAuditEntry[] }>(
-      `/v1/admin/finance/topups/${topupId}`),
-  retryCreditPosting: (topupId: string) =>
-    apiFetch<FinanceTopup>(`/v1/admin/finance/topups/${topupId}/retry-credit`, { method: "POST" }),
-  refundTopup: (topupId: string, amount: number, reason?: string) =>
-    apiFetch<FinanceTopup>(`/v1/admin/finance/topups/${topupId}/refund`,
-      { method: "POST", body: JSON.stringify({ amount, reason }) }),
-
-  // Warranty Claims
-  listClaims: (params?: {
-    status?: string; category?: string; q?: string;
-    page?: number; pageSize?: number; sortBy?: string; sortDir?: string;
-  }) => {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set("status", params.status);
-    if (params?.category) qs.set("category", params.category);
-    if (params?.q) qs.set("q", params.q);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    qs.set("sort_by", params?.sortBy ?? "created_at");
-    qs.set("sort_dir", params?.sortDir ?? "desc");
-    return apiFetch<{ items: FinanceClaim[]; pagination: GridPagination }>(`/v1/admin/finance/warranty-claims?${qs.toString()}`);
-  },
-  getClaimsSummary: () => apiFetch<FinanceClaimsSummary>("/v1/admin/finance/warranty-claims/summary"),
-  exportClaims: (filters?: { status?: string }) => {
-    const qs = new URLSearchParams();
-    if (filters?.status) qs.set("status", filters.status);
-    return apiFetch<{ rows: FinanceClaim[]; count: number }>(`/v1/admin/finance/warranty-claims/export?${qs.toString()}`);
-  },
-  getClaimDetail: (claimId: string) =>
-    apiFetch<{ claim: FinanceClaim; audit_log: FinanceAuditEntry[] }>(`/v1/admin/finance/warranty-claims/${claimId}`),
-  assignReviewer: (claimId: string, reviewerId: string) =>
-    apiFetch<FinanceClaim>(`/v1/admin/finance/warranty-claims/${claimId}/assign`,
-      { method: "POST", body: JSON.stringify({ reviewer_id: reviewerId }) }),
-  requestDocuments: (claimId: string, notes: string) =>
-    apiFetch<FinanceClaim>(`/v1/admin/finance/warranty-claims/${claimId}/request-documents`,
-      { method: "POST", body: JSON.stringify({ notes }) }),
-  approveClaim: (claimId: string, amountApproved: number, adminNotes?: string) =>
-    apiFetch<FinanceClaim>(`/v1/admin/finance/warranty-claims/${claimId}/approve`,
-      { method: "POST", body: JSON.stringify({ amount_approved: amountApproved, admin_notes: adminNotes }) }),
-  rejectClaim: (claimId: string, rejectionReason: string, adminNotes?: string) =>
-    apiFetch<FinanceClaim>(`/v1/admin/finance/warranty-claims/${claimId}/reject`,
-      { method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason, admin_notes: adminNotes }) }),
-  settleClaim: (claimId: string) =>
-    apiFetch<FinanceClaim>(`/v1/admin/finance/warranty-claims/${claimId}/settle`, { method: "POST" }),
-
   // Payouts
   listPayouts: (params?: {
     status?: string; tenantId?: string; q?: string;
@@ -8713,85 +8328,10 @@ export const financeApi = {
     apiFetch<FinancePayout>(`/v1/admin/finance/payouts/${payoutId}/mark-failed`,
       { method: "POST", body: JSON.stringify({ failure_reason: failureReason }) }),
 
-  // Wallets
-  listWallets: (params?: { q?: string; healthBand?: string; page?: number; pageSize?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.q) qs.set("q", params.q);
-    if (params?.healthBand) qs.set("health_band", params.healthBand);
-    qs.set("page", String(params?.page ?? 1));
-    qs.set("page_size", String(params?.pageSize ?? 50));
-    return apiFetch<{ items: FinanceWallet[]; pagination: GridPagination }>(`/v1/admin/finance/wallets?${qs.toString()}`);
-  },
-  getWalletLedger: (walletId: string, page = 1, pageSize = 50) =>
-    apiFetch<{
-      wallet: FinanceWallet & { lifetime_purchased: number; lifetime_consumed: number };
-      ledger: { txn_id: string; txn_type: string; amount: number; balance_before: number; balance_after: number;
-        reference_id?: string | null; reference_type?: string | null; description?: string | null; created_at: string }[];
-      pagination: GridPagination;
-    }>(`/v1/admin/finance/wallets/${walletId}/ledger?page=${page}&page_size=${pageSize}`),
-
   // Audit
   listAuditLogs: (entityType: string, entityId: string, limit = 50) =>
     apiFetch<{ audit_log: FinanceAuditEntry[] }>(
       `/v1/admin/finance/audit-logs?entity_type=${entityType}&entity_id=${entityId}&limit=${limit}`),
-
-  // Dispute Settlements (migration 080)
-  getSettlementSummary: () =>
-    apiFetch<DisputeSettlementSummary>("/v1/admin/finance/settlements/summary"),
-  listSettlements: (params?: { page?: number; limit?: number; status?: string; tenantId?: string; customerId?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.limit) qs.set("limit", String(params.limit));
-    if (params?.status) qs.set("status", params.status);
-    if (params?.tenantId) qs.set("tenant_id", params.tenantId);
-    if (params?.customerId) qs.set("customer_id", params.customerId);
-    return apiFetch<{ settlements: DisputeSettlement[]; meta: { total: number; page: number; limit: number; total_pages: number } }>(`/v1/admin/finance/settlements?${qs}`);
-  },
-  getSettlement: (id: string) =>
-    apiFetch<DisputeSettlement>(`/v1/admin/finance/settlements/${id}`),
-  previewDeduction: (disputeId: string, tenantId: string, amount: number, strategy: string) =>
-    apiFetch<DeductionPreview>(`/v1/admin/finance/disputes/${disputeId}/settlements/preview`, {
-      method: "POST",
-      body: JSON.stringify({ tenant_id: tenantId, settlement_amount: amount, deduction_strategy: strategy }),
-    }),
-  createSettlement: (disputeId: string, data: object) =>
-    apiFetch<DisputeSettlement>(`/v1/admin/finance/disputes/${disputeId}/settlements`, {
-      method: "POST", body: JSON.stringify(data),
-    }),
-  approveSettlement: (settlementId: string) =>
-    apiFetch<DisputeSettlement>(`/v1/admin/finance/settlements/${settlementId}/approve`, { method: "POST", body: "{}" }),
-  executeSettlement: (settlementId: string) =>
-    apiFetch<DisputeSettlement>(`/v1/admin/finance/settlements/${settlementId}/execute`, { method: "POST", body: "{}" }),
-  cancelSettlement: (settlementId: string, reason: string) =>
-    apiFetch<DisputeSettlement>(`/v1/admin/finance/settlements/${settlementId}/cancel`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-
-  // Customer Service Credits (migration 080)
-  getCreditSummary: () =>
-    apiFetch<CustomerCreditSummary>("/v1/admin/finance/credits/summary"),
-  listCredits: (params?: { page?: number; limit?: number; status?: string; customerId?: string }) => {
-    const qs = new URLSearchParams();
-    if (params?.page) qs.set("page", String(params.page));
-    if (params?.limit) qs.set("limit", String(params.limit));
-    if (params?.status) qs.set("status", params.status);
-    if (params?.customerId) qs.set("customer_id", params.customerId);
-    return apiFetch<{ credits: CustomerServiceCredit[]; meta: { total: number; page: number; limit: number; total_pages: number } }>(`/v1/admin/finance/credits?${qs}`);
-  },
-  getCredit: (id: string) =>
-    apiFetch<CustomerServiceCredit & { ledger: CreditLedgerEntry[] }>(`/v1/admin/finance/credits/${id}`),
-  issueManualCredit: (customerId: string, data: object) =>
-    apiFetch<CustomerServiceCredit>(`/v1/admin/finance/customers/${customerId}/credits`, {
-      method: "POST", body: JSON.stringify(data),
-    }),
-  cancelCredit: (creditId: string, reason: string) =>
-    apiFetch<CustomerServiceCredit>(`/v1/admin/finance/credits/${creditId}/cancel`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-  extendCredit: (creditId: string, newExpiry: string) =>
-    apiFetch<CustomerServiceCredit>(`/v1/admin/finance/credits/${creditId}/extend`, {
-      method: "POST", body: JSON.stringify({ new_expiry: newExpiry }),
-    }),
 
   // Tenant Penalties (migration 080)
   getPenaltySummary: () =>
@@ -9972,7 +9512,7 @@ export const intelligenceCmdApi = {
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // P0 Platform Command Center Dashboard (migration 104)
-// ServiceOS finance rule: platform_revenue excludes provider_direct_service_value
+// Fuvay finance rule: platform_revenue excludes provider_direct_service_value
 // (the amount customers pay providers directly for Home Services).
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

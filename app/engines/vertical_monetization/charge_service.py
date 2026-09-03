@@ -179,5 +179,5 @@ async def assert_customer_platform_fee_paid_if_required(db: AsyncSession, job) -
                                  "The customer's platform fee payment failed. Work cannot start.",
                                  status_code=402)
     raise ServiceOSException("CUSTOMER_PLATFORM_FEE_REQUIRED",
-                             "The customer must pay the ServiceOS platform fee before work can start.",
+                             "The customer must pay the Fuvay platform fee before work can start.",
                              status_code=402)

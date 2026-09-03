@@ -10,9 +10,9 @@ export function ConfigurationOwnershipCard() {
       <OwnershipRow icon={<User size={14}/>} iconBg="var(--success-bg)" iconColor="var(--success-text)"
         title="Tenant controlled" desc="You can edit these settings." example="Examples: timezone, contacts, default hours"/>
       <OwnershipRow icon={<Shield size={14}/>} iconBg="var(--info-bg)" iconColor="var(--info-text)"
-        title="ServiceOS controlled" desc="These are platform rules." example="Examples: matching algorithm, lifecycle transitions"/>
+        title="Fuvay controlled" desc="These are platform rules." example="Examples: matching algorithm, lifecycle transitions"/>
       <OwnershipRow icon={<ShieldAlert size={14}/>} iconBg="var(--warning-bg)" iconColor="var(--warning-text)"
-        title="Admin policy" desc="Set by ServiceOS administrators." example="Examples: deposit per qualifying technician, usage credit"/>
+        title="Admin policy" desc="Set by Fuvay administrators." example="Examples: deposit per qualifying technician, usage credit"/>
     </Card>
   );
 }
@@ -73,7 +73,7 @@ export function DangerZoneCard() {
       <p style={{ fontSize: 13, fontWeight: 700, color: "var(--danger-text)", margin: "0 0 8px" }}>Danger zone</p>
       {showGap ? (
         <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-          A self-service deactivation-request flow doesn't exist on the backend yet — this isn't wired to a real endpoint, so no request was actually submitted. Contact ServiceOS support to request deactivation today.
+          A self-service deactivation-request flow doesn't exist on the backend yet — this isn't wired to a real endpoint, so no request was actually submitted. Contact Fuvay support to request deactivation today.
         </p>
       ) : (
         <>

@@ -1,6 +1,6 @@
-# ServiceOS architecture
+# Fuvay architecture
 
-ServiceOS is a multi-tenant service marketplace. A FastAPI application owns
+Fuvay is a multi-tenant service marketplace. A FastAPI application owns
 the business rules and PostgreSQL data, while separate web and mobile clients
 serve platform administrators, providers, staff, and customers.
 

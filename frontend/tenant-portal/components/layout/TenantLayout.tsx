@@ -53,22 +53,9 @@ type NavGroup = { label: string; items: NavItem[]; special?: string };
 /**
  * Sidebar information architecture.
  *
- * This keeps the production grouping and labels local because older navigation
- * prototypes contained superseded and non-navigable destinations:
- *
- *   1. UX03_NAV_GROUPS predates the Home Services consolidation. Its hrefs
- *      still point at the legacy routes (/bookings, /service-jobs,
- *      /dispatch, /provider/staff), so adopting it verbatim would send the
- *      menu BACK to the superseded pages.
- *   2. Three of its hrefs are route TEMPLATES ("/service-jobs/[id]#quote",
- *      "/provider/staff/[id]/permissions") which are not navigable at all.
- *   3. Several items are marked `readiness: "MOCK_DESIGN_ONLY"` -- design
- *      approved, never built.
- *
- * Destinations below are canonical routes that actually exist and are backed
- * by mounted endpoints. Where a Home
- * Services workspace supersedes a legacy page, the workspace wins -- the
- * legacy route stays live and reachable by URL, it simply leaves the nav.
+ * Destinations below are canonical routes backed by mounted endpoints. Older
+ * prototype navigation is intentionally not imported because it contains
+ * route templates and mock-design-only entries rather than usable links.
  */
 const NAV_GROUPS: NavGroup[] = [
   {

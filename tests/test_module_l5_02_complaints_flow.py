@@ -108,7 +108,8 @@ def test_refund_path_advances_and_resolves_the_complaint():
     assert STATUS_REFUND_REQUESTED in ALLOWED_TRANSITIONS[STATUS_AWAITING_PROVIDER]
     assert STATUS_RESOLVED in ALLOWED_TRANSITIONS[STATUS_REFUND_RECORDED]
     from app.engines.complaints.refund_service import RefundRequestService
-    src = inspect.getsource(RefundRequestService.verify_refund)
+    src = inspect.getsource(RefundRequestService.record_refund)
+    assert "STATUS_REFUND_RECORDED" in src
     assert "STATUS_RESOLVED" in src and "get_complaint" in src
 
 

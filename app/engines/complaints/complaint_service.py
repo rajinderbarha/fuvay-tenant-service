@@ -8,36 +8,30 @@ from datetime import timedelta
 
 from app.engines.complaints.constants import (
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
-    STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
+    STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED, STATUS_REFUND_RECORDED,
-    STATUS_REJECTED, STATUS_RESOLVED, STATUS_CLOSED, STATUS_CANCELLED,
-    STATUS_TENANT_REVIEW_PENDING, STATUS_TENANT_NO_RESPONSE,
-    STATUS_AI_SETTLEMENT_STARTED, STATUS_AI_WAITING_CUSTOMER,
-    STATUS_AI_PROPOSAL_SENT, STATUS_AI_SETTLEMENT_ACCEPTED, STATUS_AI_SETTLEMENT_FAILED,
-    STATUS_ADMIN_REVIEW_PENDING, STATUS_SETTLEMENT_PROPOSED, STATUS_SETTLED,
-    ALLOWED_TRANSITIONS, ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES, VALID_PRIORITIES,
+    STATUS_RESOLVED, STATUS_CANCELLED,
+    STATUS_SETTLED,
+    ALLOWED_TRANSITIONS, ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES,
     SLA_ON_TIME, SLA_AT_RISK, SLA_BREACHED, SLA_ESCALATED,
     RES_PROPOSED, RES_CUSTOMER_ACCEPTED, RES_CUSTOMER_REJECTED,
     PROPOSAL_PROPOSED, PROPOSAL_ACCEPTED, PROPOSAL_REJECTED, PROPOSAL_COUNTERED,
-    ACTOR_CUSTOMER, ACTOR_PROVIDER, ACTOR_STAFF, ACTOR_ADMIN, ACTOR_SYSTEM, ACTOR_AI,
-    VIS_PUBLIC, VIS_ADMIN_ONLY,
-    EVT_COMPLAINT_CREATED, EVT_COMPLAINT_ASSIGNED, EVT_PROVIDER_RESPONSE_REQUESTED,
-    EVT_PROVIDER_RESPONDED, EVT_CUSTOMER_MESSAGE_ADDED, EVT_ADMIN_MESSAGE_ADDED,
-    EVT_EVIDENCE_UPLOADED, EVT_PRIORITY_CHANGED, EVT_STATUS_CHANGED,
+    ACTOR_CUSTOMER, ACTOR_PROVIDER, ACTOR_SYSTEM,
+    VIS_PUBLIC,
+    EVT_COMPLAINT_CREATED, EVT_PROVIDER_RESPONDED, EVT_CUSTOMER_MESSAGE_ADDED,
+    EVT_EVIDENCE_UPLOADED, EVT_STATUS_CHANGED,
     EVT_RESOLUTION_PROPOSED, EVT_RESOLUTION_ACCEPTED, EVT_RESOLUTION_REJECTED,
-    EVT_COMPLAINT_REJECTED, EVT_COMPLAINT_RESOLVED, EVT_COMPLAINT_CLOSED,
     EVT_SLA_BREACHED, EVT_SETTLEMENT_PROPOSED, EVT_SETTLEMENT_ACCEPTED,
-    EVT_SETTLEMENT_REJECTED, EVT_SETTLEMENT_COUNTERED, EVT_COMPLAINT_SETTLED,
-    EVT_SEVERITY_CHANGED, EVT_ADMIN_ESCALATED,
+    EVT_SETTLEMENT_REJECTED, EVT_SETTLEMENT_COUNTERED,
     ERR_COMPLAINT_NOT_FOUND, ERR_COMPLAINT_ACCESS_DENIED, ERR_COMPLAINT_ALREADY_CLOSED,
-    ERR_COMPLAINT_INVALID_TRANSITION, ERR_COMPLAINT_REASON_REQUIRED,
+    ERR_COMPLAINT_INVALID_TRANSITION,
     ERR_COMPLAINT_MESSAGE_REQUIRED, ERR_RESOLUTION_NOT_FOUND,
     ERR_COMPLAINT_RECORD_NOT_FOUND, ERR_COMPLAINT_NOT_ELIGIBLE,
 )
 from app.engines.complaints.models import (
     CustomerComplaint, ComplaintMessage, ComplaintMedia,
     ComplaintEvent, ComplaintResolution, ComplaintPolicy,
-    SettlementProposal, AISettlementSession,
+    SettlementProposal,
 )
 from app.engines.complaints.eligibility_service import ComplaintEligibilityService
 
@@ -196,8 +190,6 @@ class ComplaintService:
         # SLA deadlines
         now = datetime.now(timezone.utc)
         complaint.tenant_first_response_due_at = now + timedelta(hours=24)
-        complaint.ai_escalation_at  = now + timedelta(hours=48)
-        complaint.admin_escalation_at = now + timedelta(hours=72)
         complaint.sla_status = SLA_ON_TIME
 
         db.add(complaint)
@@ -403,7 +395,7 @@ class ComplaintService:
         # Slice 2F-10: same ordering fix as customer_accept_resolution --
         # validate the transition before mutating resolution.status.
         if STATUS_AWAITING_PROVIDER not in ALLOWED_TRANSITIONS.get(complaint.status, set()):
-            raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {STATUS_UNDER_ADMIN_REVIEW}")
+            raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {STATUS_AWAITING_PROVIDER}")
 
         resolution.status = RES_CUSTOMER_REJECTED
         await db.flush()
@@ -631,197 +623,6 @@ class ComplaintService:
         r = await db.execute(q)
         return r.scalars().all()
 
-    async def admin_assign_complaint(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        assignee_id: uuid.UUID,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        old_assignee = complaint.assigned_admin_user_id
-        complaint.assigned_admin_user_id = assignee_id
-        await db.flush()
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_COMPLAINT_ASSIGNED, None, None,
-                              {"assignee_id": str(old_assignee) if old_assignee else None},
-                              {"assignee_id": str(assignee_id)}, request_id=request_id)
-        await db.commit()
-        return complaint
-
-    async def admin_change_priority(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        priority: str,
-        reason: str | None = None,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        old_priority = complaint.priority
-        complaint.priority = priority
-        await db.flush()
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_PRIORITY_CHANGED, None, None,
-                              {"priority": old_priority}, {"priority": priority},
-                              reason=reason, request_id=request_id)
-        await db.commit()
-        return complaint
-
-    async def admin_request_provider_response(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        await self._transition(db, complaint, STATUS_AWAITING_PROVIDER, ACTOR_ADMIN, admin_user_id,
-                               request_id=request_id)
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_PROVIDER_RESPONSE_REQUESTED, None, None, None, None, request_id=request_id)
-        await db.commit()
-        return complaint
-
-    async def admin_add_message(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        message_text: str,
-        visibility: str = VIS_ADMIN_ONLY,
-        request_id: str = "—",
-    ) -> ComplaintMessage:
-        if not message_text.strip():
-            raise ValueError(ERR_COMPLAINT_MESSAGE_REQUIRED)
-        complaint = await self._get_complaint(db, complaint_id)
-        msg = ComplaintMessage(
-            complaint_id   = complaint_id,
-            tenant_id      = complaint.tenant_id,
-            sender_type    = ACTOR_ADMIN,
-            sender_user_id = admin_user_id,
-            message_text   = message_text,
-            visibility     = visibility,
-        )
-        db.add(msg)
-        await db.flush()
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_ADMIN_MESSAGE_ADDED, None, None, None, None, request_id=request_id)
-        await db.commit()
-        return msg
-
-    async def admin_propose_resolution(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        resolution_type: str,
-        description: str,
-        customer_visible_notes: str | None = None,
-        internal_notes: str | None = None,
-        request_id: str = "—",
-    ) -> ComplaintResolution:
-        complaint = await self._get_complaint(db, complaint_id)
-        # Keep admin proposals on the same canonical state path as provider
-        # proposals. The previous direct jump to awaiting_customer_response
-        # was not legal from under_admin_review and made every admin proposal
-        # fail after its resolution row had already been staged.
-        await self._transition(db, complaint, STATUS_RESOLUTION_PROPOSED, ACTOR_ADMIN, admin_user_id,
-                               request_id=request_id)
-        resolution = ComplaintResolution(
-            complaint_id           = complaint_id,
-            tenant_id              = complaint.tenant_id,
-            resolution_type        = resolution_type,
-            status                 = RES_PROPOSED,
-            proposed_by_type       = ACTOR_ADMIN,
-            proposed_by_user_id    = admin_user_id,
-            description            = description,
-            customer_visible_notes = customer_visible_notes,
-            internal_notes         = internal_notes,
-        )
-        db.add(resolution)
-        await db.flush()
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
-                              request_id=request_id)
-        # MODULE-L5-24: it is now the customer's move (accept/reject) — tell them,
-        # or the complaint silently waits on someone who doesn't know it's on them.
-        from app.engines.complaints.notifications import notify_customer_complaint
-        await notify_customer_complaint(
-            db, complaint, notification_type="complaint.resolution_proposed",
-            title="A resolution was proposed for your complaint",
-            body="Your provider or our team proposed a resolution. Review and accept or decline it.")
-        await db.commit()
-        return resolution
-
-    async def admin_reject_complaint(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        reason: str,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        if not reason:
-            raise ValueError(ERR_COMPLAINT_REASON_REQUIRED)
-        complaint = await self._get_complaint(db, complaint_id)
-        await self._transition(db, complaint, STATUS_REJECTED, ACTOR_ADMIN, admin_user_id,
-                               reason=reason, request_id=request_id)
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_COMPLAINT_REJECTED, None, None, None, {"reason": reason}, request_id=request_id)
-        from app.engines.complaints.notifications import notify_customer_complaint
-        await notify_customer_complaint(
-            db, complaint, notification_type="complaint.rejected",
-            title="Your complaint was closed",
-            body=f"After review, your complaint was closed: {reason}", severity="warning")
-        await db.commit()
-        return complaint
-
-    async def admin_resolve_complaint(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        reason: str | None = None,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        complaint.resolved_at = datetime.now(timezone.utc)
-        await db.flush()
-        await self._transition(db, complaint, STATUS_RESOLVED, ACTOR_ADMIN, admin_user_id,
-                               reason=reason, request_id=request_id)
-        await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_COMPLAINT_RESOLVED, None, None, None, None, request_id=request_id)
-        from app.engines.complaints.notifications import notify_customer_complaint
-        await notify_customer_complaint(
-            db, complaint, notification_type="complaint.resolved",
-            title="Your complaint has been resolved",
-            body="Our team marked your complaint as resolved. Tap to view the details.")
-        await db.commit()
-        return complaint
-
-    async def close_complaint(
-        self,
-        db: AsyncSession,
-        actor_user_id: uuid.UUID,
-        actor_type: str,
-        complaint_id: uuid.UUID,
-        reason: str | None = None,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        complaint.closed_at = datetime.now(timezone.utc)
-        await db.flush()
-        await self._transition(db, complaint, STATUS_CLOSED, actor_type, actor_user_id,
-                               reason=reason, request_id=request_id)
-        await self._log_event(db, complaint_id, complaint.tenant_id, actor_type, actor_user_id,
-                              EVT_COMPLAINT_CLOSED, None, None, None, None, request_id=request_id)
-        await db.commit()
-        return complaint
-
-    # ── Queries ───────────────────────────────────────────────────────────────
     async def get_complaint(self, db: AsyncSession, complaint_id: uuid.UUID) -> CustomerComplaint:
         return await self._get_complaint(db, complaint_id)
 
@@ -963,8 +764,6 @@ class ComplaintService:
         *,
         proposal_amount=None,
         conditions: str | None = None,
-        ai_generated: bool = False,
-        ai_confidence_score=None,
         request_id: str = "—",
         tenant_id: uuid.UUID | None = None,
     ) -> SettlementProposal:
@@ -987,8 +786,6 @@ class ComplaintService:
             description         = description,
             proposal_amount     = proposal_amount,
             conditions          = conditions,
-            ai_generated        = ai_generated,
-            ai_confidence_score = ai_confidence_score,
             status              = PROPOSAL_PROPOSED,
         )
         db.add(proposal)
@@ -1001,8 +798,7 @@ class ComplaintService:
             request_id=request_id,
         )
         # bug #42: a settlement needs BOTH parties to accept, so notify whoever
-        # did NOT make this proposal that it is now awaiting their response. An
-        # AI/admin proposal awaits both sides.
+        # did NOT make this proposal that it is now awaiting their response.
         try:
             from app.engines.complaints.notifications import (
                 notify_customer_complaint, notify_provider_complaint,
@@ -1115,8 +911,8 @@ class ComplaintService:
                 # dual acceptance, so a settlement accepted by BOTH parties left
                 # the complaint sitting at 'open' in every queue forever.
                 complaint.status = STATUS_SETTLED
-                # Pay the customer in CREDIT POINTS, funded from the PROVIDER's
-                # credit wallet and then their security deposit. Never money.
+                # Pay the customer in credit points funded from the provider's
+                # canonical usage-credit balance. Never money.
                 await self._execute_settlement_payout(db, complaint, proposal, actor_user_id)
         elif response == "reject":
             proposal.status = PROPOSAL_REJECTED
@@ -1131,61 +927,6 @@ class ComplaintService:
         await db.commit()
         return proposal
 
-    async def admin_start_ai_settlement(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        request_id: str = "—",
-    ) -> AISettlementSession:
-        complaint = await self._get_complaint(db, complaint_id)
-        from app.engines.complaints.ai_settlement_service import AISettlementService
-        ai_svc = AISettlementService()
-        session = await ai_svc.start_session(db, complaint, admin_user_id, request_id=request_id)
-        complaint.status = STATUS_AI_SETTLEMENT_STARTED
-        await db.flush()
-        await self._log_event(
-            db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-            EVT_ADMIN_ESCALATED, None, STATUS_AI_SETTLEMENT_STARTED,
-            None, {"session_id": str(session.id)}, request_id=request_id,
-        )
-        await db.commit()
-        return session
-
-    async def admin_finalize_settlement(
-        self,
-        db: AsyncSession,
-        admin_user_id: uuid.UUID,
-        complaint_id: uuid.UUID,
-        decision: str,
-        notes: str | None = None,
-        request_id: str = "—",
-    ) -> CustomerComplaint:
-        complaint = await self._get_complaint(db, complaint_id)
-        now = datetime.now(timezone.utc)
-        if decision == "settle":
-            complaint.status = STATUS_SETTLED
-            complaint.settlement_status = PROPOSAL_ACCEPTED
-            complaint.resolved_at = now
-            evt = EVT_COMPLAINT_SETTLED
-        elif decision == "reject":
-            complaint.status = STATUS_REJECTED
-            evt = EVT_COMPLAINT_REJECTED
-        else:
-            complaint.status = STATUS_RESOLVED
-            evt = EVT_COMPLAINT_RESOLVED
-
-        if notes:
-            complaint.internal_admin_notes = notes
-        await db.flush()
-        await self._log_event(
-            db, complaint_id, complaint.tenant_id, ACTOR_ADMIN, admin_user_id,
-            evt, None, complaint.status, None, {"decision": decision, "notes": notes},
-            request_id=request_id,
-        )
-        await db.commit()
-        return complaint
-
     async def list_settlement_proposals(
         self, db: AsyncSession, complaint_id: uuid.UUID
     ) -> list[SettlementProposal]:
@@ -1195,16 +936,6 @@ class ComplaintService:
             .order_by(SettlementProposal.created_at)
         )
         return r.scalars().all()
-
-    async def get_ai_session(
-        self, db: AsyncSession, complaint_id: uuid.UUID
-    ) -> AISettlementSession | None:
-        r = await db.execute(
-            select(AISettlementSession)
-            .where(AISettlementSession.complaint_id == complaint_id)
-            .order_by(AISettlementSession.created_at.desc())
-        )
-        return r.scalars().first()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
     def _check_dual_acceptance(self, proposal: SettlementProposal) -> None:

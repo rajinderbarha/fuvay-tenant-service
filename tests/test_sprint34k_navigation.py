@@ -83,7 +83,7 @@ class TestAdminNavConfig(unittest.TestCase):
 
     def test_review_group_items(self):
         self.assertIn("reviews", self.src)
-        self.assertIn("complaints", self.src)
+        self.assertNotIn('href: "/admin/complaints"', self.src)
 
     def test_automation_items(self):
         self.assertIn("engines", self.src)
@@ -266,14 +266,14 @@ class TestTenantPageRegistry(unittest.TestCase):
         self.assertIn('"/dashboard"', self.src)
 
     def test_jobs_entry(self):
-        self.assertIn('"/jobs"', self.src)
+        self.assertIn('"/home-services/bookings-jobs"', self.src)
 
     def test_provider_entries(self):
         self.assertIn('"/profile"', self.src)
         self.assertIn('"/provider/offerings"', self.src)
 
     def test_finance_entry(self):
-        self.assertIn('"/finance"', self.src)
+        self.assertIn('"/home-services/finance"', self.src)
 
     def test_analytics_entry(self):
         self.assertIn('"/analytics"', self.src)

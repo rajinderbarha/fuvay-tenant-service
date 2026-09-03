@@ -90,19 +90,19 @@ class TestFrontendLabeling:
         assert '"deposit"' not in src
         assert "Security Deposit Held" not in src
 
-    def test_complaints_disputes_tab_exists(self):
+    def test_admin_dispute_tab_is_absent(self):
         src = _read(PAGE)
-        assert '"disputes"' in src
-        assert "Complaints & Disputes" in src
+        assert '"disputes"' not in src
+        assert "Complaints & Disputes" not in src
 
-    def test_customer_credit_settlements_tab_exists(self):
+    def test_admin_settlement_tab_is_absent(self):
         src = _read(PAGE)
-        assert '"settlements"' in src
-        assert "Customer Credit Settlements" in src
+        assert '"settlements"' not in src
+        assert "Customer Credit Settlements" not in src
 
-    def test_settlement_deduction_language_correct(self):
+    def test_provider_customer_adjudication_boundary_is_documented(self):
         src = _read(PAGE)
-        assert "sourced from this" in src or "usage credits first" in src
+        assert "adjudication belongs to the customer and provider" in src
 
     def test_risk_health_tab_exists(self):
         src = _read(PAGE)
@@ -124,9 +124,9 @@ class TestFrontendLabeling:
         assert "reinstateMsg" in src
         assert "Reinstate Tenant" in src
 
-    def test_uses_existing_finance_api_for_disputes(self):
+    def test_admin_reads_penalties_but_not_settlements(self):
         """No new backend needed — reuses financeApi.listSettlements/listPenalties
         with tenantId filter, which already existed from the customer_credits sprint."""
         src = _read(PAGE)
-        assert "financeApi.listSettlements({ tenantId: id" in src
+        assert "financeApi.listSettlements" not in src
         assert "financeApi.listPenalties({ tenantId: id" in src

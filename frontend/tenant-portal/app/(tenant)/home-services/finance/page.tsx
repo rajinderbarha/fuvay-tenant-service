@@ -18,7 +18,7 @@ import { PageHeader, PageShell, TableSurface } from "@serviceos/design-system";
  * Direct customer payments stay on their own route
  * (/home-services/direct-payments); only a summary + link appears here.
  * There is deliberately NO payouts/settlement surface anywhere on this page —
- * for Home Services the customer pays the provider directly and ServiceOS
+ * for Home Services the customer pays the provider directly and Fuvay
  * never holds or settles job funds.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -504,7 +504,7 @@ export default function HomeServicesFinancePage() {
       order = await homeServicesFinanceApi.createTopup(buyQty);
       const result = await openCheckout({
         keyId: order.key, orderId: order.gateway_order_id, amountPaise: order.amount_paise,
-        currency: order.currency ?? "INR", name: "ServiceOS — Home Services Usage Credit",
+        currency: order.currency ?? "INR", name: "Fuvay — Home Services Usage Credit",
         description: `${buyQty} credit package${buyQty === 1 ? "" : "s"}`,
       });
       const confirmed = await homeServicesFinanceApi.confirmTopup({
@@ -721,7 +721,7 @@ export default function HomeServicesFinancePage() {
           {/* 5. Current finance policy (read-only) */}
           <Card>
             <SectionTitle icon={<FileText size={16} />} title="Current finance policy"
-              subtitle="Published by ServiceOS Admin · read-only for your business"
+              subtitle="Published by Fuvay Admin · read-only for your business"
               actions={data.policy.resolved
                 ? <Badge variant="muted" size="sm">v{data.policy.version} · {humanStatus(data.policy.status ?? "")}</Badge>
                 : <Badge variant="danger" size="sm">Unresolved</Badge>} />
@@ -744,7 +744,7 @@ export default function HomeServicesFinancePage() {
                   <Row label="GST / tax rule" value={data.policy.gst_tax_rule ?? "—"} />
                   <Row label="Low-balance policy" value={data.policy.low_balance_policy ?? "—"} />
                   <Row label="Effective from" value={dt(data.policy.effective_from)} />
-                  <Row label="Published by" value={data.policy.published_by ?? "ServiceOS Admin"}
+                  <Row label="Published by" value={data.policy.published_by ?? "Fuvay Admin"}
                     hint={data.policy.published_at ? dt(data.policy.published_at) : undefined} />
                 </div>
               </div>
@@ -775,7 +775,7 @@ export default function HomeServicesFinancePage() {
                 <Row label="Disputed" value={data.direct_payments.disputed ?? 0} />
                 <Row label="Total records" value={data.direct_payments.total_attempts ?? 0} />
                 <Row label="Provider collected (recorded)" value={money(data.direct_payments.provider_collected_total)} />
-                <Row label="Held by ServiceOS" value={money(data.direct_payments.serviceos_held_amount)}
+                <Row label="Held by Fuvay" value={money(data.direct_payments.serviceos_held_amount)}
                   hint="never holds job funds" />
               </div>
             )}
@@ -1073,7 +1073,7 @@ export default function HomeServicesFinancePage() {
 
           <Card>
             <SectionTitle icon={<FileText size={16} />} title="Published finance policy"
-              subtitle="Immutable, versioned, published by ServiceOS Admin — your business cannot edit it"
+              subtitle="Immutable, versioned, published by Fuvay Admin — your business cannot edit it"
               actions={data.policy.resolved
                 ? <Badge variant="muted" size="lg">Version {data.policy.version}</Badge>
                 : <Badge variant="danger" size="lg">Unresolved</Badge>} />
@@ -1192,7 +1192,7 @@ export default function HomeServicesFinancePage() {
                   </div>
                   <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "12px 0 0" }}>
                     GST is platform tax and is never added to your usable credits. Credits are posted only
-                    after ServiceOS verifies the payment signature server-side — a pending payment credits nothing.
+                    after Fuvay verifies the payment signature server-side — a pending payment credits nothing.
                   </p>
                   {buyResult && (
                     <div style={{ marginTop: 12, background: "var(--info-bg)", border: "1px solid var(--info-border)",
@@ -1220,7 +1220,7 @@ export default function HomeServicesFinancePage() {
             background: "rgba(0,0,0,.5)", padding: 20 }}>
           <Card style={{ width: "min(520px, 100%)", maxHeight: "88vh", overflowY: "auto" }}>
             <SectionTitle icon={<Receipt size={16} />} title="Usage credit receipt"
-              subtitle="Issued by ServiceOS for this credit purchase"
+              subtitle="Issued by Fuvay for this credit purchase"
               actions={<Btn size="sm" variant="ghost" onClick={() => setReceipt(null)}>Close</Btn>} />
             {receipt.loading ? <Skeleton height={200} /> : !receipt.order.receipt ? (
               <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)",

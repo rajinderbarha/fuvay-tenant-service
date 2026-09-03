@@ -223,8 +223,10 @@ class TestTenantPricing:
 _ROOT = os.path.join(os.path.dirname(__file__), "..")
 ADMIN_FORM_PATH = os.path.join(_ROOT, "frontend", "super-admin", "app", "admin", "service-options", "page.tsx")
 WORKSPACE_PATH = os.path.join(_ROOT, "frontend", "super-admin", "app", "admin", "catalog-workspace", "page.tsx")
-TENANT_WIZARD_PATH = os.path.join(_ROOT, "frontend", "tenant-portal", "app", "(tenant)", "provider",
-                                  "service-options", "page.tsx")
+TENANT_WIZARD_PATH = os.path.join(
+    _ROOT, "frontend", "tenant-portal", "app", "(tenant)", "home-services",
+    "services", "[[...serviceId]]", "page.tsx",
+)
 ADMIN_API_PATH = os.path.join(_ROOT, "frontend", "super-admin", "lib", "api.ts")
 
 
@@ -258,7 +260,8 @@ class TestFrontendOwnership:
 
     def test_tenant_wizard_owns_price_input(self):
         src = _read_utf8(TENANT_WIZARD_PATH)
-        assert "Your price" in src
+        assert "Price for ${option.name}" in src
+        assert "Minimum price for ${option.name}" in src
         assert "setOptionPrice" in src
 
     def test_admin_api_client_option_mapping_requires_job_type(self):

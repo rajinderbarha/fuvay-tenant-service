@@ -2,7 +2,7 @@
 
 Business rule: Home Services customers pay tenant directly on-site.
 Platform does NOT collect the original payment. Therefore:
-- Platform issues ServiceOS service credit (not cash) after disputes.
+- Platform issues Fuvay service credit (not cash) after disputes.
 - Platform recovers from tenant credit alone; the balance may go negative.
 - No silent deductions — every deduction creates an audit trail.
 """
@@ -441,7 +441,7 @@ class DisputeSettlementService:
                     deduction_source="provider_usage_credits",
                     reason=(
                         f"Dispute settlement deduction — {s.settlement_number}. "
-                        "ServiceOS platform does not collect direct payments for Home Services; "
+                        "Fuvay platform does not collect direct payments for Home Services; "
                         "this amount is deducted to fund customer service credit."
                     ),
                     created_by=self.actor_id,
@@ -480,7 +480,7 @@ class DisputeSettlementService:
             issued_by_admin_id=self.actor_id,
             issued_reason=s.admin_decision_reason,
             customer_message=s.customer_message or (
-                f"We have issued ₹{float(credit_amount):,.0f} ServiceOS credit to your account "
+                f"We have issued ₹{float(credit_amount):,.0f} Fuvay credit to your account "
                 "for dispute settlement. You can use it on your next booking."),
             valid_from=_utcnow(),
             expires_at=_utcnow() + timedelta(days=CREDIT_EXPIRY_DAYS),
@@ -497,7 +497,7 @@ class DisputeSettlementService:
             transaction_type="issued",
             amount=credit_amount,
             balance_after=credit_amount,
-            description=(f"ServiceOS credit issued — dispute settlement {s.settlement_number}. "
+            description=(f"Fuvay credit issued — dispute settlement {s.settlement_number}. "
                          "This is platform service credit, not a cash refund."),
             reference_type="dispute_settlement",
             reference_id=settlement_id,
@@ -938,7 +938,7 @@ class CustomerCreditService:
                 transaction_type="used" if credit.status == "used" else "partially_used",
                 amount=-apply_from_this,
                 balance_after=credit.remaining_amount,
-                description=(f"ServiceOS credit applied to booking. "
+                description=(f"Fuvay credit applied to booking. "
                              f"Amount to collect from customer is reduced by ₹{float(apply_from_this):,.0f}."),
                 reference_type="booking",
                 reference_id=booking_id,
@@ -1006,7 +1006,7 @@ class CustomerCreditService:
                 customer_credit_id=credit.id, customer_id=customer_id,
                 transaction_type=credit.status,
                 amount=-apply_from_this, balance_after=credit.remaining_amount,
-                description=(f"ServiceOS credit applied to {reference_type}. "
+                description=(f"Fuvay credit applied to {reference_type}. "
                              f"Amount to collect is reduced by ₹{float(apply_from_this):,.0f}."),
                 reference_type=reference_type, reference_id=reference_id, created_at=now,
             ))

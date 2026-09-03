@@ -257,9 +257,9 @@ def test_preflight_requires_auth(client):
                           "estimated_job_value": 500.0})
     assert r.status_code == 401
 
-def test_warranty_claims_platform_queue_requires_admin(client):
+def test_warranty_claims_has_no_platform_admin_queue(client):
     r = client.get("/v1/commerce/warranty/claims")
-    assert r.status_code == 401
+    assert r.status_code == 405
 
 def test_platform_summary_requires_admin(client):
     r = client.get("/v1/commerce/platform/summary")

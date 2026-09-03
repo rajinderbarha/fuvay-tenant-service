@@ -4,10 +4,10 @@ derivation and SLA policy.
 SUPPORT vs COMPLAINT BOUNDARY (audited, deliberate):
   * app/engines/complaints -> CustomerComplaint: a CUSTOMER disputes or
     complains about a service job delivered by a tenant. Actors: customer,
-    provider, ServiceOS mediator. Has refunds/rework/settlement.
+    provider, Fuvay mediator. Has refunds/rework/settlement.
   * this engine -> SupportTicket: a PROVIDER BUSINESS (tenant) needs help
-    from ServiceOS about its own account or the platform. Actors: tenant
-    user, ServiceOS support/ops. Has SLA, triage, incidents. No refund or
+    from Fuvay about its own account or the platform. Actors: tenant
+    user, Fuvay support/ops. Has SLA, triage, incidents. No refund or
     settlement semantics.
 Separate tables, separate routes, separate statuses, separate SLA. They are
 NOT merged, and the tenant Support UI links out to Complaints instead of
@@ -43,7 +43,7 @@ STATUS_LABELS = {
     ST_DRAFT: "Draft", ST_SUBMITTED: "Submitted", ST_TRIAGED: "Triaged",
     ST_ASSIGNED: "Assigned", ST_INVESTIGATING: "Investigating",
     ST_WAITING_FOR_TENANT: "Awaiting your reply",
-    ST_WAITING_FOR_SERVICEOS: "With ServiceOS support",
+    ST_WAITING_FOR_SERVICEOS: "With Fuvay support",
     ST_RESOLVED: "Resolved", ST_CLOSED: "Closed", ST_REOPENED: "Reopened",
     ST_WITHDRAWN: "Withdrawn",
 }
@@ -198,7 +198,7 @@ REOPEN_WINDOW_DAYS = 14
 CRITICAL_INCIDENT_MAX_PER_WINDOW = 2
 CRITICAL_INCIDENT_WINDOW_HOURS = 24
 CRITICAL_INCIDENT_IMPACTS = [
-    ("cannot_access",      "Cannot access ServiceOS at all"),
+    ("cannot_access",      "Cannot access Fuvay at all"),
     ("major_outage",       "Major outage affecting active operations"),
     ("data_loss",          "Confirmed data loss or corruption"),
     ("security_incident",  "Serious security incident"),

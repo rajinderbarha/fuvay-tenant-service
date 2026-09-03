@@ -153,7 +153,7 @@ export default function FinanceHubPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { label: "Payout Pending Approval", value: o.pending_actions_queue.payout_pending_approval, href: "/admin/finance/payouts?status=pending" },
-                { label: "Failed Top-up Payments", value: o.pending_actions_queue.failed_topup_payment, href: "/admin/finance/topups?payment_status=failed" },
+                { label: "Failed Top-up Payments", value: o.pending_actions_queue.failed_topup_payment, href: "/admin/home-services/finance?tab=credits&credits_tab=topups&payment_status=failed" },
               ].map(q => (
                 <div key={q.label} onClick={() => router.push(q.href)} style={{
                   padding: "12px 14px", borderRadius: 10, background: "var(--surface-sunken)",

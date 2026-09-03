@@ -27,7 +27,7 @@ def _ticket_number() -> str:
 
 
 class SupportTicket(Base):
-    """A tenant business asking ServiceOS for help. NOT a customer complaint."""
+    """A tenant business asking Fuvay for help. NOT a customer complaint."""
     __tablename__ = "support_tickets"
     __table_args__ = (
         UniqueConstraint("ticket_number", name="uq_support_ticket_number"),
@@ -246,7 +246,7 @@ class SupportAnnouncementAck(Base):
 
 
 class SupportPlatformIncident(Base):
-    """Platform incident / maintenance window. Only ServiceOS ops create these
+    """Platform incident / maintenance window. Only Fuvay ops create these
     — the tenant service-status banner is derived from real rows here, and
     reports 'unavailable' when there is no evidence at all."""
     __tablename__ = "support_platform_incidents"

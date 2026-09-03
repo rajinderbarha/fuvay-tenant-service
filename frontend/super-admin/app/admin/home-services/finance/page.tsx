@@ -4,7 +4,7 @@
  *
  * One canonical route (/admin/home-services/finance?tab=...). Home Services
  * customers pay the PROVIDER directly (cash/UPI/card/bank transfer) --
- * ServiceOS never collects the job payment itself, holds provider earnings,
+ * Fuvay never collects the job payment itself, holds provider earnings,
  * or pays out providers. "Direct Customer Payments" (ServicePaymentRecord,
  * invoice_payment.payment_service.record_onsite_payment) is the provider's
  * on-record of what the customer paid; a separate customer-confirmation
@@ -268,13 +268,13 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
             tone={a.payment_disputes > 0 ? "danger" : undefined} onClick={() => onNavigate("financial-events")} />
         </div>
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "8px 0 0" }}>
-          Provider-collected customer payments are records, not ServiceOS-held funds.
+          Provider-collected customer payments are records, not Fuvay-held funds.
         </p>
       </div>
 
       <div>
         <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-          ServiceOS financial position
+          Fuvay financial position
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
           <NotTrackedCard label="Platform-Charge Credits Recovered" tracked={b.platform_charge_recovery_tracked} value={b.platform_charges_recovered} asCredits />
@@ -304,7 +304,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
           ))}
         </div>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 10, marginBottom: 0 }}>
-          ServiceOS does not hold or pay out provider service earnings.
+          Fuvay does not hold or pay out provider service earnings.
         </p>
       </Card>
 
@@ -625,7 +625,7 @@ function MonetizationTab() {
               <KV label="Recovery" value="Deducted from usage credits" />
             </div>
             <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
-              The customer pays the inclusive amount to the provider. At job completion, ServiceOS recovers this customer charge from the provider&apos;s usage credits in addition to the provider-side charge.
+              The customer pays the inclusive amount to the provider. At job completion, Fuvay recovers this customer charge from the provider&apos;s usage credits in addition to the provider-side charge.
             </div>
           </Card>
         </div>
@@ -646,7 +646,7 @@ function MonetizationTab() {
                 <PreviewRow label="Customer-charge credit recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />
                 <PreviewRow label="Total credits deducted at completion" value={units(previewResult.total_credit_deduction as string)} strong />
                 <PreviewRow label="Provider calculation" value={fmt(previewResult.provider_charge_note)} />
-                <PreviewRow label="ServiceOS holds provider earnings" value="₹0" />
+                <PreviewRow label="Fuvay holds provider earnings" value="₹0" />
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>Preview only — does not change tenant pricing.</p>
               </div>
             )}
@@ -1456,7 +1456,7 @@ function ProviderChargeDetail({ chargeRef }: { chargeRef: string }) {
 // canonical balance is tenant_billing.credit_balance (usage_credit_ledger).
 // Credit units are platform usage units, never displayed with a ₹ symbol;
 // only actual top-up payment amounts (a provider's rupee payment to
-// ServiceOS to purchase credits) use money().
+// Fuvay to purchase credits) use money().
 
 function units(v: unknown): string {
   const n = Number(v ?? 0);
@@ -1700,7 +1700,7 @@ function TopupDetail({ topupId, onChanged }: { topupId: string; onChanged: () =>
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <KeyValueGrid data={detail.data} />
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        A top-up is a provider payment to ServiceOS to purchase platform Usage Credits -- distinct from a customer
+        A top-up is a provider payment to Fuvay to purchase platform Usage Credits -- distinct from a customer
         paying the provider for a service job.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2004,277 +2004,6 @@ function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
 
 // ── Customer Refunds ─────────────────────────────────────────────────────────
 
-function CustomerRefundsTab() {
-  const [q, setQ] = useState("");
-  const query = useDebouncedValue(q);
-  const [status, setStatus] = useState("");
-  const [refundType, setRefundType] = useState("");
-  const refundTypeQuery = useDebouncedValue(refundType);
-  const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<string | null>(null);
-  const summary = useApi(useCallback(() => homeServicesFinanceApi.getRefundsSummary(), []));
-  const refunds = useApi(useCallback(
-    () => homeServicesFinanceApi.listRefunds({
-      q: query || undefined, status: status || undefined,
-      refund_type: refundTypeQuery || undefined, page, pageSize: 20,
-    }),
-    [query, status, refundTypeQuery, page]), [query, status, refundTypeQuery, page]);
-  const s = summary.data as Record<string, unknown> | undefined;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Requested" value={(s?.requested as number) ?? 0} />
-        <SummaryCard label="Under Review" value={(s?.under_review as number) ?? 0} tone="warning" />
-        <SummaryCard label="Approved" value={(s?.approved as number) ?? 0} />
-        <SummaryCard label="Recorded by Provider" value={(s?.recorded as number) ?? 0} />
-        <SummaryCard label="Verified" value={(s?.verified as number) ?? 0} />
-        <SummaryCard label="Rejected" value={(s?.rejected as number) ?? 0} tone="danger" />
-      </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search refund or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
-        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
-          { value: "requested", label: "Requested" }, { value: "provider_review", label: "Provider review" },
-          { value: "admin_review", label: "Admin review" },
-          { value: "approved", label: "Approved" }, { value: "recorded", label: "Recorded" },
-          { value: "verified", label: "Verified" }, { value: "rejected", label: "Rejected" },
-          { value: "cancelled", label: "Cancelled" },
-        ]} />
-        <div style={{ width: 220 }}><Input placeholder="Exact refund type..." value={refundType} onChange={v => { setRefundType(v); setPage(1); }} /></div>
-      </div>
-      <QueryError message={refunds.error} onRetry={refunds.refetch} />
-      <DataTable
-        loading={refunds.loading}
-        rows={(refunds.data?.items ?? []) as unknown as Record<string, unknown>[]}
-        emptyText="No customer refunds found for Home Services."
-        onRowClick={row => setSelected(String((row as Record<string, unknown>).id))}
-        columns={[
-          { key: "refund_number", label: "Refund #" },
-          { key: "tenant_name", label: "Provider" },
-          { key: "requested_amount", label: "Requested", render: v => money(v as string) },
-          { key: "approved_amount", label: "Approved", render: v => v ? money(v as string) : "—" },
-          { key: "status", label: "Status", render: v => <Badge variant={v === "verified" ? "success" : v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
-          { key: "created_at", label: "Requested At", render: v => dt(v as string) },
-        ]}
-      />
-      <Pagination page={page} total={refunds.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Customer Refund Detail" size="lg">
-        {selected && <RefundDetail refundId={selected} />}
-      </Modal>
-    </div>
-  );
-}
-function RefundDetail({ refundId }: { refundId: string }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getRefundDetail(refundId), [refundId]), [refundId]);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [openAction, setOpenAction] = useState<"credit" | "reject" | null>(null);
-  const [reason, setReason] = useState("");
-  const [approvedAmount, setApprovedAmount] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(action: string, fn: () => Promise<unknown>) {
-    setBusy(action);
-    setError(null);
-    try {
-      await fn();
-      setOpenAction(null); setReason(""); setApprovedAmount("");
-      detail.refetch();
-    }
-    catch (e) { setError(e instanceof Error ? e.message : `Failed to ${action}.`); }
-    finally { setBusy(null); }
-  }
-
-  if (detail.loading) return <Skeleton height={160} />;
-  const refund = (detail.data ?? {}) as Record<string, unknown>;
-  const status = refund.status as string | undefined;
-  const adminAttention = Boolean(refund.admin_attention_required);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <KeyValueGrid data={detail.data} />
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-        The provider owns the refund and records any direct customer repayment. Admin intervenes only after
-        provider resolution fails, issuing reusable service points funded from provider usage credits — which
-        may take the balance negative, pausing new bookings until it is cleared.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {adminAttention && (
-          <>
-            <Btn variant="primary" disabled={busy === "credit"} onClick={() => setOpenAction("credit")}>Issue service points</Btn>
-            <Btn variant="ghost" disabled={busy === "reject"}
-              onClick={() => setOpenAction("reject")}>
-              {busy === "reject" ? "Rejecting…" : "Reject"}
-            </Btn>
-          </>
-        )}
-        {status === "recorded" && (
-          <Btn variant="primary" disabled={busy === "verify"}
-            onClick={() => run("verify", () => homeServicesFinanceApi.verifyProviderRefund(refundId))}>
-            {busy === "verify" ? "Verifying…" : "Verify with Customer Confirmation"}
-          </Btn>
-        )}
-      </div>
-      {openAction === "credit" && (
-        <div className="hs-finance-action-panel">
-          <Input placeholder="Service points to issue" value={approvedAmount} onChange={setApprovedAmount} />
-          <Input placeholder="Why provider resolution failed" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" disabled={!!busy || !reason.trim() || !Number.isFinite(Number(approvedAmount)) || Number(approvedAmount) <= 0}
-              onClick={() => run("issue service points", () => homeServicesFinanceApi.issueRefundCreditRemedy(
-                refundId, Number(approvedAmount), reason.trim(),
-              ))}>Issue points</Btn>
-            <Btn variant="ghost" onClick={() => setOpenAction(null)}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {openAction === "reject" && (
-        <div className="hs-finance-action-panel">
-          <Input placeholder="Required rejection reason" value={reason} onChange={setReason} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" disabled={!reason.trim() || !!busy}
-              onClick={() => run("reject", () => homeServicesFinanceApi.rejectRefund(refundId, reason.trim()))}>
-              Confirm rejection
-            </Btn>
-            <Btn variant="ghost" onClick={() => setOpenAction(null)}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {error && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 12, margin: 0 }}>{error}</p>}
-    </div>
-  );
-}
-
-// ── Warranty Claims ──────────────────────────────────────────────────────────
-
-function WarrantyClaimsTab() {
-  const [q, setQ] = useState("");
-  const query = useDebouncedValue(q);
-  const [status, setStatus] = useState("");
-  const [claimType, setClaimType] = useState("");
-  const claimTypeQuery = useDebouncedValue(claimType);
-  const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<string | null>(null);
-  const summary = useApi(useCallback(() => homeServicesFinanceApi.getWarrantyClaimsSummary(), []));
-  const claims = useApi(useCallback(
-    () => homeServicesFinanceApi.listWarrantyClaims({
-      q: query || undefined, status: status || undefined,
-      category: claimTypeQuery || undefined, page, pageSize: 20,
-    }),
-    [query, status, claimTypeQuery, page]), [query, status, claimTypeQuery, page]);
-  const s = summary.data as Record<string, unknown> | undefined;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Provider Action" value={(s?.provider_action_required as number) ?? 0} tone="warning" />
-        <SummaryCard label="Admin Escalations" value={(s?.pending_review as number) ?? 0} tone="warning" />
-        <SummaryCard label="Points Issued" value={(s?.approved_claims as number) ?? 0} />
-        <SummaryCard label="Rejected" value={(s?.rejected_claims as number) ?? 0} />
-        <SummaryCard label="Open Exposure" value={money((s?.open_exposure as string) ?? 0)} tone="warning" />
-        <SummaryCard label="Settled Value" value={money((s?.settled_value as string) ?? 0)} />
-      </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: 1, maxWidth: 320 }}><Input placeholder="Search job or provider..." value={q} onChange={v => { setQ(v); setPage(1); }} /></div>
-        <div style={{ width: 220 }}><Input placeholder="Exact claim type..." value={claimType} onChange={v => { setClaimType(v); setPage(1); }} /></div>
-        <Select value={status} onChange={v => { setStatus(v); setPage(1); }} placeholder="All statuses" options={[
-          { value: "provider_action_required", label: "Provider action required" },
-          { value: "provider_in_progress", label: "Provider in progress" },
-          { value: "provider_resolved", label: "Resolved by provider" },
-          { value: "admin_review", label: "Admin escalation" },
-          { value: "credit_issued", label: "Service points issued" },
-          { value: "rejected", label: "Rejected" }, { value: "closed", label: "Closed" },
-        ]} />
-      </div>
-      <QueryError message={claims.error} onRetry={claims.refetch} />
-      <DataTable
-        loading={claims.loading}
-        rows={(claims.data?.items ?? []) as unknown as Record<string, unknown>[]}
-        emptyText="No warranty claims found for Home Services."
-        onRowClick={row => setSelected(String((row as Record<string, unknown>).claim_id))}
-        columns={[
-          { key: "tenant_name", label: "Provider" },
-          { key: "job_id", label: "Job", render: v => v ? String(v).slice(0, 8) : "—" },
-          { key: "claim_type", label: "Type" },
-          { key: "amount_requested", label: "Exposure", render: v => money(v as number) },
-          { key: "status", label: "Status", render: v => <Badge variant={v === "credit_issued" || v === "provider_resolved" ? "success" : v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
-          { key: "created_at", label: "Created", render: v => dt(v as string) },
-        ]}
-      />
-      <Pagination page={page} total={claims.data?.total ?? 0} pageSize={20} onPage={setPage} alwaysShow />
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Warranty Claim Detail" size="lg">
-        {selected && <WarrantyClaimDetail claimId={selected} onChanged={() => { claims.refetch(); summary.refetch(); }} />}
-      </Modal>
-    </div>
-  );
-}
-function WarrantyClaimDetail({ claimId, onChanged }: { claimId: string; onChanged: () => void }) {
-  const detail = useApi(useCallback(() => homeServicesFinanceApi.getWarrantyClaimDetail(claimId), [claimId]), [claimId]);
-  const [openAction, setOpenAction] = useState<"assign" | "documents" | "approve" | "reject" | null>(null);
-  const [field1, setField1] = useState("");
-  const [field2, setField2] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(action: string, fn: () => Promise<unknown>) {
-    setBusy(action); setError(null);
-    try {
-      await fn(); setOpenAction(null); setField1(""); setField2("");
-      await detail.refetch(); onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : `Failed to ${action}.`);
-    } finally { setBusy(null); }
-  }
-
-  if (detail.loading) return <Skeleton height={160} />;
-  const claim = (detail.data ?? {}) as Record<string, unknown>;
-  const status = String(claim.status ?? "");
-  const decisionAllowed = Boolean(claim.admin_attention_required)
-    && !["credit_issued", "rejected", "provider_resolved", "closed"].includes(status);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <KeyValueGrid data={detail.data} />
-      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        The provider is responsible during the warranty window. Admin actions unlock only after customer
-        escalation or the provider response deadline, and compensation is issued as reusable service points.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("assign")}>Assign reviewer</Btn>}
-        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("documents")}>Request documents</Btn>}
-        {decisionAllowed && <Btn variant="primary" onClick={() => setOpenAction("approve")}>Issue service points</Btn>}
-        {decisionAllowed && <Btn variant="ghost" onClick={() => setOpenAction("reject")}>Reject</Btn>}
-      </div>
-      {openAction && (
-        <div className="hs-finance-action-panel">
-          {openAction === "assign" && <Input label="Reviewer user ID" value={field1} onChange={setField1} />}
-          {openAction === "documents" && <Input label="Documents required and instructions" value={field1} onChange={setField1} />}
-          {openAction === "approve" && <>
-            <Input label="Service points" value={field1} onChange={setField1} />
-            <Input label="Required remedy reason" value={field2} onChange={setField2} />
-          </>}
-          {openAction === "reject" && <>
-            <Input label="Rejection reason" value={field1} onChange={setField1} />
-            <Input label="Admin notes (optional)" value={field2} onChange={setField2} />
-          </>}
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="primary" loading={!!busy}
-              disabled={!field1.trim() || (openAction === "approve" && (!Number.isFinite(Number(field1)) || Number(field1) <= 0 || field2.trim().length < 5))}
-              onClick={() => {
-                if (openAction === "assign") return run("assign reviewer", () => homeServicesFinanceApi.assignWarrantyReviewer(claimId, field1.trim()));
-                if (openAction === "documents") return run("request documents", () => homeServicesFinanceApi.requestWarrantyDocuments(claimId, field1.trim()));
-                if (openAction === "approve") return run("issue service points", () => homeServicesFinanceApi.approveWarrantyClaim(claimId, Number(field1), field2.trim()));
-                return run("reject claim", () => homeServicesFinanceApi.rejectWarrantyClaim(claimId, field1.trim(), field2.trim() || undefined));
-              }}>Confirm</Btn>
-            <Btn variant="ghost" onClick={() => { setOpenAction(null); setField1(""); setField2(""); }}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-      {error && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 12, margin: 0 }}>{error}</p>}
-    </div>
-  );
-}
-
-// ── Financial Events ─────────────────────────────────────────────────────────
-
 function FinancialEventsTab() {
   const [q, setQ] = useState("");
   const query = useDebouncedValue(q);
@@ -2392,7 +2121,7 @@ function KeyValueGrid({ data }: { data: unknown }) {
 /**
  * Platform view of money that never touches the platform.
  *
- * Home-services customers pay the PROVIDER directly, so ServiceOS only records
+ * Home-services customers pay the PROVIDER directly, so Fuvay only records
  * the declaration and the customer's confirmation of it. The tenant has had a
  * full console for this at /home-services/direct-payments. The admin view is
  * deliberately read-only: it supplies evidence, never customer interaction
@@ -2423,7 +2152,7 @@ function DirectPaymentsTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
-          ServiceOS does not collect, hold, settle, or adjudicate this money. This is read-only
+          Fuvay does not collect, hold, settle, or adjudicate this money. This is read-only
           operational evidence; the customer and provider handle confirmation and any dispute
           directly in their own apps.
         </p>

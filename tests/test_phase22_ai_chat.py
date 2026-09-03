@@ -41,7 +41,7 @@ def test_deepseek_api_base_defined():
 def test_system_prompt_defined():
     with open(f"{ENGINE}/constants.py", encoding="utf-8") as f: c = f.read()
     assert "SYSTEM_PROMPT" in c
-    assert "ServiceOS" in c
+    assert "Fuvay" in c
 
 def test_system_prompt_covers_key_capabilities():
     with open(f"{ENGINE}/constants.py", encoding="utf-8") as f: c = f.read()

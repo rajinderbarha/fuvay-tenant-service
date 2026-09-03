@@ -41,8 +41,8 @@ class TestLoginRequestSchema:
         assert r.email == "admin@serviceos.local"
 
     def test_email_normalised_to_lowercase(self):
-        r = LoginRequest(email="Admin@ServiceOS.IN", password="x")
-        assert r.email == "admin@serviceos.in"
+        r = LoginRequest(email="Admin@Fuvay.IN", password="x")
+        assert r.email == "admin@fuvay.in"
 
     def test_email_whitespace_stripped(self):
         r = LoginRequest(email="  admin@serviceos.in  ", password="x")

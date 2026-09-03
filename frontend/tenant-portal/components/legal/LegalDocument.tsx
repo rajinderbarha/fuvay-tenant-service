@@ -147,8 +147,7 @@ export function LegalDocumentUnavailable({ title }: { title: string }) {
           This document is temporarily unavailable. Please try again shortly.
         </p>
         <p style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
-          If you need a copy now, contact{" "}
-          <a href="mailto:support@serviceos.in" style={{ color: "var(--brand)" }}>support@serviceos.in</a>.
+          If you need a copy now, contact the Fuvay support team through your usual support channel.
         </p>
       </article>
     </main>

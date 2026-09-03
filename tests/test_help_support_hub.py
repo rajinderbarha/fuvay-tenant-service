@@ -43,13 +43,11 @@ def test_to_customer_dict_still_includes_customer_safe_fields():
         assert field in d
 
 
-def test_to_dict_itself_still_computes_assigned_admin_user_id():
-    """Confirms the fix is a customer-view allowlist change, not a removal
-    of the underlying admin-facing field (admin_router.py's own responses
-    still need it)."""
+def test_to_dict_does_not_expose_retired_admin_assignment():
+    """Complaints are provider-owned; generic responses must not expose or
+    imply a retired Admin assignment workflow."""
     d = _complaint().to_dict()
-    assert "assigned_admin_user_id" in d
-    assert d["assigned_admin_user_id"] is not None
+    assert "assigned_admin_user_id" not in d
 
 
 def test_to_provider_dict_unaffected_by_this_fix():

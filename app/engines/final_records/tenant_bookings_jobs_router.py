@@ -447,7 +447,7 @@ async def get_bookings_jobs_detail(
         # tenant_visible on this job's own snapshotted workflow. Empty when the
         # workflow defines no steps, so pre-migration-274 workflows are unaffected.
         "workflow_stages": _tenant_stages,
-        "direct_payment_notice": "Customer pays the provider directly. ServiceOS records confirmation only.",
+        "direct_payment_notice": "Customer pays the provider directly. Fuvay records confirmation only.",
     }, _RID(r), "final_records")
 
 
@@ -525,7 +525,7 @@ async def confirm_job_payment(
     invoice_id first. Does not duplicate the payment logic itself: customer
     pays the tenant directly, this only records that confirmation and lets
     the existing commission/wallet debit run exactly as it already does for
-    every other caller of record_onsite_payment. Never creates a ServiceOS
+    every other caller of record_onsite_payment. Never creates a Fuvay
     payout or gateway settlement record."""
     tenant_id = _tenant_id(user)
     job = (await db.execute(

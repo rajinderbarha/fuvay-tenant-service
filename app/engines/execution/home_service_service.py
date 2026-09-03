@@ -272,6 +272,7 @@ class HomeServiceJobExecutionService:
             "quote_state": None,
             "can_start_work": False,
             "start_work_block_code": None,
+            "start_work_block_message": None,
         }
         if job.job_type_id:
             jt = await db.get(JobTypeDefinition, job.job_type_id)
@@ -282,6 +283,7 @@ class HomeServiceJobExecutionService:
         workflow = await self._resolve_job_type_workflow(db, job)
         if workflow is None:
             result["start_work_block_code"] = ERR_JOB_TYPE_CONTEXT_UNRESOLVED
+            result["start_work_block_message"] = MSG_JOB_TYPE_CONTEXT_UNRESOLVED
             return result
         requires_quote_approval = bool(workflow.quote_approval_required) or (
             getattr(workflow, "pricing_behavior", None)
@@ -303,6 +305,7 @@ class HomeServiceJobExecutionService:
             result["can_start_work"] = True
         except ServiceOSException as exc:
             result["start_work_block_code"] = exc.error_code
+            result["start_work_block_message"] = exc.detail
 
         if requires_quote_approval:
             from app.engines.quote_checklist.models import ServiceJobQuote
@@ -1201,7 +1204,7 @@ class HomeServiceJobExecutionService:
 
         # Use the issued invoice snapshot as the financial basis. The amount
         # collected from the customer can include the platform fee, so using
-        # it as the commission base would charge commission on ServiceOS's
+        # it as the commission base would charge commission on Fuvay's
         # own fee and recalculating that fee would create fee-on-fee drift.
         invoice = (await db.execute(
             select(ServiceInvoice).where(

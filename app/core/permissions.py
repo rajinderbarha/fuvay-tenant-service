@@ -1,5 +1,5 @@
 """
-ServiceOS — Complete RBAC Permission System
+Fuvay — Complete RBAC Permission System
 Level 5: granular permissions, role hierarchy, tenant-scoped overrides,
 Redis-cached resolution, staff-level custom grants.
 
@@ -140,8 +140,6 @@ class P:
     CUSTOMERS_LOGIN_HISTORY_READ    = "customers:login_history:read"
     CUSTOMERS_ADDRESSES_READ        = "customers:addresses:read"
     CUSTOMERS_ADDRESSES_VIEW_FULL   = "customers:addresses:view_full"
-    CUSTOMERS_SERVICE_CREDITS_READ  = "customers:service_credits:read"
-    CUSTOMERS_SERVICE_CREDITS_CREATE= "customers:service_credits:create"
     CUSTOMERS_PRIVACY_READ          = "customers:privacy:read"
     CUSTOMERS_AUDIT_READ            = "customers:audit:read"
 
@@ -207,12 +205,6 @@ class P:
     SUPPORT_ADMIN_INCIDENT_MANAGE = "support:admin:incident_manage"
 
     # ── Tenant AI Assistant ───────────────────────────────────────────────────
-    # ASSISTANT_USE is the tenant-side gate; the two admin permissions gate the
-    # configuration console, which is platform-side only.
-    ASSISTANT_USE              = "assistant:use"
-    ASSISTANT_ADMIN_VIEW       = "assistant:admin:view"
-    ASSISTANT_ADMIN_CONFIGURE  = "assistant:admin:configure"
-
     # ── Home Services top-up plans ────────────────────────────────────────────
     # What an admin sells: a price and the technician seats it grants. Tenants
     # read the catalogue through their own router, which needs no permission —
@@ -639,7 +631,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.SETTINGS_READ, P.SETTINGS_WRITE, P.SETTINGS_BRANDING,
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_VIEW_ALL,
         P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN, P.SUPPORT_INCIDENT_REPORT,
-        P.ASSISTANT_USE,
         # Service areas — own tenant only (service enforces tenant scoping)
         P.TENANT_SERVICE_AREA_READ, P.TENANT_SERVICE_AREA_CREATE,
         P.TENANT_SERVICE_AREA_UPDATE, P.TENANT_SERVICE_AREA_DELETE,
@@ -690,7 +681,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.TENANT_SERVICE_AREA_READ, # View (not edit) tenant's configured service areas
         P.RAG_QUERY,               # Query knowledge base mid-job
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
-        P.SUPPORT_INCIDENT_REPORT, P.ASSISTANT_USE,
+        P.SUPPORT_INCIDENT_REPORT,
     ],
 
     # "technician" is the role value actually seeded onto real staff/User rows
@@ -703,7 +694,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         P.INVENTORY_READ, P.BOOKING_READ, P.CHAT_READ, P.CHAT_WRITE, P.REVIEW_READ,
         P.NOTIFICATION_LOGS_READ, P.SETTINGS_READ, P.TENANT_SERVICE_AREA_READ, P.RAG_QUERY,
         P.SUPPORT_REQUESTS_CREATE, P.SUPPORT_REQUESTS_VIEW, P.SUPPORT_REQUESTS_REPLY, P.SUPPORT_REQUESTS_REOPEN,
-        P.SUPPORT_INCIDENT_REPORT, P.ASSISTANT_USE,
+        P.SUPPORT_INCIDENT_REPORT,
     ],
 
     "customer": [
@@ -734,7 +725,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     # ── FINAL-L5-05L — canonical least-privilege platform Admin roles ──────────
     # None of these get P.ALL; super_admin remains the sole wildcard role.
     "admin_operations": [
-        P.ASSISTANT_ADMIN_VIEW, P.ASSISTANT_ADMIN_CONFIGURE,
         P.ADMIN_JOBS_READ, P.ADMIN_JOBS_REASSIGN, P.ADMIN_JOBS_STATUS_OVERRIDE,
         P.ADMIN_JOBS_FORCE_CLOSE, P.ADMIN_JOBS_VOID,
         P.FIELD_OPS_JOBS_READ, P.FIELD_OPS_REPORTS_READ, P.FIELD_OPS_JOBS_EXPORT,
@@ -836,7 +826,6 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 
     "admin_readonly": [
-        P.ASSISTANT_ADMIN_VIEW,
         P.LEGAL_ADMIN_VIEW,
         P.TOPUP_PLAN_VIEW,
         P.ADMIN_JOBS_READ, P.FIELD_OPS_JOBS_READ,
@@ -982,6 +971,10 @@ def require_permission(permission: str) -> Callable:
 # BEFORE the endpoint body / request payload is parsed, so business validation
 # (e.g. 422) can never be reached by a read-only-scoped caller.
 TENANT_READONLY_ACCESS_SCOPES = {"customer_support_limited"}
+TENANT_KNOWN_ACCESS_SCOPES = {
+    "global", "operations", "finance", "compliance", "support",
+    "tenant_scoped", "customer_support_limited",
+}
 
 
 def require_tenant_mutation_permission(permission: str) -> Callable:
@@ -1004,7 +997,11 @@ def require_tenant_mutation_permission(permission: str) -> Callable:
         # Role-based permission gate first (existing behavior preserved).
         user = await role_check(user)
         # Tenant read-only access_scope gate — super_admin is exempt.
-        if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+        access_scope = getattr(user, "access_scope", None)
+        if user.role != "super_admin" and (
+            access_scope in TENANT_READONLY_ACCESS_SCOPES
+            or (access_scope is not None and access_scope not in TENANT_KNOWN_ACCESS_SCOPES)
+        ):
             raise ServiceOSException(
                 error_code="PERMISSION_DENIED",
                 detail=(
@@ -1039,7 +1036,11 @@ async def require_tenant_owner_mutation(
     does for permission-gated endpoints.
     """
     from app.exceptions import ServiceOSException
-    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+    access_scope = getattr(user, "access_scope", None)
+    if user.role != "super_admin" and (
+        access_scope in TENANT_READONLY_ACCESS_SCOPES
+        or (access_scope is not None and access_scope not in TENANT_KNOWN_ACCESS_SCOPES)
+    ):
         raise ServiceOSException(
             error_code="PERMISSION_DENIED",
             detail=(
@@ -1072,7 +1073,11 @@ async def require_staff_or_above_mutation(
     matching), which this guard sits in front of, not in place of.
     """
     from app.exceptions import ServiceOSException
-    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+    access_scope = getattr(user, "access_scope", None)
+    if user.role != "super_admin" and (
+        access_scope in TENANT_READONLY_ACCESS_SCOPES
+        or (access_scope is not None and access_scope not in TENANT_KNOWN_ACCESS_SCOPES)
+    ):
         raise ServiceOSException(
             error_code="PERMISSION_DENIED",
             detail=(
@@ -1107,7 +1112,11 @@ async def require_mutation_access_scope(
     guards -- this is a fail-closed floor, not a full authorization decision.
     """
     from app.exceptions import ServiceOSException
-    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+    access_scope = getattr(user, "access_scope", None)
+    if user.role != "super_admin" and (
+        access_scope in TENANT_READONLY_ACCESS_SCOPES
+        or (access_scope is not None and access_scope not in TENANT_KNOWN_ACCESS_SCOPES)
+    ):
         raise ServiceOSException(
             error_code="PERMISSION_DENIED",
             detail=(
@@ -1148,7 +1157,11 @@ async def require_owner_or_office_staff_mutation(
             detail=f"Owner or office staff access required. Your role: '{user.role}'.",
             blocking_rule="required_role: tenant_owner | staff | super_admin",
         )
-    if user.role != "super_admin" and getattr(user, "access_scope", None) in TENANT_READONLY_ACCESS_SCOPES:
+    access_scope = getattr(user, "access_scope", None)
+    if user.role != "super_admin" and (
+        access_scope in TENANT_READONLY_ACCESS_SCOPES
+        or (access_scope is not None and access_scope not in TENANT_KNOWN_ACCESS_SCOPES)
+    ):
         raise ServiceOSException(
             error_code="PERMISSION_DENIED",
             detail=(

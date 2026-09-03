@@ -270,14 +270,11 @@ class TestRetiredDuplicateWorkflowSurface:
         assert r.status_code == 410, r.text
         assert r.json()["error_code"] == "WORKFLOW_TEMPLATES_RETIRED"
 
-    def test_admin_page_redirects_to_canonical_catalog_workspace(self):
+    def test_admin_duplicate_workflow_page_is_deleted(self):
         root = os.path.join(os.path.dirname(__file__), "..")
         page = os.path.join(root, "frontend", "super-admin", "app", "admin",
                             "workflow-templates", "page.tsx")
-        src = open(page, encoding="utf-8").read()
-        assert "redirect" in src
-        assert "/admin/catalog-workspace?tab=workflow" in src
-        assert "masterDataApi" not in src
+        assert not os.path.exists(page)
 
     def test_canonical_job_type_workflow_router_still_present(self):
         import app.engines.admin_catalog.admin_router as ac_router_mod

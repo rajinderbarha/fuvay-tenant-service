@@ -2,7 +2,7 @@
 /**
  * Home Services Customer 360° — single-customer detail page.
  *
- * Overview, Services Used, Providers Used, Jobs and Complaints tabs are
+ * Overview, Services Used, Providers Used and Jobs tabs are
  * backed by real data (ServiceJob/ServiceInvoice/CustomerComplaint queries
  * scoped to this customer_id). Payments (confirmation-level detail),
  * Reviews, Addresses and Activity & Audit tabs need canonical read
@@ -32,7 +32,6 @@ const TABS = [
   { key: "providers", label: "Providers Used" },
   { key: "payments", label: "Payments" },
   { key: "reviews", label: "Reviews" },
-  { key: "complaints", label: "Complaints" },
   { key: "addresses", label: "Service Addresses Used" },
   { key: "activity", label: "Activity & Audit" },
 ] as const;
@@ -93,7 +92,7 @@ function CustomerDetailWorkspace() {
       <Card padding={12} style={{ marginTop: 12, background: "var(--surface-sunken)" }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
           Actions on this page affect only Home Services. Payment reliability is based on customer and
-          provider confirmations. ServiceOS does not collect the job payment.
+          provider confirmations. Fuvay does not collect the job payment.
         </p>
       </Card>
 
@@ -112,7 +111,6 @@ function CustomerDetailWorkspace() {
       {tab === "services" && <ServicesTab d={d} />}
       {tab === "providers" && <ProvidersTab d={d} />}
       {tab === "jobs" && <JobsTab customerId={customerId} />}
-      {tab === "complaints" && <ComplaintsTab customerId={customerId} />}
       {tab === "payments" && <PaymentsTab customerId={customerId} />}
       {tab === "reviews" && <ReviewsTab customerId={customerId} />}
       {tab === "addresses" && <AddressesTab customerId={customerId} />}
@@ -188,25 +186,6 @@ function JobsTab({ customerId }: { customerId: string }) {
         ) },
         { key: "status", label: "Status", render: v => <Badge variant={v === "completed" ? "success" : v === "cancelled" ? "danger" : "default"}>{String(v)}</Badge> },
         { key: "updated_at", label: "Last Update", render: v => dt(v as string) },
-      ]}
-    />
-  );
-}
-
-function ComplaintsTab({ customerId }: { customerId: string }) {
-  const complaints = useApi(useCallback(() => hsCustomerDirectoryApi.getComplaints(customerId), [customerId]));
-  if (complaints.loading) return <Skeleton height={200} />;
-  if (complaints.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Complaints unavailable: {complaints.error}</p></Card>;
-  return (
-    <DataTable
-      rows={(complaints.data?.items ?? []) as unknown as Record<string, unknown>[]}
-      emptyText="No complaints recorded for this customer."
-      columns={[
-        { key: "complaint_number", label: "Complaint #" },
-        { key: "title", label: "Title", render: v => v ? String(v) : "—" },
-        { key: "severity", label: "Severity", render: v => <Badge variant={v === "high" || v === "critical" ? "danger" : v === "medium" ? "warning" : "default"}>{String(v ?? "—")}</Badge> },
-        { key: "status", label: "Status", render: v => <Badge variant={v === "resolved" || v === "closed" ? "success" : "default"}>{String(v)}</Badge> },
-        { key: "created_at", label: "Created", render: v => dt(v as string) },
       ]}
     />
   );

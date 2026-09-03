@@ -9,15 +9,12 @@ FRONTEND = ROOT / "frontend/tenant-portal"
 SETUP = (
     FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
 ).read_text(encoding="utf-8-sig")
-LEGACY = (
-    FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx"
-).read_text(encoding="utf-8-sig")
+LEGACY = FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx"
 API = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 
 
-def test_legacy_parallel_wizard_is_redirect_only():
-    assert "/tenant/home-services/setup/services-pricing" in LEGACY
-    assert "homeServicesSetupApi" not in LEGACY
+def test_legacy_parallel_wizard_is_deleted():
+    assert not LEGACY.exists()
 
 
 def test_setup_loads_available_and_enabled_catalog_services():

@@ -187,7 +187,7 @@ class ProfileService:
         # Aliased rather than renamed -- the original key stays for existing callers.
         data["address_line"] = data.get("address_line1")
 
-        # Staged edits to verified fields, waiting on ServiceOS. Surfaced so the profile
+        # Staged edits to verified fields, waiting on Fuvay. Surfaced so the profile
         # can show the provider what they asked for beside what is still live, rather than
         # a status badge that says "pending" without saying pending WHAT.
         data["pending_changes"] = (tenant.meta or {}).get("pending_changes")
@@ -275,7 +275,7 @@ class ProfileService:
         # Critical fields are now STAGED: the proposed values are held in
         # meta['pending_changes'] and the live columns are left alone until an admin
         # approves. Everything else -- description, website, logo, trading details -- still
-        # saves immediately, because none of it is what ServiceOS verified.
+        # saves immediately, because none of it is what Fuvay verified.
         #
         # Staging applies only to a business that has actually been verified. Before that
         # there is nothing to protect and setup would be unusable if every keystroke needed

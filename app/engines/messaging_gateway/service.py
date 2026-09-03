@@ -26,6 +26,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import ServiceOSException
+from app.config import get_settings
+from app.core.security import (
+    enforce_otp_verify_limits, opaque_rate_identifier, rate_limiter, record_abuse_event,
+)
 from app.engines.messaging_gateway import flow, meta_client, pickers
 from app.engines.messaging_gateway.constants import (
     CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
@@ -299,6 +304,32 @@ class MessagingGatewayService:
             logger.info("messaging_gateway.inbound.duplicate",
                         provider_message_id=msg.provider_message_id)
             return {"status": STATUS_DUPLICATE, "reply_sent": False}
+
+        # Meta must always receive a successful webhook acknowledgement, even
+        # when one sender is flooding us. Claim the provider id, mark the
+        # message ignored, and stop before creating sessions/drafts or replies.
+        try:
+            allowed, _ = await rate_limiter.check(
+                limit_key="booking:social:message",
+                limit_type="booking:social_message",
+                identifier=opaque_rate_identifier(f"{msg.channel}:{msg.from_id}"),
+                fail_closed=get_settings().APP_ENV in ("staging", "production"),
+            )
+        except ServiceOSException:
+            allowed = False
+            record.failure_reason = "security_control_unavailable"
+        if not allowed:
+            record.status = STATUS_IGNORED
+            record.failure_reason = record.failure_reason or "sender_rate_limited"
+            await self.db.commit()
+            await record_abuse_event(
+                "social_message_flood",
+                entity_id=f"{msg.channel}:{msg.from_id}",
+                entity_type="social_sender",
+                threat_level="medium",
+                context={"channel": msg.channel},
+            )
+            return {"status": STATUS_IGNORED, "reply_sent": False, "rate_limited": True}
 
         thread = await self.get_or_create_thread(msg)
         record.thread_id = thread.id
@@ -1050,7 +1081,16 @@ class MessagingGatewayService:
         thread.pending_phone_ciphertext = channel_config_service._fernet().encrypt(phone.encode()).decode()
         # Enumeration-safe: send_phone_otp has the same response shape. We do
         # not tell an Instagram sender whether a supplied phone is registered.
-        await AuthService(self.db).send_phone_otp(phone, "messaging_link")
+        try:
+            await AuthService(self.db).send_phone_otp(
+                phone,
+                "messaging_link",
+                source_id=f"{thread.channel}:{thread.channel_user_id}",
+            )
+        except ServiceOSException as exc:
+            if exc.error_code in {"RATE_LIMITED", "SECURITY_CONTROL_UNAVAILABLE"}:
+                return "Too many verification requests. Please wait before trying again."
+            raise
         await self.db.flush()
         return (
             "If that number belongs to an active Fuvay account, a verification "
@@ -1077,6 +1117,13 @@ class MessagingGatewayService:
             thread.pending_customer_id = None
             thread.pending_phone_ciphertext = None
             return "That code is invalid or expired. Send /link to try again."
+        try:
+            await enforce_otp_verify_limits(
+                phone,
+                source_id=f"{thread.channel}:{thread.channel_user_id}",
+            )
+        except ServiceOSException:
+            return "Too many verification attempts. Please wait before trying again."
         user = await self.db.get(User, thread.pending_customer_id) if thread.pending_customer_id else None
         if user and (not user.phone or not user.is_active):
             thread.pending_customer_id = None

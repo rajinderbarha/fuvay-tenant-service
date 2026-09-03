@@ -16,7 +16,7 @@ from app.engines.platform_commerce.schemas import (
     PurchaseInitiateRequest, PurchaseConfirmRequest, ManualCreditRequest,
     CommissionDeductRequest, UpdateHealthSignalRequest, HealthOverrideRequest,
     ReservationCreateRequest, WarrantyClaimRequest, WarrantyProviderResponseRequest,
-    WarrantyEscalationRequest, ClaimResolveRequest, PreflightRequest,
+    WarrantyEscalationRequest, PreflightRequest,
 )
 from app.engines.platform_commerce.service import CommerceService
 from app.exceptions import ServiceOSException
@@ -24,7 +24,6 @@ from app.schemas.base import ApiResponse, Meta, Links, Link, ok
 
 logger = structlog.get_logger("commerce.router")
 router = APIRouter(prefix="/v1/commerce", tags=["Platform Commerce"])
-retired_admin_warranty_router = APIRouter()
 ENGINE_ID = "platform_commerce"
 
 
@@ -418,30 +417,6 @@ async def escalate_claim(claim_id: uuid.UUID, body: WarrantyEscalationRequest, r
         customer_id=uuid.UUID(u.user_id) if u.role == "customer" else None,
         tenant_id=uuid.UUID(u.tenant_id) if u.tenant_id else None,
     )
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-@retired_admin_warranty_router.get("/warranty/claims")
-async def list_all_claims(r: Request,
-                           status_filter: str | None = Query(None, alias="status"),
-                           limit: int = Query(50, ge=1, le=200),
-                           cursor: str | None = Query(None),
-                           u: UserContext = Depends(require_super_admin),
-                           s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.list_all_claims(status_filter, limit, cursor)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-@retired_admin_warranty_router.post("/warranty/claims/{claim_id}/approve")
-async def approve_claim(claim_id: uuid.UUID, body: ClaimResolveRequest, r: Request,
-                         u: UserContext = Depends(require_super_admin),
-                         s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.approve_claim(claim_id, body.amount_approved or Decimal("0"), body.admin_notes)
-    return ok(data, _meta(r).request_id, ENGINE_ID)
-
-@retired_admin_warranty_router.post("/warranty/claims/{claim_id}/reject")
-async def reject_claim(claim_id: uuid.UUID, body: ClaimResolveRequest, r: Request,
-                        u: UserContext = Depends(require_super_admin),
-                        s: CommerceService = Depends(_svc)) -> ApiResponse[dict]:
-    data = await s.reject_claim(claim_id, body.rejection_reason or "Claim rejected.", body.admin_notes)
     return ok(data, _meta(r).request_id, ENGINE_ID)
 
 # ── BADGES (3) ────────────────────────────────────────────────────────────────

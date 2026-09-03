@@ -3,7 +3,7 @@
  * FRONTEND-CONNECT-01 — Shared API UI-state components (tenant-portal).
  *
  * The error/loading/empty patterns already exist ad-hoc across many pages
- * (see /provider/status/page.tsx for the most complete hand-rolled version).
+ * Shared loading, empty, and error states for tenant workspaces.
  * This file is the reusable version so future pages don't hand-roll it again.
  * Uses the same CSS design tokens (var(--*)) as components/shared/ui.tsx.
  */

@@ -94,7 +94,7 @@ export default function LoginPage() {
     }
     localStorage.removeItem("serviceos_admin_token");
     localStorage.removeItem("serviceos_admin_refresh");
-    setError("This account does not have access to the ServiceOS Admin Control Center.");
+    setError("This account does not have access to the Fuvay Admin Control Center.");
     return true;
   }
 
@@ -226,7 +226,7 @@ export default function LoginPage() {
               <form onSubmit={handleCredentials} className="admin-login-form" noValidate>
                 <LoginField
                   id="admin-email" label="Work email" icon={Mail} type="email" value={email}
-                  onChange={setEmail} placeholder="admin@serviceos.in" autoComplete="username"
+                  onChange={setEmail} placeholder="admin@fuvay.in" autoComplete="username"
                 />
                 <LoginField
                   id="admin-password" label="Password" icon={Lock} type={showPassword ? "text" : "password"}

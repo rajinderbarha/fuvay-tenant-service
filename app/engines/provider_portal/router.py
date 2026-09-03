@@ -892,8 +892,8 @@ async def create_member_login(
         from app.email_client import send_email
         activation_sent = await send_email(
             email,
-            "Activate your ServiceOS team account",
-            (f"Hi {full_name},\n\nYour ServiceOS team account is ready. "
+            "Activate your Fuvay team account",
+            (f"Hi {full_name},\n\nYour Fuvay team account is ready. "
              f"Open the team activation page and enter this one-time code:\n\n"
              f"{token_plain}\n\nThis code expires in 24 hours."),
         )

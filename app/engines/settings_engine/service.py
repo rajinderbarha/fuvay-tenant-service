@@ -18,14 +18,14 @@ from app.schemas.base import encode_cursor, decode_cursor
 
 MASKED_VALUE = "••••••••"
 
-# The one concrete cross-setting business rule from the P0 ticket: ServiceOS Home
+# The one concrete cross-setting business rule from the P0 ticket: Fuvay Home
 # Services is a direct-payment model — tenant payouts cannot be turned on unless
 # the platform is also configured to collect payment.
 IMPACT_RULES = {
     "tenant_payouts_enabled": {
         "blocked_unless": {"key": "payment_collection_enabled", "equals": True},
         "message": "Cannot enable tenant_payouts_enabled while payment_collection_enabled=false. "
-                   "ServiceOS Home Services uses a direct-payment model — customers pay providers "
+                   "Fuvay Home Services uses a direct-payment model — customers pay providers "
                    "directly, so the platform does not collect payment or make payouts.",
     },
 }
@@ -582,7 +582,7 @@ class SettingsService:
                 ))
             created.append(item["key"])
             await self._audit(SettingTier.PLATFORM, item["key"], None, item["value"],
-                               reason="Seeded ServiceOS default settings", action_type="created")
+                               reason="Seeded Fuvay default settings", action_type="created")
         return {"created": created, "skipped": to_skip, "total_defaults": len(SERVICEOS_DEFAULT_SETTINGS)}
 
     # ── Feature flags ────────────────────────────────────────────────────────

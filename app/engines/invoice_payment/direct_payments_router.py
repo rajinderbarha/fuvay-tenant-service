@@ -200,7 +200,7 @@ async def correct_declaration(
 # ── Reminder / dispute ───────────────────────────────────────────────────────
 
 @router.post("/direct-payments/{payment_id}/remind-customer", response_model=ApiResponse,
-             summary="Send a real confirmation reminder through ServiceOS notifications")
+             summary="Send a real confirmation reminder through Fuvay notifications")
 async def remind_customer(
     payment_id: uuid.UUID,
     r: Request,

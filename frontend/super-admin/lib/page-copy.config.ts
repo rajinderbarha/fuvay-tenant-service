@@ -88,7 +88,7 @@ export const PAGE_COPY = {
     },
     settings: {
       title: "Platform Settings",
-      description: "Global configuration for the ServiceOS platform.",
+      description: "Global configuration for the Fuvay platform.",
     },
     marketing: {
       title: "Marketing",

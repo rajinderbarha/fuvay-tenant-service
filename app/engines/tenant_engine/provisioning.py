@@ -261,7 +261,7 @@ async def _seed_notification_templates(
         ("payment.successful", "Payment Successful", "Your payment of {amount} was successful."),
         ("payment.failed", "Payment Failed", "Your payment of {amount} failed. Please retry."),
         ("review.requested", "How was your experience?", "Please rate your {service_name} experience with {staff_name}."),
-        ("staff.invited", "You've Been Invited", "You've been invited to join {tenant_name} on ServiceOS."),
+        ("staff.invited", "You've Been Invited", "You've been invited to join {tenant_name} on Fuvay."),
     ]
     for event_type, title, body in templates:
         await db.execute(text(f"""

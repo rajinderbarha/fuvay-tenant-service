@@ -20,7 +20,7 @@ export function useAdminMenuRefresh(): () => void {
   return useContext(AdminMenuRefreshCtx);
 }
 import {
-  LayoutDashboard, Building2, Inbox, Settings2, Banknote,
+  LayoutDashboard, Building2, Settings2, Banknote,
   Shield, ClipboardCheck, Brain, Users, Star, Bell,
   Settings, Sun, Moon, ChevronRight,
   Search, Zap, LogOut, Tag, CalendarDays, UserCheck, Wrench, LayoutGrid, Cpu, Layers, FolderTree,
@@ -76,9 +76,6 @@ const NAV_GROUPS: NavGroup[] = [
       // and its detail page were built and are live, but nothing linked to
       // them, so a provider could raise a request no admin would ever see.
       { id: "support",    href: "/admin/support",    label: "Support Requests", icon: <HelpCircle size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // "Complaint Policies" folded into the Complaints page as a "Policies"
-      // tab 2026-08-05 at explicit user request -- removed as a separate
-      // nav item. /admin/complaint-policies route stays live, unlinked.
     ],
   },
   {
@@ -102,17 +99,12 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "customer-home", href: "/admin/marketing/home", label: "Customer Home",   icon: <Image size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "notifications", href: "/admin/notifications", label: "Notifications",   icon: <Bell size={16}/>,      requiredPermission: SUPER_ADMIN_ONLY },
       { id: "messaging-channels", href: "/admin/messaging-channels", label: "Social Booking", icon: <MessageCircle size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
-      // "Notification Settings" folded into Notifications as a "Settings"
-      // tab 2026-08-05 at explicit user request -- removed as a separate
-      // nav item. /admin/notifications/settings route stays live, unlinked.
+      // Notification settings and templates are tabs of this workspace.
       { id: "analytics",     href: "/admin/analytics",     label: "Analytics",       icon: <BarChart3 size={16}/>, requiredPermission: "analytics:dashboard:read" },
       // "Reports" folded into Analytics as a "Reports" tab 2026-08-05 at
       // explicit user request -- removed as a separate nav item.
       // /admin/reports route stays live, unlinked.
       { id: "intelligence",  href: "/admin/intelligence",  label: "AI Intelligence", icon: <Brain size={16}/>,     requiredPermission: SUPER_ADMIN_ONLY },
-      // The provider-facing assistant's own console -- its knowledge base and
-      // escalations. Live, and previously unreachable.
-      { id: "tenant-assistant", href: "/admin/tenant-assistant", label: "Tenant Assistant", icon: <Inbox size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
     ],
   },
   {
@@ -139,8 +131,8 @@ const NAV_GROUPS: NavGroup[] = [
       // Workflow authoring lives in Home Services -> Service Catalog -> Catalog Workspace.
       { id: "audit-logs",         href: "/admin/audit-logs",        label: "Audit Logs", icon: <ScrollText size={16}/>, requiredPermission: "auth:audit:read" },
       { id: "users",              href: "/admin/users",              label: "Users",      icon: <Users size={16}/>,      requiredPermission: "auth:users:read" },
-      { id: "roles",              href: "/admin/roles",              label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
-      { id: "permissions",        href: "/admin/permissions",        label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
+      { id: "roles",              href: "/admin/users/roles",        label: "Roles",       icon: <UserCog size={16}/>,   requiredPermission: "platform:roles:read" },
+      { id: "permissions",        href: "/admin/users/permissions",  label: "Permissions", icon: <KeyRound size={16}/>, requiredPermission: "platform:permissions:read" },
       // Terms and privacy policy: authored here, published from here, and read
       // by the customer app, the staff app and the tenant portal. The engine,
       // its admin console and all three consumers were built, but neither

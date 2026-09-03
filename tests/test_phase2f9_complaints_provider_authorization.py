@@ -74,7 +74,6 @@ MUTATION_ROUTES = [
      {"approve": False, "reason": "Provider decision"}),
     ("POST", f"/v1/provider/refund-requests/{REFUND_ID}/record",
      {"recorded_amount": "10.00"}),
-    ("POST", f"/v1/provider/complaints/{COMPLAINT_ID}/ai-session/answers", {"answers": ["yes"]}),
     ("POST", f"/v1/provider/complaints/{COMPLAINT_ID}/settlement-proposals",
      {"proposal_type": "refund", "description": "settlement"}),
     ("POST", f"/v1/provider/complaints/{COMPLAINT_ID}/settlement-proposals/{PROPOSAL_ID}/respond",
@@ -392,7 +391,7 @@ class TestModuleVerificationExitsClean:
         mod = self._load_inventory_module()
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.complaints.provider_router"]
-        assert len(routes) == 11
+        assert len(routes) == 10
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

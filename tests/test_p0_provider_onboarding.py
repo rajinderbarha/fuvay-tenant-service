@@ -180,18 +180,17 @@ def test_api_ts_request_changes_method():
 
 # ── 5. Frontend page ──────────────────────────────────────────────────────────
 
-def test_page_file_exists():
-    assert Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").exists()
+def test_legacy_page_is_deleted():
+    assert not Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").exists()
 
 
 def test_page_no_provider_onboarding_statuses_reference():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
+    src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(encoding="utf-8")
     assert "provider_onboarding_statuses" not in src
 
 
-def test_legacy_page_redirects_to_canonical_home_services_queue():
-    src = Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").read_text(encoding="utf-8")
-    assert 'redirect("/admin/home-services/providers?tab=onboarding")' in src
+def test_legacy_page_is_not_kept_as_redirect_code():
+    assert not Path("frontend/super-admin/app/admin/onboarding/providers/page.tsx").exists()
 
 
 def test_canonical_page_uses_review_api_and_summary_cards():

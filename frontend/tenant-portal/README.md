@@ -1,25 +1,26 @@
-# ServiceOS — Tenant Owner Portal
+# Fuvay — Tenant Owner Portal
 
-Next.js 15 dashboard for service business owners.
+Next.js dashboard for service business owners.
 
-## Pages (14)
+## Canonical Home Services workspaces
 
 | Route | Description |
 |---|---|
 | /login | Stores 6 context keys in localStorage |
-| /dashboard | Jobs-first layout, KPIs, SLA alerts |
-| /jobs | Filter/search with SLA badge |
-| /jobs/[id] | Status transitions (VALID_TRANSITIONS graph), history |
-| /bookings | Confirm / reject / convert to job |
-| /staff | List + DS performance scores |
-| /staff/[id] | Performance breakdown, schedule edit |
+| /dashboard | Live operations, capacity, quality and finance summary |
+| /home-services/bookings-jobs | Booking-to-job pipeline and job detail drawer |
+| /home-services/dispatch | Assignment and dispatch |
+| /home-services/availability | Provider and technician capacity |
+| /home-services/services | Admin-catalog services, options and tenant pricing |
+| /home-services/team | Team, skills and operational readiness |
+| /business/coverage-hours | Zipcode coverage, hours and booking controls |
+| /inventory | Tenant-owned parts inventory |
 | /customers | Health band tabs, search |
 | /customers/[id] | Health signals, risk flags, job history |
-| /finance | Wallet, commissions, payout request |
-| /reviews | One-reply enforcement, aggregate |
-| /chat | Rooms + messages |
-| /documents | Sign now, generate, status tabs |
-| /settings | 3-tier source display, webhooks |
+| /home-services/reviews | Reviews and provider replies |
+| /home-services/complaints | Provider/customer complaint workflow |
+| /provider/refund-requests | Provider-owned refund and warranty remedies |
+| /home-services/finance | Usage credits, top-up plans and deductions |
 
 ## Running
 
@@ -31,7 +32,7 @@ npm run dev     # → http://localhost:3001
 ## Tests
 
 ```bash
-python -m pytest tests/test_tenant_portal.py -v   # 34 tests
+python -m pytest tests/test_tenant_portal.py -v
 ```
 
 ## Connecting to Backend

@@ -122,7 +122,7 @@ export function SupportRequestDetailScreen({ navigation, route }: Props) {
               <AppText variant="bodySmall" color="tertiary">No messages yet.</AppText>
             ) : req.conversation.map(msg => (
               <View key={msg.id} style={{ marginBottom: theme.spacing.sm }}>
-                <AppText variant="labelStrong">{msg.author_type === "serviceos" ? "ServiceOS Support" : msg.author_name ?? "You"}</AppText>
+                <AppText variant="labelStrong">{msg.author_type === "serviceos" ? "Fuvay Support" : msg.author_name ?? "You"}</AppText>
                 <AppText variant="bodySmall">{msg.body}</AppText>
                 <AppText variant="caption" color="tertiary">{formatDateTime(msg.created_at)}</AppText>
               </View>

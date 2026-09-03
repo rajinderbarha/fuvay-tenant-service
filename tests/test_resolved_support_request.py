@@ -57,8 +57,6 @@ def test_to_customer_dict_exposes_resolution_fields_and_excludes_internal_ones()
         complaint_type="service_quality", status=STATUS_RESOLVED,
         description="Provider arrived late",
         customer_visible_summary="Your booking remains active.",
-        internal_admin_notes="Escalated to regional manager -- do not share.",
-        assigned_admin_user_id=_uuid(),
         resolved_at=now, closed_at=None,
     )
     d = c.to_customer_dict()

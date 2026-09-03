@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   legalDocumentIndexSchema, legalDocumentSchema,
 } from "../contracts/legalDocuments";
+import { ENV } from "../../config/environment";
 
 /**
  * Legal documents — public read client.
@@ -17,6 +18,11 @@ import {
  */
 
 const BASE = "/v1/public/legal";
+// This request runs immediately after authentication, when the API may still be
+// warming its legal-document cache or database connection. It gates the entire
+// signed-in experience, so give it a little more room than ordinary screen data
+// instead of stranding a successfully authenticated customer on a timeout page.
+const CONSENT_TIMEOUT_MS = 30_000;
 
 export const CUSTOMER_AUDIENCE = "customer";
 
@@ -49,7 +55,11 @@ const legalConsentStatusSchema = z.object({
 export type LegalConsentStatus = z.infer<typeof legalConsentStatusSchema>;
 
 export async function getLegalConsentStatus(): Promise<LegalConsentStatus> {
-  const res = await authenticatedRequest({ method: "GET", path: "/v1/legal/consent-status" });
+  const res = await authenticatedRequest({
+    method: "GET",
+    path: "/v1/legal/consent-status",
+    timeoutMs: Math.max(ENV.apiTimeoutMs, CONSENT_TIMEOUT_MS),
+  });
   return parseApiSuccess(res.json, legalConsentStatusSchema).data;
 }
 
@@ -58,6 +68,7 @@ export async function acceptLegalDocuments(documentIds: string[]): Promise<Legal
     method: "POST",
     path: "/v1/legal/accept",
     body: { accepted: true, document_ids: documentIds },
+    timeoutMs: Math.max(ENV.apiTimeoutMs, CONSENT_TIMEOUT_MS),
   });
   return parseApiSuccess(res.json, legalConsentStatusSchema).data;
 }

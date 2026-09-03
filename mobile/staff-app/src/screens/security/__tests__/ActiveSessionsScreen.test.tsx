@@ -19,7 +19,7 @@ const route = { params: undefined } as any;
 const DATA: SessionListResponseDTO = {
   total: 2, current_session_id: "s1", total_sessions: 2, trusted_device_count: 1,
   sessions: [
-    { session_id: "s1", device_name: "Samsung Galaxy S24", device_display_name: "Samsung Galaxy S24", device_type: "ServiceOS Staff · Android 16", is_trusted: true, approximate_location: "Ludhiana", last_active_at: new Date().toISOString(), created_at: "2026-07-31T00:00:00Z", is_current: true, allowed_actions: ["view", "remove_trust"] },
+    { session_id: "s1", device_name: "Samsung Galaxy S24", device_display_name: "Samsung Galaxy S24", device_type: "Fuvay Staff · Android 16", is_trusted: true, approximate_location: "Ludhiana", last_active_at: new Date().toISOString(), created_at: "2026-07-31T00:00:00Z", is_current: true, allowed_actions: ["view", "remove_trust"] },
     { session_id: "s2", device_name: "Chrome on Windows", device_display_name: "Chrome on Windows", device_type: "Windows 11 · Chrome 150", is_trusted: false, approximate_location: "Ludhiana", last_active_at: "2026-07-31T07:00:00Z", created_at: "2026-07-28T00:00:00Z", is_current: false, allowed_actions: ["view", "revoke"] },
   ],
 };

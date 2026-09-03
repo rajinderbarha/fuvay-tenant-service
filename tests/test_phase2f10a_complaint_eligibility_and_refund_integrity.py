@@ -38,7 +38,7 @@ from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.refund_service import RefundRequestService
 from app.engines.complaints.constants import (
     RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB,
-    STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_UNDER_ADMIN_REVIEW,
+    STATUS_OPEN, STATUS_AWAITING_PROVIDER,
     STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED, STATUS_RESOLVED,
     STATUS_CLOSED, STATUS_CANCELLED, STATUS_REJECTED, STATUS_SETTLED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED, STATUS_REFUND_RECORDED,
@@ -234,7 +234,6 @@ class TestRefundRequestSilentTransitionIsIntentional:
     @pytest.mark.parametrize("status,should_transition", [
         (STATUS_OPEN, True),
         (STATUS_AWAITING_PROVIDER, True),
-        (STATUS_UNDER_ADMIN_REVIEW, True),
         (STATUS_RESOLUTION_PROPOSED, False),
         (STATUS_REWORK_APPROVED, False),
         (STATUS_RESOLVED, False),

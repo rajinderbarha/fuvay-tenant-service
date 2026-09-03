@@ -8,8 +8,7 @@ from pathlib import Path
 def test_workspace_client_uses_only_scoped_list_contracts():
     src = Path("frontend/super-admin/lib/api-hs-finance.ts").read_text(encoding="utf-8")
     for path in (
-        "provider-charges", "topups", "warranty-claims",
-        "invoices", "refunds", "financial-events", "audit",
+        "provider-charges", "topups", "invoices", "financial-events", "audit",
     ):
         assert f"/v1/admin/finance/home-services/{path}" in src
     assert "/v1/admin/commission-records${_q(params)}" not in src
@@ -30,19 +29,16 @@ def test_large_summary_cards_use_aggregates_not_full_table_loads():
     for name in (
         "get_credits_workspace_summary",
         "get_hs_warranty_claims_summary", "get_invoices_summary",
-        "get_hs_refunds_summary",
     ):
         src = inspect.getsource(getattr(HomeServicesFinanceService, name))
-        assert "func.count" in src
+        assert "func.count" in src or "func.sum" in src
         assert ".scalars().all()" not in src
 
 
-def test_retired_duplicate_pages_are_server_redirects_and_unlinked():
-    completed = Path("frontend/super-admin/app/admin/home-services/completed-job-deduction/page.tsx").read_text(encoding="utf-8")
-    wallets = Path("frontend/super-admin/app/admin/provider-wallets/page.tsx").read_text(encoding="utf-8")
+def test_retired_duplicate_pages_are_deleted_and_unlinked():
     layout = Path("frontend/super-admin/components/layout/AdminLayout.tsx").read_text(encoding="utf-8")
-    assert 'redirect("/admin/home-services/finance?tab=provider-charges")' in completed
-    assert "credits_tab=accounts" in wallets and "redirect(" in wallets
+    assert not Path("frontend/super-admin/app/admin/home-services/completed-job-deduction/page.tsx").exists()
+    assert not Path("frontend/super-admin/app/admin/provider-wallets/page.tsx").exists()
     assert 'href: "/admin/home-services/completed-job-deduction"' not in layout
 
 
@@ -65,13 +61,11 @@ def test_finance_filters_and_pagination_are_reactive():
         "[query, lowOnly, page, pageSize]), [query, lowOnly, page, pageSize]",
         "[query, status, dateFrom, dateTo, page, pageSize]), [query, status, dateFrom, dateTo, page, pageSize]",
         "[query, status, paymentStatus, page]), [query, status, paymentStatus, page]",
-        "[query, status, refundTypeQuery, page]), [query, status, refundTypeQuery, page]",
-        "[query, status, claimTypeQuery, page]), [query, status, claimTypeQuery, page]",
         "[query, eventType, recordType, page]), [query, eventType, recordType, page]",
     )
     for dependency_set in dependency_sets:
         assert dependency_set in src
-    assert src.count("<QueryError message=") >= 10
+    assert src.count("<QueryError message=") >= 8
 
 
 def test_finance_routes_have_base_permission_and_bounded_pages():
@@ -92,13 +86,6 @@ def test_shared_invoice_commission_and_event_reads_are_vertical_scoped():
         assert "HOME_SERVICES_VERTICAL" in src
 
 
-def test_refund_record_client_matches_backend_contract_and_avoids_prompts():
-    client = Path("frontend/super-admin/lib/api-hs-finance.ts").read_text(encoding="utf-8")
-    page = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
-    assert "recorded_amount: amount" in client
-    assert "prompt(" not in page
-
-
 def test_invoice_summary_uses_the_statuses_written_by_invoice_engine():
     from app.engines.finance_hub.home_services_finance_service import HomeServicesFinanceService
     src = inspect.getsource(HomeServicesFinanceService.get_invoices_summary)
@@ -106,15 +93,6 @@ def test_invoice_summary_uses_the_statuses_written_by_invoice_engine():
         assert f'payment_status == "{status}"' in src
     assert 'payment_status == "paid"' not in src
     assert 'payment_status == "overdue"' not in src
-
-
-def test_warranty_workflow_and_audit_pagination_are_reachable_from_workspace():
-    client = Path("frontend/super-admin/lib/api-hs-finance.ts").read_text(encoding="utf-8")
-    page = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
-    for action in ("assign", "request-documents", "approve", "reject", "settle"):
-        assert f"/${{id}}/{action}`" in client
-    assert "listAudit(page, pageSize)" in page
-    assert "<Pagination page={page} total={audit.data?.total ?? 0}" in page
 
 
 def test_direct_payment_oversight_uses_the_canonical_finance_client():

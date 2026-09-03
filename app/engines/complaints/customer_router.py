@@ -16,9 +16,6 @@ from app.engines.complaints.refund_service import RefundRequestService
 from app.exceptions import ServiceOSException
 
 customer_complaint_router = APIRouter(prefix="/v1/customer/complaints", tags=["customer-complaints"])
-# Historical AI handlers stay importable for old migrations/tests, but this
-# router is intentionally never mounted. No AI complaint route is reachable.
-retired_ai_router = APIRouter()
 
 _eligibility = ComplaintEligibilityService()
 _complaint   = ComplaintService()
@@ -60,15 +57,6 @@ class CreateJobRefundIn(BaseModel):
     job_id:           uuid.UUID
     reason:           str
     requested_amount: Decimal
-
-class EscalateRefundIn(BaseModel):
-    reason: str
-
-
-class CreateReworkIn(BaseModel):
-    rework_reason:          str
-    customer_visible_notes: Optional[str] = None
-
 
 # ── Eligibility check ─────────────────────────────────────────────────────────
 @customer_complaint_router.get("/check-eligible")
@@ -250,56 +238,6 @@ async def list_resolutions(
 
 
 # ── AI settlement: answer the clarifying questions ────────────────────────────
-class AIAnswersIn(BaseModel):
-    answers: list[str]
-
-
-@retired_ai_router.get("/{complaint_id}/ai-session")
-async def get_ai_session(
-    complaint_id: uuid.UUID,
-    r: Request       = None,
-    u: UserContext   = Depends(require_customer),
-    db: AsyncSession = Depends(get_db),
-):
-    """The customer must be able to SEE the questions the AI asked them."""
-    rid = getattr(r.state, "request_id", "—") if r else "—"
-    await _complaint.get_customer_complaint(db, u.user_id, complaint_id)
-    session = await _complaint.get_ai_session(db, complaint_id)
-    if not session:
-        return ok(None, rid, "complaint.ai_session.get")
-    # customer-safe view only — never expose the tenant's answers or the raw
-    # AI risk flags / confidence to the other side of the dispute
-    return ok({
-        "id":                 str(session.id),
-        "status":             session.status,
-        "customer_questions": session.customer_questions,
-        "customer_answers":   session.customer_answers,
-        "awaiting_your_answers": session.customer_answers is None,
-    }, rid, "complaint.ai_session.get")
-
-
-@retired_ai_router.post("/{complaint_id}/ai-session/answers")
-async def submit_ai_answers(
-    complaint_id: uuid.UUID,
-    body: AIAnswersIn,
-    r: Request       = None,
-    u: UserContext   = Depends(require_customer),
-    db: AsyncSession = Depends(get_db),
-):
-    """MODULE-L5-02 bug #37: the AI settlement session asked the customer
-    clarifying questions but there was NO endpoint to answer them, so the session
-    sat in 'collecting' forever and the analysis never ran."""
-    rid = getattr(r.state, "request_id", "—") if r else "—"
-    complaint = await _complaint.get_customer_complaint(db, u.user_id, complaint_id)
-    from app.engines.complaints.ai_settlement_service import AISettlementService
-    session = await AISettlementService().submit_answers(
-        db, complaint, "customer", body.answers, request_id=rid,
-    )
-    await db.commit()
-    return ok({"id": str(session.id), "status": session.status}, rid, "complaint.ai_answers.submitted")
-
-
-# ── Cancel complaint ──────────────────────────────────────────────────────────
 @customer_complaint_router.post("/{complaint_id}/cancel")
 async def cancel_complaint(
     complaint_id: uuid.UUID,
@@ -363,15 +301,6 @@ async def request_refund(
         request_id=rid,
     )
     return ok(refund.to_customer_dict(), rid, "refund.requested")
-
-@customer_complaint_router.post("/refunds/{refund_id}/escalate")
-async def escalate_refund(
-    refund_id: uuid.UUID, body: EscalateRefundIn, r: Request = None,
-    u: UserContext = Depends(require_customer), db: AsyncSession = Depends(get_db),
-):
-    rid = getattr(r.state, "request_id", "-") if r else "-"
-    refund = await _refund.escalate_refund(db, refund_id, u.user_id, body.reason, request_id=rid)
-    return ok(refund.to_customer_dict(), rid, "refund.escalated")
 
 @customer_complaint_router.get("/records/refunds")
 async def list_customer_refunds(

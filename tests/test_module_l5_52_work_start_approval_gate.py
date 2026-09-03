@@ -217,6 +217,21 @@ class TestWorkStartGate:
         assert exc.value.error_code == "ESTIMATE_REQUIRED"
 
     @pytest.mark.asyncio
+    async def test_work_start_status_includes_human_readable_blocker_message(self):
+        svc = await self._svc_with_required()
+        job = _mock_job(status="assigned")
+        job_type = MagicMock(key="repair", label="Repair")
+        db = AsyncMock()
+        db.get = AsyncMock(return_value=job_type)
+        db.execute = AsyncMock(return_value=_first_result(None))
+
+        with patch.object(svc, "_resolve_job_type_workflow", AsyncMock(return_value=_mock_workflow(True))):
+            result = await svc.get_work_start_status(db, job)
+
+        assert result["start_work_block_code"] == "ESTIMATE_REQUIRED"
+        assert result["start_work_block_message"] == "Create and send an estimate before starting work."
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("status,code", [
         ("draft", "ESTIMATE_REQUIRED"),
         ("submitted_to_provider", "ESTIMATE_REQUIRED"),

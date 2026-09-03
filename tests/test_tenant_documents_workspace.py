@@ -203,20 +203,20 @@ class TestSummaryCounts:
 
 
 class TestTechnicianRequirementResolver:
-    def test_technician_requirements_present(self):
+    def test_platform_identity_and_background_requirements_are_absent(self):
         reqs = resolve_technician_requirements(vertical="home_services")
         keys = {r["key"] for r in reqs}
-        assert {"technician_identity_proof", "technician_background_check"} <= keys
+        assert "technician_identity_proof" not in keys
+        assert "technician_background_check" not in keys
 
     def test_technician_skill_certificate_is_optional(self):
         reqs = resolve_technician_requirements(vertical="home_services")
         cert = next(r for r in reqs if r["key"] == "technician_skill_certificate")
         assert cert["required"] is False
 
-    def test_technician_identity_proof_is_required(self):
+    def test_no_technician_document_is_platform_required(self):
         keys = required_technician_keys(vertical="home_services")
-        assert "technician_identity_proof" in keys
-        assert "technician_skill_certificate" not in keys
+        assert keys == set()
 
     def test_technician_requirements_distinct_from_business_keys(self):
         reqs = resolve_technician_requirements(vertical="home_services")

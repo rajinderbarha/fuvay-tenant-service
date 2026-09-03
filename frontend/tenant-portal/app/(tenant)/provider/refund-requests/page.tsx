@@ -114,7 +114,7 @@ const WARRANTY_FILTERS: FilterDef[] = [
 
 interface RefundSummary {
   total: number; needs_action: number; approved: number; settled: number;
-  escalated: number; rejected: number;
+  overdue: number; rejected: number;
   requested_amount: string; approved_amount: string;
   recorded_amount: string; provider_exposure: string;
 }
@@ -317,7 +317,7 @@ export default function ProviderCustomerRemediesPage() {
           <Kpi label="Needs your action" value={summary.needs_action} sub={money(summary.requested_amount)} tone={summary.needs_action > 0 ? "warning" : "default"}/>
           <Kpi label="Approved" value={summary.approved} sub={money(summary.approved_amount)} tone="default"/>
           <Kpi label="Paid out" value={summary.settled} sub={money(summary.recorded_amount)} tone="success"/>
-          <Kpi label="Overdue" value={summary.escalated} tone={summary.escalated > 0 ? "danger" : "default"}/>
+          <Kpi label="Overdue" value={summary.overdue} tone={summary.overdue > 0 ? "danger" : "default"}/>
           <Kpi label="Rejected" value={summary.rejected} tone="default"/>
           <Kpi label="Provider-funded remedies" value={money(summary.provider_exposure)} sub="usage-credit ledger" tone={Number(summary.provider_exposure) > 0 ? "danger" : "default"}/>
         </div>
@@ -465,7 +465,6 @@ function DetailDrawer({ row, mode, onClose }: { row: Record<string, unknown>; mo
       ["Method", words(row.refund_method) || "—"],
       ["Credit recovered from you", money(row.provider_credit_deducted)],
       ["Response due", dtl(row.provider_response_due_at)],
-      ["Escalated", dtl(row.escalated_at)],
     ] : mode === "rework" ? [
       ["Rework", String(row.id ?? "").slice(0, 8)],
       ["Status", words(row.status)],

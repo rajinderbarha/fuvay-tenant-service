@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent } from "@testing-library/react-native";
+import { cleanup, fireEvent } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { SupportRequestDetailsScreen } from "../SupportRequestDetailsScreen";
 import * as queriesModule from "../../../api/supportRequests/useSupportRequestsQueries";
@@ -60,7 +60,12 @@ function mockBookings(items: Array<{ bookingId: string; serviceName: string | nu
 }
 
 describe("SupportRequestDetailsScreen", () => {
-  afterEach(() => { jest.restoreAllMocks(); mockGoBack.mockClear(); mockNavigate.mockClear(); });
+  afterEach(() => {
+    cleanup();
+    jest.restoreAllMocks();
+    mockGoBack.mockClear();
+    mockNavigate.mockClear();
+  });
 
   it("shows the enumeration-safe unavailable state for a missing or foreign request", () => {
     mockDetail({ kind: "unavailable" });

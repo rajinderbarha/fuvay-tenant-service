@@ -1,5 +1,5 @@
 """
-ServiceOS — Structured Logging
+Fuvay — Structured Logging
 Every log line carries: request_id, tenant_id, engine_id, user_id, env.
 Uses structlog for machine-parseable JSON in production, pretty-print in dev.
 """

@@ -15,7 +15,7 @@ MAX_TOOL_ITERATIONS = 5
 BOOKING_TAG_OPEN  = "<BOOK>"
 BOOKING_TAG_CLOSE = "</BOOK>"
 
-SYSTEM_PROMPT = """You are ServiceOS Assistant — a smart, warm AI for home service customers in India.
+SYSTEM_PROMPT = """You are Fuvay Assistant — a smart, warm AI for home service customers in India.
 
 ## YOUR PRIMARY JOB
 Help customers figure out EXACTLY what kind of service they need, then recommend the right option and help them book it.

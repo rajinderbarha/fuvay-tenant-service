@@ -1,5 +1,5 @@
 /**
- * ServiceOS Staff App — API Client
+ * Fuvay Staff App — API Client
  * PROVEN LEVEL 5:
  *   ALL API calls through this file — no inline fetch() in screens
  *   Staff token from AsyncStorage — never hardcoded

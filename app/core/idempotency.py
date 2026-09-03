@@ -1,5 +1,5 @@
 """
-ServiceOS — Idempotency Key Middleware
+Fuvay — Idempotency Key Middleware
 All write endpoints accept X-Idempotency-Key header.
 Same key within 24h returns the cached response — safe to retry.
 """

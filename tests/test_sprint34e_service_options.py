@@ -682,8 +682,9 @@ class TestTenantPortalApiTs:
     def test_get_supported_for_service(self):
         assert "getSupportedForService" in self.src
 
-    def test_set_supported_for_service(self):
-        assert "setSupportedForService" in self.src
+    def test_set_exact_option_price(self):
+        assert "setOptionPrice" in self.src
+        assert "option-mappings/${mappingId}/price" in self.src
 
     def test_customer_service_diagnostics_api(self):
         assert "customerServiceDiagnosticsApi" in self.src
@@ -705,7 +706,7 @@ class TestTenantPortalApiTs:
 
 class TestProviderServiceOptionsPage:
     def setup_method(self):
-        path = "frontend/tenant-portal/app/(tenant)/provider/service-options/page.tsx"
+        path = "frontend/tenant-portal/app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
         assert _exists(path), f"File not found: {path}"
         self.src = _read(path)
 
@@ -719,7 +720,7 @@ class TestProviderServiceOptionsPage:
         assert "getSupportedForService" in self.src
 
     def test_saves_supported_options(self):
-        assert "setSupportedForService" in self.src
+        assert "setOptionPrice" in self.src
 
     def test_no_hardcoded_option_names(self):
         assert '"Split AC"' not in self.src

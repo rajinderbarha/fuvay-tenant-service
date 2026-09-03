@@ -30,7 +30,7 @@ export default function PlatformConfigurationPage() {
     <AdminLayout activeNav="configuration">
       <SectionHeader
         title="Platform Configuration"
-        subtitle="Review and safely manage registered ServiceOS configuration policies."
+        subtitle="Review and safely manage registered Fuvay configuration policies."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn size="sm" variant="ghost" onClick={() => setTab("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>

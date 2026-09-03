@@ -52,7 +52,6 @@ canonical_router = APIRouter(
     tags=["Admin — Home Services Finance"],
     dependencies=[_hs_enabled, Depends(require_permission(P.FINANCE_READ))],
 )
-retired_warranty_router = APIRouter()
 ENGINE_ID = "home_services_finance"
 
 
@@ -254,27 +253,6 @@ async def hs_topup_detail(topup_id: uuid.UUID, r: Request, s: HomeServicesFinanc
 # down as commission, so there is no held balance to administer.
 
 
-@retired_warranty_router.get("/warranty-claims")
-async def hs_warranty_claims(
-    r: Request, status: str | None = Query(None), category: str | None = Query(None),
-    q: str | None = Query(None), page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-    s: HomeServicesFinanceService = Depends(_svc),
-):
-    return ok(await s.list_hs_warranty_claims(
-        status=status, category=category, q=q, page=page, page_size=page_size,
-    ), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.get("/warranty-claims/summary")
-async def hs_warranty_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_warranty_claims_summary(), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.get("/warranty-claims/{claim_id}")
-async def hs_warranty_detail(claim_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_warranty_claim_detail(claim_id), _rid(r), ENGINE_ID)
-
-
 @router.get(
     "/payments", response_model=ApiResponse[dict], summary="List direct customer-to-provider payments",
     dependencies=[Depends(require_permission(P.DIRECT_PAYMENTS_READ))],
@@ -335,29 +313,6 @@ async def hs_invoices_summary(r: Request, s: HomeServicesFinanceService = Depend
 @canonical_router.get("/invoices/{invoice_id}", response_model=ApiResponse[dict])
 async def hs_invoice_detail(invoice_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
     return ok(await s.get_invoice_detail(str(invoice_id)), _rid(r), ENGINE_ID)
-
-
-@canonical_router.get("/refunds", response_model=ApiResponse[dict])
-async def hs_refunds(
-    r: Request, status: str | None = Query(None), refund_type: str | None = Query(None),
-    q: str | None = Query(None), date_from: str | None = Query(None), date_to: str | None = Query(None),
-    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-    s: HomeServicesFinanceService = Depends(_svc),
-):
-    return ok(await s.list_hs_refunds(
-        status=status, refund_type=refund_type, q=q, date_from=date_from,
-        date_to=date_to, page=page, page_size=page_size,
-    ), _rid(r), ENGINE_ID)
-
-
-@canonical_router.get("/refunds/summary", response_model=ApiResponse[dict])
-async def hs_refunds_summary(r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_refunds_summary(), _rid(r), ENGINE_ID)
-
-
-@canonical_router.get("/refunds/{refund_id}", response_model=ApiResponse[dict])
-async def hs_refund_detail(refund_id: uuid.UUID, r: Request, s: HomeServicesFinanceService = Depends(_svc)):
-    return ok(await s.get_hs_refund_detail(refund_id), _rid(r), ENGINE_ID)
 
 
 @canonical_router.get("/financial-events", response_model=ApiResponse[dict])

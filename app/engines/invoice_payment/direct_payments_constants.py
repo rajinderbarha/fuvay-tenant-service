@@ -1,7 +1,7 @@
 """TENANT-HS-DIRECT-PAYMENTS-01 — constants for the Home Services
 direct-payment confirmation / reconciliation workflow.
 
-ServiceOS never collects, holds, settles or transfers this money and never
+Fuvay never collects, holds, settles or transfers this money and never
 creates a payout for it. Every name in this module is about RECORDING a
 customer-to-provider payment, not moving one.
 """
@@ -49,7 +49,7 @@ STATUS_LABELS = {
 # ── Direct payment methods ──────────────────────────────────────────────────
 # Deliberately the same vocabulary as invoice_payment.constants
 # VALID_PAYMENT_MODES so the canonical ServicePaymentRecord writer keeps
-# working -- ServiceOS-collected online gateway payments are NOT a direct
+# working -- Fuvay-collected online gateway payments are NOT a direct
 # payment and are excluded here.
 DP_METHOD_CASH          = "onsite_cash"
 DP_METHOD_UPI           = "onsite_upi"
@@ -148,18 +148,18 @@ ERR_DP_INVALID_EVIDENCE_TYPE  = "DIRECT_PAYMENT_INVALID_EVIDENCE_TYPE"
 
 # ── Policy guidance shown in the UI (single source of truth) ────────────────
 POLICY_BULLETS = [
-    "ServiceOS does not collect, hold, settle or pay out job money. "
+    "Fuvay does not collect, hold, settle or pay out job money. "
     "We only record confirmation.",
     "Amount must match the approved estimate after visit-fee adjustment.",
     "No wallet credit, no security deposit, no platform revenue.",
-    "All communication happens through ServiceOS.",
+    "All communication happens through Fuvay.",
     "No payout or settlement is created.",
 ]
 
-BANNER_TEXT = ("ServiceOS does not collect this money. "
+BANNER_TEXT = ("Fuvay does not collect this money. "
                "Customers pay your business directly.")
 
-FOOTER_DISCLAIMER = ("All confirmations are recorded securely within ServiceOS. "
+FOOTER_DISCLAIMER = ("All confirmations are recorded securely within Fuvay. "
                      "We never share or request personal contact details.")
 
 SENSITIVE_EVIDENCE_WARNING = (

@@ -31,7 +31,7 @@ async def dispatch_sms(rec) -> None:
 
 async def dispatch_email(rec) -> None:
     email = (rec.data or {}).get("email")
-    sent = await smtp_send_email(email, rec.title or "ServiceOS Notification", rec.body) if email else False
+    sent = await smtp_send_email(email, rec.title or "Fuvay Notification", rec.body) if email else False
     logger.info("notification.dispatch.email",
                 notification_id=str(rec.id), recipient_id=str(rec.recipient_id),
                 title=rec.title, sent=sent)

@@ -9,15 +9,12 @@ FRONTEND = ROOT / "frontend/tenant-portal"
 PAGE = (
     FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
 ).read_text(encoding="utf-8-sig")
-LEGACY = (
-    FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx"
-).read_text(encoding="utf-8-sig")
+LEGACY = FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx"
 
 
 def test_one_canonical_write_surface():
     assert "homeServicesSetupApi.listAvailable" in PAGE
-    assert "/tenant/home-services/setup/services-pricing" in LEGACY
-    assert "homeServicesSetupApi" not in LEGACY
+    assert not LEGACY.exists()
 
 
 def test_provider_price_hierarchy_is_default_type_brand():

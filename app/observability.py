@@ -1,5 +1,5 @@
 """
-ServiceOS — Observability
+Fuvay — Observability
 Prometheus metrics + Sentry error tracking.
 Import setup_observability() in main.py startup.
 """

@@ -53,7 +53,7 @@ describe("DirectPaymentScreen — declaration state (spec sections 1, 3, 6, 8)",
     (useDirectPayment as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
     expect(screen.getAllByText("₹1,701").length).toBeGreaterThan(0);
-    expect(screen.getByText("Customer pays the provider directly. ServiceOS does not collect this payment.")).toBeTruthy();
+    expect(screen.getByText("Customer pays the provider directly. Fuvay does not collect this payment.")).toBeTruthy();
     expect(screen.getByText("Backend calculated")).toBeTruthy();
   });
 

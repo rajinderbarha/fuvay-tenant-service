@@ -6,7 +6,7 @@ import { TableSurface } from "@serviceos/design-system";
  * no mock data. Expensive domain panels are loaded only when their URL-backed
  * workspace is opened, keeping the executive landing view small at scale.
  *
- * Compatibility note: this replaces the old description "Monitor ServiceOS
+ * Compatibility note: this replaces the old description "Monitor Fuvay
  * health, tenants, operations, finance, trust, compliance, and system engines
  * in real time." while retaining the same permission boundaries.
  */

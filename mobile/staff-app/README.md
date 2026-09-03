@@ -1,4 +1,4 @@
-# ServiceOS — Staff App
+# Fuvay — Staff App
 
 Expo React Native app for field technicians (iOS + Android).
 
@@ -41,7 +41,7 @@ EXPO_PUBLIC_API_URL=https://api.serviceos.in
 ## Tests
 
 ```bash
-python -m pytest tests/test_staff_app.py -v   # 51 tests
+npm test -- --runInBand
 ```
 
 ## Connecting to Backend

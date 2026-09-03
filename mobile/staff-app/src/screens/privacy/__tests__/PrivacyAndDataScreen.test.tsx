@@ -94,7 +94,7 @@ describe("PrivacyAndDataScreen (Phase X)", () => {
   it("shows the information and retention banners", () => {
     (usePrivacy as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
-    expect(screen.getByText("Privacy requests are reviewed across every ServiceOS category linked to your account.")).toBeTruthy();
+    expect(screen.getByText("Privacy requests are reviewed across every Fuvay category linked to your account.")).toBeTruthy();
     expect(screen.getByText("Active jobs, disputes, finance records and legal retention may affect erasure or closure.")).toBeTruthy();
   });
 

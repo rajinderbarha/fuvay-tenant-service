@@ -71,7 +71,7 @@ export default function VerificationDocumentsPage() {
         <div>
           <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700 }}>Fresh documents required for your profile change</p>
           <p style={{ margin: "0 0 8px", fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-            Your current approved details stay published. Upload the supporting documents below; ServiceOS reviews them and the profile change together.
+            Your current approved details stay published. Upload the supporting documents below; Fuvay reviews them and the profile change together.
           </p>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(pending.documents_to_revalidate ?? []).map(key => <Badge key={key} variant="warning" size="sm">{key.replace(/_/g, " ")}</Badge>)}</div>
         </div>

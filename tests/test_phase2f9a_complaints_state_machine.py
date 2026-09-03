@@ -7,8 +7,8 @@ by direct source re-reading:
    precondition at all." This was WRONG -- it calls `self._transition`,
    which checks `ALLOWED_TRANSITIONS_EXT` and raises
    `ERR_COMPLAINT_INVALID_TRANSITION` unless the complaint is currently
-   `awaiting_provider_response` or `under_admin_review` (the only two
-   states whose transition set includes `resolution_proposed`). This
+   `awaiting_provider_response` (the provider-owned state whose transition
+   set includes `resolution_proposed`). This
    already fully blocks offering a resolution on open/resolved/closed/
    cancelled/rejected/settled complaints -- pre-existing, unmodified.
 
@@ -32,7 +32,7 @@ import pytest
 
 from app.engines.complaints.constants import (
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
-    STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
+    STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
     STATUS_REJECTED, STATUS_RESOLVED, STATUS_CLOSED, STATUS_CANCELLED,
     STATUS_SETTLED, FINAL_STATUSES, ERR_COMPLAINT_ALREADY_CLOSED,
     ERR_COMPLAINT_INVALID_TRANSITION,
@@ -65,7 +65,7 @@ def _db_returning(complaint):
 
 ALL_STATES = [
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
-    STATUS_UNDER_ADMIN_REVIEW, STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
+    STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
     STATUS_RESOLVED, STATUS_CLOSED, STATUS_CANCELLED, STATUS_REJECTED, STATUS_SETTLED,
 ]
 
@@ -142,9 +142,9 @@ class TestOfferResolutionStateMachine:
     _transition + ALLOWED_TRANSITIONS_EXT (pre-existing, unmodified) --
     these tests PROVE that claim directly rather than assuming it."""
 
-    LEGAL_SOURCE_STATES = [STATUS_AWAITING_PROVIDER, STATUS_UNDER_ADMIN_REVIEW]
+    LEGAL_SOURCE_STATES = [STATUS_OPEN, STATUS_AWAITING_PROVIDER]
     ILLEGAL_SOURCE_STATES = [
-        STATUS_OPEN, STATUS_AWAITING_CUSTOMER, STATUS_RESOLUTION_PROPOSED,
+        STATUS_AWAITING_CUSTOMER, STATUS_RESOLUTION_PROPOSED,
         STATUS_REWORK_APPROVED, STATUS_RESOLVED, STATUS_CLOSED,
         STATUS_CANCELLED, STATUS_REJECTED, STATUS_SETTLED,
     ]

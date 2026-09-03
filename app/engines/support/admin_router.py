@@ -34,7 +34,7 @@ def _rid(request: Request) -> str:
 
 def _require(user: UserContext, permission: str) -> None:
     if not permission_checker.has(user.role, permission, user.permission_overrides):
-        raise HTTPException(403, "You do not have access to the ServiceOS support queue.")
+        raise HTTPException(403, "You do not have access to the Fuvay support queue.")
 
 
 async def _load(db: AsyncSession, ticket_id: uuid.UUID) -> SupportTicket:
@@ -117,7 +117,7 @@ async def transition(
     t = await _load(db, ticket_id)
     await svc.admin_transition(db, t, to_status=payload.to_status,
                                actor_user_id=uuid.UUID(user.user_id),
-                               actor_name=user.full_name or "ServiceOS Support",
+                               actor_name=user.full_name or "Fuvay Support",
                                reason=payload.reason,
                                resolution_summary=payload.resolution_summary)
     await db.commit()
@@ -144,7 +144,7 @@ async def assign(
     await svc.admin_assign(db, t, team=payload.team, assignee_id=payload.assignee_id,
                            assignee_name=payload.assignee_name,
                            actor_user_id=uuid.UUID(user.user_id),
-                           actor_name=user.full_name or "ServiceOS Support")
+                           actor_name=user.full_name or "Fuvay Support")
     await db.commit()
     await db.refresh(t)
     return ok(await svc.ticket_detail(db, t, for_admin=True), request_id=_rid(request))
@@ -167,7 +167,7 @@ async def set_priority(
     t = await _load(db, ticket_id)
     await svc.admin_set_priority(db, t, priority=payload.priority, reason=payload.reason,
                                  actor_user_id=uuid.UUID(user.user_id),
-                                 actor_name=user.full_name or "ServiceOS Support")
+                                 actor_name=user.full_name or "Fuvay Support")
     await db.commit()
     await db.refresh(t)
     return ok(await svc.ticket_detail(db, t, for_admin=True), request_id=_rid(request))
@@ -192,7 +192,7 @@ async def reply(
     await svc.admin_reply(db, t, body=payload.body, internal=payload.internal,
                           request_info=payload.request_info,
                           actor_user_id=uuid.UUID(user.user_id),
-                          actor_name=user.full_name or "ServiceOS Support")
+                          actor_name=user.full_name or "Fuvay Support")
     await db.commit()
     await db.refresh(t)
     return ok(await svc.ticket_detail(db, t, for_admin=True), request_id=_rid(request))
@@ -224,7 +224,7 @@ async def merge(
     t.closed_at = utcnow()
     await svc.add_message(db, t, kind=C.MSG_SYSTEM,
                           body=f"Merged into {target.ticket_number}. {payload.reason}",
-                          author_type="system", author_name="ServiceOS")
+                          author_type="system", author_name="Fuvay")
     await svc.log_event(db, t.id, "merged", from_value=prev, to_value=target.ticket_number,
                         reason=payload.reason, actor_user_id=uuid.UUID(user.user_id),
                         actor_type="serviceos", actor_name=user.full_name)

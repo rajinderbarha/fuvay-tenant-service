@@ -131,8 +131,7 @@ class CommerceService:
                 "description": c.description,
                 "amount_requested": float(c.amount_requested),
                 "amount_approved": float(c.amount_approved) if c.amount_approved else None,
-                "status": c.status, "admin_notes": c.admin_notes,
-                "rejection_reason": c.rejection_reason,
+                "status": c.status,
                 "provider_response_due_at": c.provider_response_due_at.isoformat() if c.provider_response_due_at else None,
                 "provider_responded_at": c.provider_responded_at.isoformat() if c.provider_responded_at else None,
                 "provider_resolution": c.provider_resolution,
@@ -141,7 +140,7 @@ class CommerceService:
                 "escalation_reason": c.escalation_reason,
                 "warranty_days": c.warranty_days_snapshot,
                 "warranty_expires_at": c.warranty_expires_at.isoformat() if c.warranty_expires_at else None,
-                "admin_attention_required": c.status == "admin_review" or overdue,
+                "provider_response_overdue": overdue,
                 "provider_credit_deducted": float(c.provider_credit_deducted or 0),
                 "customer_credit_id": str(c.customer_credit_id) if c.customer_credit_id else None,
                 "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
@@ -778,87 +777,6 @@ class CommerceService:
         claims = rows[:limit]
         next_cursor = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
         return {"claims": [self._claim_dict(c) for c in claims], "has_next": has_next, "next_cursor": next_cursor}
-
-    async def list_all_claims(self, status_filter, limit, cursor):
-        q = select(WarrantyClaim).order_by(WarrantyClaim.created_at.desc())
-        if status_filter: q = q.where(WarrantyClaim.status==status_filter)
-        if cursor:
-            try:
-                cr = decode_cursor(cursor)
-                q = q.where(WarrantyClaim.created_at < datetime.fromisoformat(cr["created_at"]))
-            except Exception: pass
-        q = q.limit(limit + 1); r = await self.db.execute(q)
-        claims = r.scalars().all(); has_next = len(claims) > limit; claims = claims[:limit]
-        nc = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
-        return {"claims": [self._claim_dict(c) for c in claims], "total": len(claims),
-                "has_next": has_next, "next_cursor": nc}
-
-    async def approve_claim(self, claim_id, amount_approved, admin_notes):
-        r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id).with_for_update())
-        c = r.scalar_one_or_none()
-        if not c: raise NotFoundException("WarrantyClaim", str(claim_id))
-        overdue = bool(c.provider_response_due_at and c.provider_response_due_at <= utcnow())
-        if c.status != "admin_review" and not (c.status == "provider_action_required" and overdue):
-            raise ServiceOSException(
-                "PROVIDER_RESOLUTION_REQUIRED",
-                "Admin can issue service credit only after provider escalation or response timeout.",
-                status_code=409,
-            )
-        amount_approved = Decimal(str(amount_approved))
-        if amount_approved <= Decimal("0"):
-            raise ServiceOSException("VALIDATION_ERROR", "Approved amount must be positive.", status_code=422)
-        if amount_approved > c.amount_requested:
-            raise ServiceOSException("VALIDATION_ERROR",
-                "Approved amount cannot exceed the requested amount.", status_code=422)
-        if not admin_notes or len(admin_notes.strip()) < 5:
-            raise ServiceOSException(
-                "VALIDATION_ERROR", "A remedy reason of at least 5 characters is required.", status_code=422,
-            )
-        from app.engines.customer_credits.service import issue_provider_funded_customer_credit
-        from app.engines.final_records.models import ServiceJob
-        job = await self.db.get(ServiceJob, uuid.UUID(str(c.job_id)))
-        remedy = await issue_provider_funded_customer_credit(
-            self.db,
-            tenant_id=c.tenant_id,
-            customer_id=c.customer_id,
-            amount=amount_approved,
-            reference_type="warranty_claim",
-            reference_id=c.id,
-            reason=admin_notes.strip(),
-            actor_id=self.actor_id,
-            actor_role=self.actor_role,
-            request_id=self.request_id,
-            booking_id=job.booking_id if job else None,
-            job_id=job.id if job else None,
-        )
-        c.status = "credit_issued"; c.amount_approved = Decimal(str(amount_approved))
-        c.admin_notes = admin_notes.strip(); c.resolver_id = self.actor_id
-        c.resolved_at = utcnow(); c.settled_at = utcnow(); c.settled_amount = amount_approved
-        # `security_deposit_deducted` is no longer written: the deposit was
-        # removed in migration 317/318 and the remedy no longer reports one.
-        # Reading it with [] raised KeyError here on EVERY settlement.
-        c.provider_credit_deducted = remedy["provider_credit_deducted"]
-        c.customer_credit_id = remedy["credit"].id
-        await self._update_warranty_signal(c.tenant_id)
-        await self._publish("warranty_claim.credit_issued", str(c.tenant_id), str(claim_id),
-                            {"amount": float(amount_approved),
-                             "provider_credit_deducted": float(remedy["provider_credit_deducted"])})
-        return self._claim_dict(c)
-
-    async def reject_claim(self, claim_id, rejection_reason, admin_notes):
-        r = await self.db.execute(select(WarrantyClaim).where(WarrantyClaim.id==claim_id))
-        c = r.scalar_one_or_none()
-        if not c: raise NotFoundException("WarrantyClaim", str(claim_id))
-        overdue = bool(c.provider_response_due_at and c.provider_response_due_at <= utcnow())
-        if c.status != "admin_review" and not (c.status == "provider_action_required" and overdue):
-            raise ServiceOSException(
-                "PROVIDER_RESOLUTION_REQUIRED", "Admin can decide only an escalated or overdue claim.", status_code=409,
-            )
-        c.status = "rejected"; c.rejection_reason = rejection_reason
-        c.admin_notes = admin_notes; c.resolver_id = self.actor_id; c.resolved_at = utcnow()
-        await self._update_warranty_signal(c.tenant_id)
-        await self._publish("warranty_claim.rejected", str(c.tenant_id), str(claim_id), {})
-        return self._claim_dict(c)
 
     async def _update_warranty_signal(self, tid):
         try:

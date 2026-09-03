@@ -23,11 +23,8 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def test_retired_workflow_templates_page_redirects_to_canonical_workspace():
-    src = _read(RETIRED_PAGE)
-    assert "redirect" in src
-    assert "/admin/catalog-workspace?tab=workflow" in src
-    assert "masterDataApi" not in src
+def test_retired_workflow_templates_page_is_deleted():
+    assert not RETIRED_PAGE.exists()
 
 
 def test_retired_workflow_template_api_fails_closed():

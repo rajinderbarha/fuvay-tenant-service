@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.service_catalog.constants import SERVICE_TYPES, PRICING_MODELS
 from app.engines.service_catalog.models import ServiceCatalogItem
+from app.engines.tenant_engine.models import Tenant
 from app.exceptions import ServiceOSException, NotFoundException
 from app.schemas.base import encode_cursor, decode_cursor
 
@@ -39,6 +40,25 @@ class ServiceCatalogService:
                 "PERMISSION_DENIED", "You do not have access to this tenant's catalog.",
                 blocking_rule="catalog_mutation_cross_tenant_denied")
         return self.actor_tenant_id
+
+    async def _require_custom_catalog_allowed(self, tenant_id: uuid.UUID) -> None:
+        """Keep Home Services on the Admin-authored master catalog.
+
+        ``service_catalog_items`` belongs to the older generic booking stack.
+        Allowing a Home Services tenant to mutate it produced services that
+        appeared in a legacy portal page but could never enter the canonical
+        customer matcher, which reads ``tenant_services`` instead.
+        """
+        if self.actor_role == "super_admin":
+            return
+        vertical = await self.db.scalar(select(Tenant.vertical).where(Tenant.id == tenant_id))
+        if vertical == "home_services":
+            raise ServiceOSException(
+                "HOME_SERVICES_MASTER_CATALOG_REQUIRED",
+                "Home Services must be configured from the Admin-approved Services & Pricing catalog.",
+                status_code=409,
+                blocking_rule="home_services_uses_canonical_master_catalog",
+            )
 
     def _dict(self, item: ServiceCatalogItem) -> dict:
         return {
@@ -78,6 +98,7 @@ class ServiceCatalogService:
 
     async def create_item(self, tenant_id: uuid.UUID, data: dict) -> dict:
         tenant_id = self._require_trusted_tenant(tenant_id)
+        await self._require_custom_catalog_allowed(tenant_id)
         self._validate(data["service_type"], data["pricing_model"],
                         Decimal(str(data["base_price"])) if data.get("base_price") is not None else None,
                         Decimal(str(data["max_price"])) if data.get("max_price") is not None else None,
@@ -113,6 +134,8 @@ class ServiceCatalogService:
         r = await self.db.execute(select(ServiceCatalogItem).where(ServiceCatalogItem.id == item_id))
         item = r.scalar_one_or_none()
         if not item: raise NotFoundException("ServiceCatalogItem", str(item_id))
+        self._require_trusted_tenant(item.tenant_id)
+        await self._require_custom_catalog_allowed(item.tenant_id)
         return self._dict(item)
 
     async def get_by_service_type_id(self, tenant_id: uuid.UUID, service_type_id: str) -> ServiceCatalogItem | None:
@@ -124,6 +147,8 @@ class ServiceCatalogService:
 
     async def list_items(self, tenant_id: uuid.UUID, service_type: str | None,
                           is_active: bool | None, limit: int, cursor: str | None) -> dict:
+        tenant_id = self._require_trusted_tenant(tenant_id)
+        await self._require_custom_catalog_allowed(tenant_id)
         q = select(ServiceCatalogItem).where(ServiceCatalogItem.tenant_id == tenant_id) \
             .order_by(ServiceCatalogItem.created_at.desc())
         if service_type: q = q.where(ServiceCatalogItem.service_type == service_type)
@@ -148,6 +173,7 @@ class ServiceCatalogService:
             self.actor_tenant_id is None or item.tenant_id != self.actor_tenant_id
         ):
             raise NotFoundException("ServiceCatalogItem", str(item_id))
+        await self._require_custom_catalog_allowed(item.tenant_id)
 
         new_service_type = data.get("service_type", item.service_type)
         new_pricing_model = data.get("pricing_model", item.pricing_model)
@@ -177,5 +203,6 @@ class ServiceCatalogService:
             self.actor_tenant_id is None or item.tenant_id != self.actor_tenant_id
         ):
             raise NotFoundException("ServiceCatalogItem", str(item_id))
+        await self._require_custom_catalog_allowed(item.tenant_id)
         item.is_active = False
         return self._dict(item)

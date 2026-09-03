@@ -108,7 +108,7 @@ ERR_FORBIDDEN_OUTPUT       = "AI_FORBIDDEN_OUTPUT_FIELD"
 ERR_PROMPT_INJECTION       = "AI_PROMPT_INJECTION_DETECTED"
 
 # ── System prompt (base, overridden by active prompt template) ────────────────
-BASE_SYSTEM_PROMPT = """You are ServiceOS Assistant — a warm, helpful AI for home service customers in India.
+BASE_SYSTEM_PROMPT = """You are Fuvay Assistant — a warm, helpful AI for home service customers in India.
 
 ## YOUR JOB
 Help customers understand what service they need, answer questions, and complete a booking through backend tools. A final booking may be created only after the server summary is shown and the customer's latest message is exactly CONFIRM BOOKING.

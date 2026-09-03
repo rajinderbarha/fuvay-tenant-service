@@ -2,7 +2,7 @@
 import { TableSurface } from "@serviceos/design-system";
 /**
  * Phase 1B — Admin Roles page.
- * ServiceOS RBAC is code-defined (app/core/permissions.py), not a DB CRUD
+ * Fuvay RBAC is code-defined (app/core/permissions.py), not a DB CRUD
  * system — this page renders the real, live-computed role data (permission
  * counts, assigned user counts) rather than a fake editable table.
  */

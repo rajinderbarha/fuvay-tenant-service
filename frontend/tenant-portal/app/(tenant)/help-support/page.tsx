@@ -1,10 +1,10 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
 /**
- * Help & Support — the tenant↔ServiceOS platform support workspace.
+ * Help & Support — the tenant↔Fuvay platform support workspace.
  *
  * DOMAIN BOUNDARY: this page is for problems the PROVIDER BUSINESS has with
- * its ServiceOS account or the platform. A CUSTOMER disputing a service job
+ * its Fuvay account or the platform. A CUSTOMER disputing a service job
  * is a complaint and belongs to /home-services/complaints — this page links
  * there and never accepts job complaints. Backed by the TENANT-SUPPORT
  * engine (/v1/tenant/support/*, migration 207); the Super Admin support
@@ -234,7 +234,7 @@ function CreateRequestDrawer({
             placeholder="How much is this blocking you?"
             options={ws.form_options.impacts.map(i => ({ value: i.key, label: i.label }))} />
           <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>
-            ServiceOS sets the internal priority and response targets from your impact, the
+            Fuvay sets the internal priority and response targets from your impact, the
             category and the affected capability — you never need to pick a priority.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -335,8 +335,8 @@ function CriticalIncidentModal({
   return (
     <Modal open={open} onClose={onClose} title="Report a critical incident" size="md">
       <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 0 }}>
-        Use this only when ServiceOS is unusable or your operations have stopped. It pages the
-        ServiceOS incident response team directly and is rate-limited. Normal questions should
+        Use this only when Fuvay is unusable or your operations have stopped. It pages the
+        Fuvay incident response team directly and is rate-limited. Normal questions should
         go through a support request instead.
       </p>
       <div style={{ display: "grid", gap: 12 }}>
@@ -441,7 +441,7 @@ function RequestDetailPanel({
         <span style={ROW_LABEL}>Category</span><span>{detail.category_label}{detail.subcategory ? ` — ${detail.subcategory}` : ""}</span>
         <span style={ROW_LABEL}>Impact</span><span>{detail.impact_label}</span>
         <span style={ROW_LABEL}>Reporter</span><span>{detail.reporter_name ?? "—"} {detail.reporter_role ? `(${detail.reporter_role})` : ""}</span>
-        <span style={ROW_LABEL}>ServiceOS team</span><span>{detail.assigned_team ?? "Awaiting triage"}{detail.assigned_admin_name ? ` — ${detail.assigned_admin_name}` : ""}</span>
+        <span style={ROW_LABEL}>Fuvay team</span><span>{detail.assigned_team ?? "Awaiting triage"}{detail.assigned_admin_name ? ` — ${detail.assigned_admin_name}` : ""}</span>
         <span style={ROW_LABEL}>Vertical</span><span>{detail.vertical_key ?? "Platform-wide"}</span>
         <span style={ROW_LABEL}>Created</span><span>{fmt(detail.created_at)}</span>
         <span style={ROW_LABEL}>Updated</span><span>{fmt(detail.updated_at)}</span>
@@ -538,7 +538,7 @@ function RequestDetailPanel({
           <>
             <Input label={a.can_provide_information ? "Provide the requested information" : "Add a reply"}
               value={reply} onChange={setReply} rows={3}
-              placeholder="Reply to ServiceOS support…" />
+              placeholder="Reply to Fuvay support…" />
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <Btn size="sm" onClick={sendReply} loading={busy} disabled={busy || !reply.trim()} icon={<Send size={13} />}>
                 Send reply
@@ -853,7 +853,7 @@ function HelpSupportPageInner() {
                     <EmptyState icon={<LifeBuoy size={24} />}
                       title={ws.requests.length === 0 ? "No support requests yet" : "No requests match these filters"}
                       description={ws.requests.length === 0
-                        ? "When you need help with your ServiceOS account or the platform, create a support request and track it here."
+                        ? "When you need help with your Fuvay account or the platform, create a support request and track it here."
                         : "Clear a filter to see more of your requests."}
                       action={ws.requests.length === 0 && p.can_create
                         ? <Btn icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>Create support request</Btn>
@@ -945,7 +945,7 @@ function HelpSupportPageInner() {
                   </div>
                   <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.45 }}>
                     Only for an outage, confirmed data loss or a serious security incident. Rate-limited
-                    and routed straight to ServiceOS incident response.
+                    and routed straight to Fuvay incident response.
                   </p>
                   <Btn size="sm" variant="danger" onClick={() => setCriticalOpen(true)}>Report critical incident</Btn>
                 </Card>

@@ -5,6 +5,7 @@ import {
   accessContextResponseSchema, passwordResetRequestResponseSchema, passwordResetConfirmResponseSchema,
   registerCustomerResponseSchema,
 } from "./authContracts";
+import { getOrCreateDeviceId } from "./deviceId";
 
 /**
  * Typed auth endpoint methods -- each maps to one confirmed-mounted route
@@ -29,13 +30,14 @@ export interface LoginWithPasswordInput {
 }
 
 export async function loginWithPassword(input: LoginWithPasswordInput) {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/login",
     body: {
       email: input.email,
       password: input.password,
-      device_id: input.deviceId ?? "mobile",
+      device_id: deviceId,
       device_name: input.deviceName,
       remember_device: input.rememberDevice ?? false,
     },
@@ -60,13 +62,12 @@ export interface RegisterCustomerInput {
  * unknown number as for a wrong code -- so a new customer could install the app and
  * had literally no way in.
  *
- * The account starts unverified and the registration response's own OTP is scoped to
- * `phone_verification`, which `/otp/verify` does not accept (confirmed live: it
- * answers "Incorrect OTP"). So the caller sends a normal login OTP afterwards and the
- * customer verifies through the SAME screen a returning customer uses -- one
- * verification implementation, not two.
+ * The account starts unverified and registration sends one `phone_login` OTP. The
+ * customer verifies it through the same screen a returning customer uses; callers
+ * must not request a second code after this call.
  */
 export async function registerCustomer(input: RegisterCustomerInput) {
+  const deviceId = await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/register/customer",
@@ -74,6 +75,7 @@ export async function registerCustomer(input: RegisterCustomerInput) {
       full_name: input.fullName,
       phone: input.phone,
       ...(input.email ? { email: input.email } : {}),
+      device_id: deviceId,
     },
   });
   return parseApiSuccess(res.json, registerCustomerResponseSchema);
@@ -84,10 +86,11 @@ export interface RequestLoginOtpInput {
 }
 
 export async function requestLoginOtp(input: RequestLoginOtpInput) {
+  const deviceId = await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/otp/send",
-    body: { phone: input.phone, purpose: "phone_login" },
+    body: { phone: input.phone, purpose: "phone_login", device_id: deviceId },
   });
   return parseApiSuccess(res.json, otpSendResponseSchema);
 }
@@ -104,10 +107,11 @@ export interface RequestEmailOtpInput {
  * anyone who asks. So a caller can never branch on "does this user exist".
  */
 export async function requestEmailOtp(input: RequestEmailOtpInput) {
+  const deviceId = await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/otp/send",
-    body: { email: input.email, purpose: "email_login" },
+    body: { email: input.email, purpose: "email_login", device_id: deviceId },
   });
   return parseApiSuccess(res.json, otpSendResponseSchema);
 }
@@ -120,12 +124,13 @@ export interface VerifyEmailOtpInput {
 }
 
 export async function verifyEmailOtp(input: VerifyEmailOtpInput) {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/otp/verify",
     body: {
       email: input.email, otp: input.otp,
-      device_id: input.deviceId ?? "mobile",
+      device_id: deviceId,
       device_name: input.deviceName,
     },
   });
@@ -140,10 +145,11 @@ export interface VerifyLoginOtpInput {
 }
 
 export async function verifyLoginOtp(input: VerifyLoginOtpInput) {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/otp/verify",
-    body: { phone: input.phone, otp: input.otp, device_id: input.deviceId ?? "mobile", device_name: input.deviceName },
+    body: { phone: input.phone, otp: input.otp, device_id: deviceId, device_name: input.deviceName },
   });
   return parseApiSuccess(res.json, loginOutcomeSchema);
 }
@@ -157,13 +163,14 @@ export interface CompleteMfaChallengeInput {
 }
 
 export async function completeMfaChallenge(input: CompleteMfaChallengeInput) {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   const res = await request({
     method: "POST",
     path: "/v1/auth/mfa/verify",
     body: {
       mfa_challenge_token: input.mfaChallengeToken,
       code: input.code,
-      device_id: input.deviceId ?? "mobile",
+      device_id: deviceId,
       device_name: input.deviceName,
       remember_device: input.rememberDevice ?? false,
     },

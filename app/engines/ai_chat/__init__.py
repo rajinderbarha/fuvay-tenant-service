@@ -1,1 +1,1 @@
-"""AI Chat Engine — DeepSeek LLM with ServiceOS tool calling."""
+"""AI Chat Engine — DeepSeek LLM with Fuvay tool calling."""

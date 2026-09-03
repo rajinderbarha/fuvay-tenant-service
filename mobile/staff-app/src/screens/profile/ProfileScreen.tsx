@@ -136,7 +136,7 @@ export function ProfileScreen({ navigation }: Props) {
 
         <DestructiveButton label="Sign out" onPress={() => setSignOutOpen(true)} fullWidth />
         <AppText variant="caption" color="tertiary" style={{ textAlign: "center", marginTop: theme.spacing.sm }}>
-          ServiceOS Staff · v{Constants.expoConfig?.version ?? "1.0.0"}
+          Fuvay Staff · v{Constants.expoConfig?.version ?? "1.0.0"}
         </AppText>
       </ScrollView>
 

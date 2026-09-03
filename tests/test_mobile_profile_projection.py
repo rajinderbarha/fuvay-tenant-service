@@ -1,7 +1,7 @@
-"""Technician mobile app Phase R: GET /v1/staff/me/profile + document
-submission + notification preferences, composed over the canonical
-User/ProviderTeamMember/UserSession (auth engine) and the two genuinely-new
-tables (StaffDocument) plus the reused NotificationPreference model.
+"""Technician profile and notification-preference contracts.
+
+Technician identity/background-document verification is tenant-owned and is
+therefore not a platform readiness requirement.
 """
 from __future__ import annotations
 
@@ -75,12 +75,9 @@ async def test_profile_requires_tenant_context():
 @pytest.mark.asyncio
 async def test_profile_full_lifecycle_live():
     """Real User + ProviderTeamMember + a real assigned service + real
-    working-hours row. Proves: identity/employment fields are real (never
-    fabricated), readiness starts incomplete without documents, submitting
-    a required document moves it toward complete once verified, a second
-    submission of the SAME type supersedes (never destructively overwrites)
-    the first, and notification preferences round-trip through the real
-    per-event/channel model."""
+    working-hours row. Identity/employment fields are real, platform
+    readiness does not require technician documents, and notification
+    preferences round-trip through the real per-event/channel model."""
     from app.database import get_session_factory, init_db
     from app.engines.auth.models import User
 
@@ -114,55 +111,23 @@ async def test_profile_full_lifecycle_live():
         ), {"id": uuid.uuid4(), "tid": tenant_id, "sid": staff_id})
         await db.commit()
 
-        doc_id_1 = doc_id_2 = None
         try:
             app.dependency_overrides[get_current_user] = lambda: make_technician_context(str(tenant_id), user_id=str(staff_user_id))
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 headers = {"Authorization": "Bearer x"}
 
-                # 1. Real identity/employment, masked mobile, readiness incomplete (no documents yet).
+                # Real identity/employment and masked mobile; technician
+                # document checks belong to the tenant, not the platform.
                 detail = (await client.get("/v1/staff/me/profile", headers=headers)).json()["data"]
                 assert detail["identity"]["full_name"] == "Demo Technician"
                 assert detail["identity"]["masked_mobile"] == "••••• 43210"
                 assert detail["employment"]["designation"] == "Senior Technician"
                 assert detail["employment"]["assigned_service_count"] == 1
-                assert detail["readiness"]["profile_percentage"] < 100
-                assert detail["readiness"]["required_documents"] == 3
+                assert detail["readiness"]["required_documents"] == 0
                 assert detail["readiness"]["verified_documents"] == 0
+                assert detail["documents"] == []
 
-                # 2. Submit a required document.
-                media_id_1 = uuid.uuid4()
-                submit_resp = await client.post(
-                    "/v1/staff/me/profile/documents", headers=headers,
-                    json={"document_type": "identity_document", "media_id": str(media_id_1)},
-                )
-                assert submit_resp.status_code == 200
-                doc_id_1 = submit_resp.json()["data"]["id"]
-                assert submit_resp.json()["data"]["status"] == "pending_review"
-
-                detail2 = (await client.get("/v1/staff/me/profile", headers=headers)).json()["data"]
-                assert len(detail2["documents"]) == 1
-
-                # 3. Replacing the same document type SUPERSEDES, never overwrites destructively.
-                media_id_2 = uuid.uuid4()
-                submit_resp2 = await client.post(
-                    "/v1/staff/me/profile/documents", headers=headers,
-                    json={"document_type": "identity_document", "media_id": str(media_id_2)},
-                )
-                doc_id_2 = submit_resp2.json()["data"]["id"]
-                assert doc_id_2 != doc_id_1
-
-                superseded = (await db.execute(text("SELECT is_current FROM staff_documents WHERE id=:id"), {"id": doc_id_1})).scalar()
-                assert superseded is False
-                current_row = (await db.execute(text("SELECT is_current FROM staff_documents WHERE id=:id"), {"id": doc_id_2})).scalar()
-                assert current_row is True
-
-                # Only the current document appears in the projection.
-                detail3 = (await client.get("/v1/staff/me/profile", headers=headers)).json()["data"]
-                assert len(detail3["documents"]) == 1
-                assert detail3["documents"][0]["id"] == doc_id_2
-
-                # 4. Notification preferences round-trip through the real model.
+                # Notification preferences round-trip through the real model.
                 prefs = (await client.get("/v1/staff/me/notification-preferences", headers=headers)).json()["data"]
                 assert prefs["categories"]["job_updates"] is True  # default on, no rows yet
 

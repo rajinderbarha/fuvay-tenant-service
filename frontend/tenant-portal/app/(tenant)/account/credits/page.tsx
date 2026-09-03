@@ -26,7 +26,7 @@ export default function MyCreditsPage() {
     <TenantLayout activeNav="account">
       <SectionHeader
         title="My Service Credits"
-        subtitle="ServiceOS platform credits you can apply on your next booking."
+        subtitle="Fuvay platform credits you can apply on your next booking."
       />
 
       {s && (
@@ -102,7 +102,7 @@ export default function MyCreditsPage() {
 
       <Card padding={16} style={{ marginTop: 16, background: "var(--bg-info, var(--bg-subtle, #f0f7ff))" }}>
         <p style={{ margin: 0, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-          <strong>About ServiceOS Credits:</strong> These are platform credits, not cash. They can be applied to reduce
+          <strong>About Fuvay Credits:</strong> These are platform credits, not cash. They can be applied to reduce
           the amount you pay on your next booking. Credits are issued as part of dispute settlement — they are not cash refunds.
         </p>
       </Card>

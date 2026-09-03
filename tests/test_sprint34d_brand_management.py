@@ -582,9 +582,11 @@ def test_tp_api_provider_brand_has_available_endpoint():
     assert "getAvailableForService" in src
 
 
-def test_tp_api_provider_brand_has_set_supported():
+def test_tp_brand_selection_is_saved_through_canonical_offering_update():
     src = _read(TP_API)
-    assert "setSupportedForService" in src
+    assert "setSupportedForService" not in src
+    assert "supported_brand_ids?: string[] | null" in src
+    assert "providerOfferingsApi" in src
 
 
 def test_tp_api_provider_brand_has_request():

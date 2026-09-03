@@ -18,8 +18,9 @@ from app.engines.admin_catalog.models import (
     MasterServiceType, MasterServiceBrand, ServiceType, Brand,
     ServiceBlueprintVersion, MasterServiceJobType, ServiceJobWorkflow,
     ServiceJobDimension, CatalogDimension, JobTypeDefinition,
+    ServiceOptionMapping, TenantSupportedServiceOption,
 )
-from app.engines.serviceability.models import TenantServiceArea
+from app.engines.serviceability.models import TenantServiceArea, TenantServiceAreaService
 from app.engines.entitlement.service import entitlement_service
 from app.engines.tenant_engine.models import TenantSettings
 from app.exceptions import ServiceOSException, NotFoundException
@@ -1524,6 +1525,66 @@ class TenantCatalogService:
                         "message": "Brand override price range is incomplete.",
                     })
 
+        if has_authoritative_blueprint and ts.job_type_id:
+            required_option_mappings = (await self.db.scalars(
+                select(ServiceOptionMapping).where(
+                    ServiceOptionMapping.master_service_id == ts.master_service_id,
+                    ServiceOptionMapping.job_type_id == ts.job_type_id,
+                    ServiceOptionMapping.status == "active",
+                    ServiceOptionMapping.usage == "REQUIRED",
+                    ServiceOptionMapping.tenant_selectable.is_(True),
+                    ServiceOptionMapping.deleted_at.is_(None),
+                )
+            )).all()
+            option_rows: dict[uuid.UUID, TenantSupportedServiceOption] = {}
+            if required_option_mappings:
+                configured_rows = (await self.db.scalars(
+                    select(TenantSupportedServiceOption).where(
+                        TenantSupportedServiceOption.tenant_id == ts.tenant_id,
+                        TenantSupportedServiceOption.service_option_mapping_id.in_(
+                            [mapping.id for mapping in required_option_mappings]
+                        ),
+                        TenantSupportedServiceOption.deleted_at.is_(None),
+                    )
+                )).all()
+                option_rows = {
+                    row.service_option_mapping_id: row
+                    for row in configured_rows
+                    if row.service_option_mapping_id
+                }
+
+            for mapping in required_option_mappings:
+                row = option_rows.get(mapping.id)
+                if row is None or row.status != "active":
+                    errors.append({
+                        "step": "service_options",
+                        "job_type_id": str(ts.job_type_id),
+                        "dimension_path": {"service_option_mapping_id": str(mapping.id)},
+                        "code": "REQUIRED_SERVICE_OPTION_NOT_CONFIGURED",
+                        "message": "Configure every required service option before publishing.",
+                    })
+                    continue
+                if not mapping.affects_estimate:
+                    continue
+                price_valid = (
+                    (row.pricing_model == "FIXED" and row.fixed_price is not None)
+                    or (row.pricing_model == "PER_UNIT" and row.unit_price is not None)
+                    or (
+                        row.pricing_model == "RANGE"
+                        and row.minimum_price is not None
+                        and row.maximum_price is not None
+                        and row.minimum_price <= row.maximum_price
+                    )
+                )
+                if not price_valid:
+                    errors.append({
+                        "step": "service_options",
+                        "job_type_id": str(ts.job_type_id),
+                        "dimension_path": {"service_option_mapping_id": str(mapping.id)},
+                        "code": "REQUIRED_SERVICE_OPTION_PRICE_MISSING",
+                        "message": "Set a valid provider price for every required service option.",
+                    })
+
         if has_authoritative_blueprint:
             # These are the same normalized setup gates edited by Admin's
             # Tenant Setup Rules tab. Keep them in preflight so Review never
@@ -1851,6 +1912,44 @@ class TenantCatalogService:
             ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1)
         )).scalar_one_or_none()
         ts.blueprint_version_id = latest_blueprint.id if latest_blueprint else ts.blueprint_version_id
+        # Coverage in the canonical tenant UI is provider-wide: every active
+        # zipcode applies to every service the provider publishes.  Matching,
+        # however, reads the normalized tenant_service_area_services table.
+        # Materialize those rows here so publishing through Services & Pricing
+        # can never leave a service invisible to booking merely because the
+        # retired per-area mapping screen was not visited.
+        active_area_ids = (await self.db.execute(
+            select(TenantServiceArea.id).where(
+                TenantServiceArea.tenant_id == ts.tenant_id,
+                TenantServiceArea.is_active.is_(True),
+            )
+        )).scalars().all()
+        if active_area_ids:
+            active_mappings = (await self.db.execute(
+                select(TenantServiceAreaService).where(
+                    TenantServiceAreaService.tenant_id == ts.tenant_id,
+                    TenantServiceAreaService.service_id == ts.master_service_id,
+                    TenantServiceAreaService.job_type == ts.job_type,
+                    TenantServiceAreaService.is_available.is_(True),
+                )
+            )).scalars().all()
+            mappings_by_area = {
+                mapping.tenant_service_area_id: mapping
+                for mapping in active_mappings
+            }
+            for area_id in active_area_ids:
+                existing_mapping = mappings_by_area.get(area_id)
+                if existing_mapping is not None:
+                    existing_mapping.status = "ACTIVE"
+                else:
+                    self.db.add(TenantServiceAreaService(
+                        tenant_service_area_id=area_id,
+                        tenant_id=ts.tenant_id,
+                        service_id=ts.master_service_id,
+                        job_type=ts.job_type,
+                        is_available=True,
+                        status="ACTIVE",
+                    ))
         await self.db.flush()
         return self._ts_dict(ts)
 

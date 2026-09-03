@@ -17,7 +17,7 @@ Built a shared design-system foundation for the two web apps in scope:
   `tsconfig.json` path aliases and `package.json` deps pointing at the
   workspace package.
 - Dev-only showcase route (`super-admin` `/dev/design-system`) exercising all
-  components in both themes with realistic ServiceOS fixture data.
+  components in both themes with realistic Fuvay fixture data.
 - One sample shell screen per app (`/dev/sample-shell`) demonstrating
   shell+nav+header+status+table.
 - Vitest + Testing Library suite (6 files) covering tokens, theme

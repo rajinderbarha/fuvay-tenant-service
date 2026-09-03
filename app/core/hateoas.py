@@ -1,5 +1,5 @@
 """
-ServiceOS — HATEOAS Link Builder
+Fuvay — HATEOAS Link Builder
 Every entity response includes links and allowed_actions.
 Clients never construct URLs manually — they follow links.
 """

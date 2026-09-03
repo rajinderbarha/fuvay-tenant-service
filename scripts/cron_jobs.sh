@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ServiceOS — Background Job Cron Reference
+# Fuvay — Background Job Cron Reference
 #
 # Copy relevant lines into your crontab or task scheduler.
 # All jobs are idempotent and safe to run more frequently.

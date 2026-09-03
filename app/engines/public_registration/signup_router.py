@@ -28,6 +28,7 @@ from app.dependencies.auth import get_current_user, get_current_user_optional, U
 from app.engines.public_registration.service import RegistrationService
 from app.schemas.base import ApiResponse, ok
 from app.core.security import get_client_ip
+from app.core.abuse_protection import verify_turnstile
 
 ENGINE_ID = "public_registration"
 router = APIRouter(prefix="/v1/public/signup", tags=["Public Signup (no payment)"])
@@ -56,11 +57,17 @@ class OwnerAccountBody(BaseModel):
     marketing_consent: bool = False
     # Present when resuming a save (idempotent re-submit of step 1).
     registration_id: uuid.UUID | None = None
+    turnstile_token: str | None = Field(default=None, max_length=4096)
 
 
 @router.post("/owner-account", response_model=ApiResponse[dict], status_code=201,
              summary="Step 1: create/resume owner account, send OTPs")
 async def owner_account(body: OwnerAccountBody, r: Request, svc: RegistrationService = Depends(_svc)):
+    await verify_turnstile(
+        body.turnstile_token,
+        remote_ip=get_client_ip(r),
+        expected_action="provider_signup",
+    )
     data = await svc.start_or_resume(
         full_name=body.full_name, email=body.email, mobile=body.mobile,
         password=body.password, password_confirm=body.password_confirm,

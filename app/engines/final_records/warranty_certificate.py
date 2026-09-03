@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 TERMS_VERSION = "2026-09-01"
 WARRANTY_TERMS = [
-    "The named service provider, not ServiceOS, is responsible for the workmanship warranty.",
-    "ServiceOS does not collect or hold a provider security deposit.",
+    "The named service provider, not Fuvay, is responsible for the workmanship warranty.",
+    "Fuvay does not collect or hold a provider security deposit.",
     "During the warranty period the customer may report a repeat issue with supporting evidence.",
     "The provider reviews the case, may inspect the work, and may propose rework, refund, credit, or another mutually agreed settlement.",
     "The technician performs field work on the provider's behalf; the provider remains responsible for supervision, customer communication, and resolution.",

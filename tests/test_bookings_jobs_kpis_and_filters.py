@@ -93,4 +93,4 @@ class TestRouterEnrichment:
     def test_direct_payment_notice_never_implies_platform_collects_payment(self):
         c = _read(ROUTER)
         assert "Customer pays the provider directly" in c
-        assert "ServiceOS records confirmation only" in c
+        assert "Fuvay records confirmation only" in c

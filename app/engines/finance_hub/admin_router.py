@@ -15,7 +15,6 @@ from app.engines.finance_hub.service import FinanceHubService
 from app.schemas.base import ApiResponse, ok
 
 router = APIRouter(prefix="/v1/admin/finance", tags=["Finance Hub"])
-retired_warranty_router = APIRouter()
 ENGINE_ID = "finance_hub"
 
 
@@ -106,82 +105,6 @@ async def refund_topup(topup_id: uuid.UUID, r: Request,
 # ═══════════════════════════════════════════════════════════════
 # WARRANTY CLAIMS
 # ═══════════════════════════════════════════════════════════════
-
-@retired_warranty_router.get("/warranty-claims")
-async def list_claims(r: Request,
-                       status: str | None = Query(None),
-                       category: str | None = Query(None),
-                       q: str | None = Query(None),
-                       page: int = Query(1, ge=1),
-                       page_size: int = Query(50, ge=1, le=500),
-                       sort_by: str = Query("created_at"),
-                       sort_dir: str = Query("desc"),
-                       u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
-                       s: FinanceHubService = Depends(_svc)):
-    return ok(await s.list_claims(status, category, q, page, page_size, sort_by, sort_dir), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.get("/warranty-claims/summary")
-async def claims_summary(r: Request,
-                          u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
-                          s: FinanceHubService = Depends(_svc)):
-    return ok(await s.get_claims_summary(), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.get("/warranty-claims/export")
-async def export_claims(r: Request, status: str | None = Query(None),
-                         # FINAL-L5-05O: distinct export permission (was READ).
-                         u: UserContext = Depends(require_permission(P.FINANCE_EXPORT)),
-                         s: FinanceHubService = Depends(_svc)):
-    rows = await s.export_claims(status=status)
-    return ok({"rows": rows, "count": len(rows), "format": "json"}, _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.get("/warranty-claims/{claim_id}")
-async def get_claim(claim_id: uuid.UUID, r: Request,
-                     u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_READ)),
-                     s: FinanceHubService = Depends(_svc)):
-    return ok(await s.get_claim_detail(claim_id), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.post("/warranty-claims/{claim_id}/assign")
-async def assign_reviewer(claim_id: uuid.UUID, r: Request,
-                           u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_ASSIGN)),
-                           s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.assign_reviewer(claim_id, uuid.UUID(str(body["reviewer_id"]))), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.post("/warranty-claims/{claim_id}/request-documents")
-async def request_documents(claim_id: uuid.UUID, r: Request,
-                             u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_ASSIGN)),
-                             s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.request_documents(claim_id, body.get("notes", "")), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.post("/warranty-claims/{claim_id}/approve")
-async def approve_claim(claim_id: uuid.UUID, r: Request,
-                         u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_APPROVE)),
-                         s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.approve_claim(claim_id, Decimal(str(body["amount_approved"])), body.get("admin_notes")), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.post("/warranty-claims/{claim_id}/reject")
-async def reject_claim(claim_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_REJECT)),
-                        s: FinanceHubService = Depends(_svc)):
-    body = await r.json()
-    return ok(await s.reject_claim(claim_id, body["rejection_reason"], body.get("admin_notes")), _rid(r), ENGINE_ID)
-
-
-@retired_warranty_router.post("/warranty-claims/{claim_id}/settle")
-async def settle_claim(claim_id: uuid.UUID, r: Request,
-                        u: UserContext = Depends(require_permission(P.FINANCE_CLAIMS_SETTLE)),
-                        s: FinanceHubService = Depends(_svc)):
-    return ok(await s.settle_claim(claim_id), _rid(r), ENGINE_ID)
-
 
 # ═══════════════════════════════════════════════════════════════
 # PAYOUTS

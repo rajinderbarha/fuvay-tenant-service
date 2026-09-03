@@ -30,7 +30,7 @@ export function DataSummaryScreen({ navigation }: Props) {
       <ScreenHeader title="Data summary" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
         <AppText variant="bodySmall" color="tertiary" style={{ marginBottom: theme.spacing.base }}>
-          A high-level view of the categories of information ServiceOS holds about you across every linked system.
+          A high-level view of the categories of information Fuvay holds about you across every linked system.
         </AppText>
         {GROUPS.map(group => (
           <Section key={group.title}>

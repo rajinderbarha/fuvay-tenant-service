@@ -45,14 +45,4 @@ test.describe('Admin Operations directories', () => {
     await expect(page.locator('body')).not.toContainText(/\b(?:undefined|invalid date|nan)\b/i);
   });
 
-  test('Complaints menu is active and policies are configurable', async ({ page }) => {
-    await loginAsSuperAdmin(page);
-    await page.goto('/admin/complaints');
-    await expect(page.getByRole('heading', { name: 'Complaints & Disputes' })).toBeVisible();
-    await expect(page.locator('a[href="/admin/complaints"]')).toHaveAttribute('aria-current', 'page');
-    await page.getByRole('button', { name: 'Policies' }).click();
-    await expect(page.getByRole('button', { name: 'Create policy' })).toBeVisible();
-    await page.getByRole('button', { name: 'Create policy' }).click();
-    await expect(page.getByRole('heading', { name: 'Create Complaint Policy' })).toBeVisible();
-  });
 });

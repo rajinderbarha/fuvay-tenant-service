@@ -15,10 +15,15 @@ def test_admin_preference_endpoints_exist():
 
 def test_settings_page_and_nav_exist():
     root = os.path.join(os.path.dirname(__file__), "..")
-    assert os.path.isfile(os.path.join(root, "frontend", "super-admin", "app", "admin",
-                          "notifications", "settings", "page.tsx"))
+    workspace = os.path.join(root, "frontend", "super-admin", "app", "admin",
+                             "notifications", "page.tsx")
+    assert os.path.isfile(workspace)
+    page = open(workspace, encoding="utf-8").read()
+    assert "NotificationSettingsPanel" in page
+    assert 'key: "settings"' in page
     api = open(os.path.join(root, "frontend", "super-admin", "lib", "api.ts"), encoding="utf-8").read()
     assert "getPreferences" in api and "updatePreference" in api
     nav = open(os.path.join(root, "frontend", "super-admin", "components", "layout",
                "AdminLayout.tsx"), encoding="utf-8").read()
-    assert "/admin/notifications/settings" in nav
+    assert 'href: "/admin/notifications"' in nav
+    assert "/admin/notifications/settings" not in nav

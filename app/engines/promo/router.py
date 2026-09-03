@@ -1,5 +1,5 @@
 """
-ServiceOS — Promo & Discounts Engine
+Fuvay — Promo & Discounts Engine
 Prefix: /v1/promos
 Phase: Stub router — full implementation in Phase 6
 """

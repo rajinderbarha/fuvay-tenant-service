@@ -17,7 +17,6 @@ def test_runtime_services_do_not_query_removed_deposit_models_or_columns():
         "tenant": _read("app/engines/tenant_engine/service.py"),
         "trust": _read("app/engines/trust_quality/service.py"),
         "trust_bulk": _read("app/engines/trust_quality/recalculation.py"),
-        "ai_settlement": _read("app/engines/complaints/settlement_rules.py"),
     }
     for name, source in sources.items():
         assert "select(SecurityDeposit)" not in source, name

@@ -17,7 +17,7 @@ import { PrivacyRequestType } from "../../services/privacy/types";
 type Props = NativeStackScreenProps<ProfileStackParamList, "PrivacyRequestForm">;
 
 const REQUEST_TYPES: { value: PrivacyRequestType; label: string; description: string }[] = [
-  { value: "data_correction", label: "Correction", description: "Fix inaccurate information ServiceOS holds about you" },
+  { value: "data_correction", label: "Correction", description: "Fix inaccurate information Fuvay holds about you" },
   { value: "processing_objection", label: "Object to processing", description: "Object to a specific way your data is used" },
   { value: "consent_withdrawal", label: "Consent withdrawal", description: "Formally withdraw a consent-based purpose" },
   { value: "grievance", label: "Grievance", description: "Raise a privacy concern or complaint" },
@@ -56,7 +56,7 @@ export function PrivacyRequestFormScreen({ navigation, route }: Props) {
       <SafeAreaScreen edges={["top", "left", "right"]}>
         <ScreenHeader title="Request submitted" onBack={() => navigation.goBack()} />
         <View style={{ padding: theme.spacing.lg }}>
-          <InlineAlert tone="success" title="Request submitted" message="It will be reviewed across every ServiceOS category linked to your account. You'll be notified as it progresses." />
+          <InlineAlert tone="success" title="Request submitted" message="It will be reviewed across every Fuvay category linked to your account. You'll be notified as it progresses." />
           <View style={{ height: theme.spacing.base }} />
           <PrimaryButton label="Track request" onPress={() => navigation.replace("PrivacyRequestDetail", { requestId: submittedId })} fullWidth />
         </View>
@@ -90,7 +90,7 @@ export function PrivacyRequestFormScreen({ navigation, route }: Props) {
               <TextArea label="Additional details (optional)" value={details} onChangeText={setDetails} minLines={2} />
             </Section>
             <Section>
-              <Checkbox label="I confirm this request is about my own ServiceOS account" checked={declared} onChange={setDeclared} />
+              <Checkbox label="I confirm this request is about my own Fuvay account" checked={declared} onChange={setDeclared} />
             </Section>
             {error ? <View style={{ marginBottom: theme.spacing.base }}><InlineAlert tone="danger" title="Couldn't submit" message={error} /></View> : null}
             <PrimaryButton label="Submit request" onPress={handleSubmit} loading={busy} disabled={!canSubmit} fullWidth />

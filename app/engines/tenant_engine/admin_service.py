@@ -537,7 +537,7 @@ class AdminTenantService:
     # A verified tenant can no longer edit its identity fields live: ProfileService stages
     # the proposed values in meta['pending_changes'] and moves the tenant to
     # 'changes_pending_review'. These three methods are what resolves that -- the live
-    # profile keeps the details ServiceOS actually verified until one of them runs.
+    # profile keeps the details Fuvay actually verified until one of them runs.
     #
     # The staged values are held on the tenant rather than in a change_requests table
     # because there is exactly one open request per tenant at a time (a second edit

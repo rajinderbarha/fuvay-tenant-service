@@ -56,14 +56,14 @@ def _assert_ok(response, *, status: int = 200):
 
 
 async def _provision_transactional_provider_capacity(connection) -> None:
-    """Fund and verify the certification technician inside the outer rollback.
+    """Fund the certification provider inside the outer rollback.
 
     The retained real tenant is intentionally allowed to be approved before
-    purchasing seats or completing technician documents. Production matching
-    therefore (correctly) fails closed when those real prerequisites are
-    absent. End-to-end workflow tests provision their own temporary evidence
-    inside the already-established rollback transaction instead of depending
-    on, or mutating, the tenant's durable payment/compliance state.
+    purchasing seats. Technician identity and background documents are
+    tenant-owned policy and are deliberately not a platform bookability or
+    assignment gate. The test therefore provisions only temporary seat
+    capacity inside the already-established rollback transaction instead of
+    depending on, or mutating, the tenant's durable payment state.
     """
     await connection.execute(text(
         "INSERT INTO tenant_topup_entitlements "
@@ -71,28 +71,6 @@ async def _provision_transactional_provider_capacity(connection) -> None:
         "VALUES (:id, :tid, 10, 0, 0, NULL, 'active', "
         "        '{\"test_fixture\":\"booking_api_certification\"}'::jsonb)"
     ), {"id": uuid.uuid4(), "tid": TENANT_ID})
-
-    required = ("technician_identity_proof", "technician_background_check")
-    await connection.execute(text(
-        "UPDATE tenant_documents SET status='verified', expiry_date=now()+interval '1 year', "
-        "verified_at=now(), updated_at=now() "
-        "WHERE tenant_id=:tid AND staff_member_id=:sid AND is_current=true "
-        "AND doc_type = ANY(:types)"
-    ), {"tid": TENANT_ID, "sid": TECHNICIAN_MEMBER_ID, "types": list(required)})
-    await connection.execute(text(
-        "INSERT INTO tenant_documents "
-        "(id, tenant_id, staff_member_id, doc_type, label, file_url, version, "
-        " is_current, status, expiry_date, verified_at, created_at, updated_at) "
-        "SELECT gen_random_uuid(), :tid, :sid, requirement.doc_type, "
-        "       'Transactional certification evidence', '', 1, true, 'verified', "
-        "       now()+interval '1 year', now(), now(), now() "
-        "FROM unnest(CAST(:types AS text[])) AS requirement(doc_type) "
-        "WHERE NOT EXISTS ("
-        "  SELECT 1 FROM tenant_documents existing "
-        "  WHERE existing.tenant_id=:tid AND existing.staff_member_id=:sid "
-        "    AND existing.doc_type=requirement.doc_type AND existing.is_current=true"
-        ")"
-    ), {"tid": TENANT_ID, "sid": TECHNICIAN_MEMBER_ID, "types": list(required)})
 
     # Matching reads this persisted canonical projection. It is scoped to the
     # same outer rollback as the temporary entitlement/documents above.

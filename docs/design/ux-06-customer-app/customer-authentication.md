@@ -2,7 +2,7 @@
 
 ## Real, verified contract
 
-`POST /v1/auth/login` — the same unified login endpoint used by every ServiceOS role
+`POST /v1/auth/login` — the same unified login endpoint used by every Fuvay role
 (confirmed via live `openapi.json`: `requestBody` schema `LoginRequest { email,
 password, device_id, device_name?, user_agent? }`, response `ApiResponse[dict]`).
 This mirrors UX-05's finding for the staff/technician app: there is no

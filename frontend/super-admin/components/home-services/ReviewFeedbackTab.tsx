@@ -200,7 +200,7 @@ export function ReviewFeedbackTab({ jobId, jobStatus }: { jobId: string; jobStat
 
         <Card>
           <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-tertiary)", margin: "0 0 10px" }}>Payment context</p>
-          <p style={{ fontSize: 11, color: "var(--info-text, #3b82f6)", marginBottom: 8 }}>Customer pays the provider directly. ServiceOS records payment confirmation only.</p>
+          <p style={{ fontSize: 11, color: "var(--info-text, #3b82f6)", marginBottom: 8 }}>Customer pays the provider directly. Fuvay records payment confirmation only.</p>
           <Field label="Platform collection" value="₹0" />
         </Card>
       </div>

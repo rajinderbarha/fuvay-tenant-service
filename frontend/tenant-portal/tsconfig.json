@@ -48,7 +48,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "tests-repro-upload.spec.ts"
+    "node_modules"
   ]
 }

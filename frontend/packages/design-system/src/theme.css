@@ -1,4 +1,4 @@
-/* ServiceOS Design System — theme.css
+/* Fuvay Design System — theme.css
  * Additive layer of shared tokens on top of each app's existing globals.css.
  * Does NOT redefine --bg/--surface/--text-primary/etc: those already exist
  * in both apps' globals.css using this exact [data-theme] convention. This

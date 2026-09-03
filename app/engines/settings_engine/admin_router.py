@@ -46,7 +46,7 @@ async def summary(r: Request, s: SettingsService = Depends(_svc), u: UserContext
 # SEED DEFAULTS
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/seed-defaults/preview", summary="Preview ServiceOS default settings")
+@router.post("/seed-defaults/preview", summary="Preview Fuvay default settings")
 async def seed_defaults_preview(r: Request,
                                  u: UserContext = Depends(require_permission(P.SETTINGS_SEED_DEFAULTS)),
                                  s: SettingsService = Depends(_svc)):
@@ -57,7 +57,7 @@ class SeedDefaultsBody(BaseModel):
     force: bool = False
 
 
-@router.post("/seed-defaults", summary="Seed ServiceOS default settings")
+@router.post("/seed-defaults", summary="Seed Fuvay default settings")
 async def seed_defaults(r: Request, body: SeedDefaultsBody = SeedDefaultsBody(),
                          u: UserContext = Depends(require_permission(P.SETTINGS_SEED_DEFAULTS)),
                          s: SettingsService = Depends(_svc)):

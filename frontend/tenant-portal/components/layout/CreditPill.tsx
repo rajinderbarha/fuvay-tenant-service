@@ -74,7 +74,7 @@ export function CreditPill() {
         orderId: order.order_id,
         amountPaise: order.amount_paise,
         currency: order.currency,
-        name: "ServiceOS",
+        name: "Fuvay",
         description: `${plan.name} — ${inr(plan.credited_amount)} credit + ${plan.seats} seat(s)`,
       });
       // Seats and credit are granted by the captured-payment webhook, never by

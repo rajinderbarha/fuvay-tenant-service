@@ -58,15 +58,10 @@ SUPER_ADMIN_ONLY_ENDPOINTS = [
     ("POST", "/v1/admin/finance/payouts/{id}/mark-failed", {"failure_reason": "test"}),
     ("POST", "/v1/admin/finance/payouts/{id}/mark-processing", None),
     ("POST", "/v1/admin/finance/payouts/{id}/reject", {"reason": "test"}),
-    ("POST", "/v1/admin/finance/warranty-claims/{id}/approve", {"amount_approved": "10.00"}),
-    ("POST", "/v1/admin/finance/warranty-claims/{id}/assign", {"reviewer_id": str(uuid.uuid4())}),
-    ("POST", "/v1/admin/finance/warranty-claims/{id}/reject", {"rejection_reason": "test"}),
-    ("POST", "/v1/admin/finance/warranty-claims/{id}/request-documents", {"notes": "test"}),
-    ("POST", "/v1/admin/finance/warranty-claims/{id}/settle", None),
 ]
 
 ALL_MUTATIONS = ADMIN_FINANCE_GRANTED_ENDPOINTS + SUPER_ADMIN_ONLY_ENDPOINTS
-assert len(ALL_MUTATIONS) == 12
+assert len(ALL_MUTATIONS) == 7
 
 
 async def _call(client, method, path_tmpl, body):
@@ -242,12 +237,6 @@ class TestExistingStateMachineGuardsUnchanged:
         src = inspect.getsource(FinanceHubService.mark_completed)
         assert '("processing",)' in src
 
-    def test_separate_claim_settle_action_is_retired(self):
-        import inspect
-        from app.engines.finance_hub.service import FinanceHubService
-        src = inspect.getsource(FinanceHubService.settle_claim)
-        assert "WARRANTY_SETTLEMENT_ATOMIC" in src
-
     def test_refund_topup_caps_at_amount_paid(self):
         import inspect
         from app.engines.finance_hub.service import FinanceHubService
@@ -279,12 +268,14 @@ class TestModuleVerificationExitsClean:
         spec.loader.exec_module(mod)
         return mod
 
-    def test_all_12_finance_hub_routes_in_allowlist_or_accepted(self):
+    def test_all_live_finance_hub_mutations_in_allowlist_or_accepted(self):
         mod = self._load_inventory_module()
         from app.main import app
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.finance_hub.admin_router"]
-        assert len(routes) == 12
+        # Settlement/admin-dispute mutations were retired; only top-up and
+        # payout operations remain in this platform-only router.
+        assert len(routes) == 7
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

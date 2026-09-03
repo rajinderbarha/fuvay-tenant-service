@@ -2,7 +2,7 @@
 
 ## PRODUCT CORRECTION (Round 6) — this workstream is NOT_APPLICABLE
 The user issued a language-architecture correction that supersedes this workstream's framing: app-wide English/
-Hindi/Punjabi localization is **not part of ServiceOS's design** for the Super Admin, Tenant, Staff, or
+Hindi/Punjabi localization is **not part of Fuvay's design** for the Super Admin, Tenant, Staff, or
 Technician apps — `mobile/staff-app` included. Those apps stay single-language (English) permanently.
 Multilingual behavior belongs exclusively to the DeepSeek customer-chat assistant, a different app entirely,
 out of UX-05's scope. Per this correction, **localization readiness is disposition `NOT_APPLICABLE`** for this

@@ -81,9 +81,9 @@ export default function ForgotPasswordPage() {
               <form onSubmit={handleRequestReset} style={{ display:"flex", flexDirection:"column", gap:16 }}>
                 <div>
                   <label style={{ fontSize:12, fontWeight:500, color:"var(--text-secondary)",
-                    display:"block", marginBottom:5 }}>Email</label>
+                  display:"block", marginBottom:5 }}>Email</label>
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                    placeholder="you@serviceos.in"
+                    placeholder="you@fuvay.in"
                     style={{ width:"100%", height:42, padding:"0 14px", fontSize:14,
                       background:"var(--surface)", border:"1px solid var(--border)",
                       borderRadius:10, color:"var(--text-primary)", outline:"none",

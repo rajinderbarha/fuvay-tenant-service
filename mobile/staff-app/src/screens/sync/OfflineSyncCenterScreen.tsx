@@ -134,7 +134,7 @@ export function OfflineSyncCenterScreen({ navigation }: Props) {
         </Section>
 
         {isEmpty ? (
-          <EmptyState icon="checkmark-done-outline" title="Nothing pending" message="All your work is synced with ServiceOS." />
+          <EmptyState icon="checkmark-done-outline" title="Nothing pending" message="All your work is synced with Fuvay." />
         ) : (
           <>
             {groups.syncingNow.length > 0 ? (

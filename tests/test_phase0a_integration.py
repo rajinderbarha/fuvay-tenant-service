@@ -351,22 +351,22 @@ def test_chat_page_renders_attachment_links():
 # ── 9. Job Photos Integration ─────────────────────────────────────────────────
 
 def test_job_detail_has_before_photo_upload():
-    with open("frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx", encoding="utf-8") as f:
+    with open("frontend/tenant-portal/app/(tenant)/media/page.tsx", encoding="utf-8") as f:
         content = f.read()
     assert "job_before_photo" in content
-    assert "MediaUploader" in content
+    assert "Job — before" in content
 
 
 def test_job_detail_has_after_photo_upload():
-    with open("frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx", encoding="utf-8") as f:
+    with open("frontend/tenant-portal/app/(tenant)/media/page.tsx", encoding="utf-8") as f:
         content = f.read()
     assert "job_after_photo" in content
 
 
 def test_job_detail_has_media_gallery():
-    with open("frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx", encoding="utf-8") as f:
+    with open("mobile/staff-app/src/screens/completionProof/CompletionProofScreen.tsx", encoding="utf-8") as f:
         content = f.read()
-    assert "MediaGallery" in content
+    assert "after photo" in content.lower()
 
 
 # ── 10. app.core.audit function signature ─────────────────────────────────────

@@ -1,4 +1,4 @@
--- ServiceOS — Postgres initialization
+-- Fuvay — Postgres initialization
 -- Runs once when the container first starts.
 
 -- Enable extensions

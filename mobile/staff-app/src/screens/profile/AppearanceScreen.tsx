@@ -19,7 +19,7 @@ const OPTIONS: { key: ThemePreference; label: string }[] = [
 /**
  * Appearance (Phase R spec section 12). Pure UI wiring onto the existing
  * ThemeProvider -- no new persistence. Deliberately no language row/selector
- * per explicit instruction: ServiceOS app interfaces remain single-language.
+ * per explicit instruction: Fuvay app interfaces remain single-language.
  */
 export function AppearanceScreen({ navigation }: Props) {
   const { theme, preference, setPreference } = useTheme();

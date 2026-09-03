@@ -1,7 +1,7 @@
 """P0 Customer Service Credit + Dispute Settlement Engine — test suite.
 
 Business rules verified:
-- Platform issues ServiceOS credit (not cash) after disputes.
+- Platform issues Fuvay credit (not cash) after disputes.
 - Platform recovers from tenant wallet first, then security deposit.
 - No silent deductions — every deduction creates a FinanceAuditLog.
 - NEVER call customer credit a 'cash refund'.
@@ -291,63 +291,17 @@ class TestPermissions:
 # ── Admin Router ─────────────────────────────────────────────────────────────
 
 class TestAdminRouter:
-    def test_admin_router_file_exists(self):
-        assert ADMIN_ROUTER.exists()
-
-    def test_prefix_v1_admin_finance(self):
-        assert "/v1/admin/finance" in _read(ADMIN_ROUTER)
-
-    def test_settlements_summary_endpoint(self):
-        assert "/settlements/summary" in _read(ADMIN_ROUTER)
-
-    def test_settlements_list_endpoint(self):
-        assert "/settlements" in _read(ADMIN_ROUTER)
-
-    def test_create_settlement_endpoint(self):
-        assert "/settlements" in _read(ADMIN_ROUTER)
-        assert "router.post" in _read(ADMIN_ROUTER)
-
-    def test_preview_endpoint(self):
-        assert "preview" in _read(ADMIN_ROUTER)
-
-    def test_approve_endpoint(self):
-        assert "approve" in _read(ADMIN_ROUTER)
-
-    def test_execute_endpoint(self):
-        assert "execute" in _read(ADMIN_ROUTER)
-
-    def test_cancel_settlement_endpoint(self):
+    def test_admin_router_is_read_only_penalty_oversight(self):
         content = _read(ADMIN_ROUTER)
-        assert "cancel" in content
-
-    def test_credits_summary_endpoint(self):
-        assert "/credits/summary" in _read(ADMIN_ROUTER)
-
-    def test_credits_list_endpoint(self):
-        assert "/credits" in _read(ADMIN_ROUTER)
-
-    def test_issue_manual_credit_endpoint(self):
-        assert "customers" in _read(ADMIN_ROUTER)
-        assert "/credits" in _read(ADMIN_ROUTER)
-
-    def test_cancel_credit_endpoint(self):
-        assert "cancel" in _read(ADMIN_ROUTER)
-
-    def test_extend_credit_endpoint(self):
-        assert "extend" in _read(ADMIN_ROUTER)
-
-    def test_penalties_list_endpoint(self):
-        assert "/penalties" in _read(ADMIN_ROUTER)
-
-    def test_vertical_config_endpoint(self):
-        assert "vertical-config" in _read(ADMIN_ROUTER)
-
-    def test_uses_finance_permissions(self):
-        assert "FINANCE_SETTLEMENTS_READ" in _read(ADMIN_ROUTER)
-        assert "FINANCE_CREDITS_READ" in _read(ADMIN_ROUTER)
-
-
-# ── Customer Router ───────────────────────────────────────────────────────────
+        assert ADMIN_ROUTER.exists()
+        assert "/v1/admin/finance" in content
+        assert "/penalties/summary" in content
+        assert "/penalties" in content
+        assert "vertical-config" in content
+        assert "FINANCE_PENALTIES_READ" in content
+        assert "router.post" not in content
+        for retired in ("/settlements", "/credits", "/disputes", "/customers"):
+            assert retired not in content
 
 class TestCustomerRouter:
     def test_customer_router_file_exists(self):
@@ -417,18 +371,6 @@ class TestMainRegistration:
 # ── Super-admin API (api.ts) ──────────────────────────────────────────────────
 
 class TestSuperAdminApi:
-    def test_dispute_settlement_interface(self):
-        assert "DisputeSettlement" in _read(SA_API)
-
-    def test_dispute_settlement_summary_interface(self):
-        assert "DisputeSettlementSummary" in _read(SA_API)
-
-    def test_customer_service_credit_interface(self):
-        assert "CustomerServiceCredit" in _read(SA_API)
-
-    def test_customer_credit_summary_interface(self):
-        assert "CustomerCreditSummary" in _read(SA_API)
-
     def test_tenant_penalty_interface(self):
         assert "TenantPenalty" in _read(SA_API)
 
@@ -437,39 +379,6 @@ class TestSuperAdminApi:
 
     def test_finance_vertical_config_interface(self):
         assert "FinanceVerticalConfig" in _read(SA_API)
-
-    def test_get_settlement_summary_method(self):
-        assert "getSettlementSummary" in _read(SA_API)
-
-    def test_list_settlements_method(self):
-        assert "listSettlements" in _read(SA_API)
-
-    def test_approve_settlement_method(self):
-        assert "approveSettlement" in _read(SA_API)
-
-    def test_execute_settlement_method(self):
-        assert "executeSettlement" in _read(SA_API)
-
-    def test_cancel_settlement_method(self):
-        assert "cancelSettlement" in _read(SA_API)
-
-    def test_preview_deduction_method(self):
-        assert "previewDeduction" in _read(SA_API)
-
-    def test_list_credits_method(self):
-        assert "listCredits" in _read(SA_API)
-
-    def test_get_credit_summary_method(self):
-        assert "getCreditSummary" in _read(SA_API)
-
-    def test_issue_manual_credit_method(self):
-        assert "issueManualCredit" in _read(SA_API)
-
-    def test_cancel_credit_method(self):
-        assert "cancelCredit" in _read(SA_API)
-
-    def test_extend_credit_method(self):
-        assert "extendCredit" in _read(SA_API)
 
     def test_list_penalties_method(self):
         assert "listPenalties" in _read(SA_API)
@@ -480,14 +389,13 @@ class TestSuperAdminApi:
     def test_get_vertical_config_method(self):
         assert "getVerticalConfig" in _read(SA_API)
 
-    def test_settlement_type_has_settlement_status(self):
+    def test_admin_dispute_and_customer_credit_controls_are_retired(self):
         content = _read(SA_API)
-        assert "settlement_status:" in content
-
-    def test_no_cash_refund_label_in_interfaces(self):
-        content = _read(SA_API)
-        sa_block = content[content.find("DisputeSettlement"):content.find("export const financeApi")]
-        assert "cash_refund" not in sa_block.lower()
+        for symbol in (
+            "DisputeSettlement", "approveSettlement", "executeSettlement",
+            "issueManualCredit", "cancelCredit", "extendCredit",
+        ):
+            assert symbol not in content
 
 
 # ── Tenant Portal API (api.ts) ────────────────────────────────────────────────
@@ -527,48 +435,9 @@ class TestTenantPortalApi:
 # ── Frontend pages ────────────────────────────────────────────────────────────
 
 class TestSuperAdminPages:
-    def test_dispute_settlements_page_exists(self):
-        assert SA_SETTLEMENTS.exists()
-
-    def test_dispute_settlements_uses_finance_api(self):
-        assert "financeApi" in _read(SA_SETTLEMENTS)
-
-    def test_dispute_settlements_shows_approve(self):
-        assert "Approve" in _read(SA_SETTLEMENTS)
-
-    def test_dispute_settlements_shows_execute(self):
-        assert "Execute" in _read(SA_SETTLEMENTS)
-
-    def test_dispute_settlements_has_cancel_modal(self):
-        content = _read(SA_SETTLEMENTS)
-        assert "Modal" in content
-        assert "cancel" in content.lower()
-
-    def test_dispute_settlements_uses_admin_layout(self):
-        assert "AdminLayout" in _read(SA_SETTLEMENTS)
-
-    def test_customer_credits_page_exists(self):
-        assert SA_CREDITS.exists()
-
-    def test_customer_credits_uses_finance_api(self):
-        assert "financeApi" in _read(SA_CREDITS)
-
-    def test_customer_credits_not_cash_refund(self):
-        # "cash refunds" only allowed if preceded by "NOT" (the disclaimer wording)
-        import re as _re
-        content = _read(SA_CREDITS)
-        for m in _re.finditer(r"cash refund", content, _re.IGNORECASE):
-            context = content[max(0, m.start() - 20):m.start()].lower()
-            assert "not" in context, f"Page labels credit as 'cash refund' without negation at pos {m.start()}"
-
-    def test_customer_credits_says_not_cash(self):
-        content = _read(SA_CREDITS)
-        assert "NOT cash" in content or "not a cash" in content.lower() or "not cash" in content.lower()
-
-    def test_customer_credits_has_extend_modal(self):
-        content = _read(SA_CREDITS)
-        assert "Extend" in content
-        assert "Modal" in content
+    def test_retired_admin_settlement_and_credit_pages_are_deleted(self):
+        assert not SA_SETTLEMENTS.exists()
+        assert not SA_CREDITS.exists()
 
     def test_tenant_penalties_page_exists(self):
         assert SA_PENALTIES.exists()

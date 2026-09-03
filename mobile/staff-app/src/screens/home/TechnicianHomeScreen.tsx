@@ -26,6 +26,18 @@ const EXECUTION_ROUTE_FOR_ACTION: Record<string, string> = {
   complete: "CompletionProof",
 };
 
+const BLOCKER_COPY: Record<string, string> = {
+  ESTIMATE_REQUIRED: "Create and send an estimate before starting work.",
+  ESTIMATE_APPROVAL_REQUIRED: "Wait for the customer to approve the current estimate before starting work.",
+  ESTIMATE_REVISION_REQUIRED: "The customer requested changes. Send a revised estimate before starting work.",
+  ESTIMATE_REJECTED: "The estimate was rejected. Contact your business before starting work.",
+  JOB_TYPE_CONTEXT_UNRESOLVED: "This job needs to be reviewed by your business before work can start.",
+};
+
+function blockerMessage(code: string, message: string | null): string {
+  return message || BLOCKER_COPY[code] || "Complete the required setup before continuing.";
+}
+
 function todayLabel(): string {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 }
@@ -218,7 +230,11 @@ function CurrentJobSection({ job, offline, onPress }: { job: CurrentJobDTO; offl
       </View>
 
       {job.blocker ? (
-        <InlineAlert tone="warning" title="Action blocked" message={job.blocker.message ?? job.blocker.code} />
+        <InlineAlert
+          tone="warning"
+          title="Before work can start"
+          message={blockerMessage(job.blocker.code, job.blocker.message)}
+        />
       ) : null}
 
       {job.next_required_action.label ? (

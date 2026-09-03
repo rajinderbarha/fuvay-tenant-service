@@ -46,6 +46,9 @@ from app.engines.final_records.number_service import (
     generate_booking_number, generate_job_number,
     generate_appointment_number, generate_lead_number,
 )
+from app.core.security import enforce_booking_action_limits
+from app.exceptions import ServiceOSException
+from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +108,7 @@ class HomeServiceFinalCreationService:
         customer_id:     uuid.UUID | None = None,
         idempotency_key: str | None       = None,
         request_id:      str | None       = None,
+        ip_address:      str | None       = None,
     ) -> dict:
         from app.engines.home_service_booking.models import (
             HomeServiceBookingDraft, HomeServiceBookingDraftEvent,
@@ -144,6 +148,52 @@ class HomeServiceFinalCreationService:
             raise ValueError(ERR_ACCESS_DENIED)
         if draft.status != _READY:
             raise ValueError(ERR_DRAFT_NOT_READY)
+
+        await enforce_booking_action_limits(
+            "confirm",
+            actor_id=str(draft.customer_id or customer_id or draft.ai_session_id),
+            ip_address=ip_address,
+        )
+
+        # A new draft must not be used to duplicate an already-active booking
+        # for the same customer, service, place, date, and time window. An
+        # unscheduled legacy draft has no concrete slot to compare and must
+        # not collapse every null date/time into one false duplicate.
+        has_concrete_slot = all((
+            draft.customer_id,
+            draft.offering_id,
+            draft.zipcode,
+            draft.preferred_date,
+            draft.preferred_time_window,
+        ))
+        if has_concrete_slot and get_settings().APP_ENV in ("staging", "production"):
+            duplicate_key = ":".join(str(value or "-") for value in (
+                draft.customer_id, draft.offering_id, draft.zipcode,
+                draft.preferred_date, draft.preferred_time_window,
+            ))
+            await self.db.execute(
+                sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"booking-confirm:{duplicate_key}"},
+            )
+        if has_concrete_slot:
+            duplicate = (await self.db.execute(
+                select(ServiceBooking).where(
+                    ServiceBooking.customer_id == draft.customer_id,
+                    ServiceBooking.offering_id == draft.offering_id,
+                    ServiceBooking.zipcode == draft.zipcode,
+                    ServiceBooking.preferred_date == draft.preferred_date,
+                    ServiceBooking.preferred_time_window == draft.preferred_time_window,
+                    ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
+                ).order_by(ServiceBooking.created_at.desc()).limit(1)
+            )).scalars().first()
+            if isinstance(duplicate, ServiceBooking):
+                raise ServiceOSException(
+                    "DUPLICATE_ACTIVE_BOOKING",
+                    f"This service is already booked as {duplicate.booking_number} for the selected time.",
+                    status_code=409,
+                    resolution="Track the existing booking or choose a different time.",
+                    context={"booking_id": str(duplicate.id), "booking_number": duplicate.booking_number},
+                )
 
         # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 8): finalize()
         # must INDEPENDENTLY revalidate Job Type/Blueprint context, not trust

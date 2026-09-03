@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Matches app/schemas/base.py `ApiResponse`/`ok()` exactly:
  * `{ success: true, data, links?, meta: { request_id, ... } }`. Every
- * mounted ServiceOS endpoint returns this envelope on success.
+ * mounted Fuvay endpoint returns this envelope on success.
  */
 export const apiSuccessEnvelopeSchema = z.object({
   success: z.literal(true),

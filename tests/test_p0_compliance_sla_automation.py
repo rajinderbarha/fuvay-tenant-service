@@ -241,11 +241,11 @@ class TestLifespanWiring:
         assert "asyncio.create_task" in self._src()
 
     def test_task_cancelled_on_shutdown(self):
-        assert "_sla_task.cancel()" in self._src()
+        assert "_compliance_sla_task.cancel()" in self._src()
 
     def test_cancelled_error_awaited(self):
         src = self._src()
-        assert "await _sla_task" in src
+        assert "await _compliance_sla_task" in src
         assert "CancelledError" in src
 
     def test_loop_started_log(self):

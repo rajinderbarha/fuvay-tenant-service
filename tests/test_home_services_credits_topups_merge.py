@@ -115,7 +115,7 @@ class TestNavigationConsolidation:
         assert '"finance-provider-wallets"' not in src
         assert 'label: "Provider Wallets"' not in src
 
-    def test_legacy_routes_are_redirects_not_duplicate_pages(self):
+    def test_legacy_routes_are_deleted_not_duplicate_pages(self):
         import pathlib
         for path in [
             "frontend/super-admin/app/admin/provider-wallets/page.tsx",
@@ -123,17 +123,13 @@ class TestNavigationConsolidation:
             "frontend/super-admin/app/admin/finance/usage-credits/page.tsx",
             "frontend/super-admin/app/admin/finance/topups/page.tsx",
         ]:
-            src = pathlib.Path(path).read_text(encoding="utf-8")
-            assert (
-                "router.replace(`/admin/home-services/finance?" in src
-                or "redirect(`/admin/home-services/finance?" in src
-            ), f"{path} is not a redirect"
+            assert not pathlib.Path(path).exists(), f"{path} should be deleted"
 
     def test_usage_credit_redirect_preserves_exact_filters(self):
         import pathlib
-        src = pathlib.Path("frontend/super-admin/app/admin/finance/usage-credits/page.tsx").read_text(encoding="utf-8")
-        assert "Object.entries(incoming)" in src
-        assert 'next.set("credits_tab", "ledger")' in src
+        assert not pathlib.Path("frontend/super-admin/app/admin/finance/usage-credits/page.tsx").exists()
+        src = pathlib.Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(encoding="utf-8")
+        assert '"ledger"' in src and "function CreditsTab" in src
 
     def test_credits_tab_has_four_subtabs(self):
         import pathlib

@@ -1,4 +1,4 @@
-"""Settings Enterprise Upgrade — ServiceOS default global settings (G1-G12).
+"""Settings Enterprise Upgrade — Fuvay default global settings (G1-G12).
 
 Single source of truth for both SettingsService.seed_defaults() and its tests.
 Every entry becomes one PlatformSetting row keyed by `key`.
@@ -41,7 +41,7 @@ def _s(key, label, value, category, setting_type="boolean", risk="low",
 
 SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     # ── G1. General Platform ─────────────────────────────────────────────────
-    _s("platform_name", "Platform Name", "ServiceOS", CATEGORY_GENERAL, "string"),
+    _s("platform_name", "Platform Name", "Fuvay", CATEGORY_GENERAL, "string"),
     _s("default_country", "Default Country", "India", CATEGORY_GENERAL, "string"),
     _s("default_currency", "Default Currency", "INR", CATEGORY_GENERAL, "currency"),
     _s("default_timezone", "Default Timezone", "Asia/Kolkata", CATEGORY_GENERAL, "string"),
@@ -63,7 +63,7 @@ SERVICEOS_DEFAULT_SETTINGS: list[dict] = [
     # ── G3. Booking & Jobs ───────────────────────────────────────────────────
     _s("home_services_enabled", "Home Services Enabled", True, CATEGORY_BOOKING),
     _s("customer_pays_provider_directly", "Customer Pays Provider Directly", True, CATEGORY_BOOKING,
-       risk="critical", description="Core ServiceOS Home Services business model — customer pays tenant/provider on-site."),
+       risk="critical", description="Core Fuvay Home Services business model — customer pays tenant/provider on-site."),
     _s("payment_collection_enabled", "Payment Collection Enabled", False, CATEGORY_BOOKING,
        risk="critical", requires_approval=True,
        description="Must stay false for Home Services — platform does not collect service payment."),

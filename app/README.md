@@ -1,4 +1,4 @@
-# ServiceOS — Backend API
+# Fuvay — Backend API
 
 FastAPI + Python 3.12. 26 engines, 15 migrations, RFC 7807 error format, rate limiting, idempotency.
 

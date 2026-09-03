@@ -312,8 +312,8 @@ def test_service_options_page_exists():
     assert not os.path.exists(os.path.join(SA_PAGES, "service-options", "page.tsx"))
     assert os.path.exists(CATALOG_WORKSPACE_PAGE)
 
-def test_workflow_templates_page_exists():
-    assert os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
+def test_workflow_templates_page_is_retired():
+    assert not os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
 
 # NOTE: issue-types was later migrated (alongside service-options, see
 # test_service_options_page_uses_service_option_api) from the Sprint34A
@@ -336,10 +336,10 @@ def test_service_options_page_uses_page_shell():
     src = _read(CATALOG_WORKSPACE_PAGE)
     assert '"options"' in src
 
-def test_workflow_templates_page_redirects_to_catalog_workspace():
-    src = _read(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
-    assert "redirect" in src
-    assert "/admin/catalog-workspace?tab=workflow" in src
+def test_catalog_workspace_contains_canonical_workflow_tab():
+    src = _read(CATALOG_WORKSPACE_PAGE)
+    assert '"workflow"' in src
+    assert "WorkflowStepBuilder" in src
 
 def test_issue_types_page_uses_master_data_api():
     # See migration note above test_issue_types_page_uses_page_shell.
@@ -352,8 +352,7 @@ def test_service_options_page_uses_service_option_api():
     assert "OptionsTab" in src
 
 def test_workflow_templates_page_does_not_use_master_data_api():
-    src = _read(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
-    assert "masterDataApi" not in src
+    assert not os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
 
 def test_no_hardcoded_brands_in_issue_types_page():
     src = _read(CATALOG_WORKSPACE_PAGE)
@@ -375,9 +374,7 @@ def test_service_options_page_no_tailwind():
     assert not tailwind.search(src)
 
 def test_workflow_templates_page_no_tailwind():
-    src = _read(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
-    tailwind = re.compile(r'className="[^"]*(?:flex|text-sm|bg-blue|p-\d|m-\d|rounded-)[^"]*"')
-    assert not tailwind.search(src)
+    assert not os.path.exists(os.path.join(SA_PAGES, "workflow-templates", "page.tsx"))
 
 
 # ── Admin Navigation ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-ServiceOS — Leads CRM Engine
+Fuvay — Leads CRM Engine
 Prefix: /v1/leads
 Phase: Stub router — full implementation in Phase 6
 """

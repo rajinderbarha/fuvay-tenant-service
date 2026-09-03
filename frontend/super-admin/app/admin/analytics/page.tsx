@@ -276,10 +276,10 @@ export default function PlatformAnalyticsDashboard() {
         <SummaryCard label="Completed Job Deductions" value={fmtMoney(s.completed_job_deductions)} href="/admin/home-services/finance?tab=provider-charges" loading={sumLoading} />
         <SummaryCard label="Provider Direct Service Value" value={fmtMoney(s.provider_direct_service_value)} sub="Paid directly to provider" loading={sumLoading} />
         <SummaryCard label="Avg Job Rating" value={fmtRating(s.avg_job_rating)} loading={sumLoading} />
-        <SummaryCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/complaints" loading={sumLoading} />
+        <SummaryCard label="Complaint Rate" value={fmtPct(s.complaint_rate)} href="/admin/analytics/complaints" loading={sumLoading} />
         <SummaryCard label="Pending Approvals" value={fmt(s.pending_approvals)} href="/admin/home-services/providers?tab=onboarding" loading={sumLoading} />
         <SummaryCard label="New Providers" value={fmt(s.new_providers)} loading={sumLoading} />
-        <SummaryCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} href="/admin/finance/customer-credits" loading={sumLoading} />
+        <SummaryCard label="Customer Service Credits Issued" value={fmtMoney(s.customer_service_credits_issued)} loading={sumLoading} />
         <SummaryCard label="Active Customers" value={fmt(s.active_customers)} loading={sumLoading} />
       </div>
 

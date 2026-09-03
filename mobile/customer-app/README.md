@@ -1,4 +1,4 @@
-# ServiceOS — Customer App
+# Fuvay — Customer App
 
 Expo React Native app for end customers (iOS + Android).
 
@@ -13,18 +13,8 @@ Expo React Native app for end customers (iOS + Android).
 | Booking Detail | Cancel modal, Track Technician CTA, Leave Review CTA |
 | Job Tracking | Progress steps, live staff GPS poll (30s interval) |
 | Review | Star rating, quick tags, comment, success state |
-| Chat | Staff conversations (separate from AI) |
-| AI Assistant | DeepSeek-powered chat — checks bookings, tracks jobs, estimates prices |
+| Chat | Staff conversations |
 | Profile | Stats, menu, logout |
-
-## AI Chat
-
-The AI tab uses DeepSeek LLM via the ServiceOS backend. The API key is **never in the app** — it lives in the backend `.env`.
-
-Customers can ask:
-- "What are my recent bookings?"
-- "Where is my technician?"
-- "How much does AC service cost in Pune?"
 
 ## Running
 
@@ -50,7 +40,7 @@ eas build --platform all --profile production
 ## Tests
 
 ```bash
-python -m pytest tests/test_customer_app.py -v   # 55 tests
+npm test -- --runInBand
 ```
 
 ## Connecting to Backend
@@ -69,6 +59,3 @@ EXPO_PUBLIC_API_URL=http://192.168.1.100:8000
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 cd mobile/customer-app && npx expo start
 ```
-
-**AI Chat:** DeepSeek key is backend-only. Set `DEEPSEEK_API_KEY` in the backend `.env`.
-The customer app never needs the key.

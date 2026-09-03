@@ -1,5 +1,5 @@
 """
-ServiceOS — Base SQLAlchemy Models
+Fuvay — Base SQLAlchemy Models
 All models inherit from ServiceOSBase which provides:
   - UUID primary key
   - created_at / updated_at timestamps (auto-managed)
@@ -58,7 +58,7 @@ class SoftDeleteMixin:
 
 class ServiceOSBase(Base, TimestampMixin):
     """
-    Base for ALL ServiceOS models.
+    Base for ALL Fuvay models.
     - UUID PK (gen_random_uuid() in Postgres, uuid4() in Python)
     - Auto timestamps
     """

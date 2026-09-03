@@ -152,22 +152,6 @@ def test_topup_retry_guards_already_credited():
 
 # ── Service — Warranty Claims ─────────────────────────────────────────────────
 
-def test_claims_service_methods_exist():
-    src = _read(FINANCE_SERVICE)
-    for fn in ("list_claims", "get_claims_summary", "get_claim_detail", "assign_reviewer",
-               "request_documents", "approve_claim", "reject_claim", "settle_claim", "export_claims"):
-        assert f"async def {fn}" in src, f"Missing claim method: {fn}"
-
-
-def test_claim_settlement_is_atomic_with_admin_approval():
-    src = _read(FINANCE_SERVICE)
-    idx = src.index("async def settle_claim(")
-    snippet = src[idx:idx + 700]
-    assert "WARRANTY_SETTLEMENT_ATOMIC" in snippet
-    assert "issued atomically when Admin approves" in snippet
-    assert "status_code=409" in snippet
-
-
 # ── Service — Payouts ──────────────────────────────────────────────────────────
 
 def test_payout_service_methods_exist():
@@ -232,15 +216,6 @@ def test_router_topups_endpoints():
         assert f'"{path}"' in src, f"Missing router path: {path}"
 
 
-def test_router_claims_endpoints():
-    src = _read(FINANCE_ROUTER)
-    for path in ("/warranty-claims", "/warranty-claims/summary",
-                 "/warranty-claims/{claim_id}/assign", "/warranty-claims/{claim_id}/request-documents",
-                 "/warranty-claims/{claim_id}/approve", "/warranty-claims/{claim_id}/reject",
-                 "/warranty-claims/{claim_id}/settle"):
-        assert f'"{path}"' in src, f"Missing router path: {path}"
-
-
 def test_router_payouts_endpoints():
     src = _read(FINANCE_ROUTER)
     for path in ("/payouts", "/payouts/summary", "/payouts/{payout_id}/approve",
@@ -258,9 +233,13 @@ def test_router_wallets_and_audit_endpoints():
 
 def test_router_uses_finance_permissions():
     src = _read(FINANCE_ROUTER)
-    for perm in ("P.FINANCE_READ", "P.FINANCE_TOPUPS_REFUND",
-                 "P.FINANCE_CLAIMS_SETTLE", "P.FINANCE_PAYOUTS_APPROVE", "P.FINANCE_WALLETS_READ",
-                 "P.FINANCE_AUDIT_READ"):
+    for perm in (
+        "P.FINANCE_READ",
+        "P.FINANCE_TOPUPS_REFUND",
+        "P.FINANCE_PAYOUTS_APPROVE",
+        "P.FINANCE_WALLETS_READ",
+        "P.FINANCE_AUDIT_READ",
+    ):
         assert f"require_permission({perm})" in src, f"Missing permission guard: {perm}"
 
 

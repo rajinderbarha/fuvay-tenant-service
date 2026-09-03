@@ -74,9 +74,8 @@ class TestFinanceHubExportPermissionSeparation:
     def test_no_finance_hub_export_endpoint_uses_a_read_only_permission(self):
         src = _read("app/engines/finance_hub/admin_router.py")
         assert 'async def export_topups(' in src
-        assert 'async def export_claims(' in src
         assert 'async def export_payouts(' in src
-        for fn in ("export_topups", "export_claims", "export_payouts"):
+        for fn in ("export_topups", "export_payouts"):
             start = src.index(f"async def {fn}(")
             end = src.index("):\n", start)
             block = src[start:end]

@@ -27,12 +27,10 @@ STAFF_PAGES = {
     "skills": FRONTEND / "app/staff/skills/page.tsx",
     "service_areas": FRONTEND / "app/staff/service-areas/page.tsx",
     "availability": FRONTEND / "app/staff/availability/page.tsx",
-    "documents": FRONTEND / "app/staff/documents/page.tsx",
     "jobs_list": FRONTEND / "app/staff/jobs/page.tsx",
     "jobs_detail": FRONTEND / "app/staff/jobs/[job_id]/page.tsx",
     "notifications": FRONTEND / "app/staff/notifications/page.tsx",
     "sessions": FRONTEND / "app/staff/security/sessions/page.tsx",
-    "activity": FRONTEND / "app/staff/activity/page.tsx",
 }
 
 
@@ -91,19 +89,11 @@ def test_availability_page_is_read_only_no_mutation_calls():
 
 
 # ── Documents / Sessions / Activity are honest gap pages, not fabricated ───
-def test_documents_page_is_honest_gap_not_fabricated_data():
-    src = STAFF_PAGES["documents"].read_text(encoding="utf-8")
-    assert "not yet available" in src
-
-
-def test_sessions_page_is_honest_gap_not_fabricated_data():
+def test_sessions_page_uses_live_session_management():
     src = STAFF_PAGES["sessions"].read_text(encoding="utf-8")
-    assert "not yet available" in src
-
-
-def test_activity_page_is_honest_gap_not_fabricated_data():
-    src = STAFF_PAGES["activity"].read_text(encoding="utf-8")
-    assert "not yet available" in src
+    assert "authApi.getSessions" in src
+    assert "authApi.deleteSession" in src
+    assert "authApi.logoutAll" in src
 
 
 # ── MODULE-L5-38: job list/detail runtime actions are now REAL and wired ───

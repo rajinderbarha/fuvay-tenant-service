@@ -284,7 +284,7 @@ export function ComponentGallery() {
           <CustomerAlias alias="Customer A." />
           <CustomerAlias alias="" />
           <MaskedIdentifier maskedValue="•••• 4821" label="Phone" />
-          <PrivacyNotice text="Customer contact details are relayed through ServiceOS to protect privacy." />
+          <PrivacyNotice text="Customer contact details are relayed through Fuvay to protect privacy." />
           <JobScopedLocation localityLabel="Koramangala, Bengaluru" />
           <RelayContactButton onPress={() => {}} />
         </GallerySection>
@@ -377,7 +377,7 @@ export function ComponentGallery() {
         <ActionSheet
           visible={actionSheetVisible}
           title="Choose an action"
-          options={[{ key: "call", label: "Call through ServiceOS" }, { key: "message", label: "Message" }, { key: "cancel", label: "Cancel job", destructive: true }]}
+          options={[{ key: "call", label: "Call through Fuvay" }, { key: "message", label: "Message" }, { key: "cancel", label: "Cancel job", destructive: true }]}
           onSelect={() => setActionSheetVisible(false)}
           onClose={() => setActionSheetVisible(false)}
         />

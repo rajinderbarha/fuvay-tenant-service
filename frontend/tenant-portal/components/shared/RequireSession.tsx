@@ -95,7 +95,10 @@ export function RequireSession({ children }: { children: React.ReactNode }) {
           setState("unavailable");
         });
     };
-    check(0);
+    // Let React Strict Mode clean up its throwaway effect before the network
+    // request starts. Otherwise every route transition checks the same session
+    // twice and one aborted request can win the state race.
+    timer = setTimeout(() => check(0), 0);
 
     return cleanup;
   }, [attempt]);

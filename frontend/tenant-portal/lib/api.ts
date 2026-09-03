@@ -1,5 +1,5 @@
 /**
- * ServiceOS Tenant Owner Portal — API Client
+ * Fuvay Tenant Owner Portal — API Client
  * PROVEN LEVEL 5:
  *   ✅ ALL API calls through this file — no inline fetch() anywhere else
  *   ✅ Tenant ID injected from localStorage — never hardcoded or repeated
@@ -67,7 +67,9 @@ export function clearSession() {
 // require cycle with api-tenant-workspaces.ts (which imports apiFetch here).
 import type { TeamReadinessSummary, ServiceCoverageRow, BusinessProfileOptions } from "./api-tenant-workspaces";
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}, skipAuth = false): Promise<T> {
+const inFlightReads = new Map<string, Promise<unknown>>();
+
+async function apiFetchOnce<T>(path: string, options: RequestInit = {}, skipAuth = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type":     "application/json",
@@ -109,6 +111,30 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, skipA
   }
   const json = await res.json();
   return json.data as T;
+}
+
+/**
+ * Share only identical, default GET requests while they are in flight. React
+ * Strict Mode can mount the same loader twice in development; coalescing the
+ * read prevents a late transport failure from replacing a successful result.
+ * Mutations and requests with custom headers or signals always run separately.
+ */
+export function apiFetch<T>(path: string, options: RequestInit = {}, skipAuth = false): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const canShare = method === "GET" && !options.body && !options.headers && !options.signal;
+  if (!canShare) return apiFetchOnce<T>(path, options, skipAuth);
+
+  const key = `${skipAuth ? "public" : getToken() ?? "anonymous"}:${path}`;
+  const existing = inFlightReads.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const request = apiFetchOnce<T>(path, options, skipAuth);
+  inFlightReads.set(key, request);
+  const clear = () => {
+    if (inFlightReads.get(key) === request) inFlightReads.delete(key);
+  };
+  request.then(clear, clear);
+  return request;
 }
 
 // ── Multipart upload helper (for Media Engine — does NOT set Content-Type so browser sets boundary) ─
@@ -303,21 +329,6 @@ export const jobsApi = {
 };
 
 // ── Service Catalog ───────────────────────────────────────────────────────────
-export const catalogApi = {
-  list: (params?: Partial<{ service_type: string; is_active: string }>) => {
-    const tid = getTenantId();
-    const qs  = new URLSearchParams({ ...(params ?? {}), ...(tid ? { tenant_id: tid } : {}) }).toString();
-    return apiFetch<ServiceCatalogListResponse>(`/v1/catalog?${qs}`);
-  },
-  get: (id: string) => apiFetch<ServiceCatalogItem>(`/v1/catalog/${id}`),
-  create: (data: Partial<ServiceCatalogItem>) =>
-    apiFetch<ServiceCatalogItem>("/v1/catalog", { method:"POST", body:JSON.stringify(data) }),
-  update: (id: string, data: Partial<ServiceCatalogItem>) =>
-    apiFetch<ServiceCatalogItem>(`/v1/catalog/${id}`, { method:"PUT", body:JSON.stringify(data) }),
-  deactivate: (id: string) =>
-    apiFetch<void>(`/v1/catalog/${id}/deactivate`, { method:"POST" }),
-};
-
 // ── Admin Master Catalog — browse + enable into own catalog (Catalog Engine) ──
 export interface AdminMasterServiceRow {
   offering_key?:string; service_id:string; category_id:string; service_name:string; description?:string|null;
@@ -528,101 +539,7 @@ export interface HsBrandPricing {
   customer_price_preview: HsPricePreview | null;
 }
 
-// ── Generic, schema-driven Service Setup Wizard (vertical-agnostic) ──────────
-// Reuses the SAME backend endpoints as homeServicesSetupApi below (they were
-// never actually Home-Services-specific on the backend -- only the old
-// frontend naming and the two list-available/list-enabled routes were) plus
-// the new coverage-mode/publish-validation/blueprint-version endpoints. This
-// is the API surface the new schema-driven wizard is built against; it must
-// never hardcode a vertical, service, type or brand name.
-export interface MyVerticalEnrollment {
-  vertical_id: string; vertical_key: string; vertical_label: string;
-  icon: string | null; capabilities: string[];
-  platform_enabled: boolean; enrollment_status: string | null;
-}
-export interface PriceResolution {
-  resolved: boolean;
-  pricing_model?: "FIXED" | "RANGE";
-  minimum_price?: number; maximum_price?: number; currency?: string;
-  source_rule_id?: string;
-  source?: "type_brand_override" | "type_override" | "brand_override" | "tenant_default";
-  inherited_from_rule_id?: string | null;
-  reason?: "NO_TENANT_PRICE_FOR_COMBINATION" | "COMBINATION_NOT_SUPPORTED";
-}
-export interface PublishValidationError {
-  step: string; job_type_id: string;
-  dimension_path: Record<string, string>;
-  code: string; message: string;
-}
-export interface PublishValidationResult {
-  valid: boolean; errors: PublishValidationError[];
-}
-export interface BlueprintUpdateStatus {
-  update_required: boolean;
-  current_version: number | null; latest_version: number | null;
-  changes: string[];
-}
-export type CoverageMode = "all" | "selected" | "all_except";
-
-export const serviceSetupApi = {
-  // Step 1: Category (vertical)
-  getMyVerticalEnrollments: () =>
-    apiFetch<{ verticals: MyVerticalEnrollment[] }>("/v1/tenant/vertical-enrollments"),
-
-  // Step 2: Service (uses the generic, entitlement-filtered available/enabled
-  // services list -- NOT the home-services-branded routes).
-  listAvailableServices: () => masterCatalogApi.listAvailable(),
-  listEnabledServices: () => masterCatalogApi.listEnabled(),
-  enableService: (masterServiceId: string, jobTypeId: string) => masterCatalogApi.enable({ master_service_id: masterServiceId, job_type_id: jobTypeId }),
-  getEnabledService: (tenantServiceId: string) => homeServicesSetupApi.getEnabledService(tenantServiceId),
-
-  // Step 3/4: dimensions, coverage, pricing (same generic endpoints)
-  getTypes: (tenantServiceId: string) => homeServicesSetupApi.getTypes(tenantServiceId),
-  setTypes: (tenantServiceId: string, typeIds: string[]) => homeServicesSetupApi.setTypes(tenantServiceId, typeIds),
-  getBrands: (tenantServiceId: string) => homeServicesSetupApi.getBrands(tenantServiceId),
-  setBrands: (tenantServiceId: string, brandIds: string[]) => homeServicesSetupApi.setBrands(tenantServiceId, brandIds),
-  getTypePricing: (tenantServiceId: string) => homeServicesSetupApi.getTypePricing(tenantServiceId),
-  setTypePricing: (tenantServiceId: string, serviceTypeId: string, min: number, max: number) =>
-    homeServicesSetupApi.setTypePricing(tenantServiceId, serviceTypeId, min, max),
-  getBrandPricing: (tenantServiceId: string, serviceTypeId?: string) =>
-    homeServicesSetupApi.getBrandPricing(tenantServiceId, serviceTypeId),
-  setBrandPricing: (tenantServiceId: string, brandId: string, min: number, max: number, serviceTypeId?: string) =>
-    apiFetch<{ brands: HsBrandPricing[] }>(
-      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands/${brandId}/pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
-      { method: "PUT", body: JSON.stringify({ tenant_min_price: min, tenant_max_price: max }) }),
-
-  setTypeCoverageMode: (tenantServiceId: string, mode: CoverageMode) =>
-    apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/type-coverage-mode`,
-      { method: "PUT", body: JSON.stringify({ mode }) }),
-  setBrandCoverageMode: (tenantServiceId: string, mode: CoverageMode) =>
-    apiFetch<TenantEnabledService>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brand-coverage-mode`,
-      { method: "PUT", body: JSON.stringify({ mode }) }),
-
-  resolvePrice: (tenantServiceId: string, serviceTypeId?: string, brandId?: string) => {
-    const p = new URLSearchParams();
-    if (serviceTypeId) p.set("service_type_id", serviceTypeId);
-    if (brandId) p.set("brand_id", brandId);
-    const qs = p.toString();
-    return apiFetch<PriceResolution>(
-      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/resolve-price${qs ? `?${qs}` : ""}`);
-  },
-
-  updateWizardStep: (tenantServiceId: string, step: string) =>
-    apiFetch<{ tenant_service_id: string; last_active_step: string }>(
-      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/wizard-step`,
-      { method: "PUT", body: JSON.stringify({ step }) }),
-
-  // Step 5: Review & Publish
-  validateForPublish: (tenantServiceId: string) =>
-    apiFetch<PublishValidationResult>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/validate-for-publish`),
-  getBlueprintUpdateStatus: (tenantServiceId: string) =>
-    apiFetch<BlueprintUpdateStatus>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/blueprint-update-status`),
-  publish: (tenantServiceId: string) => homeServicesSetupApi.publish(tenantServiceId),
-  saveDraft: (tenantServiceId: string) => homeServicesSetupApi.saveDraft(tenantServiceId),
-  pricePreview: (data: { tenant_min_price: number; tenant_max_price: number; platform_fee_percent?: number }) =>
-    homeServicesSetupApi.pricePreview(data),
-};
-
+// ── Canonical Home Services setup API ────────────────────────────────────────
 export const homeServicesSetupApi = {
   listAvailable: () => {
     const tid = getTenantId();
@@ -1739,11 +1656,6 @@ export interface InventoryExtractionResult {
 // ── Public Registration (no auth) ─────────────────────────────────────────────
 // ── Public Packages (signup — no auth) ───────────────────────────────────────
 // ── AI Chat Engine ────────────────────────────────────────────────────────────
-export const aiChatApi = {
-  chat: (message:string, history:AIChatMessage[] = []) =>
-    apiFetch<AIChatResponse>("/v1/ai/chat", { method:"POST", body:JSON.stringify({ message, history }) }),
-};
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface TenantUser  { id:string; user_id?:string; email:string; full_name:string; role:string; tenant_id:string; force_password_change?:boolean; onboarding_complete?:boolean; }
 export interface TenantCtx   { id:string; name:string; vertical:string; city:string; plan_type:string; health_score:number; }
@@ -1771,8 +1683,6 @@ export interface JobPaymentBreakdown {
   payment_recorded: boolean;
   payment_mode?: string;
 }
-export interface ServiceCatalogItem { id:string; service_type_id:string; name:string; category?:string; description?:string; service_type:"repair"|"service"|"consultation"; pricing_model:"fixed"|"post_assessment"|"hourly"; base_price?:number; max_price?:number; visit_fee?:number; pre_approval_limit?:number; estimated_duration_minutes?:number; checklist_required:boolean; checklist_template?:string[]; is_active:boolean; created_at:string; }
-export interface ServiceCatalogListResponse { items:ServiceCatalogItem[]; total:number; }
 export interface JobListResponse { jobs:Job[]; total:number; has_next:boolean; next_cursor?:string; }
 export interface JobHistoryResponse { history:{ status:string; changed_at:string; notes?:string }[]; }
 export interface JobQuotePart { name:string; cost:number; }
@@ -2555,9 +2465,6 @@ export interface MatchedTenant {
 export interface RegistrationVerifyResult { tenant_id:string; business_name:string; plan_type:string; owner_email:string; temp_password:string; message:string; }
 
 // ── Phase 9 — AI Chat types ───────────────────────────────────────────────────
-export interface AIChatMessage { role:"user"|"assistant"; content:string; }
-export interface AIChatResponse { reply:string; tools_called:string[]; model:string; }
-
 // ── Review request + Notification types ──────────────────────────────────────
 export interface ReviewRequest  { review_request_id:string; job_id:string; status:string; expires_at:string; review_id?:string; }
 export interface ReviewRequestListResponse { requests:ReviewRequest[]; has_next:boolean; next_cursor?:string; }
@@ -2973,36 +2880,8 @@ export const providerServiceAreasApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  // Per-area service pricing -- this is the real price the booking engine
-  // uses (TenantServiceAreaService.base_price), set by the provider for
-  // their own service area. Unlike the Offerings page's "Price Override"
-  // (a different, unrelated field the booking pipeline never reads), this
-  // is the price that actually determines what a customer is charged when
-  // matched to this provider in this area. service_id must be a real
-  // enabled offering id (offering_id === master_service_id — see
-  // providerOfferingsApi.listEnabled()).
-  listServiceMappings: (areaId: string) =>
-    apiFetch<{ mappings: AreaServiceMapping[]; total: number }>(`/v1/tenant/service-areas/${areaId}/services`),
-  addServiceMapping: (areaId: string, payload: AreaServiceMappingPayload) =>
-    apiFetch<AreaServiceMapping>(`/v1/tenant/service-areas/${areaId}/services`, { method: "POST", body: JSON.stringify(payload) }),
-  updateServiceMapping: (areaId: string, mappingId: string, payload: Partial<AreaServiceMappingPayload>) =>
-    apiFetch<AreaServiceMapping>(`/v1/tenant/service-areas/${areaId}/services/${mappingId}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteServiceMapping: (areaId: string, mappingId: string) =>
-    apiFetch<{ deleted: boolean }>(`/v1/tenant/service-areas/${areaId}/services/${mappingId}`, { method: "DELETE" }),
 };
 
-export interface AreaServiceMapping {
-  id: string; tenant_service_area_id: string; tenant_id: string;
-  service_id: string; job_type: string; is_available: boolean;
-  sla_minutes: number | null; base_price: number | null;
-  min_price: number | null; max_price: number | null;
-  created_at?: string; updated_at?: string;
-}
-export interface AreaServiceMappingPayload {
-  service_id: string; job_type: string; is_available?: boolean;
-  sla_minutes?: number | null; base_price?: number | null;
-  min_price?: number | null; max_price?: number | null;
-}
 
 // ── Sprint 11 — Provider Team Members ────────────────────────────────────────
 
@@ -3850,7 +3729,6 @@ export interface ComplaintRecord {
   complaint_type: string; requested_resolution?: string;
   title?: string; description: string;
   status: string; priority: string;
-  assigned_admin_user_id?: string;
   provider_responded_at?: string; customer_accepted_resolution_at?: string;
   resolved_at?: string; closed_at?: string;
   created_at?: string; updated_at?: string;
@@ -4329,12 +4207,6 @@ export const providerBrandApi = {
     apiFetch<{ service_id: string; tenant_id: string; supported_brands: ProviderSupportedBrand[] }>(
       `/v1/provider/brands/services/${serviceId}/supported`),
 
-  /** Replace provider's supported brands for a service */
-  setSupportedForService: (serviceId: string, brandIds: string[], supportLevel?: string) =>
-    apiFetch<{ service_id: string; tenant_id: string; selected_count: number }>(
-      `/v1/provider/brands/services/${serviceId}/supported`,
-      { method: "POST", body: JSON.stringify({ brand_ids: brandIds, support_level: supportLevel }) }),
-
   /** Provider submits a request for a missing brand */
   requestBrand: (data: { requested_brand_name: string; reason?: string; suggested_service_id?: string }) =>
     apiFetch<{ request_id: string; status: string }>(
@@ -4387,6 +4259,7 @@ export interface ProviderAvailableServiceOption {
   minimum_quantity?: number | null;
   maximum_quantity?: number | null;
   measurement_unit?: string | null;
+  affects_estimate: boolean;
 }
 
 export interface TenantOptionPrice {
@@ -4406,6 +4279,12 @@ export interface ProviderSupportedServiceOption {
   service_option_id: string;
   status: string;
   option?: ProviderAvailableServiceOption;
+  service_option_mapping_id?: string | null;
+  pricing_model?: "FIXED" | "PER_UNIT" | "RANGE" | null;
+  fixed_price?: string | null;
+  unit_price?: string | null;
+  minimum_price?: string | null;
+  maximum_price?: string | null;
 }
 
 export interface CustomerServiceOption {
@@ -4447,10 +4326,6 @@ export const providerServiceOptionApi = {
   getSupportedForService: (serviceId: string) =>
     apiFetch<ProviderSupportedServiceOption[]>(
       `/v1/provider/setup/services/${serviceId}/supported-options`),
-  setSupportedForService: (serviceId: string, serviceOptionIds: string[]) =>
-    apiFetch<{ set: number }>(
-      `/v1/provider/setup/services/${serviceId}/supported-options`,
-      { method: "POST", body: JSON.stringify({ service_option_ids: serviceOptionIds }) }),
   // Tenant-owned pricing (migration 169) -- admin never sets these.
   setOptionPrice: (mappingId: string, data: {
     enabled: boolean; pricing_model?: "FIXED" | "PER_UNIT" | "RANGE";
@@ -5025,6 +4900,7 @@ export interface SignupOwnerAccountPayload {
   password: string; password_confirm: string;
   authorized_declaration?: boolean; tos_privacy_accepted?: boolean;
   marketing_consent?: boolean; registration_id?: string;
+  turnstile_token?: string;
 }
 export interface SignupBusinessIdentityPayload {
   registration_id: string;

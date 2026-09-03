@@ -18,8 +18,9 @@
  * payment) -> auto-login -> complete vertical setup -> submit for admin
  * review -> activation. See lib/api.ts `publicSignupApi`.
  */
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import {
   Building2, CheckCircle2, Clock, Eye, EyeOff, Lock, Mail,
   Phone, ShieldCheck, User, ArrowRight, ArrowLeft, FileText, RefreshCw,
@@ -38,6 +39,7 @@ const VERTICAL_ICONS: Record<string, React.ElementType> = {
 
 type StepId = "account" | "verify" | "identity" | "vertical" | "review";
 const SIGNUP_DRAFT_KEY = "serviceos_provider_signup_draft";
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 const STEPS: { id: StepId; label: string; desc: string }[] = [
   { id: "account",  label: "Owner Account",   desc: "Secure your login" },
   { id: "verify",   label: "Verify Contact",  desc: "Mobile and email verification" },
@@ -135,6 +137,31 @@ export default function RegisterPage() {
   const [otpNotice, setOtpNotice] = useState<Partial<Record<"mobile" | "email", string>>>({});
   const [verticals, setVerticals] = useState<SignupVertical[]>([]);
   const [verticalsLoaded, setVerticalsLoaded] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetRef = useRef<string | null>(null);
+
+  const renderTurnstile = useCallback(() => {
+    if (!TURNSTILE_SITE_KEY || !turnstileContainerRef.current || turnstileWidgetRef.current) return;
+    const api = (window as typeof window & { turnstile?: {
+      render: (element: HTMLElement, options: Record<string, unknown>) => string;
+      reset: (widgetId: string) => void;
+    } }).turnstile;
+    if (!api) return;
+    turnstileWidgetRef.current = api.render(turnstileContainerRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      action: "provider_signup",
+      callback: (token: string) => { setTurnstileToken(token); setError(""); },
+      "expired-callback": () => setTurnstileToken(""),
+      "error-callback": () => setTurnstileToken(""),
+    });
+  }, []);
+
+  function resetTurnstile() {
+    setTurnstileToken("");
+    const api = (window as typeof window & { turnstile?: { reset: (widgetId: string) => void } }).turnstile;
+    if (api && turnstileWidgetRef.current) api.reset(turnstileWidgetRef.current);
+  }
 
   const [form, setForm] = useState({
     owner_name: "", owner_email: "", owner_phone: "",
@@ -181,6 +208,27 @@ export default function RegisterPage() {
   const pwScore = passwordScore(form.password);
 
   useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || step.id !== "account") return;
+
+    // The account step unmounts while the user moves through the wizard. If
+    // they navigate back, the old widget id points at a detached element and
+    // must not prevent a fresh challenge from rendering in the new container.
+    turnstileWidgetRef.current = null;
+    const timer = window.setTimeout(renderTurnstile, 0);
+    return () => {
+      window.clearTimeout(timer);
+      const api = (window as typeof window & { turnstile?: {
+        remove?: (widgetId: string) => void;
+      } }).turnstile;
+      if (turnstileWidgetRef.current) {
+        api?.remove?.(turnstileWidgetRef.current);
+        turnstileWidgetRef.current = null;
+      }
+      setTurnstileToken("");
+    };
+  }, [step.id, renderTurnstile]);
+
+  useEffect(() => {
     if (step.id !== "vertical" || verticalsLoaded) return;
     publicSignupApi.listVerticals()
       .then(res => { setVerticals(res.verticals); setVerticalsLoaded(true); })
@@ -208,12 +256,14 @@ export default function RegisterPage() {
   async function goNext() {
     if (step.id === "account") {
       if (!stepValid("account")) { setError("Please complete the required fields before continuing."); return; }
+      if (TURNSTILE_SITE_KEY && !turnstileToken) { setError("Please complete the security check."); return; }
       setSubmitting(true); setError("");
       try {
         const res = await publicSignupApi.ownerAccount({
           full_name: form.owner_name, email: form.owner_email, mobile: form.owner_phone,
           password: form.password, password_confirm: form.confirmPassword,
           registration_id: registrationId ?? undefined,
+          turnstile_token: turnstileToken || undefined,
         });
         if (res.existing_account || !res.registration_id) {
           setError(res.message || "An account already exists. Sign in or recover your account.");
@@ -232,6 +282,7 @@ export default function RegisterPage() {
       } catch (e) {
         setError(e instanceof Error ? e.message : "Couldn't create your account. Please try again.");
       } finally {
+        resetTurnstile();
         setSubmitting(false);
       }
       return;
@@ -441,6 +492,13 @@ export default function RegisterPage() {
 
             {step.id === "account" && (
               <>
+                {TURNSTILE_SITE_KEY && (
+                  <Script
+                    src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+                    strategy="afterInteractive"
+                    onLoad={renderTurnstile}
+                  />
+                )}
                 <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your owner account</h1>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: "0 0 24px" }}>
                   Start with your secure login. Business and service setup comes next.
@@ -502,6 +560,11 @@ export default function RegisterPage() {
                 <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "10px 0 0" }}>
                   Your account and workspace are created immediately after contact verification and consent. Admin review happens after business setup.
                 </p>
+                {TURNSTILE_SITE_KEY && (
+                  <div style={{ marginTop: 16 }}>
+                    <div ref={turnstileContainerRef} aria-label="Security check" />
+                  </div>
+                )}
               </>
             )}
 

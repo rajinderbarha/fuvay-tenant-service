@@ -52,7 +52,7 @@ export function PrivacyNotice({ text }: { text?: string }) {
   const { theme } = useTheme();
   return (
     <AppText variant="caption" color="tertiary" style={{ fontStyle: "italic" }}>
-      {text ?? "Customer contact is protected by ServiceOS and available only during authorized job activity."}
+      {text ?? "Customer contact is protected by Fuvay and available only during authorized job activity."}
     </AppText>
   );
 }
@@ -73,7 +73,7 @@ export function SensitiveValue({ children }: { children: React.ReactNode }) {
 
 /** RelayContactButton -- feature layer supplies the real relay action;
  * this is presentation only and never exposes a raw phone/email. */
-export function RelayContactButton({ label = "Contact through ServiceOS", onPress, disabled }: { label?: string; onPress: () => void; disabled?: boolean }) {
+export function RelayContactButton({ label = "Contact through Fuvay", onPress, disabled }: { label?: string; onPress: () => void; disabled?: boolean }) {
   const { theme } = useTheme();
   return (
     <AppText

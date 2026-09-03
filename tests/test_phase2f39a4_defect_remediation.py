@@ -40,6 +40,7 @@ class TestServiceCatalogDeactivateItemTenantScoping:
         item = MagicMock(tenant_id=my_tenant, is_active=True)
         r = MagicMock(); r.scalar_one_or_none.return_value = item
         svc.db.execute = AsyncMock(return_value=r)
+        svc.db.scalar = AsyncMock(return_value="retail")
         svc._dict = MagicMock(return_value={"is_active": False})
         result = await svc.deactivate_item(uuid.uuid4())
         assert item.is_active is False

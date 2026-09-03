@@ -11,11 +11,11 @@ const engines = [
   ['notifications', 'Notifications', 'communication', 'enabled', false, false, 'healthy', 20, 5, 0],
   ['trust_quality', 'Trust & Quality', 'governance', 'enabled', false, false, 'healthy', 14, 3, 2],
   ['pricing', 'Pricing', 'commerce', 'enabled', true, true, 'healthy', 22, 5, 1],
-  ['ai_settlement', 'AI Settlement', 'intelligence', 'disabled', false, false, 'unknown', 3, 1, 1],
+  ['routing_optimizer', 'Routing Optimizer', 'intelligence', 'disabled', false, false, 'unknown', 3, 1, 1],
   ['warranty', 'Warranty', 'finance', 'enabled', false, false, 'down', 8, 3, 0],
 ].map(([engine_key, display_name, engine_type, global_status, is_core, is_locked, health_status, category_usage_count, package_usage_count, active_overrides], index) => ({
   id: `engine-${index + 1}`, engine_key, display_name,
-  description: `${display_name} runtime capability for ServiceOS operations.`, engine_type,
+  description: `${display_name} runtime capability for Fuvay operations.`, engine_type,
   lifecycle_status: index === 6 ? 'beta' : 'stable', global_status, is_core, is_locked,
   is_customer_visible: false, is_tenant_visible: true, version: index === 2 ? '2.4.1' : '1.8.0',
   owner_team: index < 2 ? 'Core Platform' : index < 5 ? 'Service Intelligence' : 'Commerce Platform',
@@ -48,14 +48,14 @@ async function mockEngineApis(page: Page) {
     if (pathname === '/v1/admin/engines/dependencies') return json(route, { dependencies: [
       { id: 'dep-1', engine_key: 'matching', depends_on_engine_key: 'booking', dependency_type: 'required', status: 'active' },
       { id: 'dep-2', engine_key: 'payments', depends_on_engine_key: 'pricing', dependency_type: 'required', status: 'active' },
-      { id: 'dep-3', engine_key: 'ai_settlement', depends_on_engine_key: 'trust_quality', dependency_type: 'required', status: 'active' },
+      { id: 'dep-3', engine_key: 'routing_optimizer', depends_on_engine_key: 'trust_quality', dependency_type: 'required', status: 'active' },
     ], total: 3 });
-    if (pathname === '/v1/admin/engines/dependencies/graph') return json(route, { nodes: [], edges: [], blocked_enables: [{ engine_key: 'ai_settlement', blocked_by: 'trust_quality policy approval' }] });
+    if (pathname === '/v1/admin/engines/dependencies/graph') return json(route, { nodes: [], edges: [], blocked_enables: [{ engine_key: 'routing_optimizer', blocked_by: 'trust_quality policy approval' }] });
     if (pathname === '/v1/admin/engines/package-entitlements') return json(route, { entitlements: [
       { id: 'pe-1', package_id: 'enterprise', engine_key: 'booking', is_included: true, status: 'active', limits: {}, feature_flags: {} },
       { id: 'pe-2', package_id: 'enterprise', engine_key: 'matching', is_included: true, status: 'active', limits: { monthly_runs: 100000 }, feature_flags: {} },
       { id: 'pe-3', package_id: 'growth', engine_key: 'booking', is_included: true, status: 'active', limits: {}, feature_flags: {} },
-      { id: 'pe-4', package_id: 'growth', engine_key: 'ai_settlement', is_included: false, status: 'inactive', limits: {}, feature_flags: {} },
+      { id: 'pe-4', package_id: 'growth', engine_key: 'routing_optimizer', is_included: false, status: 'inactive', limits: {}, feature_flags: {} },
     ], meta: { total: 4 } });
     if (pathname === '/v1/admin/engines/tenant-overrides' && method === 'GET') return json(route, { overrides: [
       { id: 'override-1', tenant_id: '44444444-4444-4444-8444-444444444444', engine_key: 'matching', override_type: 'force_enable', effective_status: 'enabled', reason: 'Controlled metro pilot', expires_at: '2026-09-01T00:00:00Z', status: 'active', created_at: '2026-08-10T00:00:00Z' },
@@ -71,7 +71,7 @@ async function mockEngineApis(page: Page) {
       { id: 'log-1', engine_key: 'matching', action_type: 'enable', scope_type: 'tenant', actor_user_id: 'admin-1', actor_role: 'super_admin', reason: 'Controlled metro pilot', created_at: '2026-08-18T08:30:00Z' },
       { id: 'log-2', engine_key: 'warranty', action_type: 'health_check', scope_type: 'global', actor_role: 'system', reason: 'Scheduled runtime probe', created_at: '2026-08-18T08:15:00Z' },
     ], meta: { total: 2, page: 1, limit: 50, total_pages: 1 } });
-    if (pathname.endsWith('/impact-preview')) return json(route, { engine_key: 'ai_settlement', engine_name: 'AI Settlement', action: 'enable', current_status: 'disabled', is_locked: false, is_core: false, categories_affected: 3, packages_affected: 1, active_tenant_overrides: 1, blockers: [], warnings: ['Beta engine: stage rollout before full enablement.'], risk_level: 'medium', can_proceed: true, recommendation: 'Enable for a pilot tenant first.' });
+    if (pathname.endsWith('/impact-preview')) return json(route, { engine_key: 'routing_optimizer', engine_name: 'Routing Optimizer', action: 'enable', current_status: 'disabled', is_locked: false, is_core: false, categories_affected: 3, packages_affected: 1, active_tenant_overrides: 1, blockers: [], warnings: ['Beta engine: stage rollout before full enablement.'], risk_level: 'medium', can_proceed: true, recommendation: 'Enable for a pilot tenant first.' });
     if (pathname === '/v1/admin/engines/health/check-all') return json(route, { results: [], total: 8 });
     if (pathname.includes('/revoke') || pathname.endsWith('/enable') || pathname.endsWith('/disable')) return json(route, {});
     return json(route, {});

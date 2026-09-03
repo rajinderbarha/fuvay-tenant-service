@@ -12,7 +12,7 @@
  *   EXPO_PUBLIC_API_TIMEOUT_MS   - optional, defaults below
  *
  * There is no DeepSeek key here and never will be -- the backend owns all
- * DeepSeek communication; this app only ever calls the ServiceOS API.
+ * DeepSeek communication; this app only ever calls the Fuvay API.
  */
 export type AppEnvironment = "local" | "test" | "staging" | "production";
 

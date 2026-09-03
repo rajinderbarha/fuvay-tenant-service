@@ -17,11 +17,8 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 
-AREAS_PAGE = (FRONTEND / "app/(tenant)/provider/service-areas/page.tsx").read_text(encoding="utf-8-sig")
-# Externally moved since this file was written: /provider/availability is
-# now a redirect stub to the real, canonical /tenant/setup/availability
-# page (1876 lines, "Business Hours & Availability").
-AVAIL_PAGE = (FRONTEND / "app/(tenant)/tenant/setup/availability/page.tsx").read_text(encoding="utf-8-sig")
+AREAS_PAGE = (FRONTEND / "app/(onboarding)/tenant/home-services/setup/coverage-availability/page.tsx").read_text(encoding="utf-8-sig")
+AVAIL_PAGE = AREAS_PAGE
 LAYOUT = (FRONTEND / "components/layout/TenantLayout.tsx").read_text(encoding="utf-8-sig")
 SERVICEABILITY_SERVICE = (ROOT / "app/engines/serviceability/service.py").read_text(encoding="utf-8-sig")
 PROVIDER_ROUTER = (ROOT / "app/engines/provider_portal/router.py").read_text(encoding="utf-8-sig")
@@ -29,11 +26,13 @@ PROVIDER_ROUTER = (ROOT / "app/engines/provider_portal/router.py").read_text(enc
 
 # ── 1. Routes / nav ────────────────────────────────────────────────────────────
 def test_service_areas_route_exists():
-    assert (FRONTEND / "app/(tenant)/provider/service-areas/page.tsx").exists()
+    assert (FRONTEND / "app/(tenant)/business/coverage-hours/page.tsx").exists()
+    assert not (FRONTEND / "app/(tenant)/provider/service-areas/page.tsx").exists()
 
 
 def test_availability_route_exists():
-    assert (FRONTEND / "app/(tenant)/provider/availability/page.tsx").exists()
+    assert (FRONTEND / "app/(tenant)/home-services/availability/page.tsx").exists()
+    assert not (FRONTEND / "app/(tenant)/provider/availability/page.tsx").exists()
 
 
 def test_setup_menu_has_service_areas_and_availability():
@@ -65,12 +64,12 @@ def test_backend_rejects_duplicate_area():
 
 
 def test_frontend_shows_package_limit_check():
-    assert "Package Limit Check" in AREAS_PAGE
+    assert "providerServiceAreasApi.validate" in AREAS_PAGE
 
 
 def test_frontend_shows_primary_area_logic():
-    assert "is_primary" in AREAS_PAGE
-    assert "Set Primary" in AREAS_PAGE
+    assert "Coverage pincodes" in AREAS_PAGE
+    assert "Weekly business hours" in AREAS_PAGE
 
 
 # ── 3. Availability time-range validation — real bug found + fixed ──────────

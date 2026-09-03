@@ -1,7 +1,7 @@
 import { LegalDocument, LegalDocumentUnavailable } from "../../components/legal/LegalDocument";
 import { fetchLegalDocument } from "../../lib/api-legal";
 
-export const metadata = { title: "Terms of Service — ServiceOS" };
+export const metadata = { title: "Terms of Service — Fuvay" };
 
 /**
  * Served from `legal_document_versions` via /v1/public/legal, not from this

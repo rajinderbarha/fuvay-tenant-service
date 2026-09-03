@@ -277,27 +277,27 @@ class MarketingService:
         # Default prompts per post type
         defaults = {
             PostType.NEW_TENANT_SPOTLIGHT:
-                f"Professional home services company named '{variables.get('tenant_name','ServiceOS Partner')}' "
+                f"Professional home services company named '{variables.get('tenant_name','Fuvay Partner')}' "
                 f"based in {variables.get('city','India')}. Modern clean graphic. "
-                f"Text: 'Now on ServiceOS'. Blue white colors. 1080x1080px Instagram post.",
+                f"Text: 'Now on Fuvay'. Blue white colors. 1080x1080px Instagram post.",
             PostType.SERVICE_FEATURE:
                 f"Professional technician performing {variables.get('service','AC service')} at a home. "
-                f"Clean modern image. ServiceOS branding. Square format.",
+                f"Clean modern image. Fuvay branding. Square format.",
             PostType.REVIEW_HIGHLIGHT:
                 f"Five star customer review graphic for home services. "
                 f"Quote: '{variables.get('review_text','Excellent service!')}'. "
-                f"Professional design. ServiceOS colors.",
+                f"Professional design. Fuvay colors.",
             PostType.STAFF_SPOTLIGHT:
                 f"Professional home services technician portrait. "
                 f"Name: {variables.get('staff_name','Our Expert')}. "
-                f"Uniform with ServiceOS logo. Friendly professional look.",
+                f"Uniform with Fuvay logo. Friendly professional look.",
             PostType.PROMOTIONAL:
                 f"Home services promotional graphic. "
                 f"Offer: '{variables.get('offer','Book now, save today!')}'. "
-                f"Bright engaging design. ServiceOS branding.",
+                f"Bright engaging design. Fuvay branding.",
         }
         return defaults.get(post_type,
-            f"Professional ServiceOS platform graphic for {post_type}. "
+            f"Professional Fuvay platform graphic for {post_type}. "
             f"Modern, clean, 1080x1080px.")
 
     async def _call_dalle(self, prompt: str) -> dict:
@@ -397,22 +397,22 @@ class MarketingService:
             return caption
         defaults = {
             PostType.NEW_TENANT_SPOTLIGHT:
-                f"🎉 Welcome {variables.get('tenant_name','our new partner')} to ServiceOS! "
-                f"Now serving {variables.get('city','your city')}. Book via ServiceOS app!",
+                f"🎉 Welcome {variables.get('tenant_name','our new partner')} to Fuvay! "
+                f"Now serving {variables.get('city','your city')}. Book via Fuvay app!",
             PostType.SERVICE_FEATURE:
                 f"✅ Need {variables.get('service','home service')}? "
-                f"ServiceOS connects you with trusted professionals instantly.",
+                f"Fuvay connects you with trusted professionals instantly.",
             PostType.REVIEW_HIGHLIGHT:
                 f"Stars: Our customers love us! "
-                f"Quote: {variables.get('review_text','Great service!')} - Real ServiceOS customer",
+                f"Quote: {variables.get('review_text','Great service!')} - Real Fuvay customer",
             PostType.STAFF_SPOTLIGHT:
                 f"Meet {variables.get('staff_name','our expert')} — one of our top-rated technicians! "
-                f"Book a service today through ServiceOS.",
+                f"Book a service today through Fuvay.",
             PostType.PROMOTIONAL:
-                f"🔥 {variables.get('offer','Book now on ServiceOS!')} "
-                f"Download the ServiceOS app and get started.",
+                f"🔥 {variables.get('offer','Book now on Fuvay!')} "
+                f"Download the Fuvay app and get started.",
         }
-        return defaults.get(post_type, f"ServiceOS — Connecting homes with trusted professionals.")
+        return defaults.get(post_type, f"Fuvay — Connecting homes with trusted professionals.")
 
     async def get_calendar(self, date_from: str, date_to: str,
                             account_id: uuid.UUID | None) -> dict:

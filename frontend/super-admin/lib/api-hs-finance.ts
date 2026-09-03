@@ -116,30 +116,6 @@ export const homeServicesFinanceApi = {
   refundTopup: <T = FinRow>(id: string, amount: number, reason?: string) =>
     apiFetch<T>(`/v1/admin/finance/topups/${id}/refund`, { method: "POST", body: JSON.stringify({ amount, reason }) }),
 
-  // ── Warranty claims ─────────────────────────────────────────────────────
-  listWarrantyClaims: <T = FinanceListEnvelope>(params?: ListParams) =>
-    apiFetch<T>(`/v1/admin/finance/home-services/warranty-claims${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
-  getWarrantyClaimsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/warranty-claims/summary"),
-  getWarrantyClaimDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/warranty-claims/${id}`),
-  assignWarrantyReviewer: <T = FinRow>(id: string, reviewerId: string) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/assign`, {
-      method: "POST", body: JSON.stringify({ reviewer_id: reviewerId }),
-    }),
-  requestWarrantyDocuments: <T = FinRow>(id: string, notes: string) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/request-documents`, {
-      method: "POST", body: JSON.stringify({ notes }),
-    }),
-  approveWarrantyClaim: <T = FinRow>(id: string, amountApproved: number, adminNotes?: string) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/approve`, {
-      method: "POST", body: JSON.stringify({ amount_approved: amountApproved, admin_notes: adminNotes }),
-    }),
-  rejectWarrantyClaim: <T = FinRow>(id: string, rejectionReason: string, adminNotes?: string) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/reject`, {
-      method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason, admin_notes: adminNotes }),
-    }),
-  settleWarrantyClaim: <T = FinRow>(id: string) =>
-    apiFetch<T>(`/v1/admin/finance/warranty-claims/${id}/settle`, { method: "POST" }),
-
   // ── Invoices ────────────────────────────────────────────────────────────
   listInvoices: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/invoices${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
   getInvoicesSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/invoices/summary"),
@@ -165,31 +141,6 @@ export const homeServicesFinanceApi = {
       date_to: params?.dateTo ?? params?.date_to,
       page_size: params?.pageSize ?? params?.page_size,
     })}`),
-
-  // ── Refund requests ─────────────────────────────────────────────────────
-  listRefunds: <T = FinanceListEnvelope>(params?: ListParams) => apiFetch<T>(`/v1/admin/finance/home-services/refunds${_q({ ...params, page_size: params?.pageSize ?? params?.page_size })}`),
-  getRefundsSummary: <T = FinRow>() => apiFetch<T>("/v1/admin/finance/home-services/refunds/summary"),
-  getRefundDetail: <T = FinRow>(id: string) => apiFetch<T>(`/v1/admin/finance/home-services/refunds/${id}`),
-  issueRefundCreditRemedy: <T = FinRow>(id: string, amount: number, reason: string) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/credit-remedy`, {
-      method: "POST", body: JSON.stringify({ amount, reason }),
-    }),
-  approveRefund: <T = FinRow>(id: string, approvedAmount?: number) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/approve`, {
-      method: "POST", body: JSON.stringify({ approved_amount: approvedAmount }),
-    }),
-  rejectRefund: <T = FinRow>(id: string, reason: string) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/reject`, {
-      method: "POST", body: JSON.stringify({ reason }),
-    }),
-  recordRefund: <T = FinRow>(id: string, amount: number, proofMediaUrl?: string) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/record`, {
-      method: "POST", body: JSON.stringify({ recorded_amount: amount, proof_media_url: proofMediaUrl || null }),
-    }),
-  /** Provider-side verification of a refund the provider says they paid. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  verifyProviderRefund: <T = FinRow>(id: string, payload?: any) =>
-    apiFetch<T>(`/v1/admin/refund-requests/${id}/verify`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
 
   // ── Financial events / ledger ───────────────────────────────────────────
   listFinancialEvents: <T = FinanceListEnvelope>(params?: ListParams) =>

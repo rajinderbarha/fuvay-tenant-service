@@ -73,7 +73,7 @@ describe("SecurityScreen (Phase V)", () => {
   it("shows the footer notice about never asking for password or OTP", () => {
     (useSecurity as jest.Mock).mockReturnValue(baseHookReturn());
     renderScreen();
-    expect(screen.getByText("ServiceOS will never ask for your password or OTP.")).toBeTruthy();
+    expect(screen.getByText("Fuvay will never ask for your password or OTP.")).toBeTruthy();
   });
 
   it("shows an offline banner", () => {

@@ -77,7 +77,7 @@ export default function AdminSupportQueuePage() {
       <PageShell>
         <PageHeader
           title="Tenant Support"
-          description="ServiceOS support queue — tenant businesses asking the platform for help. Customer service complaints live under Home Services → Complaints."
+          description="Fuvay support queue — tenant businesses asking the platform for help. Customer service complaints live under Home Services → Complaints."
           actions={<Btn variant="secondary" size="sm" onClick={() => void load()}>Refresh</Btn>}
         />
 

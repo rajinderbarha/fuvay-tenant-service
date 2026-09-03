@@ -26,25 +26,14 @@ def _read(path: Path) -> str:
 
 
 class TestJobsNavigationGuard:
-    def test_operations_page_still_carries_the_legacy_field_ops_disclosure_banner(self):
-        """FINAL-L5-05E: /admin/operations is now a real compatibility
-        redirect to the canonical Bookings & Jobs page (parity proven, all 4
-        mutations + SLA + summary built) -- stronger than a disclosure
-        banner. Must still self-identify as legacy and point at canonical."""
-        src = _read(SA / "app" / "admin" / "operations" / "page.tsx")
-        assert "legacy" in src.lower()
-        assert "/admin/home-services/bookings-jobs" in src
+    def test_operations_compatibility_page_is_deleted(self):
+        """The retired operations route must not return alongside the
+        canonical Home Services Bookings & Jobs workspace."""
+        assert not (SA / "app" / "admin" / "operations" / "page.tsx").exists()
 
-    def test_operations_pages_no_longer_use_jobs_api(self):
-        """FINAL-L5-05E regression guard: both legacy operations pages must
-        no longer import jobsApi/staffApi or fetch legacy /v1/jobs data --
-        they are pure redirects now."""
-        list_src = _read(SA / "app" / "admin" / "operations" / "page.tsx")
-        detail_src = _read(SA / "app" / "admin" / "operations" / "[jobId]" / "page.tsx")
-        assert "import { jobsApi" not in list_src
-        assert "import { jobsApi" not in detail_src
-        assert "redirect(" in list_src
-        assert "redirect(" in detail_src
+    def test_operations_compatibility_pages_are_deleted(self):
+        assert not (SA / "app" / "admin" / "operations" / "page.tsx").exists()
+        assert not (SA / "app" / "admin" / "operations" / "[jobId]" / "page.tsx").exists()
 
     def test_admin_layout_jobs_nav_points_to_canonical_route(self):
         """FINAL-L5-05E: primary Jobs sidebar item must point at the

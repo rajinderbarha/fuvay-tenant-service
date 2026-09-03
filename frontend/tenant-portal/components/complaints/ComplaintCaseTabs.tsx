@@ -28,8 +28,8 @@ function fmtDate(iso: string | null): string {
 }
 
 const SENDER_LABEL: Record<string, string> = {
-  customer: "Customer", provider: "You", admin: "ServiceOS Admin",
-  staff: "Your staff", system: "System", ai: "ServiceOS AI",
+  customer: "Customer", provider: "You", admin: "Fuvay Admin",
+  staff: "Your staff", system: "System", ai: "System",
 };
 
 const fieldStyle: React.CSSProperties = {

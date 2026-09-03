@@ -1448,8 +1448,18 @@ class TenantSupportedServiceOption(ServiceOSBase):
     which would incorrectly collapse Installation and Repair pricing)."""
     __tablename__ = "tenant_supported_service_options"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "master_service_id", "service_option_id",
-                         name="uq_tsso_tenant_service_option"),
+        Index(
+            "uq_tsso_tenant_mapping_active",
+            "tenant_id", "service_option_mapping_id",
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL AND service_option_mapping_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_tsso_tenant_legacy_option_active",
+            "tenant_id", "master_service_id", "service_option_id",
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL AND service_option_mapping_id IS NULL"),
+        ),
         Index("ix_tsso_tenant",  "tenant_id"),
         Index("ix_tsso_service", "master_service_id"),
         Index("ix_tsso_option",  "service_option_id"),

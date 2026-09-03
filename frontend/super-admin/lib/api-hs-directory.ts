@@ -67,7 +67,6 @@ export const hsCustomerDirectoryApi = {
 
   getDetail: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}`),
   getJobs: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}/jobs`),
-  getComplaints: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}/complaints`),
   getPayments: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}/payments`),
   getActivity: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}/activity`),
   getReviews: <T = HsRow>(customerId: string) => apiFetch<T>(`${CUSTOMERS}/${customerId}/reviews`),

@@ -332,6 +332,7 @@ class TestStartBookingDraft:
             # legitimately find nothing -- empty is fine, it's optional).
             _scalars([MagicMock()]),  # has_publisher: truthy
             _scalars([MagicMock()]),  # has_problems: truthy
+            _scalar(0),               # active booking drafts: below cap
             _scalars([]),             # customer's default address: none found
         ])
         db.add     = MagicMock()

@@ -1,5 +1,5 @@
 """
-ServiceOS — Global Exception Handlers
+Fuvay — Global Exception Handlers
 All unhandled exceptions are converted to RFC 7807 Problem Details.
 No raw Python exceptions ever reach the client.
 """
@@ -53,7 +53,7 @@ logger = structlog.get_logger("exceptions")
 
 class ServiceOSException(Exception):
     """
-    Base exception for all ServiceOS domain errors.
+    Base exception for all Fuvay domain errors.
     Raise this (or subclasses) from any engine — the handler converts to RFC 7807.
     """
     def __init__(

@@ -7,7 +7,7 @@ ROUTER = (ROOT / "app/engines/admin_catalog/skill_catalog_router.py").read_text(
 PROVIDER = (ROOT / "app/engines/provider_portal/router.py").read_text(encoding="utf-8")
 TEAM_MODAL = (ROOT / "frontend/tenant-portal/components/onboarding/AddTeamMemberWizard.tsx").read_text(encoding="utf-8")
 ADMIN_CATEGORY = (ROOT / "frontend/super-admin/app/admin/categories/[id]/page.tsx").read_text(encoding="utf-8")
-TEAM_DIRECTORY = (ROOT / "frontend/tenant-portal/app/(tenant)/provider/team-members/page.tsx").read_text(encoding="utf-8")
+TEAM_DIRECTORY = ROOT / "frontend/tenant-portal/app/(tenant)/provider/team-members/page.tsx"
 TEAM_DETAIL = (ROOT / "frontend/tenant-portal/app/(tenant)/home-services/team/[[...staffId]]/page.tsx").read_text(encoding="utf-8")
 TEAM_SETUP = (ROOT / "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/staff/page.tsx").read_text(encoding="utf-8")
 ACTION_MENU = (ROOT / "frontend/packages/design-system/src/components/ActionMenu.tsx").read_text(encoding="utf-8")
@@ -65,7 +65,7 @@ def test_all_onboarding_designations_are_controlled_dropdowns():
     assert '<select value={designation}' in TEAM_MODAL
     assert 'return "Select a designation."' in TEAM_MODAL
     assert 'placeholder="Senior Technician"' not in TEAM_MODAL
-    assert 'redirect("/home-services/team")' in TEAM_DIRECTORY
+    assert not TEAM_DIRECTORY.exists()
     assert "AddTeamMemberWizard" in TEAM_DETAIL
 
 

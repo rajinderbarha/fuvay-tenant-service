@@ -74,23 +74,19 @@ def test_service_importable():
 
 def test_service_composes_existing_engines_not_new_tables():
     src = _read(SERVICE)
-    assert "from app.engines.complaints.complaint_service import ComplaintService" in src
-    assert "from app.engines.customer_credits.service import CustomerCreditService" in src
+    assert "ComplaintService" not in src
+    assert "CustomerCreditService" not in src
     assert "from app.engines.compliance.enterprise_service import ComplianceEnterpriseService" in src
     assert "from app.engines.security.admin_service import SecurityAdminService" in src
     assert "from app.engines.auth.service import AuthService" in src
     assert "from app.engines.serviceability.models import CustomerAddress" in src
 
 
-def test_service_has_complaints_methods():
+def test_service_has_no_admin_complaint_or_credit_adjudication_methods():
     src = _read(SERVICE)
-    assert "async def list_complaints" in src
-
-
-def test_service_has_service_credit_methods():
-    src = _read(SERVICE)
-    assert "async def list_service_credits" in src
-    assert "async def issue_service_credit" in src
+    assert "async def list_complaints" not in src
+    assert "async def list_service_credits" not in src
+    assert "async def issue_service_credit" not in src
 
 
 def test_service_has_address_methods():
@@ -141,11 +137,12 @@ def test_service_writes_platform_audit_for_every_mutation():
 
 def test_router_has_new_detail_tab_routes():
     src = _read(ROUTER)
-    for path in ('"/{customer_id}/complaints"', '"/{customer_id}/service-credits"',
-                 '"/{customer_id}/addresses"', '"/{customer_id}/sessions"',
+    for path in ('"/{customer_id}/addresses"', '"/{customer_id}/sessions"',
                  '"/{customer_id}/login-history"', '"/{customer_id}/privacy-requests"',
                  '"/{customer_id}/audit-logs"'):
         assert path in src, f"missing route {path}"
+    assert '"/{customer_id}/complaints"' not in src
+    assert '"/{customer_id}/service-credits"' not in src
 
 
 def test_router_has_new_action_routes():
@@ -158,8 +155,7 @@ def test_router_has_new_action_routes():
 
 def test_router_new_routes_permission_guarded():
     src = _read(ROUTER)
-    for perm in ("P.CUSTOMERS_VIEW_DETAIL", "P.CUSTOMERS_SERVICE_CREDITS_READ",
-                 "P.CUSTOMERS_SERVICE_CREDITS_CREATE", "P.CUSTOMERS_ADDRESSES_READ",
+    for perm in ("P.CUSTOMERS_ADDRESSES_READ",
                  "P.CUSTOMERS_SESSIONS_READ", "P.CUSTOMERS_SESSIONS_REVOKE",
                  "P.CUSTOMERS_LOGIN_HISTORY_READ", "P.CUSTOMERS_PRIVACY_READ",
                  "P.CUSTOMERS_AUDIT_READ", "P.CUSTOMERS_BLOCK", "P.CUSTOMERS_SUSPEND",
@@ -175,9 +171,10 @@ def test_permissions_customers_constants_exist():
                   "CUSTOMERS_SUSPEND", "CUSTOMERS_REACTIVATE", "CUSTOMERS_SESSIONS_READ",
                   "CUSTOMERS_SESSIONS_REVOKE", "CUSTOMERS_LOGIN_HISTORY_READ",
                   "CUSTOMERS_ADDRESSES_READ", "CUSTOMERS_ADDRESSES_VIEW_FULL",
-                  "CUSTOMERS_SERVICE_CREDITS_READ", "CUSTOMERS_SERVICE_CREDITS_CREATE",
                   "CUSTOMERS_PRIVACY_READ", "CUSTOMERS_AUDIT_READ"):
         assert const in src
+    assert "CUSTOMERS_SERVICE_CREDITS_READ" not in src
+    assert "CUSTOMERS_SERVICE_CREDITS_CREATE" not in src
 
 
 # ── compliance/enterprise_service.py — subject_id filter ────────────────────

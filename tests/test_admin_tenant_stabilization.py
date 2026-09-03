@@ -73,11 +73,10 @@ def test_tenant_layout_exists():
     assert os.path.exists(TENANT_LAYOUT), "TenantLayout.tsx missing"
 
 
-def test_admin_nav_complaints_present():
-    """Home Services complaints must appear in the rendered admin nav."""
+def test_admin_nav_complaints_absent():
+    """Customer/provider complaint cases are not an admin workspace."""
     src = admin_layout_src()
-    assert '"/admin/home-services/complaints"' in src, \
-        "Complaints href missing from AdminLayout NAV_GROUPS"
+    assert '"/admin/home-services/complaints"' not in src
 
 
 def test_admin_nav_service_groups_present():
@@ -199,18 +198,6 @@ def test_admin_complaints_icon_imported():
 
 
 # ── Complaints page wired ─────────────────────────────────────────────────────
-def test_complaints_page_uses_complaints_api():
-    path = os.path.join(ADMIN_APP, "complaints", "page.tsx")
-    src = read(path)
-    assert "complaintsApi" in src, "Complaints page does not import complaintsApi"
-
-
-def test_complaints_api_exists_in_admin_api():
-    src = read(ADMIN_API)
-    assert "complaintsApi" in src, "complaintsApi not found in admin api.ts"
-
-
-# ── Service Groups page wired ─────────────────────────────────────────────────
 def test_service_groups_page_exists():
     path = os.path.join(ADMIN_APP, "service-groups", "page.tsx")
     assert os.path.exists(path), "service-groups/page.tsx missing"
@@ -225,29 +212,22 @@ def test_service_groups_page_has_api():
 
 # ── Tenant fallback nav routes have pages ─────────────────────────────────────
 @pytest.mark.parametrize("href", [
-    "/dashboard",
-    "/jobs",
-    "/bookings",
-    "/catalog",
-    "/dispatch",
-    "/staff",
-    "/finance",
-    "/reviews",
-    "/provider/status",
-    "/provider/marketing",
-    "/provider/offerings",
-    "/provider/service-areas",
-    "/provider/team-members",
-    "/provider/availability",
-    "/onboarding-status",
-    "/settings",
+    "/dashboard", "/home-services/bookings-jobs", "/home-services/dispatch",
+    "/home-services/availability", "/customers", "/home-services/services",
+    "/home-services/team", "/home-services/finance", "/business/coverage-hours",
+    "/inventory", "/home-services/reviews", "/home-services/complaints",
+    "/provider/refund-requests", "/home-services/direct-payments", "/reports",
+    "/activity", "/settings",
 ])
-def test_tenant_fallback_nav_page_exists(href):
-    """Every tenant fallback nav href must resolve to a page."""
+def test_canonical_tenant_home_services_nav_page_exists(href):
+    """Every Home Services destination resolves to its canonical workspace."""
     rel = href.lstrip("/")
-    page = os.path.join(TENANT_APP, rel, "page.tsx")
-    assert os.path.exists(page), \
-        f"Missing tenant page.tsx for nav href {href} (expected at {page})"
+    candidates = [
+        os.path.join(TENANT_APP, rel, "page.tsx"),
+        os.path.join(TENANT_APP, rel, "[[...serviceId]]", "page.tsx"),
+        os.path.join(TENANT_APP, rel, "[[...staffId]]", "page.tsx"),
+    ]
+    assert any(os.path.exists(page) for page in candidates), href
 
 
 # ── Tenant layout: nav visibility is entitlement-driven ──────────────────────
@@ -292,7 +272,6 @@ def test_admin_categories_has_label_maps():
 
 # ── Admin api.ts has key API clients ──────────────────────────────────────────
 @pytest.mark.parametrize("api_name", [
-    "complaintsApi",
     "categoryRuntimeApi",
     "catalogApi",
     "staffApi",
@@ -339,7 +318,7 @@ def test_admin_operations_group_order():
     assert block, "Operations group not found"
     assert "/admin/customers" in block,  "Customers missing from Operations"
     assert "/admin/home-services/staff" in block, "Staff missing from Operations"
-    assert "/admin/home-services/complaints" in block, "Complaints missing from Operations"
+    assert "/admin/home-services/complaints" not in block
     assert "/admin/home-services/bookings-jobs" in src, "Unified HS operations missing"
 
 

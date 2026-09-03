@@ -317,7 +317,6 @@ async def get_review_detail(db: AsyncSession, tid: uuid.UUID, review_id: uuid.UU
         "rr.id AS reply_id, rr.reply_text, rr.status AS reply_status, rr.created_at AS reply_created_at, "
         "cc.id AS complaint_id, cc.complaint_number, cc.status AS complaint_status, "
         "cc.severity AS complaint_severity, cc.sla_status AS complaint_sla_status, "
-        "cc.assigned_admin_user_id AS complaint_owner_id, "
         "si.invoice_number, si.payment_status "
         "FROM customer_reviews cr "
         "JOIN service_jobs sj ON sj.id = cr.job_id "
@@ -332,7 +331,7 @@ async def get_review_detail(db: AsyncSession, tid: uuid.UUID, review_id: uuid.UU
         # de-duped via LATERAL) showed the current one. Both sides now agree
         # on "the most recent".
         "LEFT JOIN LATERAL ("
-        "  SELECT id, complaint_number, status, severity, sla_status, assigned_admin_user_id "
+        "  SELECT id, complaint_number, status, severity, sla_status "
         "  FROM customer_complaints WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1"
         ") cc ON true "
         "LEFT JOIN LATERAL ("

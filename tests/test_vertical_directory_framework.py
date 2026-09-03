@@ -258,53 +258,6 @@ class TestCustomersIsolation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. COMPLAINTS
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TestComplaintsIsolation:
-
-    async def test_home_services_complaints_exact_ownership(self, admin, fixture_data):
-        r = await admin.get("/v1/admin/verticals/home-services/complaints", params={"page_size": 100})
-        assert r.status_code == 200, r.text
-        ids = [i["id"] for i in r.json()["data"]["items"]]
-        assert str(fixture_data["hs_complaint"]) in ids
-
-    async def test_coaching_complaints_never_shows_home_services(self, admin, fixture_data):
-        r = await admin.get("/v1/admin/verticals/coaching/complaints", params={"page_size": 100})
-        ids = [i["id"] for i in r.json()["data"]["items"]]
-        assert str(fixture_data["hs_complaint"]) not in ids
-        assert str(fixture_data["coach_complaint"]) in ids
-
-    async def test_complaint_detail_rejects_cross_vertical_access(self, admin, fixture_data):
-        r = await admin.get(f"/v1/admin/verticals/coaching/complaints/{fixture_data['hs_complaint']}")
-        assert r.status_code == 403, r.text
-
-    async def test_unresolved_legacy_complaint_excluded_from_directory(self, pg, admin):
-        """A complaint whose vertical could not be resolved (vertical_id
-        NULL) must never appear in any vertical directory."""
-        orphan_id = uuid.uuid4()
-        orphan_customer = uuid.uuid4()
-        cat = await pg.fetchrow("SELECT id FROM service_categories LIMIT 1")
-        await pg.execute(
-            "INSERT INTO users (id, email, full_name, role, hashed_password, is_active, is_verified, "
-            "created_at, updated_at) VALUES ($1,$2,'Orphan Customer','customer','x',true,true, now(), now())",
-            orphan_customer, f"orphan_{orphan_customer.hex[:8]}@test.local")
-        await pg.execute(
-            "INSERT INTO customer_complaints (id, complaint_number, customer_id, category_id, vertical_id, "
-            "record_type, record_id, complaint_type, priority, status, title, description, severity, sla_status, "
-            "created_at, updated_at) VALUES ($1,$2,$3,$4,NULL,'booking',$5,'service_quality','medium','open',"
-            "'Orphan','Orphan desc','medium','on_time', now(), now())",
-            orphan_id, f"CMP-ORPHAN-{orphan_id.hex[:6]}", orphan_customer, cat["id"], uuid.uuid4())
-        try:
-            r = await admin.get("/v1/admin/verticals/home-services/complaints", params={"page_size": 100})
-            ids = [i["id"] for i in r.json()["data"]["items"]]
-            assert str(orphan_id) not in ids
-        finally:
-            await pg.execute("DELETE FROM customer_complaints WHERE id = $1", orphan_id)
-            await pg.execute("DELETE FROM users WHERE id = $1", orphan_customer)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # 5. SECURITY / NAVIGATION / VERTICAL DISABLE
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -318,7 +271,7 @@ class TestSecurityAndDisable:
     async def test_disabled_vertical_blocks_all_four_routes(self, admin):
         await admin.post("/v1/admin/verticals/coaching/disable", json={"reason": "isolation test"})
         try:
-            for domain in ("providers", "staff", "customers", "complaints"):
+            for domain in ("providers", "staff", "customers"):
                 r = await admin.get(f"/v1/admin/verticals/coaching/{domain}")
                 assert r.status_code == 403, f"{domain}: {r.text}"
                 assert r.json().get("error_code") == "VERTICAL_DISABLED"

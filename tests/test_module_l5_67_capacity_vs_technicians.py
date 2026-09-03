@@ -104,15 +104,12 @@ class TestCountingTheTeam:
         assert "dow" not in params
 
     @pytest.mark.asyncio
-    async def test_required_document_manifest_is_passed_to_capacity_query(self):
+    async def test_technician_identity_documents_do_not_gate_capacity(self):
         db = self._db(1)
         await assignable_technician_count(db, TENANT)
         params = db.execute.await_args.args[1]
-        assert set(params["required_documents"]) == {
-            "technician_identity_proof",
-            "technician_background_check",
-        }
-        assert params["required_count"] == 2
+        assert params["required_documents"] == []
+        assert params["required_count"] == 0
 
     @pytest.mark.asyncio
     async def test_same_count_with_or_without_service_and_day(self):

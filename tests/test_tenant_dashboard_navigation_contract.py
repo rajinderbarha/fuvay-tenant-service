@@ -1,5 +1,6 @@
 """Dashboard drill-downs must match the tenant operations workspace contract."""
 
+import re
 from pathlib import Path
 
 
@@ -16,6 +17,50 @@ ADMIN_REGISTRY = (
 TENANT_REGISTRY = (
     ROOT / "frontend/tenant-portal/lib/page-registry.ts"
 ).read_text(encoding="utf-8")
+ADMIN_LAYOUT_PATH = ROOT / "frontend/super-admin/components/layout/AdminLayout.tsx"
+TENANT_LAYOUT_PATH = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
+
+
+def _sidebar_hrefs(layout_path: Path) -> set[str]:
+    source = layout_path.read_text(encoding="utf-8")
+    return {
+        match.group(1)
+        for match in re.finditer(r'href:\s*"([^"?#]+)"', source)
+        if match.group(1).startswith("/")
+    }
+
+
+def _page_route_patterns(app_root: Path) -> list[tuple[str, ...]]:
+    patterns: list[tuple[str, ...]] = []
+    for page in app_root.rglob("page.tsx"):
+        parts = page.parent.relative_to(app_root).parts
+        patterns.append(tuple(part for part in parts if not part.startswith("(")))
+    return patterns
+
+
+def _route_matches(pattern: tuple[str, ...], route: tuple[str, ...]) -> bool:
+    if not pattern:
+        return not route
+    segment = pattern[0]
+    if segment.startswith("[[..."):
+        return True
+    if segment.startswith("[..."):
+        return bool(route)
+    if not route:
+        return False
+    if segment.startswith("[") or segment == route[0]:
+        return _route_matches(pattern[1:], route[1:])
+    return False
+
+
+def _missing_sidebar_pages(layout_path: Path, app_root: Path) -> list[str]:
+    patterns = _page_route_patterns(app_root)
+    missing: list[str] = []
+    for href in sorted(_sidebar_hrefs(layout_path)):
+        route = tuple(part for part in href.strip("/").split("/") if part)
+        if not any(_route_matches(pattern, route) for pattern in patterns):
+            missing.append(href)
+    return missing
 
 
 def test_dashboard_job_links_use_the_detail_drawer_parameter():
@@ -61,12 +106,12 @@ def test_every_rendered_tenant_sidebar_destination_has_page_metadata():
 def test_every_rendered_admin_sidebar_destination_has_page_metadata():
     routes = [
         "/admin/dashboard", "/admin/customers", "/admin/staff",
-        "/admin/home-services/complaints", "/admin/verticals",
+        "/admin/verticals",
         "/admin/categories", "/admin/marketing", "/admin/marketing/home",
         "/admin/notifications", "/admin/analytics", "/admin/intelligence",
         "/admin/engines", "/admin/security", "/admin/compliance",
         "/admin/trust-quality", "/admin/audit-logs", "/admin/users",
-        "/admin/roles", "/admin/permissions", "/admin/media",
+        "/admin/media",
         "/admin/settings", "/admin/home-services/dashboard",
         "/admin/catalog-workspace", "/admin/home-services/settings",
         "/admin/bookability/providers", "/admin/home-services/providers",
@@ -78,3 +123,13 @@ def test_every_rendered_admin_sidebar_destination_has_page_metadata():
 
 def test_home_services_breadcrumbs_do_not_link_to_deleted_landing_page():
     assert 'href: "/admin/home-services"' not in ADMIN_REGISTRY
+
+
+def test_every_admin_sidebar_destination_resolves_to_a_next_page():
+    app_root = ROOT / "frontend/super-admin/app"
+    assert _missing_sidebar_pages(ADMIN_LAYOUT_PATH, app_root) == []
+
+
+def test_every_tenant_sidebar_destination_resolves_to_a_next_page():
+    app_root = ROOT / "frontend/tenant-portal/app"
+    assert _missing_sidebar_pages(TENANT_LAYOUT_PATH, app_root) == []

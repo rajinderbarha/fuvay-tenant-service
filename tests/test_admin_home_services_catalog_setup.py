@@ -9,9 +9,7 @@ FRONTEND = ROOT / "frontend/super-admin"
 WORKSPACE = (
     FRONTEND / "app/admin/catalog-workspace/page.tsx"
 ).read_text(encoding="utf-8-sig")
-LEGACY = (
-    FRONTEND / "app/admin/home-services/service-catalog/page.tsx"
-).read_text(encoding="utf-8-sig")
+LEGACY = FRONTEND / "app/admin/home-services/service-catalog/page.tsx"
 LAYOUT = (
     FRONTEND / "components/layout/AdminLayout.tsx"
 ).read_text(encoding="utf-8-sig")
@@ -19,8 +17,8 @@ API = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8-sig")
 
 
-def test_legacy_route_redirects_to_single_catalog_workspace():
-    assert 'redirect("/admin/catalog-workspace")' in LEGACY
+def test_legacy_route_is_deleted():
+    assert not LEGACY.exists()
 
 
 def test_navigation_points_to_canonical_workspace_only():

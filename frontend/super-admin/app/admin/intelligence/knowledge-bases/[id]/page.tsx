@@ -736,7 +736,7 @@ export default function KBDetailPage() {
             <div style={{ marginTop: 16, padding: 14, background: 'var(--surface-sunken)', borderRadius:"var(--radius-md)" }}>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6 }}>Fallback Message</div>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-                {String(getField('fallback_message') ?? 'I do not have enough verified information to answer this. Please contact ServiceOS support.')}
+                {String(getField('fallback_message') ?? 'I do not have enough verified information to answer this. Please contact Fuvay support.')}
               </p>
             </div>
           </div>
@@ -768,7 +768,7 @@ export default function KBDetailPage() {
                   'AI cannot decide price',
                   'AI cannot assign provider',
                   'AI cannot create booking by itself',
-                  'AI cannot apply ServiceOS credit',
+                  'AI cannot apply Fuvay credit',
                   'AI cannot approve tenant',
                   'AI cannot change credit balance',
                   'AI cannot expose internal risk score to customer',

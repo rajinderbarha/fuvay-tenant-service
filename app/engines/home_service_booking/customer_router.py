@@ -15,6 +15,7 @@ from app.dependencies.auth import require_customer, UserContext
 from app.dependencies.db import get_db
 from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
 from app.schemas.base import ApiResponse, ok
+from app.core.security import get_client_ip
 
 logger = structlog.get_logger("home_service.customer_router")
 
@@ -33,7 +34,11 @@ assistant_bootstrap_router = APIRouter(
 
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db)) -> HomeServiceChatbotBookingService:
-    return HomeServiceChatbotBookingService(db=db, request_id=getattr(r.state, "request_id", "—"))
+    return HomeServiceChatbotBookingService(
+        db=db,
+        request_id=getattr(r.state, "request_id", "—"),
+        ip_address=get_client_ip(r),
+    )
 
 
 def _rid(r: Request) -> str:
@@ -553,6 +558,7 @@ async def confirm_draft(
         customer_id     = customer_id,
         idempotency_key = idempotency_key,
         request_id      = request_id,
+        ip_address      = get_client_ip(r),
     )
     await db.commit()
     return ok(result, request_id or "—", "home_service_booking")

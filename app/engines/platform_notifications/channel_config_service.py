@@ -24,7 +24,7 @@ from app.exceptions import ServiceOSException
 
 PROVIDER_DEFINITIONS: dict[str, dict] = {
     "in_app": {
-        "provider": "ServiceOS Inbox", "description": "Durable notifications stored in the ServiceOS inbox.",
+        "provider": "Fuvay Inbox", "description": "Durable notifications stored in the Fuvay inbox.",
         "fields": [], "managed": False,
     },
     "email": {

@@ -45,15 +45,11 @@ class TestLegalDocumentsAreMounted:
 
 
 class TestOrphanedConsolesAreLinked:
-    """Built, working, and previously unreachable from the sidebar."""
+    """Built, working consoles must be reachable from the sidebar."""
 
     def test_support_queue_is_linked(self):
         # A provider could raise a support request no admin would ever see.
         assert "/admin/support" in _nav_hrefs()
-
-    def test_tenant_assistant_is_linked(self):
-        assert "/admin/tenant-assistant" in _nav_hrefs()
-
 
 class TestNoRouterIsLeftUnmounted:
     def test_every_engine_router_is_mounted(self):

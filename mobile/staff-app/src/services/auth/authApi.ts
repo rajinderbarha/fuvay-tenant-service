@@ -4,36 +4,40 @@ import { ApiResult } from "../api/types";
 import {
   LoginResultDTO, RefreshResultDTO, AccessContextDTO, SessionListItemDTO, SessionListResponseDTO,
 } from "./types";
+import { getOrCreateDeviceId } from "./deviceId";
 
 /**
- * Thin wrappers over the real ServiceOS auth endpoints (traced verbatim
+ * Thin wrappers over the real Fuvay auth endpoints (traced verbatim
  * from app/engines/auth/router.py + schemas.py -- field names below match
  * LoginRequest/OTPSendRequest/OTPVerifyRequest/MFAVerifyRequest/
  * RefreshTokenRequest/PasswordResetRequest/PasswordResetConfirmRequest
  * exactly). This is NOT the Login UI -- these are called by sessionManager
  * and, later, the Phase (Login) screens.
  */
-export function login(input: {
+export async function login(input: {
   email: string; password: string; deviceId?: string; deviceName?: string; rememberDevice?: boolean;
 }): Promise<ApiResult<LoginResultDTO>> {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   return publicRequest<LoginResultDTO>("/v1/auth/login", {
     method: "POST",
     body: {
       email: input.email, password: input.password,
-      device_id: input.deviceId ?? "mobile", device_name: input.deviceName,
+      device_id: deviceId, device_name: input.deviceName,
       remember_device: input.rememberDevice ?? false,
     },
   });
 }
 
-export function sendOtp(input: { phone: string; purpose?: "phone_login" | "phone_verification" | "password_reset" | "job_approval" }): Promise<ApiResult<{ message: string; use_verify?: boolean; otp_hint?: string }>> {
-  return publicRequest("/v1/auth/otp/send", { method: "POST", body: { phone: input.phone, purpose: input.purpose ?? "phone_login" } });
+export async function sendOtp(input: { phone: string; purpose?: "phone_login" | "phone_verification" | "password_reset" | "job_approval" }): Promise<ApiResult<{ message: string; use_verify?: boolean; otp_hint?: string }>> {
+  const deviceId = await getOrCreateDeviceId();
+  return publicRequest("/v1/auth/otp/send", { method: "POST", body: { phone: input.phone, purpose: input.purpose ?? "phone_login", device_id: deviceId } });
 }
 
-export function verifyOtp(input: { phone: string; otp: string; deviceId?: string; deviceName?: string }): Promise<ApiResult<LoginResultDTO>> {
+export async function verifyOtp(input: { phone: string; otp: string; deviceId?: string; deviceName?: string }): Promise<ApiResult<LoginResultDTO>> {
+  const deviceId = input.deviceId ?? await getOrCreateDeviceId();
   return publicRequest<LoginResultDTO>("/v1/auth/otp/verify", {
     method: "POST",
-    body: { phone: input.phone, otp: input.otp, device_id: input.deviceId ?? "mobile", device_name: input.deviceName },
+    body: { phone: input.phone, otp: input.otp, device_id: deviceId, device_name: input.deviceName },
   });
 }
 

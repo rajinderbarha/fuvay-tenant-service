@@ -2322,8 +2322,8 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
           <div style={{ padding:"10px 14px", background:"var(--info-bg)", border:"1px solid var(--info-border)", borderRadius:"var(--radius-md)" }}>
             <p style={{ fontSize:12, color:"var(--info-text)", margin:0 }}>
-              Usage credits are internal ServiceOS credits used for platform charges. They are not cash, not withdrawable, and not a payout balance.
-              Customers pay this provider directly — ServiceOS does not collect service payment for Home Services.
+              Usage credits are internal Fuvay credits used for platform charges. They are not cash, not withdrawable, and not a payout balance.
+              Customers pay this provider directly — Fuvay does not collect service payment for Home Services.
             </p>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14 }}>
@@ -2528,7 +2528,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
             <TableSurface style={{ width:"100%", borderCollapse:"collapse" }}>
               <thead>
                 <tr style={{ background:"var(--surface-sunken)", borderBottom:"1px solid var(--border)" }}>
-                  {["Booking #","Service","Status","Preferred Date","Service Price","ServiceOS Credit Applied","Payable To Provider","Created"].map(h => (
+                  {["Booking #","Service","Status","Preferred Date","Service Price","Fuvay Credit Applied","Payable To Provider","Created"].map(h => (
                     <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:11, fontWeight:700,
                       color:"var(--text-tertiary)", textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</th>
                   ))}

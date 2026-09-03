@@ -21,6 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.permissions import ROLE_PERMISSIONS, permission_checker
+from app.core.security import (
+    enforce_otp_delivery_budget,
+    enforce_otp_send_limits,
+    enforce_otp_verify_limits,
+)
 from app.engines.auth.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES, BACKUP_CODE_COUNT,
     MAX_FAILED_LOGIN_ATTEMPTS, LOCKOUT_MINUTES, HARD_LOCKOUT_ATTEMPTS,
@@ -485,7 +490,12 @@ class AuthService:
 
     # ── Registration ──────────────────────────────────────────────────────────
     async def register_customer(
-        self, full_name: str, phone: str, email: str | None, tenant_id: uuid.UUID | None
+        self,
+        full_name: str,
+        phone: str,
+        email: str | None,
+        tenant_id: uuid.UUID | None,
+        source_id: str | None = None,
     ) -> dict:
         # Check if phone already registered
         existing = await self._get_user_by_phone(phone)
@@ -507,14 +517,11 @@ class AuthService:
         self.db.add(user)
         await self.db.flush()
 
-        otp_plain, otp_hashed = generate_otp()
-        otp_record = OTPRecord(
-            purpose="phone_verification",
-            recipient_hash=hash_recipient(phone),
-            hashed_otp=otp_hashed,
-            expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+        otp_result = await self.send_phone_otp(
+            phone,
+            "phone_login",
+            source_id=source_id or f"customer-register:{user.id}",
         )
-        self.db.add(otp_record)
         await self._audit("user.registered", "success", actor_id=user.id,
                           tenant_id=tenant_id, target_id=user.id, target_type="user")
         await self._publish_event("auth.user_registered", str(user.id),
@@ -523,7 +530,7 @@ class AuthService:
         return {
             "user_id": str(user.id),
             "message": "OTP sent to your phone. Verify to activate your account.",
-            "otp_hint": otp_plain,  # Remove in production — for dev only
+            **({"otp_hint": otp_result["otp_hint"]} if otp_result.get("otp_hint") else {}),
         }
 
     # ── Login ─────────────────────────────────────────────────────────────────
@@ -674,17 +681,28 @@ class AuthService:
         }
 
     # ── Phone OTP Login ───────────────────────────────────────────────────────
-    async def send_phone_otp(self, phone: str, purpose: str) -> dict:
+    async def send_phone_otp(
+        self, phone: str, purpose: str, *, source_id: str | None = None
+    ) -> dict:
         """
         Send OTP to phone.
         When Twilio Verify is configured: delegates to Verify API (no local OTP stored).
         Otherwise: generates OTP locally, stores hashed in DB, no SMS sent (dev mode).
         """
+        await enforce_otp_send_limits(
+            phone, ip_address=self.ip_address, source_id=source_id
+        )
         from app.twilio_client import verify_send, is_verify_configured
         if is_verify_configured():
             sent = await verify_send(phone)
             logger.info("auth.otp_sent", purpose=purpose, phone=phone[:4] + "****",
                         method="twilio_verify", sent=sent)
+            if not sent:
+                raise ServiceOSException(
+                    "SERVICE_UNAVAILABLE",
+                    "We couldn't send the verification code. Please try again.",
+                    status_code=503,
+                )
             return {"message": "OTP sent to your phone via Twilio Verify.", "use_verify": True}
 
         # Fallback: self-managed OTP stored in DB
@@ -698,12 +716,17 @@ class AuthService:
         )
         self.db.add(otp_record)
         logger.info("auth.otp_sent", purpose=purpose, phone=phone[:4] + "****", method="db_fallback")
-        return {"message": "OTP sent.", "otp_hint": otp_plain}
+        return {
+            "message": "OTP sent.",
+            **({"otp_hint": otp_plain} if self.settings.DEBUG else {}),
+        }
 
     # ── Email OTP Login ───────────────────────────────────────────────────────
     EMAIL_OTP_PURPOSE = "email_login"
 
-    async def send_email_otp(self, email: str, purpose: str = EMAIL_OTP_PURPOSE) -> dict:
+    async def send_email_otp(
+        self, email: str, purpose: str = EMAIL_OTP_PURPOSE, *, source_id: str | None = None
+    ) -> dict:
         """Email a sign-in code.
 
         `/otp/send` has advertised "phone or email" and accepted an `email` field since
@@ -721,6 +744,12 @@ class AuthService:
         from app.email_client import is_email_configured, send_login_code_email
 
         normalized = email.lower().strip()
+        await enforce_otp_send_limits(
+            normalized,
+            ip_address=self.ip_address,
+            source_id=source_id,
+            costed_delivery=False,
+        )
         generic = {"message": "If an account exists, a sign-in code has been sent."}
 
         if not is_email_configured():
@@ -772,6 +801,9 @@ class AuthService:
         fail identically.
         """
         normalized = email.lower().strip()
+        await enforce_otp_verify_limits(
+            normalized, ip_address=self.ip_address, source_id=device_id
+        )
         recipient_hash = hash_recipient(normalized)
         r = await self.db.execute(
             select(OTPRecord).where(
@@ -865,6 +897,9 @@ class AuthService:
         user_agent: str | None, enabled_engines: list[str] | None = None,
         tenant_name: str | None = None, plan_type: str | None = None,
     ) -> dict:
+        await enforce_otp_verify_limits(
+            phone, ip_address=self.ip_address, source_id=device_id
+        )
         from app.twilio_client import verify_check, is_verify_configured
         if is_verify_configured():
             approved = await verify_check(phone, otp)
@@ -1665,33 +1700,77 @@ class AuthService:
         return sessions_revoked
 
     async def request_password_reset(self, email: str | None, phone: str | None) -> dict:
+        recipient = (email or phone or "").strip().lower()
+        if not recipient:
+            raise ServiceOSException(
+                "VALIDATION_ERROR", "Either email or phone is required.", status_code=422
+            )
+        await enforce_otp_send_limits(
+            recipient,
+            ip_address=self.ip_address,
+            source_id=f"password-reset:{self.ip_address or 'unknown'}",
+            # Unknown recipients are throttled, but cannot consume the paid
+            # SMS circuit breaker when no message will be delivered.
+            costed_delivery=False,
+        )
         user = None
-        recipient = None
         if email:
             user = await self._get_user_by_email(email)
-            recipient = email
         elif phone:
             user = await self._get_user_by_phone(phone)
-            recipient = phone
 
         # Always return success (don't reveal if account exists)
         if not user:
             return {"message": "If an account exists, a reset link/OTP has been sent."}
 
-        otp_plain, otp_hashed = generate_otp()
+        if phone:
+            await enforce_otp_delivery_budget(ip_address=self.ip_address)
+
         purpose = "password_reset"
-        otp_record = OTPRecord(
-            purpose=purpose,
-            recipient_hash=hash_recipient(recipient),
-            hashed_otp=otp_hashed,
-            expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
-        )
-        self.db.add(otp_record)
+        otp_plain: str | None = None
+        if phone:
+            from app.twilio_client import is_verify_configured, send_sms, verify_send
+            if is_verify_configured():
+                delivered = await verify_send(phone)
+            else:
+                otp_plain, otp_hashed = generate_otp()
+                self.db.add(OTPRecord(
+                    purpose=purpose,
+                    recipient_hash=hash_recipient(recipient),
+                    hashed_otp=otp_hashed,
+                    expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+                ))
+                delivered = True if self.settings.DEBUG else await send_sms(
+                    phone,
+                    f"Your Fuvay password reset code is {otp_plain}. "
+                    f"Valid for {OTP_EXPIRE_MINUTES} minutes.",
+                )
+        else:
+            from app.email_client import is_email_configured, send_login_code_email
+            otp_plain, otp_hashed = generate_otp()
+            self.db.add(OTPRecord(
+                purpose=purpose,
+                recipient_hash=hash_recipient(recipient),
+                hashed_otp=otp_hashed,
+                expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
+            ))
+            delivered = True if self.settings.DEBUG else (
+                await send_login_code_email(email or "", otp_plain, OTP_EXPIRE_MINUTES)
+                if is_email_configured() else False
+            )
+        if not delivered:
+            logger.warning("auth.password_reset_delivery_failed", channel="phone" if phone else "email")
+            raise ServiceOSException(
+                "SERVICE_UNAVAILABLE",
+                "We couldn't send the reset code. Please try again.",
+                status_code=503,
+            )
         await self._audit("password.reset_requested", "success",
                           actor_id=user.id, tenant_id=user.tenant_id)
-        # In production: send OTP via Notification engine
-        return {"message": "If an account exists, a reset OTP has been sent.",
-                "otp_hint": otp_plain}
+        return {
+            "message": "If an account exists, a reset OTP has been sent.",
+            **({"otp_hint": otp_plain} if self.settings.DEBUG and otp_plain else {}),
+        }
 
     async def confirm_password_reset(
         self, email: str | None, phone: str | None, reset_token: str, new_password: str
@@ -1701,34 +1780,51 @@ class AuthService:
         OTPRecord has no reversible user reference (only a one-way
         `recipient_hash`), so the same identifier used to request the OTP is
         required again here to locate both the OTP and the account."""
-        recipient = email or phone
+        recipient = (email or phone or "").strip().lower()
         if not recipient:
             raise ServiceOSException("VALIDATION_ERROR", "Either email or phone is required.")
-        recipient_hash = hash_recipient(recipient)
-        r = await self.db.execute(
-            select(OTPRecord).where(
-                and_(OTPRecord.purpose == "password_reset",
-                     OTPRecord.recipient_hash == recipient_hash,
-                     OTPRecord.is_used == False,
-                     OTPRecord.expires_at > utcnow())
-            ).order_by(OTPRecord.created_at.desc()).limit(1)
+        await enforce_otp_verify_limits(
+            recipient,
+            ip_address=self.ip_address,
+            source_id=f"password-reset:{self.ip_address or 'unknown'}",
         )
-        otp_record = r.scalar_one_or_none()
-        # Enumeration-safe: an unknown recipient and an expired/wrong OTP for
-        # a real recipient both fail identically -- never reveal which.
-        if not otp_record:
-            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
-                                     status_code=400, resolution="Request a new reset code.")
-        otp_record.attempts += 1
-        if otp_record.attempts > 3:
+        otp_record = None
+        verify_approved = False
+        if phone:
+            from app.twilio_client import is_verify_configured, verify_check
+            if is_verify_configured():
+                verify_approved = await verify_check(phone, reset_token)
+                if not verify_approved:
+                    raise ServiceOSException(
+                        "PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
+                        status_code=400, resolution="Request a new reset code.",
+                    )
+        if not verify_approved:
+            recipient_hash = hash_recipient(recipient)
+            r = await self.db.execute(
+                select(OTPRecord).where(
+                    and_(OTPRecord.purpose == "password_reset",
+                         OTPRecord.recipient_hash == recipient_hash,
+                         OTPRecord.is_used == False,
+                         OTPRecord.expires_at > utcnow())
+                ).order_by(OTPRecord.created_at.desc()).limit(1)
+            )
+            otp_record = r.scalar_one_or_none()
+            # Enumeration-safe: an unknown recipient and an expired/wrong OTP
+            # for a real recipient both fail identically.
+            if not otp_record:
+                raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
+                                         status_code=400, resolution="Request a new reset code.")
+            otp_record.attempts += 1
+            if otp_record.attempts > 3:
+                otp_record.is_used = True
+                raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Too many incorrect attempts. Request a new reset code.",
+                                         status_code=400)
+            if not verify_otp(reset_token, otp_record.hashed_otp):
+                raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
+                                         status_code=400,
+                                         resolution=f"{3 - otp_record.attempts} attempts remaining.")
             otp_record.is_used = True
-            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Too many incorrect attempts. Request a new reset code.",
-                                     status_code=400)
-        if not verify_otp(reset_token, otp_record.hashed_otp):
-            raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.",
-                                     status_code=400,
-                                     resolution=f"{3 - otp_record.attempts} attempts remaining.")
-        otp_record.is_used = True
 
         user = await self._get_user_by_email(email) if email else await self._get_user_by_phone(phone)
         if not user or not user.is_active:

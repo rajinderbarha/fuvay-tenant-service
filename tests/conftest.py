@@ -1,5 +1,5 @@
 """
-Pytest configuration for ServiceOS tests.
+Pytest configuration for Fuvay tests.
 Phase 1+2: uses mocks for DB/Redis so tests run without Docker.
 """
 import pytest

@@ -9,7 +9,6 @@ import { DomainError } from "../../../domain/errors";
 type Screen = ReturnType<typeof renderAuthScreen>;
 
 let register: jest.SpyInstance;
-let requestOtp: jest.SpyInstance;
 
 function render(): Screen {
   return renderAuthScreen("Signup", SignupScreen, undefined, {
@@ -27,9 +26,6 @@ describe("SignupScreen", () => {
   beforeEach(() => {
     register = jest.spyOn(authApi, "registerCustomer").mockResolvedValue(
       { data: { user_id: "u-1", message: "OTP sent." } } as never,
-    );
-    requestOtp = jest.spyOn(sessionManager, "requestLoginOtp").mockResolvedValue(
-      { message: "OTP sent." } as never,
     );
   });
 
@@ -59,16 +55,14 @@ describe("SignupScreen", () => {
     ));
   });
 
-  it("verifies through the same OTP screen a returning customer uses", async () => {
-    // The registration response carries its own OTP, but it is scoped to
-    // `phone_verification` and /otp/verify rejects it (confirmed live). A normal login
-    // OTP is sent instead, so there is ONE verification implementation.
+  it("uses the single OTP sent by registration on the normal verification screen", async () => {
+    const requestOtp = jest.spyOn(sessionManager, "requestLoginOtp");
     const screen = render();
     fillValid(screen);
     fireEvent.press(screen.getByText("Create account"));
 
-    await waitFor(() => expect(requestOtp).toHaveBeenCalledWith("+919876543210"));
     await waitFor(() => expect(screen.getByText("verify-otp-screen")).toBeTruthy());
+    expect(requestOtp).not.toHaveBeenCalled();
   });
 
   it("rejects a too-short name and an invalid number without calling the backend", async () => {
@@ -101,15 +95,13 @@ describe("SignupScreen", () => {
     expect(screen.queryByText("verify-otp-screen")).toBeNull();
   });
 
-  it("does not navigate when the OTP could not be sent", async () => {
-    // The account exists, but sending someone to a code screen with no code on the way
-    // is a dead end.
-    requestOtp.mockRejectedValue(new Error("network"));
+  it("does not navigate when registration could not send the OTP", async () => {
+    register.mockRejectedValue(new Error("network"));
     const screen = render();
     fillValid(screen);
     fireEvent.press(screen.getByText("Create account"));
 
-    await waitFor(() => expect(requestOtp).toHaveBeenCalled());
+    await waitFor(() => expect(register).toHaveBeenCalled());
     // Still on signup: sending someone to a code screen with no code on the way is a
     // dead end.
     expect(screen.getByText("Create account")).toBeTruthy();
@@ -132,10 +124,7 @@ describe("signup verification is a real step", () => {
     // at all. The one step that proves the customer owns the number was invisible, and
     // untestable.
     jest.spyOn(authApi, "registerCustomer").mockResolvedValue(
-      { data: { user_id: "u-1", message: "OTP sent." } } as never,
-    );
-    jest.spyOn(sessionManager, "requestLoginOtp").mockResolvedValue(
-      { message: "OTP sent.", otp_hint: "123456" } as never,
+      { data: { user_id: "u-1", message: "OTP sent.", otp_hint: "123456" } } as never,
     );
     const verify = jest.spyOn(sessionManager, "verifyLoginOtp");
 

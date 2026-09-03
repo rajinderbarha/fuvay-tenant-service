@@ -18,7 +18,7 @@ Real, honored constraints:
   all** — the real `confirm_draft` route takes no body, so there is nothing
   for the client to override.
 - On-site payment wording preserved (`DeepSeekChatScreen.tsx`'s review screen
-  footer: "You pay the technician on-site — ServiceOS does not process this
+  footer: "You pay the technician on-site — Fuvay does not process this
   payment.").
 - "Make an offer" (genuine customer counter-offer) UI was not built this round
   — no backend endpoint for it was found in `home_service_booking` (only tier

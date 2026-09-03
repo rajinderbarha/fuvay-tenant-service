@@ -81,10 +81,10 @@ class TestPageInventory(unittest.TestCase):
         self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/dashboard"))
 
     def test_tenant_jobs_exists(self):
-        self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/jobs"))
+        self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs"))
 
     def test_tenant_finance_exists(self):
-        self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/finance"))
+        self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/home-services/finance"))
 
     def test_tenant_analytics_exists(self):
         self.assertTrue(_exists("frontend/tenant-portal/app/(tenant)/analytics"))

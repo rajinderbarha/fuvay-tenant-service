@@ -6,9 +6,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
-LEGACY = (
-    FRONTEND / "app/(tenant)/provider/service-setup/page.tsx"
-).read_text(encoding="utf-8-sig")
+LEGACY = FRONTEND / "app/(tenant)/provider/service-setup/page.tsx"
 SETUP = (
     FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
 ).read_text(encoding="utf-8-sig")
@@ -25,10 +23,8 @@ CUSTOMER_OPTION_ROUTER = (
 ).read_text(encoding="utf-8-sig")
 
 
-def test_deprecated_duplicate_is_redirect_only():
-    assert 'redirect("/home-services/services")' in LEGACY
-    assert "providerOfferingsApi" not in LEGACY
-    assert "ServiceSetupWizard" not in LEGACY
+def test_deprecated_duplicate_is_deleted():
+    assert not LEGACY.exists()
 
 
 def test_navigation_uses_canonical_services_workspace():

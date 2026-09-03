@@ -9,8 +9,8 @@ from app.engines.complaints.constants import (
     REWORK_IN_PROGRESS, REWORK_COMPLETED, REWORK_REJECTED, REWORK_CANCELLED,
     STATUS_REWORK_APPROVED, STATUS_RESOLVED,
     ALLOWED_TRANSITIONS,
-    EVT_REWORK_REQUESTED, EVT_REWORK_APPROVED, EVT_REWORK_CREATED,
-    ACTOR_ADMIN, ACTOR_PROVIDER, ACTOR_SYSTEM,
+    EVT_REWORK_CREATED,
+    ACTOR_PROVIDER, ACTOR_SYSTEM,
     ERR_REWORK_NOT_FOUND, ERR_REWORK_ACCESS_DENIED, ERR_REWORK_NOT_ALLOWED,
 )
 from app.exceptions import ServiceOSException
@@ -41,14 +41,14 @@ class ServiceReworkService:
             booking_id             = complaint.booking_id,
             job_id                 = complaint.job_id,
             original_job_id        = complaint.job_id,
-            status                 = REWORK_REQUESTED,
+            status                 = REWORK_APPROVED,
             rework_reason          = rework_reason,
             customer_visible_notes = customer_visible_notes,
         )
         db.add(rework)
         await db.flush()
         await self._log_event(db, complaint_id, complaint.tenant_id, actor_type, actor_user_id,
-                              EVT_REWORK_REQUESTED, None, None, {"rework_id": str(rework.id)}, request_id)
+                              EVT_REWORK_CREATED, None, None, {"rework_id": str(rework.id)}, request_id)
         await db.commit()
         return rework
 
@@ -82,30 +82,6 @@ class ServiceReworkService:
                 "A rework in state '%s' cannot move to '%s'." % (current, target),
                 status_code=409,
             )
-
-    async def approve_rework(
-        self,
-        db: AsyncSession,
-        rework_id: uuid.UUID,
-        admin_user_id: uuid.UUID,
-        admin_notes: str | None = None,
-        request_id: str = "—",
-    ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
-        self._assert_rework_transition(rework, REWORK_APPROVED)
-        rework.status      = REWORK_APPROVED
-        rework.admin_notes = admin_notes
-        await db.flush()
-
-        complaint = await self._complaint_svc.get_complaint(db, rework.complaint_id)
-        if complaint.status in ALLOWED_TRANSITIONS and STATUS_REWORK_APPROVED in ALLOWED_TRANSITIONS.get(complaint.status, set()):
-            complaint.status = STATUS_REWORK_APPROVED
-            await db.flush()
-
-        await self._log_event(db, rework.complaint_id, rework.tenant_id, ACTOR_ADMIN, admin_user_id,
-                              EVT_REWORK_APPROVED, None, None, {"rework_id": str(rework_id)}, request_id)
-        await db.commit()
-        return rework
 
     async def assign_rework(
         self,
@@ -174,34 +150,6 @@ class ServiceReworkService:
             complaint.status    = STATUS_RESOLVED
             complaint.resolved_at = datetime.now(timezone.utc)
 
-        await db.commit()
-        return rework
-
-    async def reject_rework(
-        self,
-        db: AsyncSession,
-        rework_id: uuid.UUID,
-        actor_user_id: uuid.UUID,
-        reason: str,
-        request_id: str = "—",
-    ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
-        rework.status      = REWORK_REJECTED
-        rework.admin_notes = reason
-        await db.commit()
-        return rework
-
-    async def cancel_rework(
-        self,
-        db: AsyncSession,
-        rework_id: uuid.UUID,
-        actor_user_id: uuid.UUID,
-        reason: str,
-        request_id: str = "—",
-    ) -> ServiceReworkRequest:
-        rework = await self._get_rework(db, rework_id)
-        rework.status      = REWORK_CANCELLED
-        rework.admin_notes = reason
         await db.commit()
         return rework
 

@@ -44,7 +44,6 @@ class CustomerComplaint(Base):
     appointment_id                  = Column(UUID(as_uuid=True), nullable=True)
     lead_id                         = Column(UUID(as_uuid=True), nullable=True)
     review_id                       = Column(UUID(as_uuid=True), nullable=True)
-    assigned_admin_user_id          = Column(UUID(as_uuid=True), nullable=True)
     complaint_type                  = Column(String(40),  nullable=False)
     requested_resolution            = Column(String(40),  nullable=True)
     priority                        = Column(String(20),  nullable=False, default="normal")
@@ -52,7 +51,6 @@ class CustomerComplaint(Base):
     title                           = Column(String(300), nullable=True)
     description                     = Column(Text,        nullable=False)
     customer_visible_summary        = Column(Text,        nullable=True)
-    internal_admin_notes            = Column(Text,        nullable=True)
     provider_response_required      = Column(Boolean,     nullable=False, default=True)
     provider_responded_at           = Column(DateTime(timezone=True), nullable=True)
     customer_accepted_resolution_at = Column(DateTime(timezone=True), nullable=True)
@@ -63,10 +61,7 @@ class CustomerComplaint(Base):
     severity                        = Column(String(20),  nullable=True, default="medium")
     sla_status                      = Column(String(30),  nullable=True, default="on_time")
     tenant_first_response_due_at    = Column(DateTime(timezone=True), nullable=True)
-    ai_escalation_at                = Column(DateTime(timezone=True), nullable=True)
-    admin_escalation_at             = Column(DateTime(timezone=True), nullable=True)
     settlement_status               = Column(String(40),  nullable=True)
-    ai_session_id                   = Column(UUID(as_uuid=True), nullable=True)
     provider_sla_penalty_charged    = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     provider_sla_penalized_at       = Column(DateTime(timezone=True), nullable=True)
     created_at                      = Column(DateTime(timezone=True), nullable=True, default=_now)
@@ -88,7 +83,6 @@ class CustomerComplaint(Base):
             "appointment_id":       str(self.appointment_id) if self.appointment_id else None,
             "lead_id":              str(self.lead_id) if self.lead_id else None,
             "review_id":            str(self.review_id) if self.review_id else None,
-            "assigned_admin_user_id": str(self.assigned_admin_user_id) if self.assigned_admin_user_id else None,
             "complaint_type":       self.complaint_type,
             "requested_resolution": self.requested_resolution,
             "priority":             self.priority,
@@ -96,7 +90,6 @@ class CustomerComplaint(Base):
             "title":                self.title,
             "description":          self.description,
             "customer_visible_summary": self.customer_visible_summary,
-            "internal_admin_notes": self.internal_admin_notes,
             "provider_response_required": self.provider_response_required,
             "provider_responded_at": self.provider_responded_at.isoformat() if self.provider_responded_at else None,
             "customer_accepted_resolution_at": self.customer_accepted_resolution_at.isoformat() if self.customer_accepted_resolution_at else None,
@@ -108,8 +101,6 @@ class CustomerComplaint(Base):
             "severity":             self.severity,
             "sla_status":           self.sla_status,
             "tenant_first_response_due_at": self.tenant_first_response_due_at.isoformat() if self.tenant_first_response_due_at else None,
-            "ai_escalation_at":     self.ai_escalation_at.isoformat() if self.ai_escalation_at else None,
-            "admin_escalation_at":  self.admin_escalation_at.isoformat() if self.admin_escalation_at else None,
             "settlement_status":    self.settlement_status,
             "provider_sla_penalty_charged": (float(self.provider_sla_penalty_charged)
                                                if self.provider_sla_penalty_charged is not None else 0.0),
@@ -118,18 +109,10 @@ class CustomerComplaint(Base):
         }
 
     def to_customer_dict(self) -> dict:
-        d = self.to_dict()
-        # Help & Support Hub audit: assigned_admin_user_id leaked the
-        # internal admin's user id to the customer app -- only
-        # internal_admin_notes was ever stripped here.
-        d.pop("internal_admin_notes", None)
-        d.pop("assigned_admin_user_id", None)
-        return d
+        return self.to_dict()
 
     def to_provider_dict(self) -> dict:
-        d = self.to_dict()
-        d.pop("internal_admin_notes", None)
-        return d
+        return self.to_dict()
 
 
 class ComplaintMessage(Base):
@@ -200,8 +183,6 @@ class ComplaintMedia(Base):
             "visibility":           self.visibility,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
         }
-
-
 class ComplaintEvent(Base):
     __tablename__ = "complaint_events"
 
@@ -431,23 +412,10 @@ class ComplaintPolicy(Base):
     allow_duplicate_open_complaints = Column(Boolean, nullable=False, default=False)
     allow_rework                 = Column(Boolean, nullable=False, default=True)
     allow_refund_request         = Column(Boolean, nullable=False, default=True)
-    require_admin_review         = Column(Boolean, nullable=False, default=False)
     require_provider_response    = Column(Boolean, nullable=False, default=True)
     default_provider_response_hours = Column(Integer, nullable=False, default=24)
     default_resolution_hours     = Column(Integer, nullable=False, default=72)
     provider_sla_breach_penalty  = Column(Numeric(12, 2), nullable=False, default=Decimal("50.00"))
-
-    # ── AI settlement rule (migration 138) — admin sets this; the rest is automatic ──
-    # The AI takes over only once the PROVIDER has failed to solve the complaint,
-    # may offer at most `ai_settlement_max_pct` of the job value, and pays in
-    # CREDIT POINTS — never real money. A case that warrants more than the cap is
-    # escalated to admin manual review rather than settled by the AI.
-    # Historical schema compatibility only; complaint AI routes are retired.
-    ai_settlement_enabled            = Column(Boolean, nullable=False, default=False)
-    ai_auto_start_on_provider_failure = Column(Boolean, nullable=False, default=False)
-    ai_settlement_max_pct            = Column(Numeric(5, 2), nullable=False, default=Decimal("25.00"))
-    ai_settlement_allowed_remedies   = Column(JSONB, nullable=True)
-    settlement_payout_in_credits_only = Column(Boolean, nullable=False, default=True)
 
     is_active                    = Column(Boolean, nullable=False, default=True)
     created_at                   = Column(DateTime(timezone=True), nullable=True, default=_now)
@@ -465,20 +433,11 @@ class ComplaintPolicy(Base):
             "allow_duplicate_open_complaints": self.allow_duplicate_open_complaints,
             "allow_rework":                 self.allow_rework,
             "allow_refund_request":         self.allow_refund_request,
-            "require_admin_review":         self.require_admin_review,
             "require_provider_response":    self.require_provider_response,
             "default_provider_response_hours": self.default_provider_response_hours,
             "default_resolution_hours":     self.default_resolution_hours,
             "provider_sla_breach_penalty": (float(self.provider_sla_breach_penalty)
                                                if self.provider_sla_breach_penalty is not None else 0.0),
-            # The AI settlement rule (migration 138) — without these the admin UI
-            # could set the rule but never read it back.
-            "ai_settlement_enabled":             self.ai_settlement_enabled,
-            "ai_auto_start_on_provider_failure": self.ai_auto_start_on_provider_failure,
-            "ai_settlement_max_pct":            (float(self.ai_settlement_max_pct)
-                                                 if self.ai_settlement_max_pct is not None else None),
-            "ai_settlement_allowed_remedies":    self.ai_settlement_allowed_remedies,
-            "settlement_payout_in_credits_only": self.settlement_payout_in_credits_only,
             "is_active":                    self.is_active,
             "created_at":                   self.created_at.isoformat() if self.created_at else None,
             "updated_at":                   self.updated_at.isoformat() if self.updated_at else None,
@@ -511,11 +470,7 @@ class SettlementProposal(Base):
     tenant_response     = Column(String(20),  nullable=True)
     customer_responded_at = Column(DateTime(timezone=True), nullable=True)
     tenant_responded_at   = Column(DateTime(timezone=True), nullable=True)
-    admin_approved_by   = Column(UUID(as_uuid=True), nullable=True)
-    admin_approved_at   = Column(DateTime(timezone=True), nullable=True)
     expires_at          = Column(DateTime(timezone=True), nullable=True)
-    ai_generated        = Column(Boolean, nullable=False, default=False)
-    ai_confidence_score = Column(Numeric(5,4), nullable=True)
     created_at          = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at          = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
 
@@ -537,60 +492,7 @@ class SettlementProposal(Base):
             "tenant_response":      self.tenant_response,
             "customer_responded_at":self.customer_responded_at.isoformat() if self.customer_responded_at else None,
             "tenant_responded_at":  self.tenant_responded_at.isoformat() if self.tenant_responded_at else None,
-            "admin_approved_by":    str(self.admin_approved_by) if self.admin_approved_by else None,
-            "admin_approved_at":    self.admin_approved_at.isoformat() if self.admin_approved_at else None,
             "expires_at":           self.expires_at.isoformat() if self.expires_at else None,
-            "ai_generated":         self.ai_generated,
-            "ai_confidence_score":  float(self.ai_confidence_score) if self.ai_confidence_score else None,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
             "updated_at":           self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
-class AISettlementSession(Base):
-    __tablename__ = "ai_settlement_sessions"
-    __table_args__ = (
-        Index("ix_ais_complaint_id", "complaint_id"),
-        Index("ix_ais_status",       "status"),
-    )
-
-    id                  = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    complaint_id        = Column(UUID(as_uuid=True), nullable=False)
-    tenant_id           = Column(UUID(as_uuid=True), nullable=True)
-    status              = Column(String(30),  nullable=False, default="started")
-    customer_questions  = Column(JSONB, nullable=True)
-    customer_answers    = Column(JSONB, nullable=True)
-    tenant_questions    = Column(JSONB, nullable=True)
-    tenant_answers      = Column(JSONB, nullable=True)
-    evidence_summary    = Column(Text, nullable=True)
-    ai_recommendation   = Column(Text, nullable=True)
-    risk_flags          = Column(JSONB, nullable=True)
-    confidence_score    = Column(Numeric(5,4), nullable=True)
-    model_used          = Column(String(100), nullable=True)
-    prompt_tokens       = Column(Integer, nullable=True)
-    completion_tokens   = Column(Integer, nullable=True)
-    started_at          = Column(DateTime(timezone=True), nullable=True, default=_now)
-    completed_at        = Column(DateTime(timezone=True), nullable=True)
-    created_at          = Column(DateTime(timezone=True), nullable=True, default=_now)
-    updated_at          = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
-
-    def to_dict(self) -> dict:
-        return {
-            "id":                 str(self.id),
-            "complaint_id":       str(self.complaint_id),
-            "tenant_id":          str(self.tenant_id) if self.tenant_id else None,
-            "status":             self.status,
-            "customer_questions": self.customer_questions,
-            "customer_answers":   self.customer_answers,
-            "tenant_questions":   self.tenant_questions,
-            "tenant_answers":     self.tenant_answers,
-            "evidence_summary":   self.evidence_summary,
-            "ai_recommendation":  self.ai_recommendation,
-            "risk_flags":         self.risk_flags,
-            "confidence_score":   float(self.confidence_score) if self.confidence_score else None,
-            "model_used":         self.model_used,
-            "started_at":         self.started_at.isoformat() if self.started_at else None,
-            "completed_at":       self.completed_at.isoformat() if self.completed_at else None,
-            "created_at":         self.created_at.isoformat() if self.created_at else None,
-            "updated_at":         self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -403,7 +403,7 @@ function MediaGrid({ items, selected, onSelect, onPreview, onDetail, onArchive, 
 function linkedRecordHref(link: MediaLinkedRecord): string | null {
   const moduleName = link.module_name.toLowerCase();
   if (moduleName === "booking" || moduleName === "job") return "/admin/home-services/bookings-jobs?" + moduleName + "_id=" + encodeURIComponent(link.record_id);
-  if (moduleName === "complaint") return "/admin/home-services/complaints/" + encodeURIComponent(link.record_id);
+  if (moduleName === "complaint") return "/admin/analytics/complaints";
   if (moduleName === "provider") return "/admin/home-services/providers/" + encodeURIComponent(link.record_id);
   if (moduleName === "invoice") return "/admin/home-services/finance?tab=invoices&invoice_id=" + encodeURIComponent(link.record_id);
   return null;

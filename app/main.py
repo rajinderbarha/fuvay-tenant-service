@@ -1,5 +1,5 @@
 """
-ServiceOS — FastAPI Application Factory
+Fuvay — FastAPI Application Factory
 Lifespan: DB → Redis → Event Bus → Engine Registry → mount all routers.
 """
 import asyncio
@@ -74,9 +74,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("export_worker_loop.started")
 
     # 7. Complaint SLA background loop (MODULE-L5-02 bug #32) — nothing ever
-    # evaluated the complaint SLA deadlines, so sla_status stayed 'on_time'
-    # forever and no escalation fired. This drives check_and_update_sla and the
-    # admin escalation of complaints the provider never answered.
+    # evaluates provider response deadlines, applies the configured usage-credit
+    # penalty, and refreshes provider account health after a breach.
     from app.jobs.complaint_sla import background_loop as _complaint_sla_loop
     _complaint_sla_task = asyncio.create_task(_complaint_sla_loop())
     logger.info("complaint_sla_loop.started")
@@ -167,6 +166,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await _complaint_sla_task
     except asyncio.CancelledError:
         pass
+    try:
+        await _media_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _reminder_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await _tte_task
+    except asyncio.CancelledError:
+        pass
     _notif_task.cancel()
     try:
         await _notif_task
@@ -191,9 +202,9 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="ServiceOS API",
+        title="Fuvay API",
         description="""
-## ServiceOS — Multi-Tenant Service Platform API
+## Fuvay — Multi-Tenant Service Platform API
 
 Enterprise-grade API with 23 plug-and-play engines for service businesses.
 
@@ -215,7 +226,7 @@ All errors return `application/problem+json` with machine-readable `error_code`.
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan,
-        contact={"name": "ServiceOS Platform", "email": "api@serviceos.io"},
+        contact={"name": "Fuvay Platform", "email": "api@serviceos.io"},
         license_info={"name": "Proprietary"},
     )
 
@@ -323,7 +334,7 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.notification.admin_router import router as notif_templates_admin_router
     app.include_router(notif_templates_admin_router)
 
-    # Customer Service Credit + Dispute Settlement Engine (migration 080)
+    # Provider-funded customer credits and SLA-penalty oversight.
     from app.engines.customer_credits.admin_router import router as credits_admin_router
     from app.engines.customer_credits.customer_router import router as credits_customer_router
     from app.engines.customer_credits.provider_router import router as credits_provider_router
@@ -807,11 +818,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     app.include_router(support_tenant_router)
     app.include_router(support_admin_router)
 
-    from app.engines.tenant_assistant.tenant_router import router as assistant_tenant_router
-    from app.engines.tenant_assistant.admin_router import router as assistant_admin_router
-    app.include_router(assistant_tenant_router)
-    app.include_router(assistant_admin_router)
-
     # Home Services Direct Payments (tenant declaration + customer
     # confirm/dispute) -- found unmounted during the Final Phase
     # end-to-end pass: the customer could never confirm/dispute a direct
@@ -1054,14 +1060,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.vertical_monetization.admin_router import router as vertical_monetization_admin_router
     from app.engines.vertical_monetization.customer_router import router as vertical_monetization_customer_router
     from app.engines.vertical_directory.admin_router import router as vertical_directory_router
-    # Platform admins retain aggregate complaint analytics, but do not enter,
-    # message, decide, credit, or otherwise adjudicate customer/provider cases.
-    # Keep the reusable provider/staff/customer directory routes and retire the
-    # complaint workspace routes from the mounted router.
-    vertical_directory_router.routes = [
-        route for route in vertical_directory_router.routes
-        if "/complaints" not in getattr(route, "path", "")
-    ]
     from app.engines.tenant_engine.hs_customer_directory_router import router as hs_customer_directory_router
     from app.engines.tenant_engine.hs_provider_directory_router import router as hs_provider_directory_router
     from app.engines.tenant_engine.hs_dashboard_router import router as hs_dashboard_router
@@ -1147,31 +1145,6 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
         ("/v1/admin/bookability/providers/{tenant_id}/override-visibility", "DELETE"),
         ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "POST"),
         ("/v1/admin/bookability/providers/{tenant_id}/override-bookability", "DELETE"),
-        ("/v1/admin/complaints/{complaint_id}", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/assign", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/priority", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/request-provider-response", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/messages", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/messages", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/propose-resolution", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/resolutions", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/reject", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/resolve", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/close", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/events", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/start-ai-settlement", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/finalize-settlement", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/settlement-proposals", "POST"),
-        ("/v1/admin/complaints/{complaint_id}/settlement-proposals", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/ai-session", "GET"),
-        ("/v1/admin/complaints/{complaint_id}/timeline", "GET"),
-        ("/v1/admin/rework-requests/{rework_id}/approve", "POST"),
-        ("/v1/admin/rework-requests/{rework_id}/reject", "POST"),
-        ("/v1/admin/rework-requests/{rework_id}/assign", "POST"),
-        ("/v1/admin/refund-requests/{refund_id}/approve", "POST"),
-        ("/v1/admin/refund-requests/{refund_id}/reject", "POST"),
-        ("/v1/admin/refund-requests/{refund_id}/record", "POST"),
-        ("/v1/admin/refund-requests/{refund_id}/verify", "POST"),
         ("/v1/admin/reviews/{review_id}", "GET"),
         ("/v1/admin/reviews/{review_id}/approve", "POST"),
         ("/v1/admin/reviews/{review_id}/reject", "POST"),

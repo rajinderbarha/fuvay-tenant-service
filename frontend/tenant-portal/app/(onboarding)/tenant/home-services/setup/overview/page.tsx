@@ -157,7 +157,7 @@ export default function HomeServicesSetupOverviewPage() {
           <div style={{ flex: 1, minWidth: 240 }}>
             <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: iconColorVars.text, margin: "0 0 4px" }}>{eyebrow}</p>
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
-              Welcome to ServiceOS{overview.tenant.name ? `, ${overview.tenant.name}` : ""}
+              Welcome to Fuvay{overview.tenant.name ? `, ${overview.tenant.name}` : ""}
             </h1>
             <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0" }}>
               {description}

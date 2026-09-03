@@ -136,11 +136,7 @@ class DashboardCommandCenterService:
               (SELECT COUNT(*) FROM service_bookings WHERE created_at>=CURRENT_DATE AND created_at<CURRENT_DATE+INTERVAL '1 day') AS today_bookings,
               (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
               (SELECT COUNT(*) FROM tenants WHERE verification_status='changes_pending_review' AND meta->>'pending_changes' IS NOT NULL AND terminated_at IS NULL AND archived_at IS NULL) AS pending_changes,
-              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled')) AS open_complaints,
               (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled') AND created_at<NOW()-INTERVAL '3 days') AS overdue_complaints,
-              (SELECT COUNT(*) FROM dispute_settlements WHERE settlement_status NOT IN ('executed','cancelled')) AS open_disputes,
-              (SELECT COUNT(*) FROM warranty_claims WHERE status='admin_review') AS warranty_escalations,
-              (SELECT COUNT(*) FROM refund_requests WHERE escalated_at IS NOT NULL AND status NOT IN ('closed','cancelled','rejected','credit_issued')) AS refund_escalations,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level IN ('high','critical')) AS attention_count,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level='critical') AS critical_attention,
               (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status='open') AS open_threats,
@@ -148,13 +144,13 @@ class DashboardCommandCenterService:
         """)
         row = rows[0] if rows else {}
         health = self._health_payload(row)
-        pending_actions = sum(int(row.get(key) or 0) for key in ("pending_tenants","pending_changes","open_complaints","open_disputes","warranty_escalations","refund_escalations"))
+        pending_actions = sum(int(row.get(key) or 0) for key in ("pending_tenants", "pending_changes"))
 
         return {
             "platform_health": {"score": health["score"], "status": health["status"]},
             "active_tenants": {"count": int(row.get("active_tenants") or 0), "new_this_month": int(row.get("new_tenants") or 0), "bookable": int(row.get("bookable") or 0)},
             "live_operations": {"total": int(row.get("live_jobs") or 0)+int(row.get("today_bookings") or 0), "jobs": int(row.get("live_jobs") or 0), "bookings": int(row.get("today_bookings") or 0), "leads": 0},
-            "pending_admin_actions": {"count": pending_actions, "approvals": int(row.get("pending_tenants") or 0)+int(row.get("pending_changes") or 0), "complaints": int(row.get("open_complaints") or 0), "disputes": int(row.get("open_disputes") or 0)},
+            "pending_admin_actions": {"count": pending_actions, "approvals": pending_actions, "complaints": 0, "disputes": 0},
             "at_risk_tenants": {"count": int(row.get("attention_count") or 0), "high_risk": int(row.get("critical_attention") or 0)},
             "critical_alerts": {"count": int(row.get("open_threats") or 0), "open_threats": int(row.get("open_threats") or 0)},
         }
@@ -391,25 +387,6 @@ class DashboardCommandCenterService:
                 "action_id": f"action_profile_change_{r['id']}", "priority": "high",
                 "action": f"Review verified profile change for {r['business_name']}",
                 "entity_type": "tenant", "entity_id": str(r["id"]), "vertical": r.get("vertical"),
-                "age_hours": None, "status": "open",
-            })
-
-        escalations = await _safe_rows(self.db, """
-            SELECT 'warranty' AS kind, wc.id, wc.tenant_id, t.business_name, t.vertical
-              FROM warranty_claims wc JOIN tenants t ON t.id=wc.tenant_id
-             WHERE wc.status='admin_review'
-            UNION ALL
-            SELECT 'refund' AS kind, rr.id, rr.tenant_id, t.business_name, t.vertical
-              FROM refund_requests rr JOIN tenants t ON t.id=rr.tenant_id
-             WHERE rr.escalated_at IS NOT NULL
-               AND rr.status NOT IN ('closed','cancelled','rejected','credit_issued')
-            LIMIT 20
-        """)
-        for r in escalations:
-            items.append({
-                "action_id": f"action_{r['kind']}_{r['id']}", "priority": "critical",
-                "action": f"Admin {r['kind']} escalation for {r['business_name']}",
-                "entity_type": r["kind"], "entity_id": str(r["id"]), "vertical": r.get("vertical"),
                 "age_hours": None, "status": "open",
             })
 

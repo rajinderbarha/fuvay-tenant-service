@@ -1,7 +1,7 @@
 import { LegalDocument, LegalDocumentUnavailable } from "../../components/legal/LegalDocument";
 import { fetchLegalDocument } from "../../lib/api-legal";
 
-export const metadata = { title: "Privacy Notice — ServiceOS" };
+export const metadata = { title: "Privacy Notice — Fuvay" };
 
 /** See app/terms/page.tsx — same pattern, same reason. */
 export default async function PrivacyPage() {

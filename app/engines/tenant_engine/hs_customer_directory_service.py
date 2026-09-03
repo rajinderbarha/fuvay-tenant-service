@@ -673,34 +673,8 @@ class HomeServicesCustomerDirectoryService:
             "total": total, "page": page, "page_size": page_size,
         }
 
-    # ── Customer 360 Complaints tab ──────────────────────────────────────────
-    async def get_customer_complaints(self, customer_id: uuid.UUID, *, page: int = 1, page_size: int = 20,
-                                       tenant_id: uuid.UUID | None = None) -> dict:
-        clauses = [CustomerComplaint.customer_id == customer_id]
-        if tenant_id:
-            clauses.append(CustomerComplaint.tenant_id == tenant_id)
-        total = (await self.db.execute(
-            select(func.count()).select_from(select(CustomerComplaint).where(*clauses).subquery())
-        )).scalar() or 0
-        rows = (await self.db.execute(
-            select(CustomerComplaint).where(*clauses).order_by(CustomerComplaint.created_at.desc())
-            .offset((page - 1) * page_size).limit(page_size)
-        )).scalars().all()
-        return {
-            "items": [{
-                "complaint_id": str(c.id),
-                "complaint_number": c.complaint_number,
-                "title": c.title,
-                "status": c.status,
-                "severity": c.severity,
-                "sla_status": c.sla_status,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-            } for c in rows],
-            "total": total, "page": page, "page_size": page_size,
-        }
-
     # ── Customer 360 Payments tab ─────────────────────────────────────────────
-    # Customer pays the provider directly -- ServiceOS never collects this
+    # Customer pays the provider directly -- Fuvay never collects this
     # payment. ServicePaymentRecord.customer_id already scopes correctly.
     async def get_customer_payments(self, customer_id: uuid.UUID, *, page: int = 1, page_size: int = 20,
                                      tenant_id: uuid.UUID | None = None) -> dict:
@@ -726,7 +700,7 @@ class HomeServicesCustomerDirectoryService:
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             } for p in rows],
             "total": total, "page": page, "page_size": page_size,
-            "note": "Paid directly to provider. ServiceOS does not collect the job payment.",
+            "note": "Paid directly to provider. Fuvay does not collect the job payment.",
         }
 
     # ── Customer 360 Activity & Audit tab ────────────────────────────────────

@@ -8,7 +8,7 @@ import { HandoverStatus } from "../../../services/completionProof/types";
 
 const STATUS_META: Record<HandoverStatus, { label: string; description: string; icon: string }> = {
   not_requested: { label: "Not requested", description: "Send a handover request once proof is submitted.", icon: "time-outline" },
-  requested: { label: "Acknowledgment pending", description: "Customer will confirm completion in the ServiceOS app.", icon: "person-outline" },
+  requested: { label: "Acknowledgment pending", description: "Customer will confirm completion in the Fuvay app.", icon: "person-outline" },
   customer_unavailable: { label: "Customer unavailable", description: "Reported unavailable -- follow tenant policy for next steps.", icon: "alert-circle-outline" },
   acknowledged: { label: "Acknowledged", description: "Customer confirmed completion.", icon: "checkmark-circle" },
   concern_reported: { label: "Customer reported a concern", description: "Routed to support -- this does not affect the approved estimate.", icon: "warning-outline" },

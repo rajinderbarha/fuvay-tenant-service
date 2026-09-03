@@ -457,6 +457,31 @@ class ServiceabilityService:
         )
         self.db.add(area)
         await self.db.flush()
+        # The consolidated Home Services coverage screen defines provider-wide
+        # zipcodes.  Keep the normalized matcher table in sync automatically
+        # for every service already published by this tenant.  This replaces
+        # the retired manual service-per-area page and makes a newly added
+        # zipcode immediately usable by booking.
+        from app.engines.admin_catalog.models import TenantService
+
+        published_services = (await self.db.execute(
+            select(TenantService).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.is_enabled.is_(True),
+                TenantService.is_active.is_(True),
+                TenantService.setup_status == "published",
+                TenantService.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        for tenant_service in published_services:
+            self.db.add(TenantServiceAreaService(
+                tenant_service_area_id=area.id,
+                tenant_id=tenant_id,
+                service_id=tenant_service.master_service_id,
+                job_type=tenant_service.job_type,
+                is_available=True,
+                status="ACTIVE",
+            ))
         await self._audit_service_area(
             operation="SERVICE_AREA_CREATED", tenant_id=tenant_id, area_id=area.id,
             before=None, after=area.to_dict(),

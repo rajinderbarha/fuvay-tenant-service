@@ -27,7 +27,7 @@ def test_tenant_detail_uses_symbols_that_exist_in_api_client():
     assert "sendNotification:" in api_src and "adminTenantsApi.sendNotification" in tenant_src
     assert "owner_name" in api_src
     assert "verification_status" in api_src
-    assert "settlement_status" in api_src
+    assert "settlement_status" not in api_src
 
 
 def test_tenant_detail_defines_menu_item_style_used_by_dropdown():
@@ -40,7 +40,7 @@ def test_tenant_detail_defines_menu_item_style_used_by_dropdown():
 
 def test_tenant_detail_bookings_table_has_credit_and_payable_columns():
     src = _read(TENANT_DETAIL)
-    assert "ServiceOS Credit Applied" in src
+    assert "Fuvay Credit Applied" in src
     assert "Payable To Provider" in src
     assert "bk.credit_applied" in src
     assert "bk.payable_amount ?? bk.quoted_price" in src

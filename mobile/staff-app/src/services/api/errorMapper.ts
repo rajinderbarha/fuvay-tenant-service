@@ -16,7 +16,7 @@ import { AppError, AppErrorCode, AppErrorCategory, ProblemDetailBody } from "./t
 export type ErrorMapperContext = "public" | "authenticated" | "refresh";
 
 const GENERIC_SERVER_MESSAGE = "Something went wrong on our end. Please try again.";
-const GENERIC_NETWORK_MESSAGE = "Couldn't reach ServiceOS. Check your connection and try again.";
+const GENERIC_NETWORK_MESSAGE = "Couldn't reach Fuvay. Check your connection and try again.";
 
 function categoryFor(code: AppErrorCode): AppErrorCategory {
   switch (code) {

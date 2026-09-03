@@ -71,7 +71,7 @@ export default function MarketingAutomationPage() {
     <AdminLayout activeNav="marketing">
       <SectionHeader
         title="Marketing Automation"
-        subtitle="Generate, approve, schedule, publish, and analyze AI-powered content across ServiceOS channels."
+        subtitle="Generate, approve, schedule, publish, and analyze AI-powered content across Fuvay channels."
         actions={<>
           <Btn variant="primary" size="sm" icon={<Sparkles size={14}/>}
             onClick={() => { window.location.href = "/admin/marketing/generate"; }}>

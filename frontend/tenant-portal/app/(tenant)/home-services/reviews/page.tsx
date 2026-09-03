@@ -500,7 +500,7 @@ function PublicationBadge({ status }: { status: string }) {
   }
   const variant = status === "pending" ? "warning" : "danger";
   return (
-    <span title={status === "pending" ? "Awaiting ServiceOS moderation before it is shown publicly." : undefined}>
+    <span title={status === "pending" ? "Awaiting Fuvay moderation before it is shown publicly." : undefined}>
       <Badge variant={variant} size="sm">{status}</Badge>
     </span>
   );
@@ -696,11 +696,11 @@ function ReviewDetailPanel({ reviewId, onClose, onChanged }: { reviewId: string;
               <textarea
                 id="rq-reply"
                 value={replyText} onChange={e => setReplyText(e.target.value.slice(0, 1000))}
-                placeholder="Acknowledge the feedback, explain corrective action, and keep all communication within ServiceOS…"
+                placeholder="Acknowledge the feedback, explain corrective action, and keep all communication within Fuvay…"
                 rows={4}
                 style={{ width: "100%", padding: 10, fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
               />
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{replyText.length} / 1000 characters — keep all communication, revisit and rebooking activity within ServiceOS.</p>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{replyText.length} / 1000 characters — keep all communication, revisit and rebooking activity within Fuvay.</p>
               {submitError && <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: "6px 0 0" }}>{submitError}</p>}
               <Btn variant="primary" size="sm" loading={submitting} disabled={!replyText.trim()} onClick={handlePublishReply} style={{ marginTop: 8 }}>Publish reply</Btn>
             </div>
@@ -720,7 +720,7 @@ function ReviewDetailPanel({ reviewId, onClose, onChanged }: { reviewId: string;
                   <p style={{ fontSize: 11.5, color: "var(--text-secondary)", margin: "0 0 3px" }}>{detail.moderation.reason_text}</p>
                 )}
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-                  Raised {fmtDate(detail.moderation.created_at)} — only ServiceOS Admin can action it.
+                  Raised {fmtDate(detail.moderation.created_at)} — only Fuvay Admin can action it.
                 </p>
               </div>
             ) : showModeration ? (

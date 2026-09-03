@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.admin_catalog.question_service import CatalogQuestionService
 from app.engines.home_service_booking.models import HomeServiceBookingDraft
 from app.exceptions import ServiceOSException
+from app.core.security import enforce_booking_action_limits
 
 QUESTION_FLOW_ENVELOPE_VERSION = 1
 
@@ -347,6 +348,9 @@ class QuestionFlowService:
         expected_version: int | None = None,
     ) -> dict:
         draft = await self._require_draft(draft_id, customer_id)
+        await enforce_booking_action_limits(
+            "answer", actor_id=str(customer_id or draft.ai_session_id or draft_id)
+        )
         self._require_scope(draft)
 
         # Duplicate-submission / stale-view protection: a client that fetched

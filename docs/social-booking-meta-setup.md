@@ -1,6 +1,6 @@
 # Meta social booking setup
 
-ServiceOS uses one signed webhook per Meta product and routes both channels
+Fuvay uses one signed webhook per Meta product and routes both channels
 into the existing AI conversation and Home Services booking engines.
 
 ## Security first
@@ -35,7 +35,7 @@ match the identity in each event or the event is acknowledged and ignored.
 1. Save the channel configuration.
 2. Copy the displayed callback path into the matching Meta product.
 3. Complete Meta's webhook verification handshake.
-4. Run **Test connection** in ServiceOS.
+4. Run **Test connection** in Fuvay.
 5. For Instagram, run **Publish chat entry** to publish the four icebreakers.
 6. Enable the channel.
 7. Send a real customer message and check **Recent conversations**.
@@ -65,10 +65,10 @@ the channel changes presentation, not business state.
 - Reply buttons handle sets of up to three actions, including confirmation,
   estimate, parts, handover, and direct-payment decisions.
 - List messages handle larger service, area, problem, booking, and appointment
-  choices. ServiceOS paginates before Meta's ten-row limit.
+  choices. Fuvay paginates before Meta's ten-row limit.
 - A booking-location CTA is sent after confirmation when the booking has a
-  usable address. ServiceOS does not add an external payment CTA because direct
-  payments go from the customer to the provider, not through ServiceOS.
+  usable address. Fuvay does not add an external payment CTA because direct
+  payments go from the customer to the provider, not through Fuvay.
 - An optional WhatsApp Flow replaces the long appointment list after provider
   matching. The submitted slot is revalidated by the canonical booking service,
   and the final booking summary is still confirmed in chat.
@@ -85,7 +85,7 @@ the channel changes presentation, not business state.
    fails closed if the configured Flow is missing, unpublished, or belongs to a
    different WABA.
 
-ServiceOS injects the matched service, provider, authoritative price, saved
+Fuvay injects the matched service, provider, authoritative price, saved
 address, and currently available slots into the published screen. The opaque
 Flow token is signed, expires after 48 hours, and is bound to the exact chat and
 draft. A completed Flow can select only a slot ID; it cannot submit provider or

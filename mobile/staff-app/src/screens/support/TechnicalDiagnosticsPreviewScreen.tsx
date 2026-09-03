@@ -62,7 +62,7 @@ export function TechnicalDiagnosticsPreviewScreen({ navigation, route }: Props) 
       <SafeAreaScreen edges={["top", "left", "right"]}>
         <ScreenHeader title="Report submitted" onBack={() => navigation.popToTop()} />
         <View style={{ padding: theme.spacing.lg }}>
-          <InlineAlert tone="success" title="Report submitted" message="ServiceOS support will review this with the diagnostics shown above." />
+          <InlineAlert tone="success" title="Report submitted" message="Fuvay support will review this with the diagnostics shown above." />
         </View>
       </SafeAreaScreen>
     );

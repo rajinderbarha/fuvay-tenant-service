@@ -140,7 +140,7 @@ def test_action_queue_panel():
 # ── 10. Quick actions ─────────────────────────────────────────────────────────
 def test_quick_links_panel():
     assert "Quick Links" in PAGE
-    for label in ["Tenant Approvals", "Live Operations", "Finance Summary", "Complaints & Disputes"]:
+    for label in ["Tenant Approvals", "Live Operations", "Finance Summary", "Security Center"]:
         assert label in PAGE
 
 

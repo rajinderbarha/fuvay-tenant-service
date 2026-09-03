@@ -389,7 +389,7 @@ class TenantHomeServicesFinanceService:
         billing = await self._billing()
         if billing and _d(billing.credit_balance) < 0:
             holds.append({"code": "NEGATIVE_CREDIT_LIABILITY",
-                          "label": "Negative usage-credit balance owed to ServiceOS",
+                          "label": "Negative usage-credit balance owed to Fuvay",
                           "count": 1, "amount": str(-_d(billing.credit_balance)), "blocking": True})
 
         return holds
@@ -697,7 +697,7 @@ class TenantHomeServicesFinanceService:
                                         actor_id=self.actor_id, actor_role=self.actor_role)
         # Canonical admin projection, reused with a tenant scope — not forked.
         data = await svc.get_direct_payments_summary_for_tenant(self.tenant_id)
-        data["notice"] = "Customer pays the provider directly. ServiceOS records confirmation only."
+        data["notice"] = "Customer pays the provider directly. Fuvay records confirmation only."
         data["link"] = "/home-services/direct-payments"
         return data
 
@@ -722,7 +722,7 @@ class TenantHomeServicesFinanceService:
                            "state": "blocked", "detail": "No published policy could be resolved"})
             blockers.append({"code": policy_err or "FINANCE_POLICY_NOT_PUBLISHED",
                              "message": "No published Home Services finance policy. Finance operations are blocked.",
-                             "resolution": "ServiceOS Admin must publish a finance policy version."})
+                             "resolution": "Fuvay Admin must publish a finance policy version."})
 
         # 2. Initial credit purchase
         if wallet["initial_purchase_required"]:
@@ -869,7 +869,7 @@ class TenantHomeServicesFinanceService:
         except Exception as exc:  # partial projection failure must not zero the page
             logger.warning("hs_finance.direct_payments_projection_failed", error=str(exc))
             direct = {"projection_failed": True, "error": str(exc),
-                      "notice": "Customer pays the provider directly. ServiceOS records confirmation only.",
+                      "notice": "Customer pays the provider directly. Fuvay records confirmation only.",
                       "link": "/home-services/direct-payments"}
 
         action_items = sum(int(q["count"]) for q in queue)
@@ -1000,7 +1000,7 @@ class TenantHomeServicesFinanceService:
             "gateway_order_id": gw["id"],
             "amount_paise": int(gross * 100),
             "key": get_settings().RAZORPAY_KEY_ID,
-            "note": "No credits are posted until ServiceOS verifies the payment signature server-side.",
+            "note": "No credits are posted until Fuvay verifies the payment signature server-side.",
         }
 
     async def confirm_topup_payment(self, *, gateway_order_id: str, gateway_payment_id: str,

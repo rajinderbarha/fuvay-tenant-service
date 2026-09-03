@@ -4,7 +4,7 @@ import { TableSurface } from "@serviceos/design-system";
  * Home Services — Direct Payments (job-linked payment confirmation and
  * reconciliation).
  *
- * This is NOT a payment-collection page. ServiceOS never collects, holds,
+ * This is NOT a payment-collection page. Fuvay never collects, holds,
  * settles or transfers the job payment and never creates a provider payout:
  * the customer pays the provider business directly and this surface records
  * the provider's DECLARATION plus the customer's CONFIRMATION of it.
@@ -302,7 +302,7 @@ function DirectPaymentsPageInner() {
         <Info size={16} style={{ flexShrink: 0, marginTop: 1 }}/>
         <span style={{ fontWeight: 600 }}>
           {queue?.banner?.text
-            ?? "ServiceOS does not collect this money. Customers pay your business directly."}
+            ?? "Fuvay does not collect this money. Customers pay your business directly."}
         </span>
       </div>
 
@@ -473,7 +473,7 @@ function DirectPaymentsPageInner() {
               busy={action}
               onRemind={() => run("remind",
                 () => homeServicesDirectPaymentsApi.remind(detail.record.id),
-                "Confirmation reminder sent through ServiceOS.")}
+                "Confirmation reminder sent through Fuvay.")}
               onDispute={() => run("dispute",
                 () => homeServicesDirectPaymentsApi.openDispute(detail.record.id,
                   "The customer reports a different amount for this direct payment."),
@@ -511,7 +511,7 @@ function DirectPaymentsPageInner() {
         <Lock size={13}/>
         <span>
           {queue?.footer_disclaimer
-            ?? "All confirmations are recorded securely within ServiceOS. We never share or request personal contact details."}
+            ?? "All confirmations are recorded securely within Fuvay. We never share or request personal contact details."}
         </span>
       </div>
 

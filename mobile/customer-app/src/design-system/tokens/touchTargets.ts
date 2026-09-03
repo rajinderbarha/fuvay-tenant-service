@@ -1,5 +1,5 @@
 /** Minimum accessible touch-target sizes (iOS HIG / Material both land at
- * or above 44-48dp; ServiceOS standardizes on 48 for parity with staff-app). */
+ * or above 44-48dp; Fuvay standardizes on 48 for parity with staff-app). */
 export const touchTargets = {
   minimum: 48,
   comfortable: 56,

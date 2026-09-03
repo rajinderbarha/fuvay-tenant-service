@@ -15,6 +15,9 @@ class RegisterCustomerRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
     phone: str = Field(pattern=r"^\+?[1-9]\d{7,14}$")
     email: EmailStr | None = None
+    # Stable installation/browser identifier used as an additional abuse-control
+    # dimension. Optional so existing clients continue to work.
+    device_id: str | None = Field(default=None, max_length=255)
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -61,6 +64,9 @@ class OTPSendRequest(BaseModel):
     # ignored for the email branch, which always uses it.
     purpose: Literal["phone_login", "phone_verification", "password_reset",
                      "job_approval", "email_login"] = "phone_login"
+    # A stable installation/browser identifier adds a third throttle dimension.
+    # Optional for backward compatibility; recipient and IP limits always apply.
+    device_id: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
     def phone_or_email(self):

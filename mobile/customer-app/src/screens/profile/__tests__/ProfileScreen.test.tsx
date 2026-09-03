@@ -1,6 +1,6 @@
 import React from "react";
 import { Alert } from "react-native";
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { ProfileScreen } from "../ProfileScreen";
@@ -52,7 +52,13 @@ describe("ProfileScreen", () => {
     } as unknown as ReturnType<typeof addressesQueryModule.useCustomerAddressesQuery>);
     (sessionManager.logout as jest.Mock).mockResolvedValue(undefined);
   });
-  afterEach(() => jest.restoreAllMocks());
+  // Provider hydration can re-render after an assertion. Unmount before the
+  // mocked query hooks are restored so React never sees a different hook
+  // implementation in the same mounted tree.
+  afterEach(() => {
+    cleanup();
+    jest.restoreAllMocks();
+  });
 
   it("renders the real customer's own name and contact info, never sample data", () => {
     const { getByText } = renderProfile();

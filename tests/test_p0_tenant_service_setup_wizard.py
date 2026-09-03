@@ -11,11 +11,8 @@ NAV = ROOT / "frontend/tenant-portal/lib/nav-config.ts"
 LAYOUT = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
 
 
-def test_legacy_route_exists_only_as_a_redirect():
-    src = LEGACY.read_text(encoding="utf-8-sig")
-    assert 'redirect("/home-services/services")' in src
-    assert '"use client"' not in src
-    assert "providerOfferingsApi" not in src
+def test_legacy_route_is_deleted():
+    assert not LEGACY.exists()
 
 
 def test_operational_services_workspace_exists():

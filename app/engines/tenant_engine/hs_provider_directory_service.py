@@ -257,11 +257,11 @@ class HomeServicesProviderDirectoryService:
             },
             "provider_charges": charges["items"],
             "topup_history": topups["items"],
-            # Customer pays the provider directly -- ServiceOS never collects
+            # Customer pays the provider directly -- Fuvay never collects
             # the job payment. This tab shows provider-side charges only;
             # customer payment records live in Direct Customer Payments
             # (Home Services Finance), not duplicated here.
-            "customer_payment_note": "Customer pays provider directly. ServiceOS does not collect or hold this payment.",
+            "customer_payment_note": "Customer pays provider directly. Fuvay does not collect or hold this payment.",
             "payment_setup": {
                 "accepts_cash": readiness.accepts_cash,
                 "accepts_upi": readiness.accepts_upi,

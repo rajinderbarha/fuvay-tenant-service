@@ -14,7 +14,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Technician screening belongs to the provider. Documents remain available as
-# optional private records, but none are a ServiceOS readiness requirement.
+# optional private records, but none are a Fuvay readiness requirement.
 REQUIRED_DOCUMENT_TYPES: list[str] = []
 
 

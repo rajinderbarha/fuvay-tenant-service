@@ -1,8 +1,8 @@
 """HOME-SERVICES-FINANCE: Customer Platform Charge Recovery.
 
 Confirmed payment model: the customer pays the PROVIDER directly (service
-amount + the transparently-added platform fee, together). ServiceOS never
-collects or holds that money. ServiceOS instead RECOVERS the fee-equivalent
+amount + the transparently-added platform fee, together). Fuvay never
+collects or holds that money. Fuvay instead RECOVERS the fee-equivalent
 by deducting it from the provider's own usage-credit balance -- a second,
 independent ledger entry from the Provider Completion Charge
 (`usage_credit_deduction.deduct_for_completed_job`), never combined into

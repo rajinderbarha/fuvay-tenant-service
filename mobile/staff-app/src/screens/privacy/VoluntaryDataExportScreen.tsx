@@ -13,7 +13,7 @@ type Props = NativeStackScreenProps<ProfileStackParamList, "VoluntaryDataExport"
 
 /**
  * Voluntary Data Export (Phase X spec section 14). Explicitly labeled
- * "Voluntary ServiceOS data export" -- never framed as a statutory
+ * "Voluntary Fuvay data export" -- never framed as a statutory
  * portability right (spec section 8), since the backend-approved policy
  * doesn't make that claim. Submission only creates the request; the
  * backend runs discovery, approval and export generation asynchronously
@@ -27,9 +27,9 @@ export function VoluntaryDataExportScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
         <Section>
           <Card>
-            <AppText variant="bodyStrong">Voluntary ServiceOS data export</AppText>
+            <AppText variant="bodyStrong">Voluntary Fuvay data export</AppText>
             <AppText variant="bodySmall" color="tertiary" style={{ marginTop: theme.spacing.xs }}>
-              Request a downloadable copy of supported ServiceOS account information. Your request will be reviewed, and once approved, an export is generated and made available through a short-lived, authorized download link.
+              Request a downloadable copy of supported Fuvay account information. Your request will be reviewed, and once approved, an export is generated and made available through a short-lived, authorized download link.
             </AppText>
           </Card>
         </Section>

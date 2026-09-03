@@ -129,8 +129,8 @@ class WorkspaceSettingsService:
         controlled_policy = [
             {
                 "key": "provider_matching", "label": "Provider matching", "ownership": "SERVICEOS_CONTROLLED",
-                "effective_value": "ServiceOS-matched",
-                "explanation": "ServiceOS selects the eligible provider for each customer request. Customers do not manually choose providers.",
+                "effective_value": "Fuvay-matched",
+                "explanation": "Fuvay selects the eligible provider for each customer request. Customers do not manually choose providers.",
                 "policy_version": None, "effective_date": None, "link": None,
             },
             {
@@ -142,7 +142,7 @@ class WorkspaceSettingsService:
             {
                 "key": "payment_model", "label": "Payment model", "ownership": "SERVICEOS_CONTROLLED",
                 "effective_value": "Customer pays provider directly",
-                "explanation": "Customer pays the provider directly. ServiceOS records confirmations and exceptions only.",
+                "explanation": "Customer pays the provider directly. Fuvay records confirmations and exceptions only.",
                 "policy_version": None, "effective_date": None, "link": "/finance",
             },
             {

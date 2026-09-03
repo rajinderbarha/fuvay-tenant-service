@@ -293,7 +293,11 @@ async def test_get_tenant_found():
     # Each execute returns the tenant (for get_tenant + settings + billing)
     db.execute.return_value = _scalar_result(tenant)
     svc = await _make_svc(db)
-    result = await svc.get_tenant(tenant.id)
+    with patch(
+        "app.engines.tenant_engine.health.compute_health_score",
+        new=AsyncMock(return_value={"score": 100.0, "band": "gold"}),
+    ):
+        result = await svc.get_tenant(tenant.id)
     assert result["tenant_id"] == str(tenant.id)
     assert result["tenant_name"] == tenant.tenant_name
 

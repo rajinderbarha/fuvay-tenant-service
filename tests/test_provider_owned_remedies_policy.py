@@ -36,7 +36,7 @@ def test_customer_rejection_returns_case_to_provider_not_admin():
     assert complaint_states.ALLOWED_TRANSITIONS[
         complaint_states.STATUS_RESOLUTION_PROPOSED
     ] >= {complaint_states.STATUS_AWAITING_PROVIDER}
-    assert complaint_states.STATUS_UNDER_ADMIN_REVIEW not in complaint_states.ALLOWED_TRANSITIONS[
+    assert "under_admin_review" not in complaint_states.ALLOWED_TRANSITIONS[
         complaint_states.STATUS_RESOLUTION_PROPOSED
     ]
 
@@ -46,11 +46,13 @@ def test_admin_and_ai_case_workspaces_are_not_mounted():
     assert "admin_complaint_router," not in main
     assert "admin_rework_router," not in main
     assert "admin_refund_router," not in main
-    assert 'if "/complaints" not in getattr(route, "path", "")' in main
+    assert "vertical_complaint" not in main
     customer = source("app/engines/complaints/customer_router.py")
     provider = source("app/engines/complaints/provider_router.py")
-    assert '@retired_ai_router.get("/{complaint_id}/ai-session")' in customer
-    assert '@retired_ai_router.get("/{complaint_id}/ai-session")' in provider
+    assert "retired_ai_router" not in customer
+    assert "retired_ai_router" not in provider
+    assert not (ROOT / "app/engines/complaints/ai_settlement_service.py").exists()
+    assert not (ROOT / "app/engines/complaints/settlement_rules.py").exists()
     credit_admin = source("app/engines/customer_credits/admin_router.py")
     admin_finance = source("app/engines/finance_hub/admin_hs_finance_router.py")
     assert 'router.post("/settlements' not in credit_admin
@@ -126,16 +128,23 @@ async def test_warranty_certificate_snapshot_is_issued_once_and_keeps_provider_e
 
 
 def test_policy_migration_covers_direct_resolution_paid_seats_and_penalties():
-    migration = source("alembic/versions/337_provider_owned_service_remedies.py")
+    policy_migration = source("alembic/versions/337_provider_owned_service_remedies.py")
     for phrase in (
-        "ServiceOS does not verify or certify individual technicians",
+        "does not verify or certify individual technicians",
         "active, paid technician-seat packages",
-        "ServiceOS does not collect, hold, or promise recovery from a provider security deposit",
+        "does not collect, hold, or promise recovery from a provider security deposit",
         "does not provide AI settlement",
         "deduct usage credits from the provider",
         "requires_reacceptance",
     ):
-        assert phrase in migration
+        assert phrase in policy_migration
+
+    # Applied migrations are immutable audit history.  The product rename is
+    # therefore a later legal version, not an edit to what users accepted.
+    brand_migration = source("alembic/versions/339_fuvay_display_brand.py")
+    assert "replace(body, 'ServiceOS', 'Fuvay')" in brand_migration
+    assert "supersedes_id" in brand_migration
+    assert "requires_reacceptance" in brand_migration
 
 
 def test_mobile_and_provider_ui_expose_direct_resolution_without_admin_or_ai():
@@ -164,19 +173,19 @@ def test_refund_and_warranty_sla_penalties_are_automatic_and_idempotent():
     assert "run_ai_auto_start" not in job
 
 
-def test_retired_admin_settlement_pages_redirect_to_penalty_oversight():
+def test_retired_admin_settlement_pages_are_deleted():
     for path in (
         "frontend/super-admin/app/admin/finance/dispute-settlements/page.tsx",
         "frontend/super-admin/app/admin/finance/customer-credits/page.tsx",
     ):
-        page = source(path)
-        assert 'redirect("/admin/finance/tenant-penalties")' in page
+        assert not (ROOT / path).exists()
 
 
 def test_tenant_ai_chat_and_admin_refund_decisions_are_not_reachable():
-    tenant_ai = source("frontend/tenant-portal/app/(tenant)/ai-chat/page.tsx")
     admin_finance = source("frontend/super-admin/app/admin/home-services/finance/page.tsx")
-    assert 'redirect("/dashboard")' in tenant_ai
+    assert not (ROOT / "frontend/tenant-portal/app/(tenant)/ai-chat/page.tsx").exists()
+    assert not (ROOT / "frontend/tenant-portal/components/assistant/AssistantPanel.tsx").exists()
+    assert not (ROOT / "frontend/tenant-portal/lib/api-tenant-assistant.ts").exists()
     assert 'key: "customer-refunds"' not in admin_finance
     assert 'tab === "customer-refunds"' not in admin_finance
 

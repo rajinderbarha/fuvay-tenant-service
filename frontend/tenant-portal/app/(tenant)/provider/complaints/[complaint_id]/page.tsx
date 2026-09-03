@@ -32,7 +32,6 @@ const STATUS_COLOR: Record<string, BV> = {
   open:                       "warning",
   awaiting_provider_response: "danger",
   awaiting_customer_response: "info",
-  under_admin_review:         "warning",
   resolution_proposed:        "info",
   rework_approved:            "info",
   refund_requested:           "warning",

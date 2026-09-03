@@ -1,4 +1,4 @@
-"""Sprint 15 — Backend tool executor wired to real ServiceOS data (not mocked)."""
+"""Sprint 15 — Backend tool executor wired to real Fuvay data (not mocked)."""
 from __future__ import annotations
 import json
 import time
@@ -14,7 +14,7 @@ logger = structlog.get_logger("ai_conversation.tools")
 
 class BackendToolExecutor:
     """
-    Executes tool calls from DeepSeek, fetching data from real ServiceOS backend.
+    Executes tool calls from DeepSeek, fetching data from real Fuvay backend.
 
     Rules:
     - NEVER return provider_id, tenant_id, commission, credit_balance, payment_status

@@ -2,7 +2,7 @@
 
 A job-linked payment CONFIRMATION and RECONCILIATION workflow. The customer
 pays the provider business DIRECTLY (cash / UPI / card on the provider's own
-terminal / bank transfer). ServiceOS:
+terminal / bank transfer). Fuvay:
 
   * does NOT collect, hold, settle or transfer this money,
   * creates NO provider payout and NO settlement record,
@@ -530,7 +530,7 @@ class DirectPaymentsService:
                            "pages": max(1, -(-total // limit))},
             "available_actions": ["declare", "remind_customer", "open_dispute", "export"],
             "banner": {"type": "info", "text":
-                       "ServiceOS does not collect this money. "
+                       "Fuvay does not collect this money. "
                        "Customers pay your business directly."},
             "generated_at": _utcnow().isoformat(),
         }
@@ -816,7 +816,7 @@ class DirectPaymentsService:
     ) -> dict:
         if method not in DIRECT_PAYMENT_METHODS:
             raise _err(ERR_DP_INVALID_METHOD,
-                       "Not a supported direct payment method. ServiceOS-collected "
+                       "Not a supported direct payment method. Fuvay-collected "
                        "gateway payments are not direct payments.")
         if evidence_type and evidence_type not in EVIDENCE_TYPES:
             raise _err(ERR_DP_INVALID_EVIDENCE_TYPE, "Unknown evidence type.")
@@ -879,7 +879,7 @@ class DirectPaymentsService:
             customer_id=job.customer_id,
             payment_mode=method,
             # "collected" here means "the provider states the customer paid
-            # them directly" -- it is NOT money received by ServiceOS.
+            # them directly" -- it is NOT money received by Fuvay.
             payment_status="collected",
             collected_amount=amt,
             currency=exp["currency"] or "INR",
@@ -1102,7 +1102,7 @@ class DirectPaymentsService:
             raise _err("DIRECT_PAYMENT_DISPUTE_NOT_CREATED",
                        "The canonical Complaints & Resolution Center rejected this "
                        f"dispute: {creation_error}. No local dispute record was "
-                       "created -- ServiceOS does not keep a parallel dispute system.",
+                       "created -- Fuvay does not keep a parallel dispute system.",
                        422)
 
         pay.dispute_complaint_id = complaint_id
@@ -1256,7 +1256,7 @@ class DirectPaymentsService:
                 "customer_confirmed": pay.customer_confirmed,
                 "customer_action": pay.customer_confirmation_action,
                 "notice": "You paid this amount directly to the provider. "
-                          "ServiceOS did not collect it.",
+                          "Fuvay did not collect it.",
             })
         return {"items": items, "total": len(items)}
 

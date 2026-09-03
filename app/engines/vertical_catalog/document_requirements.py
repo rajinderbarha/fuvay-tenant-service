@@ -76,7 +76,7 @@ _VERTICAL_EXTRA_REQUIREMENTS: dict[str, list[dict]] = {
     ],
 }
 
-# Technician evidence is provider-owned. ServiceOS verifies the business that
+# Technician evidence is provider-owned. Fuvay verifies the business that
 # joins the marketplace; the provider is legally and operationally responsible
 # for checking the people it sends to a customer's address. Optional skill
 # evidence may still be stored in the provider's private workspace, but it is
@@ -85,7 +85,7 @@ _TECHNICIAN_BASE_REQUIREMENTS = [
     {
         "key": "technician_skill_certificate",
         "label": "Skill certificate (optional, provider records only)",
-        "why": "Helps the provider keep its own training records. ServiceOS does not verify or require it.",
+        "why": "Helps the provider keep its own training records. Fuvay does not verify or require it.",
         "accepted_examples": ["ITI certificate", "Trade certificate", "Manufacturer training certificate"],
         "required": False,
         "requires_document_number": False,

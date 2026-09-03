@@ -86,7 +86,7 @@ export function SyncConflictReviewScreen({ navigation, route }: Props) {
         <Section>
           <SectionHeader title="Why automatic sync stopped" />
           <Card>
-            <AppText color="secondary">ServiceOS never overwrites a newer server version automatically. Choose how to proceed below.</AppText>
+            <AppText color="secondary">Fuvay never overwrites a newer server version automatically. Choose how to proceed below.</AppText>
           </Card>
         </Section>
         <Section>

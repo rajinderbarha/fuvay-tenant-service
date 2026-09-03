@@ -5,7 +5,6 @@ from app.engines.complaints.constants import (
     ALLOWED_TRANSITIONS,
     STATUS_AWAITING_PROVIDER,
     STATUS_RESOLUTION_PROPOSED,
-    STATUS_UNDER_ADMIN_REVIEW,
 )
 
 
@@ -14,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_admin_complaint_case_routes_are_filtered_from_mount():
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert 'if "/complaints" not in getattr(route, "path", "")' in main
+    assert "vertical_complaint" not in main
     assert "admin_complaint_router," not in main
 
 
@@ -28,7 +27,7 @@ def test_admin_navigation_has_no_complaint_case_workspace():
 def test_customer_rejection_returns_to_provider():
     allowed = ALLOWED_TRANSITIONS[STATUS_RESOLUTION_PROPOSED]
     assert STATUS_AWAITING_PROVIDER in allowed
-    assert STATUS_UNDER_ADMIN_REVIEW not in allowed
+    assert "under_admin_review" not in allowed
 
 
 def test_provider_and_customer_routes_remain_mounted_in_main():

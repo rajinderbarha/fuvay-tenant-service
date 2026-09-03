@@ -107,7 +107,7 @@ test.describe('admin control-center login', () => {
     await page.locator('#admin-password').fill('Password123!');
     await page.getByRole('button', { name: 'Continue securely' }).click();
 
-    await expect(page.getByText('This account does not have access to the ServiceOS Admin Control Center.')).toBeVisible();
+    await expect(page.getByText('This account does not have access to the Fuvay Admin Control Center.')).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem('serviceos_admin_token'))).toBeNull();
     expect(await page.evaluate(() => localStorage.getItem('serviceos_admin_refresh'))).toBeNull();
   });

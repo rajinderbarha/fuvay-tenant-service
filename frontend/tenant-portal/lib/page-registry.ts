@@ -27,30 +27,10 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "core",
     breadcrumbs: [{ label: "Settings" }],
   },
-  "/jobs": {
-    title: "Bookings & Jobs",
-    section: "operations",
-    breadcrumbs: [{ label: "Bookings & Jobs" }],
-  },
-  "/service-jobs": {
-    title: "Service Jobs",
-    section: "operations",
-    breadcrumbs: [{ label: "Bookings & Jobs", href: "/jobs" }, { label: "Service Jobs" }],
-  },
   "/appointments": {
     title: "Appointments",
     section: "operations",
     breadcrumbs: [{ label: "Appointments" }],
-  },
-  "/dispatch": {
-    title: "Dispatch",
-    section: "operations",
-    breadcrumbs: [{ label: "Dispatch" }],
-  },
-  "/service-areas": {
-    title: "Service Areas",
-    section: "operations",
-    breadcrumbs: [{ label: "Service Areas" }],
   },
   "/staff": {
     title: "Staff",
@@ -62,30 +42,10 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "provider",
     breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Offerings" }],
   },
-  "/provider/service-areas": {
-    title: "Service Areas",
-    section: "provider",
-    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Service Areas" }],
-  },
-  "/provider/team-members": {
-    title: "Team Members",
-    section: "provider",
-    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Team" }],
-  },
-  "/provider/availability": {
-    title: "Availability",
-    section: "provider",
-    breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Availability" }],
-  },
   "/provider/marketing": {
     title: "Provider Marketing",
     section: "provider",
     breadcrumbs: [{ label: "Business Profile", href: "/profile" }, { label: "Marketing" }],
-  },
-  "/catalog": {
-    title: "Catalog",
-    section: "catalog",
-    breadcrumbs: [{ label: "Catalog" }],
   },
   "/inventory": {
     title: "Inventory",
@@ -96,11 +56,6 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Documents",
     section: "catalog",
     breadcrumbs: [{ label: "Documents" }],
-  },
-  "/finance": {
-    title: "Finance",
-    section: "finance",
-    breadcrumbs: [{ label: "Finance" }],
   },
   "/customers": {
     title: "Customers",
@@ -141,11 +96,6 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Insights",
     section: "insights",
     breadcrumbs: [{ label: "Insights" }],
-  },
-  "/onboarding-status": {
-    title: "Onboarding Status",
-    section: "provider",
-    breadcrumbs: [{ label: "Onboarding Status" }],
   },
   "/tenant/home-services/setup": {
     title: "Home Services Setup",
@@ -232,11 +182,6 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "services",
     breadcrumbs: [{ label: "Services & Coverage" }, { label: "Services & Pricing" }],
   },
-  "/home-services/coverage": {
-    title: "Service Areas",
-    section: "services",
-    breadcrumbs: [{ label: "Services & Coverage" }, { label: "Service Areas" }],
-  },
   "/home-services/team": {
     title: "Team Members",
     section: "team",
@@ -287,11 +232,6 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "operations",
     breadcrumbs: [{ label: "Operations" }, { label: "Operational Exceptions" }],
   },
-  "/account/privacy": {
-    title: "Privacy & Data",
-    section: "more",
-    breadcrumbs: [{ label: "More" }, { label: "Privacy & Data" }],
-  },
   "/activity": {
     title: "Activity",
     section: "more",
@@ -305,12 +245,11 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
   "/media": {
     title: "Media",
     section: "catalog",
-    breadcrumbs: [{ label: "Catalog", href: "/catalog" }, { label: "Media" }],
+    breadcrumbs: [{ label: "Services & Pricing", href: "/home-services/services" }, { label: "Media" }],
   },
 };
 
 const ROUTE_LABELS: Record<string, string> = {
-  "ai-chat": "AI Assistant",
   "bookings-jobs": "Bookings & Jobs",
   "coverage-hours": "Coverage & Hours",
   "direct-payments": "Direct Payments",

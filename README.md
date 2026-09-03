@@ -1,4 +1,4 @@
-# ServiceOS — Multi-Tenant Home Services SaaS
+# Fuvay — Multi-Tenant Home Services SaaS
 
 A full-stack SaaS platform for managing home service businesses (AC repair, plumbing, electrical, cleaning, etc.) across multiple tenants, cities, and verticals.
 
@@ -8,7 +8,7 @@ A full-stack SaaS platform for managing home service businesses (AC repair, plum
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   ServiceOS Platform                     │
+│                   Fuvay Platform                     │
 │                                                          │
 │  ┌────────────────┐    ┌──────────────────────────────┐  │
 │  │  Super Admin   │    │   Tenant Owner Portal        │  │

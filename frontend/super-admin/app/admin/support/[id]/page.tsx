@@ -22,7 +22,7 @@ const BREACH_VARIANT: Record<string, "success" | "warning" | "danger" | "muted" 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft", submitted: "Submitted", triaged: "Triaged", assigned: "Assigned",
   investigating: "Investigating", waiting_for_tenant: "Awaiting tenant reply",
-  waiting_for_serviceos: "With ServiceOS support", resolved: "Resolved",
+  waiting_for_serviceos: "With Fuvay support", resolved: "Resolved",
   closed: "Closed", reopened: "Reopened", withdrawn: "Withdrawn",
 };
 
@@ -159,7 +159,7 @@ export default function AdminSupportDetailPage() {
 
               <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3}
-                  placeholder={internal ? "Internal note — visible only to ServiceOS staff" : "Reply to the tenant…"}
+                  placeholder={internal ? "Internal note — visible only to Fuvay staff" : "Reply to the tenant…"}
                   style={{ ...inp, height: "auto", padding: 10, resize: "vertical",
                     borderColor: internal ? "var(--warning-border)" : "var(--border)",
                     background: internal ? "var(--warning-bg)" : "var(--surface)" }} />

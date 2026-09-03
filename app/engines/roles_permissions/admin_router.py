@@ -1,6 +1,6 @@
 """Phase 1B — Admin Roles & Permissions read API.
 
-Backs /admin/users/roles and /admin/users/permissions. Read-only: ServiceOS
+Backs /admin/users/roles and /admin/users/permissions. Read-only: Fuvay
 RBAC is code-defined (app/core/permissions.py), not a DB CRUD system —
 mutation endpoints return 501 with a clear explanation rather than
 pretending to support role editing that doesn't actually change any

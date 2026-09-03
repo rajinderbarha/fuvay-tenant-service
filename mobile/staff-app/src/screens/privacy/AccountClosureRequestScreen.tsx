@@ -47,7 +47,7 @@ export function AccountClosureRequestScreen({ navigation }: Props) {
       <SafeAreaScreen edges={["top", "left", "right"]}>
         <ScreenHeader title="Account closure" onBack={() => navigation.goBack()} />
         <View style={{ padding: theme.spacing.lg }}>
-          <InlineAlert tone="success" title="Closure request submitted" message="ServiceOS will review your active relationships, retention requirements and legal holds before any action is taken. You'll be notified of the outcome." />
+          <InlineAlert tone="success" title="Closure request submitted" message="Fuvay will review your active relationships, retention requirements and legal holds before any action is taken. You'll be notified of the outcome." />
         </View>
       </SafeAreaScreen>
     );
@@ -61,7 +61,7 @@ export function AccountClosureRequestScreen({ navigation }: Props) {
           <Card>
             <AppText variant="bodyStrong">Before you request closure</AppText>
             <AppText variant="bodySmall" color="tertiary" style={{ marginTop: theme.spacing.xs }}>
-              Closing your ServiceOS account is different from leaving a business's team. If you're currently employed by a tenant, ending that specific relationship is a separate action from closing your platform account.
+              Closing your Fuvay account is different from leaving a business's team. If you're currently employed by a tenant, ending that specific relationship is a separate action from closing your platform account.
             </AppText>
             <AppText variant="bodySmall" color="tertiary" style={{ marginTop: theme.spacing.xs }}>
               This does not immediately delete your data or end active jobs. Your request will be reviewed for active jobs, disputes, finance records and legal retention requirements before any action is taken.

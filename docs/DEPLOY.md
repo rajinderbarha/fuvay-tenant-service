@@ -1,4 +1,4 @@
-# ServiceOS — Deployment Runbook
+# Fuvay — Deployment Runbook
 
 ## Release Candidate: serviceos-rc-1
 
@@ -43,6 +43,8 @@ open http://localhost:8000/docs
 ### Prerequisites
 - TLS certificates at `./nginx/ssl/fullchain.pem` and `./nginx/ssl/privkey.pem`
 - `.env.production` with production secrets (see `.env.example`)
+- Bot-booking deployment gate completed (see
+  [`deployment/bot-booking-protection.md`](deployment/bot-booking-protection.md))
 - Docker + Docker Compose v2 on the host
 - Managed PostgreSQL + Redis recommended (or use compose services)
 
@@ -230,7 +232,7 @@ docker compose -f docker-compose.prod.yml up -d api
 ```bash
 # Return 503 for all API traffic via nginx
 # Edit nginx.conf: replace proxy_pass with:
-#   return 503 '{"error": "ServiceOS is in maintenance mode"}';
+#   return 503 '{"error": "Fuvay is in maintenance mode"}';
 # Reload nginx:
 docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 ```

@@ -11,7 +11,6 @@ import { AuthErrorBanner } from "../../components/auth/AuthErrorBanner";
 import { copyForSignupError } from "../../components/auth/authErrorCopy";
 import { DEFAULT_COUNTRY_CODE, isValidNationalNumber, toE164, CountryCode } from "../../domain/phone";
 import { registerCustomer } from "../../api/auth/authApi";
-import { requestLoginOtp } from "../../api/session/sessionManager";
 import { PublicStackParamList } from "../../navigation/routeTypes";
 import { ENV } from "../../config/environment";
 
@@ -37,11 +36,8 @@ const NAME_MAX = 255;
  *  - Only what the backend actually stores is asked for: full name, phone, and an
  *    optional email. No address, no password. The account is usable immediately and
  *    the first address is collected where it is actually needed, during a booking.
- *  - Verification reuses the SAME screen a returning customer uses. The registration
- *    response carries its own OTP, but it is scoped to `phone_verification` and
- *    `/otp/verify` rejects it (confirmed live: "Incorrect OTP"), so this sends a
- *    normal login OTP afterwards. One verification implementation, not two that can
- *    drift.
+ *  - Verification reuses the SAME screen a returning customer uses. Registration
+ *    sends one redeemable login OTP; the app never requests a duplicate code.
  */
 export function SignupScreen() {
   const { theme } = useTheme();
@@ -78,10 +74,14 @@ export function SignupScreen() {
     setSubmitting(true);
     const phone = toE164(nationalNumber, countryCode);
     try {
-      await registerCustomer({ fullName: name, phone, email: email.trim() || undefined });
-      // The account exists now; the code that verifies it is a normal login OTP.
-      const otp = await requestLoginOtp(phone);
-      const devOtpHint = ENV.appEnv !== "production" ? otp.otp_hint : undefined;
+      const registration = await registerCustomer({
+        fullName: name,
+        phone,
+        email: email.trim() || undefined,
+      });
+      const devOtpHint = ENV.appEnv !== "production"
+        ? registration.data.otp_hint
+        : undefined;
       navigation.navigate("VerifyLoginOtp", { phone, devOtpHint });
     } catch (err) {
       // Signup copy, not login copy: "We couldn't sign you in with those details" is

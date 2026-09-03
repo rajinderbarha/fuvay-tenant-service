@@ -107,8 +107,6 @@ def test_permissions_are_paginated_for_admin_scale():
     assert "pageCount={totalPages}" in PERMISSIONS_PAGE
 
 
-def test_top_level_roles_and_permissions_routes_exist():
-    assert ROLES_ALIAS.exists()
-    assert PERMISSIONS_ALIAS.exists()
-    assert 'redirect("/admin/users/roles")' in ROLES_ALIAS.read_text(encoding="utf-8")
-    assert 'redirect("/admin/users/permissions")' in PERMISSIONS_ALIAS.read_text(encoding="utf-8")
+def test_duplicate_top_level_roles_and_permissions_routes_are_deleted():
+    assert not ROLES_ALIAS.exists()
+    assert not PERMISSIONS_ALIAS.exists()

@@ -26,6 +26,7 @@ from app.engines.admin_catalog.models import (
     MasterDataAuditLog,
     MasterChecklistItem,
     JobTypeDefinition,
+    TenantService,
 )
 
 _VALID_STATUSES = {"active", "inactive", "archived", "deprecated", "pending_review", "rejected"}
@@ -862,13 +863,15 @@ class ServiceOptionService:
         job_type_id hasn't been assigned yet, rather than guessing it applies
         everywhere -- see the non-negotiable "no Master-Service-only runtime
         mapping" rule."""
+        if job_type_id is None:
+            return []
         conditions = [ServiceOptionMapping.master_service_id == master_service_id,
                       ServiceOptionMapping.status == "active",
                       ServiceOptionMapping.usage != "DISABLED",
+                      ServiceOptionMapping.tenant_selectable == True,
                       ServiceOptionMapping.deleted_at.is_(None),
                       MasterServiceOption.status == "active"]
-        if job_type_id is not None:
-            conditions.append(ServiceOptionMapping.job_type_id == job_type_id)
+        conditions.append(ServiceOptionMapping.job_type_id == job_type_id)
         q = (select(ServiceOptionMapping, MasterServiceOption)
              .join(MasterServiceOption, ServiceOptionMapping.service_option_id == MasterServiceOption.id)
              .where(*conditions)
@@ -885,6 +888,7 @@ class ServiceOptionService:
             d["customer_selectable"] = mapping.customer_selectable
             d["tenant_selectable"] = mapping.tenant_selectable
             d["technician_selectable"] = mapping.technician_selectable
+            d["affects_estimate"] = mapping.affects_estimate
             d["quantity_supported"] = mapping.quantity_supported
             d["minimum_quantity"] = mapping.minimum_quantity
             d["maximum_quantity"] = mapping.maximum_quantity
@@ -973,6 +977,20 @@ class ServiceOptionService:
         if not mapping.tenant_selectable:
             raise HTTPException(status.HTTP_403_FORBIDDEN,
                                 "This option is not tenant-configurable for this Job Type")
+        offering_id = await self.db.scalar(
+            select(TenantService.id).where(
+                TenantService.tenant_id == tenant_id,
+                TenantService.master_service_id == mapping.master_service_id,
+                TenantService.job_type_id == mapping.job_type_id,
+                TenantService.is_enabled.is_(True),
+                TenantService.deleted_at.is_(None),
+            )
+        )
+        if offering_id is None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Enable this exact service and Job Type before configuring its options",
+            )
 
         enabled = body.get("enabled", True)
         pricing_model = body.get("pricing_model")

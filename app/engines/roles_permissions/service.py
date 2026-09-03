@@ -1,6 +1,6 @@
 """Phase 1B — Roles & Permissions read service.
 
-ServiceOS's RBAC is code-based (app/core/permissions.py::ROLE_PERMISSIONS,
+Fuvay's RBAC is code-based (app/core/permissions.py::ROLE_PERMISSIONS,
 class P), not a DB-table CRUD system. This service does NOT introduce a
 parallel roles/permissions table — it exposes the real, authoritative
 code-defined roles/permissions as read data, enriched with live counts

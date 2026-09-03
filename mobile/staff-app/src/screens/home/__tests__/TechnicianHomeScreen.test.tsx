@@ -97,6 +97,25 @@ describe("TechnicianHomeScreen — loaded state (spec sections 2, 15)", () => {
     });
   });
 
+  it("never exposes an internal blocker code to the technician", async () => {
+    (homeApi.getMobileHome as jest.Mock).mockResolvedValue({
+      ok: true,
+      data: {
+        ...BASE_HOME,
+        current_job: {
+          ...BASE_HOME.current_job!,
+          blocker: { code: "ESTIMATE_REQUIRED", message: null },
+        },
+      },
+      meta: {},
+    });
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText("Before work can start")).toBeTruthy());
+    expect(screen.getByText("Create and send an estimate before starting work.")).toBeTruthy();
+    expect(screen.queryByText("ESTIMATE_REQUIRED")).toBeNull();
+  });
+
   it("routes a schedule row tap to Job Detail with only stable IDs, never a full job object", async () => {
     (homeApi.getMobileHome as jest.Mock).mockResolvedValue({ ok: true, data: BASE_HOME, meta: {} });
     renderScreen();

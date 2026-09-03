@@ -44,7 +44,6 @@ from app.engines.invoice_payment.models import (
 )
 from app.engines.finance_hub.models import CreditTopupOrder
 from app.engines.platform_commerce.models import WarrantyClaim
-from app.engines.complaints.models import RefundRequest
 from app.exceptions import ServiceOSException, NotFoundException
 
 HOME_SERVICES_VERTICAL = "home_services"
@@ -580,7 +579,7 @@ class HomeServicesFinanceService:
         return {**entry.to_dict(), "tenant_name": tenant.business_name}
 
     # ── Direct Customer Payments ─────────────────────────────────────────────
-    # Home Services customers pay the provider directly -- ServiceOS never
+    # Home Services customers pay the provider directly -- Fuvay never
     # collects the job payment itself (no gateway order exists for this
     # path). ServicePaymentRecord (invoice_payment/payment_service.py::
     # record_onsite_payment) is the one canonical writer: the provider
@@ -774,7 +773,7 @@ class HomeServicesFinanceService:
             "disputed": sum(1 for p in rows if p.payment_status == "disputed"),
             "failed": sum(1 for p in rows if p.payment_status == "failed"),
             "provider_collected_total": str(provider_collected_total),
-            # ServiceOS never holds or settles these funds — there is no
+            # Fuvay never holds or settles these funds — there is no
             # platform-held balance to report, by design.
             "serviceos_held_amount": "0",
             "settlement_model": "none_provider_collects_directly",
@@ -1071,59 +1070,14 @@ class HomeServicesFinanceService:
     # directly with a Tenant.vertical join rather than editing the shared,
     # cross-vertical service.
 
-    async def list_hs_warranty_claims(self, *, status: str | None = None, category: str | None = None,
-                                       q: str | None = None, page: int = 1, page_size: int = 50) -> dict:
-        stmt = (
-            select(WarrantyClaim, Tenant)
-            .join(Tenant, Tenant.id == WarrantyClaim.tenant_id)
-            .where(Tenant.vertical == HOME_SERVICES_VERTICAL)
-        )
-        if status: stmt = stmt.where(WarrantyClaim.status == status)
-        if category: stmt = stmt.where(WarrantyClaim.claim_type == category)
-        if q and q.strip():
-            like = f"%{q.strip()}%"
-            stmt = stmt.where(or_(
-                WarrantyClaim.job_id.ilike(like),
-                cast(WarrantyClaim.id, String).ilike(like),
-                Tenant.tenant_name.ilike(like),
-                Tenant.business_name.ilike(like),
-            ))
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        stmt = stmt.order_by(WarrantyClaim.created_at.desc(), WarrantyClaim.id.desc()).offset((page - 1) * page_size).limit(page_size)
-        rows = (await self.db.execute(stmt)).all()
-        return {
-            "items": [{**self._fh._claim_dict(c, t), "vertical": t.vertical} for c, t in rows],
-            "total": total, "page": page, "page_size": page_size,
-        }
-
     async def get_hs_warranty_claims_summary(self) -> dict:
         row = (await self.db.execute(select(
-            func.count(WarrantyClaim.id),
-            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "admin_review"),
-            func.count(WarrantyClaim.id).filter(WarrantyClaim.status.in_(("provider_action_required", "provider_in_progress"))),
-            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "credit_issued"),
-            func.count(WarrantyClaim.id).filter(WarrantyClaim.status == "rejected"),
-            func.coalesce(func.sum(WarrantyClaim.settled_amount).filter(WarrantyClaim.status == "credit_issued"), 0),
             func.coalesce(func.sum(WarrantyClaim.amount_requested).filter(
-                WarrantyClaim.status.not_in(("rejected", "credit_issued", "closed"))
+                WarrantyClaim.status.in_(("provider_action_required", "provider_in_progress"))
             ), 0),
         ).join(Tenant, Tenant.id == WarrantyClaim.tenant_id)
          .where(Tenant.vertical == HOME_SERVICES_VERTICAL))).one()
-        return {
-            "total_claims": row[0], "pending_review": row[1], "provider_action_required": row[2],
-            "investigation_ongoing": row[1],
-            "approved_claims": row[3], "rejected_claims": row[4], "settled_value": str(row[5]),
-            "open_exposure": str(row[6]),
-        }
-
-    async def get_hs_warranty_claim_detail(self, claim_id: uuid.UUID) -> dict:
-        claim = await self.db.get(WarrantyClaim, claim_id)
-        if not claim:
-            raise NotFoundException("WarrantyClaim", str(claim_id))
-        tenant = await self.db.get(Tenant, claim.tenant_id)
-        if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
-            raise NotFoundException("WarrantyClaim", str(claim_id))
-        return {**self._fh._claim_dict(claim, tenant), "vertical": tenant.vertical}
+        return {"open_exposure": str(row[0])}
 
     # ── Service Invoices ─────────────────────────────────────────────────────
     # ServiceInvoice (invoice_payment/models.py) is HS-scoped via job_id ->
@@ -1224,73 +1178,6 @@ class HomeServicesFinanceService:
     # can exist before a provider is assigned), so isolation here requires
     # tenant_id present AND Tenant.vertical == 'home_services' -- rows with
     # no tenant are excluded rather than guessed into scope.
-
-    async def list_hs_refunds(
-        self, *, status: str | None = None, refund_type: str | None = None,
-        q: str | None = None, date_from: str | None = None, date_to: str | None = None,
-        page: int = 1, page_size: int = 50,
-    ) -> dict:
-        clauses = [RefundRequest.tenant_id.isnot(None), Tenant.vertical == HOME_SERVICES_VERTICAL]
-        clauses += self._date_filters(date_from, date_to, RefundRequest.created_at)
-        if status: clauses.append(RefundRequest.status == status)
-        if refund_type: clauses.append(RefundRequest.refund_type == refund_type)
-
-        stmt = (
-            select(RefundRequest, Tenant)
-            .join(Tenant, Tenant.id == RefundRequest.tenant_id)
-            .where(*clauses)
-        )
-        if q:
-            like = f"%{q}%"
-            stmt = stmt.where(or_(RefundRequest.refund_number.ilike(like), Tenant.business_name.ilike(like)))
-        stmt = stmt.order_by(RefundRequest.created_at.desc())
-
-        total = (await self.db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        rows = (await self.db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
-        return {
-            "items": [{**rr.to_dict(), "tenant_name": t.business_name} for rr, t in rows],
-            "total": total, "page": page, "page_size": page_size,
-        }
-
-    async def get_hs_refund_detail(self, refund_id: uuid.UUID) -> dict:
-        rr = await self.db.get(RefundRequest, refund_id)
-        if not rr or not rr.tenant_id:
-            raise NotFoundException("RefundRequest", str(refund_id))
-        tenant = await self.db.get(Tenant, rr.tenant_id)
-        if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
-            raise NotFoundException("RefundRequest", str(refund_id))
-        overdue = bool(
-            rr.provider_response_due_at
-            and rr.provider_response_due_at <= datetime.now(timezone.utc)
-            and rr.status == "requested"
-        )
-        return {
-            **rr.to_dict(),
-            "tenant_name": tenant.business_name,
-            "admin_attention_required": rr.status == "admin_review" or overdue,
-            "provider_response_overdue": overdue,
-        }
-
-    async def get_hs_refunds_summary(self, date_from: str | None = None, date_to: str | None = None) -> dict:
-        clauses = [RefundRequest.tenant_id.isnot(None), Tenant.vertical == HOME_SERVICES_VERTICAL]
-        clauses += self._date_filters(date_from, date_to, RefundRequest.created_at)
-        row = (await self.db.execute(select(
-            func.count(RefundRequest.id).filter(RefundRequest.status == "requested"),
-            func.count(RefundRequest.id).filter(RefundRequest.status.in_(("provider_review", "admin_review"))),
-            func.count(RefundRequest.id).filter(RefundRequest.status == "approved"),
-            func.count(RefundRequest.id).filter(RefundRequest.status == "recorded"),
-            func.count(RefundRequest.id).filter(RefundRequest.status == "verified"),
-            func.count(RefundRequest.id).filter(RefundRequest.status == "rejected"),
-            func.count(RefundRequest.id).filter(RefundRequest.status == "cancelled"),
-        ).join(Tenant, Tenant.id == RefundRequest.tenant_id).where(*clauses))).one()
-        # Real RefundRequest.status values (complaints/constants.py REFUND_*):
-        # requested -> provider_review/admin_review -> approved -> rejected |
-        # recorded -> verified | cancelled. No "processing"/"partially_
-        # refunded"/"failed" status exists on this model -- not fabricated here.
-        return {
-            "requested": row[0], "under_review": row[1], "approved": row[2],
-            "recorded": row[3], "verified": row[4], "rejected": row[5], "cancelled": row[6],
-        }
 
     # ── Financial Events ─────────────────────────────────────────────────────
     # FinancialEvent (invoice_payment/models.py) is written exclusively by

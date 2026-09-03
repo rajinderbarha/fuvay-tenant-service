@@ -1,5 +1,5 @@
 """
-ServiceOS — Cursor-based Pagination
+Fuvay — Cursor-based Pagination
 Never offset — cursor is always a base64-encoded last-item ID + timestamp.
 Clients get next_cursor and prev_cursor, never page numbers.
 """

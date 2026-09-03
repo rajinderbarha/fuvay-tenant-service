@@ -42,7 +42,7 @@ const CONTENT: Record<RestrictedRouteName, StateContent> = {
   TenantSuspended: {
     icon: "business-outline",
     title: "Work access suspended",
-    message: "Your business's ServiceOS workspace is currently suspended.",
+    message: "Your business's Fuvay workspace is currently suspended.",
     showRetry: true, showSignOut: true,
   },
   TechnicianInactive: {
@@ -60,13 +60,13 @@ const CONTENT: Record<RestrictedRouteName, StateContent> = {
   AppUpdateRequired: {
     icon: "cloud-download-outline",
     title: "Update required",
-    message: "Install the latest ServiceOS Staff version to keep your account and job data secure.",
+    message: "Install the latest Fuvay Staff version to keep your account and job data secure.",
     showRetry: false, showSignOut: false,
   },
   ServiceUnavailable: {
     icon: "construct-outline",
     title: "We'll be back shortly",
-    message: "ServiceOS is temporarily unavailable. Please check again shortly.",
+    message: "Fuvay is temporarily unavailable. Please check again shortly.",
     showRetry: true, showSignOut: false,
   },
 };
@@ -122,8 +122,8 @@ export function RestrictedStateScreen({ screen, reasonCode }: RestrictedStateScr
       const result = await checkPublicHealth();
       setHealthMessage(
         result === "online" ? "All systems operational."
-        : result === "limited" ? "ServiceOS is degraded but reachable."
-        : "ServiceOS is still unreachable.",
+        : result === "limited" ? "Fuvay is degraded but reachable."
+        : "Fuvay is still unreachable.",
       );
     } finally {
       setCheckingHealth(false);

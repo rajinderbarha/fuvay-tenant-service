@@ -32,6 +32,7 @@ from app.engines.compliance.models import ConsentRecord, DPDPPolicyVersion
 from app.engines.public_registration.models import PendingTenantRegistration
 from app.exceptions import ServiceOSException
 from app.config import get_settings
+from app.core.security import enforce_otp_send_limits
 from app.twilio_client import send_sms
 from app.email_client import send_email
 
@@ -199,6 +200,12 @@ class RegistrationService:
             )).scalar_one_or_none()
             if recent and recent.created_at and (utcnow() - recent.created_at).total_seconds() < RESEND_COOLDOWN_SECONDS:
                 continue
+            await enforce_otp_send_limits(
+                recipient,
+                ip_address=self.ip_address,
+                source_id=f"provider-signup:{pending.id}",
+                costed_delivery=(purpose == MOBILE_OTP_PURPOSE),
+            )
             otp_plain, otp_hashed = generate_otp()
             self.db.add(OTPRecord(
                 purpose=purpose, recipient_hash=hash_recipient(recipient),
@@ -211,10 +218,10 @@ class RegistrationService:
                 dev_codes[purpose] = otp_plain
                 logger.info("registration.otp_sent_dev", purpose=purpose, dev_otp=otp_plain)
             elif purpose == MOBILE_OTP_PURPOSE:
-                await send_sms(recipient, f"Your ServiceOS verification code is {otp_plain}. Valid for {OTP_EXPIRE_MINUTES} minutes.")
+                await send_sms(recipient, f"Your Fuvay verification code is {otp_plain}. Valid for {OTP_EXPIRE_MINUTES} minutes.")
             else:
-                await send_email(recipient, "Verify your ServiceOS email",
-                    f"Your ServiceOS verification code is {otp_plain}. Valid for {OTP_EXPIRE_MINUTES} minutes.")
+                await send_email(recipient, "Verify your Fuvay email",
+                    f"Your Fuvay verification code is {otp_plain}. Valid for {OTP_EXPIRE_MINUTES} minutes.")
         return dev_codes
 
     def _issue_flow_response(self, pending: PendingTenantRegistration, resumed: bool = False,

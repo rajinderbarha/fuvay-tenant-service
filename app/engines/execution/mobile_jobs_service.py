@@ -203,7 +203,10 @@ class TechnicianMobileJobsService:
 
         blocker = None
         if work_start_status.get("start_work_block_code"):
-            blocker = {"code": work_start_status["start_work_block_code"], "message": next_action.get("blocked_message")}
+            blocker = {
+                "code": work_start_status["start_work_block_code"],
+                "message": work_start_status.get("start_work_block_message") or next_action.get("blocked_message"),
+            }
 
         allowed_actions = [next_action["action_type"]] if next_action.get("allowed") and next_action.get("action_type") else []
 

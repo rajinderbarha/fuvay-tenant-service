@@ -1,6 +1,6 @@
 import React from "react";
 import { Alert } from "react-native";
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithProviders } from "../../../testing/renderWithProviders";
 import { SecurityScreen } from "../SecurityScreen";
 import * as profileQueryModule from "../../../api/customer/useCustomerProfileQuery";
@@ -50,6 +50,7 @@ function render() {
 
 describe("SecurityScreen", () => {
   afterEach(() => {
+    cleanup();
     jest.restoreAllMocks();
     mockNavigate.mockClear();
     (sessionManagerModule.logout as jest.Mock).mockClear();

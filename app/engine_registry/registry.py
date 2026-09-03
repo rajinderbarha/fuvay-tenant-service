@@ -1,5 +1,5 @@
 """
-ServiceOS — Engine Registry
+Fuvay — Engine Registry
 The central registry of runtime engines.
 Each engine self-registers at import time.
 The registry provides:

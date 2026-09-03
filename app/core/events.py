@@ -1,5 +1,5 @@
 """
-ServiceOS — Event Bus (Redis Pub/Sub)
+Fuvay — Event Bus (Redis Pub/Sub)
 Transactional outbox pattern: events are first written to the outbox table
 in the same DB transaction as the business operation, then a background
 worker publishes them to Redis. This guarantees delivery even on crash.

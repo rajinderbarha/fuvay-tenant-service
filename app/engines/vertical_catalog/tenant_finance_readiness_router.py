@@ -1,10 +1,10 @@
 """Tenant-facing Finance Readiness onboarding step (Home Services, step 7 of 8).
 
 Canonical model: for Home Services the customer pays the tenant's business
-directly — ServiceOS never collects, holds or settles that job payment
+directly — Fuvay never collects, holds or settles that job payment
 (app.engines.invoice_payment.commission_service.ServiceCommissionService
 debits the tenant's platform wallet for commission on the invoice value, it
-never routes the customer's payment through ServiceOS). This router only
+never routes the customer's payment through Fuvay). This router only
 lets the tenant declare HOW it accepts that direct payment and its invoice
 preferences (`TenantFinanceReadiness`), and surfaces the already-resolved,
 read-only Home Services finance policy from the published vertical
@@ -147,7 +147,7 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
             "vertical": HOME_SERVICES_VERTICAL_KEY,
             "revenue_model": "Provider commission on completed jobs",
             "customer_pays": "Provider directly",
-            "job_settlement": "Outside ServiceOS",
+            "job_settlement": "Outside Fuvay",
             "pricing_ownership": "Tenant business",
             "provider_commission_pct": commission_rate,
             "policy_version": "HS_VERTICAL_MONETIZATION_LIVE",
@@ -179,7 +179,7 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
             "funding_quote": funding_quote,
             "policy_resolved": policy_resolved,
         },
-        "notice": "Customers pay your business directly. ServiceOS records the payment but does not hold or settle job funds.",
+        "notice": "Customers pay your business directly. Fuvay records the payment but does not hold or settle job funds.",
     }
 
 

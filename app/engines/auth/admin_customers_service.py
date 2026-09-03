@@ -1,8 +1,6 @@
 """Customer Users Enterprise Upgrade — CustomerAdminService.
 
 Composes existing engines rather than duplicating tables:
-  - Complaints/disputes  -> app.engines.complaints.complaint_service.ComplaintService
-  - Service credits      -> app.engines.customer_credits.service.CustomerCreditService
   - Sessions/login hist. -> app.engines.security.admin_service.SecurityAdminService
                             (queries auth.UserSession/auth.LoginEvent generically)
   - Block/suspend        -> app.engines.auth.service.AuthService.lock_user/unlock_user/
@@ -21,9 +19,7 @@ from app.core.audit import record_platform_audit
 from app.dependencies.auth import UserContext
 from app.engines.auth.models import User
 from app.engines.auth.service import AuthService
-from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.compliance.enterprise_service import ComplianceEnterpriseService
-from app.engines.customer_credits.service import CustomerCreditService
 from app.engines.security.admin_service import SecurityAdminService
 from app.engines.serviceability.models import CustomerAddress
 from app.exceptions import NotFoundException
@@ -56,39 +52,6 @@ class CustomerAdminService:
             actor_id=self.actor_id, actor_role=self.actor_role, actor_ip=self.actor_ip,
             request_id=self.request_id, before=before, after=after,
         )
-
-    # ─────────────────────────────────────────────────────────────────────
-    # COMPLAINTS / DISPUTES
-    # ─────────────────────────────────────────────────────────────────────
-
-    async def list_complaints(self, customer_id: uuid.UUID, status: str | None = None) -> dict:
-        await self._get_customer(customer_id)
-        svc = ComplaintService()
-        rows = await svc.admin_list_complaints(self.db, customer_id=customer_id, status=status)
-        return {"complaints": [c.to_dict() for c in rows], "total": len(rows)}
-
-    # ─────────────────────────────────────────────────────────────────────
-    # SERVICE CREDITS
-    # ─────────────────────────────────────────────────────────────────────
-
-    async def list_service_credits(self, customer_id: uuid.UUID, status: str | None = None) -> dict:
-        await self._get_customer(customer_id)
-        svc = CustomerCreditService(self.db, actor_id=self.actor_id,
-                                     actor_role=self.actor_role or "super_admin",
-                                     request_id=self.request_id)
-        credits = await svc.list_credits(customer_id=customer_id, status=status, page=1, limit=100)
-        summary = await svc.get_credit_summary(customer_id=customer_id)
-        return {**credits, "summary": summary}
-
-    async def issue_service_credit(self, customer_id: uuid.UUID, data: dict) -> dict:
-        await self._get_customer(customer_id)
-        svc = CustomerCreditService(self.db, actor_id=self.actor_id,
-                                     actor_role=self.actor_role or "super_admin",
-                                     request_id=self.request_id)
-        result = await svc.issue_credit_manual(customer_id, data)
-        await self._audit("customer.service_credit_issued", customer_id,
-                           after={"amount": str(data.get("amount")), "reason": data.get("issued_reason")})
-        return result
 
     # ─────────────────────────────────────────────────────────────────────
     # ADDRESSES

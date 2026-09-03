@@ -69,7 +69,7 @@ describe("HelpAndSupportScreen (Phase Y)", () => {
     renderScreen();
     fireEvent.press(screen.getByText("Contact your manager"));
     expect(mockNavigate).toHaveBeenCalledWith("CreateSupportRequest", { intent: "manager" });
-    fireEvent.press(screen.getByText("ServiceOS support"));
+    fireEvent.press(screen.getByText("Fuvay support"));
     expect(mockNavigate).toHaveBeenCalledWith("CreateSupportRequest", { intent: "platform" });
     fireEvent.press(screen.getByText("Report a technical problem"));
     expect(mockNavigate).toHaveBeenCalledWith("CreateSupportRequest", { intent: "technical" });

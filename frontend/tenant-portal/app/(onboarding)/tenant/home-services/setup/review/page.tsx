@@ -247,7 +247,7 @@ export default function ReviewSubmitPage() {
         <div>
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 6px", textTransform: "uppercase" }}>Tenant Onboarding</p>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Review &amp; submit</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Review your setup before sending it to ServiceOS for verification.</p>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Review your setup before sending it to Fuvay for verification.</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Step 8 of 8</span>

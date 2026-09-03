@@ -47,7 +47,7 @@ and set required_next_action=ask_question, backend_action_request.action=none.
 """
 
 # ── Home Service Flow ─────────────────────────────────────────────────────────
-HOME_SERVICE_SYSTEM_PROMPT = """You are ServiceOS Home Service Assistant. Help customers book home repair and maintenance services.
+HOME_SERVICE_SYSTEM_PROMPT = """You are Fuvay Home Service Assistant. Help customers book home repair and maintenance services.
 
 ## WHAT YOU COLLECT (in order)
 1. Service category/offering (AC repair, plumbing, electrical, cleaning, pest control, etc.)
@@ -74,7 +74,7 @@ HOME_SERVICE_SYSTEM_PROMPT = """You are ServiceOS Home Service Assistant. Help c
 """ + _CONTRACT_INSTRUCTION
 
 # ── Coaching / IELTS Flow ──────────────────────────────────────────────────────
-COACHING_SYSTEM_PROMPT = """You are ServiceOS Coaching Assistant. Help students book demo classes and consultations at coaching centers.
+COACHING_SYSTEM_PROMPT = """You are Fuvay Coaching Assistant. Help students book demo classes and consultations at coaching centers.
 
 ## WHAT YOU COLLECT (in order)
 1. Target exam (IELTS, PTE, TOEFL, Spoken English, etc.)
@@ -101,7 +101,7 @@ COACHING_SYSTEM_PROMPT = """You are ServiceOS Coaching Assistant. Help students 
 """ + _CONTRACT_INSTRUCTION
 
 # ── Real Estate Lead Flow ──────────────────────────────────────────────────────
-REAL_ESTATE_SYSTEM_PROMPT = """You are ServiceOS Real Estate Assistant. Help customers connect with verified real estate agents.
+REAL_ESTATE_SYSTEM_PROMPT = """You are Fuvay Real Estate Assistant. Help customers connect with verified real estate agents.
 
 ## WHAT YOU COLLECT (in order)
 1. Intent (buy, rent, sell, site visit, consultation, commercial)
@@ -131,7 +131,7 @@ REAL_ESTATE_SYSTEM_PROMPT = """You are ServiceOS Real Estate Assistant. Help cus
 """ + _CONTRACT_INSTRUCTION
 
 # ── Unsupported Flow ───────────────────────────────────────────────────────────
-UNSUPPORTED_SYSTEM_PROMPT = """You are ServiceOS Assistant. The customer is asking about a service we don't currently support.
+UNSUPPORTED_SYSTEM_PROMPT = """You are Fuvay Assistant. The customer is asking about a service we don't currently support.
 
 ## YOUR JOB
 1. Politely acknowledge the customer's request

@@ -83,7 +83,6 @@ MUTATION_ROUTES = [
      {"record_type": "service_booking", "record_id": str(uuid.uuid4()),
       "complaint_type": "service_quality", "description": "not done"}),
     ("POST", f"/v1/customer/complaints/{COMPLAINT_ID}/messages", {"message_text": "hello"}),
-    ("POST", f"/v1/customer/complaints/{COMPLAINT_ID}/ai-session/answers", {"answers": ["a"]}),
     ("POST", f"/v1/customer/complaints/{COMPLAINT_ID}/cancel", {"reason": "changed my mind"}),
     ("POST", f"/v1/customer/complaints/{COMPLAINT_ID}/resolutions/{RESOLUTION_ID}/accept", None),
     ("POST", f"/v1/customer/complaints/{COMPLAINT_ID}/resolutions/{RESOLUTION_ID}/reject", {"reason": "no"}),
@@ -99,7 +98,6 @@ READ_ROUTES = [
     ("GET", f"/v1/customer/complaints/{COMPLAINT_ID}"),
     ("GET", f"/v1/customer/complaints/{COMPLAINT_ID}/messages"),
     ("GET", f"/v1/customer/complaints/{COMPLAINT_ID}/resolutions"),
-    ("GET", f"/v1/customer/complaints/{COMPLAINT_ID}/ai-session"),
     ("GET", f"/v1/customer/complaints/{COMPLAINT_ID}/settlement-proposals"),
 ]
 
@@ -183,7 +181,7 @@ from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.refund_service import RefundRequestService
 from app.engines.complaints.constants import (
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_RESOLVED, STATUS_REWORK_APPROVED,
-    STATUS_UNDER_ADMIN_REVIEW, STATUS_CLOSED, RECORD_SERVICE_BOOKING,
+    STATUS_CLOSED, RECORD_SERVICE_BOOKING,
     ACTOR_CUSTOMER, ERR_COMPLAINT_ACCESS_DENIED, ERR_COMPLAINT_RECORD_NOT_FOUND,
     ERR_RESOLUTION_NOT_FOUND, ERR_COMPLAINT_INVALID_TRANSITION,
 )

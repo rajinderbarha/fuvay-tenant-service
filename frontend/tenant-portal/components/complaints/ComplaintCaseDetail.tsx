@@ -200,7 +200,7 @@ function JobContextTab({ data }: { data: import("../../lib/api").ComplaintJobCon
           </div>
         ))}
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
-          Paid directly to the provider. ServiceOS records confirmation only.
+          Paid directly to the provider. Fuvay records confirmation only.
         </p>
       </div>
     </div>

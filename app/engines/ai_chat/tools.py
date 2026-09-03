@@ -1,6 +1,6 @@
 """
 AI Chat Engine — Tool Executor
-Each tool maps to a ServiceOS backend query.
+Each tool maps to a Fuvay backend query.
 Tools are called when DeepSeek requests them via function calling.
 Data comes from the real database — never mocked.
 """
@@ -17,7 +17,7 @@ logger = structlog.get_logger("ai_chat.tools")
 
 
 class ToolExecutor:
-    """Executes tool calls from the DeepSeek LLM, fetching data from ServiceOS backend."""
+    """Executes tool calls from the DeepSeek LLM, fetching data from Fuvay backend."""
 
     def __init__(self, db: AsyncSession, customer_id: uuid.UUID):
         self.db = db

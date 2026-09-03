@@ -35,11 +35,11 @@ describe("ForgotPasswordScreen (spec section 7, 17)", () => {
   });
 
   it("surfaces a real network failure distinctly instead of the enumeration-safe message", async () => {
-    (authApi.requestPasswordReset as jest.Mock).mockResolvedValue({ ok: false, error: { code: "NETWORK_TIMEOUT", category: "network", safeMessage: "Couldn't reach ServiceOS. Check your connection and try again.", retryable: true } });
+    (authApi.requestPasswordReset as jest.Mock).mockResolvedValue({ ok: false, error: { code: "NETWORK_TIMEOUT", category: "network", safeMessage: "Couldn't reach Fuvay. Check your connection and try again.", retryable: true } });
     renderScreen();
     fireEvent.changeText(screen.getByPlaceholderText("Enter email or mobile"), "tech@biz.io");
     fireEvent.press(screen.getByText("Send reset code"));
-    await waitFor(() => expect(screen.getByText("Couldn't reach ServiceOS. Check your connection and try again.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Couldn't reach Fuvay. Check your connection and try again.")).toBeTruthy());
   });
 });
 

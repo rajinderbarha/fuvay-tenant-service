@@ -348,8 +348,8 @@ export default function SettingsPage() {
                   <p style={{ fontWeight:700, margin:"0 0 12px" }}>Configuration ownership</p>
                   {[
                     { label:"Tenant controlled", desc:"You can edit these settings.", tone:"success" },
-                    { label:"ServiceOS controlled", desc:"These are platform rules.", tone:"info" },
-                    { label:"Admin policy", desc:"Set by ServiceOS administrators.", tone:"warning" },
+                    { label:"Fuvay controlled", desc:"These are platform rules.", tone:"info" },
+                    { label:"Admin policy", desc:"Set by Fuvay administrators.", tone:"warning" },
                   ].map(o => (
                     <div key={o.label} style={{ display:"flex", gap:10, marginBottom:12 }}>
                       <div style={{ width:8, height:8, borderRadius:"50%", background:`var(--${o.tone}-text)`, marginTop:5, flexShrink:0 }} />

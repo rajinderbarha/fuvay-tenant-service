@@ -248,11 +248,9 @@ class VerticalCatalogService:
                      "action_href": "/admin/home-services/finance?tab=credits",
                      "action_label": "Open credits",
                      "runtime_behaviour": "A completed job posts one idempotent Usage Credit ledger deduction."},
-                    {"name": "Refund and warranty remedy", "status": "enabled", "owner": "Provider first, Admin escalation",
-                     "source": "Trust & Quality / Finance",
-                     "action_href": "/admin/home-services/finance?tab=warranty",
-                     "action_label": "Review remedies",
-                     "runtime_behaviour": "Providers own warranty response; approved compensation is issued through the canonical customer-credit remedy flow."},
+                    {"name": "Complaint, refund and warranty remedy", "status": "enabled", "owner": "Customer + Provider",
+                     "source": "Warranty evidence and provider remedy flow",
+                     "runtime_behaviour": "The provider reviews the technician's ground work and resolves the case directly with the customer. Admin does not adjudicate; an SLA breach posts the configured tenant Usage Credit penalty."},
                 ]},
                 {"name": "Finance", "capabilities": [
                     {"name": "Usage Credits", "status": "enabled", "owner": "Platform",
@@ -266,11 +264,6 @@ class VerticalCatalogService:
                      "action_label": "Manage monetization",
                      "runtime_behaviour": "Commission and completion-credit rules are configured once in Home Services Finance and resolved per job type."},
                 ]},
-                {"name": "AI", "capabilities": [
-                    {"name": "AI-assisted booking", "status": "enabled", "owner": "Backend policy",
-                     "source": "AI booking assistant",
-                     "runtime_behaviour": "AI collects inputs; backend catalog and serviceability rules decide."},
-                ]},
             ],
             "policy_boundaries": [
                 {"policy": "Business profile changes after activation", "owner": "Admin approval required"},
@@ -278,6 +271,7 @@ class VerticalCatalogService:
                 {"policy": "Service prices and visit fees", "owner": "Tenant-owned"},
                 {"policy": "Commission and completion-credit rules", "owner": "Admin-controlled"},
                 {"policy": "Warranty minimum", "owner": "Admin policy; provider can only extend"},
+                {"policy": "Complaint, refund and warranty resolution", "owner": "Customer and provider; no Admin adjudication"},
             ],
         }
 

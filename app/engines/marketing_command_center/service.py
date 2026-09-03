@@ -208,7 +208,7 @@ class MarketingCommandCenterService:
     async def generate_hashtags(self, data: dict[str, Any]) -> dict[str, Any]:
         await self._check_and_charge_budget("hashtags", "gpt-content-v1", _HASHTAG_COST, data.get("post_id"), data.get("campaign_id"))
         vertical = (data.get("vertical") or "home_services").replace("_", "")
-        base = [f"#{vertical}", "#ServiceOS", "#BookNow"]
+        base = [f"#{vertical}", "#Fuvay", "#BookNow"]
         return {"hashtags": base, "estimated_cost": float(_HASHTAG_COST)}
 
     async def generate_image(self, data: dict[str, Any]) -> dict[str, Any]:

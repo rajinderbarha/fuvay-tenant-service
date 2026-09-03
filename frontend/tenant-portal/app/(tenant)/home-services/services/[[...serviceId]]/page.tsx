@@ -31,9 +31,11 @@ import {
 } from "@serviceos/design-system";
 import {
   servicesWorkspaceApi, homeServicesSetupApi, providerStatusApi,
+  providerServiceOptionApi,
   type SWCatalogService, type SWCatalogGroup, type SWResolvedPrice, type SWOfferingDetail,
   type AdminMasterServiceRow, type TenantEnabledService,
   type HsSetupAvailableType, type HsSetupBrand,
+  type ProviderAvailableServiceOption, type ProviderSupportedServiceOption,
 } from "../../../../../lib/api";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { ServiceRequirementsPanel } from "../../../../../components/services/ServiceRequirementsPanel";
@@ -432,10 +434,11 @@ function CatalogRow({ s, selected, onClick }: { s: SWCatalogService; selected: b
   );
 }
 
-const TABS = ["overview", "types-brands", "pricing", "visit-fee", "warranty", "requirements"] as const;
+const TABS = ["overview", "types-brands", "options", "pricing", "visit-fee", "warranty", "requirements"] as const;
 type Tab = typeof TABS[number];
 const TAB_LABEL: Record<Tab, string> = {
   overview: "Overview", "types-brands": "Types & Brands", pricing: "Pricing",
+  options: "Service options",
   "visit-fee": "Visit & estimate", warranty: "Warranty", requirements: "Booking & job requirements",
 };
 
@@ -461,17 +464,17 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
   );
 
   const data = detail.data;
-  const ts = data.tenant_service as { setup_status: string; requires_type: boolean; requires_brand: boolean; master_service_id?: string; job_type?: string };
+  const ts = data.tenant_service as { setup_status: string; requires_type: boolean; requires_brand: boolean; master_service_id?: string; job_type_id?: string; job_type?: string };
   const inspectionPricing = isInspectionPricing(data.blueprint.pricing_behavior);
   const consultationPricing = String(ts.job_type ?? "").toLowerCase() === "consultation";
   const pricingMode: "inspection" | "consultation" | "dimension" = inspectionPricing
     ? "inspection"
     : consultationPricing ? "consultation" : "dimension";
   const availableTabs: Tab[] = pricingMode === "inspection"
-    ? ["overview", "types-brands", "visit-fee", "warranty", "requirements"]
+    ? ["overview", "types-brands", "options", "visit-fee", "warranty", "requirements"]
     : pricingMode === "consultation"
-      ? ["overview", "types-brands", "warranty", "requirements"]
-      : ["overview", "types-brands", "pricing", "warranty", "requirements"];
+      ? ["overview", "types-brands", "options", "warranty", "requirements"]
+      : ["overview", "types-brands", "options", "pricing", "warranty", "requirements"];
   const requestedTab = searchParams.get("tab") as Tab | null;
   const tab: Tab = requestedTab && availableTabs.includes(requestedTab) ? requestedTab : "overview";
 
@@ -515,6 +518,12 @@ function OfferingWorkspace({ tenantServiceId, onWorkspaceChanged }: { tenantServ
         )}
         {tab === "visit-fee" && (
           <VisitFeeTab tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />
+        )}
+        {tab === "options" && (
+          <ServiceOptionsTab
+            masterServiceId={String(ts.master_service_id ?? "")}
+            jobTypeId={String(ts.job_type_id ?? "")}
+          />
         )}
         {tab === "warranty" && (
           <WarrantyTab tenantServiceId={tenantServiceId} data={data} onChanged={refreshAll} />
@@ -584,6 +593,162 @@ function OverviewTab({ data }: { data: SWOfferingDetail }) {
         )}
       </Card>
     </>
+  );
+}
+
+type ServiceOptionDraft = {
+  enabled: boolean;
+  pricingModel: "FIXED" | "PER_UNIT" | "RANGE";
+  amount: string;
+  minimum: string;
+  maximum: string;
+};
+
+function ServiceOptionsTab({ masterServiceId, jobTypeId }: { masterServiceId: string; jobTypeId: string }) {
+  const available = useApi(
+    () => masterServiceId && jobTypeId
+      ? providerServiceOptionApi.getAvailableForService(masterServiceId, jobTypeId)
+      : Promise.resolve([] as ProviderAvailableServiceOption[]),
+    [masterServiceId, jobTypeId],
+  );
+  const supported = useApi(
+    () => masterServiceId
+      ? providerServiceOptionApi.getSupportedForService(masterServiceId)
+      : Promise.resolve([] as ProviderSupportedServiceOption[]),
+    [masterServiceId],
+  );
+  const [drafts, setDrafts] = useState<Record<string, ServiceOptionDraft>>({});
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!available.data || !supported.data) return;
+    const configured = new Map(
+      supported.data
+        .filter(row => row.service_option_mapping_id)
+        .map(row => [String(row.service_option_mapping_id), row]),
+    );
+    const next: Record<string, ServiceOptionDraft> = {};
+    for (const option of available.data) {
+      const row = configured.get(option.mapping_id);
+      const pricingModel = row?.pricing_model ?? "FIXED";
+      next[option.mapping_id] = {
+        enabled: option.is_required || row?.status === "active",
+        pricingModel,
+        amount: pricingModel === "PER_UNIT" ? row?.unit_price ?? "" : row?.fixed_price ?? "",
+        minimum: row?.minimum_price ?? "",
+        maximum: row?.maximum_price ?? "",
+      };
+    }
+    setDrafts(next);
+  }, [available.data, supported.data]);
+
+  function update(mappingId: string, patch: Partial<ServiceOptionDraft>) {
+    setDrafts(current => ({
+      ...current,
+      [mappingId]: {
+        enabled: false,
+        pricingModel: "FIXED",
+        amount: "",
+        minimum: "",
+        maximum: "",
+        ...current[mappingId],
+        ...patch,
+      },
+    }));
+  }
+
+  async function save() {
+    if (!available.data) return;
+    setSaving(true); setMessage(""); setError("");
+    try {
+      for (const option of available.data) {
+        const draft = drafts[option.mapping_id] ?? {
+          enabled: option.is_required, pricingModel: "FIXED" as const,
+          amount: "", minimum: "", maximum: "",
+        };
+        const enabled = option.is_required || draft.enabled;
+        if (!enabled) {
+          await providerServiceOptionApi.setOptionPrice(option.mapping_id, { enabled: false });
+          continue;
+        }
+        if (option.affects_estimate) {
+          const missingSingle = draft.pricingModel !== "RANGE" && !draft.amount.trim();
+          const invalidRange = draft.pricingModel === "RANGE"
+            && (!draft.minimum.trim() || !draft.maximum.trim() || Number(draft.maximum) < Number(draft.minimum));
+          if (missingSingle || invalidRange) {
+            throw new Error(`Enter a valid tenant price for ${option.name}.`);
+          }
+        }
+        await providerServiceOptionApi.setOptionPrice(option.mapping_id, {
+          enabled: true,
+          pricing_model: option.affects_estimate ? draft.pricingModel : undefined,
+          ...(draft.pricingModel === "FIXED" ? { fixed_price: draft.amount } : {}),
+          ...(draft.pricingModel === "PER_UNIT" ? { unit_price: draft.amount } : {}),
+          ...(draft.pricingModel === "RANGE"
+            ? { minimum_price: draft.minimum, maximum_price: draft.maximum }
+            : {}),
+        });
+      }
+      setMessage("Service options saved. Customer booking now uses this exact job-type configuration.");
+      supported.refetch();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Service options could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (available.loading || supported.loading) return <Card><Skeleton height={120} /></Card>;
+  if (available.error || supported.error) return <Card><Alert tone="danger">{available.error ?? supported.error}</Alert></Card>;
+  const options = available.data ?? [];
+  return (
+    <Card title="Customer-selectable service options">
+      <p style={{ margin: "0 0 14px", color: "var(--text-secondary)", fontSize: 12.5, lineHeight: 1.55 }}>
+        These options are created and mapped to this job type by Admin. Select what your business provides and set your own price where the option changes the estimate.
+      </p>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {message && <Alert tone="success">{message}</Alert>}
+      {!options.length ? (
+        <div style={{ color: "var(--text-tertiary)", fontSize: 12.5 }}>Admin has not mapped any tenant-selectable options to this job type.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {options.map(option => {
+            const draft = drafts[option.mapping_id] ?? { enabled: option.is_required, pricingModel: "FIXED" as const, amount: "", minimum: "", maximum: "" };
+            const enabled = option.is_required || draft.enabled;
+            return (
+              <div key={option.mapping_id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, fontWeight: 650 }}>
+                  <input type="checkbox" checked={enabled} disabled={option.is_required || saving}
+                    onChange={event => update(option.mapping_id, { enabled: event.target.checked })} />
+                  <span style={{ flex: 1 }}>{option.name}</span>
+                  {option.is_required && <StatusBadge status="required" size="sm" />}
+                </label>
+                {enabled && option.affects_estimate && (
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, .7fr) minmax(160px, 1fr)", gap: 8, marginTop: 10 }}>
+                    <select aria-label={`Pricing model for ${option.name}`} value={draft.pricingModel}
+                      onChange={event => update(option.mapping_id, { pricingModel: event.target.value as ServiceOptionDraft["pricingModel"] })}
+                      style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface)", color: "var(--text-primary)", padding: "8px 9px" }}>
+                      <option value="FIXED">Fixed price</option><option value="PER_UNIT">Per unit</option><option value="RANGE">Price range</option>
+                    </select>
+                    {draft.pricingModel === "RANGE" ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <Input aria-label={`Minimum price for ${option.name}`} type="number" min={0} value={draft.minimum} onChange={event => update(option.mapping_id, { minimum: event.target.value })} placeholder="Minimum ₹" />
+                        <Input aria-label={`Maximum price for ${option.name}`} type="number" min={0} value={draft.maximum} onChange={event => update(option.mapping_id, { maximum: event.target.value })} placeholder="Maximum ₹" />
+                      </div>
+                    ) : (
+                      <Input aria-label={`Price for ${option.name}`} type="number" min={0} value={draft.amount} onChange={event => update(option.mapping_id, { amount: event.target.value })} placeholder={draft.pricingModel === "PER_UNIT" ? `₹ per ${option.measurement_unit ?? "unit"}` : "Price ₹"} />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div><Button variant="primary" loading={saving} onClick={save}>Save service options</Button></div>
+        </div>
+      )}
+    </Card>
   );
 }
 

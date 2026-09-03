@@ -18,9 +18,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./test-setup.ts"],
     globals: true,
-    // Playwright specs must never be collected by Vitest. The historical
-    // root-level reproduction spec otherwise starts browser-test machinery
-    // under jsdom and makes `npm test` appear to hang indefinitely.
-    exclude: ["**/node_modules/**", "**/.next/**", "**/tests-repro-upload.spec.ts"],
+    // Keep generated and dependency trees out of component-test discovery.
+    exclude: ["**/node_modules/**", "**/.next/**"],
   },
 });

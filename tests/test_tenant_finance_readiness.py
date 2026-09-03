@@ -1,7 +1,7 @@
 """Finance Readiness step (onboarding step 7 of 8) — router + model structure tests.
 
 Home Services canonical model: the customer pays the tenant's business
-directly; ServiceOS never collects/holds/settles that payment. These tests
+directly; Fuvay never collects/holds/settles that payment. These tests
 assert the router only ever reads the LIVE commission/credit/deposit
 authorities and never invents a payout/settlement mechanism or reads from
 the frozen package_commerce commission path.

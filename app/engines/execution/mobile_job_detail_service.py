@@ -112,7 +112,10 @@ class TechnicianJobDetailService:
         requirements = await self._build_requirements(db, job)
         blocker = None
         if work_start_status.get("start_work_block_code"):
-            blocker = {"code": work_start_status["start_work_block_code"], "message": next_action.get("blocked_message")}
+            blocker = {
+                "code": work_start_status["start_work_block_code"],
+                "message": work_start_status.get("start_work_block_message") or next_action.get("blocked_message"),
+            }
 
         is_terminal = job.status in _TERMINAL_STATUSES
 

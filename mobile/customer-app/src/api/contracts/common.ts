@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Every ServiceOS API response this app has observed wraps its payload in
+/** Every Fuvay API response this app has observed wraps its payload in
  * `{ ok, data, request_id, ... }` via app/schemas/base.py's `ok()` helper. */
 export const apiEnvelopeSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   z.object({

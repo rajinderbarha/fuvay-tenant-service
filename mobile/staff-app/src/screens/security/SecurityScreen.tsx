@@ -154,7 +154,7 @@ export function SecurityScreen({ navigation }: Props) {
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, padding: theme.spacing.base }}>
           <Icon name="information-circle-outline" size="compact" color={theme.colors.textTertiary} decorative />
-          <AppText variant="caption" color="tertiary" style={{ flex: 1 }}>ServiceOS will never ask for your password or OTP.</AppText>
+          <AppText variant="caption" color="tertiary" style={{ flex: 1 }}>Fuvay will never ask for your password or OTP.</AppText>
         </View>
       </ScrollView>
     </SafeAreaScreen>

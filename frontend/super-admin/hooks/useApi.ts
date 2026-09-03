@@ -44,7 +44,17 @@ export function useApi<T>(
     const id = ++runRef.current;
     setLoading(true); setError(null); setErrorCode(null); setRequestId(null);
     try {
-      const result = await fetcher();
+      let result: T;
+      try {
+        result = await fetcher();
+      } catch (firstError) {
+        // A browser-level failure (offline transition, aborted socket, dev
+        // server warm-up) has no domain error code and is safe to retry once
+        // because useApi is only used for reads. Never retry a backend verdict.
+        if (firstError instanceof ServiceOSError) throw firstError;
+        await new Promise(resolve => window.setTimeout(resolve, 250));
+        result = await fetcher();
+      }
       if (id === runRef.current) setData(result);
     } catch (e) {
       if (id === runRef.current) {
@@ -58,7 +68,15 @@ export function useApi<T>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);
 
-  useEffect(() => { run(); }, [run]);
+  // Schedule the automatic load one tick later. React development Strict Mode
+  // mounts an effect, immediately cleans it up, then mounts it again; firing
+  // synchronously here launched two identical requests and the slower failure
+  // could replace a successful response with an error card. The cleanup
+  // cancels that throwaway pass while manual refetch remains immediate.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void run(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [run]);
   return { data, loading, error, errorCode, requestId, refetch: run };
 }
 

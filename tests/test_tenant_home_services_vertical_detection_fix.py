@@ -29,7 +29,7 @@ FRONTEND = ROOT / "frontend/tenant-portal"
 
 USE_TENANT = (FRONTEND / "hooks/useTenant.ts").read_text(encoding="utf-8-sig")
 GUARD_PATH = FRONTEND / "lib/verticalGuard.ts"
-LEGACY_PAGE = (FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx").read_text(encoding="utf-8-sig")
+LEGACY_PAGE = FRONTEND / "app/(tenant)/tenant/setup/services/page.tsx"
 WIZARD_PAGE = (FRONTEND / "app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx").read_text(encoding="utf-8-sig")
 API_TS = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 PORTAL_ROUTER = (ROOT / "app/engines/tenant_engine/portal_router.py").read_text(encoding="utf-8-sig")
@@ -87,7 +87,7 @@ def test_use_tenant_error_path_sets_request_id():
 
 # ── 3. Wizard page — loading/error/guard wiring ──────────────────────────────
 def test_wizard_uses_normalizer_not_raw_equality():
-    assert "/tenant/home-services/setup/services-pricing" in LEGACY_PAGE
+    assert not LEGACY_PAGE.exists()
     assert 'tenant.vertical === "home_services"' not in WIZARD_PAGE
 
 

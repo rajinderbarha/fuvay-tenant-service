@@ -232,7 +232,7 @@ async def report_critical_incident(
     user: UserContext = Depends(get_current_user),
 ):
     """Restrained channel (section 17). Permission-gated, rate-limited, routed
-    to ServiceOS Incident Response, audited. Not a shortcut for questions."""
+    to Fuvay Incident Response, audited. Not a shortcut for questions."""
     if not (_perm(user, P.SUPPORT_INCIDENT_REPORT) and not _read_only(user)):
         raise HTTPException(403, "Only an owner can report a critical platform incident.")
     if payload.critical_impact_key not in C.CRITICAL_INCIDENT_IMPACT_KEYS:
@@ -386,7 +386,7 @@ async def confirm_resolution(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ):
-    """Tenant confirms a ServiceOS resolution -> the case closes. The tenant
+    """Tenant confirms a Fuvay resolution -> the case closes. The tenant
     can only reach 'closed' from 'resolved' — never an arbitrary status."""
     if not (_perm(user, P.SUPPORT_REQUESTS_REPLY) and not _read_only(user)):
         raise HTTPException(403, "You do not have permission to confirm a resolution.")

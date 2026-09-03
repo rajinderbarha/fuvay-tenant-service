@@ -35,7 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * Direct Payment Confirmation & Final Job Closure (Phase O). ServiceOS
+ * Direct Payment Confirmation & Final Job Closure (Phase O). Fuvay
  * never collects this payment -- it only records the provider's assertion
  * and the customer's independent confirmation (spec section 1).
  */
@@ -140,7 +140,7 @@ export function DirectPaymentScreen({ route, navigation }: Props) {
           <AmountDueCard amount={data.amount} />
         </Section>
 
-        <InlineAlert tone="info" message="Customer pays the provider directly. ServiceOS does not collect this payment." />
+        <InlineAlert tone="info" message="Customer pays the provider directly. Fuvay does not collect this payment." />
 
         {!hasRecord ? (
           <Section>
@@ -163,7 +163,7 @@ export function DirectPaymentScreen({ route, navigation }: Props) {
             <AppText variant="title" style={{ marginBottom: theme.spacing.xs }}>Customer confirmation</AppText>
             <Card>
               <AppText variant="bodyStrong">{STATUS_LABEL[data.provider_record!.status] ?? data.provider_record!.status}</AppText>
-              <AppText variant="caption" color="tertiary">A confirmation request was sent in the ServiceOS app.</AppText>
+              <AppText variant="caption" color="tertiary">A confirmation request was sent in the Fuvay app.</AppText>
               {canRemind ? (
                 <View style={{ marginTop: theme.spacing.sm }}>
                   <SecondaryButton label="Send reminder" onPress={() => { void remindCustomer(); }} disabled={mutating || offline} />

@@ -1,5 +1,5 @@
 """
-ServiceOS — Async Database Setup
+Fuvay — Async Database Setup
 SQLAlchemy 2.0 async engine + session factory.
 Per-tenant schema isolation: each tenant gets schema = tenant_{tenant_id}.
 The public schema holds platform-level tables (tenants, tenant_engines, users).

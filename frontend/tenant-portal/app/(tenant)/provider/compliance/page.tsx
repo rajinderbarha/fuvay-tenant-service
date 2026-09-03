@@ -502,7 +502,7 @@ function ProviderComplianceContent() {
             },
             {
               title: "Who can I contact for compliance queries?",
-              body: "For escalations, email compliance@serviceos.in or file a Grievance request from the My Requests tab. Our Data Protection Officer responds within 24 hours.",
+              body: "For escalations, file a Grievance request from the My Requests tab. Our Data Protection Officer responds within 24 hours.",
             },
           ].map(({ title, body }) => (
             <Card key={title}>

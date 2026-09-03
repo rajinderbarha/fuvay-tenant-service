@@ -1,5 +1,5 @@
 """
-ServiceOS — Middleware Stack
+Fuvay — Middleware Stack
 Order (last registered = first executed):
   RequestID → StructuredLogging → UsageQuota → Idempotency → CORS → SecurityHeaders
 
@@ -43,7 +43,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
-        response.headers["X-ServiceOS-Version"] = get_settings().APP_VERSION
+        response.headers["X-Fuvay-Version"] = get_settings().APP_VERSION
         return response
 
 
@@ -305,7 +305,7 @@ def register_middleware(app: FastAPI) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=[
-            "X-Request-ID", "X-ServiceOS-Version",
+            "X-Request-ID", "X-Fuvay-Version",
             "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
             "X-Idempotency-Key", "X-Idempotency-Replayed",
             # CSV exports are capped server-side and report the cap through

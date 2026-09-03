@@ -35,9 +35,8 @@ def test_dispatch_filters_and_pagination_are_url_backed():
 
 def test_dispatch_navigation_uses_only_canonical_home_services_route():
     nav = NAV.read_text(encoding="utf-8")
-    legacy = LEGACY.read_text(encoding="utf-8")
     assert 'href: "/home-services/dispatch"' in nav
-    assert 'redirect("/home-services/dispatch")' in legacy
+    assert not LEGACY.exists()
 
 
 def test_dispatch_mutations_surface_inner_http_200_failures():

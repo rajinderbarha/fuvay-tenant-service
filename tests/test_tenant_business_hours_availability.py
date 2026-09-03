@@ -255,10 +255,8 @@ def test_route_at_correct_path():
 
 
 # ── 33. Old provider/availability redirects ───────────────────────────────────
-def test_provider_availability_redirects_to_new_route():
-    src = read(REDIRECT)
-    assert "/business/coverage-hours" in src
-    assert "replace" in src or "redirect" in src.lower() or "Redirect" in src
+def test_provider_availability_duplicate_route_is_deleted():
+    assert not REDIRECT.exists()
 
 
 # ── 34. Nav item points to new route ─────────────────────────────────────────

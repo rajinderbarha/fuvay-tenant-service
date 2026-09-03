@@ -1,26 +1,14 @@
 "use client";
 import React from "react";
-import { PartyPopper, AlertTriangle, ArrowRight, X } from "lucide-react";
+import {
+  AlertTriangle, BriefcaseBusiness, Clock3, MapPin, PartyPopper, X,
+} from "lucide-react";
 import type { DashboardAlert } from "../../lib/api";
 import { playAlertTone } from "../../lib/alertTone";
 
-/**
- * A non-blocking dashboard alert: a new job to celebrate, or a job past its slot to fix.
- *
- * The tone comes from the SERVER (`alert.tone`, the notification registry's own severity
- * vocabulary), and it drives everything a provider reads at a glance -- the colour, the
- * icon, the heading and the button. That is the point: someone should know within a
- * second whether this popup is worth stopping for, without reading a word of it. A single
- * neutral alert for both would train people to dismiss all of it, and the delay alerts
- * are the ones that cost money. The panel never blocks the operational dashboard.
- *
- * Delays come FIRST when both are waiting. Good news can be a moment later; a customer
- * standing in their kitchen cannot.
- */
-
 export interface JobAlertPopupProps {
   alerts: DashboardAlert[];
-  /** Real totals, which can exceed the alerts shown -- the list is capped for a popup. */
+  /** Real totals can exceed the four alerts shown in this compact interruption. */
   newTotal: number;
   delayedTotal: number;
   onDismiss: () => void;
@@ -30,28 +18,20 @@ export interface JobAlertPopupProps {
 
 const TONES = {
   success: {
-    accent: "var(--success, #10b981)",
-    surface: "rgba(16,185,129,0.08)",
-    Icon: PartyPopper,
-    action: "Assign a technician",
+    accent: "var(--success, #10b981)", surface: "rgba(16,185,129,0.12)",
+    Icon: PartyPopper, eyebrow: "New booking", action: "Assign technician",
   },
   warning: {
-    accent: "var(--warning, #f59e0b)",
-    surface: "rgba(245,158,11,0.10)",
-    Icon: AlertTriangle,
-    action: "Open the job",
+    accent: "var(--warning, #f59e0b)", surface: "rgba(245,158,11,0.13)",
+    Icon: AlertTriangle, eyebrow: "Needs attention", action: "Open job",
   },
   critical: {
-    accent: "var(--danger, #ef4444)",
-    surface: "rgba(239,68,68,0.10)",
-    Icon: AlertTriangle,
-    action: "Open the job",
+    accent: "var(--danger, #ef4444)", surface: "rgba(239,68,68,0.13)",
+    Icon: AlertTriangle, eyebrow: "Urgent action", action: "Open job",
   },
   info: {
-    accent: "var(--brand, #4f46e5)",
-    surface: "rgba(79,70,229,0.08)",
-    Icon: ArrowRight,
-    action: "Open the job",
+    accent: "var(--brand, #4f46e5)", surface: "rgba(79,70,229,0.11)",
+    Icon: BriefcaseBusiness, eyebrow: "Job update", action: "Open job",
   },
 } as const;
 
@@ -59,36 +39,35 @@ function toneOf(tone: DashboardAlert["tone"]) {
   return TONES[tone] ?? TONES.info;
 }
 
-/** Lower sorts first: the most serious alert leads, and its tone is the one that sounds. */
+/** The most time-sensitive customer commitment always leads. */
 function toneWeight(tone: DashboardAlert["tone"]): number {
-  return tone === "critical" ? 0 : tone === "warning" ? 1 : 2;
+  return tone === "critical" ? 0 : tone === "warning" ? 1 : tone === "success" ? 2 : 3;
+}
+
+function totalLabel(newTotal: number, delayedTotal: number, hiddenAlerts: number): string {
+  const parts: string[] = [];
+  if (delayedTotal > 0) parts.push(`${delayedTotal} past slot`);
+  if (newTotal > 0) parts.push(`${newTotal} new`);
+  if (hiddenAlerts > 0) parts.push(`${hiddenAlerts} more`);
+  return parts.join(" · ");
 }
 
 export function JobAlertPopup({
   alerts, newTotal, delayedTotal, onDismiss, onOpenJob, onSeeAllDelayed,
 }: JobAlertPopupProps) {
-  const leadTone = alerts.length > 0
-    ? [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone))[0].tone
-    : null;
+  const ordered = React.useMemo(
+    () => [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone)),
+    [alerts],
+  );
+  const lead = ordered[0];
+  const leadTone = lead?.tone ?? null;
 
-  /**
-   * Sounds once per popup, matched to the severity: rising for a new job, falling for a
-   * delay. The point is that a provider can tell WHICH arrived without looking up --
-   * a single generic ping would only say "something happened".
-   *
-   * Keyed on the tone so a delay arriving while a celebration is on screen re-sounds
-   * with the right one, and does not sound again on an unrelated re-render.
-   */
   React.useEffect(() => {
     if (leadTone) playAlertTone(leadTone);
   }, [leadTone]);
 
-  if (alerts.length === 0) return null;
+  if (!lead) return null;
 
-  // Worst first. `tone` decides, not list order, so this holds however the caller
-  // assembled the array.
-  const ordered = [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone));
-  const lead = ordered[0];
   const visible = ordered.slice(0, 4);
   const rest = visible.slice(1);
   const tone = toneOf(lead.tone);
@@ -97,155 +76,75 @@ export function JobAlertPopup({
 
   return (
     <aside
-      role="region"
-      aria-live="polite"
-      aria-label={lead.title}
+      role="dialog"
+      aria-modal="false"
+      aria-live={isDelay ? "assertive" : "polite"}
+      aria-labelledby="job-alert-title"
+      aria-describedby="job-alert-message"
+      className="job-alert-popup"
       style={{
-        width: "100%",
-      }}
+        "--job-alert-accent": tone.accent,
+        "--job-alert-tint": tone.surface,
+      } as React.CSSProperties}
     >
-      <div
-        style={{
-          width: "100%", background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg, 14px)", overflow: "hidden",
-          boxShadow: "0 18px 48px rgba(2,6,23,0.28)",
-          // A single hairline of the tone colour. A 4px bar PLUS a tinted header PLUS a
-          // coloured button was three statements of the same thing.
-          borderTop: `3px solid ${tone.accent}`,
-        }}
-      >
-        <div style={{ padding: "18px 20px", display: "flex", gap: 14, alignItems: "flex-start" }}>
-          <div
-            style={{
-              width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-              // The tint lives on the icon tile only, so the tone reads at a glance
-              // without washing the whole panel in colour.
-              background: tone.surface,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-          >
-            <tone.Icon size={20} color={tone.accent} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
-              {lead.title}
-            </h2>
-            <p style={{ margin: "5px 0 0", fontSize: 13, lineHeight: 1.5, color: "var(--text-secondary)" }}>
-              {lead.message}
-            </p>
-            {/* The slot itself, for a delay: "how late" means little without knowing
-                what was promised. */}
-            {isDelay && lead.scheduled_date ? (
-              <p
-                style={{
-                  margin: "10px 0 0", fontSize: 12, color: "var(--text-secondary)",
-                  padding: "6px 8px", borderRadius: 6,
-                  background: "var(--surface-raised, rgba(255,255,255,0.05))",
-                  display: "inline-block",
-                }}
-              >
-                {`Committed slot: ${lead.scheduled_date}`}
-                {lead.scheduled_time_window ? ` · ${lead.scheduled_time_window}` : ""}
-                {lead.city ? ` · ${lead.city}` : ""}
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={onDismiss}
-            aria-label="Dismiss"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", height: 24 }}
-          >
-            <X size={18} />
-          </button>
+      <style>{`
+        .job-alert-popup{position:fixed;z-index:80;top:74px;right:24px;width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 96px);overflow:auto;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--job-alert-accent);border-radius:16px;box-shadow:0 24px 72px rgba(2,6,23,.34),0 4px 14px rgba(2,6,23,.18);animation:job-alert-enter .2s ease-out}.job-alert-head{display:grid;grid-template-columns:44px minmax(0,1fr) 36px;gap:12px;padding:16px 16px 14px;align-items:start}.job-alert-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--job-alert-tint);color:var(--job-alert-accent)}.job-alert-eyebrow{margin:0 0 4px;color:var(--job-alert-accent);font-size:10px;line-height:1.2;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.job-alert-title{margin:0;color:var(--text-primary);font-size:16px;line-height:1.3;font-weight:700}.job-alert-message{margin:5px 0 0;color:var(--text-secondary);font-size:12px;line-height:1.5}.job-alert-dismiss{width:36px;height:36px;border:0;border-radius:10px;display:grid;place-items:center;background:transparent;color:var(--text-tertiary);cursor:pointer}.job-alert-dismiss:hover{background:var(--surface-raised);color:var(--text-primary)}.job-alert-meta{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 14px}.job-alert-chip{display:inline-flex;align-items:center;gap:5px;min-height:26px;padding:4px 8px;border-radius:8px;background:var(--surface-sunken);color:var(--text-secondary);font-size:11px}.job-alert-list{margin:0;padding:7px 9px;list-style:none;border-top:1px solid var(--border)}.job-alert-list-button{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:9px;align-items:center;width:100%;padding:9px 7px;border:0;border-radius:10px;background:transparent;color:var(--text-primary);font:inherit;text-align:left;cursor:pointer}.job-alert-list-button:hover{background:var(--surface-sunken)}.job-alert-list-icon{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:var(--row-tone-surface);color:var(--row-tone-accent)}.job-alert-list-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600}.job-alert-late{color:var(--row-tone-accent);font-size:11px;font-weight:650;white-space:nowrap}.job-alert-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface-raised)}.job-alert-total{color:var(--text-tertiary);font-size:11px}.job-alert-actions{display:flex;gap:8px}.job-alert-button{min-height:36px;padding:8px 12px;border-radius:9px;font:inherit;font-size:12px;font-weight:650;cursor:pointer}.job-alert-button-secondary{border:1px solid var(--border);background:transparent;color:var(--text-primary)}.job-alert-button-primary{border:1px solid transparent;background:var(--job-alert-accent);color:#fff}.job-alert-button:focus-visible,.job-alert-dismiss:focus-visible,.job-alert-list-button:focus-visible{outline:2px solid var(--focus-ring,var(--brand));outline-offset:2px}@keyframes job-alert-enter{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}@media(max-width:700px){.job-alert-popup{top:auto;right:12px;bottom:12px;width:calc(100vw - 24px);max-height:min(72vh,620px);border-radius:16px}.job-alert-head{grid-template-columns:40px minmax(0,1fr) 36px;padding:14px 14px 12px}.job-alert-icon{width:40px;height:40px}.job-alert-meta{padding:0 14px 12px}.job-alert-footer{align-items:stretch;flex-direction:column;padding:12px 14px}.job-alert-actions{display:grid;grid-template-columns:1fr 1fr}.job-alert-button:only-child{grid-column:1/-1}.job-alert-button{width:100%}}@media(prefers-reduced-motion:reduce){.job-alert-popup{animation:none}}
+      `}</style>
+
+      <div className="job-alert-head">
+        <div className="job-alert-icon" aria-hidden="true"><tone.Icon size={21} /></div>
+        <div>
+          <p className="job-alert-eyebrow">{tone.eyebrow}</p>
+          <h2 id="job-alert-title" className="job-alert-title">{lead.title}</h2>
+          <p id="job-alert-message" className="job-alert-message">{lead.message}</p>
         </div>
+        <button type="button" onClick={onDismiss} aria-label="Dismiss job alert" className="job-alert-dismiss">
+          <X size={18} />
+        </button>
+      </div>
 
-        {/* Everything else waiting, named rather than counted: "and 4 more" tells a
-            provider nothing about whether to keep reading. */}
-        {rest.length > 0 ? (
-          <ul
-            style={{
-              margin: 0, padding: "6px 12px 10px", listStyle: "none",
-              borderTop: "1px solid var(--border)",
-            }}
-          >
-            {rest.map(alert => {
-              const t = toneOf(alert.tone);
-              return (
-                <li key={alert.job_id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenJob(alert.job_id)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 10, width: "100%",
-                      background: "none", border: "none", cursor: "pointer",
-                      padding: "8px", borderRadius: 8, textAlign: "left",
-                      fontSize: 13, color: "var(--text-primary)",
-                    }}
-                  >
-                    <t.Icon size={14} color={t.accent} style={{ flexShrink: 0 }} />
-                    <span
-                      style={{
-                        flex: 1, minWidth: 0, overflow: "hidden",
-                        textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}
-                    >
-                      {alert.label}
-                    </span>
-                    {/* Right-aligned so the delays line up and can be compared down the
-                        column, instead of being read one sentence at a time. */}
-                    {alert.lateness_label ? (
-                      <span style={{ fontSize: 12, color: t.accent, flexShrink: 0 }}>
-                        {alert.lateness_label}
-                      </span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+      {(lead.scheduled_date || lead.scheduled_time_window || lead.city) && (
+        <div className="job-alert-meta" aria-label="Job details">
+          {lead.scheduled_date && <span className="job-alert-chip"><Clock3 size={12} />{lead.scheduled_date}</span>}
+          {lead.scheduled_time_window && <span className="job-alert-chip"><Clock3 size={12} />{lead.scheduled_time_window}</span>}
+          {lead.city && <span className="job-alert-chip"><MapPin size={12} />{lead.city}</span>}
+        </div>
+      )}
 
-        <div
-          style={{
-            padding: "14px 20px", borderTop: "1px solid var(--border)",
-            background: "var(--surface-raised, rgba(255,255,255,0.03))",
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-          }}
-        >
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            {/* Real totals, so a capped list never quietly understates the problem. */}
-            {delayedTotal > 0
-              ? `${delayedTotal} past their slot${newTotal > 0 ? ` · ${newTotal} new` : ""}`
-              : `${newTotal} new job${newTotal === 1 ? "" : "s"}`}
-            {hiddenAlerts > 0 ? ` · ${hiddenAlerts} more` : ""}
-          </span>
-          <div style={{ display: "flex", gap: 8 }}>
-            {delayedTotal > 1 ? (
+      {rest.length > 0 && (
+        <ul className="job-alert-list" aria-label="Other job alerts">
+          {rest.map(alert => {
+            const rowTone = toneOf(alert.tone);
+            return <li key={`${alert.job_id}:${alert.tone}`}>
               <button
                 type="button"
-                onClick={onSeeAllDelayed}
+                onClick={() => onOpenJob(alert.job_id)}
+                className="job-alert-list-button"
                 style={{
-                  background: "none", border: "1px solid var(--border)", borderRadius: 8,
-                  padding: "8px 12px", fontSize: 13, cursor: "pointer",
-                  color: "var(--text-primary)",
-                }}
+                  "--row-tone-accent": rowTone.accent,
+                  "--row-tone-surface": rowTone.surface,
+                } as React.CSSProperties}
               >
-                See all
+                <span className="job-alert-list-icon" aria-hidden="true"><rowTone.Icon size={13} /></span>
+                <span className="job-alert-list-label">{alert.label}</span>
+                {alert.lateness_label && <span className="job-alert-late">{alert.lateness_label}</span>}
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => onOpenJob(lead.job_id)}
-              style={{
-                background: tone.accent, color: "#fff", border: "none", borderRadius: 8,
-                padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              }}
-            >
-              {tone.action}
+            </li>;
+          })}
+        </ul>
+      )}
+
+      <div className="job-alert-footer">
+        <span className="job-alert-total">{totalLabel(newTotal, delayedTotal, hiddenAlerts)}</span>
+        <div className="job-alert-actions">
+          {delayedTotal > 1 && (
+            <button type="button" onClick={onSeeAllDelayed} className="job-alert-button job-alert-button-secondary">
+              See all delayed
             </button>
-          </div>
+          )}
+          <button type="button" onClick={() => onOpenJob(lead.job_id)} className="job-alert-button job-alert-button-primary">
+            {tone.action}
+          </button>
         </div>
       </div>
     </aside>

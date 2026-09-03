@@ -119,7 +119,7 @@ WA_BUTTON_TITLE_CHARS = 20
 #: An interactive body is capped well below a plain text body.
 MAX_INTERACTIVE_BODY_CHARS = 1024
 
-#: The bundled WhatsApp Flow has one terminal scheduling screen. ServiceOS
+#: The bundled WhatsApp Flow has one terminal scheduling screen. Fuvay
 #: injects live slots at send time and processes the resulting ``nfm_reply``
 #: through the same slot-selection service as an ordinary list tap.
 WHATSAPP_BOOKING_FLOW_SCREEN = "BOOKING_SLOT"

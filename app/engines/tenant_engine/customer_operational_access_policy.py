@@ -2,7 +2,7 @@
 authorization for tenant-side access to customer contact/address data.
 
 Business requirement (marketplace anti-disintermediation): customers must
-book through the ServiceOS customer app; providers/technicians must not
+book through the Fuvay customer app; providers/technicians must not
 receive permanent reusable contact info that lets them route future bookings
 off-platform. This module is the ONE place that decides — given tenant,
 staff, customer, job, job status, assignment and purpose — which fields and

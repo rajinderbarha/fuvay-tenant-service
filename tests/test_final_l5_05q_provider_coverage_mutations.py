@@ -322,9 +322,16 @@ class TestOfferingsAuditNowWritten:
     def test_offering_row_lookup_scopes_by_both_tenant_and_offering_id(self):
         src = _read("app/engines/tenant_engine/admin_router.py")
         start = src.index("async def _fetch_offering_row(")
-        end = src.index("return dict", start)
+        end = src.index("\n\n@router", start)
         block = src[start:end]
-        assert "peo.tenant_id = :tid AND peo.id = :oid" in block
+        assert "_canonical_enabled_offering_rows(db, tenant_id, offering_id)" in block
+        provider_src = _read("app/engines/provider_portal/router.py")
+        helper_start = provider_src.index("async def _canonical_enabled_offering_rows(")
+        helper_end = provider_src.index("\n\n\n", helper_start)
+        helper = provider_src[helper_start:helper_end]
+        assert "ts.tenant_id=:tid" in helper
+        assert "ts.id=:service_id" in helper
+        assert 'params["service_id"]' in helper
 
 
 class TestAdminTenantServiceServiceAreaMethodsRemoved:

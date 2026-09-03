@@ -41,21 +41,16 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "core",
     breadcrumbs: [{ label: "Staff" }],
   },
-  "/admin/operations": {
-    title: "Operations",
-    section: "operations",
-    breadcrumbs: [{ label: "Operations" }],
-  },
   "/admin/home-services": {
     title: "Home Services",
     section: "operations",
-    breadcrumbs: [{ label: "Operations", href: "/admin/operations" }, { label: "Home Services" }],
+    breadcrumbs: [{ label: "Operations" }, { label: "Home Services" }],
   },
   "/admin/home-services/finance": {
     title: "Home Services Finance",
     section: "operations",
     breadcrumbs: [
-      { label: "Operations", href: "/admin/operations" },
+      { label: "Operations" },
       { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Finance" },
     ],
@@ -64,7 +59,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Bookings & Jobs",
     section: "operations",
     breadcrumbs: [
-      { label: "Operations", href: "/admin/operations" },
+      { label: "Operations" },
       { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Bookings & Jobs" },
     ],
@@ -73,18 +68,9 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Providers",
     section: "operations",
     breadcrumbs: [
-      { label: "Operations", href: "/admin/operations" },
-      { label: "Home Services", href: "/admin/home-services/dashboard" },
-      { label: "Providers" },
-    ],
-  },
-  "/admin/home-services/complaints": {
-    title: "Complaints",
-    section: "operations",
-    breadcrumbs: [
       { label: "Operations" },
       { label: "Home Services", href: "/admin/home-services/dashboard" },
-      { label: "Complaints" },
+      { label: "Providers" },
     ],
   },
   "/admin/home-services/settings": {
@@ -100,7 +86,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Customers",
     section: "operations",
     breadcrumbs: [
-      { label: "Operations", href: "/admin/operations" },
+      { label: "Operations" },
       { label: "Home Services", href: "/admin/home-services/dashboard" },
       { label: "Customers" },
     ],
@@ -109,7 +95,7 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     title: "Dashboard",
     section: "operations",
     breadcrumbs: [
-      { label: "Operations", href: "/admin/operations" },
+      { label: "Operations" },
       { label: "Home Services" },
       { label: "Dashboard" },
     ],
@@ -127,12 +113,12 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
   "/admin/real-estate": {
     title: "Real Estate",
     section: "operations",
-    breadcrumbs: [{ label: "Operations", href: "/admin/operations" }, { label: "Real Estate" }],
+    breadcrumbs: [{ label: "Operations" }, { label: "Real Estate" }],
   },
   "/admin/coaching": {
     title: "Coaching",
     section: "operations",
-    breadcrumbs: [{ label: "Operations", href: "/admin/operations" }, { label: "Coaching" }],
+    breadcrumbs: [{ label: "Operations" }, { label: "Coaching" }],
   },
   "/admin/bookability": {
     title: "Bookability",
@@ -278,11 +264,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Reviews" }],
   },
-  "/admin/complaints": {
-    title: "Complaints",
-    section: "engagement",
-    breadcrumbs: [{ label: "Complaints" }],
-  },
   "/admin/automation": {
     title: "Automation",
     section: "automation",
@@ -335,16 +316,6 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "admin",
     breadcrumbs: [{ label: "Audit Logs" }],
   },
-  "/admin/roles": {
-    title: "Roles",
-    section: "admin",
-    breadcrumbs: [{ label: "Access Control" }, { label: "Roles" }],
-  },
-  "/admin/permissions": {
-    title: "Permissions",
-    section: "admin",
-    breadcrumbs: [{ label: "Access Control" }, { label: "Permissions" }],
-  },
   "/admin/media": {
     title: "Media Library",
     section: "admin",
@@ -370,7 +341,6 @@ const ROUTE_LABELS: Record<string, string> = {
   "bulk-runs": "Bulk Runs",
   "bulk-wizard": "Bulk Wizard",
   "catalog-workspace": "Catalog Workspace",
-  "customer-credits": "Customer Credits",
   "customer-flow": "Customer Flow",
   "direct-payments": "Direct Payments",
   "financial-events": "Financial Events",
@@ -379,15 +349,12 @@ const ROUTE_LABELS: Record<string, string> = {
   "master-services": "Master Services",
   "notification-outbox": "Delivery Outbox",
   "notification-templates": "Notification Templates",
-  "provider-wallets": "Provider Wallets",
   "service-area-requests": "Service Area Requests",
   "service-groups": "Service Groups",
   "service-invoices": "Service Invoices",
   "service-setup": "Service Setup",
-  "tenant-assistant": "Tenant Assistant",
   "trust-quality": "Trust & Quality",
   "types-brands": "Types & Brands",
-  "workflow-templates": "Workflow Templates",
 };
 
 const humanizeRoute = (segment: string) => ROUTE_LABELS[segment]

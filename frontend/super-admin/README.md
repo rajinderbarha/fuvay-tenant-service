@@ -1,4 +1,4 @@
-# ServiceOS — Super Admin Portal
+# Fuvay — Super Admin Portal
 
 Next.js 15 dashboard for platform administrators.
 

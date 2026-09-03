@@ -1,7 +1,7 @@
 """HOME-SERVICES-FINANCE — Overview aggregation + Direct Customer Payments.
 
 Home Services customers pay the provider directly (cash/UPI/card/bank
-transfer) -- ServiceOS never collects the job payment itself. This suite
+transfer) -- Fuvay never collects the job payment itself. This suite
 proves, against real inserted rows (not mocks):
 
 1. Direct Customer Payments (ServicePaymentRecord) and Overview aggregation

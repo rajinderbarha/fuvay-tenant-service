@@ -2,7 +2,7 @@
 /**
  * Tenant Onboarding — Finance Readiness (step 7 of 8).
  * Home Services: the customer pays the tenant's business directly.
- * ServiceOS never collects/holds/settles that payment — this step only
+ * Fuvay never collects/holds/settles that payment — this step only
  * records HOW the tenant accepts it (direct payment methods) and the
  * tenant's invoice preferences.
  *
@@ -257,7 +257,7 @@ export default function FinanceReadinessPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
               <div>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Issue customer receipt</p>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Provider receipt for a direct payment — not a ServiceOS payment receipt.</p>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Provider receipt for a direct payment — not a Fuvay payment receipt.</p>
               </div>
               <SwitchToggle label="Issue customer receipt" checked={form.issue_customer_receipt}
                 onChange={v => setForm({ ...form, issue_customer_receipt: v })}/>

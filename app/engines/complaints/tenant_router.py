@@ -23,8 +23,8 @@ from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.constants import (
-    ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES, STATUS_RESOLUTION_PROPOSED,
-    STATUS_AWAITING_CUSTOMER, STATUS_UNDER_ADMIN_REVIEW, STATUS_ADMIN_REVIEW_PENDING,
+    ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES_EXT, STATUS_RESOLUTION_PROPOSED,
+    STATUS_AWAITING_CUSTOMER,
 )
 from app.engines.tenant_engine.customer_operational_access_policy import customer_alias
 
@@ -49,25 +49,15 @@ def _tid(user: UserContext) -> uuid.UUID:
 def _available_actions(status: str) -> list[str]:
     """Actions THIS tenant can actually perform on a case in `status`.
 
-    This previously returned raw next-status edges out of
-    ALLOWED_TRANSITIONS_EXT (e.g. "under_admin_review", "cancelled"). None of
-    those are things a tenant can do: there is no tenant- or provider-side
-    status-transition endpoint anywhere in this engine -- only admin has one
-    (`/v1/admin/complaints/{id}/request-provider-response` and friends). So the
-    field described transitions the caller had no way to execute, and any UI
-    built on it would render dead buttons.
-
-    Complaint status is deliberately admin-mediated here ("no invented
-    dispute-resolution authority"), so this reports only the two real
-    provider-side capabilities, gated on the state machine that actually
-    enforces them:
+    This reports only the real provider-side capabilities, gated on the state
+    machine that enforces them:
 
       SEND_MESSAGE      -- POST /v1/provider/complaints/{id}/respond
       OFFER_RESOLUTION  -- POST /v1/provider/complaints/{id}/offer-resolution,
                            which transitions to resolution_proposed and is
                            therefore only legal from a status that permits it.
     """
-    if status in FINAL_STATUSES:
+    if status in FINAL_STATUSES_EXT:
         return []
     actions = ["SEND_MESSAGE"]
     if STATUS_RESOLUTION_PROPOSED in ALLOWED_TRANSITIONS_EXT.get(status, set()):
@@ -81,25 +71,20 @@ def _blocked_reason(status: str, actions: list[str]) -> str | None:
     Without this the workspace can only show a missing button, which reads as
     a broken page rather than as "this case is waiting on someone else".
     """
-    if status in FINAL_STATUSES:
+    if status in FINAL_STATUSES_EXT:
         return None
     if "OFFER_RESOLUTION" in actions:
         return None
-    # A case that already carries a proposal is not "waiting for admin
-    # routing" -- saying so would contradict the Resolution tab sitting right
-    # next to it, which is showing the proposal.
     if status == STATUS_RESOLUTION_PROPOSED:
         return (
             "A resolution has been proposed and is with the customer. "
             "You can keep replying while they decide."
         )
-    if status in (STATUS_AWAITING_CUSTOMER,):
+    if status == STATUS_AWAITING_CUSTOMER:
         return "This case is waiting on the customer. You can keep replying."
-    if status in (STATUS_UNDER_ADMIN_REVIEW, STATUS_ADMIN_REVIEW_PENDING):
-        return "A ServiceOS admin is reviewing this case. You can keep replying."
     return (
-        "You can reply to the customer now. Proposing a formal resolution "
-        "unlocks once a ServiceOS admin routes this case for your response."
+        "This case has moved into its selected remedy flow. You can keep "
+        "replying to the customer while the provider-owned action is completed."
     )
 
 
@@ -323,14 +308,14 @@ async def get_evidence(
 ):
     """Photos and documents attached to the case.
 
-    `ComplaintService.list_media` already existed and was already used by the
-    AI settlement service, but NO router exposed it -- so evidence a customer
+    `ComplaintService.list_media` already existed, but no provider router
+    exposed it -- so evidence a customer
     attached to their complaint was stored and then unreachable by the
     provider who needs it to judge the case. The Evidence tab on the case
     workspace was a placeholder purely because this endpoint was missing.
 
     Scoped as `viewer="provider"`, which filters to case-visible media rather
-    than returning admin-only internal attachments.
+    than returning internal attachments.
     """
     tenant_id = _tid(u)
     await _svc.provider_get_complaint(db, tenant_id, complaint_id)

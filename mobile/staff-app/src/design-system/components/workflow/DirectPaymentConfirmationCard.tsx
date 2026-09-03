@@ -24,8 +24,8 @@ export interface DirectPaymentConfirmationCardProps {
 }
 
 /**
- * Uses the correct ServiceOS language: the customer pays the PROVIDER
- * directly; ServiceOS only records confirmation. Never says "ServiceOS
+ * Uses the correct Fuvay language: the customer pays the PROVIDER
+ * directly; Fuvay only records confirmation. Never says "Fuvay
  * payout", "platform settlement sent" or "funds transferred" -- and a
  * technician can only REPORT what was collected, never mark the
  * customer's own confirmation on their behalf.
@@ -42,7 +42,7 @@ export function DirectPaymentConfirmationCard({ amount, state, onReportPayment, 
       </View>
       <Money amount={amount} size="large" />
       <AppText variant="caption" color="tertiary" style={{ marginTop: theme.spacing.xs, fontStyle: "italic" }}>
-        Customer pays the provider directly. ServiceOS records confirmation only.
+        Customer pays the provider directly. Fuvay records confirmation only.
       </AppText>
       {state === "not_reported" && onReportPayment ? (
         <View style={{ marginTop: theme.spacing.sm }}>

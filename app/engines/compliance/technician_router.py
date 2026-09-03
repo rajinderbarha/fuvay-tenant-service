@@ -46,7 +46,7 @@ SUBJECT_TYPE = "tenant_staff"
 # (staff_data_export/staff_data_erasure were added there specifically for this
 # staff-subject use case, per that module's own Slice 2F-20 comment -- reused,
 # not invented). "Account closure" in the UI maps to staff_data_erasure: closing
-# a personal ServiceOS account IS an erasure request for this subject, and
+# a personal Fuvay account IS an erasure request for this subject, and
 # reuses the exact same erasure-safety pipeline (legal hold, active jobs,
 # retention checks) rather than a separate destructive action.
 TECHNICIAN_ALLOWED_REQUEST_TYPES = {
@@ -281,7 +281,7 @@ async def create_request(
         "request_type": result["request_type"], "status": result["status"],
         "status_label": STATUS_LABELS.get(result["status"], result["status"]),
         "submitted_at": result["submitted_at"], "due_at": result["due_at"],
-        "message": "Your request has been submitted and will be reviewed across every ServiceOS category linked to your account.",
+        "message": "Your request has been submitted and will be reviewed across every Fuvay category linked to your account.",
     }, _rid(r), "compliance_technician")
 
 

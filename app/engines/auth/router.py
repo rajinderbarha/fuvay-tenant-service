@@ -10,8 +10,9 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.permissions import P, require_permission, require_tenant_mutation_permission
-from app.core.security import rate_limiter, get_client_ip
+from app.core.security import rate_limiter, get_client_ip, opaque_rate_identifier
 from app.dependencies.auth import (
     get_current_user, UserContext,
     require_super_admin, require_tenant_owner, require_staff_or_above,
@@ -91,6 +92,7 @@ async def register_customer(
         limit_key=f"ip:{get_client_ip(request)}",
         limit_type="auth:register",
         identifier=get_client_ip(request),
+        fail_closed=get_settings().APP_ENV in ("staging", "production"),
     )
     tenant_id = None
     if request.headers.get("X-Tenant-ID"):
@@ -98,7 +100,13 @@ async def register_customer(
             tenant_id = uuid.UUID(request.headers["X-Tenant-ID"])
         except ValueError:
             pass
-    data = await svc.register_customer(body.full_name, body.phone, body.email and str(body.email), tenant_id)
+    data = await svc.register_customer(
+        body.full_name,
+        body.phone,
+        body.email and str(body.email),
+        tenant_id,
+        source_id=body.device_id,
+    )
     return ok(data, _meta(request).request_id, ENGINE_ID,
               links=Links(
                   self_link="/v1/auth/register/customer",
@@ -122,6 +130,13 @@ async def login(
         limit_key=f"ip:{get_client_ip(request)}",
         limit_type="auth:login",
         identifier=get_client_ip(request),
+        fail_closed=get_settings().APP_ENV in ("staging", "production"),
+    )
+    await rate_limiter.check_and_raise(
+        limit_key="login:account",
+        limit_type="auth:login_account",
+        identifier=opaque_rate_identifier(str(body.email)),
+        fail_closed=get_settings().APP_ENV in ("staging", "production"),
     )
     data = await svc.login(
         email=str(body.email),
@@ -144,19 +159,16 @@ async def send_otp(
     request: Request,
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    await rate_limiter.check_and_raise(
-        limit_key=f"otp:{body.phone or body.email}",
-        limit_type="auth:otp_send",
-        identifier=str(body.phone or body.email),
-    )
     # The email branch was advertised in this endpoint's own summary and never
     # implemented: `phone=body.phone or ""` dropped the address, stored a record
     # against an empty recipient, and answered "OTP sent."
     if body.email and not body.phone:
-        data = await svc.send_email_otp(email=str(body.email))
+        data = await svc.send_email_otp(
+            email=str(body.email), source_id=body.device_id
+        )
     else:
         data = await svc.send_phone_otp(
-            phone=body.phone or "", purpose=body.purpose
+            phone=body.phone or "", purpose=body.purpose, source_id=body.device_id
         )
     return ok(data, _meta(request).request_id, ENGINE_ID)
 
@@ -172,12 +184,6 @@ async def verify_otp(
     request: Request,
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    recipient = body.phone or str(body.email or "")
-    await rate_limiter.check_and_raise(
-        limit_key=f"otp_verify:{recipient}",
-        limit_type="auth:otp_verify",
-        identifier=recipient,
-    )
     if body.email and not body.phone:
         data = await svc.verify_email_otp_login(
             email=str(body.email), otp=body.otp,
@@ -465,11 +471,6 @@ async def request_password_reset(
     request: Request,
     svc: AuthService = Depends(_svc),
 ) -> ApiResponse[dict]:
-    await rate_limiter.check_and_raise(
-        limit_key=f"pwreset:{str(body.email or body.phone)}",
-        limit_type="auth:password_reset",
-        identifier=str(body.email or body.phone),
-    )
     data = await svc.request_password_reset(
         email=str(body.email) if body.email else None,
         phone=body.phone,

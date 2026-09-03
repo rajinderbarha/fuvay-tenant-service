@@ -54,8 +54,8 @@ ALL_CATEGORIES = ["Jobs & bookings", "Customer approvals", "Complaints", "Team &
 # complaints engine (complaint_service.py) never calls fire_event() at all
 # for provider-facing complaint notifications -- it hand-rolls
 # InAppNotification rows via notify_provider_complaint() using entirely
-# DIFFERENT notification_type strings ("complaint.filed",
-# "complaint.settlement_proposed", "complaint.ai_settlement_proposed").
+# DIFFERENT notification_type strings ("complaint.filed" and
+# "complaint.settlement_proposed").
 # Similarly, job.quote_required / quote.* / wallet.* / commission.failed are
 # registered in event_registry.py but have ZERO real callers anywhere in
 # the codebase (confirmed by grep) -- listing them here would silently
@@ -64,7 +64,6 @@ ACTION_REQUIRED_EVENT_KEYS = {
     "booking.new",                        # assign a technician
     "complaint.filed",                    # respond to a new complaint
     "complaint.settlement_proposed",      # provider must act on settlement
-    "complaint.ai_settlement_proposed",   # provider must act on AI settlement
     "payment.confirmation_requested",     # confirm direct payment
     "payment.mismatch_reported",          # resolve a payment mismatch
     "document.changes_requested",         # resubmit the document
@@ -89,7 +88,6 @@ TRUSTED_DESTINATIONS: dict[str, str] = {
     # notify_provider_complaint) -- NOT the aspirational registry keys.
     "complaint.filed": "/home-services/complaints/{entity_id}",
     "complaint.settlement_proposed": "/home-services/complaints/{entity_id}",
-    "complaint.ai_settlement_proposed": "/home-services/complaints/{entity_id}",
     # Registry keys kept for forward-compat if these are ever wired through
     # fire_event() -- currently dead (no real caller), harmless if unused.
     "complaint.created": "/home-services/complaints/{entity_id}",

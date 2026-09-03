@@ -12,8 +12,8 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_legacy_template_url_redirects_to_canonical_center():
-    assert 'redirect("/admin/notifications?tab=templates")' in _read(REDIRECT)
+def test_legacy_template_url_is_deleted():
+    assert not REDIRECT.exists()
 
 
 def test_notification_center_registers_templates_tab():

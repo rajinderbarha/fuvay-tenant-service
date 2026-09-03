@@ -81,7 +81,9 @@ class TestTenantGateAsksTheServer:
     def test_the_gate_exists_and_wraps_every_route(self):
         assert (TP / "components/shared/RequireSession.tsx").exists()
         layout = _read(TP / "app/(tenant)/layout.tsx")
-        assert "<RequireSession>{children}</RequireSession>" in layout
+        assert "<RequireSession>" in layout
+        assert "<LegalReacceptanceGate>{children}</LegalReacceptanceGate>" in layout
+        assert "</RequireSession>" in layout
 
     def test_it_verifies_with_the_server_not_localstorage_alone(self):
         src = _read(TP / "components/shared/RequireSession.tsx")

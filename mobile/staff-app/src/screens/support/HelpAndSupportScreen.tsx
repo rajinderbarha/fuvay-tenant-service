@@ -42,7 +42,7 @@ const formatRelative = (iso: string) => {
  * engine end-to-end -- no fake contact buttons, no fabricated chat, no
  * static request list. Support ownership is guided, not assumed: job/
  * schedule/employment issues route to your manager; app/account/security
- * issues route to ServiceOS platform support (spec section 1, 9).
+ * issues route to Fuvay platform support (spec section 1, 9).
  */
 export function HelpAndSupportScreen({ navigation }: Props) {
   const { theme } = useTheme();
@@ -138,7 +138,7 @@ export function HelpAndSupportScreen({ navigation }: Props) {
               trailing={manager?.display_name ? <AppText variant="caption" color="tertiary">{manager.display_name}</AppText> : undefined}
               onPress={() => navigation.navigate("CreateSupportRequest", { intent: "manager" })}
             />
-            <ListRow title="ServiceOS support" subtitle="App, account or platform issue" onPress={() => navigation.navigate("CreateSupportRequest", { intent: "platform" })} />
+            <ListRow title="Fuvay support" subtitle="App, account or platform issue" onPress={() => navigation.navigate("CreateSupportRequest", { intent: "platform" })} />
             <ListRow title="Report a technical problem" subtitle="Send safe diagnostics with your report" onPress={() => navigation.navigate("CreateSupportRequest", { intent: "technical" })} />
           </Card>
         </Section>
@@ -181,7 +181,7 @@ export function HelpAndSupportScreen({ navigation }: Props) {
 
         <PrimaryButton label="Create support request" onPress={() => navigation.navigate("CreateSupportRequest")} fullWidth />
         <AppText variant="caption" color="tertiary" style={{ textAlign: "center", marginTop: theme.spacing.base }}>
-          For emergencies, contact local emergency services.{"\n"}ServiceOS support is not an emergency service.
+          For emergencies, contact local emergency services.{"\n"}Fuvay support is not an emergency service.
         </AppText>
       </ScrollView>
     </SafeAreaScreen>

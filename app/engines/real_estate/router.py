@@ -1,5 +1,5 @@
 """
-ServiceOS — Real Estate Engine
+Fuvay — Real Estate Engine
 Prefix: /v1/real-estate
 Phase: Stub router — full implementation in Phase 6
 """

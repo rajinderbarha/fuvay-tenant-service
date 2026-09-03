@@ -1,5 +1,5 @@
 """
-ServiceOS — Structlog PII Filter
+Fuvay — Structlog PII Filter
 Masks sensitive fields in all log output before emission.
 Applied as a structlog processor — works for console + JSON renderers.
 """

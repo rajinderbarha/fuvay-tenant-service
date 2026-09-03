@@ -24,7 +24,6 @@ ROUTER = os.path.join(BASE, "app/engines/platform_notifications/provider_router.
 EVENT_REGISTRY = os.path.join(BASE, "app/engines/platform_notifications/event_registry.py")
 CONSTANTS = os.path.join(BASE, "app/engines/platform_notifications/constants.py")
 COMPLAINT_SERVICE = os.path.join(BASE, "app/engines/complaints/complaint_service.py")
-AI_SETTLEMENT_SERVICE = os.path.join(BASE, "app/engines/complaints/ai_settlement_service.py")
 
 
 def _read(path):
@@ -54,7 +53,7 @@ class TestCategoryAndActionMappingsAreReal:
         registry's "complaint.created")."""
         proj = _read(PROJECTION)
         registry = _read(EVENT_REGISTRY) + _read(CONSTANTS)
-        complaints = _read(COMPLAINT_SERVICE) + _read(AI_SETTLEMENT_SERVICE)
+        complaints = _read(COMPLAINT_SERVICE)
         import re
         start = proj.index("ACTION_REQUIRED_EVENT_KEYS = {")
         end = proj.index("}", start)

@@ -39,7 +39,7 @@ export default function ActivateTeamMemberPage() {
           {complete ? "Account activated" : "Activate your team account"}
         </h1>
         <p style={{ margin: "0 0 22px", fontSize: 13, lineHeight: 1.6, color: "var(--text-secondary)" }}>
-          {complete ? "Your password is set. You can now sign in to ServiceOS." : "Enter the one-time code from your invitation and choose your password."}
+          {complete ? "Your password is set. You can now sign in to Fuvay." : "Enter the one-time code from your invitation and choose your password."}
         </p>
         {complete ? (
           <Link href="/login" style={{ display: "block", padding: "11px 16px", borderRadius: 8, background: "var(--brand)", color: "var(--text-on-brand)", textAlign: "center", fontWeight: 700, textDecoration: "none" }}>Continue to sign in</Link>

@@ -183,7 +183,7 @@ class TechnicianMobileHomeService:
         if work_start_status.get("start_work_block_code"):
             blocker = {
                 "code": work_start_status["start_work_block_code"],
-                "message": next_action.get("blocked_message"),
+                "message": work_start_status.get("start_work_block_message") or next_action.get("blocked_message"),
             }
 
         return {

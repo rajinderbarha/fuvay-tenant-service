@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, desc, or_, select, text, update
+from sqlalchemy import and_, desc, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_booking.constants import (
@@ -55,6 +55,8 @@ from app.engines.home_service_booking.provider_matching import (
     find_bookable_home_service_providers,
 )
 from app.exceptions import ServiceOSException
+from app.config import get_settings
+from app.core.security import enforce_booking_action_limits
 
 logger = structlog.get_logger("home_service.booking.service")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -67,9 +69,12 @@ class HomeServiceChatbotBookingService:
     are made here. DeepSeek only supplies text/field values via the chat layer.
     """
 
-    def __init__(self, db: AsyncSession, request_id: str = "—"):
+    def __init__(
+        self, db: AsyncSession, request_id: str = "—", ip_address: str | None = None
+    ):
         self.db         = db
         self.request_id = request_id
+        self.ip_address = ip_address
         self._svc_svc   = HomeServiceServiceabilityService(db)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -84,6 +89,11 @@ class HomeServiceChatbotBookingService:
         offering_slug: str,
     ) -> dict:
         """Create a new booking draft for a Home Service offering."""
+        abuse_actor = str(customer_id or ai_session_id or "anonymous")
+        await enforce_booking_action_limits(
+            "draft", actor_id=abuse_actor, ip_address=self.ip_address
+        )
+
         # This guard intentionally lives in the shared service choke point,
         # not only the HTTP router: the AI booking tool invokes this method
         # directly and must obey the same platform vertical switch.
@@ -176,6 +186,37 @@ class HomeServiceChatbotBookingService:
                 ERR_OFFERING_INVALID,
                 f"Offering '{offering_slug}' is not fully configured for booking yet.",
                 status_code=422,
+            )
+
+        if get_settings().APP_ENV in ("staging", "production"):
+            # Serialize the count+insert decision for this identity. Without
+            # this transaction lock, parallel requests could all observe zero
+            # drafts and defeat the cap before any insert became visible.
+            await self.db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"booking-draft:{customer_id or ai_session_id or 'anonymous'}"},
+            )
+        identity_clause = (
+            HomeServiceBookingDraft.customer_id == customer_id
+            if customer_id
+            else HomeServiceBookingDraft.ai_session_id == ai_session_id
+        )
+        active_drafts = int((await self.db.execute(
+            select(func.count()).select_from(HomeServiceBookingDraft).where(
+                identity_clause,
+                HomeServiceBookingDraft.status.notin_(TERMINAL_STATUSES),
+                or_(
+                    HomeServiceBookingDraft.expires_at.is_(None),
+                    HomeServiceBookingDraft.expires_at > utcnow(),
+                ),
+            )
+        )).scalar_one() or 0)
+        if active_drafts >= get_settings().BOOKING_MAX_ACTIVE_DRAFTS:
+            raise ServiceOSException(
+                "ACTIVE_BOOKING_DRAFT_LIMIT",
+                "You already have several bookings in progress.",
+                status_code=429,
+                resolution="Finish or cancel an existing booking before starting another.",
             )
 
         expires_at = utcnow() + timedelta(hours=DRAFT_EXPIRY_HOURS)
@@ -862,6 +903,7 @@ class HomeServiceChatbotBookingService:
                 f"No service is currently available in {location}.",
                 status_code=422,
             )
+
         return {"providers": providers, "draft_status": draft.status}
 
     # ══════════════════════════════════════════════════════════════════════════

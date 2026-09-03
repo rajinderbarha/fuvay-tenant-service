@@ -5,7 +5,6 @@ const expectedRoutes = [
   '/admin/dashboard',
   '/admin/customers',
   '/admin/staff',
-  '/admin/home-services/complaints',
   '/admin/verticals',
   '/admin/categories',
   '/admin/marketing',

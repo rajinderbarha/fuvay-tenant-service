@@ -6,7 +6,7 @@
  * and adds the small number of types the spec asks for that had no existing
  * equivalent. Payment architecture is confirmed direct customer-to-provider
  * payment + platform usage-credit billing — NOT wallet/payout. Do not add
- * wallet/payout types here even though a legacy /provider/wallet page exists
+ * wallet/payout types here even though the provider wallet API remains
  * elsewhere in the repo (out of scope for this sprint to rename).
  */
 export type {

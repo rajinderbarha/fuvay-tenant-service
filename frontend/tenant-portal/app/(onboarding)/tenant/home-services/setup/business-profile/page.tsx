@@ -196,7 +196,7 @@ function BusinessProfileWorkspace() {
       setSaveState("saved");
       if (workspace) {
         setSubmissionMessage(updated.reverification_triggered
-          ? "Your protected changes were sent to ServiceOS for review. Your current approved details stay published until fresh documents are uploaded and an admin approves the request."
+          ? "Your protected changes were sent to Fuvay for review. Your current approved details stay published until fresh documents are uploaded and an admin approves the request."
           : "Your business profile changes are now saved.");
         load();
       } else {
@@ -294,7 +294,7 @@ function BusinessProfileWorkspace() {
           <ShieldCheck size={16} style={{ color: "var(--info-text)", flexShrink: 0 }}/>
           <p style={{ fontSize: 13, color: "var(--info-text)", margin: 0 }}>
             {changePending
-              ? "A protected profile change is awaiting review. Upload the requested verification documents, then ServiceOS can approve and publish it."
+              ? "A protected profile change is awaiting review. Upload the requested verification documents, then Fuvay can approve and publish it."
               : `This section is read-only while Home Services is ${verticalStatus?.replace(/_/g, " ")}. Contact support if you need to make a correction.`}
           </p>
         </div>

@@ -34,7 +34,10 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   async function acceptUpdates() {
     if (!status || !accepted) return;
@@ -77,7 +80,7 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
           <li>Your business is responsible for technician screening, supervision, and field work.</li>
           <li>Warranty, complaint, refund, and settlement decisions are handled directly with the customer.</li>
           <li>Missed response SLAs may deduct usage credits and affect account health.</li>
-          <li>ServiceOS does not hold a provider security deposit or adjudicate the case.</li>
+          <li>Fuvay does not hold a provider security deposit or adjudicate the case.</li>
         </ul>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "18px 0" }}>
           {status.documents.map(document => (

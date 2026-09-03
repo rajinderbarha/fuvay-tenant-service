@@ -7,16 +7,15 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.engines.complaints.constants import (
-    REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_ADMIN_REVIEW,
+    REFUND_REQUESTED, REFUND_PROVIDER_REVIEW,
     REFUND_APPROVED, REFUND_REJECTED, REFUND_RECORDED, REFUND_VERIFIED, REFUND_CANCELLED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED, STATUS_REFUND_RECORDED, STATUS_RESOLVED,
     ALLOWED_TRANSITIONS,
     EVT_REFUND_REQUESTED, EVT_REFUND_APPROVED, EVT_REFUND_RECORDED,
-    ACTOR_ADMIN, ACTOR_PROVIDER, ACTOR_CUSTOMER,
+    ACTOR_PROVIDER, ACTOR_CUSTOMER,
     ERR_REFUND_NOT_FOUND, ERR_REFUND_ACCESS_DENIED, ERR_REFUND_AMOUNT_INVALID,
-    ERR_REFUND_APPROVAL_FAILED, ERR_REFUND_RECORD_FAILED, ERR_REFUND_VERIFY_FAILED,
 )
-from app.engines.complaints.models import RefundRequest, CustomerComplaint, ComplaintEvent
+from app.engines.complaints.models import RefundRequest, ComplaintEvent
 from app.engines.complaints.complaint_service import ComplaintService
 
 
@@ -302,128 +301,6 @@ class RefundRequestService:
                 return winner
             raise
 
-    async def escalate_refund(
-        self, db: AsyncSession, refund_id: uuid.UUID, customer_id: uuid.UUID,
-        reason: str, request_id: str = "-",
-    ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id, for_update=True)
-        if str(refund.customer_id) != str(customer_id):
-            raise ServiceOSException("REFUND_NOT_FOUND", "Refund request not found.", status_code=404)
-        if refund.status not in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_REJECTED):
-            raise ServiceOSException("REFUND_INVALID_STATE", f"Refund cannot be escalated from {refund.status}.", status_code=409)
-        missed_deadline = bool(
-            refund.provider_response_due_at
-            and refund.provider_response_due_at <= datetime.now(timezone.utc)
-            and refund.status in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW)
-        )
-        if (refund.status == REFUND_REQUESTED and refund.provider_response_due_at
-                and refund.provider_response_due_at > datetime.now(timezone.utc)):
-            raise ServiceOSException(
-                "PROVIDER_RESPONSE_WINDOW_ACTIVE", "The provider still has time to respond.", status_code=409,
-                context={"provider_response_due_at": refund.provider_response_due_at.isoformat()},
-            )
-        if missed_deadline and refund.tenant_id:
-            from app.engines.usage_credits.service import UsageCreditService
-            from app.engines.tenant_engine.health import compute_health_score
-            await UsageCreditService(
-                db, actor_role="system", request_id=request_id,
-            ).charge_provider_response_sla_penalty(
-                tenant_id=refund.tenant_id, source_type="refund_request",
-                source_id=str(refund.id), amount=Decimal("50.00"),
-            )
-            await compute_health_score(refund.tenant_id, db=db)
-        refund.status = REFUND_PROVIDER_REVIEW
-        refund.escalated_at = datetime.now(timezone.utc)
-        refund.escalation_reason = reason
-        refund.provider_response_due_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        await db.commit()
-        return refund
-
-    async def admin_issue_credit_remedy(
-        self, db: AsyncSession, refund_id: uuid.UUID, admin_user_id: uuid.UUID,
-        amount: Decimal, reason: str, request_id: str = "-",
-    ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id, for_update=True)
-        overdue = bool(refund.provider_response_due_at and refund.provider_response_due_at <= datetime.now(timezone.utc))
-        if refund.status != REFUND_ADMIN_REVIEW and not (refund.status == REFUND_REQUESTED and overdue):
-            raise ServiceOSException(
-                "PROVIDER_RESOLUTION_REQUIRED",
-                "Admin service credit is available only after provider failure or timeout.", status_code=409,
-            )
-        amount = Decimal(str(amount))
-        if amount <= 0 or (refund.requested_amount and amount > refund.requested_amount):
-            raise ServiceOSException("REFUND_AMOUNT_INVALID", "Credit amount is invalid.", status_code=422)
-        if not reason or len(reason.strip()) < 5:
-            raise ServiceOSException(
-                "VALIDATION_ERROR", "A remedy reason of at least 5 characters is required.", status_code=422,
-            )
-        from app.engines.customer_credits.service import issue_provider_funded_customer_credit
-        remedy = await issue_provider_funded_customer_credit(
-            db, tenant_id=refund.tenant_id, customer_id=refund.customer_id,
-            amount=amount, reference_type="refund_request", reference_id=refund.id,
-            reason=reason.strip(), actor_id=admin_user_id, actor_role=ACTOR_ADMIN,
-            request_id=request_id, booking_id=refund.booking_id, job_id=refund.job_id,
-            currency=refund.currency,
-        )
-        refund.status = REFUND_VERIFIED
-        refund.approved_amount = amount
-        refund.recorded_amount = amount
-        refund.resolution_method = "customer_service_credit"
-        refund.customer_credit_id = remedy["credit"].id
-        # `security_deposit_deducted` is no longer written: the deposit was
-        # removed in migration 317/318 and the remedy no longer reports one.
-        # Reading it with [] raised KeyError here on EVERY settlement.
-        refund.provider_credit_deducted = remedy["provider_credit_deducted"]
-        refund.approved_by_user_id = admin_user_id
-        refund.verified_by_user_id = admin_user_id
-        refund.approved_at = refund.approved_at or datetime.now(timezone.utc)
-        refund.recorded_at = datetime.now(timezone.utc)
-        refund.verified_at = datetime.now(timezone.utc)
-        complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
-        complaint.status = STATUS_RESOLVED
-        complaint.resolved_at = datetime.now(timezone.utc)
-        await db.commit()
-        return refund
-
-    async def admin_approve_refund(
-        self,
-        db: AsyncSession,
-        refund_id: uuid.UUID,
-        admin_user_id: uuid.UUID,
-        approved_amount: Decimal | None = None,
-        request_id: str = "—",
-    ) -> RefundRequest:
-        await self._get_refund(db, refund_id)
-        raise ServiceOSException(
-            "PROVIDER_OWNS_REFUND",
-            "Cash refunds must be approved by the provider. Admin may issue service credit only after escalation.",
-            status_code=409,
-        )
-
-    async def admin_reject_refund(
-        self,
-        db: AsyncSession,
-        refund_id: uuid.UUID,
-        admin_user_id: uuid.UUID,
-        reason: str,
-        request_id: str = "—",
-    ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id)
-        overdue = bool(
-            refund.provider_response_due_at
-            and refund.provider_response_due_at <= datetime.now(timezone.utc)
-        )
-        if refund.status != REFUND_ADMIN_REVIEW and not (refund.status == REFUND_REQUESTED and overdue):
-            raise ServiceOSException("REFUND_INVALID_STATE",
-                "Admin can reject only a provider-failed refund in admin review.", status_code=409)
-        if not reason or not reason.strip():
-            raise ServiceOSException("VALIDATION_ERROR", "A rejection reason is required.", status_code=422)
-        refund.status           = REFUND_REJECTED
-        refund.rejection_reason = reason
-        refund.resolution_method = "admin_rejected"
-        await db.commit()
-        return refund
-
     async def record_refund(
         self,
         db: AsyncSession,
@@ -461,48 +338,14 @@ class RefundRequestService:
             complaint.status = STATUS_REFUND_RECORDED
             applied = STATUS_REFUND_RECORDED
             await db.flush()
+            if STATUS_RESOLVED in ALLOWED_TRANSITIONS.get(complaint.status, set()):
+                complaint.status = STATUS_RESOLVED
+                complaint.resolved_at = datetime.now(timezone.utc)
+                applied = STATUS_RESOLVED
 
         await self._log_event(db, refund.complaint_id, refund.tenant_id, actor_type, actor_user_id,
                               EVT_REFUND_RECORDED, old_status, applied,
                               {"recorded_amount": str(recorded_amount)}, request_id)
-        await db.commit()
-        return refund
-
-    async def verify_refund(
-        self,
-        db: AsyncSession,
-        refund_id: uuid.UUID,
-        admin_user_id: uuid.UUID,
-        request_id: str = "—",
-    ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id)
-        if refund.status != REFUND_RECORDED:
-            raise ValueError(ERR_REFUND_VERIFY_FAILED)
-        refund.status              = REFUND_VERIFIED
-        refund.verified_by_user_id = admin_user_id
-        refund.verified_at         = datetime.now(timezone.utc)
-        # MODULE-L5-02 bug #29: verifying the refund is the terminal step of the
-        # refund path, but nothing ever moved the complaint out of
-        # refund_recorded — so a fully paid-out and verified refund left the
-        # complaint permanently unresolved. Resolve it here.
-        complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
-        if STATUS_RESOLVED in ALLOWED_TRANSITIONS.get(complaint.status, set()):
-            complaint.status      = STATUS_RESOLVED
-            complaint.resolved_at = datetime.now(timezone.utc)
-        await db.commit()
-        return refund
-
-    async def cancel_refund(
-        self,
-        db: AsyncSession,
-        refund_id: uuid.UUID,
-        actor_user_id: uuid.UUID,
-        reason: str,
-        request_id: str = "—",
-    ) -> RefundRequest:
-        refund = await self._get_refund(db, refund_id)
-        refund.status           = REFUND_CANCELLED
-        refund.rejection_reason = reason
         await db.commit()
         return refund
 
@@ -533,7 +376,7 @@ class RefundRequestService:
         """
         from app.engines.complaints.constants import (
             REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_APPROVED,
-            REFUND_RECORDED, REFUND_VERIFIED, REFUND_REJECTED, REFUND_ADMIN_REVIEW,
+            REFUND_RECORDED, REFUND_VERIFIED, REFUND_REJECTED,
         )
         rows = (await db.execute(
             select(RefundRequest).where(RefundRequest.tenant_id == tenant_id)
@@ -551,7 +394,11 @@ class RefundRequestService:
             "needs_action": len(needs_action),
             "approved":     len(approved),
             "settled":      len(settled),
-            "escalated":    len([r for r in rows if r.status == REFUND_ADMIN_REVIEW]),
+            "overdue":      len([
+                r for r in needs_action
+                if r.provider_response_due_at
+                and r.provider_response_due_at <= datetime.now(timezone.utc)
+            ]),
             "rejected":     len([r for r in rows if r.status == REFUND_REJECTED]),
             # Money the provider is actually exposed to, not just row counts.
             "requested_amount": _money(r.requested_amount for r in needs_action),

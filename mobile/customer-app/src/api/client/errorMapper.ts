@@ -22,7 +22,7 @@ const BACKEND_CODE_CATEGORY: Record<string, DomainErrorCategory> = {
 
 /**
  * Matches the backend's RFC 7807 problem+json shape exactly
- * (app/schemas/base.py `ProblemDetail`) -- every ServiceOS error uses
+ * (app/schemas/base.py `ProblemDetail`) -- every Fuvay error uses
  * this, never a bespoke shape. Clients must switch on `error_code`, never
  * on HTTP status alone (the backend's own stated contract).
  */

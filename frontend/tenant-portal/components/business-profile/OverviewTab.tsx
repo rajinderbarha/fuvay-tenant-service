@@ -56,7 +56,7 @@ export function OverviewTab({ profile, verifiedLocked }: { profile: BusinessProf
           </div>
           {verifiedLocked && (
             <p style={{ fontSize: 11.5, color: "var(--warning-text)", marginTop: 14, marginBottom: 0 }}>
-              Verified by ServiceOS · These fields are locked. Change request required.
+              Verified by Fuvay · These fields are locked. Change request required.
             </p>
           )}
         </Card>
@@ -141,7 +141,7 @@ export function OverviewTab({ profile, verifiedLocked }: { profile: BusinessProf
           <Card style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: "var(--warning-text)", margin: "0 0 6px" }}>Pending change request</p>
             <p style={{ fontSize: 12, color: "var(--warning-text)", margin: "0 0 8px" }}>
-              A change to a verified field has been submitted and is awaiting ServiceOS review.
+              A change to a verified field has been submitted and is awaiting Fuvay review.
             </p>
             <Link href="?tab=change-requests" style={{ fontSize: 12, fontWeight: 700, color: "var(--warning-text)" }}>Review request →</Link>
           </Card>
@@ -162,7 +162,7 @@ export function OverviewTab({ profile, verifiedLocked }: { profile: BusinessProf
             </div>
           </div>
           <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>
-            Customers see this public profile only after ServiceOS matches your business to their request — never by browsing or choosing a provider directly.
+            Customers see this public profile only after Fuvay matches your business to their request — never by browsing or choosing a provider directly.
           </p>
         </Card>
 

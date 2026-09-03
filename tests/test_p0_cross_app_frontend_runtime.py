@@ -46,31 +46,26 @@ def test_admin_booking_router_exposes_credit_applied_and_payable_amount():
 # ── Tenant portal ───────────────────────────────────────────────────────────
 
 def test_tenant_booking_detail_shows_payment_breakdown():
-    src = _read("frontend/tenant-portal/app/(tenant)/bookings/[id]/page.tsx")
-    assert "Payment Breakdown" in src
-    assert "ServiceOS Credit Applied" in src
-    assert "Payable To Provider" in src
-    assert "Customer pays provider directly" in src
+    src = _read("frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs/page.tsx")
+    assert "Confirm direct payment" in src
+    assert "Record the amount paid directly" in src
+    assert "does not charge the customer or create a platform settlement" in src
 
 
 def test_tenant_job_detail_shows_payment_collection_and_deduction():
-    src = _read("frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx")
-    assert "Payment Collection" in src
-    assert "Usage Credit Deduction" in src
-    assert "Completed Job Deduction" in src
+    src = _read("frontend/tenant-portal/app/(tenant)/home-services/finance/page.tsx")
+    assert "Usage Credits" in src
+    assert "Completed-job deductions" in src
     assert "deduct commission from your wallet" not in src  # old forbidden phrasing removed
 
 
 def test_tenant_finance_ledger_labels_completed_job_deduction():
-    # E2E-11: /finance/page.tsx now redirects to /finance/package (the
-    # legacy Wallet/Payouts page it used to render violated the
-    # platform's no-wallet/no-payout business rules). The real page
-    # showing Completed Job Deduction / Usage Credit Ledger labels is
-    # the dedicated ledger page.
-    redirect = _read("frontend/tenant-portal/app/(tenant)/finance/usage-credit-ledger/page.tsx")
-    assert "/home-services/finance?tab=usage-credits" in redirect
+    # The canonical workspace owns both the balance and immutable ledger;
+    # there is no redirect-only finance page anymore.
     src = _read("frontend/tenant-portal/app/(tenant)/home-services/finance/page.tsx")
     assert "Usage Credits" in src
+    assert "Usage-credit ledger" in src
+    assert "completion deductions" in src
 
 
 def test_tenant_api_types_have_payment_breakdown_fields():
@@ -85,10 +80,10 @@ def test_tenant_api_types_have_payment_breakdown_fields():
 # ── Admin ───────────────────────────────────────────────────────────────────
 
 def test_admin_booking_detail_shows_payment_breakdown():
-    src = _read("frontend/super-admin/app/admin/bookings/[id]/page.tsx")
-    assert "Payment Breakdown" in src
-    assert "Customer Credit Applied" in src
-    assert "Payable To Provider" in src
+    src = _read("frontend/super-admin/app/admin/home-services/bookings-jobs/page.tsx")
+    assert "WorkDetailDrawer" in src
+    assert "price_snapshot" in src
+    assert "customer_total" in src
 
 
 def test_admin_job_detail_shows_credit_and_deduction_record():
@@ -167,14 +162,12 @@ _FORBIDDEN = ["Payout", "Withdraw", "Cash Wallet", "Escrow", "Provider Earnings 
 
 def test_no_forbidden_labels_on_job_completion_facing_pages():
     # "Platform Payment" is exempted: the ticket's own Part C spec requires the
-    # literal disclosure line "Platform Payment: Not collected by ServiceOS" —
-    # a negation clarifying ServiceOS does NOT hold the payment, not a payout
+    # literal disclosure line "Platform Payment: Not collected by Fuvay" —
+    # a negation clarifying Fuvay does NOT hold the payment, not a payout
     # feature name. The other 5 forbidden terms have no such carve-out.
     pages = [
-        "frontend/tenant-portal/app/(tenant)/bookings/[id]/page.tsx",
-        "frontend/tenant-portal/app/(tenant)/jobs/[id]/page.tsx",
-        "frontend/super-admin/app/admin/bookings/[id]/page.tsx",
-        "frontend/super-admin/app/admin/operations/[jobId]/page.tsx",
+        "frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs/page.tsx",
+        "frontend/tenant-portal/app/(tenant)/home-services/finance/page.tsx",
         "mobile/staff-app/src/screens/directPayment/DirectPaymentScreen.tsx",
         "mobile/customer-app/src/components/booking-details/WorkCompletedCard.tsx",
     ]

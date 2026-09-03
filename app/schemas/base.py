@@ -1,5 +1,5 @@
 """
-ServiceOS — Base Response Schemas
+Fuvay — Base Response Schemas
 Level 5: RFC 7807, HATEOAS, cursor pagination, idempotency, sparse fieldsets,
          allowed transitions (state machine), bulk operation responses.
 """

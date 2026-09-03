@@ -154,7 +154,7 @@ _reg(ConfigurationDefinition(
 
 _reg(ConfigurationDefinition(
     key="payment_collection_enabled", label="Home Services Payment Collection",
-    description="Whether ServiceOS collects the Home Services job payment (vs. customer pays provider directly).",
+    description="Whether Fuvay collects the Home Services job payment (vs. customer pays provider directly).",
     owner_module="platform_commerce", data_type="boolean",
     allowed_scopes=["global"], default_value=False,
     risk_level="critical", admin_mutable=False, locked=True, sensitivity="internal",

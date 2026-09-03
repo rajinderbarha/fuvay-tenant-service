@@ -1,5 +1,5 @@
 """
-ServiceOS — Redis Client
+Fuvay — Redis Client
 Used for:
   1. Engine flag cache per tenant (TTL 5min)
   2. Rate limiting counters

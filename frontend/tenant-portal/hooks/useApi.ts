@@ -28,7 +28,18 @@ export function useApi<T>(
     const id=++r.current; setLoading(true); setError(null); setRequestId(null);
     // Read through a ref so that when `deps` DO fire, the fetch uses the current
     // closure rather than the one captured on the render that created `run`.
-    try{const res=await fetcherRef.current(); if(id===r.current)setData(res);}
+    try{
+      let res:T;
+      try{res=await fetcherRef.current();}
+      catch(firstError){
+        // Read requests may be retried once when the browser itself failed to
+        // reach the server. Domain errors remain final and visible.
+        if(firstError instanceof ServiceOSError)throw firstError;
+        await new Promise(resolve=>window.setTimeout(resolve,250));
+        res=await fetcherRef.current();
+      }
+      if(id===r.current)setData(res);
+    }
     catch(e){
       if(id===r.current){
         setError(e instanceof ServiceOSError?e.message:"Unexpected error.");
@@ -38,9 +49,13 @@ export function useApi<T>(
     finally{if(id===r.current)setLoading(false);}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },deps);
+  // Defer the automatic request by one tick so React development Strict Mode
+  // can cancel its throwaway effect pass. This prevents duplicate live reads
+  // where a late failure could overwrite a successful response.
   useEffect(()=>{
-    if (enabled) run();
-    else setLoading(false);
+    if (!enabled) { setLoading(false); return; }
+    const timer=window.setTimeout(()=>{ void run(); },0);
+    return()=>window.clearTimeout(timer);
   },[run, enabled]);
   return {data,loading,error,requestId,refetch:run};
 }

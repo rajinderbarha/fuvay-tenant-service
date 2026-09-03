@@ -75,7 +75,7 @@ export function LegalReacceptanceGate({ children }: { children: React.ReactNode 
         <View style={{ padding: theme.spacing.base, borderRadius: theme.radiusUsage.card, backgroundColor: theme.colors.surfaceSecondary, gap: theme.spacing.sm }}>
           <AppText>• Your provider is responsible for technician screening, supervision, and field work.</AppText>
           <AppText>• Warranty, complaint, refund, and settlement decisions are handled directly with the provider.</AppText>
-          <AppText>• ServiceOS does not hold a provider security deposit or adjudicate the case.</AppText>
+          <AppText>• Fuvay does not hold a provider security deposit or adjudicate the case.</AppText>
           <AppText>• Missed response SLAs may affect provider credits, health, and bookability.</AppText>
         </View>
 

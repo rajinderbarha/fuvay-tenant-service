@@ -14,6 +14,7 @@ Run: python scripts/canonical_seed_final_l5_01.py
 """
 from __future__ import annotations
 import asyncio
+import json
 import os
 import sys
 import uuid
@@ -135,7 +136,7 @@ async def run():
         trow = (await db.execute(text("SELECT id, status FROM tenants WHERE slug = :s"), {"s": TENANT_SLUG})).first()
         if trow and trow[1] == "active":
             tenant_id = trow[0]
-            print(f"[SKIP]   tenant {TENANT_SLUG} (already active)")
+            print(f"[SKIP]   tenant {TENANT_SLUG} (already active; refreshing canonical profile)")
         elif trow:
             tenant_id = trow[0]
             await db.execute(text("""
@@ -155,6 +156,24 @@ async def run():
             """), {"id": str(tenant_id), "slug": TENANT_SLUG})
             created["tenants"] += 1
             print(f"[CREATE] tenant {TENANT_SLUG} (active)")
+
+        # This is a deterministic end-to-end QA provider, so its approved
+        # profile must satisfy the same current fields as a real provider.
+        # Older versions of this seed marked the tenant verified while leaving
+        # the address/contact fields empty, which produced an impossible state:
+        # "approved" in Admin but permanently unbookable in Customer.
+        await db.execute(text("""
+            UPDATE tenants
+               SET tenant_name='Demo AC Services', business_name='Demo AC Services',
+                   legal_name='Demo AC Services', business_type='sole_proprietorship',
+                   email='owner@demo-ac-services.local', phone='9041624576',
+                   address_line1='123 Model Town', district='Ludhiana',
+                   city='Ludhiana', state='Punjab', country='India', zipcode='141001',
+                   status='active', verification_status='verified', is_discoverable=true,
+                   suspended_at=NULL, suspension_reason=NULL,
+                   meta=COALESCE(meta, '{}'::jsonb) - 'pending_changes', updated_at=now()
+             WHERE id=:tid
+        """), {"tid": str(tenant_id)})
 
         # ── 2b. Tenant B: Isolation Test Services (for Part 13 isolation tests) ──
         trow_b = (await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": TENANT_B_SLUG})).first()
@@ -228,29 +247,115 @@ async def run():
         print(f"[OK]     catalog verified: ac_repair={ac_repair}, split_ac={split_ac}, window_ac={window_ac}, "
               f"lg={lg}, not_cooling={not_cooling}")
 
+        # Current discovery is entitlement-backed. The legacy seed predated
+        # this model and therefore created a service which Customer correctly
+        # hid even after every operational gate was green.
+        vertical_id = (await db.execute(text(
+            "SELECT id FROM verticals WHERE key='home_services' AND is_enabled=true"
+        ))).scalar_one()
+        service_group_id = (await db.execute(text(
+            "SELECT service_group_id FROM master_services WHERE id=:sid"
+        ), {"sid": str(ac_repair)})).scalar_one()
+        module_entitlement = (await db.execute(text("""
+            SELECT id FROM tenant_module_entitlements
+             WHERE tenant_id=:tid AND module_id=:mid AND status='ACTIVE'
+             ORDER BY created_at DESC LIMIT 1
+        """), {"tid": str(tenant_id), "mid": str(vertical_id)})).scalar_one_or_none()
+        if not module_entitlement:
+            module_entitlement = uuid.uuid4()
+            await db.execute(text("""
+                INSERT INTO tenant_module_entitlements
+                    (id, tenant_id, module_id, status, source, configuration,
+                     enabled_at, effective_from, created_by, updated_by, version,
+                     created_at, updated_at)
+                VALUES (:id, :tid, :mid, 'ACTIVE', 'canonical_qa_seed',
+                        '{"purpose":"four_role_e2e"}'::jsonb, now(), now(), :actor, :actor, 1,
+                        now(), now())
+            """), {"id": str(module_entitlement), "tid": str(tenant_id),
+                     "mid": str(vertical_id), "actor": str(super_admin)})
+            print("[CREATE] Home Services module entitlement")
+
+        category_entitlement = (await db.execute(text("""
+            SELECT id FROM tenant_category_entitlements
+             WHERE tenant_id=:tid AND category_id=:cid AND status='ACTIVE'
+             ORDER BY created_at DESC LIMIT 1
+        """), {"tid": str(tenant_id), "cid": str(service_group_id)})).scalar_one_or_none()
+        if not category_entitlement:
+            await db.execute(text("""
+                INSERT INTO tenant_category_entitlements
+                    (id, tenant_id, category_id, module_entitlement_id, status, source,
+                     configuration, enabled_at, effective_from, created_by, updated_by,
+                     version, created_at, updated_at)
+                VALUES (:id, :tid, :cid, :meid, 'ACTIVE', 'canonical_qa_seed',
+                        '{"purpose":"four_role_e2e"}'::jsonb, now(), now(), :actor, :actor,
+                        1, now(), now())
+            """), {"id": str(uuid.uuid4()), "tid": str(tenant_id),
+                     "cid": str(service_group_id), "meid": str(module_entitlement),
+                     "actor": str(super_admin)})
+            print("[CREATE] AC service-group entitlement")
+
+        enrollment = (await db.execute(text("""
+            SELECT id FROM tenant_vertical_enrollments
+             WHERE tenant_id=:tid AND vertical_id=:vid LIMIT 1
+        """), {"tid": str(tenant_id), "vid": str(vertical_id)})).scalar_one_or_none()
+        if enrollment:
+            await db.execute(text("""
+                UPDATE tenant_vertical_enrollments
+                   SET status='active', activated_at=COALESCE(activated_at, now()),
+                       suspended_at=NULL, suspend_reason=NULL, updated_at=now()
+                 WHERE id=:id
+            """), {"id": str(enrollment)})
+        else:
+            await db.execute(text("""
+                INSERT INTO tenant_vertical_enrollments
+                    (id, tenant_id, vertical_id, status, submitted_at, reviewed_by,
+                     reviewed_at, activated_at, created_at, updated_at)
+                VALUES (:id, :tid, :vid, 'active', now(), :actor, now(), now(), now(), now())
+            """), {"id": str(uuid.uuid4()), "tid": str(tenant_id),
+                     "vid": str(vertical_id), "actor": str(super_admin)})
+
         # ── 7. Canonical pricing rules: Split AC+LG and Window AC+LG, distinct ──
+        # Pricing rules are runtime offering records and must always carry an
+        # explicit job type. Resolve it from the service's supported mapping rather
+        # than relying on the legacy text column alone.
+        pricing_job_type_id = (await db.execute(text("""
+            SELECT msjt.job_type_id
+              FROM master_service_job_types msjt
+              JOIN job_types jt ON jt.id = msjt.job_type_id
+             WHERE msjt.master_service_id = :sid
+               AND jt.key = 'repair'
+               AND msjt.is_active = true
+             LIMIT 1
+        """), {"sid": str(ac_repair)})).scalar_one()
+
         async def upsert_rule(service_type_id, code, name, base, mn, mx, deduction):
             existing = (await db.execute(text("""
                 SELECT id FROM service_pricing_rules
                 WHERE rule_code = :code AND deleted_at IS NULL
             """), {"code": code})).scalar_one_or_none()
             if existing:
+                await db.execute(text("""
+                    UPDATE service_pricing_rules
+                       SET job_type_id = :jtid, updated_at = now()
+                     WHERE id = :id AND job_type_id IS DISTINCT FROM :jtid
+                """), {"id": str(existing), "jtid": str(pricing_job_type_id)})
                 print(f"[SKIP]   pricing_rule {code} (exists)")
                 return existing
             rid = uuid.uuid4()
             await db.execute(text("""
                 INSERT INTO service_pricing_rules
-                    (id, master_service_id, category_id, service_type_id, brand_id, job_type,
+                    (id, master_service_id, category_id, service_type_id, brand_id, job_type, job_type_id,
                      city, district, state, zipcode, pricing_model,
                      base_price, min_price, max_price, completed_job_deduction_credits,
                      rule_name, rule_code, priority, is_active, source, created_at, updated_at)
                 VALUES
-                    (:id, :svc, :cat, :typ, :brand, 'repair',
+                    (:id, :svc, :cat, :typ, :brand, 'repair', :jtid,
                      'Ludhiana', 'Ludhiana', 'Punjab', '141001', 'range',
                      :base, :mn, :mx, :ded,
                      :name, :code, 10, true, 'final_l5_01_canonical_seed', now(), now())
             """), {"id": str(rid), "svc": str(ac_repair), "cat": str(category_id), "typ": str(service_type_id),
-                    "brand": str(lg), "base": base, "mn": mn, "mx": mx, "ded": deduction,
+                    "brand": str(lg), "jtid": str(pricing_job_type_id),
+                    "base": base, "mn": mn, "mx": mx, "ded": deduction,
                     "name": name, "code": code})
             created["pricing_rules"] += 1
             print(f"[CREATE] pricing_rule {code}: {name} (Rs{mn}-{mx})")
@@ -304,10 +409,54 @@ async def run():
             print("[WARN]   no master_offerings row found for AC Repair category — skipping provider offering seed")
 
         # ── 9. Service area coverage: 141001 active for Tenant A ────────────
+        # Canonical, job-type-scoped provider service used by current Admin,
+        # Tenant, Customer discovery, booking and technician assignment.
+        job_type_id = (await db.execute(text(
+            "SELECT job_type_id FROM master_services WHERE id=:sid"
+        ), {"sid": str(ac_repair)})).scalar_one()
+        tenant_service = (await db.execute(text("""
+            SELECT id FROM tenant_services
+             WHERE tenant_id=:tid AND master_service_id=:sid AND job_type_id=:jtid
+             LIMIT 1
+        """), {"tid": str(tenant_id), "sid": str(ac_repair),
+                 "jtid": str(job_type_id)})).scalar_one_or_none()
+        if tenant_service:
+            await db.execute(text("""
+                UPDATE tenant_services
+                   SET is_enabled=true, is_active=true, setup_status='published',
+                       published_at=COALESCE(published_at, now()),
+                       tenant_display_name='AC Repair', tenant_base_price=775,
+                       tenant_min_price=700, tenant_max_price=850,
+                       tenant_visit_fee=199, warranty_days=5,
+                       type_coverage_mode='all', brand_coverage_mode='all',
+                       deleted_at=NULL, admin_suspended_at=NULL,
+                       admin_suspension_reason=NULL, updated_at=now()
+                 WHERE id=:id
+            """), {"id": str(tenant_service)})
+            print("[UPDATE] tenant_service: AC Repair published")
+        else:
+            tenant_service = uuid.uuid4()
+            await db.execute(text("""
+                INSERT INTO tenant_services
+                    (id, tenant_id, master_service_id, category_id, job_type, job_type_id,
+                     is_enabled, tenant_display_name, tenant_base_price, tenant_min_price,
+                     tenant_max_price, tenant_visit_fee, override_allowed, requires_brand,
+                     requires_type, is_active, setup_status, published_at,
+                     type_coverage_mode, brand_coverage_mode, warranty_days,
+                     created_at, updated_at)
+                VALUES (:id, :tid, :sid, :cid, 'repair', :jtid,
+                        true, 'AC Repair', 775, 700, 850, 199, true, true, true,
+                        true, 'published', now(), 'all', 'all', 5, now(), now())
+            """), {"id": str(tenant_service), "tid": str(tenant_id),
+                     "sid": str(ac_repair), "cid": str(category_id),
+                     "jtid": str(job_type_id)})
+            print("[CREATE] tenant_service: Demo AC Services -> AC Repair")
+
         cov = (await db.execute(text(
             "SELECT id FROM tenant_service_areas WHERE tenant_id=:t AND zipcode='141001'"),
             {"t": str(tenant_id)})).scalar_one_or_none()
         if not cov:
+            cov = uuid.uuid4()
             await db.execute(text("""
                 INSERT INTO tenant_service_areas
                     (id, tenant_id, coverage_type, country, state, district, city, zipcode,
@@ -315,11 +464,36 @@ async def run():
                 VALUES
                     (:id, :t, 'zipcode', 'India', 'Punjab', 'Ludhiana', 'Ludhiana', '141001',
                      'Ludhiana Central', 1, true, true, now(), now())
-            """), {"id": str(uuid.uuid4()), "t": str(tenant_id)})
+            """), {"id": str(cov), "t": str(tenant_id)})
             created["coverage"] += 1
             print("[CREATE] tenant_service_area: 141001 (active, primary)")
         else:
             print("[SKIP]   tenant_service_area 141001 (exists)")
+
+        area_service = (await db.execute(text("""
+            SELECT id FROM tenant_service_area_services
+             WHERE tenant_service_area_id=:aid AND service_id=:sid AND job_type='repair'
+             LIMIT 1
+        """), {"aid": str(cov), "sid": str(ac_repair)})).scalar_one_or_none()
+        if area_service:
+            await db.execute(text("""
+                UPDATE tenant_service_area_services
+                   SET is_available=true, status='ACTIVE', base_price=775,
+                       min_price=700, max_price=850, updated_at=now()
+                 WHERE id=:id
+            """), {"id": str(area_service)})
+            print("[UPDATE] tenant_service_area_service: AC Repair -> 141001")
+        else:
+            await db.execute(text("""
+                INSERT INTO tenant_service_area_services
+                    (id, tenant_service_area_id, tenant_id, service_id, job_type,
+                     is_available, sla_minutes, min_price, max_price, base_price,
+                     status, created_at, updated_at)
+                VALUES (:id, :aid, :tid, :sid, 'repair', true, 240,
+                        700, 850, 775, 'ACTIVE', now(), now())
+            """), {"id": str(uuid.uuid4()), "aid": str(cov),
+                     "tid": str(tenant_id), "sid": str(ac_repair)})
+            print("[CREATE] tenant_service_area_service: AC Repair -> 141001")
 
         # ── 10. Weekly availability rule (Mon-Sat 09:00-18:00, lunch break) ──
         avail = (await db.execute(text(
@@ -339,6 +513,119 @@ async def run():
             print("[CREATE] provider_availability_rules: Mon-Sat 09:00-18:00 with 13:00-14:00 break")
         else:
             print("[SKIP]   provider_availability_rules (exists)")
+
+        # One paid, active technician is enough to make this one published
+        # service operational. The login user and provider-team member are
+        # deliberately linked but retain their separate canonical identities.
+        technician_member = (await db.execute(text("""
+            SELECT id FROM provider_team_members
+             WHERE tenant_id=:tid AND user_id=:uid AND deleted_at IS NULL LIMIT 1
+        """), {"tid": str(tenant_id), "uid": str(tech1)})).scalar_one_or_none()
+        if technician_member:
+            await db.execute(text("""
+                UPDATE provider_team_members
+                   SET member_type='technician', designation='technician',
+                       full_name='Technician One', email='tech1@demo-ac-services.local',
+                       phone='9041624577', status='active', can_receive_assignment=true,
+                       availability_state='available',
+                       supported_offering_ids=CAST(:offerings AS jsonb),
+                       supported_type_ids='[]'::jsonb, supported_brand_ids='[]'::jsonb,
+                       service_area_ids=CAST(:areas AS jsonb), deleted_at=NULL, updated_at=now()
+                 WHERE id=:id
+            """), {"id": str(technician_member),
+                     "offerings": f'["{tenant_service}"]', "areas": f'["{cov}"]'})
+            print("[UPDATE] provider_team_member: Technician One ready")
+        else:
+            technician_member = uuid.uuid4()
+            await db.execute(text("""
+                INSERT INTO provider_team_members
+                    (id, tenant_id, category_id, user_id, member_type, full_name,
+                     phone, email, designation, status, can_receive_assignment,
+                     supported_offering_ids, supported_type_ids, supported_brand_ids,
+                     service_area_ids, max_concurrent_jobs, availability_state,
+                     created_at, updated_at)
+                VALUES (:id, :tid, :cid, :uid, 'technician', 'Technician One',
+                        '9041624577', 'tech1@demo-ac-services.local', 'technician',
+                        'active', true, CAST(:offerings AS jsonb), '[]'::jsonb,
+                        '[]'::jsonb, CAST(:areas AS jsonb), 4, 'available', now(), now())
+            """), {"id": str(technician_member), "tid": str(tenant_id),
+                     "cid": str(category_id), "uid": str(tech1),
+                     "offerings": f'["{tenant_service}"]', "areas": f'["{cov}"]'})
+            print("[CREATE] provider_team_member: Technician One")
+
+        staff_availability = (await db.execute(text("""
+            SELECT id FROM provider_availability_rules
+             WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid
+             LIMIT 1
+        """), {"tid": str(tenant_id), "sid": str(technician_member)})).scalar_one_or_none()
+        if not staff_availability:
+            for dow in range(0, 6):
+                await db.execute(text("""
+                    INSERT INTO provider_availability_rules
+                        (id, tenant_id, scope_type, scope_id, category_id, day_of_week,
+                         start_time, end_time, slot_duration_minutes, max_bookings_per_slot,
+                         is_active, break_start_time, break_end_time, max_jobs_per_day,
+                         timezone, created_at, updated_at)
+                    VALUES (:id, :tid, 'staff_member', :sid, :cid, :dow,
+                            '09:00', '18:00', 60, 1, true, '13:00', '14:00',
+                            6, 'Asia/Kolkata', now(), now())
+                """), {"id": str(uuid.uuid4()), "tid": str(tenant_id),
+                         "sid": str(technician_member), "cid": str(category_id), "dow": dow})
+            print("[CREATE] Technician One availability: Mon-Sat")
+
+        seat_entitlement = (await db.execute(text("""
+            SELECT id FROM tenant_topup_entitlements
+             WHERE tenant_id=:tid AND status='active'
+               AND meta ->> 'seed_key' = 'canonical_four_role_e2e'
+             LIMIT 1
+        """), {"tid": str(tenant_id)})).scalar_one_or_none()
+        if not seat_entitlement:
+            await db.execute(text("""
+                INSERT INTO tenant_topup_entitlements
+                    (id, tenant_id, seats, credit_granted, credit_expired,
+                     validity_days, starts_at, expires_at, status, meta,
+                     created_at, updated_at)
+                VALUES (:id, :tid, 1, 0, 0, 0, now(), NULL, 'active',
+                        '{"seed_key":"canonical_four_role_e2e","purpose":"paid_test_capacity"}'::jsonb,
+                        now(), now())
+            """), {"id": str(uuid.uuid4()), "tid": str(tenant_id)})
+            print("[CREATE] one active technician-seat entitlement")
+
+        # Business approval evidence only. Technician identity/background
+        # documents remain provider-owned and are intentionally not seeded or
+        # evaluated by the platform.
+        for document_type, label in (
+            ("business_registration", "Canonical business registration"),
+            ("identity_proof", "Canonical owner identity proof"),
+            ("address_proof", "Canonical registered address proof"),
+        ):
+            document = (await db.execute(text("""
+                SELECT id FROM tenant_documents
+                 WHERE tenant_id=:tid AND staff_member_id IS NULL
+                   AND doc_type=:doc_type AND is_current=true LIMIT 1
+            """), {"tid": str(tenant_id), "doc_type": document_type})).scalar_one_or_none()
+            if document:
+                await db.execute(text("""
+                    UPDATE tenant_documents
+                       SET status='verified', verified_at=now(), verified_by=:actor,
+                           rejection_reason=NULL, review_notes='Canonical four-role QA fixture',
+                           updated_at=now()
+                     WHERE id=:id
+                """), {"id": str(document), "actor": str(super_admin)})
+            else:
+                await db.execute(text("""
+                    INSERT INTO tenant_documents
+                        (id, tenant_id, doc_type, label, file_url, version, is_current,
+                         status, uploaded_by_user_id, verified_at, verified_by,
+                         reviewed_by, review_notes, created_at, updated_at)
+                    VALUES (:id, :tid, :doc_type, :label, :file_url, 1, true,
+                            'verified', :owner, now(), :actor, :actor,
+                            'Canonical four-role QA fixture', now(), now())
+                """), {"id": str(uuid.uuid4()), "tid": str(tenant_id),
+                         "doc_type": document_type, "label": label,
+                         "file_url": f"canonical-qa://{document_type}",
+                         "owner": str(owner), "actor": str(super_admin)})
+        print("[OK]     three required business documents verified")
 
         await db.commit()
 
@@ -368,7 +655,24 @@ async def run():
             existing = (await db.execute(text(
                 "SELECT id FROM service_jobs WHERE job_number=:jn"), {"jn": job_number})).scalar_one_or_none()
             if existing:
-                print(f"[SKIP]   service_job {job_number} (exists)")
+                await db.execute(text("""
+                    UPDATE service_jobs
+                       SET offering_id=:off, job_type_id=:jtid,
+                           assigned_staff_id=:staff, assignment_status=:astatus,
+                           updated_at=now()
+                     WHERE id=:id
+                """), {"id": str(existing), "off": str(ac_repair),
+                         "jtid": str(job_type_id),
+                         "staff": str(assigned) if assigned else None,
+                         "astatus": assignment_status})
+                await db.execute(text("""
+                    UPDATE service_bookings sb
+                       SET offering_id=:off, job_type_id=:jtid, updated_at=now()
+                      FROM service_jobs sj
+                     WHERE sj.id=:id AND sb.id=sj.booking_id
+                """), {"id": str(existing), "off": str(ac_repair),
+                         "jtid": str(job_type_id)})
+                print(f"[UPDATE] service_job {job_number} (current service/staff mapping)")
                 return existing
             addr_json = '{"line1": "H.No. 123, Model Town", "city": "Ludhiana", "zipcode": "141001"}'
 
@@ -389,32 +693,32 @@ async def run():
                 VALUES
                     (:id, :cust, :cat, :off, :t, 'converted', 'Ludhiana', '141001', CAST(:addr AS jsonb), now(), now())
             """), {"id": str(draft_id), "cust": str(customer), "cat": str(category_id),
-                    "off": str(offering) if offering else None, "t": str(tenant_id), "addr": addr_json})
+                    "off": str(ac_repair), "t": str(tenant_id), "addr": addr_json})
 
             booking_id = uuid.uuid4()
             await db.execute(text("""
                 INSERT INTO service_bookings
-                    (id, booking_number, draft_id, customer_id, tenant_id, category_id, offering_id,
+                    (id, booking_number, draft_id, customer_id, tenant_id, category_id, offering_id, job_type_id,
                      city, zipcode, address_snapshot, status, assignment_status, created_at, updated_at)
                 VALUES
-                    (:id, :bnum, :did, :cust, :t, :cat, :off, 'Ludhiana', '141001', CAST(:addr AS jsonb),
+                    (:id, :bnum, :did, :cust, :t, :cat, :off, :jtid, 'Ludhiana', '141001', CAST(:addr AS jsonb),
                      :bstatus, :astatus, now(), now())
             """), {"id": str(booking_id), "bnum": f"L501-BK-{job_number[-4:]}", "did": str(draft_id),
                     "cust": str(customer), "t": str(tenant_id), "cat": str(category_id),
-                    "off": str(offering) if offering else None, "addr": addr_json,
+                    "off": str(ac_repair), "jtid": str(job_type_id), "addr": addr_json,
                     "bstatus": booking_status, "astatus": assignment_status})
 
             jid = uuid.uuid4()
             await db.execute(text("""
                 INSERT INTO service_jobs
-                    (id, job_number, booking_id, customer_id, tenant_id, category_id, offering_id,
+                    (id, job_number, booking_id, customer_id, tenant_id, category_id, offering_id, job_type_id,
                      assigned_staff_id, scheduled_date, scheduled_time_window, city, zipcode,
                      address_snapshot, status, assignment_status, completion_data, created_at, updated_at)
                 VALUES
-                    (:id, :jn, :bid, :cust, :t, :cat, :off, :staff, current_date, '10:00-12:00', 'Ludhiana', '141001',
+                    (:id, :jn, :bid, :cust, :t, :cat, :off, :jtid, :staff, current_date, '10:00-12:00', 'Ludhiana', '141001',
                      :addr, :status, :astatus, :completion, now(), now())
             """), {"id": str(jid), "jn": job_number, "bid": str(booking_id), "cust": str(customer), "t": str(tenant_id),
-                    "cat": str(category_id), "off": str(offering) if offering else None,
+                    "cat": str(category_id), "off": str(ac_repair), "jtid": str(job_type_id),
                     "staff": str(assigned) if assigned else None,
                     "addr": addr_json,
                     "status": status, "astatus": assignment_status, "completion": completion})
@@ -423,10 +727,10 @@ async def run():
             return jid
 
         job_new = await upsert_job("L501-JOB-0001", "new", "unassigned")
-        job_assigned = await upsert_job("L501-JOB-0002", "assigned", "assigned", assigned=tech1)
-        job_in_progress = await upsert_job("L501-JOB-0003", "in_progress", "assigned", assigned=tech1)
+        job_assigned = await upsert_job("L501-JOB-0002", "assigned", "assigned", assigned=technician_member)
+        job_in_progress = await upsert_job("L501-JOB-0003", "in_progress", "assigned", assigned=technician_member)
         job_completed = await upsert_job(
-            "L501-JOB-0004", "completed", "assigned", assigned=tech2,
+            "L501-JOB-0004", "completed", "assigned", assigned=technician_member,
             completion='{"work_summary": "Replaced capacitor, cleaned filter, gas checked OK.", '
                        '"collected_amount": 775, "completion_notes": "Customer confirmed cooling restored.", '
                        '"technician": "Technician Two", "completed_at": "' +
@@ -500,6 +804,46 @@ async def run():
                                    "You have been assigned job L501-JOB-0002.", read=True)
 
         await db.commit()
+
+        from app.engines.provider_portal.router import _evaluate_provider_bookability
+        bookability = await _evaluate_provider_bookability(db, tenant_id)
+        visibility_row = (await db.execute(text("""
+            SELECT id FROM provider_visibility_statuses
+             WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1
+        """), {"tid": str(tenant_id)})).scalar_one_or_none()
+        visibility_payload = {
+            "tid": str(tenant_id),
+            "visible": bookability["is_visible"],
+            "bookable": bookability["is_bookable"],
+            "visibility_blockers": json.dumps(bookability["visibility_blockers"]),
+            "bookability_blockers": json.dumps(bookability["bookability_blockers"]),
+        }
+        if visibility_row:
+            await db.execute(text("""
+                UPDATE provider_visibility_statuses
+                   SET is_visible=:visible, is_bookable=:bookable,
+                       visibility_blockers=CAST(:visibility_blockers AS jsonb),
+                       bookability_blockers=CAST(:bookability_blockers AS jsonb),
+                       last_evaluated_at=now(), last_changed_at=now(), updated_at=now()
+                 WHERE id=:id
+            """), {**visibility_payload, "id": str(visibility_row)})
+        else:
+            await db.execute(text("""
+                INSERT INTO provider_visibility_statuses
+                    (tenant_id, is_visible, is_bookable, visibility_blockers,
+                     bookability_blockers, last_evaluated_at, last_changed_at,
+                     created_at, updated_at)
+                VALUES (:tid, :visible, :bookable,
+                        CAST(:visibility_blockers AS jsonb),
+                        CAST(:bookability_blockers AS jsonb), now(), now(), now(), now())
+            """), visibility_payload)
+        await db.commit()
+        if not bookability["is_bookable"]:
+            raise RuntimeError(
+                "Canonical provider did not become bookable: "
+                f"{bookability['bookability_blockers']}"
+            )
+        print("[OK]     canonical provider is visible and 100% bookable")
         print("\n[DONE] FINAL-L5-01 canonical seed complete.")
         print(f"[SUMMARY] {created}")
 

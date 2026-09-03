@@ -200,7 +200,7 @@ class CreditReservation(ServiceOSBase):
 
 
 class WarrantyClaim(ServiceOSBase):
-    """Provider-first warranty claim; admin credit is the final escalation."""
+    """Provider-first warranty claim resolved directly with the customer."""
     __tablename__ = "warranty_claims"
     __table_args__ = (
         UniqueConstraint("job_id", name="uq_warranty_job"),

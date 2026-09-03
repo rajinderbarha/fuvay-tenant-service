@@ -8,11 +8,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 NAV = (FRONTEND / "lib/nav-config.ts").read_text(encoding="utf-8-sig")
 LAYOUT = (FRONTEND / "components/layout/TenantLayout.tsx").read_text(encoding="utf-8-sig")
-LEGACY_SETUP = (
-    FRONTEND / "app/(tenant)/provider/service-setup/page.tsx"
-).read_text(encoding="utf-8-sig")
+LEGACY_SETUP = FRONTEND / "app/(tenant)/provider/service-setup/page.tsx"
 CANONICAL_SERVICES = (
     FRONTEND / "app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
+).read_text(encoding="utf-8-sig")
+COMPLAINT_TABS = (
+    FRONTEND / "components/complaints/ComplaintCaseTabs.tsx"
 ).read_text(encoding="utf-8-sig")
 
 
@@ -41,9 +42,8 @@ def test_navigation_has_no_retired_service_setup_or_price_preview_routes():
         assert href not in combined
 
 
-def test_retired_provider_setup_is_redirect_only():
-    assert 'redirect("/home-services/services")' in LEGACY_SETUP
-    assert "providerOfferingsApi" not in LEGACY_SETUP
+def test_retired_provider_setup_is_deleted():
+    assert not LEGACY_SETUP.exists()
 
 
 def test_deleted_customer_price_preview_page_stays_deleted():
@@ -60,3 +60,8 @@ def test_current_services_workspace_links_to_onboarding_source_of_truth():
 def test_retired_bargain_and_price_tier_labels_are_absent_from_navigation():
     for label in ("Bargain Rules", "Manual Bargain Setup", "Low/Mid/High"):
         assert label not in NAV + LAYOUT
+
+
+def test_tenant_surfaces_do_not_identify_messages_as_fuvay_ai():
+    assert "Fuvay AI" not in NAV + LAYOUT + COMPLAINT_TABS
+    assert 'ai: "System"' in COMPLAINT_TABS

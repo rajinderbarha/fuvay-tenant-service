@@ -80,7 +80,7 @@ export function PrivacyAndDataScreen({ navigation }: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <AppText variant="bodyStrong">Your privacy settings</AppText>
-              <AppText variant="bodySmall" color="tertiary">Manage consent and requests connected to your ServiceOS account.</AppText>
+              <AppText variant="bodySmall" color="tertiary">Manage consent and requests connected to your Fuvay account.</AppText>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: theme.spacing.sm, paddingVertical: 2, borderRadius: theme.radiusUsage.statusPill, backgroundColor: visual.color === "success" ? theme.colors.statusSuccessSurface : theme.colors.statusWarningSurface }}>
               <Icon name={visual.icon} size="compact" color={visual.color === "success" ? theme.colors.statusSuccess : theme.colors.statusWarning} decorative />
@@ -121,7 +121,7 @@ export function PrivacyAndDataScreen({ navigation }: Props) {
           <SectionHeader title="Your data" />
           <Card padding="base">
             <ListRow title="Data summary" subtitle="Profile, employment and activity records" trailing={<AppText variant="labelStrong" color="warning">View</AppText>} onPress={() => navigation.navigate("DataSummary")} />
-            <ListRow title="Download my data" subtitle="Request a voluntary ServiceOS export" onPress={() => navigation.navigate("VoluntaryDataExport")} />
+            <ListRow title="Download my data" subtitle="Request a voluntary Fuvay export" onPress={() => navigation.navigate("VoluntaryDataExport")} />
             <ListRow
               title="Privacy requests" subtitle="Access, correction, erasure and grievances"
               trailing={summary.request_counts.open > 0 ? <OpenPill count={summary.request_counts.open} /> : undefined}
@@ -163,7 +163,7 @@ export function PrivacyAndDataScreen({ navigation }: Props) {
 
         <View style={{ flexDirection: "row", gap: theme.spacing.sm, padding: theme.spacing.base, backgroundColor: theme.colors.brandPrimaryMuted, borderRadius: theme.radiusUsage.card, marginTop: theme.spacing.base }}>
           <Icon name="information-circle" size="compact" color={theme.colors.brandPrimary} decorative />
-          <AppText variant="bodySmall" style={{ flex: 1, color: theme.colors.brandPrimary }}>Privacy requests are reviewed across every ServiceOS category linked to your account.</AppText>
+          <AppText variant="bodySmall" style={{ flex: 1, color: theme.colors.brandPrimary }}>Privacy requests are reviewed across every Fuvay category linked to your account.</AppText>
         </View>
         <AppText variant="caption" color="tertiary" style={{ textAlign: "center", marginTop: theme.spacing.base }}>
           Active jobs, disputes, finance records and legal retention may affect erasure or closure.

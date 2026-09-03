@@ -67,9 +67,7 @@ def test_admin_options_flow_is_visible_in_tenant_requirements_projection():
 
 
 def test_old_servicesnow_link_redirects_to_the_single_canonical_workspace():
-    route = read(COMPAT_ROUTE)
-    assert 'redirect("/home-services/services")' in route
-    assert "ServicesPricingPage" not in route
+    assert not COMPAT_ROUTE.exists()
 
 
 def test_route_layout_owns_the_tenant_shell_once():

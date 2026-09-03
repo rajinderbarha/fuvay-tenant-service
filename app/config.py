@@ -1,13 +1,14 @@
 """
-ServiceOS — Application Configuration
+Fuvay — Application Configuration
 All settings loaded from environment / .env file via pydantic-settings.
 Never import settings directly — always use get_settings() to allow DI in tests.
 """
 from functools import lru_cache
+import ipaddress
 import json
 from typing import Annotated, Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Current release version — bump for each release candidate
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ────────────────────────────────────────────────────────
-    APP_NAME: str = "ServiceOS"
+    APP_NAME: str = "Fuvay"
     APP_VERSION: str = "rc-1"
     APP_ENV: Literal["development", "staging", "production", "testing"] = "development"
     DEBUG: bool = False  # Must stay False; only override to True in dev via .env
@@ -44,6 +45,20 @@ class Settings(BaseSettings):
         "http://localhost:19006",  # Expo web
     ]
     RATE_LIMIT_PER_MINUTE: int = 100
+
+    # Public-edge abuse protection. Proxy headers are only trusted when the
+    # socket peer belongs to one of these networks; otherwise clients could
+    # rotate X-Forwarded-For values to evade every IP limit.
+    TRUSTED_PROXY_CIDRS: Annotated[list[str], NoDecode] = ["127.0.0.1/32", "::1/128"]
+    TURNSTILE_REQUIRED: bool = False
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_ALLOWED_HOSTNAMES: Annotated[list[str], NoDecode] = []
+    OTP_DAILY_GLOBAL_LIMIT: int = Field(default=1000, ge=1)
+    OTP_DAILY_RECIPIENT_LIMIT: int = Field(default=5, ge=1)
+    OTP_DAILY_IP_LIMIT: int = Field(default=20, ge=1)
+    OTP_DAILY_SOURCE_LIMIT: int = Field(default=20, ge=1)
+    BOOKING_MAX_ACTIVE_DRAFTS: int = Field(default=3, ge=1)
+    BOOKING_MAX_CONFIRMATIONS_PER_DAY: int = Field(default=5, ge=1)
 
     # ── Database ───────────────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://serviceos:serviceos@localhost:5432/serviceos"
@@ -173,7 +188,7 @@ class Settings(BaseSettings):
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
 
-    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @field_validator("ALLOWED_ORIGINS", "TRUSTED_PROXY_CIDRS", "TURNSTILE_ALLOWED_HOSTNAMES", mode="before")
     @classmethod
     def parse_origins(cls, v):
         if isinstance(v, str):
@@ -193,6 +208,16 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in v.split(",")]
         return v
 
+    @field_validator("TRUSTED_PROXY_CIDRS")
+    @classmethod
+    def validate_proxy_cidrs(cls, values: list[str]) -> list[str]:
+        for value in values:
+            try:
+                ipaddress.ip_network(value, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid trusted proxy CIDR: {value}") from exc
+        return values
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug_flag(cls, value):
@@ -200,7 +225,7 @@ class Settings(BaseSettings):
 
         Some Windows/CI toolchains expose DEBUG=release or DEBUG=debug as a
         process-wide variable.  Treat those as false/true instead of making
-        ServiceOS fail before its own .env configuration can be used.
+        Fuvay fail before its own .env configuration can be used.
         """
         if isinstance(value, str):
             normalized = value.strip().lower()
@@ -215,6 +240,8 @@ class Settings(BaseSettings):
         """Fail fast if production environment has dev/placeholder secrets."""
         if self.APP_ENV == "production":
             errors: list[str] = []
+            if self.DEBUG:
+                errors.append("DEBUG must be false in production")
             if "dev-secret-key" in self.SECRET_KEY:
                 errors.append("SECRET_KEY is still the development placeholder — set a 64-char random string")
             if "dev-jwt-secret" in self.JWT_SECRET_KEY:
@@ -224,6 +251,14 @@ class Settings(BaseSettings):
             # Wildcard CORS in production is dangerous when credentials: true
             if "*" in self.ALLOWED_ORIGINS:
                 errors.append("ALLOWED_ORIGINS contains '*' — wildcard CORS with credentials is insecure")
+            if not self.TRUSTED_PROXY_CIDRS or set(self.TRUSTED_PROXY_CIDRS).issubset({"127.0.0.1/32", "::1/128"}):
+                errors.append("TRUSTED_PROXY_CIDRS must contain the production reverse-proxy network")
+            if not self.TURNSTILE_REQUIRED:
+                errors.append("TURNSTILE_REQUIRED must be true for public provider registration")
+            if not self.TURNSTILE_SECRET_KEY:
+                errors.append("TURNSTILE_SECRET_KEY is required in production")
+            if not self.TURNSTILE_ALLOWED_HOSTNAMES:
+                errors.append("TURNSTILE_ALLOWED_HOSTNAMES must contain the public signup hostnames")
             if errors:
                 raise ValueError(
                     "Production config validation failed:\n" + "\n".join(f"  - {e}" for e in errors)

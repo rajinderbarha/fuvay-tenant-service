@@ -30,7 +30,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend/tenant-portal"
 
 ROUTER_PY = (ROOT / "app/engines/provider_portal/router.py").read_text(encoding="utf-8-sig")
-PAGE = (FRONTEND / "components/service-setup/ReviewPublishStep.tsx").read_text(encoding="utf-8-sig")
+PAGE = (FRONTEND / "app/(tenant)/home-services/services/[[...serviceId]]/page.tsx").read_text(encoding="utf-8-sig")
 
 
 def _eval_fn() -> str:
@@ -170,8 +170,8 @@ def test_response_includes_passed_and_failed_checks():
 
 # ── 5. Frontend calls refresh after publish and shows real status ────────────
 def test_frontend_calls_refresh_after_publish():
-    publish_action = PAGE.split("const publishAction")[1].split("async function handlePublish")[0]
-    assert "serviceSetupApi.publish(tsid)" in publish_action
+    publish_action = PAGE.split("const { execute: publish")[1].split("const { execute: remove")[0]
+    assert "homeServicesSetupApi.publish(tenantServiceId)" in publish_action
     assert "providerStatusApi.refresh()" in publish_action
 
 
@@ -191,10 +191,9 @@ def test_frontend_shows_not_bookable_copy_with_reasons():
 def test_frontend_never_shows_false_ready_state():
     # Publishing only emits success after both the publish mutation and the
     # canonical provider-status recomputation complete.
-    publish_action = PAGE.split("const publishAction")[1].split("async function handlePublish")[0]
-    handle_publish = PAGE.split("async function handlePublish")[1].split("const errors")[0]
-    assert publish_action.index("serviceSetupApi.publish(tsid)") < publish_action.index("providerStatusApi.refresh()")
-    assert "publishAction.execute()" in handle_publish
+    publish_action = PAGE.split("const { execute: publish")[1].split("const { execute: remove")[0]
+    assert publish_action.index("homeServicesSetupApi.publish(tenantServiceId)") < publish_action.index("providerStatusApi.refresh()")
+    assert "onClick={() => publish()}" in PAGE
 
 
 # ── 6. Regression: existing safety fixes still intact ────────────────────────

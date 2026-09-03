@@ -40,7 +40,7 @@ export default function ChangePasswordPage() {
     try {
       await authApi.changePassword(current, next);
       localStorage.removeItem("serviceos_force_pw_change");
-      window.location.href = "/onboarding";
+      window.location.href = "/tenant/home-services/setup";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Password change failed. Check your current password.");
     } finally { setLoading(false); }
@@ -174,7 +174,7 @@ export default function ChangePasswordPage() {
 
         <p style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11,
           color: "var(--text-tertiary)", marginTop: 20, justifyContent: "center" }}>
-          <ShieldCheck size={13}/> Secured by ServiceOS Auth Engine
+          <ShieldCheck size={13}/> Secured by Fuvay Auth Engine
         </p>
       </div>
     </div>

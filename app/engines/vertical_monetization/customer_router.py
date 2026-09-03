@@ -28,7 +28,7 @@ async def get_charge(
     user: UserContext = Depends(get_current_user),
 ):
     """Full breakdown for the payment/receipt screen: service amount, who
-    receives it, ServiceOS fee, total, refundability, collection stage."""
+    receives it, Fuvay fee, total, refundability, collection stage."""
     charge = await db.get(CustomerPlatformFeeCharge, charge_id)
     if not charge:
         from app.exceptions import NotFoundException

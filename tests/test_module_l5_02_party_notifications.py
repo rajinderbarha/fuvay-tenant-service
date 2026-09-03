@@ -36,7 +36,6 @@ async def test_provider_notify_is_one_per_owner():
 
 def test_hand_off_points_are_wired():
     from app.engines.complaints.complaint_service import ComplaintService
-    from app.engines.complaints import ai_settlement_service
     # customer files -> provider told
     assert "notify_provider_complaint" in inspect.getsource(ComplaintService.create_complaint)
     # provider offers a resolution -> customer told
@@ -44,8 +43,5 @@ def test_hand_off_points_are_wired():
     # a settlement proposal -> the counterparty told
     prop = inspect.getsource(ComplaintService.create_settlement_proposal)
     assert "notify_customer_complaint" in prop and "notify_provider_complaint" in prop
-    # AI proposal -> both told
-    ai = inspect.getsource(ai_settlement_service.AISettlementService.analyze_and_propose)
-    assert "notify_customer_complaint" in ai and "notify_provider_complaint" in ai
     # credits actually issued -> customer told
     assert "complaint.settlement_paid" in inspect.getsource(ComplaintService._execute_settlement_payout)

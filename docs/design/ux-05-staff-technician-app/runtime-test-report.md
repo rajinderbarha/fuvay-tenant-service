@@ -31,7 +31,7 @@ dependency tree with zero `invalid` warnings, and `npx jest` (35/35) still passe
 Re-ran the same smoke check against the fixed build:
 ```
 TITLE: Login
-BODY: "S / ServiceOS Staff / Field Operations App / Sign In / Phone Number / Password / Sign In / ..."
+BODY: "S / Fuvay Staff / Field Operations App / Sign In / Phone Number / Password / Sign In / ..."
 ERRORS: []
 ```
 Zero page errors, zero console errors. Repeated with the browser context's `colorScheme` set to both `'light'`

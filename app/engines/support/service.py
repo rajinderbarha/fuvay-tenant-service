@@ -292,17 +292,17 @@ async def create_ticket(
 
 def _route_team(category: str, critical: bool) -> str:
     if critical:
-        return "ServiceOS Incident Response"
+        return "Fuvay Incident Response"
     return {
-        "account_access": "ServiceOS Account Support",
-        "security": "ServiceOS Security",
-        "onboarding": "ServiceOS Onboarding",
-        "profile_documents": "ServiceOS Verification",
-        "finance_credits": "ServiceOS Finance Support",
-        "direct_payments": "ServiceOS Finance Support",
-        "integrations": "ServiceOS Platform Engineering",
-        "technical": "ServiceOS Platform Engineering",
-    }.get(category, "ServiceOS Provider Support")
+        "account_access": "Fuvay Account Support",
+        "security": "Fuvay Security",
+        "onboarding": "Fuvay Onboarding",
+        "profile_documents": "Fuvay Verification",
+        "finance_credits": "Fuvay Finance Support",
+        "direct_payments": "Fuvay Finance Support",
+        "integrations": "Fuvay Platform Engineering",
+        "technical": "Fuvay Platform Engineering",
+    }.get(category, "Fuvay Provider Support")
 
 
 TENANT_FACING_EVENTS = {
@@ -421,7 +421,7 @@ async def tenant_reply(
     )
     t.last_tenant_reply_at = utcnow()
 
-    # A tenant reply to waiting_for_tenant returns the case to ServiceOS
+    # A tenant reply to waiting_for_tenant returns the case to Fuvay
     # handling and un-pauses the SLA clock (section 11/12).
     if t.status == C.ST_WAITING_FOR_TENANT:
         prev = t.status
@@ -596,7 +596,7 @@ async def admin_reply(db: AsyncSession, t: SupportTicket, *, body: str, internal
             t.status = C.ST_WAITING_FOR_TENANT
             t.sla_paused_at = utcnow()
             await log_event(db, t.id, "status_changed", from_value=prev, to_value=t.status,
-                            reason="ServiceOS requested more information",
+                            reason="Fuvay requested more information",
                             actor_user_id=actor_user_id, actor_type="serviceos",
                             actor_name=actor_name)
         await db.flush()
@@ -690,7 +690,7 @@ async def ticket_detail(
         "sla": sla_projection(t),
         "conversation": [{
             "id": str(m.id), "kind": m.kind, "author_name": m.author_name or (
-                "ServiceOS Support" if m.author_type == "serviceos" else "System"),
+                "Fuvay Support" if m.author_type == "serviceos" else "System"),
             "author_type": m.author_type, "author_role": m.author_role,
             "body": m.body, "visibility": m.visibility,
             "attachments": m.attachments or [],
@@ -820,7 +820,7 @@ async def service_status(db: AsyncSession) -> dict:
         message = "Some platform components are reporting degraded health."
     else:
         state = C.STATUS_OPERATIONAL
-        message = "All ServiceOS platform components are operational."
+        message = "All Fuvay platform components are operational."
 
     return {
         "state": state,

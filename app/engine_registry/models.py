@@ -1,5 +1,5 @@
 """
-ServiceOS — Engine Registry DB Models
+Fuvay — Engine Registry DB Models
 tenant_engines: which engines are enabled per tenant + their config.
 """
 import uuid

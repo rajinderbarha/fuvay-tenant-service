@@ -158,11 +158,6 @@ class WarrantyProviderResponseRequest(BaseModel):
 class WarrantyEscalationRequest(BaseModel):
     reason: str = Field(min_length=10, max_length=1000)
 
-class ClaimResolveRequest(BaseModel):
-    amount_approved: Decimal | None = Field(None, ge=0)
-    admin_notes: str = Field(min_length=5, max_length=1000)
-    rejection_reason: str | None = None
-
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 class PreflightRequest(BaseModel):
     tenant_id: uuid.UUID
