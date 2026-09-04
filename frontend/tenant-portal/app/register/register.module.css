@@ -1,0 +1,32 @@
+.page {
+  --bg:#f7f5f1; --surface:#fff; --surface-sunken:#fbfaf8;
+  --border:#e9e5df; --border-strong:#e2ded7; --border-focus:#0f6b60;
+  --text-primary:#1b1a18; --text-secondary:#5f5b54; --text-tertiary:#8a857c;
+  --brand:#0f6b60; --brand-hover:#0a4f47; --text-on-brand:#fff;
+  --accent:#0f6b60; --accent-muted:#e8f2f0;
+  --success-bg:#e8f2f0; --success-border:#d9e9e5; --success-text:#0f6b60;
+  --danger-text:#c2703f; --neutral-bg:#f0ece6;
+  min-height:100vh; display:flex; flex-direction:column; background:var(--bg); color:var(--text-primary);
+}
+.header {
+  min-height:67px; padding:16px clamp(16px,4vw,40px); display:flex; align-items:center;
+  justify-content:space-between; gap:14px; flex-wrap:wrap; background:var(--surface); border-bottom:1px solid var(--border);
+}
+.wordmark { display:inline-flex; align-items:center; gap:10px; color:var(--text-primary); font-size:18px; font-weight:700; line-height:1; }
+.wordmarkIcon { width:34px; height:34px; display:grid; place-items:center; flex:none; border-radius:11px; background:var(--brand); color:#fff; font-size:15px; }
+.flow {
+  flex:1; width:100%; max-width:1080px; margin:0 auto; padding:clamp(20px,4vw,40px) clamp(16px,4vw,40px) 60px;
+  display:grid; grid-template-columns:minmax(280px,1fr) minmax(0,1.6fr); gap:20px; align-items:start;
+}
+.sidebar,.formPanel { min-width:0; }
+.twoColumn { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.formCard { border-radius:18px !important; box-shadow:none !important; }
+@media (max-width:760px) {
+  .flow { display:flex; flex-direction:column; padding:24px 16px 40px; }
+  .formPanel { order:1; width:100%; }
+  .sidebar { order:2; width:100%; }
+  .twoColumn { grid-template-columns:1fr; }
+  .formCard { padding:20px !important; }
+  .header { padding:14px 16px; }
+  .headerPrompt { display:none; }
+}

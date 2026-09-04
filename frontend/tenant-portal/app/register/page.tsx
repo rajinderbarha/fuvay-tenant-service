@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { Button, Alert, Card } from "@serviceos/design-system";
 import { publicSignupApi, SignupVertical } from "../../lib/api";
-import FuvayLogo from "../../components/brand/FuvayLogo";
+import styles from "./register.module.css";
 
 const VERTICAL_ICONS: Record<string, React.ElementType> = {
   home_services: Wrench, real_estate: Building2, salon: Scissors, coaching: GraduationCap,
@@ -68,19 +68,20 @@ function Field({
   const id = React.useId();
   return (
     <div>
-      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, lineHeight: 1, fontWeight: 600, color: "var(--text-primary)", marginBottom: 7 }}>
         {label}{required && <span style={{ color: "var(--danger-text)" }}> *</span>}
       </label>
       {/* Bordered icon cell, matching the field style used on /login. */}
       <div style={{
-        position: "relative", display: "flex", alignItems: "center", height: 44,
-        background: "var(--surface)", border: `1px solid ${focused ? "var(--border-focus)" : "var(--border)"}`,
-        borderRadius: "var(--radius-md)", overflow: "hidden", transition: "border-color 0.15s ease",
+        position: "relative", display: "flex", alignItems: "center", height: 46, gap: 10, padding: "0 13px",
+        background: "var(--surface-sunken)", border: `1.5px solid ${focused ? "var(--border-focus)" : "var(--border-strong)"}`,
+        borderRadius: 12, transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+        boxShadow: focused ? "0 0 0 3px rgba(15,107,96,.08)" : "none",
       }}>
         {icon && (
           <span style={{
-            display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: "100%",
-            color: "var(--text-tertiary)", borderRight: "1px solid var(--border)", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "var(--text-tertiary)", flexShrink: 0,
           }}>
             {icon}
           </span>
@@ -91,7 +92,7 @@ function Field({
           onChange={e => onChange(e.target.value)} placeholder={placeholder}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           style={{
-            flex: 1, height: "100%", padding: `0 ${trailing ? 40 : 12}px 0 12px`,
+            flex: 1, height: "100%", padding: `0 ${trailing ? 28 : 0}px 0 0`,
             fontSize: 14, background: "transparent", border: "none",
             color: "var(--text-primary)", outline: "none",
             fontFamily: "inherit", boxSizing: "border-box", minWidth: 0,
@@ -385,37 +386,21 @@ export default function RegisterPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <style>{`
-        .register-flow { flex: 1; display: flex; gap: 28px; padding: 40px 32px; flex-wrap: wrap; max-width: 1260px; margin: 0 auto; width: 100%; align-items: flex-start; box-sizing: border-box; }
-        .register-sidebar { flex: 1 1 300px; max-width: 340px; }
-        .register-form { flex: 2 1 600px; max-width: 860px; min-width: 0; }
-        .register-two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-        @media (max-width: 720px) {
-          .register-flow { flex-direction: column; padding: 24px 16px; }
-          .register-form { order: 1; width: 100%; max-width: none; flex-basis: auto; }
-          .register-sidebar { order: 2; width: 100%; max-width: none; flex-basis: auto; }
-          .register-two-column { grid-template-columns: 1fr; }
-          .register-form-card { padding: 0 !important; }
-          .register-header { padding: 14px 16px !important; }
-          .register-header-prompt { display: none; }
-        }
-      `}</style>
-      <header style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "18px 32px", borderBottom: "1px solid var(--border)", flexWrap: "wrap", gap: 12,
-      }} className="register-header">
-        <FuvayLogo height={36}/>
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <Link className={styles.wordmark} href="/" aria-label="Fuvay home">
+          <span className={styles.wordmarkIcon}>F</span><span>Fuvay</span>
+        </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <span className="register-header-prompt" style={{ fontSize: 13, color: "var(--text-secondary)" }}>Already have an account?</span>
+          <span className={styles.headerPrompt} style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Already have an account?</span>
           <Link href="/login" style={{ minHeight: 36, padding: "0 16px", display: "inline-flex", alignItems: "center", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-md)", color: "var(--text-primary)", background: "var(--surface)", fontSize: 14, fontWeight: 600, textDecoration: "none" }}>Sign in</Link>
           <Link href="/help" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}>Need help?</Link>
         </div>
       </header>
 
-      <main className="register-flow">
+      <main className={styles.flow}>
         {/* Left rail */}
-        <aside className="register-sidebar" aria-label="Signup progress">
+        <aside className={styles.sidebar} aria-label="Signup progress">
           <Card>
             <h2 style={{ fontSize: 19, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Create your workspace</h2>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 14px" }}>
@@ -478,8 +463,8 @@ export default function RegisterPage() {
         </aside>
 
         {/* Right form card */}
-        <div className="register-form">
-          <Card className="register-form-card" style={{ padding: 40 }}>
+        <div className={styles.formPanel}>
+          <Card className={styles.formCard} style={{ padding: 28 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-secondary)" }}>Step {stepIndex + 1} of {STEPS.length}</span>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--brand)" }}>{pct}%</span>
@@ -504,13 +489,13 @@ export default function RegisterPage() {
                   Start with your secure login. Business and service setup comes next.
                 </p>
                 <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 12px" }}>Owner details</p>
-                <div className="register-two-column" style={{ marginBottom: 14 }}>
+                <div className={styles.twoColumn} style={{ marginBottom: 16 }}>
                   <Field label="Full name" icon={<User size={16} />} required value={form.owner_name}
                     onChange={v => set("owner_name", v)} placeholder="Enter your full name" autoComplete="name" />
                   <Field label="Mobile number" icon={<Phone size={16} />} type="tel" required value={form.owner_phone}
                     onChange={v => set("owner_phone", v)} placeholder="Enter mobile number" autoComplete="tel" />
                 </div>
-                <div className="register-two-column" style={{ marginBottom: 8 }}>
+                <div className={styles.twoColumn} style={{ marginBottom: 16 }}>
                   <Field label="Email address" icon={<Mail size={16} />} type="email" required value={form.owner_email}
                     onChange={v => set("owner_email", v)} placeholder="Enter your email address" autoComplete="email" />
                   <PasswordField label="Password" value={form.password} onChange={v => set("password", v)} placeholder="Create a password" />
@@ -639,7 +624,7 @@ export default function RegisterPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <Field label="Business name" icon={<Building2 size={16} />} required value={form.business_name}
                     onChange={v => set("business_name", v)} placeholder="e.g. Rahul AC Services" />
-                  <div className="register-two-column">
+                  <div className={styles.twoColumn}>
                     <Field label="City" required value={form.city} onChange={v => set("city", v)} placeholder="e.g. Mumbai" />
                     <Field label="State" required value={form.state} onChange={v => set("state", v)} placeholder="e.g. Maharashtra" />
                   </div>
@@ -744,8 +729,8 @@ export default function RegisterPage() {
                     Continue{stepIndex === 0 ? " to verification" : ""} <ArrowRight size={15} style={{ marginLeft: 6 }} />
                   </Button>}
             </div>
-            <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", textAlign: "center", margin: "16px 0 0" }}>
-              🔒 Your information is encrypted and saved securely.
+            <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontSize: 11.5, color: "var(--text-tertiary)", textAlign: "center", margin: "16px 0 0" }}>
+              <Lock size={12} aria-hidden="true" /> Your information is encrypted and saved securely.
             </p>
           </Card>
         </div>

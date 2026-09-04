@@ -106,7 +106,7 @@ export function CreditPill() {
         aria-expanded={open}
         title={`${tone.label}: ${inr(status.credit_balance)} — click to top up`}
         style={{
-          display: "flex", alignItems: "center", gap: 7, height: 36, padding: "0 12px",
+          display: "flex", alignItems: "center", gap: 7, height: 38, padding: "0 12px",
           borderRadius: 999, background: tone.bg, border: `1px solid ${tone.border}`,
           cursor: "pointer", fontFamily: "inherit",
         }}

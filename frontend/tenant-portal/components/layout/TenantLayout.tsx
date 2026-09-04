@@ -711,29 +711,31 @@ function TenantShellInner({ children, activeNav }: {
       {/* ── Main ─────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top nav */}
-        <header className="provider-topbar" style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
-          <div className="provider-global-search" style={{ flex: 1, maxWidth: 360 }}>
+        <header className="provider-topbar" style={{ minHeight: 64, display: "flex", alignItems: "center", gap: 8, padding: "0 32px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <div className="provider-global-search" style={{ flex: "1 1 260px", maxWidth: 420 }}>
             <div style={{ position: "relative" }}>
-              <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
+              <Search size={15} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
               <input
+                aria-label="Search jobs, customers and bookings"
                 placeholder="Search jobs, customers, bookings…"
-                style={{ width: "100%", height: 36, padding: "0 12px 0 34px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}
+                style={{ width: "100%", height: 42, padding: "0 50px 0 38px", fontSize: 14, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}
                 onFocus={e => { e.currentTarget.style.borderColor = "var(--border-focus)"; e.currentTarget.style.background = "var(--surface)"; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = "var(--border)";       e.currentTarget.style.background = "var(--surface-sunken)"; }}
               />
+              <span aria-hidden="true" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", padding: "3px 5px", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-tertiary)", font: '500 10px/1 "IBM Plex Mono", var(--font-family-mono)' }}>⌘K</span>
             </div>
           </div>
           <div style={{ flex: 1 }}/>
-          <div className="provider-online-status" style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 999, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
+          <div className="provider-online-status" style={{ height: 38, display: "flex", alignItems: "center", gap: 7, padding: "0 12px", borderRadius: 999, background: "var(--success-bg)" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
           </div>
           <CreditPill/>
           <div ref={bellRef} style={{ position: "relative" }}>
             <button onClick={openBell}
               aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
               title="Notifications"
-              style={{ width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", position: "relative" }}>
+              style={{ width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", position: "relative" }}>
               <Bell size={16}/>
               {!!unreadCount && unreadCount > 0 && (
                 <span style={{
@@ -823,16 +825,17 @@ function TenantShellInner({ children, activeNav }: {
               </div>
             )}
           </div>
+          <span className="provider-header-divider" aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }}/>
           <div ref={profileRef} style={{ position: "relative" }}>
             <button onClick={() => setProfileOpen(o => !o)} style={{
-              display: "flex", alignItems: "center", gap: 10, background: "none", border: "none",
-              cursor: "pointer", padding: "4px 4px 4px 10px", borderRadius: "var(--radius-lg)",
+              height: 42, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "1px solid var(--border)",
+              cursor: "pointer", padding: "0 8px 0 12px", borderRadius: 12,
               fontFamily: "inherit" }}>
               <div className="provider-profile-copy" style={{ textAlign: "right" }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{myName || tenant.tenantName || "Owner"}</p>
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</p>
               </div>
-              <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={34}/>
+              <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={myAvatar} size={28}/>
             </button>
 
             {profileOpen && (

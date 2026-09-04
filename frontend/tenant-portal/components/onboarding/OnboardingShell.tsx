@@ -244,16 +244,16 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
 
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        <header className="provider-topbar onboarding-header-pad" style={{ height: 58, display: "flex", alignItems: "center", gap: 14, padding: "0 28px", background: "var(--surface)", borderBottom: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", flexShrink: 0 }}>
+        <header className="provider-topbar onboarding-header-pad" style={{ minHeight: 64, display: "flex", alignItems: "center", gap: 8, padding: "0 32px", background: "var(--surface)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <button aria-label="Open menu" onClick={() => setDrawerOpen(true)} className="onboarding-hamburger"
             style={{
-              width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
+              width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)",
               background: "var(--surface)", cursor: "pointer", alignItems: "center", justifyContent: "center",
               color: "var(--text-secondary)", flexShrink: 0,
             }}>
             <Menu size={18}/>
           </button>
-          <div aria-label="Current workspace" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface-sunken)", minWidth: 0 }}>
+          <div aria-label="Current workspace" style={{ height: 42, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", minWidth: 0 }}>
             <Building2 size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
             <span className="onboarding-workspace-selector-text" style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {tenant.tenantName ?? "My Business"}
@@ -261,14 +261,14 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           </div>
           <div style={{ flex: 1 }}/>
           <button type="button" onClick={toggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title="Change theme" style={{
-            width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
+            width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)",
             background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
             justifyContent: "center", color: "var(--text-secondary)",
           }}>
             {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
           </button>
           <Link href="/provider/notifications" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} title="Notifications" style={{
-            width: 36, height: 36, borderRadius: "var(--radius-lg)", border: "1px solid var(--border)",
+            width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)",
             background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
             justifyContent: "center", color: "var(--text-secondary)", position: "relative",
           }}>
@@ -285,13 +285,14 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           }}>
             <HelpCircle size={15}/> <span className="onboarding-help-text">Help</span>
           </Link>
+          <span className="provider-header-divider" aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }}/>
           <div ref={profileRef} style={{ position: "relative" }}>
             <button onClick={() => setProfileOpen(o => !o)} style={{
-              display: "flex", alignItems: "center", gap: 10, background: "none", border: "none",
-              cursor: "pointer", padding: "4px 4px 4px 10px", borderRadius: "var(--radius-lg)", fontFamily: "inherit",
+              height: 42, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "1px solid var(--border)",
+              cursor: "pointer", padding: "0 8px 0 12px", borderRadius: 12, fontFamily: "inherit",
             }}>
               <div style={{ position: "relative", flexShrink: 0 }}>
-                <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={null} size={32}/>
+                <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={null} size={28}/>
                 <span style={{
                   position: "absolute", bottom: -1, right: -1, width: 10, height: 10, borderRadius: "50%",
                   background: "var(--success)", border: "2px solid var(--surface)",
