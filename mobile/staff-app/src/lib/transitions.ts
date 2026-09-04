@@ -49,11 +49,11 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export const STATUS_COLOR: Record<string, { bg:string; text:string; border:string }> = {
   pending_assignment: { bg:"#F8FAFC", text:"#1E293B", border:"#CBD5E1" },
-  assigned:            { bg:"#EFF6FF", text:"#1D4ED8", border:"#BFDBFE" },
+  assigned:            { bg:"#E8F2F0", text:"#0F6B60", border:"#DFE9E7" },
   accepted:            { bg:"#F0FDF4", text:"#15803D", border:"#BBF7D0" },
-  scheduled:           { bg:"#EFF6FF", text:"#1D4ED8", border:"#BFDBFE" },
+  scheduled:           { bg:"#E8F2F0", text:"#0F6B60", border:"#DFE9E7" },
   on_the_way:          { bg:"#FFF7ED", text:"#9A3412", border:"#FED7AA" },
-  reached_site:        { bg:"#F0F9FF", text:"#0369A1", border:"#BAE6FD" },
+  reached_site:        { bg:"#E8F2F0", text:"#0F6B60", border:"#DFE9E7" },
   inspection_started:  { bg:"#FDF4FF", text:"#701A75", border:"#F0ABFC" },
   inspection_done:     { bg:"#FDF4FF", text:"#701A75", border:"#F0ABFC" },
   quote_required:      { bg:"#FEFCE8", text:"#713F12", border:"#FEF08A" },

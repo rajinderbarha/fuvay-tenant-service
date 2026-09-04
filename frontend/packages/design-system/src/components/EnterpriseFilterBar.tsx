@@ -60,8 +60,8 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       height: 26, padding: "0 6px 0 10px",
-      background: "var(--brand-muted, #eff6ff)", color: "var(--brand, #2563eb)",
-      border: "1px solid var(--brand-border, #bfdbfe)",
+      background: "var(--brand-muted, #e8f2f0)", color: "var(--brand, #0f6b60)",
+      border: "1px solid var(--brand-border, #dfe9e7)",
       borderRadius: 999, fontSize: 12, fontWeight: 500,
       whiteSpace: "nowrap",
     }}>
@@ -92,8 +92,8 @@ function QuickSelect({ def, value, onChange }: {
         ...BASE,
         paddingRight: 28, cursor: "pointer",
         fontWeight: active ? 600 : undefined,
-        borderColor: active ? "var(--brand, #2563eb)" : undefined,
-        color: active ? "var(--brand, #2563eb)" : undefined,
+        borderColor: active ? "var(--brand, #0f6b60)" : undefined,
+        color: active ? "var(--brand, #0f6b60)" : undefined,
       }}
     >
       <option value="">{def.label}</option>
@@ -297,7 +297,7 @@ function AdvancedDrawer({
             style={{
               flex: 2, height: 38, fontSize: 13, fontWeight: 600,
               borderRadius: 8, border: "none",
-              background: "var(--brand, #2563eb)", color: "#fff",
+              background: "var(--brand, #0f6b60)", color: "#fff",
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
@@ -429,9 +429,9 @@ export function EnterpriseFilterBar({
             onClick={openDrawer}
             style={{
               height: 34, padding: "0 12px", fontSize: 13, borderRadius: 8,
-              border: `1px solid ${activeAdvCount > 0 ? "var(--brand, #2563eb)" : "var(--border)"}`,
-              background: activeAdvCount > 0 ? "var(--brand-muted, #eff6ff)" : "var(--surface-sunken)",
-              color: activeAdvCount > 0 ? "var(--brand, #2563eb)" : "var(--text-secondary)",
+              border: `1px solid ${activeAdvCount > 0 ? "var(--brand, #0f6b60)" : "var(--border)"}`,
+              background: activeAdvCount > 0 ? "var(--brand-muted, #e8f2f0)" : "var(--surface-sunken)",
+              color: activeAdvCount > 0 ? "var(--brand, #0f6b60)" : "var(--text-secondary)",
               cursor: "pointer", fontFamily: "inherit", fontWeight: activeAdvCount > 0 ? 600 : undefined,
               display: "inline-flex", alignItems: "center", gap: 6,
               whiteSpace: "nowrap",
@@ -445,7 +445,7 @@ export function EnterpriseFilterBar({
               <span style={{
                 display: "inline-flex", alignItems: "center", justifyContent: "center",
                 width: 18, height: 18, fontSize: 11, fontWeight: 700,
-                background: "var(--brand, #2563eb)", color: "#fff", borderRadius: "50%",
+                background: "var(--brand, #0f6b60)", color: "#fff", borderRadius: "50%",
               }}>
                 {activeAdvCount}
               </span>

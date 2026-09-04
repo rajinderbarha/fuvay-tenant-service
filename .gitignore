@@ -59,6 +59,9 @@ var/*.png
 # Local database backups (may contain data, never commit)
 .backups/
 
+# Local design-QA screenshot dumps (before/after comparison PNGs), not source
+.design-qa/
+
 # Bundled local PostgreSQL install + live data + installers (not source, huge, regenerable)
 db/pgsql/
 db/pgdata/

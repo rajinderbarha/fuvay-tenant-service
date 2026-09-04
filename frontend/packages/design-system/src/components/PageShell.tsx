@@ -4,7 +4,7 @@ export function PageShell({ children }: { children: React.ReactNode }) {
   // Authenticated application layouts already own the viewport padding and
   // content width. PageShell only owns vertical rhythm; adding another inset
   // here created the inconsistent, double-padded headers seen on newer pages.
-  return <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)", width: "100%" }}>{children}</div>;
+  return <div className="ds-page-shell" style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)", width: "100%" }}>{children}</div>;
 }
 
 export function PageHeader({
@@ -46,11 +46,11 @@ export function PageHeader({
             <span style={{ width: 40, height: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRadius: "var(--radius-lg)", background: "var(--accent-muted)", color: "var(--accent)", border: "1px solid var(--border)" }}>{renderedIcon}</span>
           )}
           <div style={{ minWidth: 0 }}>
-            <h1 className="ds-text-page-title" style={{ margin: 0, color: "var(--text-primary)", fontSize: 22, lineHeight: 1.2, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            <h1 className="ds-text-page-title" style={{ margin: 0, color: "var(--text-primary)", fontSize: "clamp(22px, 2.4vw, 28px)", lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em" }}>
               {title}
             </h1>
             {supportingText && (
-              <p className="ds-text-body" style={{ margin: "var(--space-1) 0 0", color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5, maxWidth: 820 }}>
+              <p className="ds-text-body" style={{ margin: "6px 0 0", color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.45, maxWidth: 560 }}>
                 {supportingText}
               </p>
             )}

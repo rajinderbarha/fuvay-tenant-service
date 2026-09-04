@@ -200,7 +200,7 @@ export function ProfilePhotoUploader({
             background: "rgba(255,255,255,0.75)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Loader size={px * 0.28} style={{ animation: "spin 0.9s linear infinite", color: "var(--accent, #3b82f6)" }}/>
+            <Loader size={px * 0.28} style={{ animation: "spin 0.9s linear infinite", color: "var(--accent, #0f6b60)" }}/>
           </div>
         )}
 

@@ -41,7 +41,7 @@ export function PermissionDeniedPage({ parentHref, parentLabel, requestId }: {
       <Link
         href={parentHref ?? "/admin/dashboard"}
         style={{
-          marginTop: 8, fontSize: 13, fontWeight: 600, color: "var(--accent, #2563eb)",
+          marginTop: 8, fontSize: 13, fontWeight: 600, color: "var(--accent, #0f6b60)",
           textDecoration: "none",
         }}
       >
@@ -55,7 +55,7 @@ export function ReadOnlyNotice() {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-      background: "var(--info-bg, #eff6ff)", border: "1px solid var(--info-border, #bfdbfe)",
+      background: "var(--info-bg, #e8f2f0)", border: "1px solid var(--info-border, #dfe9e7)",
       borderRadius: 10, fontSize: 12.5, marginBottom: 16,
     }}>
       <ShieldOff size={14} aria-hidden="true"/>

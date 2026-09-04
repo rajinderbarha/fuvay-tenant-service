@@ -146,6 +146,9 @@ async def get_workspace(
             "blocker_count": len(validation["errors"]),
             "customer_visible": s["setup_status"] == "published" and validation["valid"],
             "pricing_behavior": pricing_behavior or None,
+            "tenant_min_price": float(s["tenant_min_price"]) if s.get("tenant_min_price") is not None else None,
+            "tenant_max_price": float(s["tenant_max_price"]) if s.get("tenant_max_price") is not None else None,
+            "tenant_visit_fee": float(s["tenant_visit_fee"]) if s.get("tenant_visit_fee") is not None else None,
         })
 
     # Price override KPIs count only offerings for which the active Admin
@@ -198,6 +201,11 @@ async def get_offering_detail(
 
     ts_dict = await svc.get_enabled_service(tenant_service_id)
     master = await db.get(MasterService, ts_row.master_service_id)
+    service_group_name = None
+    if master and master.service_group_id:
+        service_group_name = await db.scalar(
+            select(ServiceGroup.name).where(ServiceGroup.id == master.service_group_id)
+        )
 
     # Admin blueprint -- exact same job-type-specific requirements used by
     # Tenant Setup and its publish gate.
@@ -251,6 +259,7 @@ async def get_offering_detail(
     return ok({
         "tenant_service": ts_dict,
         "service_name": master.service_name if master else ts_dict.get("tenant_display_name"),
+        "service_group_name": service_group_name,
         "job_type_label": job_type_label,
         "blueprint": blueprint,
         "readiness": {

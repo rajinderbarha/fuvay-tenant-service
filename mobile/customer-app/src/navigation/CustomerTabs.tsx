@@ -58,7 +58,7 @@ function FuvayTabBar({ state, navigation }: BottomTabBarProps) {
             return <View key={route.key} style={{ width: 66, height: 46 }} />;
           }
           // Only the labelled Home pill needs contrast text. Icon-only active
-          // destinations use the brand blue directly so their glyph remains
+          // destinations use the brand teal directly so their glyph remains
           // visible against the navigation surface in both themes.
           const foreground = showLabel
             ? t.ink(t.accents.a2)

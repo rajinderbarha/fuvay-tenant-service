@@ -849,8 +849,8 @@ class TenantCatalogService:
         )).scalar_one_or_none()
         eff = {}
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
-            if field in data and data[field] is not None:
-                eff[field] = Decimal(str(data[field]))
+            if field in data:
+                eff[field] = Decimal(str(data[field])) if data[field] is not None else None
             else:
                 eff[field] = getattr(ts, field)
         self._validate_price_overrides(svc, eff["tenant_base_price"], eff["tenant_min_price"],
@@ -860,8 +860,8 @@ class TenantCatalogService:
             if field in data and data[field] is not None:
                 setattr(ts, field, data[field])
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
-            if field in data and data[field] is not None:
-                setattr(ts, field, Decimal(str(data[field])))
+            if field in data:
+                setattr(ts, field, Decimal(str(data[field])) if data[field] is not None else None)
         if "tenant_emergency_surcharge" in data:
             value = data["tenant_emergency_surcharge"]
             if value is not None and Decimal(str(value)) < 0:
@@ -1182,6 +1182,26 @@ class TenantCatalogService:
         await self.db.flush()
         return await self.get_type_pricing_for_setup(tenant_service_id)
 
+    async def clear_type_pricing(self, tenant_service_id: uuid.UUID,
+                                 service_type_id: uuid.UUID) -> dict:
+        """Remove only the tenant price override while keeping the Type enabled."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        await self._reject_dimension_price_for_inspection(ts)
+        res = await self.db.execute(
+            select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+                TenantServiceType.service_type_id == service_type_id,
+                TenantServiceType.is_enabled == True))
+        tst = res.scalar_one_or_none()
+        if not tst:
+            raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
+                "This type is not selected for this service.", status_code=422)
+        tst.tenant_min_price = None
+        tst.tenant_max_price = None
+        await self.db.flush()
+        return await self.get_type_pricing_for_setup(tenant_service_id)
+
     async def get_brand_pricing_for_setup(self, tenant_service_id: uuid.UUID,
                                            service_type_id: uuid.UUID | None = None) -> dict:
         """Type-Dependent Brand Pricing (migration 120): brand rows are now
@@ -1303,6 +1323,24 @@ class TenantCatalogService:
         tsb.tenant_min_price = tmin
         tsb.tenant_max_price = tmax
         await self.db.flush()
+        return await self.get_brand_pricing_for_setup(tenant_service_id, service_type_id)
+
+    async def clear_brand_pricing(self, tenant_service_id: uuid.UUID, brand_id: uuid.UUID,
+                                  service_type_id: uuid.UUID | None = None) -> dict:
+        """Clear a Brand exception without disabling that Brand for matching."""
+        ts = await self._load_tenant_service(tenant_service_id)
+        self._assert_tenant_owns_ts(ts)
+        await self._reject_dimension_price_for_inspection(ts)
+        stmt = select(TenantServiceBrand).where(
+            TenantServiceBrand.tenant_service_id == tenant_service_id,
+            TenantServiceBrand.brand_id == brand_id,
+            TenantServiceBrand.service_type_id == service_type_id
+            if service_type_id is not None else TenantServiceBrand.service_type_id.is_(None))
+        tsb = (await self.db.execute(stmt)).scalar_one_or_none()
+        if tsb is not None:
+            tsb.tenant_min_price = None
+            tsb.tenant_max_price = None
+            await self.db.flush()
         return await self.get_brand_pricing_for_setup(tenant_service_id, service_type_id)
 
     # ── Coverage modes (migration 152) ──────────────────────────────────────

@@ -311,7 +311,7 @@ export default function BulkWizardDetailPage() {
         <div>
           <h2 style={{ fontWeight: 700, marginBottom: "1rem" }}>Step 9 — Review Preview</h2>
           <button onClick={runPreview} disabled={saving}
-            style={{ background: "#0891b2", color: "#fff", border: "none", padding: "0.5rem 1.25rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600, marginBottom: "1.25rem", opacity: saving ? 0.6 : 1 }}>
+            style={{ background: "#0f6b60", color: "#fff", border: "none", padding: "0.5rem 1.25rem", borderRadius: "0.375rem", cursor: "pointer", fontWeight: 600, marginBottom: "1.25rem", opacity: saving ? 0.6 : 1 }}>
             {saving ? "Generating Preview..." : "Run Preview"}
           </button>
 
@@ -356,7 +356,7 @@ export default function BulkWizardDetailPage() {
                         <td style={{ padding: "0.45rem 0.75rem" }}>
                           <span style={{
                             fontSize: "0.7rem", padding: "0.15rem 0.4rem", borderRadius: "9999px",
-                            background: item.action.startsWith("create") ? "#dcfce7" : item.action === "skip" ? "#f3f4f6" : "#dbeafe",
+                            background: item.action.startsWith("create") ? "#dcfce7" : item.action === "skip" ? "#f3f4f6" : "#e8f2f0",
                             color: item.action.startsWith("create") ? "#166534" : item.action === "skip" ? "#6b7280" : "var(--brand-hover)",
                           }}>
                             {item.action}

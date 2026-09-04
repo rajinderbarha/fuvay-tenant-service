@@ -10,8 +10,8 @@
  */
 
 :root {
-  --font-family-base: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-family-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-family-base: "Instrument Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-family-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
 
   --space-0: 0;
   --space-1: 0.25rem;
@@ -31,10 +31,10 @@
    * single source of truth. Portals may override the semantic tokens at a
    * layout boundary without forking component markup. */
   --layout-control-gap: var(--space-2);
-  --layout-section-gap: var(--space-5);
-  --layout-page-gap: var(--space-6);
+  --layout-section-gap: var(--space-4);
+  --layout-page-gap: 1.25rem;
   --layout-card-padding-block: var(--space-4);
-  --layout-card-padding-inline: var(--space-5);
+  --layout-card-padding-inline: var(--space-4);
   --layout-content-padding-block: var(--space-8);
   --layout-content-padding-inline: var(--space-8);
 
@@ -43,7 +43,7 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-full: 9999px;
-  --radius-card: var(--radius-xl);
+  --radius-card: 1.125rem;
   --radius-kpi: 0.875rem;
 
   --shadow-sm: 0 1px 2px rgba(38, 30, 20, 0.06);
@@ -56,19 +56,21 @@
   --motion-slow: 320ms;
   --motion-easing: cubic-bezier(0.2, 0, 0, 1);
 
-  --focus-ring: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--border-focus, #f2994a);
-  --overlay: rgba(34, 29, 20, 0.5);
-  --skeleton: rgba(148, 163, 184, 0.18);
+  --focus-ring: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--border-focus, #0f6b60);
+  --overlay: rgba(27, 26, 24, 0.5);
+  --skeleton: rgba(138, 133, 124, 0.18);
+  --brand-muted: var(--accent-muted, #e8f2f0);
+  --brand-border: #dfe9e7;
 
-  --neutral: #64748b;
-  --neutral-bg: #f1f5f9;
-  --neutral-border: #e2e8f0;
-  --neutral-text: #475569;
+  --neutral: #7c776e;
+  --neutral-bg: #f0eee9;
+  --neutral-border: #e2ded7;
+  --neutral-text: #7c776e;
 
-  --info: #6b6153;
-  --info-bg: #f3f1ea;
-  --info-border: #d4cfc4;
-  --info-text: #45402f;
+  --info: #0f6b60;
+  --info-bg: #e8f2f0;
+  --info-border: #dfe9e7;
+  --info-text: #0f6b60;
 }
 
 [data-theme="dark"] {
@@ -79,16 +81,18 @@
 
   --overlay: rgba(20, 16, 10, 0.65);
   --skeleton: rgba(148, 163, 184, 0.12);
+  --brand-muted: var(--accent-muted, #15332f);
+  --brand-border: #26514a;
 
-  --neutral: #94a3b8;
-  --neutral-bg: rgba(148, 163, 184, 0.12);
-  --neutral-border: rgba(148, 163, 184, 0.25);
-  --neutral-text: #cbd5e1;
+  --neutral: #a09a90;
+  --neutral-bg: #262622;
+  --neutral-border: #33322c;
+  --neutral-text: #a09a90;
 
-  --info: #c9c3b7;
-  --info-bg: rgba(201, 195, 183, 0.12);
-  --info-border: rgba(201, 195, 183, 0.25);
-  --info-text: #e4e0d8;
+  --info: #2f9e8f;
+  --info-bg: #15332f;
+  --info-border: #26514a;
+  --info-text: #7fd6c7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -99,6 +103,8 @@
     --shadow-overlay: 0 24px 56px rgba(20, 16, 10, 0.6);
     --overlay: rgba(20, 16, 10, 0.65);
     --skeleton: rgba(148, 163, 184, 0.12);
+    --brand-muted: var(--accent-muted, #15332f);
+    --brand-border: #26514a;
   }
 }
 

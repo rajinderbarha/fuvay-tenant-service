@@ -571,10 +571,8 @@ function TenantShellInner({ children, activeNav }: {
       }}>
         {/* Logo */}
         <div style={{ height: 64, padding: sidebarCollapsed ? "0 14px" : "0 18px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0 }}>
-          {/* The provider sidebar is navy in both themes now (globals.css
-              scopes --sidebar-bg to #101A31 under [data-theme="light"], the
-              same as super-admin), so it always needs the white-wordmark
-              artwork rather than the theme swap. */}
+          {/* The provider sidebar stays dark in both themes, so it always needs
+              the white-wordmark artwork rather than the theme swap. */}
           <FuvayLogo compact={sidebarCollapsed} height={34} tone="onDark"/>
           {!sidebarCollapsed && (
             <div style={{ minWidth: 0 }}>

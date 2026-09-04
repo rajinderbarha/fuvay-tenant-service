@@ -1,7 +1,7 @@
 import { lightColors, darkColors } from "../tokens/colors";
 
 /**
- * Customer native design tokens: restrained brand blue for actions, a warm
+ * Customer native design tokens: restrained brand teal for actions, a warm
  * neutral canvas, multicolour campaign content, and a deep charcoal dark
  * theme. These guards protect contrast without forcing campaign artwork or
  * service imagery into the brand colour.
@@ -31,10 +31,10 @@ function contrastRatio(a: string, b: string): number {
 }
 
 describe("customer native brand and contrast tokens", () => {
-  it("uses the Fuvay v2 blue (a2) as the brand fill, brighter in dark mode", () => {
+  it("uses the shared Fuvay teal as the brand fill, brighter in dark mode", () => {
     // v2's a2 accent -- the canvas uses it for every primary action.
-    expect(lightColors.brandPrimary).toBe("#1a63a8");
-    expect(darkColors.brandPrimary).toBe("#3f9bf0");
+    expect(lightColors.brandPrimary).toBe("#0f6b60");
+    expect(darkColors.brandPrimary).toBe("#2f9e8f");
     // Dark mode must be the brighter of the two, so a filled button reads
     // as raised against a dark shell rather than sinking into it.
     expect(relativeLuminance(darkColors.brandPrimary)).toBeGreaterThan(
@@ -45,8 +45,8 @@ describe("customer native brand and contrast tokens", () => {
   /**
    * The invariant that actually protects users, asserted independently of
    * any specific hex: whatever sits ON the brand fill must be readable
-   * against it. Blue has enough luminance contrast for white text/icons,
-   * unlike the previous yellow which needed dark ink.
+   * against it. The token helper chooses the correct foreground for each
+   * theme's teal fill.
    */
   it("keeps text on the brand fill readable in both themes", () => {
     for (const theme of [lightColors, darkColors]) {
@@ -61,15 +61,15 @@ describe("customer native brand and contrast tokens", () => {
     }
   });
 
-  it("keeps the foreground brand shade in the same blue family as the fill", () => {
-    // Same hue family: blue >= red and blue >= green for both, so the
+  it("keeps the foreground brand shade in the same teal family as the fill", () => {
+    // Same hue family: green >= red and green >= blue for both, so the
     // foreground shade still reads as the brand colour, not a new one.
     for (const hex of [lightColors.brandPrimaryStrong, lightColors.brandPrimary]) {
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
-      expect(b).toBeGreaterThanOrEqual(r);
-      expect(b).toBeGreaterThanOrEqual(g);
+      expect(g).toBeGreaterThanOrEqual(r);
+      expect(g).toBeGreaterThanOrEqual(b);
     }
   });
 
@@ -87,7 +87,7 @@ describe("customer native brand and contrast tokens", () => {
   });
 
   it("uses the v2 neutral shell (not pure-black) as the dark background", () => {
-    expect(darkColors.backgroundPrimary).toBe("#232326");
+    expect(darkColors.backgroundPrimary).toBe("#111110");
     expect(darkColors.backgroundPrimary).not.toBe("#000000");
   });
 
@@ -103,7 +103,7 @@ describe("customer native brand and contrast tokens", () => {
   });
 
   it("keeps dark-mode primary text close to white, not washed-out gray", () => {
-    expect(darkColors.textPrimary).toBe("#f0f0f2");
+    expect(darkColors.textPrimary).toBe("#f2efe9");
     // The real requirement: near-white, and comfortably readable on the shell.
     expect(relativeLuminance(darkColors.textPrimary)).toBeGreaterThan(0.8);
     expect(

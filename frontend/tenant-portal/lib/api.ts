@@ -592,6 +592,10 @@ export const homeServicesSetupApi = {
     apiFetch<{ types: HsTypePricing[] }>(
       `/v1/tenant/catalog/enabled-services/${tenantServiceId}/types/${serviceTypeId}/pricing`,
       { method: "PUT", body: JSON.stringify({ tenant_min_price: min, tenant_max_price: max }) }),
+  clearTypePricing: (tenantServiceId: string, serviceTypeId: string) =>
+    apiFetch<{ types: HsTypePricing[] }>(
+      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/types/${serviceTypeId}/pricing`,
+      { method: "DELETE" }),
   getBrandPricing: (tenantServiceId: string, serviceTypeId?: string) =>
     apiFetch<{ brands: HsBrandPricing[] }>(
       `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brand-pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`),
@@ -599,6 +603,10 @@ export const homeServicesSetupApi = {
     apiFetch<{ brands: HsBrandPricing[] }>(
       `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands/${brandId}/pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
       { method: "PUT", body: JSON.stringify({ tenant_min_price: min, tenant_max_price: max }) }),
+  clearBrandPricing: (tenantServiceId: string, brandId: string, serviceTypeId?: string) =>
+    apiFetch<{ brands: HsBrandPricing[] }>(
+      `/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands/${brandId}/pricing${serviceTypeId ? `?service_type_id=${serviceTypeId}` : ""}`,
+      { method: "DELETE" }),
   pricePreview: (data: { tenant_min_price: number; tenant_max_price: number; platform_fee_percent?: number }) =>
     Promise.resolve({
       provider_min_price: data.tenant_min_price,

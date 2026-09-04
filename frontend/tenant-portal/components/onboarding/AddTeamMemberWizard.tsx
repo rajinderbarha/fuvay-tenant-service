@@ -25,7 +25,7 @@
  * "ready" itself.
  */
 import React, { useEffect, useRef, useState } from "react";
-import { X, CheckCircle2, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
+import { X, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
 import { Btn, Input } from "../shared/ui";
 import { ProfilePhotoUploader } from "../shared/ProfilePhotoUploader";
 import {
@@ -39,6 +39,8 @@ const MEMBER_TYPES = [
   { value: "staff", label: "Staff", hint: "Non-technician operational staff" },
   { value: "manager", label: "Manager", hint: "Oversees operations" },
 ];
+
+const EDIT_SECTIONS = ["Identity", "Role & assignment", "Approved skills", "Services", "Login access"] as const;
 
 const DESIGNATIONS_BY_MEMBER_TYPE: Record<string, string[]> = {
   technician: [
@@ -70,6 +72,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [completed, setCompleted] = useState(false);
+  const [activeSection, setActiveSection] = useState(0);
   const tenantId = getTenantId() ?? "";
   const isEdit = !!existing?.member_id;
 
@@ -208,7 +211,13 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
 
   async function handleSave() {
     const invalid = validate();
-    if (invalid) { setError(invalid); return; }
+    if (invalid) {
+      setError(invalid);
+      if (/full name|email address|mobile number|designation/i.test(invalid)) setActiveSection(0);
+      else if (/skill/i.test(invalid)) setActiveSection(2);
+      else if (/service/i.test(invalid)) setActiveSection(3);
+      return;
+    }
     setError(""); setWarning(""); setSaving(true);
 
     const payload = {
@@ -268,25 +277,27 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
 
   return (
     <div
+      className="team-member-editor-backdrop"
       role="presentation"
       onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(7, 12, 20, 0.68)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
     >
-      <div role="dialog" aria-modal="true" aria-labelledby="team-member-dialog-title" style={{ width: "min(900px, 100%)", maxHeight: "calc(100vh - 40px)", borderRadius: 16, border: "1px solid var(--border)", background: "var(--surface)", boxShadow: "var(--shadow-lg)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
-        <div>
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 2px" }}>
-            {MEMBER_TYPES.find(t => t.value === memberType)?.label ?? "Team member"} details
-          </p>
-          <h2 id="team-member-dialog-title" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-            {isEdit ? "Edit team member" : "Add team member"}
-          </h2>
+      <div className="team-member-editor" role="dialog" aria-modal="true" aria-labelledby="team-member-dialog-title">
+      <div className="team-member-editor-header">
+        <div className="team-member-editor-heading">
+          <span className="team-member-editor-avatar">{(fullName || existing?.full_name || "TM").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</span>
+          <span>
+            <p>{isEdit ? "Edit team member" : "Add team member"}</p>
+            <h2 id="team-member-dialog-title">{fullName || (isEdit ? "Team member" : "New team member")}</h2>
+          </span>
         </div>
-        <button ref={closeButtonRef} onClick={onClose} aria-label="Close team member dialog" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}><X size={22}/></button>
+        <button ref={closeButtonRef} onClick={onClose} aria-label="Close team member dialog"><X size={17}/></button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <div className="team-member-editor-body">
+        <nav aria-label="Team member sections">
+          {EDIT_SECTIONS.map((label, index) => <button type="button" key={label} className={activeSection === index ? "active" : ""} aria-current={activeSection === index ? "step" : undefined} onClick={() => { setError(""); setActiveSection(index); }}><i />{label}</button>)}
+        </nav>
+        <div className="team-member-editor-content">
           {error && (
             <div role="alert" style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>{error}</div>
           )}
@@ -295,6 +306,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           )}
 
           {/* ── Identity ── */}
+          {activeSection === 0 && <>
           <SectionTitle>Identity</SectionTitle>
           <Field label="Profile photo" hint="JPG, PNG or WebP up to 5 MB. Crop the face to the centre of the circle.">
             <ProfilePhotoUploader
@@ -328,6 +340,8 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           </Row>
 
           {/* ── Role & capacity ── */}
+          </>}
+          {activeSection === 1 && <>
           <SectionTitle>Role &amp; assignment</SectionTitle>
           <Field label="Role" required>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
@@ -353,6 +367,9 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
               </label>
             </Field>
           </Row>
+          </>}
+          {activeSection === 2 && <>
+          <SectionTitle>Approved skills</SectionTitle>
           {isTechnician && (
             <Field label="Approved skills" required hint="Skills are controlled by the platform administrator for this business category.">
               {servicesLoading ? (
@@ -395,6 +412,9 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
               )}
             </Field>
           )}
+          {!isTechnician && <p className="team-member-editor-empty">Approved skills only apply to technicians.</p>}
+          </>}
+          {activeSection === 1 && <>
           <Row>
             <Field label="Reports to" hint="Shown on the member's Help &amp; Support screen">
               <Input value={reportsToName} onChange={setReportsToName} placeholder="Manager name"/>
@@ -410,7 +430,8 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           </Row>
 
           {/* ── Services (technicians only) ── */}
-          {isTechnician && (
+          </>}
+          {activeSection === 3 && isTechnician && (
             <>
               <SectionTitle>Services this technician can perform</SectionTitle>
               <Field label="Services &amp; job types" hint="A technician can only be assigned jobs for the services selected here.">
@@ -471,7 +492,8 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           )}
 
           {/* ── Weekly availability (create only) ── */}
-          {isTechnician && !isEdit && (
+          {activeSection === 3 && !isTechnician && <><SectionTitle>Services</SectionTitle><p className="team-member-editor-empty">Service assignments only apply to technicians.</p></>}
+          {activeSection === 3 && isTechnician && !isEdit && (
             <>
               <SectionTitle>Weekly availability</SectionTitle>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
@@ -481,6 +503,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           )}
 
           {/* ── Optional login ── */}
+          {activeSection === 4 && <>
           <SectionTitle>Login access<Optional/></SectionTitle>
           <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: hasDeliverableEmail ? "var(--text-primary)" : "var(--text-tertiary)", cursor: hasDeliverableEmail ? "pointer" : "not-allowed" }}>
             <input type="checkbox" checked={wantsLogin} disabled={!hasDeliverableEmail}
@@ -522,24 +545,40 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
             <CheckCircle2 size={16} style={{ color: "var(--success)" }}/>
             <span style={{ fontSize: 12, color: "var(--success-text)" }}>Readiness is recalculated automatically after saving.</span>
           </div>
+          </>}
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 24px", borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
+      <div className="team-member-editor-footer">
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div>
           {completed ? (
             <Btn variant="primary" onClick={onSaved}>Done</Btn>
           ) : (
-            <Btn variant="primary" disabled={saving} onClick={handleSave}>
-              {saving
-                ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/>
-                : <>{isEdit ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/></>}
-            </Btn>
+            <>
+              {activeSection > 0 && <Btn variant="secondary" disabled={saving} onClick={() => { setError(""); setActiveSection(section => section - 1); }}><ChevronLeft size={14}/> Back</Btn>}
+              {activeSection < EDIT_SECTIONS.length - 1
+                ? <Btn variant="primary" disabled={saving} onClick={() => { setError(""); setActiveSection(section => section + 1); }}>Continue <ChevronRight size={14}/></Btn>
+                : <Btn variant="primary" disabled={saving} onClick={handleSave}>
+                    {saving
+                      ? <Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }}/>
+                      : <>{isEdit ? "Save changes" : "Add team member"} <CheckCircle2 size={15}/></>}
+                  </Btn>}
+            </>
           )}
         </div>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .team-member-editor-backdrop{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px;background:color-mix(in srgb,var(--text-primary) 12%,transparent);backdrop-filter:blur(7px)}
+        .team-member-editor{display:flex;width:min(880px,100%);height:min(500px,calc(100vh - 40px));flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:20px;background:var(--surface);box-shadow:0 30px 70px rgba(24,22,18,.24)}
+        .team-member-editor-header{display:flex;min-height:80px;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);background:var(--surface)}
+        .team-member-editor-heading{display:flex;align-items:center;gap:13px}.team-member-editor-heading>span:last-child{display:flex;flex-direction:column;gap:2px}.team-member-editor-heading p{margin:0;color:var(--text-tertiary);font:500 10px/1.2 "IBM Plex Mono",var(--font-family-mono);letter-spacing:.08em;text-transform:uppercase}.team-member-editor-heading h2{margin:0;color:var(--text-primary);font-size:17px;line-height:1.2}.team-member-editor-avatar{display:grid;width:44px;height:44px;place-items:center;border-radius:50%;background:var(--accent-muted);color:var(--brand);font-size:13px;font-weight:750}.team-member-editor-header>button{display:grid;width:34px;height:34px;place-items:center;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text-tertiary);cursor:pointer}
+        .team-member-editor-body{display:grid;min-height:0;flex:1;grid-template-columns:190px minmax(0,1fr)}.team-member-editor-body>nav{display:flex;flex-direction:column;gap:3px;padding:13px 10px;border-right:1px solid var(--border);background:var(--surface-sunken)}.team-member-editor-body>nav button{display:flex;min-height:38px;align-items:center;gap:10px;padding:0 11px;border:0;border-radius:10px;background:transparent;color:var(--text-tertiary);font:500 12px/1.2 inherit;text-align:left;cursor:pointer}.team-member-editor-body>nav button i{width:7px;height:7px;flex:none;border-radius:50%;background:var(--border)}.team-member-editor-body>nav button.active{background:var(--surface);color:var(--text-primary);font-weight:700;box-shadow:var(--shadow-sm)}.team-member-editor-body>nav button.active i{background:var(--brand)}
+        .team-member-editor-content{min-width:0;overflow-y:auto;padding:22px 26px}.team-member-editor-content>h3:first-of-type{margin-top:0!important}.team-member-editor-empty{margin:0;padding:24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-tertiary);font-size:12px;text-align:center}
+        .team-member-editor-footer{display:flex;min-height:72px;align-items:center;justify-content:space-between;padding:14px 22px;border-top:1px solid var(--border);background:var(--surface)}.team-member-editor-footer>div{display:flex;gap:9px}
+        @media(max-width:700px){.team-member-editor{height:calc(100vh - 24px)}.team-member-editor-body{grid-template-columns:1fr}.team-member-editor-body>nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border)}.team-member-editor-body>nav button{white-space:nowrap}.team-member-editor-content{padding:20px}.team-member-editor-backdrop{padding:12px}}
+      `}</style>
       </div>
     </div>
   );

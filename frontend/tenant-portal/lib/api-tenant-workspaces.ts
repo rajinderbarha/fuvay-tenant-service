@@ -482,6 +482,9 @@ export interface SWCatalogService {
   blocker_count: number;
   customer_visible: boolean;
   pricing_behavior: string | null;
+  tenant_min_price: number | null;
+  tenant_max_price: number | null;
+  tenant_visit_fee: number | null;
 }
 export interface SWCatalogGroup {
   service_group_id: string;
@@ -498,6 +501,7 @@ export interface SWResolvedPrice {
 export interface SWOfferingDetail {
   tenant_service: WsPayload;
   service_name: string;
+  service_group_name: string | null;
   job_type_label: string | null;
   blueprint: {
     type_mode: "required" | "optional";

@@ -13,16 +13,16 @@
  *
  * Two consequences worth knowing:
  *
- * 1. `brandPrimary` is v2's **a2 (blue)**. The canvas uses a2 for every
+ * 1. `brandPrimary` is v2's **a2 (teal)**. The canvas uses a2 for every
  *    primary action -- the active nav pill, "Send code", "Ask AI" -- so it
  *    is the honest mapping for the single-brand-colour token. The other
  *    three accents (a1 amber / a3 green / a4 violet) are exposed through
  *    `accentAmber` / `accentMint` / `accentViolet`, and directly via
  *    ./fuvay.ts for screens that rotate accents per card.
  *
- * 2. `brandOnPrimary` is now theme-DEPENDENT. v2's dark-mode blue (#3f9bf0)
- *    is a light colour, so WCAG-correct foreground on it is near-black, not
- *    white. This is `ink()` in ./fuvay.ts doing its job; a filled button in
+ * 2. `brandOnPrimary` is theme-dependent. The dark-mode teal is light enough
+ *    that WCAG-correct foreground on it is near-black rather than white.
+ *    This is `ink()` in ./fuvay.ts doing its job; a filled button in
  *    dark mode legitimately gets dark text. Hardcoding white there would
  *    fail contrast.
  */
@@ -43,9 +43,9 @@ export interface ColorTokens {
   /**
    * The brand colour for TEXT and ICONS sitting on a normal page surface.
    *
-   * Needed because one hex cannot do both jobs: v2's dark-mode blue is a
+   * Needed because one hex cannot do both jobs: v2's dark-mode teal is a
    * light tint that fills a shape well but is used as-is for text on dark
-   * surfaces, while the light theme needs a darkened blue to stay legible
+   * surfaces, while the light theme needs a darker teal to stay legible
    * on pale ones.
    *
    * Rule of thumb: `brandPrimary` fills a shape, `brandPrimaryStrong`
@@ -133,7 +133,7 @@ const D = darkAccents;
 const DS = darkSurfaces;
 
 /**
- * Danger has no accent in the v2 canvas -- a1-a4 are amber/blue/green/violet
+ * Danger has no accent in the v2 canvas -- a1-a4 are amber/teal/green/violet
  * and none of them may signal destruction. These are the one addition, hue-
  * matched to the palette's saturation and verified for AA in the tests.
  */
@@ -142,7 +142,7 @@ const DARK_DANGER = "#f2827a";
 
 export const lightColors: ColorTokens = {
   brandPrimary: L.a2,
-  brandPrimaryPressed: "#134e85",
+  brandPrimaryPressed: "#0b574e",
   brandPrimaryMuted: softAccent(L.a2, false),
   brandOnPrimary: ink(L.a2),
   brandPrimaryStrong: L.a2,
@@ -152,8 +152,8 @@ export const lightColors: ColorTokens = {
   // invisible when surface and background were within ~1.5% luminance.
   backgroundPrimary: LS.shell,
   backgroundSecondary: LS.panel,
-  backgroundElevated: LS.card,
-  backgroundSunken: "#eceae7",
+  backgroundElevated: LS.panel,
+  backgroundSunken: "#f6f4f0",
   backgroundOverlay: "rgba(20, 20, 26, 0.45)",
 
   // v2 has two card-ish surfaces with distinct jobs: `panel` is the raised
@@ -166,7 +166,7 @@ export const lightColors: ColorTokens = {
   surfaceRaised: LS.card,
   surfaceInteractive: softAccent(L.a2, false),
   surfaceSelected: softAccent(L.a2, false),
-  surfaceDisabled: "#eceae7",
+  surfaceDisabled: "#f0eee9",
 
   textPrimary: LS.text,
   textSecondary: LS.sub,
@@ -177,7 +177,7 @@ export const lightColors: ColorTokens = {
 
   borderSubtle: LS.edge,
   borderDefault: LS.rule,
-  borderStrong: "rgba(90,82,74,0.28)",
+  borderStrong: "#ddd8d0",
   borderFocus: L.a2,
   borderDisabled: LS.edge,
   divider: LS.rule,
@@ -216,23 +216,23 @@ export const lightColors: ColorTokens = {
   statusInfo: L.a2,
   statusInfoSurface: softAccent(L.a2, false),
   statusNeutral: LS.faint,
-  statusNeutralSurface: "rgba(90,82,74,0.08)",
+  statusNeutralSurface: "#f0eee9",
 
   statusBarStyle: "dark",
 };
 
 export const darkColors: ColorTokens = {
   brandPrimary: D.a2,
-  brandPrimaryPressed: "#3287d6",
+  brandPrimaryPressed: "#267f73",
   brandPrimaryMuted: softAccent(D.a2, true),
-  // #3f9bf0 is a light blue -- WCAG puts near-black on it, not white.
+  // The brighter dark-theme teal needs near-black foreground for contrast.
   brandOnPrimary: ink(D.a2),
   brandPrimaryStrong: D.a2,
 
   backgroundPrimary: DS.shell,
   backgroundSecondary: DS.panel,
-  backgroundElevated: DS.card,
-  backgroundSunken: "#1d1d20",
+  backgroundElevated: DS.panel,
+  backgroundSunken: "#141413",
   backgroundOverlay: "rgba(0, 0, 0, 0.6)",
 
   // See the light-theme note: `panel` is the raised card, `card` the
@@ -242,7 +242,7 @@ export const darkColors: ColorTokens = {
   surfaceRaised: DS.hexPanel,
   surfaceInteractive: softAccent(D.a2, true),
   surfaceSelected: softAccent(D.a2, true),
-  surfaceDisabled: "#1d1d20",
+  surfaceDisabled: "#262622",
 
   textPrimary: DS.text,
   textSecondary: DS.sub,
@@ -253,7 +253,7 @@ export const darkColors: ColorTokens = {
 
   borderSubtle: DS.edge,
   borderDefault: DS.rule,
-  borderStrong: "rgba(140,140,150,0.35)",
+  borderStrong: "#33322c",
   borderFocus: D.a2,
   borderDisabled: DS.edge,
   divider: DS.rule,
@@ -291,7 +291,7 @@ export const darkColors: ColorTokens = {
   statusInfo: D.a2,
   statusInfoSurface: softAccent(D.a2, true),
   statusNeutral: DS.faint,
-  statusNeutralSurface: "rgba(255,255,255,0.06)",
+  statusNeutralSurface: "#262622",
 
   statusBarStyle: "light",
 };

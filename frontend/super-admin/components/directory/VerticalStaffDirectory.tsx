@@ -95,7 +95,7 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: "var(--radius-lg)",
           background: "var(--info-bg, rgba(59,130,246,0.08))", border: "1px solid var(--info-border, rgba(59,130,246,0.3))", marginBottom: 16 }}>
-          <p style={{ fontSize: 12, color: "var(--info-text, #3b82f6)", margin: 0 }}>
+          <p style={{ fontSize: 12, color: "var(--info-text, #0f6b60)", margin: 0 }}>
             Providers add and manage staff. Platform admins verify identity, capabilities and {verticalLabel} readiness.
           </p>
         </div>

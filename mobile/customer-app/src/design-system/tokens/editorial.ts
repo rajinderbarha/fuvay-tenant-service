@@ -9,7 +9,7 @@ export interface EditorialPalette {
 /** Campaign palettes are tokens because backend content chooses a palette by
  * key.  No campaign component owns colour literals. */
 export const darkEditorialPalettes: Record<EditorialPaletteKey, EditorialPalette> = {
-  ink: { background: "#132039", foreground: "#f7f8fc", accent: "#79a7ff" },
+  ink: { background: "#14302c", foreground: "#f2efe9", accent: "#7fd6c7" },
   citrus: { background: "#312812", foreground: "#fff8d6", accent: "#f7c948" },
   coral: { background: "#34201e", foreground: "#fff1ee", accent: "#ff8a78" },
   mint: { background: "#15302b", foreground: "#edfff9", accent: "#72d9b5" },
@@ -19,7 +19,7 @@ export const darkEditorialPalettes: Record<EditorialPaletteKey, EditorialPalette
 };
 
 export const lightEditorialPalettes: Record<EditorialPaletteKey, EditorialPalette> = {
-  ink: { background: "#0b1b35", foreground: "#ffffff", accent: "#71a3ff" },
+  ink: { background: "#15332f", foreground: "#ffffff", accent: "#2f9e8f" },
   citrus: { background: "#fff2a8", foreground: "#291e00", accent: "#d07100" },
   coral: { background: "#ffe0da", foreground: "#341713", accent: "#d94b36" },
   mint: { background: "#ddf7ee", foreground: "#103229", accent: "#168263" },
@@ -27,4 +27,3 @@ export const lightEditorialPalettes: Record<EditorialPaletteKey, EditorialPalett
   sky: { background: "#ddf3fc", foreground: "#102f3d", accent: "#197a9f" },
   sand: { background: "#f3e7d5", foreground: "#35291d", accent: "#936630" },
 };
-

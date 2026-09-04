@@ -107,7 +107,7 @@ function KpiCards({ s, loading, onFilter }: {
     { label: "Active",                value: v.active,                    accent: "var(--success)",     icon: <CheckCircle />, filter: { status: "active" } },
     { label: "Pending Review",        value: v.pending_review,            accent: "var(--warning)",     icon: <Clock />, filter: { verification_status: "pending" } },
     { label: "Pending Setup",         value: v.pending_setup,             accent: "#6366f1",     icon: <Settings />, filter: { verification_status: "not_started" } },
-    { label: "Changes Requested",     value: v.changes_requested,         accent: "#0891b2",     icon: <Edit />, filter: { verification_status: "changes_requested" } },
+    { label: "Changes Requested",     value: v.changes_requested,         accent: "#2f9e8f",     icon: <Edit />, filter: { verification_status: "changes_requested" } },
     { label: "Suspended",             value: v.suspended,                 accent: "var(--danger)",     icon: <Lock />, filter: { status: "suspended" }, alert: v.suspended > 0 },
     { label: "Rejected",              value: v.rejected,                  accent: "#9ca3af",     icon: <XCircle />, filter: { status: "rejected" } },
   ];

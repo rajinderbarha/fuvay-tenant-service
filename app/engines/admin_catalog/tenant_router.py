@@ -203,6 +203,14 @@ async def set_tenant_type_pricing(tenant_service_id: uuid.UUID, service_type_id:
                _rid(r), ENGINE_ID)
 
 
+@router.delete("/enabled-services/{tenant_service_id}/types/{service_type_id}/pricing", response_model=ApiResponse[dict],
+               summary="Clear provider Type price override", tags=["Tenant Service Setup Pricing"])
+async def clear_tenant_type_pricing(tenant_service_id: uuid.UUID, service_type_id: uuid.UUID, r: Request,
+                                    u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                    s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.clear_type_pricing(tenant_service_id, service_type_id), _rid(r), ENGINE_ID)
+
+
 @router.get("/enabled-services/{tenant_service_id}/brand-pricing", response_model=ApiResponse[dict],
             summary="Get provider brand override price range + customer preview", tags=["Tenant Service Setup Pricing"])
 async def get_tenant_brand_pricing(tenant_service_id: uuid.UUID, r: Request,
@@ -222,6 +230,15 @@ async def set_tenant_brand_pricing(tenant_service_id: uuid.UUID, brand_id: uuid.
     return ok(await s.set_brand_pricing(tenant_service_id, brand_id,
                                          body.get("tenant_min_price"), body.get("tenant_max_price"),
                                          service_type_id), _rid(r), ENGINE_ID)
+
+
+@router.delete("/enabled-services/{tenant_service_id}/brands/{brand_id}/pricing", response_model=ApiResponse[dict],
+               summary="Clear provider Brand price exception", tags=["Tenant Service Setup Pricing"])
+async def clear_tenant_brand_pricing(tenant_service_id: uuid.UUID, brand_id: uuid.UUID, r: Request,
+                                     service_type_id: uuid.UUID | None = Query(None),
+                                     u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
+                                     s: TenantCatalogService = Depends(_svc)):
+    return ok(await s.clear_brand_pricing(tenant_service_id, brand_id, service_type_id), _rid(r), ENGINE_ID)
 
 
 @router.get("/enabled-services/{tenant_service_id}/resolve-price", response_model=ApiResponse[dict],

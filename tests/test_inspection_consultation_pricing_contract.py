@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TENANT_SERVICE = (ROOT / "app/engines/admin_catalog/tenant_service.py").read_text(encoding="utf-8")
 BOOKING_SERVICE = (ROOT / "app/engines/home_service_booking/service.py").read_text(encoding="utf-8")
-SETUP_PAGE = (ROOT / "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx").read_text(encoding="utf-8")
+SETUP_PAGE = (ROOT / "frontend/tenant-portal/components/services/ServicesPricingSetupPage.tsx").read_text(encoding="utf-8")
 AC_CONFIG = (ROOT / "scripts/configure_ac_catalog.py").read_text(encoding="utf-8")
 
 
@@ -40,4 +40,3 @@ def test_consultation_fee_is_provider_wide_and_used_by_booking():
     assert "_resolve_provider_consultation_fee" in BOOKING_SERVICE
     assert "Any later repair is quoted and booked separately." in BOOKING_SERVICE
     assert "Provider-wide consultation fee" in SETUP_PAGE
-

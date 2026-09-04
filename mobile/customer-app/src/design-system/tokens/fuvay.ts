@@ -29,7 +29,7 @@
 export interface AccentSet {
   /** Amber — offers, ratings, warmth. */
   a1: string;
-  /** Blue — primary actions, navigation, the closest thing to "brand". */
+  /** Teal — primary actions, navigation, the closest thing to "brand". */
   a2: string;
   /** Green — success, verification, safety. */
   a3: string;
@@ -39,7 +39,7 @@ export interface AccentSet {
 
 export const darkAccents: AccentSet = {
   a1: "#f0b429",
-  a2: "#3f9bf0",
+  a2: "#2f9e8f",
   a3: "#4ecb7c",
   a4: "#a875f5",
 };
@@ -57,19 +57,16 @@ export const lightAccents: AccentSet = {
   /**
    * DELIBERATE DIVERGENCE from the canvas, which specifies #a3670a.
    *
-   * That value fails WCAG AA as text on the light theme's own tinted
-   * surfaces -- 4.43:1 on `panel` (#faf9f7) and 4.21:1 on `shell`
-   * (#f4f3f1), against the 4.5:1 minimum. It only passes on pure white
-   * (4.66:1), and the canvas uses a1 for label text directly on a panel
-   * (the "LIMITED OFFER" eyebrow), so the failing combination is one the
-   * design actually ships.
+   * That value fails WCAG AA as text on pale surfaces, and the canvas uses
+   * a1 for label text directly on those surfaces (the "LIMITED OFFER"
+   * eyebrow), so the failing combination is one the design actually ships.
    *
    * #9c6209 is the smallest darkening that clears AA on every light
-   * surface (4.55 shell / 4.79 panel / 5.04 card) and is visually the same
-   * amber. Locked by a test in __tests__/fuvay.test.ts.
+   * surface and is visually the same amber. Locked by a test in
+   * __tests__/fuvay.test.ts.
    */
   a1: "#9c6209",
-  a2: "#1a63a8",
+  a2: "#0f6b60",
   a3: "#207c4a",
   a4: "#6c37b3",
 };
@@ -120,21 +117,21 @@ export interface TileSurface {
 }
 
 export const darkTile: TileSurface = {
-  outerStops: ["#262629", "#29292d", "#35353c", "#40404a", "#33333a", "#1f1f22"],
-  innerStops: ["#34343a", "#2e2e33", "#29292d", "#232326"],
+  outerStops: ["#1a1a17", "#1f1f1c", "#262622", "#33322c", "#242420", "#111110"],
+  innerStops: ["#1f1f1c", "#1a1a17", "#161615", "#141413"],
   outerShadow: { color: "#000000", offsetY: 10, radius: 16, opacity: 0.7 },
   innerHairline: "rgba(0,0,0,0.35)",
   innerHighlight: "rgba(255,255,255,0.06)",
-  icon: "#c8c8d0",
+  icon: "#b6b0a6",
 };
 
 export const lightTile: TileSurface = {
-  outerStops: ["#ecebe8", "#e9e7e4", "#f4f2f0", "#fbfaf9", "#f2f0ed", "#d6d2cd"],
-  innerStops: ["#fbfaf9", "#f4f2ef", "#edebe7", "#e4e0db"],
+  outerStops: ["#f0eee9", "#f6f4f0", "#fbfaf8", "#ffffff", "#f7f5f1", "#ddd8d0"],
+  innerStops: ["#ffffff", "#fbfaf8", "#f6f4f0", "#f0eee9"],
   outerShadow: { color: "#3c342c", offsetY: 10, radius: 16, opacity: 0.28 },
   innerHairline: "rgba(120,110,100,0.14)",
   innerHighlight: "rgba(255,255,255,0.9)",
-  icon: "#3c3c44",
+  icon: "#5f5b54",
 };
 
 /** Standalone 30%-radius plate from Circle Tile Light + Dark. Unlike the
@@ -148,7 +145,7 @@ export interface SquircleTileSurface {
 }
 
 export const darkSquircleTile: SquircleTileSurface = {
-  stops: ["#34343a", "#2e2e33", "#29292d", "#232326"],
+  stops: ["#1f1f1c", "#1a1a17", "#161615", "#141413"],
   hairline: "rgba(0,0,0,0.4)",
   highlight: "rgba(255,255,255,0.07)",
   shade: "rgba(0,0,0,0.4)",
@@ -156,7 +153,7 @@ export const darkSquircleTile: SquircleTileSurface = {
 };
 
 export const lightSquircleTile: SquircleTileSurface = {
-  stops: ["#ffffff", "#fbfaf8", "#f7f5f2", "#f1efeb"],
+  stops: ["#ffffff", "#fbfaf8", "#f7f5f1", "#f0eee9"],
   hairline: "rgba(120,110,100,0.12)",
   highlight: "rgba(255,255,255,0.9)",
   shade: "rgba(120,110,100,0.035)",
@@ -172,14 +169,14 @@ export interface ServiceCardSurface {
 }
 
 export const darkServiceCard: ServiceCardSurface = {
-  stops: ["#34343a", "#2c2c31", "#242427"],
+  stops: ["#1f1f1c", "#1a1a17", "#141413"],
   hairline: "rgba(0,0,0,0.35)",
   highlight: "rgba(255,255,255,0.06)",
   shadow: { color: "#000000", offsetY: 16, radius: 26, opacity: 0.65 },
 };
 
 export const lightServiceCard: ServiceCardSurface = {
-  stops: ["#ffffff", "#f7f5f3", "#eeebe7"],
+  stops: ["#ffffff", "#fbfaf8", "#f0eee9"],
   hairline: "rgba(120,110,100,0.1)",
   highlight: "rgba(255,255,255,0.9)",
   shadow: { color: "#8f867d", offsetY: 8, radius: 14, opacity: 0.1 },
@@ -210,26 +207,26 @@ export interface DiamondTileSurface {
 }
 
 export const darkDiamondTile: DiamondTileSurface = {
-  ghostBorder: "#33333a",
-  ghostFill: "#26262a",
-  plateBorder: "#1f1f22",
-  plateStops: ["#35353b", "#2d2d32", "#232326"],
+  ghostBorder: "#33322c",
+  ghostFill: "#262622",
+  plateBorder: "#242420",
+  plateStops: ["#1f1f1c", "#1a1a17", "#141413"],
   innerHighlight: "rgba(255,255,255,0.07)",
   innerShade: "rgba(0,0,0,0.4)",
   innerHairline: "rgba(0,0,0,0.35)",
-  label: "#e8e8ea",
+  label: "#f2efe9",
   shadow: { color: "#000000", offsetY: 8, radius: 11, opacity: 0.55 },
 };
 
 export const lightDiamondTile: DiamondTileSurface = {
-  ghostBorder: "#dcd8d3",
-  ghostFill: "#efedea",
+  ghostBorder: "#ddd8d0",
+  ghostFill: "#f0eee9",
   plateBorder: "rgba(120,110,100,0.22)",
-  plateStops: ["#ffffff", "#f6f4f2", "#eae7e3"],
+  plateStops: ["#ffffff", "#fbfaf8", "#f0eee9"],
   innerHighlight: "rgba(255,255,255,0.9)",
   innerShade: "rgba(60,52,44,0.1)",
   innerHairline: "rgba(120,110,100,0.1)",
-  label: "#33333a",
+  label: "#1b1a18",
   shadow: { color: "#3c342c", offsetY: 8, radius: 11, opacity: 0.24 },
 };
 
@@ -261,7 +258,7 @@ export interface FuvaySurfaces {
   navBg: readonly [string, string];
   headerGradient: readonly [string, string, string];
   splashGradient: readonly [string, string, string, string];
-  /** Low-to-high blue wash used by full-card ambient gradients. */
+  /** Low-to-high teal wash used by full-card ambient gradients. */
   ambientGlow: readonly [string, string, string];
   glowTint: string;
   sheen: string;
@@ -276,40 +273,40 @@ export interface FuvaySurfaces {
 }
 
 export const darkSurfaces: FuvaySurfaces = {
-  shell: "#232326",
-  panel: "#2b2b2f",
-  card: "#26262a",
-  hexPanel: "#33333a",
-  navBg: ["#26262a", "#202023"] as const,
-  headerGradient: ["#313137", "#2a2a2e", "#232326"] as const,
-  splashGradient: ["#34343c", "#2b2b31", "#232326", "#1d1d20"] as const,
-  ambientGlow: ["rgba(63,155,240,0)", "rgba(63,155,240,0.04)", "rgba(63,155,240,0.18)"] as const,
-  glowTint: "rgba(63,155,240,0.18)",
+  shell: "#111110",
+  panel: "#1a1a17",
+  card: "#141413",
+  hexPanel: "#1f1f1c",
+  navBg: ["#1a1a17", "#111110"] as const,
+  headerGradient: ["#1f1f1c", "#1a1a17", "#111110"] as const,
+  splashGradient: ["#1f1f1c", "#1a1a17", "#161615", "#111110"] as const,
+  ambientGlow: ["rgba(47,158,143,0)", "rgba(47,158,143,0.04)", "rgba(47,158,143,0.18)"] as const,
+  glowTint: "rgba(47,158,143,0.18)",
   sheen: "rgba(255,255,255,0.28)",
-  edge: "rgba(255,255,255,0.07)",
-  rule: "rgba(255,255,255,0.09)",
-  text: "#f0f0f2",
-  sub: "rgba(255,255,255,0.5)",
-  faint: "rgba(255,255,255,0.62)",
+  edge: "#242420",
+  rule: "#2c2c26",
+  text: "#f2efe9",
+  sub: "#b6b0a6",
+  faint: "#918c83",
   hexFill: "#f0b429",
 };
 
 export const lightSurfaces: FuvaySurfaces = {
-  shell: "#f4f3f1",
-  panel: "#faf9f7",
-  card: "#ffffff",
+  shell: "#f7f5f1",
+  panel: "#ffffff",
+  card: "#fbfaf8",
   hexPanel: "#ffffff",
-  navBg: ["#ffffff", "#f2f0ed"] as const,
-  headerGradient: ["#ffffff", "#f8f6f4", "#f0eeeb"] as const,
-  splashGradient: ["#ffffff", "#f7f5f3", "#efedea", "#e8e5e1"] as const,
-  ambientGlow: ["rgba(27,111,186,0)", "rgba(27,111,186,0.025)", "rgba(27,111,186,0.14)"] as const,
-  glowTint: "rgba(27,111,186,0.14)",
+  navBg: ["#ffffff", "#f6f4f0"] as const,
+  headerGradient: ["#ffffff", "#fbfaf8", "#f7f5f1"] as const,
+  splashGradient: ["#ffffff", "#fbfaf8", "#f7f5f1", "#f0eee9"] as const,
+  ambientGlow: ["rgba(15,107,96,0)", "rgba(15,107,96,0.025)", "rgba(15,107,96,0.14)"] as const,
+  glowTint: "rgba(15,107,96,0.14)",
   sheen: "rgba(255,255,255,0.75)",
-  edge: "rgba(120,110,100,0.14)",
-  rule: "rgba(90,82,74,0.14)",
-  text: "#2a2a2f",
-  sub: "rgba(60,52,44,0.78)",
-  faint: "rgba(60,52,44,0.72)",
+  edge: "#f0ece6",
+  rule: "#e9e5df",
+  text: "#1b1a18",
+  sub: "#5f5b54",
+  faint: "#8a857c",
   hexFill: "#f0b429",
 };
 

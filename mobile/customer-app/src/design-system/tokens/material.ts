@@ -34,31 +34,31 @@ export interface MaterialTokens {
 
 export const lightMaterial: MaterialTokens = {
   // Shell -> sunken, the page ground.
-  canvas: ["#f4f3f1", "#eceae7"],
+  canvas: ["#f7f5f1", "#f0eee9"],
   // The v2 header/panel ramp: white falling to a warm off-white.
-  raised: ["#ffffff", "#f8f6f4", "#f0eeeb"],
-  interactive: ["#ffffff", "#faf9f7", "#f4f2ef"],
+  raised: ["#ffffff", "#fbfaf8", "#f7f5f1"],
+  interactive: ["#ffffff", "#fbfaf8", "#f6f4f0"],
   // Recessed input surface -- brighter than the panel in light mode.
-  inset: ["#f4f2ef", "#edebe7"],
-  tileOuter: ["#ecebe8", "#f4f2f0", "#d6d2cd"],
-  tileInner: ["#fbfaf9", "#f4f2ef", "#e4e0db"],
-  outline: "rgba(120, 110, 100, 0.14)",
-  outlineStrong: "rgba(90, 82, 74, 0.28)",
+  inset: ["#fbfaf8", "#f0eee9"],
+  tileOuter: ["#f0eee9", "#f6f4f0", "#ddd8d0"],
+  tileInner: ["#ffffff", "#fbfaf8", "#f0eee9"],
+  outline: "#e9e5df",
+  outlineStrong: "#ddd8d0",
   highlight: "rgba(255, 255, 255, 0.9)",
   shadow: "rgba(60, 52, 44, 0.35)",
   shadowSoft: "rgba(60, 52, 44, 0.2)",
 };
 
 export const darkMaterial: MaterialTokens = {
-  canvas: ["#232326", "#1d1d20"],
-  raised: ["#313137", "#2a2a2e", "#232326"],
-  interactive: ["#2b2b2f", "#26262a", "#232326"],
+  canvas: ["#111110", "#141413"],
+  raised: ["#1f1f1c", "#1a1a17", "#111110"],
+  interactive: ["#1f1f1c", "#1a1a17", "#141413"],
   // Recessed input surface -- darker than the panel in dark mode.
-  inset: ["#26262a", "#232326"],
-  tileOuter: ["#262629", "#35353c", "#1f1f22"],
-  tileInner: ["#34343a", "#2e2e33", "#232326"],
-  outline: "rgba(255, 255, 255, 0.07)",
-  outlineStrong: "rgba(255, 255, 255, 0.09)",
+  inset: ["#1a1a17", "#141413"],
+  tileOuter: ["#1a1a17", "#262622", "#111110"],
+  tileInner: ["#1f1f1c", "#1a1a17", "#141413"],
+  outline: "#2c2c26",
+  outlineStrong: "#33322c",
   highlight: "rgba(255, 255, 255, 0.06)",
   shadow: "rgba(0, 0, 0, 0.8)",
   shadowSoft: "rgba(0, 0, 0, 0.55)",

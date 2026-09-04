@@ -49,14 +49,14 @@ describe("ink() — WCAG on-colour selection", () => {
   });
 
   it("matches the canvas on the specific accents it shipped", () => {
-    // Dark amber/green are light colours -> dark ink; dark blue/violet and
+    // Dark amber/green/teal are light colours -> dark ink; dark violet and
     // every light-theme accent are dark enough for white.
     expect(ink("#f0b429")).toBe("#14141a");
     expect(ink("#4ecb7c")).toBe("#14141a");
-    expect(ink("#3f9bf0")).toBe("#14141a");
+    expect(ink("#2f9e8f")).toBe("#14141a");
     expect(ink("#a875f5")).toBe("#14141a");
     expect(ink("#9c6209")).toBe("#ffffff");
-    expect(ink("#1a63a8")).toBe("#ffffff");
+    expect(ink("#0f6b60")).toBe("#ffffff");
     expect(ink("#207c4a")).toBe("#ffffff");
     expect(ink("#6c37b3")).toBe("#ffffff");
   });
@@ -70,13 +70,13 @@ describe("ink() — WCAG on-colour selection", () => {
 
 describe("softAccent()", () => {
   it("produces 8-digit hex RN can parse", () => {
-    expect(softAccent("#3f9bf0", true)).toBe("#3f9bf01f");
-    expect(softAccent("#1a63a8", false)).toBe("#1a63a818");
+    expect(softAccent("#2f9e8f", true)).toBe("#2f9e8f1f");
+    expect(softAccent("#0f6b60", false)).toBe("#0f6b6018");
   });
 
   it("is more transparent in light mode than dark", () => {
-    const darkAlpha = parseInt(softAccent("#3f9bf0", true).slice(-2), 16);
-    const lightAlpha = parseInt(softAccent("#3f9bf0", false).slice(-2), 16);
+    const darkAlpha = parseInt(softAccent("#2f9e8f", true).slice(-2), 16);
+    const lightAlpha = parseInt(softAccent("#2f9e8f", false).slice(-2), 16);
     expect(lightAlpha).toBeLessThan(darkAlpha);
   });
 });
@@ -85,8 +85,8 @@ describe("buildFuvayTheme()", () => {
   it("binds the exact Circle Tile diamond surfaces to each theme", () => {
     expect(buildFuvayTheme(true).diamondTile).toBe(darkDiamondTile);
     expect(buildFuvayTheme(false).diamondTile).toBe(lightDiamondTile);
-    expect(darkDiamondTile.plateStops).toEqual(["#35353b", "#2d2d32", "#232326"]);
-    expect(lightDiamondTile.plateStops).toEqual(["#ffffff", "#f6f4f2", "#eae7e3"]);
+    expect(darkDiamondTile.plateStops).toEqual(["#1f1f1c", "#1a1a17", "#141413"]);
+    expect(lightDiamondTile.plateStops).toEqual(["#ffffff", "#fbfaf8", "#f0eee9"]);
   });
 
   it("binds the exact Circle Tile squircle and service-card gradients", () => {
@@ -94,13 +94,13 @@ describe("buildFuvayTheme()", () => {
     expect(buildFuvayTheme(false).squircleTile).toBe(lightSquircleTile);
     expect(buildFuvayTheme(true).serviceCard).toBe(darkServiceCard);
     expect(buildFuvayTheme(false).serviceCard).toBe(lightServiceCard);
-    expect(darkSquircleTile.stops).toEqual(["#34343a", "#2e2e33", "#29292d", "#232326"]);
-    expect(lightServiceCard.stops).toEqual(["#ffffff", "#f7f5f3", "#eeebe7"]);
+    expect(darkSquircleTile.stops).toEqual(["#1f1f1c", "#1a1a17", "#161615", "#141413"]);
+    expect(lightServiceCard.stops).toEqual(["#ffffff", "#fbfaf8", "#f0eee9"]);
   });
 
   it("binds soft() to the theme so callers cannot mix alphas", () => {
-    expect(buildFuvayTheme(true).soft("#3f9bf0")).toBe("#3f9bf01f");
-    expect(buildFuvayTheme(false).soft("#3f9bf0")).toBe("#3f9bf018");
+    expect(buildFuvayTheme(true).soft("#2f9e8f")).toBe("#2f9e8f1f");
+    expect(buildFuvayTheme(false).soft("#2f9e8f")).toBe("#2f9e8f18");
   });
 
   it("light accents are darker than dark accents (not merely dimmed)", () => {
@@ -125,9 +125,9 @@ describe("buildFuvayTheme()", () => {
    * which is why lightAccents.a1 is #9c6209 here.
    */
   describe.each([
-    ["shell", "#f4f3f1"],
-    ["panel", "#faf9f7"],
-    ["card", "#ffffff"],
+    ["shell", "#f7f5f1"],
+    ["panel", "#ffffff"],
+    ["card", "#fbfaf8"],
   ])("light accents as text on %s", (_name, surface) => {
     function lum(hex: string): number {
       const c = [1, 3, 5]

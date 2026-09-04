@@ -42,7 +42,7 @@ describe("buildTheme", () => {
     expect(light.material.canvas).not.toEqual(dark.material.canvas);
     expect(light.material.raised[0]).not.toBe(light.material.raised[2]);
     expect(dark.material.raised[0]).not.toBe(dark.material.raised[2]);
-    expect(light.colors.brandPrimary).toBe("#1a63a8");
-    expect(dark.colors.brandPrimary).toBe("#3f9bf0");
+    expect(light.colors.brandPrimary).toBe("#0f6b60");
+    expect(dark.colors.brandPrimary).toBe("#2f9e8f");
   });
 });

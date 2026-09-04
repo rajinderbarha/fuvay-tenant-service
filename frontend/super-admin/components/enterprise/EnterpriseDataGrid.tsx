@@ -280,7 +280,7 @@ function SortTh({ col, sortBy, sortDir, onClick }: {
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         {col.label}
         {active && (
-          <span style={{ color: "var(--brand, #2563eb)", fontSize: 10 }}>
+          <span style={{ color: "var(--brand, #0f6b60)", fontSize: 10 }}>
             {sortDir === "asc" ? "↑" : "↓"}
           </span>
         )}
@@ -560,7 +560,7 @@ function EnterpriseDataGridInner({
               type="button"
               onClick={load}
               style={{
-                marginTop: 4, fontSize: 13, color: "var(--brand, #2563eb)",
+                marginTop: 4, fontSize: 13, color: "var(--brand, #0f6b60)",
                 background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
               }}
             >

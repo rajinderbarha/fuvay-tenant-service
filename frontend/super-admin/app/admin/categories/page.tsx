@@ -143,7 +143,7 @@ function LinkedCountsBadges({ counts }: { counts: EnterpriseCategory["linked_cou
     { label: "Services", value: counts.services, color: "var(--brand)" },
     { label: "Pricing", value: counts.pricing_rules, color: "var(--success)" },
     { label: "Brands", value: counts.brands, color: "var(--warning)" },
-    { label: "Providers", value: counts.providers, color: "#0891b2" },
+    { label: "Providers", value: counts.providers, color: "#2f9e8f" },
   ].filter(i => i.value > 0);
 
   if (!items.length) return <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>No data</span>;
@@ -617,7 +617,7 @@ export default function CategoriesPage() {
           <SummaryCard label="Inactive" value={sum.inactive} icon={<MinusCircle size={16}/>} accent="#94a3b8"
             active={activeCard === "inactive"}
             onClick={() => handleCardClick("inactive", "status", "inactive")}/>
-          <SummaryCard label="Customer Visible" value={sum.customer_visible} icon={<Eye size={16}/>} accent="#0891b2"/>
+          <SummaryCard label="Customer Visible" value={sum.customer_visible} icon={<Eye size={16}/>} accent="#2f9e8f"/>
           <SummaryCard label="Tenant Selectable" value={sum.tenant_selectable} icon={<Users size={16}/>} accent="var(--accent)"/>
           <SummaryCard label="Runtime Ready" value={sum.runtime_ready} icon={<Zap size={16}/>} accent="var(--success)"
             active={activeCard === "ready"}

@@ -19,11 +19,11 @@ export const radius = {
 
 // ── Shadows ───────────────────────────────────────────────────────────────────
 export const shadows = {
-  sm:       "0 1px 2px rgba(15,23,42,0.04), 0 1px 4px rgba(15,23,42,0.03)",
-  default:  "0 1px 3px rgba(15,23,42,0.05), 0 8px 24px rgba(15,23,42,0.06)",
-  md:       "0 4px 16px rgba(15,23,42,0.07), 0 12px 32px rgba(15,23,42,0.05)",
-  lg:       "0 8px 32px rgba(15,23,42,0.10), 0 24px 48px rgba(15,23,42,0.07)",
-  focus:    "0 0 0 4px rgba(37, 99, 235, 0.14)",
+  sm:       "0 1px 2px rgba(27,26,24,0.04), 0 1px 4px rgba(27,26,24,0.03)",
+  default:  "0 1px 3px rgba(27,26,24,0.05), 0 8px 24px rgba(27,26,24,0.06)",
+  md:       "0 4px 16px rgba(27,26,24,0.07), 0 12px 32px rgba(27,26,24,0.05)",
+  lg:       "0 8px 32px rgba(27,26,24,0.10), 0 24px 48px rgba(27,26,24,0.07)",
+  focus:    "0 0 0 4px rgba(15, 107, 96, 0.14)",
 } as const;
 
 // ── Spacing ───────────────────────────────────────────────────────────────────
@@ -80,16 +80,16 @@ export const typography = {
 
 // ── Chart colors (concrete values for JS charting libraries) ──────────────────
 export const chartColors = {
-  primary:   "#2563EB",
-  secondary: "#7C3AED",
-  accent:    "#06B6D4",
-  success:   "#16A34A",
-  warning:   "#D97706",
-  danger:    "#DC2626",
-  muted:     "#94A3B8",
+  primary:   "#0F6B60",
+  secondary: "#2F9E8F",
+  accent:    "#7FD6C7",
+  success:   "#0F6B60",
+  warning:   "#A9722F",
+  danger:    "#C2703F",
+  muted:     "#8A857C",
   // Dark mode equivalents
-  primaryDark:   "#60A5FA",
-  secondaryDark: "#A78BFA",
+  primaryDark:   "#2F9E8F",
+  secondaryDark: "#7FD6C7",
 } as const;
 
 // ── Component token presets (reference for new components) ────────────────────

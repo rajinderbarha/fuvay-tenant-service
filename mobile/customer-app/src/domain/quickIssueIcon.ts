@@ -37,7 +37,7 @@ export interface QuickIssueIcon {
 }
 
 const TINTS = {
-  blue: "#2563EB",
+  brand: "#0F6B60",
   teal: "#0D9488",
   amber: "#D97706",
   violet: "#7C3AED",
@@ -48,18 +48,18 @@ const TINTS = {
 type Tint = (typeof TINTS)[keyof typeof TINTS];
 
 const RULES: ReadonlyArray<[RegExp, QuickIssueGlyphName, Tint]> = [
-  [/not\s*cool|cooling\s*low|low\s*cool/i, "snowflake", TINTS.blue],
+  [/not\s*cool|cooling\s*low|low\s*cool/i, "snowflake", TINTS.brand],
   [/gas\s*refill|refill/i, "format-color-fill", TINTS.teal],
   [/not\s*start|won'?t\s*start|no\s*power|power/i, "lightning-bolt-outline", TINTS.amber],
   [/smell|odou?r/i, "alert-circle-outline", TINTS.rose],
   [/nois|sound/i, "volume-high", TINTS.violet],
-  [/leak|drip/i, "water-outline", TINTS.blue],
+  [/leak|drip/i, "water-outline", TINTS.brand],
   [/block|clog|drain/i, "pipe-wrench", TINTS.teal],
   [/install/i, "hammer-wrench", TINTS.violet],
   [/deep\s*clean/i, "creation-outline", TINTS.green],
   [/clean|wash/i, "spray-bottle", TINTS.teal],
-  [/service|maintenanc|amc/i, "tools", TINTS.blue],
-  [/tap|faucet|pipe|plumb/i, "water-pump", TINTS.blue],
+  [/service|maintenanc|amc/i, "tools", TINTS.brand],
+  [/tap|faucet|pipe|plumb/i, "water-pump", TINTS.brand],
   [/switch|socket|wiring|electric|light|fan/i, "power-plug-outline", TINTS.amber],
   [/paint/i, "format-paint", TINTS.rose],
   [/pest|termite|cockroach/i, "bug-outline", TINTS.green],
@@ -67,7 +67,7 @@ const RULES: ReadonlyArray<[RegExp, QuickIssueGlyphName, Tint]> = [
 
 const FALLBACK: QuickIssueIcon = {
   name: "tools",
-  tint: TINTS.blue,
+  tint: TINTS.brand,
   onTint: "#FFFFFF",
 };
 

@@ -18,7 +18,7 @@ import {
   Users2,
   Wrench,
 } from "lucide-react";
-import BusinessProfileWorkspace from "../../(onboarding)/tenant/home-services/setup/business-profile/page";
+import BusinessProfileWorkspace from "../../(onboarding)/tenant/home-services/setup/business-profile/BusinessProfileSetupPage";
 import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { resolveMediaUrl } from "../../../components/shared/ProfilePhotoUploader";
 import { Badge, Btn, Card, KpiGrid, Skeleton, SummaryCard } from "../../../components/shared/ui";

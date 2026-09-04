@@ -23,6 +23,7 @@ export function Breadcrumbs({
     : [{ label: "Workspace", href: "/dashboard" }, ...source];
 
   return <BreadcrumbTrail
+    className="provider-breadcrumbs"
     items={items}
     renderLink={(href, children) => (
       <Link href={href} style={{ color: "var(--text-secondary)", textDecoration: "none" }}>

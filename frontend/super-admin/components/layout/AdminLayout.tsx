@@ -454,9 +454,8 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
           display: "flex", alignItems: "center", gap: 12,
           borderBottom: "1px solid var(--sidebar-border)", flexShrink: 0,
         }}>
-          {/* The admin sidebar is navy in both themes (globals.css scopes
-              --sidebar-bg to #101A31 under [data-theme="light"]), so it always
-              needs the white-wordmark artwork rather than the theme swap. */}
+          {/* The admin sidebar stays dark in both themes, so it always needs
+              the white-wordmark artwork rather than the theme swap. */}
           <FuvayLogo compact={collapsed} height={34} tone="onDark"/>
           {!collapsed && (
             <div>

@@ -7,8 +7,10 @@ from pathlib import Path
 
 
 BASE = Path(__file__).parent.parent
-WORKSPACE = BASE / "frontend/tenant-portal/app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
-ONBOARDING = BASE / "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
+WORKSPACE_ROUTE = BASE / "frontend/tenant-portal/app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
+ONBOARDING_ROUTE = BASE / "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
+WORKSPACE = BASE / "frontend/tenant-portal/components/services/ServicesPricingPage.tsx"
+ONBOARDING = BASE / "frontend/tenant-portal/components/services/ServicesPricingSetupPage.tsx"
 SETUP = ONBOARDING
 TENANT_SERVICE = BASE / "app/engines/admin_catalog/tenant_service.py"
 WORKSPACE_ROUTER = BASE / "app/engines/admin_catalog/tenant_services_workspace_router.py"
@@ -34,7 +36,7 @@ def test_no_disabled_import_dead_action_and_guided_setup_route_exists():
     page = read(WORKSPACE)
     assert "Import pricing" not in page
     assert "/tenant/home-services/setup/services-pricing?return_to=" in page
-    assert ONBOARDING.exists()
+    assert ONBOARDING_ROUTE.exists()
 
 
 def test_add_service_filter_uses_master_service_and_job_type_pair():
@@ -71,9 +73,18 @@ def test_old_servicesnow_link_redirects_to_the_single_canonical_workspace():
 
 
 def test_route_layout_owns_the_tenant_shell_once():
-    page = read(WORKSPACE)
+    page = read(WORKSPACE_ROUTE)
     assert "import { TenantLayout }" not in page
     assert '<TenantLayout activeNav="provider-services">' not in page
+
+
+def test_routes_are_thin_component_entry_points():
+    workspace_route = read(WORKSPACE_ROUTE)
+    onboarding_route = read(ONBOARDING_ROUTE)
+    assert "<ServicesPricingPage />" in workspace_route
+    assert "<ServicesPricingSetupPage />" in onboarding_route
+    assert "useState" not in workspace_route
+    assert "useState" not in onboarding_route
 
 
 def test_tabs_and_filters_are_deep_linkable_query_state():
