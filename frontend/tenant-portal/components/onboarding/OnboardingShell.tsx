@@ -5,12 +5,13 @@ import FuvayLogo from "../brand/FuvayLogo";
 import {
   LayoutGrid, Building2, FileText, Tag, MapPin, Users2, Wallet,
   ClipboardCheck, HelpCircle, Bell, ChevronDown, LogOut, User, Shield, Menu, X, Rocket,
-  Sun, Moon,
+  Sun, Moon, Search,
 } from "lucide-react";
 import { useTenant } from "../../hooks/useTenant";
 import { useTheme } from "../../hooks/useTheme";
 import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "../layout/Breadcrumbs";
+import { CreditPill } from "../layout/CreditPill";
 import { authApi, clearSession, homeServicesSetupOverviewApi, providerNotifApi } from "../../lib/api";
 
 type OnboardingNavId =
@@ -253,20 +254,25 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
             }}>
             <Menu size={18}/>
           </button>
-          <div aria-label="Current workspace" style={{ height: 42, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", minWidth: 0 }}>
-            <Building2 size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
-            <span className="onboarding-workspace-selector-text" style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {tenant.tenantName ?? "My Business"}
-            </span>
+          <div className="provider-global-search" style={{ flex: "1 1 260px", maxWidth: 420 }}>
+            <div style={{ position: "relative" }}>
+              <Search size={15} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}/>
+              <input
+                aria-label="Search jobs, customers and bookings"
+                placeholder="Search jobs, customers, bookings…"
+                style={{ width: "100%", height: 42, padding: "0 50px 0 38px", fontSize: 14, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--text-primary)", outline: "none", fontFamily: "inherit" }}
+                onFocus={event => { event.currentTarget.style.borderColor = "var(--border-focus)"; event.currentTarget.style.background = "var(--surface)"; }}
+                onBlur={event => { event.currentTarget.style.borderColor = "var(--border)"; event.currentTarget.style.background = "var(--surface-sunken)"; }}
+              />
+              <span aria-hidden="true" style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", padding: "3px 5px", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-tertiary)", font: '500 10px/1 "IBM Plex Mono", var(--font-family-mono)' }}>⌘K</span>
+            </div>
           </div>
           <div style={{ flex: 1 }}/>
-          <button type="button" onClick={toggle} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title="Change theme" style={{
-            width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)",
-            background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
-            justifyContent: "center", color: "var(--text-secondary)",
-          }}>
-            {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
-          </button>
+          <div className="provider-online-status" style={{ height: 38, display: "flex", alignItems: "center", gap: 7, padding: "0 12px", borderRadius: 999, background: "var(--success-bg)" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }}/>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--success-text)" }}>Online</span>
+          </div>
+          <CreditPill/>
           <Link href="/provider/notifications" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} title="Notifications" style={{
             width: 38, height: 38, borderRadius: 11, border: "1px solid var(--border)",
             background: "var(--surface)", cursor: "pointer", display: "flex", alignItems: "center",
@@ -279,32 +285,20 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700,
             }}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
           </Link>
-          <Link href="/help" className="onboarding-help-link" style={{
-            display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)",
-            textDecoration: "none", padding: "6px 10px",
-          }}>
-            <HelpCircle size={15}/> <span className="onboarding-help-text">Help</span>
-          </Link>
           <span className="provider-header-divider" aria-hidden="true" style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }}/>
           <div ref={profileRef} style={{ position: "relative" }}>
             <button onClick={() => setProfileOpen(o => !o)} style={{
               height: 42, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "1px solid var(--border)",
               cursor: "pointer", padding: "0 8px 0 12px", borderRadius: 12, fontFamily: "inherit",
             }}>
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={null} size={28}/>
-                <span style={{
-                  position: "absolute", bottom: -1, right: -1, width: 10, height: 10, borderRadius: "50%",
-                  background: "var(--success)", border: "2px solid var(--surface)",
-                }}/>
-              </div>
-              <div className="onboarding-profile-text" style={{ textAlign: "left" }}>
+              <div className="onboarding-profile-text provider-profile-copy" style={{ textAlign: "right" }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>
-                  {myName || "Owner"}
+                  {myName || tenant.tenantName || "Owner"}
                 </p>
-                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "capitalize" }}>Owner</p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</p>
               </div>
-              <ChevronDown size={13} className="onboarding-profile-text" style={{ color: "var(--text-tertiary)" }}/>
+              <DefaultAvatar name={myName || tenant.tenantName || "Owner"} src={null} size={28}/>
+              <ChevronDown size={13} style={{ color: "var(--text-tertiary)" }}/>
             </button>
             {profileOpen && (
               <div style={{
@@ -314,6 +308,9 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
               }}>
                 <Link href="/settings" style={menuItemStyle}><User size={15}/> My Profile</Link>
                 <Link href="/settings?tab=security" style={menuItemStyle}><Shield size={15}/> Security &amp; Sessions</Link>
+                <button type="button" onClick={toggle} style={{ ...menuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                  {theme === "dark" ? <Sun size={15}/> : <Moon size={15}/>} {theme === "dark" ? "Light theme" : "Dark theme"}
+                </button>
                 <Link href="/help" style={menuItemStyle}><HelpCircle size={15}/> Help</Link>
                 <button onClick={handleLogout} style={{ ...menuItemStyle, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--danger)" }}>
                   <LogOut size={15}/> Sign Out

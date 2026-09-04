@@ -31,6 +31,15 @@ describe("provider shell structural parity", () => {
     expect(onboarding).toContain("unreadCount > 0");
   });
 
+  it("keeps the setup topbar aligned with the operational notification header", () => {
+    for (const className of ["provider-global-search", "provider-online-status", "provider-profile-copy"]) {
+      expect(onboarding).toContain(className);
+      expect(operational).toContain(className);
+    }
+    expect(onboarding).toContain("<CreditPill/>");
+    expect(operational).toContain("<CreditPill/>");
+  });
+
   it("registers setup and post-submission pages for breadcrumbs", () => {
     for (const path of [
       "/tenant/home-services/setup/business-profile",
