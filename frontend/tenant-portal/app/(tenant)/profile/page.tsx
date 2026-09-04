@@ -19,7 +19,7 @@ import {
   Wrench,
 } from "lucide-react";
 import BusinessProfileWorkspace from "../../(onboarding)/tenant/home-services/setup/business-profile/BusinessProfileSetupPage";
-import { TenantLayout } from "../../../components/layout/TenantLayout";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import { resolveMediaUrl } from "../../../components/shared/ProfilePhotoUploader";
 import { Badge, Btn, Card, KpiGrid, Skeleton, SummaryCard } from "../../../components/shared/ui";
 import { businessProfileApi, ServiceOSError, type BusinessProfile, type BusinessProfileOverview } from "../../../lib/api";
@@ -79,12 +79,14 @@ function Field({ label, value, icon, protectedField }: {
 }) {
   return (
     <div className="profile-read-field">
-      <div className="profile-read-field-label">
-        {icon}
-        <span>{label}</span>
-        {protectedField && <ShieldCheck size={12}/>}
+      <span className="profile-read-field-icon">{icon || <Building2 size={13}/>}</span>
+      <div className="profile-read-field-copy">
+        <div className="profile-read-field-label">
+          <span>{label}</span>
+          {protectedField && <ShieldCheck size={12}/>}
+        </div>
+        <div className="profile-read-field-value">{value || "-"}</div>
       </div>
-      <div className="profile-read-field-value">{value || "-"}</div>
     </div>
   );
 }
@@ -110,7 +112,7 @@ function BusinessProfileRoute() {
 
 function BusinessProfileSkeletonPage() {
   return (
-    <TenantLayout activeNav="business-profile">
+    <PageShell>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <Skeleton height={260}/>
         <KpiGrid minCardWidth={190}>
@@ -120,7 +122,7 @@ function BusinessProfileSkeletonPage() {
           <Skeleton height={104}/>
         </KpiGrid>
       </div>
-    </TenantLayout>
+    </PageShell>
   );
 }
 
@@ -160,36 +162,43 @@ function BusinessProfileReadOnly() {
   }, [profile]);
 
   return (
-    <TenantLayout activeNav="business-profile">
+    <PageShell>
+      <PageHeader eyebrow="" title="Business profile"
+        description="Approved identity, public presentation, verification status, and operating summary."
+        actions={<Btn variant="primary" icon={<Pencil size={15}/>} onClick={() => router.push("/profile?mode=edit")}>Edit profile</Btn>} />
       <style>{`
         .profile-read-wrap { display: flex; flex-direction: column; gap: 20px; }
-        .profile-read-cover { height: 224px; position: relative; overflow: hidden; background:
-          radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--brand) 28%, transparent), transparent 34%),
-          linear-gradient(135deg, var(--surface-sunken), var(--surface), color-mix(in srgb, var(--brand) 12%, var(--surface-sunken))); }
-        .profile-read-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: end; padding: 0 24px 24px; margin-top: -46px; position: relative; z-index: 1; }
-        .profile-read-logo { width: 96px; height: 96px; border-radius: 20px; overflow: hidden; border: 4px solid var(--surface); background: var(--brand); color: white; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 800; box-shadow: var(--shadow-md); }
+        .profile-read-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 18px; }
+        .profile-read-logo { width: 58px; height: 58px; border-radius: 16px; overflow: hidden; background: var(--accent-muted); color: var(--brand); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; }
         .profile-read-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .profile-read-title h1 { margin: 0; color: var(--text-primary); font-size: 28px; font-weight: 800; letter-spacing: 0; }
-        .profile-read-title p { margin: 6px 0 0; color: var(--text-secondary); font-size: 14px; max-width: 760px; line-height: 1.55; }
-        .profile-read-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .profile-read-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, .75fr); gap: 20px; align-items: start; }
-        .profile-read-card-title { margin: 0 0 16px; color: var(--text-primary); font-size: 15px; font-weight: 800; }
-        .profile-read-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-        .profile-read-field { min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--border); }
-        .profile-read-field-label { display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
-        .profile-read-field-value { color: var(--text-primary); font-size: 13.5px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+        .profile-read-title h1 { margin: 0; color: var(--text-primary); font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+        .profile-read-title p { margin: 5px 0 0; color: var(--text-tertiary); font-size: 13px; max-width: 760px; line-height: 1.45; }
+        .profile-read-badges { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+        .profile-read-actions p:nth-child(2) { font-family: "IBM Plex Mono", var(--font-family-mono); color: var(--brand) !important; }
+        .profile-read-kpis { gap: 10px !important; }
+        .profile-read-kpis .ds-summary-card { border-radius: 14px !important; }
+        .profile-read-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+        .profile-read-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+        .profile-read-card-title { display:flex;align-items:center;gap:9px;margin: 0 0 4px; padding-bottom:10px; border-bottom:1px solid var(--border); color: var(--text-primary); font-size: 15px; font-weight: 600; }
+        .profile-read-card-title svg { width:26px;height:26px;padding:6px;border-radius:8px;background:var(--accent-muted);color:var(--brand); }
+        .profile-read-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
+        .profile-read-field { display:flex;align-items:flex-start;gap:11px;min-width:0;padding:13px 0;border-top:1px solid var(--border); }
+        .profile-read-field-icon { display:grid;place-items:center;width:26px;height:26px;flex:none;margin-top:1px;border-radius:8px;background:var(--surface-sunken);color:var(--text-tertiary); }
+        .profile-read-field-copy { min-width:0; }
+        .profile-read-field-label { display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); font: 500 10px/1 "IBM Plex Mono", var(--font-family-mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+        .profile-read-field-value { color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
         .profile-read-document-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
         .profile-read-status-box { display: flex; gap: 10px; align-items: flex-start; padding: 14px 16px; border-radius: var(--radius-lg); border: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--warning-text); }
-        .profile-read-action-stack { display: flex; flex-direction: column; gap: 10px; }
+        .profile-read-action-stack { display: flex; flex-direction: column; gap: 0; }
+        .profile-read-edit-card { background:linear-gradient(155deg,var(--accent-muted),var(--surface)) !important; }
         @media (max-width: 980px) {
           .profile-read-body { grid-template-columns: 1fr; }
           .profile-read-identity { grid-template-columns: auto 1fr; }
           .profile-read-actions { grid-column: 1 / -1; justify-self: stretch; }
         }
         @media (max-width: 640px) {
-          .profile-read-cover { height: 168px; }
-          .profile-read-identity { padding: 0 16px 18px; gap: 12px; }
-          .profile-read-logo { width: 76px; height: 76px; border-radius: 16px; font-size: 24px; }
+          .profile-read-identity { padding: 16px; gap: 12px; }
+          .profile-read-logo { width: 52px; height: 52px; border-radius: 15px; font-size: 18px; }
           .profile-read-title h1 { font-size: 22px; }
           .profile-read-field-grid { grid-template-columns: 1fr; }
         }
@@ -228,22 +237,7 @@ function BusinessProfileReadOnly() {
 
       {!loading && profile && (
         <div className="profile-read-wrap">
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-            <div>
-              <p style={{ margin: "0 0 4px", color: "var(--brand)", fontSize: 11, fontWeight: 800, letterSpacing: ".08em" }}>BUSINESS</p>
-              <h1 style={{ margin: 0, color: "var(--text-primary)", fontSize: 24, fontWeight: 800 }}>Business Profile</h1>
-              <p style={{ margin: "6px 0 0", color: "var(--text-secondary)", fontSize: 14 }}>
-                Approved identity, public presentation, verification status, and operating summary.
-              </p>
-            </div>
-            <Btn variant="primary" icon={<Pencil size={15}/>} onClick={() => router.push("/profile?mode=edit")}>
-              Edit profile
-            </Btn>
-          </div>
-
           <Card padding={0} style={{ overflow: "hidden" }}>
-            <div className="profile-read-cover">
-            </div>
             <div className="profile-read-identity">
               <div className="profile-read-logo">
                 {logoUrl ? <img src={logoUrl} alt="" /> : initials(profile.business_name)}
@@ -282,16 +276,16 @@ function BusinessProfileReadOnly() {
             </div>
           )}
 
-          <KpiGrid minCardWidth={190}>
+          <KpiGrid className="profile-read-kpis" minCardWidth={180}>
             <SummaryCard label="Active services" value={profile.operational_summary.active_services} sub="Published offerings" icon={<Wrench/>} tone="success" onClick={() => router.push("/home-services/services")}/>
             <SummaryCard label="Coverage pincodes" value={profile.operational_summary.service_areas} sub="Bookable service areas" icon={<MapPin/>} tone="info" onClick={() => router.push("/business/coverage-hours")}/>
             <SummaryCard label="Technicians" value={profile.operational_summary.active_technicians} sub="Active team members" icon={<Users2/>} tone="success" onClick={() => router.push("/home-services/team")}/>
           </KpiGrid>
 
           <div className="profile-read-body">
-            <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
+            <div className="profile-read-stack">
               <Card>
-                <p className="profile-read-card-title">Business identity</p>
+                <p className="profile-read-card-title"><Building2 size={14}/>Business identity</p>
                 <div className="profile-read-field-grid">
                   <Field label="Display name" value={display(profile.business_name)} icon={<Building2 size={13}/>} protectedField={verifiedLocked}/>
                   <Field label="Legal name" value={display(profile.legal_name)} icon={<IdCard size={13}/>} protectedField={verifiedLocked}/>
@@ -303,7 +297,7 @@ function BusinessProfileReadOnly() {
               </Card>
 
               <Card>
-                <p className="profile-read-card-title">Contact and registered address</p>
+                <p className="profile-read-card-title"><MapPin size={14}/>Contact and registered address</p>
                 <div className="profile-read-field-grid">
                   <Field label="Business phone" value={display(profile.phone)} icon={<Phone size={13}/>}/>
                   <Field label="Business email" value={display(profile.email)} icon={<Mail size={13}/>}/>
@@ -315,9 +309,9 @@ function BusinessProfileReadOnly() {
               </Card>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
+            <div className="profile-read-stack">
               <Card>
-                <p className="profile-read-card-title">Verification</p>
+                <p className="profile-read-card-title"><ShieldCheck size={14}/>Verification</p>
                 <div className="profile-read-action-stack">
                   <Field label="Current status" value={verificationBadge(profile.verification_status)}/>
                   <Field label="Customer rating" value={`${profile.rating.average_rating.toFixed(1)} (${profile.rating.total_reviews} reviews)`}/>
@@ -345,8 +339,8 @@ function BusinessProfileReadOnly() {
                 </Card>
               )}
 
-              <Card>
-                <p className="profile-read-card-title">Edit policy</p>
+              <Card className="profile-read-edit-card">
+                <p className="profile-read-card-title"><ShieldCheck size={14}/>Edit policy</p>
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <ShieldCheck size={17} style={{ color: "var(--brand)", marginTop: 2, flexShrink: 0 }}/>
                   <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.6 }}>
@@ -361,6 +355,6 @@ function BusinessProfileReadOnly() {
           </div>
         </div>
       )}
-    </TenantLayout>
+    </PageShell>
   );
 }

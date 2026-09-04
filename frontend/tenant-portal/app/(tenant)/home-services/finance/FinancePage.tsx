@@ -555,14 +555,16 @@ export default function HomeServicesFinancePage() {
   return (
     <PageShell>
       <style>{`
-        .fh-kpis { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin: 20px 0; }
+        .fh-kpis { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin: 0; }
         @media (max-width: 1100px) { .fh-kpis { grid-template-columns: repeat(3, minmax(0,1fr)); } }
         @media (max-width: 760px)  { .fh-kpis { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-        .fh-two { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
-        @media (max-width: 1100px) { .fh-two { grid-template-columns: 1fr; } }
+        .fh-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: start; }
         .fh-queue { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
         @media (max-width: 1300px) { .fh-queue { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-        .fh-tabs { display: flex; gap: 4; overflow-x: auto; }
+        .fh-tabs { display: flex; align-items: center; gap: 6px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+        .fh-tabs > button { flex: none; min-height: 0; padding: 11px 4px !important; border: 0 !important; border-bottom: 2px solid transparent !important; border-radius: 0 !important; background: transparent !important; color: var(--text-tertiary) !important; font-size: 13px !important; font-weight: 500 !important; white-space: nowrap; }
+        .fh-tabs > button[aria-pressed="true"] { border-bottom-color: var(--brand) !important; color: var(--text-primary) !important; font-weight: 600 !important; }
+        .fh-money { margin-bottom: 12px; color: var(--text-primary); font: 700 30px/1 "IBM Plex Mono", var(--font-family-mono); }
         .fh-input { width: 100%; background: var(--surface-sunken); border: 1px solid var(--border);
           border-radius: 10px; padding: 9px 11px; font-size: 13px; color: var(--text-primary);
           font-family: inherit; }
@@ -615,12 +617,11 @@ export default function HomeServicesFinancePage() {
       )}
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: "1px solid var(--border)",
-        margin: "4px 0 18px", overflowX: "auto" }}>
+      <div className="fh-tabs">
         {TABS.map(t => {
           const on = tab === t.key;
           return (
-            <button key={t.key} onClick={() => goTab(t.key)} style={{
+            <button key={t.key} aria-pressed={on} onClick={() => goTab(t.key)} style={{
               display: "inline-flex", alignItems: "center", gap: 7, background: "none", border: "none",
               borderBottom: `2px solid ${on ? "var(--brand)" : "transparent"}`,
               color: on ? "var(--text-primary)" : "var(--text-secondary)",
@@ -667,7 +668,7 @@ export default function HomeServicesFinancePage() {
                 subtitle="Internal platform credits — not money"
                 actions={<Badge variant={data.usage_credits.is_low_balance ? "warning" : "success"} size="sm">
                   {humanStatus(data.usage_credits.wallet_status)}</Badge>} />
-              <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", marginBottom: 12 }}>
+              <div className="fh-money">
                 {money(data.usage_credits.available_credits)}
               </div>
               <Row label="Reserved credits"
@@ -701,7 +702,7 @@ export default function HomeServicesFinancePage() {
             <Card>
               <SectionTitle icon={<Shield size={16} />} title="Technician seats"
                 subtitle="Bought with a top-up plan — one seat is one technician, and one more job per slot" />
-              <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", marginBottom: 12 }}>
+              <div className="fh-money">
                 {data.kpis?.entitled_seats ?? 0}
               </div>
               <Row label="Seats purchased" value={data.kpis?.entitled_seats ?? 0} />

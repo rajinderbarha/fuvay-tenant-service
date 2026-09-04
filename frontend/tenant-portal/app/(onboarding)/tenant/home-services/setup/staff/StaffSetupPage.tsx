@@ -148,10 +148,24 @@ export default function StaffTechniciansPage() {
       <PageShell>
       <style>{`
         .staff-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(320px,1fr); gap: 16px; align-items: start; }
-        .staff-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
-        .staff-coverage-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px }.staff-coverage-head p{margin:3px 0 0;color:var(--text-tertiary);font-size:12px}.staff-coverage-count{color:var(--brand);font:600 12px/1.4 "IBM Plex Mono",var(--font-family-mono)}.staff-coverage-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.staff-coverage-tabs button{height:32px;padding:0 11px;border:1px solid var(--border);border-radius:99px;background:var(--surface);color:var(--text-secondary);font-size:11px}.staff-coverage-tabs button[aria-pressed=true]{border-color:var(--brand);background:var(--accent-muted);color:var(--brand)}.staff-coverage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--border);border-radius:12px;overflow:hidden}.staff-coverage-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px}.staff-coverage-row:nth-child(odd){border-right:1px solid var(--border)}.staff-coverage-row strong{color:var(--text-primary);font-weight:600}.staff-coverage-row span:last-child{color:var(--brand);font:600 11px/1.2 "IBM Plex Mono",var(--font-family-mono);white-space:nowrap}
+        .staff-row { display: flex; align-items: center; gap: 12px; padding: 13px 4px; }
+        .staff-roster-list { position: relative; overflow: visible; }
+        .staff-coverage-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px }
+        .staff-coverage-head p{margin:3px 0 0;color:var(--text-tertiary);font-size:12px}
+        .staff-coverage-count{padding:6px 10px;border-radius:99px;background:var(--accent-muted);color:var(--brand);font:600 11px/1 "Instrument Sans",var(--font-family-base)}
+        .staff-coverage-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+        .staff-coverage-tabs button{height:32px;padding:0 11px;border:1px solid var(--border);border-radius:99px;background:var(--surface);color:var(--text-secondary);font-size:11px}
+        .staff-coverage-tabs button[aria-pressed=true]{border-color:var(--brand);background:var(--accent-muted);color:var(--brand)}
+        .staff-coverage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:9px;max-height:360px;overflow-y:auto;padding-top:2px}
+        .staff-coverage-row{display:flex;flex-direction:column;gap:8px;padding:11px;border:1px solid var(--border);border-radius:13px;background:var(--surface-sunken);font-size:12px}
+        .staff-coverage-row strong{color:var(--text-primary);font-size:13px;font-weight:600}
+        .staff-coverage-meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+        .staff-coverage-meta b{color:var(--brand);font:600 12px/1 "IBM Plex Mono",var(--font-family-mono)}
+        .staff-coverage-meta em{color:var(--text-tertiary);font-size:11px;font-style:normal}
+        .staff-security-card{background:var(--accent-muted)!important;border-color:color-mix(in srgb,var(--brand) 12%,var(--border))!important}
+        .staff-actions{position:sticky;z-index:8;bottom:0;display:flex;justify-content:space-between;gap:10px;padding:14px 0;margin-top:22px;border-top:1px solid var(--border);background:color-mix(in srgb,var(--surface) 95%,transparent);backdrop-filter:blur(8px)}
         @media (max-width: 900px) { .staff-grid { grid-template-columns: 1fr; } }
-        @media (max-width: 700px) { .staff-row { flex-wrap: wrap; } .staff-coverage-grid{grid-template-columns:1fr}.staff-coverage-row:nth-child(odd){border-right:0} }
+        @media (max-width: 700px) { .staff-row { flex-wrap: wrap; } .staff-coverage-grid{grid-template-columns:1fr}.staff-actions{flex-wrap:wrap}.staff-actions>div{display:flex;flex:1}.staff-actions>div>*{flex:1} }
       `}</style>
 
       {error && (
@@ -216,12 +230,12 @@ export default function StaffTechniciansPage() {
               </div>
             )}
 
-            <div style={{ border: filtered.length ? "1px solid var(--border)" : "none", borderRadius: 10, overflow: "visible", position: "relative" }}>
-              {filtered.map((m, i) => {
+            <div className="staff-roster-list">
+              {filtered.map((m) => {
                 const r = readiness?.per_member[m.member_id];
                 const meta = READINESS_META[r?.status ?? "needs_identity"];
                 return (
-                  <div key={m.member_id} className="staff-row" style={{ borderBottom: i === filtered.length - 1 ? "none" : "1px solid var(--border)", background: "var(--surface)" }}>
+                  <div key={m.member_id} className="staff-row" style={{ borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", overflow: "hidden" }}>
                       {m.profile_photo_url ? <img src={m.profile_photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : m.full_name.slice(0, 2).toUpperCase()}
                     </div>
@@ -257,7 +271,7 @@ export default function StaffTechniciansPage() {
           <Card style={{ marginTop: 16 }}>
             <div className="staff-coverage-head"><div><strong>Service coverage</strong><p>{coverageGaps.length ? "Assign a ready technician before publishing uncovered services." : "Every service has a technician assigned — nothing is exposed uncovered."}</p></div><span className="staff-coverage-count">{coverage.length - coverageGaps.length} of {coverage.length} covered</span></div>
             <div className="staff-coverage-tabs" aria-label="Filter service coverage">{coverageGroups.map(group => <button type="button" key={group} aria-pressed={coverageFilter === group} onClick={() => setCoverageFilter(group)}>{group}</button>)}</div>
-            {coverage.length === 0 ? <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No enabled services require technician coverage yet. You can continue and add your team after configuring services.</p> : <div className="staff-coverage-grid">{visibleCoverage.map(c => <div className="staff-coverage-row" key={c.offering_id}><strong>{c.name}</strong><span>{c.ready_technician_count > 0 ? `${c.ready_technician_count} tech · ${c.ready_technician_count}/slot` : "No technician"}</span></div>)}</div>}
+            {coverage.length === 0 ? <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No enabled services require technician coverage yet. You can continue and add your team after configuring services.</p> : <div className="staff-coverage-grid">{visibleCoverage.map(c => <div className="staff-coverage-row" key={c.offering_id}><strong>{c.name}</strong><span className="staff-coverage-meta"><b>{c.ready_technician_count > 0 ? `${c.ready_technician_count} tech` : "No technician"}</b><em>{c.ready_technician_count > 0 ? `${c.ready_technician_count}/slot` : "Needs assignment"}</em></span></div>)}</div>}
           </Card>
 
           {coverageGaps.length > 0 && (
@@ -293,7 +307,7 @@ export default function StaffTechniciansPage() {
             )}
           </Card>
 
-          <Card>
+          <Card className="staff-security-card">
             <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 6px" }}>Access &amp; security</p>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6 }}>
               Team members get role-based access to Fuvay. You can invite account access after setup.
@@ -302,7 +316,7 @@ export default function StaffTechniciansPage() {
         </div>
       </div>
 
-      <div style={{ position: "sticky", zIndex: 8, bottom: 0, display: "flex", justifyContent: "space-between", padding: "14px 0", marginTop: 22, background: "var(--bg)" }}>
+      <div className="staff-actions">
         <Link href="/tenant/home-services/setup/coverage-availability"><Btn variant="secondary">Back</Btn></Link>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="secondary" onClick={load}>Save draft</Btn>

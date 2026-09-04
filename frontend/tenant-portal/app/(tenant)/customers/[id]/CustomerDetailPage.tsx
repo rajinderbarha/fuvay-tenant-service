@@ -117,24 +117,26 @@ function CustomerDetailWorkspace({ customerId }: { customerId: string }) {
       </PageShell>
 
       <style jsx global>{`
-        .relationship-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px; }
+        .relationship-hero { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 16px; }
         .relationship-person { display: flex; align-items: center; gap: 14px; min-width: 0; }
-        .relationship-avatar { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; color: var(--brand); background: var(--accent-muted); font-size: 15px; font-weight: 850; }
-        .relationship-person h2 { margin: 0; color: var(--text-primary); font-size: 19px; }
+        .relationship-avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: var(--brand); background: var(--accent-muted); font-size: 15px; font-weight: 600; }
+        .relationship-person h2 { margin: 0; color: var(--text-primary); font-size: 17px; font-weight:600; }
         .relationship-meta { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 7px; }
         .relationship-dates { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 8px; }
-        .relationship-date { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-sunken); }
-        .relationship-date span { display: block; color: var(--text-tertiary); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
-        .relationship-date strong { display: block; color: var(--text-primary); font-size: 12px; margin-top: 2px; }
-        .customer-detail-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; }
-        .customer-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 10px 13px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
-        .customer-detail-tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); }
-        .customer-overview-grid { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; }
-        .customer-overview-panels { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .75fr); gap: 14px; }
-        .customer-panel-title { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; color: var(--text-primary); font-size: 14px; }
+        .relationship-date { padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-sunken); }
+        .relationship-date span { display: block; color: var(--text-tertiary); font:500 10px/1 "IBM Plex Mono",var(--font-family-mono); text-transform: uppercase; letter-spacing: .06em; }
+        .relationship-date strong { display: block; color: var(--text-primary); font-size: 13px; margin-top: 4px; }
+        .customer-detail-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+        .customer-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 11px 4px; background: transparent; color: var(--text-tertiary); font:500 13px/1 inherit; cursor: pointer; white-space: nowrap; }
+        .customer-detail-tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--brand); font-weight:600; }
+        .customer-overview-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(160px,100%),1fr)); gap: 10px; }
+        .customer-overview-grid .ds-summary-card { border-radius:14px!important; }
+        .customer-overview-panels { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; }
+        .customer-panel-title { display: flex; align-items: center; gap: 9px; margin: 0 0 4px; padding-bottom:10px; border-bottom:1px solid var(--border); color: var(--text-primary); font-size: 15px; font-weight:600; }
+        .customer-privacy-card { background:var(--accent-muted)!important;border-color:color-mix(in srgb,var(--brand) 12%,var(--border))!important; }
         .customer-policy-list { display: grid; gap: 10px; }
         .customer-policy-row { display: flex; gap: 9px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
-        .customer-policy-row svg { color: var(--success-text); flex: 0 0 auto; margin-top: 2px; }
+        .customer-policy-row svg { color: var(--brand); flex: 0 0 auto; margin-top: 2px; }
         .customer-timeline { display: grid; gap: 2px; }
         .customer-event { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 9px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--border); }
         .customer-event-icon { width: 25px; height: 25px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-muted); color: var(--brand); }
@@ -177,7 +179,7 @@ function OverviewTab({ customer, customerId }: { customer: HsCustomerDetail; cus
     </div>
     <div className="customer-overview-panels">
       <Card><h3 className="customer-panel-title"><Clock3 size={16} /> Recent relationship activity</h3>{activity.error ? <Alert tone="warning">{activity.error}</Alert> : activity.loading ? <Skeleton height={130} /> : items.length === 0 ? <EmptyState title="No activity recorded" description="Booking and job events will appear here automatically." /> : <div className="customer-timeline">{items.map((item, index) => <div className="customer-event" key={`${String(item.source_system)}-${String(item.source_record_id)}-${index}`}><div className="customer-event-icon"><CalendarDays size={13} /></div><div><strong>{String(item.description ?? item.event_type ?? "Relationship event")}</strong><small>{String(item.source_system ?? "system").replace(/_/g, " ")} · {String(item.actor ?? "system")}</small></div><small>{fmtDate(item.timestamp, true)}</small></div>)}</div>}</Card>
-      <Card><h3 className="customer-panel-title"><ShieldCheck size={16} /> Privacy and operating policy</h3><div className="customer-policy-list"><div className="customer-policy-row"><LockKeyhole size={15} /><span>Customer name, phone, email and reusable addresses are not exposed in this directory.</span></div><div className="customer-policy-row"><BriefcaseBusiness size={15} /><span>Exact service address and relay contact are available only during an authorized active job.</span></div><div className="customer-policy-row"><RotateCcw size={15} /><span>All service, pricing and payment values come from finalized booking, invoice and direct-payment records.</span></div></div></Card>
+      <Card className="customer-privacy-card"><h3 className="customer-panel-title"><ShieldCheck size={16} /> Privacy and operating policy</h3><div className="customer-policy-list"><div className="customer-policy-row"><LockKeyhole size={15} /><span>Customer name, phone, email and reusable addresses are not exposed in this directory.</span></div><div className="customer-policy-row"><BriefcaseBusiness size={15} /><span>Exact service address and relay contact are available only during an authorized active job.</span></div><div className="customer-policy-row"><RotateCcw size={15} /><span>All service, pricing and payment values come from finalized booking, invoice and direct-payment records.</span></div></div></Card>
     </div>
   </>;
 }

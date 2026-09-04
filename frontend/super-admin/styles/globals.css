@@ -104,30 +104,30 @@
 }
 
 /* ─── DARK MODE — Near-black Warm Neutrals, Teal Accent ──────────────────── */
-[data-theme="dark"] {
+html[data-theme="dark"] {
   color-scheme: dark;
 
   /* ── Backgrounds ── */
-  --bg:               #111110;
-  --bg-soft:          #161615;
-  --bg-muted:         #1D1D1A;
-  --bg-gradient:      #111110;
+  --bg:               #141311;
+  --bg-soft:          #181715;
+  --bg-muted:         #211F1C;
+  --bg-gradient:      #141311;
 
   /* ── Surfaces ── */
-  --surface:          #1A1A17;
-  --surface-elevated: #1F1F1C;
-  --surface-sunken:   #141413;
+  --surface:          #1B1A18;
+  --surface-elevated: #24221F;
+  --surface-sunken:   #11110F;
   --card-bg:          var(--surface);
 
   /* ── Borders ── */
-  --border:           #2C2C26;
-  --border-strong:    #33322C;
+  --border:           #33302B;
+  --border-strong:    #464139;
   --border-focus:     #2F9E8F;
 
   /* ── Text ── */
-  --text-primary:     #F2EFE9;
-  --text-secondary:   #B6B0A6;
-  --text-tertiary:    #918C83;
+  --text-primary:     #F4F1EB;
+  --text-secondary:   #B6B1A8;
+  --text-tertiary:    #8C877E;
   --text-link:        #7FD6C7;
   --text-on-brand:    #07211D;
   --text:             var(--text-primary);
@@ -141,16 +141,21 @@
   /* ── Accent ── */
   --accent:           #2F9E8F;
   --accent-hover:     #7FD6C7;
-  --accent-muted:     #15332F;
+  --accent-muted:     #183B35;
+
+  --neutral:          #A09A90;
+  --neutral-bg:       #272521;
+  --neutral-border:   #3A3630;
+  --neutral-text:     #A09A90;
 
   /* ── Sidebar — neutral charcoal-black, theme-aware ── */
-  --sidebar-bg:           #080807;
-  --sidebar-text:         #8D887F;
+  --sidebar-bg:           #1B1A18;
+  --sidebar-text:         #B6B1A8;
   --sidebar-text-active:  #7FD6C7;
-  --sidebar-active:       #15332F;
-  --sidebar-hover:        rgba(255, 255, 255, 0.05);
-  --sidebar-border:       #242420;
-  --sidebar-category:     #6F6A62;
+  --sidebar-active:       #26433D;
+  --sidebar-hover:        rgba(255, 255, 255, 0.06);
+  --sidebar-border:       #33302B;
+  --sidebar-category:     #8C877E;
 
   /* ── Semantic — Success ── */
   --success:          #22C55E;
@@ -337,7 +342,7 @@
   background:
     radial-gradient(circle at 8% 2%, rgba(47, 158, 143, 0.30), transparent 30%),
     radial-gradient(circle at 100% 76%, rgba(15, 107, 96, 0.24), transparent 34%),
-    linear-gradient(155deg, #1A1A17 0%, #111110 62%, #080807 100%);
+    linear-gradient(155deg, #24221F 0%, #141311 62%, #0D0C0B 100%);
 }
 .admin-login-command-panel::before,
 .admin-login-command-panel::after {

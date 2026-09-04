@@ -19,6 +19,7 @@
  *    they came from, and never showed the customer's stated reason.
  */
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import EnterpriseDataGrid, { GridColumn, GridData, RowAction } from "../../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
 import { apiFetch, financeApi, providerComplaintApi } from "../../../../lib/api";
@@ -311,9 +312,27 @@ export default function ProviderCustomerRemediesPage() {
   const filters = mode === "refunds" ? REFUND_FILTERS : mode === "rework" ? REWORK_FILTERS : WARRANTY_FILTERS;
 
   return (
-    <>
+    <PageShell>
+      <style jsx global>{`
+        .remedies-workspace { display: flex; flex-direction: column; gap: 20px; }
+        .remedies-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 10px; }
+        .remedies-kpi { min-height: 104px; padding: 13px !important; border-radius: 14px !important; }
+        .remedies-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-sunken); overflow-x: auto; }
+        .remedies-tabs button { height: 32px !important; border-radius: 8px !important; }
+        .remedies-grid-shell { padding: 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); overflow: hidden; }
+        @media (max-width: 680px) {
+          .remedies-tabs { width: 100%; }
+          .remedies-tabs button { flex: 1 0 auto; }
+        }
+      `}</style>
+      <PageHeader
+        eyebrow=""
+        title="Refunds & warranty"
+        description="Every customer remedy — refunds, rework visits and warranty claims — in one place."
+      />
+      <div className="remedies-workspace">
       {mode === "refunds" && summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="remedies-kpis">
           <Kpi label="Needs your action" value={summary.needs_action} sub={money(summary.requested_amount)} tone={summary.needs_action > 0 ? "warning" : "default"}/>
           <Kpi label="Approved" value={summary.approved} sub={money(summary.approved_amount)} tone="default"/>
           <Kpi label="Paid out" value={summary.settled} sub={money(summary.recorded_amount)} tone="success"/>
@@ -323,6 +342,7 @@ export default function ProviderCustomerRemediesPage() {
         </div>
       )}
 
+      <div className="remedies-grid-shell">
       <EnterpriseDataGrid
         key={`${mode}-${revision}`}
         resourceKey={`provider_${mode}`}
@@ -339,7 +359,7 @@ export default function ProviderCustomerRemediesPage() {
               : "No warranty claims."
         }
         headerSlot={
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="remedies-tabs">
             {(["refunds", "rework", "warranty"] as RemedyMode[]).map(m => (
               <button key={m} onClick={() => switchMode(m)} aria-pressed={mode === m} style={btnSecondary(mode === m)}>
                 {m === "refunds" ? "Refunds" : m === "rework" ? "Rework visits" : "Warranty claims"}
@@ -348,6 +368,7 @@ export default function ProviderCustomerRemediesPage() {
           </div>
         }
       />
+      </div>
 
       {detail && <DetailDrawer row={detail} mode={mode} onClose={() => setDetail(null)}/>}
 
@@ -393,7 +414,8 @@ export default function ProviderCustomerRemediesPage() {
           </div>
         </div>
       )}
-    </>
+      </div>
+    </PageShell>
   );
 }
 
@@ -440,7 +462,7 @@ const fieldStyle: React.CSSProperties = {
 function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone: "default" | "warning" | "danger" | "success" }) {
   const color = tone === "warning" ? "var(--warning-text)" : tone === "danger" ? "var(--danger-text)" : tone === "success" ? "var(--success-text)" : "var(--text-primary)";
   return (
-    <div style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14 }}>
+    <div className="remedies-kpi" style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14 }}>
       <p style={{ fontSize: 20, fontWeight: 800, color, margin: 0, lineHeight: 1.1 }}>{value}</p>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "3px 0 0" }}>{label}</p>
       {sub && <p style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)", margin: "4px 0 0" }}>{sub}</p>}

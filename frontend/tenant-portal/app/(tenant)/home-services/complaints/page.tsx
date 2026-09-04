@@ -15,6 +15,7 @@
 import React, { useCallback, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { RefreshCw, Search, SlidersHorizontal, ChevronLeft, ChevronRight, Inbox } from "lucide-react";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import { Skeleton, Btn, Pagination } from "../../../../components/shared/ui";
 import { ComplaintKpis } from "../../../../components/complaints/ComplaintKpis";
 import { ComplaintQueueList } from "../../../../components/complaints/ComplaintQueueList";
@@ -120,27 +121,32 @@ function ComplaintsPageInner() {
   }
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 4px" }}>Customers</p>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px" }}>Complaints &amp; Resolution Center</h1>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
-            Resolve customer issues with complete job context, clear ownership and SLA control.
-          </p>
-        </div>
-        <Btn variant="secondary" size="sm" icon={<RefreshCw size={13}/>} onClick={() => queue.refetch()}>Refresh</Btn>
-      </div>
+    <PageShell>
+      <PageHeader eyebrow="" title="Complaints & resolution center"
+        description="Resolve customer issues with complete job context, clear ownership and SLA control."
+        actions={<Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={() => queue.refetch()}>Refresh</Btn>} />
+      <style jsx global>{`
+        .complaints-workspace { display:flex;flex-direction:column;gap:20px; }
+        .complaints-kpis .ds-summary-card { border-radius:14px!important; }
+        .complaints-split { display:flex;gap:16px;align-items:flex-start;min-width:0; }
+        .complaints-queue-shell { flex:1;min-width:0;border:1px solid var(--border);border-radius:18px;background:var(--surface);overflow:hidden; }
+        .complaints-tabs { display:flex;gap:6px;overflow-x:auto;padding:0 16px;border-bottom:1px solid var(--border); }
+        .complaints-tabs>button { flex:none;padding:11px 4px!important;border-radius:0!important; }
+        .complaints-search-row { display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px;border-bottom:1px solid var(--border); }
+        .complaints-search-row input { height:42px!important;border-radius:12px!important; }
+        .complaints-search-row>button { height:42px!important;border-radius:12px!important; }
+        .complaints-empty { display:flex;flex-direction:column;align-items:center;gap:12px;padding:56px 16px 68px;text-align:center; }
+        .complaints-empty>svg { box-sizing:content-box;padding:15px;border-radius:16px;background:var(--accent-muted);color:var(--brand)!important; }
+        @media(max-width:980px){.complaints-split{flex-direction:column}.complaints-split>div{width:100%}.complaints-split .ds-surface-card{width:100%!important}}
+      `}</style>
+      <div className="complaints-workspace">
 
       {queue.loading && !queue.data ? <Skeleton height={100}/> : summary && <ComplaintKpis summary={summary}/>}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-        <div style={{
-          flex: 1, minWidth: 0, background: "var(--surface)",
-          border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden",
-        }}>
+      <div className="complaints-split">
+        <div className="complaints-queue-shell">
           {/* Queue tabs */}
-          <div role="tablist" aria-label="Complaint queues" style={{ display: "flex", gap: 2, padding: "10px 12px 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+          <div className="complaints-tabs" role="tablist" aria-label="Complaint queues">
             {TABS.map(t => {
               const count = t.countKey && summary ? summary[t.countKey] : undefined;
               const isActive = queueTab === t.id;
@@ -171,7 +177,7 @@ function ComplaintsPageInner() {
           </div>
 
           {/* Search + filter toggle */}
-          <div style={{ padding: 12, borderBottom: "1px solid var(--border)", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="complaints-search-row">
             <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
               <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
               <input
@@ -258,7 +264,7 @@ function ComplaintsPageInner() {
               <Btn variant="secondary" size="sm" icon={<RefreshCw size={13}/>} onClick={() => queue.refetch()}>Retry</Btn>
             </div>
           ) : (queue.data?.complaints ?? []).length === 0 ? (
-            <div style={{ textAlign: "center", padding: "48px 16px" }}>
+            <div className="complaints-empty">
               <Inbox size={28} color="var(--text-tertiary)" style={{ marginBottom: 10 }}/>
               <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "0 0 10px" }}>
                 {anyFilter ? "No complaints match your filters." : "No open complaints. Cases appear here when a customer reports an issue."}
@@ -288,7 +294,8 @@ function ComplaintsPageInner() {
           />
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }
 

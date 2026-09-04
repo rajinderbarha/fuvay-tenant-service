@@ -165,14 +165,15 @@ function CustomersWorkspace() {
       </PageShell>
 
       <style jsx global>{`
-        .customer-kpis { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 10px; }
+        .customer-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 10px; }
+        .customer-kpis .ds-summary-card { border-radius: 14px !important; }
         .customer-directory-card { overflow: hidden; }
-        .customer-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+        .customer-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; border-bottom: 1px solid var(--border); }
         .customer-toolbar h2 { margin: 0; color: var(--text-primary); font-size: 16px; }
         .customer-toolbar p { margin: 3px 0 0; color: var(--text-tertiary); font-size: 12px; }
-        .customer-privacy-note { display: flex; align-items: center; gap: 7px; max-width: 430px; color: var(--text-secondary); font-size: 12px; }
-        .customer-privacy-note svg { color: var(--success-text); flex: 0 0 auto; }
-        .customer-filters { display: grid; grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(140px, .7fr)); gap: 8px; align-items: center; padding: 12px 16px; background: var(--surface-sunken); border-bottom: 1px solid var(--border); }
+        .customer-privacy-note { display: flex; align-items: center; gap: 7px; max-width: 430px; padding:7px 10px; border-radius:10px; background:var(--accent-muted); color: var(--brand); font-size: 12px; }
+        .customer-privacy-note svg { color: var(--brand); flex: 0 0 auto; }
+        .customer-filters { display: grid; grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(140px, .7fr)); gap: 8px; align-items: center; padding: 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
         .customer-search { position: relative; }
         .customer-search > svg { position: absolute; z-index: 1; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
         .customer-search input { padding-left: 34px !important; }
@@ -181,11 +182,11 @@ function CustomersWorkspace() {
         .customer-list-row:hover { background: var(--surface-sunken); }
         .customer-list-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
         .customer-identity { display: flex; align-items: center; gap: 10px; }
-        .customer-avatar { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-muted); color: var(--brand); font-weight: 800; font-size: 11px; }
+        .customer-avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-muted); color: var(--brand); font-weight: 600; font-size: 12px; }
         .customer-alias { color: var(--text-primary); font-weight: 700; }
         .customer-subtext { color: var(--text-tertiary); font-size: 10.5px; margin-top: 2px; }
         .customer-count { color: var(--text-primary); font-weight: 700; }
-        .customer-open { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-primary); font-size: 11.5px; font-weight: 650; }
+        .customer-open { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
         .customer-list-metric { display: flex; min-width: 80px; flex-direction: column; gap: 3px; }
         .customer-list-metric small { color: var(--text-tertiary); font: 500 10px/1 "IBM Plex Mono", var(--font-family-mono); letter-spacing: .06em; text-transform: uppercase; }
         .customer-list-spacer { flex: 1 1 24px; }
