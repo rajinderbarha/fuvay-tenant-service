@@ -45,6 +45,7 @@ function TeamPageContent() {
   const tab: TabKey = TABS.some(([key]) => key === requestedTab) ? requestedTab! : "overview";
   if (!selectedStaffId) return <TeamDirectory />;
   return <><PageShell>
+    <PageHeader eyebrow="" title="Staff details" description="Review this team member’s profile, capabilities, availability, jobs and performance." />
     <button className="team-back" onClick={() => router.push("/home-services/team")}><ArrowLeft size={15} /> Back to team directory</button>
     <StaffDetail staffId={selectedStaffId} tab={tab} onTabChange={key => router.replace(`/home-services/team/${selectedStaffId}?tab=${key}`)} />
   </PageShell><TeamStyles /></>;

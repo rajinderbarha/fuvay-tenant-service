@@ -1,12 +1,4 @@
-.page { width:100%; display:flex; flex-direction:column; font-family:"Instrument Sans",var(--font-family-base); }
-.header { margin:-28px -32px 0; padding:16px 32px 18px; display:flex; flex-direction:column; gap:10px; background:var(--surface); border-bottom:1px solid var(--border); }
-.breadcrumbs { display:flex; align-items:center; gap:6px; color:var(--text-tertiary); font-size:12px; }
-.breadcrumbs a { color:var(--text-link); }
-.breadcrumbs span { color:var(--text-primary); }
-.headerRow { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px; }
-.headerRow h1 { margin:0; color:var(--text-primary); font-size:clamp(22px,2.4vw,28px); line-height:1.1; font-weight:700; letter-spacing:-.02em; }
-.headerRow p { max-width:560px; margin:6px 0 0; color:var(--text-secondary); font-size:14px; line-height:1.45; }
-.content { display:flex; flex-direction:column; gap:clamp(16px,2.4vw,22px); padding-top:clamp(16px,3vw,26px); }
+.page { width:100%; display:flex; flex-direction:column; gap:clamp(16px,2.4vw,22px); font-family:"Instrument Sans",var(--font-family-base); }
 .toolbar { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:14px; }
 .categoryTabs { max-width:100%; display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
 .categoryTabs button { flex:none; display:flex; align-items:center; gap:7px; padding:9px 12px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text-tertiary); font-size:13px; font-weight:500; white-space:nowrap; }
@@ -39,10 +31,7 @@ button.notificationRow { cursor:pointer; font-family:inherit; }
 .emptyState strong { color:var(--text-primary); font-size:14px; }
 .emptyState p { margin:0; color:var(--text-tertiary); font-size:12px; }
 @keyframes notificationShimmer { to { background-position:-200% 0; } }
-@media(max-width:1024px) { .header { margin:-22px -20px 0; padding:14px 20px 18px; } }
 @media(max-width:640px) {
-  .header { margin:-16px -16px 0; padding:12px 16px 16px; }
-  .headerRow>button { width:100%; }
   .toolbar,.dateFilters { width:100%; }
   .dateFilters button { flex:1; }
   .notificationRow { padding:14px 12px; }

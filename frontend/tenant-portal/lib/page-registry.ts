@@ -77,6 +77,11 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Notifications" }],
   },
+  "/provider/notifications": {
+    title: "Notifications",
+    section: "engagement",
+    breadcrumbs: [{ label: "Notifications" }],
+  },
   "/chat": {
     title: "Chat",
     section: "engagement",

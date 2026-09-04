@@ -28,7 +28,7 @@ import {
   Eye, Plus, Save, Search, ArrowRight, RefreshCw, Trash2,
 } from "lucide-react";
 import {
-  PageShell, Card, StatusBadge, Skeleton, Alert, Button, Input, Modal,
+  PageHeader, PageShell, Card, StatusBadge, Skeleton, Alert, Button, Input, Modal,
 } from "@serviceos/design-system";
 import {
   servicesWorkspaceApi, homeServicesSetupApi, providerStatusApi,
@@ -191,27 +191,16 @@ function ServicesPricingPageContent() {
 
   return (
       <PageShell>
+        <PageHeader
+          title="Services & pricing"
+          description="Repairs are quoted after inspection — you set the inspection charge. Service and installation use your fixed price."
+          actions={<>
+            <Button variant="secondary" size="sm" leftIcon={<Eye size={14} />} onClick={() => setPreviewOpen(true)}>Preview customer view</Button>
+            <Button variant="secondary" size="sm" leftIcon={<ArrowRight size={14} />} onClick={() => router.push("/tenant/home-services/setup/services-pricing?return_to=%2Fhome-services%2Fservices")}>Guided setup</Button>
+            <Button variant="primary" size="sm" leftIcon={<Plus size={14} />} onClick={() => setAddOpen(true)}>Add services</Button>
+          </>}
+        />
         <div className="pricing-experience">
-        <header className="pricing-page-header">
-          <div className="pricing-page-heading">
-            <span className="pricing-page-eyebrow">Business · Service catalog</span>
-            <h1 className="pricing-page-title">Services &amp; pricing</h1>
-            <p className="pricing-page-description">Repairs are quoted after inspection — you set the inspection charge. Service and installation use your fixed price.</p>
-          </div>
-          <div className="pricing-page-actions">
-            <Button variant="secondary" size="sm" leftIcon={<Eye size={14} />}
-              onClick={() => setPreviewOpen(true)}>Preview customer view</Button>
-            <Button variant="secondary" size="sm" leftIcon={<ArrowRight size={14} />}
-              onClick={() => router.push("/tenant/home-services/setup/services-pricing?return_to=%2Fhome-services%2Fservices")}>
-              Guided setup
-            </Button>
-            <Button variant="primary" size="sm" leftIcon={<Plus size={14} />}
-              onClick={() => setAddOpen(true)}>
-              Add services
-            </Button>
-          </div>
-        </header>
-
         {workspace.error && !setupCatalog.data && <Alert tone="danger">{workspace.error}</Alert>}
 
         {workspace.error && !workspace.data && !setupCatalog.data ? (

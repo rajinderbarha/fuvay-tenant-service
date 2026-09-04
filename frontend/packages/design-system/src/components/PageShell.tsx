@@ -35,7 +35,7 @@ export function PageHeader({
     <header className="ds-section-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--layout-section-gap)", flexWrap: "wrap" }}>
       <div style={{ minWidth: 0, flex: "1 1 32rem" }}>
         {hasCommandContext && (
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--layout-control-gap)", minHeight: 14, marginBottom: "var(--space-2)" }}>
+          <div className="ds-section-header-context" style={{ display: "flex", alignItems: "center", gap: "var(--layout-control-gap)", minHeight: 14, marginBottom: "var(--space-2)" }}>
             {icon && <span style={{ display: "inline-flex", alignItems: "center", color: "var(--text-link)", flexShrink: 0 }}>{renderedIcon}</span>}
             <span style={{ color: "var(--text-link)", fontSize: 10, lineHeight: 1, fontWeight: 750, letterSpacing: "0.08em", textTransform: "uppercase" }}>{commandEyebrow}</span>
             {context && <span style={{ paddingLeft: "var(--space-2)", borderLeft: "1px solid var(--border)", color: "var(--text-tertiary)", fontSize: 10, lineHeight: 1, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>{context}</span>}

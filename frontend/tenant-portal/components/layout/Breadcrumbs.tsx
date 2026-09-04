@@ -15,8 +15,6 @@ export function Breadcrumbs({
   pathname?: string;
 }) {
   const path = pathname ?? usePathname();
-  if (path === "/dashboard") return null;
-
   const source = crumbs ?? resolveTenantPageMeta(path)?.breadcrumbs ?? [];
   const items = source[0]?.href === "/dashboard"
     ? source

@@ -1,5 +1,5 @@
 "use client";
-import { TableSurface } from "@serviceos/design-system";
+import { PageHeader, PageShell, TableSurface } from "@serviceos/design-system";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -17,13 +17,6 @@ import {
   type AdminMasterServiceRow, type TenantEnabledService,
   type HsSetupAvailableType, type HsSetupBrand, type HsTypePricing, type HsBrandPricing,
 } from "../../lib/api";
-
-const SETUP_STEPS = [
-  "overview", "business-profile", "documents", "services-pricing",
-  "coverage-availability", "staff", "finance", "review",
-] as const;
-const STEP_NUMBER = SETUP_STEPS.indexOf("services-pricing") + 1;
-const TOTAL_STEPS = SETUP_STEPS.length;
 
 interface ServiceGroup {
   id: string; name: string; services: AdminMasterServiceRow[];
@@ -562,21 +555,18 @@ function ServicesPricingPageContent() {
 
   return (
     <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
-      <div className="pricing-experience">
-        <header className="pricing-page-header">
-          <div className="pricing-page-heading">
-            <span className="pricing-page-eyebrow">Tenant onboarding · Step {STEP_NUMBER} of {TOTAL_STEPS}</span>
-            <h1 className="pricing-page-title">Services &amp; pricing</h1>
-            <p className="pricing-page-description">Choose what you provide and set your own prices. Repairs start with an inspection; fixed-scope jobs show a real price at booking.</p>
-          </div>
-          <div className="pricing-page-actions">
+      <PageShell>
+        <PageHeader
+          title="Services & pricing"
+          description="Choose what you provide and set your own prices. Repairs start with an inspection; fixed-scope jobs show a real price at booking."
+          actions={<>
             <Badge variant={configuredCount > 0 ? "success" : "muted"} size="lg">
               {configuredCount === 0 ? "No services configured" : `${configuredCount} service${configuredCount === 1 ? "" : "s"} configured`}
             </Badge>
             {returnTo && <Btn variant="secondary" onClick={handleBack}>Back to workspace</Btn>}
-          </div>
-        </header>
-
+          </>}
+        />
+      <div className="pricing-experience">
         {error && (
           <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 14px", marginTop: 14, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>
             <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{error}</p>
@@ -695,6 +685,7 @@ function ServicesPricingPageContent() {
           </div>
         </div>
       </div>
+      </PageShell>
     </OnboardingShell>
   );
 }

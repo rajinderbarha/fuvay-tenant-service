@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Bell, BriefcaseBusiness, CheckCircle2, ChevronRight, CreditCard, UserRound } from "lucide-react";
-import { Alert, Button } from "@serviceos/design-system";
+import { Alert, Button, PageHeader, PageShell } from "@serviceos/design-system";
 import { providerNotifApi, type InAppNotificationItem } from "../../../../lib/api";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import styles from "./notifications.module.css";
@@ -122,18 +122,14 @@ export default function ProviderNotificationsPage() {
     void markAll.execute().then(refresh);
   }, [markAll, refresh]);
 
-  return <div className={styles.page}>
-    <header className={styles.header}>
-      <div className={styles.breadcrumbs} aria-label="Breadcrumb">
-        <Link href="/dashboard">Workspace</Link><ChevronRight size={13} /><span>Notifications</span>
-      </div>
-      <div className={styles.headerRow}>
-        <div><h1>Notifications</h1><p>Everything that needs your attention, in one feed.</p></div>
-        <Button variant="secondary" onClick={handleMarkAll} loading={markAll.loading} disabled={unread === 0 || markAll.loading}>Mark all as read</Button>
-      </div>
-    </header>
+  return <PageShell>
+    <PageHeader
+      title="Notifications"
+      description="Everything that needs your attention, in one feed."
+      actions={<Button variant="secondary" onClick={handleMarkAll} loading={markAll.loading} disabled={unread === 0 || markAll.loading}>Mark all as read</Button>}
+    />
 
-    <div className={styles.content}>
+    <div className={styles.page}>
       {(notifications.error || unreadCount.error || markRead.error || markAll.error) &&
         <Alert tone="danger" title="Notifications could not be updated">
           {notifications.error ?? unreadCount.error ?? markRead.error ?? markAll.error}
@@ -161,5 +157,5 @@ export default function ProviderNotificationsPage() {
         {visibleItems.map((notification) => <NotificationRow key={notification.id} notification={notification} onRead={handleRead} />)}
       </div>}
     </div>
-  </div>;
+  </PageShell>;
 }
