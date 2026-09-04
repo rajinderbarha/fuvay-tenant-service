@@ -1,62 +1,82 @@
-# ServiceOS — CI: Docker Build + Push
-# Builds and pushes backend Docker image on pushes to main/develop.
-name: Build & Push Docker Image
+name: Build & Push Docker Images
 
 on:
   push:
-    branches: [main, develop]
-  release:
-    types: [published]
+    branches:
+      - main
+  workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/serviceos-api
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build:
-    name: Build Docker Image
+    name: Build production images
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-,format=short
-
-      - name: Build and push
+      - name: Build API
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fuvay-serviceos-api:main
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
-      - name: Summarise
-        run: |
-          echo "### Docker Image Built 🐳" >> $GITHUB_STEP_SUMMARY
-          echo "Tags: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+      - name: Build Super Admin
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/super-admin.Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.fuvay.in
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fuvay-super-admin:main
+          cache-from: type=gha,scope=super-admin
+          cache-to: type=gha,mode=max,scope=super-admin
+
+      - name: Build Tenant Portal
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/tenant-portal.Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.fuvay.in
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fuvay-tenant-portal:main
+          cache-from: type=gha,scope=tenant-portal
+          cache-to: type=gha,mode=max,scope=tenant-portal
+
+      - name: Build Public Site
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/public-site.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fuvay-public-site:main
+          cache-from: type=gha,scope=public-site
+          cache-to: type=gha,mode=max,scope=public-site
