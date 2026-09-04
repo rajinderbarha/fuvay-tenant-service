@@ -9,6 +9,7 @@ import {
   OnboardingHelpCard, OnboardingPolicyBanner, AutosaveStatus,
 } from "../../../../../../components/onboarding/SetupOverviewCards";
 import { Card, Badge, Skeleton, Btn } from "../../../../../../components/shared/ui";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import { homeServicesSetupOverviewApi, ServiceOSError, type HomeServicesSetupOverview } from "../../../../../../lib/api";
 
 const EYEBROW_BY_STATUS: Record<string, string> = {
@@ -93,10 +94,10 @@ export default function HomeServicesSetupOverviewPage() {
   if (loading || redirecting) {
     return (
       <OnboardingShell activeNav="overview">
-        <Skeleton height={80} style={{ marginBottom: 20 }}/>
-        <Skeleton height={140} style={{ marginBottom: 20 }}/>
-        <Skeleton height={120} style={{ marginBottom: 20 }}/>
-        <Skeleton height={320}/>
+        <PageShell>
+          <PageHeader title="Setup overview" description="Track your Home Services setup and prepare your workspace for review." />
+          <Skeleton height={140}/><Skeleton height={120}/><Skeleton height={320}/>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -104,7 +105,9 @@ export default function HomeServicesSetupOverviewPage() {
   if (error || !overview) {
     return (
       <OnboardingShell activeNav="overview">
-        <Card>
+        <PageShell>
+          <PageHeader title="Setup overview" description="Track your Home Services setup and prepare your workspace for review." />
+          <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
               We couldn&apos;t load your setup progress.
@@ -112,7 +115,8 @@ export default function HomeServicesSetupOverviewPage() {
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{error}</p>
             <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Retry</Btn>
           </div>
-        </Card>
+          </Card>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -145,6 +149,8 @@ export default function HomeServicesSetupOverviewPage() {
 
   return (
     <OnboardingShell activeNav="overview">
+      <PageShell>
+      <PageHeader title="Setup overview" description="Track your Home Services setup and prepare your workspace for review." />
       <Card style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
           <div style={{
@@ -194,6 +200,7 @@ export default function HomeServicesSetupOverviewPage() {
 
       <OnboardingPolicyBanner/>
       <div style={{ marginTop: 12 }}><AutosaveStatus state="saved"/></div>
+      </PageShell>
     </OnboardingShell>
   );
 }

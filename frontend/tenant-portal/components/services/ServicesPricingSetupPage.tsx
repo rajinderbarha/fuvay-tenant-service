@@ -514,10 +514,12 @@ function ServicesPricingPageContent() {
   if (loading) {
     return (
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
-        <Skeleton height={70} style={{ marginBottom: 20 }}/>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 20 }}>
-          <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
-        </div>
+        <PageShell>
+          <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 20 }}>
+            <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
+          </div>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -525,7 +527,9 @@ function ServicesPricingPageContent() {
   if (error && !available) {
     return (
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
-        <Card>
+        <PageShell>
+          <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
+          <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
               We couldn&apos;t load your services catalog.
@@ -533,7 +537,8 @@ function ServicesPricingPageContent() {
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>{error}</p>
             <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Retry</Btn>
           </div>
-        </Card>
+          </Card>
+        </PageShell>
       </OnboardingShell>
     );
   }

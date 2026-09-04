@@ -128,8 +128,8 @@ export default function StaffTechniciansPage() {
     return (
       <OnboardingShell activeNav="staff">
         <PageShell>
-          <Skeleton height={60} style={{ marginBottom: 16 }}/>
-          <Skeleton height={320} style={{ marginBottom: 16 }}/>
+          <PageHeader title="Staff & technicians" description="Add your team and assign the services they can perform." />
+          <Skeleton height={320}/>
           <Skeleton height={200}/>
         </PageShell>
       </OnboardingShell>
@@ -167,6 +167,18 @@ export default function StaffTechniciansPage() {
         @media (max-width: 900px) { .staff-grid { grid-template-columns: 1fr; } }
         @media (max-width: 700px) { .staff-row { flex-wrap: wrap; } .staff-coverage-grid{grid-template-columns:1fr}.staff-actions{flex-wrap:wrap}.staff-actions>div{display:flex;flex:1}.staff-actions>div>*{flex:1} }
       `}</style>
+      <PageHeader
+        eyebrow="Tenant onboarding · Step 6 of 8"
+        title="Staff & technicians"
+        description="Add your team and assign the services they can perform."
+        actions={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {counts && <Badge variant={counts.total === 0 ? "info" : counts.ready === counts.total ? "success" : "warning"}>{statusLine}</Badge>}
+          <Btn variant="primary" disabled={noPlan || seatsFull}
+               onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
+            <UserPlus size={15}/> Add team member
+          </Btn>
+        </div>}
+      />
 
       {error && (
         <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>
@@ -195,18 +207,6 @@ export default function StaffTechniciansPage() {
         </div>
       )}
 
-      <PageHeader
-        eyebrow="Tenant onboarding · Step 6 of 8"
-        title="Staff & technicians"
-        description="Add your team and assign the services they can perform."
-        actions={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {counts && <Badge variant={counts.total === 0 ? "info" : counts.ready === counts.total ? "success" : "warning"}>{statusLine}</Badge>}
-          <Btn variant="primary" disabled={noPlan || seatsFull}
-               onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
-            <UserPlus size={15}/> Add team member
-          </Btn>
-        </div>}
-      />
       <div className="staff-grid">
         <div>
           <Card>

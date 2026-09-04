@@ -18,6 +18,7 @@ import { OnboardingShell } from "../../../../../../components/onboarding/Onboard
 import { ProgressRing } from "../../../../../../components/onboarding/ProgressRing";
 import { StepProgressBar } from "../../../../../../components/onboarding/StepProgressBar";
 import { Card, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import { MediaUploader } from "../../../../../../components/media/MediaUploader";
 import { useTenant } from "../../../../../../hooks/useTenant";
 import {
@@ -69,9 +70,10 @@ export default function VerificationDocumentsPage() {
   if (loading) {
     return (
       <OnboardingShell activeNav="documents">
-        <Skeleton height={60} style={{ marginBottom: 16 }}/>
-        <Skeleton height={320} style={{ marginBottom: 16 }}/>
-        <Skeleton height={200}/>
+        <PageShell>
+          <PageHeader title="Verification documents" description="Upload the documents required to verify your business." />
+          <Skeleton height={320}/><Skeleton height={200}/>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -79,7 +81,9 @@ export default function VerificationDocumentsPage() {
   if (manifest && !manifest.business_profile_complete) {
     return (
       <OnboardingShell activeNav="documents">
-        <Card>
+        <PageShell>
+          <PageHeader title="Verification documents" description="Upload the documents required to verify your business." />
+          <Card>
           <div style={{ textAlign: "center", padding: "40px 20px" }}>
             <Info size={28} style={{ color: "var(--text-tertiary)", marginBottom: 12 }}/>
             <h1 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -92,7 +96,8 @@ export default function VerificationDocumentsPage() {
               <Btn variant="primary">Go to Business Profile <ChevronRight size={15}/></Btn>
             </Link>
           </div>
-        </Card>
+          </Card>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -105,6 +110,7 @@ export default function VerificationDocumentsPage() {
 
   return (
     <OnboardingShell activeNav="documents">
+      <PageShell>
       <style>{`
         .docs-grid { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 28px; align-items: start; }
         .docs-req-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
@@ -117,24 +123,20 @@ export default function VerificationDocumentsPage() {
           .docs-req-badges { width: 100%; padding-left: 48px; }
         }
       `}</style>
+      <PageHeader
+        title="Verification documents"
+        description="Upload the documents required to verify your business."
+        actions={readiness && (
+          <Badge variant={readiness.missing === 0 ? "success" : readiness.rejected > 0 ? "danger" : "warning"}>
+            <Upload size={12}/> {statusLine}
+          </Badge>
+        )}
+      />
       {error && (
         <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/><span>{error}</span>
         </div>
       )}
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 6 }}>
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 6px", textTransform: "uppercase" }}>Tenant Onboarding</p>
-          <h1 style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Verification documents</h1>
-          <p style={{ fontSize: 13.5, color: "var(--text-secondary)", margin: 0 }}>Upload the documents required to verify your business.</p>
-        </div>
-        {readiness && (
-          <Badge variant={readiness.missing === 0 ? "success" : readiness.rejected > 0 ? "danger" : "warning"}>
-            <Upload size={12}/> {statusLine}
-          </Badge>
-        )}
-      </div>
 
       <StepProgressBar step={3} total={8} />
 
@@ -256,6 +258,7 @@ export default function VerificationDocumentsPage() {
           </Btn>
         </div>
       </div>
+      </PageShell>
     </OnboardingShell>
   );
 }

@@ -26,6 +26,7 @@ import { OnboardingShell } from "../../../../../../components/onboarding/Onboard
 import { ProgressRing } from "../../../../../../components/onboarding/ProgressRing";
 import { StepProgressBar } from "../../../../../../components/onboarding/StepProgressBar";
 import { Card, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import {
   financeReadinessApi, activationPaymentApi, ServiceOSError,
   type FinanceReadinessManifest, type FinanceReadinessDirectPayment,
@@ -126,9 +127,10 @@ export default function FinanceReadinessPage() {
   if (loading || !manifest || !form) {
     return (
       <OnboardingShell activeNav="finance">
-        <Skeleton height={60} style={{ marginBottom: 16 }}/>
-        <Skeleton height={320} style={{ marginBottom: 16 }}/>
-        <Skeleton height={200}/>
+        <PageShell>
+          <PageHeader title="Finance readiness" description="Confirm how customer payments are recorded and review your Home Services finance policy." />
+          <Skeleton height={320}/><Skeleton height={200}/>
+        </PageShell>
       </OnboardingShell>
     );
   }
@@ -141,6 +143,7 @@ export default function FinanceReadinessPage() {
 
   return (
     <OnboardingShell activeNav="finance">
+      <PageShell>
       <style>{`
         .fin-grid { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 28px; align-items: start; }
         .fin-methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -168,24 +171,20 @@ export default function FinanceReadinessPage() {
         @media (max-width: 760px) { .fin-invoice-grid { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .fin-methods { grid-template-columns: repeat(2, 1fr); } .fin-funding-grid { grid-template-columns: 1fr; } }
       `}</style>
+      <PageHeader
+        title="Finance readiness"
+        description="Confirm how customer payments are recorded and review your Home Services finance policy."
+        actions={<Badge variant={actionsRemaining === 0 ? "success" : "warning"}>
+          {actionsRemaining === 0 ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
+          {actionsRemaining === 0 ? "Ready for review" : `${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining`}
+        </Badge>}
+      />
 
       {error && (
         <div role="alert" style={{ display: "flex", gap: 8, padding: "12px 14px", borderRadius: 10, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger-text)", fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }}/><span>{error}</span>
         </div>
       )}
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 6 }}>
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 6px", textTransform: "uppercase" }}>Tenant Onboarding</p>
-          <h1 style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>Finance readiness</h1>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>Confirm how customer payments are recorded and review your Home Services finance policy.</p>
-        </div>
-        <Badge variant={actionsRemaining === 0 ? "success" : "warning"}>
-          {actionsRemaining === 0 ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
-          {actionsRemaining === 0 ? "Ready for review" : `${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining`}
-        </Badge>
-      </div>
 
       <StepProgressBar step={7} total={8} />
 
@@ -385,6 +384,7 @@ export default function FinanceReadinessPage() {
           </Btn>
         </div>
       </div>
+      </PageShell>
     </OnboardingShell>
   );
 }

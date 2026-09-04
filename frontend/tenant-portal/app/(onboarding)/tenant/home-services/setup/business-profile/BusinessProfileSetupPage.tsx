@@ -234,7 +234,7 @@ function BusinessProfileWorkspace() {
   if (loading) {
     return (
       <ProfileShell mode={mode}>
-        <Skeleton height={70} style={{ marginBottom: 20 }}/>
+        <PageHeader title="Business profile" description={workspace ? "Manage the business identity, contact and address information approved during setup." : "Tell us about your business. These details will be reviewed before your workspace is activated."} />
         <Skeleton height={12} style={{ marginBottom: 20 }}/>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 20 }}>
           <Skeleton height={520}/>
@@ -247,6 +247,7 @@ function BusinessProfileWorkspace() {
   if (error && !profile) {
     return (
       <ProfileShell mode={mode}>
+        <PageHeader title="Business profile" description={workspace ? "Manage the business identity, contact and address information approved during setup." : "Tell us about your business. These details will be reviewed before your workspace is activated."} />
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>

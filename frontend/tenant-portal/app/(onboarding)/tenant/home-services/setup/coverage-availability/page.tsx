@@ -7,6 +7,7 @@ import { TenantLayout } from "../../../../../../components/layout/TenantLayout";
 import { ProgressRing } from "../../../../../../components/onboarding/ProgressRing";
 import { StepProgressBar } from "../../../../../../components/onboarding/StepProgressBar";
 import { Card, Btn, Badge, Skeleton, Input, KpiGrid, SummaryCard } from "../../../../../../components/shared/ui";
+import { PageHeader, PageShell } from "@serviceos/design-system";
 import {
   providerServiceAreasApi, providerAvailabilityApi, bookingWindowApi, availabilityExceptionsApi,
   ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
@@ -28,8 +29,8 @@ const DAYS = [
 
 function CoverageShell({ mode, children }: { mode: "onboarding" | "workspace"; children: React.ReactNode }) {
   return mode === "workspace"
-    ? <TenantLayout activeNav="business-hours">{children}</TenantLayout>
-    : <OnboardingShell activeNav="coverage-availability">{children}</OnboardingShell>;
+    ? <TenantLayout activeNav="business-hours"><PageShell>{children}</PageShell></TenantLayout>
+    : <OnboardingShell activeNav="coverage-availability"><PageShell>{children}</PageShell></OnboardingShell>;
 }
 
 function CoverageAvailabilityWorkspace() {
@@ -290,7 +291,7 @@ function CoverageAvailabilityWorkspace() {
   if (loading) {
     return (
       <CoverageShell mode={mode}>
-        <Skeleton height={70} style={{ marginBottom: 20 }}/>
+        <PageHeader title={workspace ? "Coverage & hours" : "Coverage & availability"} description="Manage the pincodes, weekly hours, booking rules, and closures used by customer booking and provider matching." />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 20 }}>
           <Skeleton height={520}/><Skeleton height={520}/>
         </div>
@@ -301,6 +302,7 @@ function CoverageAvailabilityWorkspace() {
   if (error && !areas) {
     return (
       <CoverageShell mode={mode}>
+        <PageHeader title={workspace ? "Coverage & hours" : "Coverage & availability"} description="Manage the pincodes, weekly hours, booking rules, and closures used by customer booking and provider matching." />
         <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -318,23 +320,16 @@ function CoverageAvailabilityWorkspace() {
 
   return (
     <CoverageShell mode={mode}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: workspace ? 18 : 4 }}>
-        <div>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--brand)", margin: "0 0 4px" }}>{workspace ? "BUSINESS" : "TENANT ONBOARDING"}</p>
-          <h1 style={{ fontSize: workspace ? 24 : 32, fontWeight: 800, margin: 0, color: "var(--text-primary)", letterSpacing: 0 }}>
-            {workspace ? "Coverage & Hours" : "Coverage & availability"}
-          </h1>
-          <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: "6px 0 0", maxWidth: 720 }}>
-            Manage the pincodes, weekly hours, booking rules, and closures used by customer booking and provider matching.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <PageHeader
+        title={workspace ? "Coverage & hours" : "Coverage & availability"}
+        description="Manage the pincodes, weekly hours, booking rules, and closures used by customer booking and provider matching."
+        actions={<div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Badge variant={isReady ? "success" : "warning"} size="lg">
             {isReady ? (workspace ? "Coverage setup ready" : "Ready for review") : "Setup incomplete"}
           </Badge>
           {workspace && <Btn variant="secondary" size="sm" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>}
-        </div>
-      </div>
+        </div>}
+      />
 
       {!workspace && <StepProgressBar step={STEP_NUMBER} total={TOTAL_STEPS} />}
 
