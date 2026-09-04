@@ -50,10 +50,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_cc_active_window", "customer_campaigns",
                      ["is_enabled", "starts_at", "ends_at"])
-    op.create_index("ix_cc_priority", "customer_campaigns", ["priority"])
+    op.create_index("ix_customer_campaigns_priority", "customer_campaigns", ["priority"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_cc_priority", table_name="customer_campaigns")
+    op.drop_index("ix_customer_campaigns_priority", table_name="customer_campaigns")
     op.drop_index("ix_cc_active_window", table_name="customer_campaigns")
     op.drop_table("customer_campaigns")
