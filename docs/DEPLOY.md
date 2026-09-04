@@ -24,6 +24,17 @@ docker compose ps
 # 4. Run migrations (from zero — creates all 48 tables + indexes)
 docker compose run --rm api alembic upgrade head
 
+# 4b. Seed the master catalog (REQUIRED on every environment, not staging-only —
+# migrations only create schema; without this, service_categories has zero
+# rows and every tenant's Services & Pricing setup fails with
+# "No Home Services category is configured." All idempotent, safe to re-run.
+docker compose run --rm api python scripts/seed_universal_categories.py
+docker compose run --rm api python scripts/seed_service_groups.py
+docker compose run --rm api python scripts/seed_master_services.py
+docker compose run --rm api python scripts/seed_brands.py
+docker compose run --rm api python scripts/seed_issue_types.py
+docker compose run --rm api python scripts/seed_checklists.py
+
 # 5. Seed demo users (staging only)
 docker compose run --rm api python scripts/seed_demo_users.py
 
