@@ -68,6 +68,7 @@ def upgrade() -> None:
              'New job assigned to you', 'A job has been assigned to you. Tap to view the details and accept it.', 'View job', '/staff/jobs/{{job_id}}', true),
             (gen_random_uuid(), now(), now(), 'booking.new.in_app', 'New Booking Received (In-App)', 'in_app',
              'New booking received', 'Booking {{booking_number}} came in. Assign a technician to get started.', 'View jobs', '/service-jobs', true)
+        ON CONFLICT (template_key) DO NOTHING
     """)
 
 
