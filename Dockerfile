@@ -10,16 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps into /build/venv
+# Install Python deps into /venv
 COPY requirements.txt .
 # torch MUST come from the CPU wheel index. The default PyPI wheel bundles CUDA
 # and is several GB larger for no benefit on a CPU-only host -- requirements.txt
 # documents this, but pip has no way to honour it from the requirements file.
-RUN python -m venv /build/venv && \
-    /build/venv/bin/pip install --upgrade pip && \
-    /build/venv/bin/pip install --no-cache-dir \
+RUN python -m venv /venv && \
+    /venv/bin/pip install --upgrade pip && \
+    /venv/bin/pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 && \
-    /build/venv/bin/pip install -r requirements.txt --no-cache-dir
+    /venv/bin/pip install -r requirements.txt --no-cache-dir
 
 # ── Runtime Stage ─────────────────────────────────────────────────
 FROM python:3.13-slim AS runtime
@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy venv from builder
-COPY --from=builder /build/venv /venv
+COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 # Copy source
