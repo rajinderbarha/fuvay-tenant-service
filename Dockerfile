@@ -12,8 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python deps into /build/venv
 COPY requirements.txt .
+# torch MUST come from the CPU wheel index. The default PyPI wheel bundles CUDA
+# and is several GB larger for no benefit on a CPU-only host -- requirements.txt
+# documents this, but pip has no way to honour it from the requirements file.
 RUN python -m venv /build/venv && \
     /build/venv/bin/pip install --upgrade pip && \
+    /build/venv/bin/pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 && \
     /build/venv/bin/pip install -r requirements.txt --no-cache-dir
 
 # ── Runtime Stage ─────────────────────────────────────────────────

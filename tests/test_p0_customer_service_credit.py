@@ -9,7 +9,10 @@ Business rules verified:
 import re
 from pathlib import Path
 
-ROOT = Path("G:/serviceos")
+# Repo-relative: this file is tests/<name>.py, so parents[1] is the repo
+# root. A hardcoded absolute path made every test here fail on any machine
+# that was not the Windows box it was written on, CI included.
+ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "alembic/versions/080_customer_service_credit_dispute_settlement.py"
 MODELS = ROOT / "app/engines/customer_credits/models.py"
 SERVICE = ROOT / "app/engines/customer_credits/service.py"

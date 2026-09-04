@@ -24,6 +24,9 @@ email-validator==2.2.0
 python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1  # passlib 1.7.4's bcrypt backend detection breaks on bcrypt>=4.1
+# app/engines/auth/utils.py imports this at module level, and that module is
+# loaded during create_app() -- without it the API fails to start at all.
+pyotp==2.9.0
 
 # ── Logging ────────────────────────────────────────────────────────
 structlog==25.3.0
@@ -31,6 +34,11 @@ python-json-logger==3.3.0
 
 # ── HTTP Client ────────────────────────────────────────────────────
 httpx==0.28.1
+# tests/test_module_l5_01_tenant_cross_tenant_idor.py and
+# tests/test_module_l5_01a_admin_finance_router_auth.py import requests, and
+# without it pytest aborts during collection -- the whole backend CI job fails
+# before a single test runs.
+requests==2.32.3
 
 # ── Document Parsing ───────────────────────────────────────────────
 pypdf==5.1.0  # PDF text extraction (inventory document extraction engine)

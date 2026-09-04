@@ -121,6 +121,44 @@ jobs:
       - run: pip install pytest
       - run: python -m pytest frontend/tenant-portal/tests/ -v -q
 
+  # ── Frontend build gate ────────────────────────────────────────────────────
+  # The per-surface jobs below run pytest against the frontend directories,
+  # which checks file structure but never compiles anything. Without this job a
+  # TypeScript error or a broken import passes CI and only fails later, when the
+  # Docker image is built -- after merge. This compiles both portals exactly the
+  # way the production image does.
+  frontend-build:
+    name: Frontend build (typecheck + next build)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [super-admin, tenant-portal]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=frontend/${{ matrix.app }}
+
+      - name: Production build
+        # Selected by PATH, not package name -- the packages were renamed once
+        # already (serviceos-* -> fuvay-*) and a path cannot go stale.
+        run: npm run build --workspace=frontend/${{ matrix.app }}
+        env:
+          NODE_ENV: production
+          NEXT_TELEMETRY_DISABLED: "1"
+          # Build-time only; the real origin is injected when the image is built.
+          NEXT_PUBLIC_API_URL: https://api.example.com
+          NEXT_PUBLIC_USE_MOCK: "false"
+
   # ── Mobile app tests ───────────────────────────────────────────────────────
   mobile-apps:
     name: Mobile Apps
@@ -172,7 +210,7 @@ jobs:
 
   all-pass:
     name: All Tests Gate
-    needs: [backend, design-system, super-admin, tenant-portal, mobile-apps, public-site, e2e-validator]
+    needs: [backend, frontend-build, design-system, super-admin, tenant-portal, mobile-apps, public-site, e2e-validator]
     runs-on: ubuntu-latest
     steps:
       - run: echo "✅ All test suites passed"

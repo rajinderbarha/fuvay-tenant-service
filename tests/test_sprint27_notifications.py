@@ -710,7 +710,10 @@ def test_notification_models_importable():
 
 def test_migration_045_importable():
     import importlib.util, pathlib
-    migration_path = pathlib.Path("G:/serviceos/alembic/versions/045_sprint27_notifications_chat_audit.py")
+    migration_path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "alembic" / "versions" / "045_sprint27_notifications_chat_audit.py"
+    )
     spec = importlib.util.spec_from_file_location("migration_045", migration_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

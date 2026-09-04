@@ -393,7 +393,7 @@ def test_provider_analytics_router_imports_cleanly():
 def test_routers_registered_in_main():
     """Ensure Sprint 28 routers are wired into the FastAPI app."""
     import importlib.util, pathlib
-    path = pathlib.Path("G:/serviceos/app/main.py")
+    path = pathlib.Path(__file__).resolve().parents[1] / "app" / "main.py"
     src = path.read_text(encoding="utf-8")
     assert "admin_analytics_router" in src
     assert "provider_analytics_router" in src
@@ -429,14 +429,14 @@ def test_provider_router_tid_helper_returns_uuid():
 
 def test_migration_046_exists():
     import pathlib
-    versions_dir = pathlib.Path("G:/serviceos/alembic/versions")
+    versions_dir = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
     files = list(versions_dir.glob("046_*.py"))
     assert len(files) == 1, f"Expected 1 migration file matching 046_*.py, found: {files}"
 
 
 def test_migration_046_has_correct_revision():
     import pathlib, importlib.util
-    versions_dir = pathlib.Path("G:/serviceos/alembic/versions")
+    versions_dir = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
     path = next(versions_dir.glob("046_*.py"))
     spec = importlib.util.spec_from_file_location("migration_046", path)
     mod  = importlib.util.module_from_spec(spec)
@@ -447,7 +447,7 @@ def test_migration_046_has_correct_revision():
 
 def test_migration_046_creates_analytics_tables():
     import pathlib
-    path = pathlib.Path("G:/serviceos/alembic/versions")
+    path = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions"
     files = list(path.glob("046_*.py"))
     src = files[0].read_text(encoding="utf-8")
     assert "analytics_daily_metrics"  in src

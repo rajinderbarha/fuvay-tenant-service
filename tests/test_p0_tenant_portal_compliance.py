@@ -23,7 +23,10 @@ Class layout
 import re
 from pathlib import Path
 
-ROOT = Path("G:/serviceos")
+# Repo-relative: this file is tests/<name>.py, so parents[1] is the repo
+# root. A hardcoded absolute path made every test here fail on any machine
+# that was not the Windows box it was written on, CI included.
+ROOT = Path(__file__).resolve().parents[1]
 
 ROUTER_FILE  = ROOT / "app/engines/compliance/provider_router.py"
 MAIN_FILE    = ROOT / "app/main.py"
