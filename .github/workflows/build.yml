@@ -49,7 +49,7 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=https://api.fuvay.in
+            NEXT_PUBLIC_API_URL=http://129.121.137.155:8000
           tags: |
             ghcr.io/${{ github.repository_owner }}/fuvay-super-admin:main
           cache-from: type=gha,scope=super-admin
@@ -63,7 +63,7 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=https://api.fuvay.in
+            NEXT_PUBLIC_API_URL=http://129.121.137.155:8000
           tags: |
             ghcr.io/${{ github.repository_owner }}/fuvay-tenant-portal:main
           cache-from: type=gha,scope=tenant-portal

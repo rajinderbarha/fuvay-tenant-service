@@ -1,0 +1,25 @@
+services:
+
+  api:
+    ports:
+      - "8000:8000"
+
+  worker:
+    healthcheck:
+      disable: true
+
+  super-admin:
+    ports:
+      - "3000:3000"
+
+  tenant-portal:
+    ports:
+      - "3001:3001"
+
+  public-site:
+    ports:
+      - "3002:80"
+
+  nginx:
+    profiles:
+      - domain-only
