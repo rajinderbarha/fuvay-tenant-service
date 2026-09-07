@@ -61,7 +61,21 @@ PROVIDER_DEFINITIONS: dict[str, dict] = {
             {"key": "access_token", "label": "Expo access token (optional)", "type": "password", "required": False, "secret": True, "placeholder": "Optional enhanced security token"},
         ],
     },
+    "razorpay": {
+        "provider": "Razorpay", "description": "Payment gateway for activation fees, package purchases and top-ups.", "managed": True,
+        "fields": [
+            {"key": "key_id", "label": "Key ID", "type": "text", "required": True, "secret": False, "placeholder": "rzp_live_..."},
+            {"key": "key_secret", "label": "Key secret", "type": "password", "required": True, "secret": True, "placeholder": "Enter to set or rotate"},
+            {"key": "webhook_secret", "label": "Webhook secret (optional)", "type": "password", "required": False, "secret": True, "placeholder": "Enter to enable webhook signature verification"},
+        ],
+    },
 }
+
+# Channels here are payment/integration providers, not notification delivery
+# channels -- kept out of ALL_CHANNELS (which notification dispatch iterates
+# to actually send messages) but they share the same encrypted-config
+# lifecycle (save/test/enable/audit), so they live in PROVIDER_DEFINITIONS.
+NON_NOTIFICATION_CHANNELS = {"razorpay"}
 
 PLATFORM_CONFIG_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
@@ -119,6 +133,12 @@ class NotificationChannelConfigService:
         ))).scalars().all()
         by_channel = {r.channel: r for r in rows}
         return [self.public_item(channel, by_channel.get(channel)) for channel in ALL_CHANNELS]
+
+    async def get_public_item(self, db: AsyncSession, channel: str) -> dict:
+        if channel not in PROVIDER_DEFINITIONS:
+            raise ServiceOSException("CHANNEL_NOT_FOUND", "Unknown channel.", status_code=404)
+        row = await self.get_row(db, channel)
+        return self.public_item(channel, row)
 
     def public_item(self, channel: str, row: NotificationChannelConfig | None) -> dict:
         definition = PROVIDER_DEFINITIONS[channel]
@@ -181,6 +201,12 @@ class NotificationChannelConfigService:
                 raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Twilio Account SID must start with AC.", status_code=422)
             if not str(config.get("from_number", "")).startswith("+"):
                 raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Sender number must use E.164 format, for example +14155550100.", status_code=422)
+        if channel == "razorpay":
+            key_id = str(config.get("key_id", ""))
+            if not (key_id.startswith("rzp_live_") or key_id.startswith("rzp_test_")):
+                raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Razorpay Key ID must start with rzp_live_ or rzp_test_.", status_code=422)
+            if len(str(credentials.get("key_secret", ""))) < 8:
+                raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Enter a valid Razorpay key secret.", status_code=422)
 
     async def save(self, db: AsyncSession, channel: str, values: dict, actor_id: uuid.UUID | None) -> dict:
         if channel not in PROVIDER_DEFINITIONS:
@@ -293,6 +319,18 @@ class NotificationChannelConfigService:
                 async with httpx.AsyncClient(timeout=10) as client:
                     response = await client.get("https://exp.host")
                 return response.status_code < 500, "Expo Push gateway is reachable."
+            if channel == "razorpay":
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(
+                        "https://api.razorpay.com/v1/payments?count=1",
+                        auth=(config["key_id"], credentials["key_secret"]),
+                    )
+                if response.status_code == 401:
+                    return False, "Razorpay rejected the key ID / key secret pair."
+                if response.status_code >= 500:
+                    return False, f"Razorpay is unreachable (HTTP {response.status_code})."
+                mode = "live" if config["key_id"].startswith("rzp_live_") else "test"
+                return True, f"Razorpay authentication succeeded ({mode} mode)."
         except Exception as exc:
             return False, f"Connection failed: {str(exc)[:350]}"
         return False, "Unsupported provider test."

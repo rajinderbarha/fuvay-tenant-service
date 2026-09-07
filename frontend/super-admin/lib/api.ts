@@ -6539,6 +6539,9 @@ export const sprint27AdminApi = {
 
   /** Delivery-channel health, computed from the active providers and outbox. */
   getChannelStatus: () => apiFetch<{ items: NotificationChannelStatus[] }>("/v1/admin/notification-outbox/channel-status"),
+  /** One channel's saved configuration state -- for channels (e.g. razorpay) not covered by channel-status. */
+  getChannelConfiguration: (channel: string) =>
+    apiFetch<NotificationChannelStatus>(`/v1/admin/notification-outbox/channel-configurations/${channel}`),
   saveChannelConfiguration: (channel: string, values: Record<string, string | boolean>) =>
     apiFetch<NotificationChannelStatus>(`/v1/admin/notification-outbox/channel-configurations/${channel}`, {
       method: "PUT", body: JSON.stringify({ values }),
@@ -7701,6 +7704,9 @@ export interface NotificationChannelStatus {
   description: string; managed: boolean; state: string; configured: boolean;
   setup_complete: boolean; enabled: boolean; verified: boolean;
   fields: NotificationChannelField[];
+  /** Present on channel-configurations GET/PUT/test/enabled responses (channel_config_service.public_item);
+   * absent from the channel-status list, which is computed by a separate provider-health service. */
+  credential_fingerprint?: string | null;
   last_health_check: string | null; last_successful_delivery: string | null;
   last_test_status: string | null; last_test_message: string | null;
   failure_rate_pct: number | null; rate_limit: string | null;

@@ -323,12 +323,21 @@ async def admin_set_channel_enabled(
     return ok(item, _rid(r), "admin.notification_channels.enabled")
 
 
+@admin_outbox_router.get("/channel-configurations/{channel}", summary="Get one channel's public configuration state")
+async def admin_get_channel_configuration(
+    channel: str, r: Request,
+    u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
+):
+    item = await channel_config_service.get_public_item(db, channel)
+    return ok(item, _rid(r), "admin.notification_channels.get")
+
+
 @admin_outbox_router.get("/channel-configurations/{channel}/audit", summary="List secret-free channel configuration history")
 async def admin_channel_configuration_audit(
     channel: str, r: Request, limit: int = Query(50, ge=1, le=200),
     u: UserContext = Depends(require_super_admin), db: AsyncSession = Depends(get_db),
 ):
-    if channel not in {"in_app", "email", "sms", "whatsapp", "push"}:
+    if channel not in {"in_app", "email", "sms", "whatsapp", "push", "razorpay"}:
         from app.exceptions import ServiceOSException
         raise ServiceOSException("CHANNEL_NOT_FOUND", "Unknown notification channel.", status_code=404)
     return ok({"items": await channel_config_service.audit(db, channel, limit)}, _rid(r), "admin.notification_channels.audit")

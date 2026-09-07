@@ -6,7 +6,28 @@ from app.engines.platform_notifications.channel_config_service import (
 
 
 def test_all_runtime_channels_have_configuration_definitions():
-    assert set(PROVIDER_DEFINITIONS) == {"in_app", "email", "sms", "whatsapp", "push"}
+    assert {"in_app", "email", "sms", "whatsapp", "push"} <= set(PROVIDER_DEFINITIONS)
+
+
+def test_razorpay_shares_the_encrypted_config_lifecycle_but_is_not_a_notification_channel():
+    from app.engines.platform_notifications.channel_config_service import NON_NOTIFICATION_CHANNELS
+    from app.engines.platform_notifications.constants import ALL_CHANNELS
+    assert "razorpay" in PROVIDER_DEFINITIONS
+    assert "razorpay" in NON_NOTIFICATION_CHANNELS
+    assert "razorpay" not in ALL_CHANNELS
+    keys = {f["key"] for f in PROVIDER_DEFINITIONS["razorpay"]["fields"]}
+    assert keys == {"key_id", "key_secret", "webhook_secret"}
+    secret_keys = {f["key"] for f in PROVIDER_DEFINITIONS["razorpay"]["fields"] if f["secret"]}
+    assert secret_keys == {"key_secret", "webhook_secret"}
+
+
+def test_razorpay_key_id_format_is_validated():
+    import pytest
+    from app.exceptions import ServiceOSException
+    service = NotificationChannelConfigService()
+    with pytest.raises(ServiceOSException):
+        service._validate("razorpay", {"key_id": "not_a_real_key"}, {"key_secret": "supersecretvalue"})
+    service._validate("razorpay", {"key_id": "rzp_test_abc123"}, {"key_secret": "supersecretvalue"})
 
 
 def test_credentials_are_encrypted_and_never_returned():
@@ -47,3 +68,28 @@ def test_configuration_routes_include_save_test_enable_and_audit():
     assert f"{base}/test" in paths
     assert f"{base}/enabled" in paths
     assert f"{base}/audit" in paths
+
+
+def test_single_channel_get_route_exists_alongside_save():
+    from app.engines.platform_notifications.admin_router import admin_outbox_router
+    base = "/v1/admin/notification-outbox/channel-configurations/{channel}"
+    methods_by_path = {}
+    for route in admin_outbox_router.routes:
+        methods_by_path.setdefault(getattr(route, "path", ""), set()).update(getattr(route, "methods", set()) or set())
+    assert {"GET", "PUT"} <= methods_by_path[base]
+
+
+def test_audit_route_accepts_razorpay():
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from app.engines.platform_notifications.admin_router import admin_channel_configuration_audit
+    db = MagicMock()
+    request = MagicMock()
+    request.state.request_id = "req_test"
+    with __import__("unittest.mock", fromlist=["patch"]).patch(
+        "app.engines.platform_notifications.admin_router.channel_config_service.audit", AsyncMock(return_value=[])
+    ):
+        result = asyncio.get_event_loop().run_until_complete(
+            admin_channel_configuration_audit("razorpay", request, 50, MagicMock(), db)
+        )
+    assert result.data == {"items": []}

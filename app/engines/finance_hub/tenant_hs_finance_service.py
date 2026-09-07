@@ -967,6 +967,7 @@ class TenantHomeServicesFinanceService:
                    "vertical_key": HOME_SERVICES_VERTICAL_KEY,
                    "policy_version": str(policy_version) if policy_version else "package",
                    **({"credit_package_id": str(credit_package_id)} if credit_package_id else {})},
+            db=self.db,
         )
 
         rec = CreditTopupOrder(
@@ -986,7 +987,6 @@ class TenantHomeServicesFinanceService:
                                  "total_payable": str(gross), **audit_extra})
         await self.db.commit()
 
-        from app.config import get_settings
         return {
             **rec.to_dict(),
             "quantity": quantity,
@@ -999,7 +999,7 @@ class TenantHomeServicesFinanceService:
             "gateway": "razorpay",
             "gateway_order_id": gw["id"],
             "amount_paise": int(gross * 100),
-            "key": get_settings().RAZORPAY_KEY_ID,
+            "key": await razorpay_client.get_key_id(self.db),
             "note": "No credits are posted until Fuvay verifies the payment signature server-side.",
         }
 
@@ -1025,7 +1025,7 @@ class TenantHomeServicesFinanceService:
             raise NotFoundException("CreditTopupOrder", gateway_order_id)
 
         if not signature_verified:
-            if not razorpay_client.verify_payment_signature(gateway_order_id, gateway_payment_id, signature or ""):
+            if not await razorpay_client.verify_payment_signature(gateway_order_id, gateway_payment_id, signature or "", db=self.db):
                 order.payment_status = "failed"
                 order.failure_reason = "Gateway signature verification failed"
                 await self.db.commit()

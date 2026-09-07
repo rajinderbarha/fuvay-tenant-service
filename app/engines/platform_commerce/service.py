@@ -243,7 +243,8 @@ class CommerceService:
         if not p: raise NotFoundException("CreditPackage", str(pkg_id))
         order = await razorpay_client.create_order(
             p.price_inr, receipt=f"purchase_{tid}_{pkg_id}",
-            notes={"tenant_id": str(tid), "package_id": str(pkg_id), "type": "credit_purchase"})
+            notes={"tenant_id": str(tid), "package_id": str(pkg_id), "type": "credit_purchase"},
+            db=self.db)
         total = float(p.credits_amount * (1 + p.bonus_pct/100))
         from app.engines.finance_hub.models import CreditTopupOrder
         topup = CreditTopupOrder(
@@ -258,7 +259,7 @@ class CommerceService:
         return {"order_id": order["id"], "package_id": str(pkg_id), "package_name": p.name,
                 "credits_to_receive": total, "amount": float(p.price_inr), "currency": "INR",
                 "amount_paise": int(p.price_inr*100), "gateway": gateway,
-                "key": get_settings().RAZORPAY_KEY_ID,
+                "key": await razorpay_client.get_key_id(self.db),
                 "topup_order_id": str(topup.id)}
 
     async def confirm_purchase(self, tid, pkg_id, order_id, payment_id, signature):
@@ -285,7 +286,7 @@ class CommerceService:
                     "bonus_credits": float(total - p.credits_amount),
                     "payment_id": payment_id, "idempotent": True}
 
-        if not razorpay_client.verify_payment_signature(order_id, payment_id, signature):
+        if not await razorpay_client.verify_payment_signature(order_id, payment_id, signature, db=self.db):
             if topup:
                 topup.payment_status = "failed"
                 topup.wallet_credit_status = "failed"

@@ -97,10 +97,11 @@ class PaymentService:
         order = await razorpay_client.create_order(
             amount, receipt=receipt,
             notes={"tenant_id": str(tenant_id), "payment_type": payment_type,
-                   **({"booking_id": booking_id} if booking_id else {})})
+                   **({"booking_id": booking_id} if booking_id else {})},
+            db=self.db)
         return {"order_id": order["id"], "amount": float(amount), "currency": "INR",
                 "amount_paise": int(amount * 100), "gateway": gateway,
-                "key": get_settings().RAZORPAY_KEY_ID,
+                "key": await razorpay_client.get_key_id(self.db),
                 "tenant_id": str(tenant_id), "booking_id": booking_id}
 
     # PROVEN LEVEL 5: webhook idempotency on gateway_payment_id

@@ -38,7 +38,7 @@ async def create_order(r: Request, u: UserContext=Depends(require_tenant_mutatio
 async def payment_webhook(r: Request, s: PaymentService=Depends(lambda r, db=Depends(get_db): PaymentService(db=db))) -> ApiResponse[dict]:
     raw_body = await r.body()
     sig = r.headers.get("x-razorpay-signature", "")
-    if not razorpay_client.verify_webhook_signature(raw_body, sig):
+    if not await razorpay_client.verify_webhook_signature(raw_body, sig, db=s.db):
         raise ServiceOSException("WEBHOOK_VERIFICATION_FAILED", "Invalid Razorpay webhook signature.")
     body = await r.json()
     return ok(await s.process_payment_webhook(

@@ -252,7 +252,7 @@ async def topup_webhook(r: Request, db: AsyncSession = Depends(get_db)):
     idempotency key, and returns idempotent=true rather than an error."""
     raw = await r.body()
     sig = r.headers.get("x-razorpay-signature", "")
-    if not razorpay_client.verify_webhook_signature(raw, sig):
+    if not await razorpay_client.verify_webhook_signature(raw, sig, db=db):
         raise ServiceOSException("WEBHOOK_VERIFICATION_FAILED",
                                  "Invalid Razorpay webhook signature.", status_code=400)
     body = await r.json()

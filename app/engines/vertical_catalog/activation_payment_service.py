@@ -150,6 +150,7 @@ async def resolve_activation_funding_quote(db: AsyncSession, tenant_id: uuid.UUI
 
 async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID, *, plan_id: uuid.UUID | None = None) -> dict:
     """Create one checkout for the exact live shortfall and allocate it on capture."""
+    await razorpay_client.require_configured(db)
     vertical, policy = await _resolve_vertical_and_policy(db, tenant_id)
     quote = await resolve_activation_funding_quote(db, tenant_id)
     if plan_id is not None:
@@ -190,6 +191,9 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
             ActivationPaymentOrder.tenant_id == tenant_id,
             ActivationPaymentOrder.payment_kind == PAYMENT_KIND_FUNDING,
             ActivationPaymentOrder.status == STATUS_CREATED,
+            # Older unconfigured servers persisted non-payable placeholder
+            # orders. Keep their history but never hand them to Checkout.
+            ActivationPaymentOrder.gateway_order_id.notlike("order_local_%"),
             ActivationPaymentOrder.topup_plan_id == uuid.UUID(str(quote["suggested_plan"]["id"])),
             ActivationPaymentOrder.amount == gross_amount,
             ActivationPaymentOrder.credited_amount == _money(quote["suggested_plan"]["credited_amount"]),
@@ -226,6 +230,7 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
                 "credit_amount": str(_money(quote["suggested_plan"]["credited_amount"])),
                 "tax_amount": str(_money(quote["suggested_plan"]["gst_amount"])),
             },
+            db=db,
         )
         pending = ActivationPaymentOrder(
             tenant_id=tenant_id,
@@ -250,13 +255,12 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
         order_id = raw["id"]
         reused = False
 
-    from app.config import get_settings
     return {
         "order_id": order_id,
         "amount": float(gross_amount),
         "amount_paise": int(gross_amount * 100),
         "currency": "INR",
-        "key": get_settings().RAZORPAY_KEY_ID,
+        "key": await razorpay_client.get_key_id(db),
         "payment_kind": PAYMENT_KIND_FUNDING,
         "activation_payment_order_id": str(pending.id),
         "topup_plan": quote["suggested_plan"],
@@ -297,7 +301,8 @@ async def create_credit_package_order(db: AsyncSession, tenant_id: uuid.UUID) ->
     order = await razorpay_client.create_order(
         gross_amount, receipt=receipt,
         notes={"tenant_id": str(tenant_id), "payment_kind": PAYMENT_KIND_CREDIT,
-               "vertical_key": HOME_SERVICES_VERTICAL_KEY})
+               "vertical_key": HOME_SERVICES_VERTICAL_KEY},
+        db=db)
 
     rec = ActivationPaymentOrder(
         tenant_id=tenant_id, vertical_id=v.id, payment_kind=PAYMENT_KIND_CREDIT,
@@ -310,10 +315,9 @@ async def create_credit_package_order(db: AsyncSession, tenant_id: uuid.UUID) ->
     db.add(rec)
     await db.commit()
 
-    from app.config import get_settings
     return {"order_id": order["id"], "amount": float(gross_amount),
             "amount_paise": int(gross_amount * 100), "currency": "INR",
-            "key": get_settings().RAZORPAY_KEY_ID,
+            "key": await razorpay_client.get_key_id(db),
             "payment_kind": PAYMENT_KIND_CREDIT, "activation_payment_order_id": str(rec.id),
             "credited_amount": float(policy.credit_package_base_amount),
             "tax_amount": float(gross_amount - policy.credit_package_base_amount)}
@@ -334,7 +338,7 @@ async def confirm_activation_checkout(
     updates the activation UI.  The browser supplies identifiers/signature,
     never an amount or allocation.
     """
-    if not razorpay_client.verify_payment_signature(gateway_order_id, gateway_payment_id, signature):
+    if not await razorpay_client.verify_payment_signature(gateway_order_id, gateway_payment_id, signature, db=db):
         raise ServiceOSException(
             "ACTIVATION_PAYMENT_SIGNATURE_INVALID",
             "Payment confirmation signature is invalid.",
@@ -381,7 +385,7 @@ async def reconcile_activation_order(
     if order_row.status == STATUS_CAPTURED:
         return {**order_row.to_dict(), "idempotent": True, "reconciled": True}
 
-    payments = await razorpay_client.get_order_payments(gateway_order_id)
+    payments = await razorpay_client.get_order_payments(gateway_order_id, db=db)
     expected_paise = int(_money(order_row.amount) * 100)
     captured = next((
         payment for payment in payments

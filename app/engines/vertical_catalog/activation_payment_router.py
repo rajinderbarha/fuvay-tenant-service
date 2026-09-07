@@ -29,7 +29,9 @@ from app.engines.vertical_catalog.activation_payment_service import (
     confirm_activation_payment_webhook,
 )
 
-router = APIRouter(prefix="/v1/tenant/home-services/activation", tags=["Tenant Activation Payments"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/home-services/activation", tags=["Tenant Activation Payments"])
 
 
 def _tid(user: UserContext) -> uuid.UUID:
@@ -128,14 +130,14 @@ async def activation_payment_webhook(
     same function payment/router.py's proven webhook already uses)."""
     raw_body = await request.body()
     sig = request.headers.get("x-razorpay-signature", "")
-    from app.config import get_settings
-    if not get_settings().RAZORPAY_WEBHOOK_SECRET:
+    _, _, webhook_secret = await razorpay_client._resolve_credentials(db)
+    if not webhook_secret:
         raise ServiceOSException(
             "ACTIVATION_WEBHOOK_NOT_CONFIGURED",
             "Activation webhook is disabled until a Razorpay webhook secret is configured.",
             status_code=503,
         )
-    if not razorpay_client.verify_webhook_signature(raw_body, sig):
+    if not await razorpay_client.verify_webhook_signature(raw_body, sig, db=db):
         raise ServiceOSException("WEBHOOK_VERIFICATION_FAILED", "Invalid Razorpay webhook signature.")
 
     body = await request.json()
