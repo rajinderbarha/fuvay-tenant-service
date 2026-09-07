@@ -1,248 +1,245 @@
-"""Tenant selection of checklist points per service (minimum 5).
-
-Division of responsibility this enforces:
-  ADMIN  authors the library -- checklist_catalog templates/versions/
-         sections/items, already complete and super-admin guarded.
-  TENANT chooses which of those points its technicians must complete for a
-         given service, at least MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE.
-
-Real gap these close: `job_type_checklist_mappings` links a published version
-to a job type PLATFORM-wide, so every provider ran the identical authored list
-and there was no way for one to run a chosen subset. `_instance_items` handed
-technicians everything the admin wrote.
-
-Exercised against any current tenant/service fixture with a real authored
-template (no mocks), because the rules being proven are enforced by a real UNIQUE
-constraint and by walking the real master_service -> job_type -> mapping ->
-published version -> section -> item chain.
-"""
-from __future__ import annotations
-
+"""Checklist authoring/tenant regression tests, isolated from .env and live databases."""
 import uuid
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import text as sa_text
+from sqlalchemy import JSON, MetaData, create_engine, select, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Session
+from starlette.requests import Request
 
-from app.engines.checklist_catalog import constants as c
-from app.engines.checklist_catalog import service as svc
+from app.engines.admin_catalog.models import MasterServiceJobType, MasterDataAuditLog, MasterService, TenantService
+from app.engines.checklist_catalog import constants as c, service as svc, admin_router as routes
+from app.engines.checklist_catalog.models import (
+    ChecklistTemplate, ChecklistTemplateVersion, ChecklistSection, ChecklistItem,
+    JobTypeChecklistMapping, JobChecklistInstance, JobChecklistResponse, TenantServiceChecklistItem,
+)
 from app.exceptions import ServiceOSException
 
-ITEM_LABELS = [
-    "Check gas pressure", "Clean filters", "Test cooling output",
-    "Inspect drainage", "Check electrical connections",
-    "Verify remote function", "Confirm customer sign-off",
-]
+
+class AsyncSessionAdapter:
+    """Async interface around a private synchronous SQLite session."""
+    def __init__(self, session): self.session = session
+    def add(self, value): self.session.add(value)
+    async def flush(self): self.session.flush()
+    async def commit(self): self.session.commit()
+    async def rollback(self): self.session.rollback()
+    async def execute(self, *args, **kwargs): return self.session.execute(*args, **kwargs)
+    async def scalar(self, *args, **kwargs): return self.session.scalar(*args, **kwargs)
+    async def get(self, *args, **kwargs): return self.session.get(*args, **kwargs)
+    async def delete(self, value): self.session.delete(value)
+    @asynccontextmanager
+    async def begin_nested(self):
+        with self.session.begin_nested():
+            yield
 
 
-async def _get_db():
-    from app.database import get_session_factory, init_db
-    await init_db()
-    return get_session_factory()()
+@pytest.fixture
+def checklist_db():
+    engine = create_engine("sqlite://")
+    metadata = MetaData()
+    for model in (ChecklistTemplate, ChecklistTemplateVersion, ChecklistSection, ChecklistItem,
+                  JobTypeChecklistMapping, JobChecklistInstance, JobChecklistResponse,
+                  TenantServiceChecklistItem, MasterServiceJobType, MasterDataAuditLog, MasterService, TenantService):
+        table = model.__table__.to_metadata(metadata)
+        for column in table.columns:
+            if isinstance(column.type, JSONB): column.type = JSON(none_as_null=True)
+    metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        session.execute(text("CREATE TABLE service_jobs (id TEXT, tenant_id TEXT, offering_id TEXT)"))
+        db = AsyncSessionAdapter(session)
+        link = MasterServiceJobType(master_service_id=uuid.uuid4(), job_type_id=uuid.uuid4(), is_active=True)
+        session.add(link)
+        session.commit()
+        yield db, link, uuid.uuid4()
+    engine.dispose()
 
 
-async def _current_tenant_service_and_job_type(db):
-    """Use current platform configuration, never a deleted demo tenant/catalog."""
-    row = (await db.execute(sa_text("""
-        SELECT t.id AS tenant_id, ms.id AS service_id, jt.id AS job_type_id
-        FROM tenants t
-        CROSS JOIN master_services ms
-        JOIN master_service_job_types jt ON jt.master_service_id = ms.id
-        WHERE t.terminated_at IS NULL AND t.archived_at IS NULL
-        ORDER BY t.created_at, ms.created_at
-        LIMIT 1
-    """))).fetchone()
-    if not row:
-        pytest.skip("current database has no tenant plus service/job-type fixture")
-    return row.tenant_id, row.service_id, row.job_type_id
+async def authored(db, link, count=7):
+    template = await svc.create_template(db, name="Field checks", code="FIELD_" + uuid.uuid4().hex,
+        description=None, purpose="INSPECTION", owner_scope="PLATFORM", tenant_id=None, created_by_user_id=None)
+    draft = await svc.get_draft_version(db, template.id)
+    section = await svc.add_section(db, draft, "Inspection")
+    items = [await svc.add_item(db, section, draft, item_type="CHECKBOX", label=f"Check {index}", display_order=index)
+             for index in range(count)]
+    await svc.publish_version(db, draft, published_by=None)
+    mapping = await svc.create_mapping(db, master_service_job_type_id=link.id, service_job_workflow_id=None,
+        checklist_template_version_id=draft.id, phase="inspection", usage="REQUIRED", actor="TECHNICIAN",
+        completion_gate="NONE", condition_rules=None, display_order=0, created_by=None)
+    return template, draft, section, items, mapping
 
 
-async def _author_published_checklist(db, job_type_id, *, item_count: int = 7):
-    """Real admin-side authoring: template -> draft version -> section -> items
-    -> publish -> map to the job type. Returns (version_id, mapping_id)."""
-    tpl = await svc.create_template(
-        db, name="AC Service Field Checklist (test)", code=f"ac-test-{uuid.uuid4().hex[:8]}",
-        purpose=c.PURPOSE_INSPECTION, description="test fixture", icon_url=None,
-        owner_scope=c.OWNER_SCOPE_PLATFORM, tenant_id=None, created_by_user_id=None,
-    )
-    version = await svc.get_draft_version(db, tpl.id)
-    section = await svc.add_section(db, version, "On-site checks", 0)
-    for i, label in enumerate(ITEM_LABELS[:item_count]):
-        await svc.add_item(db, section, version, item_type=c.ITEM_TYPE_CHECKBOX,
-                           label=label, is_required=True, display_order=i)
-    await svc.publish_version(db, version, published_by=None)
-    mapping = await svc.create_mapping(
-        db, master_service_job_type_id=job_type_id,
-        checklist_template_version_id=version.id,
-        phase="INSPECTION", usage="REQUIRED", actor="TECHNICIAN",
-        completion_gate="NONE", condition_rules=None, display_order=0,
-        service_job_workflow_id=None, created_by=None,
-    )
-    await db.commit()
-    return tpl.id, version.id, mapping.id
+def request():
+    return Request({"type": "http", "method": "POST", "path": "/", "headers": []})
 
 
-async def _cleanup(db, tenant_id, template_id, version_id, mapping_id):
-    await db.rollback()
-    if mapping_id:
-        await db.execute(sa_text("DELETE FROM job_type_checklist_mappings WHERE id=:i"),
-                         {"i": str(mapping_id)})
-    await db.execute(sa_text(
-        "DELETE FROM tenant_service_checklist_items WHERE tenant_id=:t"), {"t": str(tenant_id)})
-    if version_id:
-        await db.execute(sa_text(
-            "DELETE FROM checklist_items WHERE checklist_section_id IN "
-            "(SELECT id FROM checklist_sections WHERE checklist_template_version_id=:v)"),
-            {"v": str(version_id)})
-        await db.execute(sa_text(
-            "DELETE FROM checklist_sections WHERE checklist_template_version_id=:v"),
-            {"v": str(version_id)})
-        await db.execute(sa_text("DELETE FROM checklist_template_versions WHERE id=:v"),
-                         {"v": str(version_id)})
-    if template_id:
-        await db.execute(sa_text("DELETE FROM checklist_templates WHERE id=:t"),
-                         {"t": str(template_id)})
-    await db.commit()
+@pytest.mark.asyncio
+async def test_tenant_requirements_show_exact_published_content_and_enforce_scope(checklist_db, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+    from app.engines.admin_catalog.service_option_service import ServiceOptionService
+    from app.engines.admin_catalog.question_service import CatalogQuestionService
+    db, link, tenant = checklist_db
+    _, version, _, items, mapping = await authored(db, link)
+    category_id = uuid.uuid4()
+    db.add(MasterService(id=link.master_service_id, category_id=category_id, service_name="AC repair",
+                         slug="ac-repair", job_type="repair", pricing_model="FIXED"))
+    db.add(TenantService(tenant_id=tenant, master_service_id=link.master_service_id,
+                         category_id=category_id, job_type="repair", job_type_id=link.job_type_id))
+    other_link = MasterServiceJobType(master_service_id=link.master_service_id, job_type_id=uuid.uuid4(), is_active=True)
+    db.add(other_link)
+    await db.flush()
+    await authored(db, other_link)
+    monkeypatch.setattr(ServiceOptionService, "list_service_issue_mappings", AsyncMock(return_value=[]))
+    monkeypatch.setattr(ServiceOptionService, "list_service_option_mappings", AsyncMock(return_value=[]))
+    monkeypatch.setattr(CatalogQuestionService, "list_questions", AsyncMock(return_value={"questions": []}))
+    catalog = TenantCatalogService(db, actor_tenant_id=tenant, actor_role="TENANT_ADMIN")
+    result = await catalog.get_service_requirements(link.master_service_id, tenant, link.job_type_id)
+    assert len(result["checklists"]) == 1
+    checklist = result["checklists"][0]
+    assert checklist["mapping_id"] == str(mapping.id)
+    assert checklist["version_number"] == version.version_number
+    assert [row["label"] for row in checklist["items"]] == [item.label for item in items]
+    assert checklist["actor"] == "TECHNICIAN" and checklist["usage"] == "REQUIRED"
+    assert checklist["items"][0]["section_title"] == "Inspection"
+    for tenant_id, job_type in [(uuid.uuid4(), link.job_type_id), (tenant, other_link.job_type_id)]:
+        with pytest.raises(ServiceOSException) as error:
+            await catalog.get_service_requirements(link.master_service_id, tenant_id, job_type)
+        assert error.value.status_code == 403
+    mapping.usage = "DISABLED"
+    await db.flush()
+    result = await catalog.get_service_requirements(link.master_service_id, tenant, link.job_type_id)
+    assert result["checklists"] == []
 
 
 def test_the_minimum_is_the_product_specified_five():
     assert c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE == 5
 
 
-@pytest.mark.asyncio
-async def test_nothing_authored_is_reported_as_an_admin_gap_not_a_tenant_failure():
-    """A tenant must never be told to "pick 5" from an empty list -- if the
-    admin has published no checklist for the service, that is distinguishable."""
-    db = await _get_db()
-    try:
-        tenant_id, sid, _ = await _current_tenant_service_and_job_type(db)
-        await db.execute(sa_text(
-            "DELETE FROM tenant_service_checklist_items WHERE tenant_id=:t"),
-            {"t": str(tenant_id)})
-        await db.commit()
-        readiness = await svc.tenant_selection_readiness(db, tenant_id, sid)
-        if readiness["selectable_total"] == 0:
-            assert readiness["nothing_authored"] is True
-            assert readiness["satisfied"] is False
-    finally:
-        await db.close()
+def test_all_authoring_mutations_require_platform_admin():
+    from app.dependencies.auth import require_super_admin
+    mutations = [route for route in routes.router.routes if route.methods & {"POST", "PUT", "DELETE", "PATCH"}]
+    assert mutations
+    for route in mutations:
+        assert require_super_admin in [dependency.call for dependency in route.dependant.dependencies], route.path
 
 
 @pytest.mark.asyncio
-async def test_selection_rules_against_a_real_authored_checklist():
-    db = await _get_db()
-    tpl_id = ver_id = map_id = None
-    try:
-        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
-        assert jt is not None, "AC Service must have a job type to map a checklist to"
-        tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
-
-        selectable = await svc.selectable_items_for_service(db, sid)
-        # Assert about THIS fixture's points, not the total: real seeded content
-        # is also legitimately offerable for this service.
-        by_label = {i["label"]: i for i in selectable}
-        for label in ITEM_LABELS:
-            assert label in by_label, f"{label!r} must be offerable once authored+published+mapped"
-        ids = [uuid.UUID(by_label[label]["id"]) for label in ITEM_LABELS]
-
-        # Below the minimum is refused, and the message carries the real count.
-        with pytest.raises(ServiceOSException) as exc:
-            await svc.set_tenant_selection(db, tenant_id, sid, ids[:4],
-                                           selected_by_user_id=None)
-        assert exc.value.error_code == c.ERR_CHECKLIST_SELECTION_TOO_SMALL
-
-        # A point that is not authored for THIS service is refused, even when
-        # the count would otherwise pass.
-        with pytest.raises(ServiceOSException) as exc:
-            await svc.set_tenant_selection(
-                db, tenant_id, sid, ids[:4] + [uuid.uuid4()],
-                selected_by_user_id=None)
-        assert exc.value.error_code == c.ERR_CHECKLIST_ITEM_NOT_SELECTABLE
-
-        # Duplicates must not be counted as distinct points -- otherwise the
-        # same tick six times would satisfy a five-point requirement.
-        with pytest.raises(ServiceOSException) as exc:
-            await svc.set_tenant_selection(db, tenant_id, sid, [ids[0]] * 6,
-                                           selected_by_user_id=None)
-        assert exc.value.error_code == c.ERR_CHECKLIST_SELECTION_TOO_SMALL
-
-        # Exactly the minimum is accepted.
-        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[:5],
-                                                    selected_by_user_id=None)
-        await db.commit()
-        assert readiness["satisfied"] is True
-        assert readiness["selected_count"] == 5
-        assert readiness["shortfall"] == 0
-    finally:
-        if 'tenant_id' in locals():
-            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
-        await db.close()
+async def test_library_creation_starts_editable_unmapped_and_duplicate_code_is_actionable(checklist_db):
+    db, _, _ = checklist_db
+    user = SimpleNamespace(user_id=uuid.uuid4())
+    body = {"name": " Before work ", "code": " pre_work ", "purpose": "PRE_WORK"}
+    await routes.create_template(body, request(), user, db)
+    template = (await db.execute(select(ChecklistTemplate))).scalars().one()
+    assert template.name == "Before work" and template.code == "PRE_WORK"
+    assert template.created_by_user_id == user.user_id
+    latest = await routes.get_latest_version(str(template.id), request(), user, db)
+    assert latest.data["status"] == "DRAFT" and latest.data["sections"] == []
+    assert not (await db.execute(select(JobTypeChecklistMapping))).scalars().all()
+    with pytest.raises(ServiceOSException) as error:
+        await routes.create_template(body, request(), user, db)
+    assert error.value.status_code == 409
+    assert "different code" in error.value.detail
 
 
 @pytest.mark.asyncio
-async def test_changing_the_selection_deactivates_rather_than_deletes():
-    """A deselected point stays on record so support can still explain why a
-    step was not performed on an older job -- and so re-selecting it cannot
-    violate the (tenant, service, item) unique constraint."""
-    db = await _get_db()
-    tpl_id = ver_id = map_id = None
-    try:
-        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
-        tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
-        ids = [uuid.UUID(i["id"]) for i in await svc.selectable_items_for_service(db, sid)]
-
-        await svc.set_tenant_selection(db, tenant_id, sid, ids[:5], selected_by_user_id=None)
-        await db.commit()
-        # Swap two points out for two others.
-        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[2:7],
-                                                    selected_by_user_id=None)
-        await db.commit()
-
-        assert readiness["selected_count"] == 5
-        rows = dict((bool(a), int(n)) for a, n in (await db.execute(sa_text(
-            "SELECT is_active, count(*) FROM tenant_service_checklist_items "
-            "WHERE tenant_id=:t AND master_service_id=:s GROUP BY is_active"),
-            {"t": str(tenant_id), "s": str(sid)})).fetchall())
-        assert rows.get(True) == 5, "five points active after the swap"
-        assert rows.get(False) == 2, "the two dropped points are retained, deactivated"
-
-        # Re-selecting a deactivated point reactivates the same row.
-        readiness = await svc.set_tenant_selection(db, tenant_id, sid, ids[:5],
-                                                    selected_by_user_id=None)
-        await db.commit()
-        assert readiness["selected_count"] == 5
-        total = (await db.execute(sa_text(
-            "SELECT count(*) FROM tenant_service_checklist_items "
-            "WHERE tenant_id=:t AND master_service_id=:s"),
-            {"t": str(tenant_id), "s": str(sid)})).scalar()
-        assert total == 7, "no duplicate rows created by re-selecting"
-    finally:
-        if 'tenant_id' in locals():
-            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
-        await db.close()
+async def test_no_authored_points_reports_admin_gap(checklist_db):
+    db, link, tenant = checklist_db
+    result = await svc.tenant_selection_readiness(db, tenant, link.master_service_id)
+    assert result["nothing_authored"] and not result["satisfied"]
 
 
 @pytest.mark.asyncio
-async def test_a_draft_version_is_never_offerable_to_a_tenant():
-    """Selecting from an unpublished draft would let an admin's unfinished edit
-    change what technicians are asked to do in the field."""
-    db = await _get_db()
-    tpl_id = ver_id = map_id = None
-    try:
-        tenant_id, sid, jt = await _current_tenant_service_and_job_type(db)
-        tpl_id, ver_id, map_id = await _author_published_checklist(db, jt)
-        mine = {i["label"] for i in await svc.selectable_items_for_service(db, sid)}
-        assert set(ITEM_LABELS) <= mine, "this fixture's points start out offerable"
+async def test_selection_roundtrip_and_tenant_isolation(checklist_db):
+    db, link, tenant = checklist_db
+    _, _, _, items, _ = await authored(db, link)
+    for ids in ([row.id for row in items[:4]], [items[0].id] * 5):
+        with pytest.raises(ServiceOSException):
+            await svc.set_tenant_selection(db, tenant, link.master_service_id, ids, selected_by_user_id=None)
+    with pytest.raises(ServiceOSException):
+        await svc.set_tenant_selection(db, tenant, link.master_service_id, [row.id for row in items[:4]] + [uuid.uuid4()], selected_by_user_id=None)
+    result = await svc.set_tenant_selection(db, tenant, link.master_service_id, [row.id for row in items[:5]], selected_by_user_id=None)
+    assert result["satisfied"] and result["selected_count"] == 5
+    assert (await svc.tenant_selection_readiness(db, uuid.uuid4(), link.master_service_id))["selected_count"] == 0
+    await svc.set_tenant_selection(db, tenant, link.master_service_id, [row.id for row in items[2:]], selected_by_user_id=None)
+    rows = (await db.execute(select(TenantServiceChecklistItem))).scalars().all()
+    assert len(rows) == 7 and sum(row.is_active for row in rows) == 5
 
-        # Force the mapped version back to DRAFT: its items must vanish from
-        # the tenant's selectable list.
-        await db.execute(sa_text(
-            "UPDATE checklist_template_versions SET status=:s WHERE id=:v"),
-            {"s": c.VERSION_DRAFT, "v": str(ver_id)})
-        await db.commit()
-        after = {i["label"] for i in await svc.selectable_items_for_service(db, sid)}
-        assert not (set(ITEM_LABELS) & after), \
-            "a DRAFT version's points must vanish from the tenant's selectable list"
-    finally:
-        if 'tenant_id' in locals():
-            await _cleanup(db, tenant_id, tpl_id, ver_id, map_id)
-        await db.close()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retirement", ["mapping", "usage", "template", "version", "job_type"])
+async def test_retired_content_does_not_count_as_ready(checklist_db, retirement):
+    db, link, tenant = checklist_db
+    template, version, _, items, mapping = await authored(db, link)
+    await svc.set_tenant_selection(db, tenant, link.master_service_id, [row.id for row in items[:5]], selected_by_user_id=None)
+    if retirement == "mapping": mapping.status = "disabled"
+    if retirement == "usage": mapping.usage = "DISABLED"
+    if retirement == "template": template.status = "archived"
+    if retirement == "version": version.status = "DRAFT"
+    if retirement == "job_type": link.is_active = False
+    await db.flush()
+    result = await svc.tenant_selection_readiness(db, tenant, link.master_service_id)
+    assert result["selected_count"] == 0 and not result["satisfied"]
+
+
+@pytest.mark.asyncio
+async def test_draft_edits_do_not_change_published_content_or_job_snapshot(checklist_db):
+    db, link, tenant = checklist_db
+    template, published, _, items, mapping = await authored(db, link)
+    job = SimpleNamespace(id=uuid.uuid4(), tenant_id=tenant)
+    instance = await svc.ensure_instance(db, job, mapping)
+    draft = await svc.get_draft_version(db, template.id)
+    assert draft.id != published.id and draft.status == "DRAFT"
+    section = (await db.execute(select(ChecklistSection).where(ChecklistSection.checklist_template_version_id == draft.id))).scalars().one()
+    edited = (await db.execute(select(ChecklistItem).where(ChecklistItem.checklist_section_id == section.id))).scalars().first()
+    await svc.update_item(db, edited, draft, {"label": "Updated draft check"})
+    assert items[0].label == "Check 0"
+    with pytest.raises(ServiceOSException):
+        await svc.update_item(db, items[0], published, {"label": "Forbidden"})
+    await svc.publish_version(db, draft, published_by=None)
+    assert instance.checklist_template_version_id == published.id
+
+
+@pytest.mark.asyncio
+async def test_quick_create_is_atomic_when_mapping_fails(checklist_db):
+    db, link, _ = checklist_db
+    payload = {"name": "Atomic", "code": "ATOMIC", "items": ["Check power"], "purpose": "INSPECTION",
+               "master_service_job_type_id": str(link.id), "completion_gate": "REQUIRE_BEFORE_HANDOVER"}
+    with pytest.raises(ServiceOSException):
+        await routes.quick_create_mapping(payload, request(), user=SimpleNamespace(user_id=uuid.uuid4()), db=db)
+    assert (await db.execute(select(ChecklistTemplate))).scalars().all() == []
+    assert (await db.execute(select(JobTypeChecklistMapping))).scalars().all() == []
+    payload["completion_gate"] = "NONE"
+    await routes.quick_create_mapping(payload, request(), user=SimpleNamespace(user_id=uuid.uuid4()), db=db)
+    assert len((await db.execute(select(ChecklistTemplate))).scalars().all()) == 1
+    assert len((await db.execute(select(JobTypeChecklistMapping))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_draft_item_and_section_endpoints_reject_published_edits(checklist_db):
+    db, link, _ = checklist_db
+    template, published, section, items, _ = await authored(db, link)
+    user = SimpleNamespace(user_id=uuid.uuid4())
+    with pytest.raises(ServiceOSException): await routes.delete_item(items[0].id, request(), user=user, db=db)
+    with pytest.raises(ServiceOSException): await routes.delete_section(section.id, request(), user=user, db=db)
+    draft = await svc.get_draft_version(db, template.id)
+    section = (await db.execute(select(ChecklistSection).where(ChecklistSection.checklist_template_version_id == draft.id))).scalars().one()
+    item = (await db.execute(select(ChecklistItem).where(ChecklistItem.checklist_section_id == section.id))).scalars().first()
+    await routes.update_item(item.id, {"label": "Changed"}, request(), user=user, db=db)
+    assert item.label == "Changed"
+    await routes.update_section(section.id, {"title": "Renamed"}, request(), user=user, db=db)
+    await routes.delete_item(item.id, request(), user=user, db=db)
+    await routes.delete_section(section.id, request(), user=user, db=db)
+    assert (await db.execute(select(ChecklistItem).where(ChecklistItem.checklist_section_id == section.id))).scalars().all() == []
+
+
+@pytest.mark.parametrize("fields", [
+    {"item_type": "CHECKBOX", "label": " "},
+    {"item_type": "CHECKBOX", "label": "Power", "evidence_required": True},
+    {"item_type": "SINGLE_SELECT", "label": "Status"},
+    {"item_type": "MULTI_SELECT", "label": "Status", "select_options": [{"value": "same", "label": "A"}, {"value": "same", "label": "B"}]},
+    {"item_type": "PHOTO", "label": "Photo", "min_evidence_count": 3, "max_evidence_count": 1},
+])
+def test_invalid_item_definitions_are_rejected(fields):
+    with pytest.raises(ServiceOSException): svc.validate_item_fields(fields)

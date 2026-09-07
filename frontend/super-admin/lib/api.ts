@@ -10152,6 +10152,18 @@ export const checklistCatalogApi = {
     apiFetch<ChecklistItemRow>(`/v1/admin/checklist-catalog/sections/${sectionId}/items`, {
       method: "POST", body: JSON.stringify(data),
     }),
+  updateItem: (itemId: string, data: Partial<ChecklistItemRow>) =>
+    apiFetch<ChecklistItemRow>(`/v1/admin/checklist-catalog/items/${itemId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteItem: (itemId: string) =>
+    apiFetch<{ deleted: boolean }>(`/v1/admin/checklist-catalog/items/${itemId}`, { method: "DELETE" }),
+  updateSection: (sectionId: string, data: { title: string; display_order?: number }) =>
+    apiFetch<ChecklistSectionRow>(`/v1/admin/checklist-catalog/sections/${sectionId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteSection: (sectionId: string) =>
+    apiFetch<{ deleted: boolean }>(`/v1/admin/checklist-catalog/sections/${sectionId}`, { method: "DELETE" }),
+  quickCreateMapping: (data: { name: string; code: string; purpose: ChecklistPurpose; items: string[];
+    master_service_job_type_id: string; phase: string; usage: ChecklistUsage; actor: ChecklistActor; completion_gate: ChecklistCompletionGate }) =>
+    apiFetch<{ template_id: string; version_id: string; mapping: JobTypeChecklistMappingRow }>(
+      "/v1/admin/checklist-catalog/quick-create-mapping", { method: "POST", body: JSON.stringify(data) }),
   publishVersion: (versionId: string, changeSummary?: string) =>
     apiFetch<ChecklistTemplateVersionSummary>(`/v1/admin/checklist-catalog/versions/${versionId}/publish`, {
       method: "POST", body: JSON.stringify({ change_summary: changeSummary }),

@@ -42,6 +42,8 @@ async def create_template(
     code = (code or "").strip().upper()
     if not name:
         raise ServiceOSException("CHECKLIST_NAME_REQUIRED", "Checklist name is required.", status_code=422)
+    if len(name) > 200:
+        raise ServiceOSException("CHECKLIST_NAME_INVALID", "Checklist name must be at most 200 characters.", status_code=422)
     if not code or len(code) > 80 or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for ch in code):
         raise ServiceOSException(
             "CHECKLIST_CODE_INVALID",
@@ -165,14 +167,20 @@ def _assert_version_editable(version: ChecklistTemplateVersion) -> None:
 
 async def add_section(db: AsyncSession, version: ChecklistTemplateVersion, title: str, display_order: int = 0) -> ChecklistSection:
     _assert_version_editable(version)
+    title = (title or "").strip()
+    if not title or len(title) > 200:
+        raise ServiceOSException("CHECKLIST_SECTION_INVALID", "Enter a section title of 1–200 characters.", status_code=422)
     section = ChecklistSection(checklist_template_version_id=version.id, title=title, display_order=display_order)
     db.add(section)
     await db.flush()
     return section
 
 
-async def add_item(db: AsyncSession, section: ChecklistSection, version: ChecklistTemplateVersion, **fields: Any) -> ChecklistItem:
-    _assert_version_editable(version)
+def validate_item_fields(fields: dict) -> dict:
+    fields = dict(fields)
+    fields["label"] = str(fields.get("label") or "").strip()
+    if not fields["label"] or len(fields["label"]) > 300:
+        raise ServiceOSException("CHECKLIST_ITEM_VALIDATION_FAILED", "Enter an item label of 1–300 characters.", status_code=422)
     if fields.get("item_type") not in c.ITEM_TYPES:
         raise ServiceOSException("CHECKLIST_ITEM_TYPE_INVALID", "Unknown checklist item type.", status_code=422)
     if fields.get("evidence_required") and fields["item_type"] not in c.EVIDENCE_CAPABLE_ITEM_TYPES:
@@ -180,8 +188,38 @@ async def add_item(db: AsyncSession, section: ChecklistSection, version: Checkli
             "CHECKLIST_ITEM_VALIDATION_FAILED",
             "Evidence can only be required for photo/document/signature items.", status_code=422,
         )
+    minimum = fields.get("min_evidence_count", 0)
+    maximum = fields.get("max_evidence_count", 1)
+    if type(minimum) is not int or type(maximum) is not int or minimum < 0 or maximum < max(minimum, 1):
+        raise ServiceOSException(c.ERR_CHECKLIST_ITEM_VALIDATION_FAILED, "Evidence limits must be non-negative whole numbers with a maximum of at least one and not below the minimum.", status_code=422)
+    if fields["item_type"] in {c.ITEM_TYPE_SINGLE_SELECT, c.ITEM_TYPE_MULTI_SELECT}:
+        options = fields.get("select_options")
+        if not isinstance(options, list) or len(options) < 2 or any(
+            not isinstance(option, dict) or not isinstance(option.get("value"), str) or not option["value"].strip()
+            or not isinstance(option.get("label"), str) or not option["label"].strip() for option in options
+        ) or len({option["value"] for option in options}) != len(options):
+            raise ServiceOSException(c.ERR_CHECKLIST_ITEM_VALIDATION_FAILED, "Selection items need at least two distinct, labelled choices.", status_code=422)
+    return fields
+
+
+async def add_item(db: AsyncSession, section: ChecklistSection, version: ChecklistTemplateVersion, **fields: Any) -> ChecklistItem:
+    _assert_version_editable(version)
+    fields = validate_item_fields(fields)
     item = ChecklistItem(checklist_section_id=section.id, **fields)
     db.add(item)
+    await db.flush()
+    return item
+
+
+async def update_item(db: AsyncSession, item: ChecklistItem, version: ChecklistTemplateVersion, fields: dict) -> ChecklistItem:
+    _assert_version_editable(version)
+    allowed = {"item_type", "label", "help_text", "is_required", "evidence_required", "min_evidence_count",
+               "max_evidence_count", "allowed_file_types", "measurement_unit", "select_options", "validation_rules",
+               "display_order", "condition_rules", "failure_behavior", "customer_visible"}
+    values = {key: value for key, value in fields.items() if key in allowed}
+    validated = validate_item_fields({**item.to_dict(), **values})
+    for key in values:
+        setattr(item, key, validated[key])
     await db.flush()
     return item
 
@@ -292,6 +330,11 @@ async def create_mapping(
             "Only a published template version may be mapped to a Job Type.", status_code=422,
         )
     template = await db.get(ChecklistTemplate, version.checklist_template_id)
+    if template is None or template.status != c.TEMPLATE_STATUS_ACTIVE:
+        raise ServiceOSException("CHECKLIST_TEMPLATE_RETIRED", "Only an active template can be mapped.", status_code=422)
+    phase = (phase or "").strip().lower()
+    if phase.upper() not in c.TEMPLATE_PURPOSES:
+        raise ServiceOSException("CHECKLIST_PHASE_INVALID", "Select a supported checklist phase.", status_code=422)
     if usage not in c.USAGES:
         raise ServiceOSException("CHECKLIST_USAGE_INVALID", "Unknown usage value.", status_code=422)
     if actor not in c.ACTORS:
@@ -508,7 +551,8 @@ async def _instance_items(db: AsyncSession, instance: JobChecklistInstance) -> l
     selected_ids = await _tenant_selected_item_ids_for_job(db, instance)
     if not selected_ids:
         return items
-    narrowed = [i for i in items if i.id in selected_ids]
+    # A provider's optional selection cannot remove admin-required checks.
+    narrowed = [i for i in items if i.id in selected_ids or i.is_required]
     # If the selection somehow matches nothing in this version (e.g. the admin
     # published a new version with entirely new items), keep the authored list
     # rather than handing the technician an empty checklist.
@@ -669,9 +713,11 @@ async def selectable_items_for_service(
     DRAFT would let an admin's unfinished edit change what technicians are
     asked to do in the field.
     """
-    job_type_ids = [r[0] for r in (await db.execute(_sa_text(
-        "SELECT id FROM master_service_job_types WHERE master_service_id=:sid"
-    ), {"sid": str(master_service_id)})).fetchall()]
+    from app.engines.admin_catalog.models import MasterServiceJobType
+    job_type_ids = (await db.execute(select(MasterServiceJobType.id).where(
+        MasterServiceJobType.master_service_id == master_service_id,
+        MasterServiceJobType.is_active.is_(True),
+    ))).scalars().all()
     if not job_type_ids:
         return []
 
@@ -679,6 +725,7 @@ async def selectable_items_for_service(
         select(JobTypeChecklistMapping).where(
             JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids),
             JobTypeChecklistMapping.status == "active",
+            JobTypeChecklistMapping.usage != c.USAGE_DISABLED,
         ).order_by(JobTypeChecklistMapping.display_order)
     )).scalars().all()
     if not mappings:
@@ -691,6 +738,8 @@ async def selectable_items_for_service(
         if not version or version.status != c.VERSION_PUBLISHED:
             continue
         template = await db.get(ChecklistTemplate, version.checklist_template_id)
+        if template is None or template.status != c.TEMPLATE_STATUS_ACTIVE:
+            continue
         sections = (await db.execute(
             select(ChecklistSection)
             .where(ChecklistSection.checklist_template_version_id == version.id)
@@ -811,6 +860,8 @@ async def tenant_selection_readiness(
     selected = await get_tenant_selection(db, tenant_id, master_service_id)
     minimum = c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE
     selectable_total = len(selectable)
+    selectable_ids = {str(item["id"]) for item in selectable}
+    selected = [row for row in selected if str(row.checklist_item_id) in selectable_ids]
     selected_count = len(selected)
     return {
         "master_service_id": str(master_service_id),

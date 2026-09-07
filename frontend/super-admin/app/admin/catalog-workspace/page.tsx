@@ -8,14 +8,13 @@ import { BLUEPRINT_SETUP_STEPS } from "../../../components/catalog/catalog-setup
 import { AddServiceJobType } from "../../../components/catalog/AddServiceJobType";
 import { preferredJobType } from "../../../components/catalog/service-family";
 import { ServiceFamilyIdentity } from "../../../components/catalog/ServiceFamilyIdentity";
+import { AddChecklistMappingForm } from "../../../components/catalog/AddChecklistMappingForm";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
   type HsConsoleService, type CatalogJobType, type DimensionGridRow, type CatalogDimensionDef,
   type BlueprintReadiness, type BlueprintImpactReport, type BlueprintDraftStatus, type CatalogQuestionItem,
   type CatalogIssueTypeMapping, type ServiceJobWorkflow,
-  type ChecklistUsage, type ChecklistActor,
-  type ChecklistCompletionGate, type ChecklistPurpose, type ChecklistItemType,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -1166,7 +1165,7 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
         )}
       </div>
       {showAdd && (
-        <AddChecklistMappingForm masterServiceJobTypeId={masterServiceJobTypeId}
+        <AddChecklistMappingForm key={masterServiceJobTypeId} masterServiceJobTypeId={masterServiceJobTypeId}
           onAdded={() => { setShowAdd(false); mappingsApi.refetch(); onChanged(); notify("Checklist mapped to this Job Type."); }}
           onError={(msg) => notify(msg, "error")}/>
       )}
@@ -1200,9 +1199,9 @@ function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
                 </div>
                 {disableTarget === m.id && (
                   <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <input autoFocus value={disableReason} onChange={event => setDisableReason(event.target.value)} placeholder="Reason for disabling (minimum 10 characters)"
+                    <input autoFocus value={disableReason} onChange={event => setDisableReason(event.target.value)} placeholder="Reason for disabling (minimum 5 characters)"
                       style={{ flex: 1, minWidth: 260, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--text-primary)", fontSize: 12 }}/>
-                    <button onClick={() => disable(m.id, disableReason.trim())} disabled={disableReason.trim().length < 10 || disablingId === m.id}
+                    <button onClick={() => disable(m.id, disableReason.trim())} disabled={disableReason.trim().length < 5 || disablingId === m.id}
                       style={{ fontSize: 11, fontWeight: 700, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--danger-border)", background: "var(--danger-bg)", color: "var(--danger-text)" }}>Confirm disable</button>
                     <button onClick={() => { setDisableTarget(null); setDisableReason(""); }} style={{ fontSize: 11, border: 0, background: "none", color: "var(--text-secondary)" }}>Cancel</button>
                   </div>
@@ -1226,117 +1225,6 @@ function Chip({ children, tone = "default" }: { children: React.ReactNode; tone?
   );
 }
 
-function AddChecklistMappingForm({ masterServiceJobTypeId, onAdded, onError }: {
-  masterServiceJobTypeId: string;
-  onAdded: () => void; onError: (msg: string) => void;
-}) {
-  const [mode, setMode] = useState<"existing" | "new">("existing");
-  const [versionId, setVersionId] = useState("");
-  const [templateQuery, setTemplateQuery] = useState("");
-  const [debouncedTemplateQuery, setDebouncedTemplateQuery] = useState("");
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedTemplateQuery(templateQuery.trim()), 250);
-    return () => window.clearTimeout(timer);
-  }, [templateQuery]);
-  const templatesApi = useApi(useCallback(
-    () => checklistCatalogApi.listPublishedTemplateOptions(debouncedTemplateQuery, 50),
-    [debouncedTemplateQuery]), [debouncedTemplateQuery]);
-  const publishedTemplates = templatesApi.data ?? [];
-  const [phase, setPhase] = useState("inspection");
-  const [usage, setUsage] = useState<ChecklistUsage>("REQUIRED");
-  const [actor, setActor] = useState<ChecklistActor>("TECHNICIAN");
-  const [gate, setGate] = useState<ChecklistCompletionGate>("NONE");
-  const [newName, setNewName] = useState("");
-  const [newItemLabel, setNewItemLabel] = useState("");
-  const create = useAction(useCallback(async (vId: string) => {
-    return checklistCatalogApi.createMapping({
-      master_service_job_type_id: masterServiceJobTypeId, checklist_template_version_id: vId,
-      phase, usage, actor, completion_gate: gate,
-    });
-  }, [masterServiceJobTypeId, phase, usage, actor, gate]));
-  const quickCreate = useAction(useCallback(async () => {
-    const code = newName.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 60);
-    const template = await checklistCatalogApi.createTemplate({ name: newName.trim(), code, purpose: "EXECUTION" as ChecklistPurpose });
-    const draft = await checklistCatalogApi.getOrCreateDraftVersion(template.id);
-    const section = await checklistCatalogApi.addSection(draft.id, "Checklist");
-    await checklistCatalogApi.addItem(section.id, { item_type: "CHECKBOX" as ChecklistItemType, label: newItemLabel.trim() || "Completed" });
-    const published = await checklistCatalogApi.publishVersion(draft.id, "Created from Catalog Workspace");
-    return published;
-  }, [newName, newItemLabel]));
-
-  async function submit() {
-    if (!versionId) return;
-    const result = await create.execute(versionId);
-    if (result) onAdded(); else onError(create.error || "Couldn't map this checklist.");
-  }
-
-  async function submitNew() {
-    if (!newName.trim()) return;
-    const published = await quickCreate.execute();
-    if (!published) { onError(quickCreate.error || "Couldn't create the checklist template."); return; }
-    const result = await create.execute(published.id);
-    if (result) onAdded(); else onError(create.error || "Template created, but mapping it failed.");
-  }
-
-  const smallSelect: React.CSSProperties = { fontSize: 12, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)" };
-
-  return (
-    <div style={{ marginBottom: 14, padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)", display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={() => setMode("existing")} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: mode === "existing" ? "var(--brand)" : "var(--surface)", color: mode === "existing" ? "white" : "var(--text-secondary)", cursor: "pointer" }}>Use existing</button>
-        <button onClick={() => setMode("new")} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: mode === "new" ? "var(--brand)" : "var(--surface)", color: mode === "new" ? "white" : "var(--text-secondary)", cursor: "pointer" }}>Create new</button>
-      </div>
-
-      {mode === "existing" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, .7fr) minmax(240px, 1fr)", gap: 8 }}>
-          <input value={templateQuery} onChange={event => { setTemplateQuery(event.target.value); setVersionId(""); }} placeholder="Search published checklists" style={smallSelect}/>
-          <select value={versionId} onChange={e => setVersionId(e.target.value)} style={smallSelect}>
-          <option value="">— Select published checklist —</option>
-            {publishedTemplates.map(t => <option key={t.id} value={t.latest_version!.id}>{t.name} (v{t.latest_version!.version_number})</option>)}
-          </select>
-        </div>
-      ) : (
-        <>
-          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New checklist name (e.g. Pre-Installation Safety Check)" style={{ ...smallSelect, width: "100%", boxSizing: "border-box" }}/>
-          <input value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)} placeholder="First checklist item (e.g. Power supply verified)" style={{ ...smallSelect, width: "100%", boxSizing: "border-box" }}/>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>Creates a single-item published checklist; add more items later from the Checklist Library.</p>
-        </>
-      )}
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <input value={phase} onChange={e => setPhase(e.target.value)} placeholder="Phase (e.g. inspection)" style={{ ...smallSelect, flex: 1, minWidth: 120 }}/>
-        <select value={usage} onChange={e => setUsage(e.target.value as ChecklistUsage)} style={smallSelect}>
-          <option value="DISABLED">DISABLED</option><option value="OPTIONAL">OPTIONAL</option><option value="REQUIRED">REQUIRED</option>
-        </select>
-        <select value={actor} onChange={e => setActor(e.target.value as ChecklistActor)} style={smallSelect}>
-          <option value="TECHNICIAN">TECHNICIAN</option><option value="STAFF">STAFF</option><option value="TENANT_ADMIN">TENANT_ADMIN</option><option value="CUSTOMER">CUSTOMER</option>
-        </select>
-        <select value={gate} onChange={e => setGate(e.target.value as ChecklistCompletionGate)} style={smallSelect}>
-          <option value="NONE">No gate</option>
-          <option value="REQUIRE_BEFORE_INSPECTION_COMPLETE">Before inspection complete</option>
-          <option value="REQUIRE_BEFORE_ESTIMATE_SUBMISSION">Before estimate submission</option>
-          <option value="REQUIRE_BEFORE_WORK_START">Before work start</option>
-          <option value="REQUIRE_BEFORE_JOB_COMPLETION">Before job completion</option>
-          <option value="REQUIRE_BEFORE_HANDOVER">Before handover</option>
-        </select>
-      </div>
-      {mode === "existing" ? (
-        <button onClick={submit} disabled={!versionId || create.loading}
-          style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white", cursor: !versionId || create.loading ? "default" : "pointer" }}>
-          {create.loading ? "Mapping…" : "Map Checklist"}
-        </button>
-      ) : (
-        <button onClick={submitNew} disabled={!newName.trim() || quickCreate.loading || create.loading}
-          style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white", cursor: !newName.trim() || quickCreate.loading || create.loading ? "default" : "pointer" }}>
-          {quickCreate.loading || create.loading ? "Creating…" : "Create & Map"}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Preview tab -- simulates tenant setup / customer booking / technician
-// execution from real DRAFT configuration. Read-only; persists nothing. ───
 function PreviewTab({ masterServiceId, jobTypeId }: { masterServiceId: string; jobTypeId: string | null }) {
   const dimApi = useApi(useCallback(() => catalogWorkspaceApi.getDimensionGrid(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]), [masterServiceId, jobTypeId]);
   const questionsApi = useApi(useCallback(() => catalogWorkspaceApi.listQuestions(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]), [masterServiceId, jobTypeId]);

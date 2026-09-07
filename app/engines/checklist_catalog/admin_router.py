@@ -8,7 +8,8 @@ model. Tenant-admin read access is served from execution_router.py instead.
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_super_admin
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/v1/admin/checklist-catalog", tags=["admin-checklist-
 
 
 def _user_id(user) -> uuid.UUID | None:
-    value = getattr(user, "id", None)
+    value = getattr(user, "user_id", None) or getattr(user, "id", None)
     return uuid.UUID(str(value)) if value else None
 
 
@@ -270,11 +271,14 @@ async def list_published_template_options(
 
 @router.post("/templates")
 async def create_template(body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    code = str(body.get("code") or "").strip().upper()
+    if await db.scalar(select(ChecklistTemplate.id).where(ChecklistTemplate.code == code)):
+        raise ServiceOSException("CHECKLIST_CODE_EXISTS", "A template already uses this code. Open that template or enter a different code.", status_code=409)
     template = await svc.create_template(
-        db, name=body["name"], code=body["code"], description=body.get("description"),
+        db, name=body.get("name", ""), code=code, description=body.get("description"),
         icon_url=body.get("icon_url"),
-        purpose=body["purpose"], owner_scope=body.get("owner_scope", "PLATFORM"),
-        tenant_id=body.get("tenant_id"), created_by_user_id=getattr(user, "id", None),
+        purpose=body.get("purpose", ""), owner_scope=body.get("owner_scope", "PLATFORM"),
+        tenant_id=body.get("tenant_id"), created_by_user_id=_user_id(user),
     )
     _audit(db, entity_type="checklist_template", entity_id=template.id, action="CREATE",
            user=user, request=r, old=None, new=template.to_dict(), summary="Checklist template created")
@@ -399,7 +403,8 @@ async def add_section(version_id: str, body: dict, r: Request, user=Depends(requ
     version = await db.get(ChecklistTemplateVersion, uuid.UUID(version_id))
     if not version:
         raise NotFoundException("ChecklistTemplateVersion", version_id)
-    section = await svc.add_section(db, version, title=body["title"], display_order=int(body.get("display_order", 0)))
+    await _editable_template(db, version)
+    section = await svc.add_section(db, version, title=body.get("title", ""), display_order=int(body.get("display_order", 0)))
     await db.commit()
     return ok(section.to_dict(), _rid(r), "add_section")
 
@@ -410,6 +415,7 @@ async def add_item(section_id: str, body: dict, r: Request, user=Depends(require
     if not section:
         raise NotFoundException("ChecklistSection", section_id)
     version = await db.get(ChecklistTemplateVersion, section.checklist_template_version_id)
+    await _editable_template(db, version)
     item = await svc.add_item(
         db, section, version,
         item_type=body["item_type"], label=body["label"], help_text=body.get("help_text"),
@@ -430,13 +436,89 @@ async def add_item(section_id: str, body: dict, r: Request, user=Depends(require
     return ok(item.to_dict(), _rid(r), "add_item")
 
 
+async def _editable_template(db, version):
+    if version is None:
+        raise ServiceOSException("CHECKLIST_CONFIGURATION_UNRESOLVED", "Checklist version not found.", status_code=404)
+    svc._assert_version_editable(version)
+    template = await db.get(ChecklistTemplate, version.checklist_template_id)
+    if template is None or template.status != "active":
+        raise ServiceOSException("CHECKLIST_TEMPLATE_RETIRED", "Restore this template before editing or publishing.", status_code=409)
+
+
+@router.put("/items/{item_id}")
+async def update_item(item_id: uuid.UUID, body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    item = await db.get(ChecklistItem, item_id)
+    if item is None:
+        raise NotFoundException("ChecklistItem", str(item_id))
+    section = await db.get(ChecklistSection, item.checklist_section_id)
+    version = await db.get(ChecklistTemplateVersion, section.checklist_template_version_id)
+    await _editable_template(db, version)
+    old = item.to_dict()
+    await svc.update_item(db, item, version, body)
+    _audit(db, entity_type="checklist_template", entity_id=version.checklist_template_id, action="UPDATE_ITEM",
+           user=user, request=r, old=old, new=item.to_dict(), summary="Draft checklist item updated")
+    await db.commit()
+    return ok(item.to_dict(), _rid(r), "update_item")
+
+
+@router.delete("/items/{item_id}")
+async def delete_item(item_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    item = await db.get(ChecklistItem, item_id)
+    if item is None:
+        raise NotFoundException("ChecklistItem", str(item_id))
+    section = await db.get(ChecklistSection, item.checklist_section_id)
+    version = await db.get(ChecklistTemplateVersion, section.checklist_template_version_id)
+    await _editable_template(db, version)
+    _audit(db, entity_type="checklist_template", entity_id=version.checklist_template_id, action="DELETE_ITEM",
+           user=user, request=r, old=item.to_dict(), new=None, summary="Draft checklist item removed")
+    await db.delete(item)
+    await db.commit()
+    return ok({"deleted": True}, _rid(r), "delete_item")
+
+
+@router.put("/sections/{section_id}")
+async def update_section(section_id: uuid.UUID, body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    section = await db.get(ChecklistSection, section_id)
+    if section is None:
+        raise NotFoundException("ChecklistSection", str(section_id))
+    version = await db.get(ChecklistTemplateVersion, section.checklist_template_version_id)
+    await _editable_template(db, version)
+    title = str(body.get("title") or "").strip()
+    if not title or len(title) > 200:
+        raise ServiceOSException("CHECKLIST_SECTION_INVALID", "Enter a section title of 1–200 characters.", status_code=422)
+    old = section.to_dict()
+    section.title = title
+    if "display_order" in body:
+        section.display_order = int(body["display_order"])
+    _audit(db, entity_type="checklist_template", entity_id=version.checklist_template_id, action="UPDATE_SECTION",
+           user=user, request=r, old=old, new=section.to_dict(), summary="Draft section updated")
+    await db.commit()
+    return ok(section.to_dict(), _rid(r), "update_section")
+
+
+@router.delete("/sections/{section_id}")
+async def delete_section(section_id: uuid.UUID, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    section = await db.get(ChecklistSection, section_id)
+    if section is None:
+        raise NotFoundException("ChecklistSection", str(section_id))
+    version = await db.get(ChecklistTemplateVersion, section.checklist_template_version_id)
+    await _editable_template(db, version)
+    _audit(db, entity_type="checklist_template", entity_id=version.checklist_template_id, action="DELETE_SECTION",
+           user=user, request=r, old=section.to_dict(), new=None, summary="Draft section and its draft items removed")
+    await db.execute(delete(ChecklistItem).where(ChecklistItem.checklist_section_id == section_id))
+    await db.delete(section)
+    await db.commit()
+    return ok({"deleted": True}, _rid(r), "delete_section")
+
+
 @router.post("/versions/{version_id}/publish")
 async def publish_version(version_id: str, body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
     version = await db.get(ChecklistTemplateVersion, uuid.UUID(version_id))
     if not version:
         raise NotFoundException("ChecklistTemplateVersion", version_id)
+    await _editable_template(db, version)
     published = await svc.publish_version(
-        db, version, published_by=getattr(user, "id", None), change_summary=body.get("change_summary"),
+        db, version, published_by=_user_id(user), change_summary=body.get("change_summary"),
     )
     _audit(db, entity_type="checklist_template", entity_id=version.checklist_template_id, action="PUBLISH_VERSION",
            user=user, request=r, old=None, new=published.to_dict(), summary=body.get("change_summary"))
@@ -576,6 +658,43 @@ async def create_mapping(body: dict, r: Request, user=Depends(require_super_admi
            user=user, request=r, old=None, new=mapping.to_dict(), summary="Job-type mapping created")
     await db.commit()
     return ok(mapping.to_dict(), _rid(r), "create_mapping")
+
+
+@router.post("/quick-create-mapping")
+async def quick_create_mapping(body: dict, r: Request, user=Depends(require_super_admin), db: AsyncSession = Depends(get_db)):
+    """Create, publish and map atomically; a failed mapping leaves no orphan template."""
+    labels = body.get("items")
+    if not isinstance(labels, list) or not 1 <= len(labels) <= 100 or any(not isinstance(label, str) or not label.strip() for label in labels):
+        raise ServiceOSException("CHECKLIST_ITEMS_REQUIRED", "Enter 1–100 checklist points, one per line.", status_code=422)
+    try:
+        link_id = uuid.UUID(str(body.get("master_service_job_type_id")))
+    except (ValueError, TypeError):
+        raise ServiceOSException("CHECKLIST_CONFIGURATION_UNRESOLVED", "Select an exact job type before creating a checklist.", status_code=422)
+    try:
+        async with db.begin_nested():
+            template = await svc.create_template(
+                db, name=body.get("name", ""), code=body.get("code", ""), description=None,
+                purpose=body.get("purpose", "INSPECTION"), owner_scope="PLATFORM", tenant_id=None, created_by_user_id=_user_id(user),
+            )
+            version = await svc.get_draft_version(db, template.id)
+            section = await svc.add_section(db, version, "Checklist")
+            for index, label in enumerate(labels):
+                await svc.add_item(db, section, version, item_type="CHECKBOX", label=label, is_required=True, display_order=index)
+            await svc.publish_version(db, version, published_by=_user_id(user), change_summary="Created and mapped from Catalog Workspace")
+            mapping = await svc.create_mapping(
+                db, master_service_job_type_id=link_id, service_job_workflow_id=None,
+                checklist_template_version_id=version.id, phase=body.get("phase", "inspection"),
+                usage=body.get("usage", "REQUIRED"), actor=body.get("actor", "TECHNICIAN"),
+                completion_gate=body.get("completion_gate", "NONE"), condition_rules=None, display_order=0, created_by=_user_id(user),
+            )
+            _audit(db, entity_type="checklist_template", entity_id=template.id, action="CREATE_AND_PUBLISH",
+                   user=user, request=r, old=None, new=version.to_dict(), summary="Checklist created, published and mapped")
+            _audit(db, entity_type="job_type_checklist_mapping", entity_id=mapping.id, action="CREATE_MAPPING",
+                   user=user, request=r, old=None, new=mapping.to_dict(), summary="Checklist mapped to exact job type")
+    except IntegrityError as error:
+        raise ServiceOSException("CHECKLIST_CONFLICT", "This checklist code or mapping already exists. Use the existing template or choose a different code.", status_code=409) from error
+    await db.commit()
+    return ok({"template_id": str(template.id), "version_id": str(version.id), "mapping": mapping.to_dict()}, _rid(r), "quick_create_mapping")
 
 
 @router.post("/mappings/{mapping_id}/disable")

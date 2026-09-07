@@ -394,6 +394,9 @@ export interface ServiceRequirementChecklist {
   mapping_id: string; template_name: string; template_code: string;
   purpose?: string | null; icon_url?: string | null;
   version_number: number; phase?: string | null; status?: string | null;
+  usage?: string; actor?: string; completion_gate?: string;
+  items?: { id: string; label: string; section_title: string; item_type: string;
+    is_required: boolean; evidence_required: boolean; help_text?: string | null }[];
 }
 export interface ServiceRequirementOption {
   mapping_id: string; service_option_id: string; name?: string | null; description?: string | null;

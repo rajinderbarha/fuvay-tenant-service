@@ -20,7 +20,8 @@ def test_workspace_queries_are_bounded_debounced_and_context_scoped():
     # runtime-supported set (job_type_blueprint_service.py rejects anything
     # else) -- not a searchable, debounced, ad-hoc-creatable picker.
     assert "pageSize: 100" in add_job_type and "runtime_supported" in add_job_type
-    assert "listPublishedTemplateOptions" in page
+    mapping_form = read("frontend/super-admin/components/catalog/AddChecklistMappingForm.tsx")
+    assert "listPublishedTemplateOptions" in mapping_form
     assert "listMappingsDirectory" in page
     assert "master_service_job_type_id: masterServiceJobTypeId" in page
     assert "master_service_job_type_id: uuid.UUID | None" in router

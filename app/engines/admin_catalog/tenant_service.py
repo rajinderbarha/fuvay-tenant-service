@@ -422,7 +422,7 @@ class TenantCatalogService:
         from app.engines.admin_catalog.service_option_service import ServiceOptionService
         from app.engines.admin_catalog.question_service import CatalogQuestionService
         from app.engines.checklist_catalog.models import (
-            JobTypeChecklistMapping, ChecklistTemplateVersion, ChecklistTemplate,
+            JobTypeChecklistMapping, ChecklistTemplateVersion, ChecklistTemplate, ChecklistSection, ChecklistItem,
         )
 
         tenant_id = self._require_tenant_id(tenant_id_raw)
@@ -466,7 +466,8 @@ class TenantCatalogService:
         job_type_ids = (await self.db.execute(
             select(MasterServiceJobType.id).where(
                 MasterServiceJobType.master_service_id == master_service_id,
-                MasterServiceJobType.job_type_id == resolved_job_type_id,
+                    MasterServiceJobType.job_type_id == resolved_job_type_id,
+                    MasterServiceJobType.is_active.is_(True),
             )
         )).scalars().all()
         checklists: list[dict] = []
@@ -480,12 +481,17 @@ class TenantCatalogService:
                 .where(
                     JobTypeChecklistMapping.master_service_job_type_id.in_(job_type_ids),
                     JobTypeChecklistMapping.status == "active",
+                    JobTypeChecklistMapping.usage != "DISABLED",
                     ChecklistTemplateVersion.status == "PUBLISHED",
                     ChecklistTemplate.status == "active",
                 )
                 .order_by(JobTypeChecklistMapping.display_order)
             )).all()
             for mapping, template, version in rows:
+                content = (await self.db.execute(select(ChecklistItem, ChecklistSection.title).join(
+                    ChecklistSection, ChecklistItem.checklist_section_id == ChecklistSection.id,
+                ).where(ChecklistSection.checklist_template_version_id == version.id)
+                  .order_by(ChecklistSection.display_order, ChecklistItem.display_order, ChecklistItem.id))).all()
                 checklists.append({
                     "mapping_id": str(mapping.id),
                     "template_name": template.name,
@@ -495,6 +501,11 @@ class TenantCatalogService:
                     "version_number": version.version_number,
                     "phase": getattr(mapping, "phase", None),
                     "status": mapping.status,
+                    "usage": mapping.usage, "actor": mapping.actor, "completion_gate": mapping.completion_gate,
+                    "items": [{"id": str(item.id), "label": item.label, "section_title": section_title,
+                               "item_type": item.item_type, "is_required": item.is_required,
+                               "evidence_required": item.evidence_required, "help_text": item.help_text}
+                              for item, section_title in content],
                 })
 
         return {

@@ -125,7 +125,7 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
         <div style={SECTION}>
           <div style={HEAD}>
             <ClipboardList size={14} style={{ color: "var(--success-text)" }} />
-            Checklists your technician must complete ({d.checklists.length})
+            Job checklists configured by the platform ({d.checklists.length})
           </div>
           {d.checklists.map(c => (
             <div key={c.mapping_id} style={ROW}>
@@ -134,7 +134,16 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
                 {c.purpose && <span style={CHIP}>{String(c.purpose).replace(/_/g, " ")}</span>}
                 {c.phase && <span style={CHIP}>{String(c.phase).replace(/_/g, " ")}</span>}
                 <span style={CHIP}>v{c.version_number}</span>
+                {c.usage && <span style={CHIP}>{c.usage}</span>}
+                {c.actor && <span style={CHIP}>{c.actor.replaceAll("_", " ")}</span>}
               </div>
+              {c.completion_gate && c.completion_gate !== "NONE" && <p style={{ fontSize: 12 }}>Required {c.completion_gate.replace("REQUIRE_", "").replaceAll("_", " ").toLowerCase()}.</p>}
+              {!!c.items?.length && <details style={{ marginTop: 8 }}><summary style={{ cursor: "pointer", fontSize: 12 }}>View {c.items.length} checklist points</summary>
+                <ol style={{ paddingLeft: 20 }}>{c.items.map(item => <li key={item.id} style={{ padding: "6px 0", fontSize: 12 }}>
+                  {item.label} {item.is_required && <span style={CHIP}>REQUIRED</span>} {item.evidence_required && <span style={CHIP}>EVIDENCE</span>}
+                  {item.help_text && <div style={{ color: "var(--text-tertiary)" }}>{item.help_text}</div>}
+                </li>)}</ol>
+              </details>}
             </div>
           ))}
         </div>

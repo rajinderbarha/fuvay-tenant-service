@@ -1,57 +1,30 @@
 "use client";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import { Card, Badge, Btn, Modal, Input, SectionHeader, DataTable, EmptyState, SummaryCard, Pagination,} from "../../../components/shared/ui";
+import { ChecklistTemplateEditor } from "../../../components/catalog/ChecklistTemplateEditor";
+import { CHECKLIST_GATES, CHECKLIST_PURPOSES, checklistLabel } from "../../../components/catalog/checklist-config";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   checklistCatalogApi, catalogApi, catalogWorkspaceApi,
-  type ChecklistTemplateRow, type ChecklistTemplateVersionDetail, type ChecklistItemType,
+  type ChecklistTemplateRow,
   type JobTypeChecklistMappingRow, type ChecklistPurpose, type ChecklistUsage,
   type ChecklistActor, type ChecklistCompletionGate,
   type ServiceCategory, type MasterService, type MasterServiceJobTypeLink,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
-import OperationsDirectoryControls from "../../../components/enterprise/OperationsDirectoryControls";
-import type { ColumnDef } from "../../../components/enterprise/EnterpriseColumnManager";
-import { Plus, ClipboardList, CheckCircle2, Pencil, Archive, ListChecks, ShieldAlert, RefreshCw, Search, ExternalLink } from "lucide-react";
+import { Plus, ClipboardList, CheckCircle2, Pencil, ListChecks, ShieldAlert, RefreshCw, Search } from "lucide-react";
 
 const PURPOSES: ChecklistPurpose[] = [
   "PRE_ARRIVAL", "INSPECTION", "PRE_WORK", "EXECUTION", "SAFETY", "COMPLETION", "HANDOVER",
 ];
-const ITEM_TYPES: ChecklistItemType[] = [
-  "CHECKBOX", "YES_NO", "SHORT_TEXT", "LONG_TEXT", "NUMBER", "MEASUREMENT",
-  "SINGLE_SELECT", "MULTI_SELECT", "PHOTO", "DOCUMENT", "SIGNATURE",
-];
 const USAGES: ChecklistUsage[] = ["DISABLED", "OPTIONAL", "REQUIRED"];
 const ACTORS: ChecklistActor[] = ["TECHNICIAN", "STAFF", "TENANT_ADMIN", "CUSTOMER"];
-const GATES: ChecklistCompletionGate[] = [
-  "NONE", "REQUIRE_BEFORE_INSPECTION_COMPLETE", "REQUIRE_BEFORE_ESTIMATE_SUBMISSION",
-  "REQUIRE_BEFORE_WORK_START", "REQUIRE_BEFORE_JOB_COMPLETION", "REQUIRE_BEFORE_HANDOVER",
-];
 
 type Tab = "templates" | "mappings" | "health";
-const TEMPLATE_COLUMNS: ColumnDef[] = [
-  { key: "name", label: "Checklist", visible: true, order: 0 },
-  { key: "code", label: "Code", visible: true, order: 1 },
-  { key: "purpose", label: "Purpose", visible: true, order: 2 },
-  { key: "version_status", label: "Version", visible: true, order: 3 },
-  { key: "active_mapping_count", label: "Mappings", visible: true, order: 4 },
-  { key: "updated_at", label: "Updated", visible: true, order: 5 },
-];
-const MAPPING_COLUMNS: ColumnDef[] = [
-  { key: "template_name", label: "Checklist", visible: true, order: 0 },
-  { key: "master_service_name", label: "Master Service", visible: true, order: 1 },
-  { key: "job_type_label", label: "Job Type", visible: true, order: 2 },
-  { key: "phase", label: "Phase", visible: true, order: 3 },
-  { key: "usage", label: "Usage", visible: true, order: 4 },
-  { key: "actor", label: "Actor", visible: true, order: 5 },
-  { key: "completion_gate", label: "Gate", visible: true, order: 6 },
-  { key: "status", label: "Status", visible: true, order: 7 },
-];
-
 const selectStyle: React.CSSProperties = {
   width: "100%", padding: "8px 10px", borderRadius: "var(--radius-md)",
   border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text)",
@@ -68,13 +41,12 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 export default function ChecklistLibraryPage() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("templates");
+  const [createdTemplateId, setCreatedTemplateId] = useState<string | null>(null);
   const [templateQuery, setTemplateQuery] = useState("");
   const [templatePurpose, setTemplatePurpose] = useState("");
   const [templateStatus, setTemplateStatus] = useState(() => searchParams.get("status") === "archived" ? "archived" : "active");
   const [templatePage, setTemplatePage] = useState(1);
   const [templatePageSize, setTemplatePageSize] = useState(25);
-  const [templateColumns, setTemplateColumns] = useState<ColumnDef[]>(TEMPLATE_COLUMNS);
-  const [mappingColumns, setMappingColumns] = useState<ColumnDef[]>(MAPPING_COLUMNS);
   const [mappingQuery, setMappingQuery] = useState("");
   const [mappingUsage, setMappingUsage] = useState("");
   const [mappingActor, setMappingActor] = useState("");
@@ -107,27 +79,18 @@ export default function ChecklistLibraryPage() {
     <AdminLayout activeNav="checklist-templates">
       <SectionHeader
         title="Checklist Library"
-        subtitle="Create reusable checklists and publish them to exact job-type blueprints."
+        subtitle="Author sections and items → publish a version → map it to the exact service and job type."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="secondary" onClick={() => { templates.refetch(); mappings.refetch(); }}>
+            <Btn size="sm" variant="secondary" onClick={() => { templates.refetch(); mappings.refetch(); summary.refetch(); }}>
               <RefreshCw size={14} style={{ marginRight: 4 }}/> Refresh
             </Btn>
-            <NewTemplateButton onCreated={() => { templates.refetch(); notify("Template created as a draft."); }} />
+            <NewTemplateButton onCreated={id => { setCreatedTemplateId(id); setTemplateQuery(""); setTemplatePurpose(""); setTemplateStatus("active"); setTemplatePage(1); setTab("templates"); templates.refetch(); summary.refetch(); notify("Draft created. Add its sections and checklist items below."); }} />
           </div>
         }
       />
       <HomeServicesCatalogNav active="checklists" />
 
-      {tab === "templates" && (
-        <OperationsDirectoryControls resourceKey="admin_checklist_templates"
-          filters={{ q: templateQuery, status: templateStatus, purpose: templatePurpose }}
-          sort={{ sort_by: "updated_at", sort_direction: "desc" }} columns={templateColumns}
-          onColumnsChange={setTemplateColumns} onApplyView={(filters) => {
-            setTemplateQuery(String(filters.q ?? filters.search ?? "")); setTemplateStatus(String(filters.status ?? "active"));
-            setTemplatePurpose(String(filters.purpose ?? "")); setTemplatePage(1);
-          }}/>
-      )}
       {tab === "templates" && (
         <Card padding={14} style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -154,15 +117,6 @@ export default function ChecklistLibraryPage() {
         </Card>
       )}
 
-      {tab === "mappings" && (
-        <OperationsDirectoryControls resourceKey="admin_checklist_mappings"
-          filters={{ q: mappingQuery, status: mappingStatus, usage: mappingUsage, actor: mappingActor }}
-          sort={{ sort_by: "updated_at", sort_direction: "desc" }} columns={mappingColumns}
-          onColumnsChange={setMappingColumns} onApplyView={(filters) => {
-            setMappingQuery(String(filters.q ?? filters.search ?? "")); setMappingStatus(String(filters.status ?? ""));
-            setMappingUsage(String(filters.usage ?? "")); setMappingActor(String(filters.actor ?? "")); setMappingPage(1);
-          }}/>
-      )}
       {tab === "mappings" && (
         <Card padding={14} style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -197,6 +151,7 @@ export default function ChecklistLibraryPage() {
         </div>
       )}
 
+      {(templates.error || mappings.error || summary.error) && <p role="alert" style={{ color: "var(--danger-text)" }}>{templates.error || mappings.error || summary.error} Use Refresh to retry.</p>}
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
         <SummaryCard icon={<ClipboardList />} label="Active Templates" value={summary.data?.active_templates ?? 0} />
@@ -220,8 +175,8 @@ export default function ChecklistLibraryPage() {
       {tab === "templates" && (
         <>
           <TemplatesWorkspace
-            templates={templateList} loading={templates.loading}
-            onRefetch={() => { templates.refetch(); mappings.refetch(); }}
+            templates={templateList} loading={templates.loading} preferredTemplateId={createdTemplateId}
+            onRefetch={() => { templates.refetch(); mappings.refetch(); summary.refetch(); }}
             notify={notify}
           />
           <DirectoryPager page={templates.data?.page ?? templatePage} pages={templates.data?.pages ?? 1}
@@ -232,7 +187,7 @@ export default function ChecklistLibraryPage() {
         <>
           <MappingsTab
             mappings={mappingList} loading={mappings.loading} templates={templateList}
-            onRefetch={() => mappings.refetch()} notify={notify}
+            onRefetch={() => { mappings.refetch(); summary.refetch(); }} notify={notify}
           />
           <DirectoryPager page={mappings.data?.page ?? mappingPage} pages={mappings.data?.pages ?? 1}
             total={mappings.data?.total ?? 0} pageSize={mappingPageSize} onPageSize={setMappingPageSize} onPage={setMappingPage}/>
@@ -251,17 +206,17 @@ function DirectoryPager({ page, pages, total, pageSize, onPageSize, onPage }: { 
 
 // ── New Template ──────────────────────────────────────────────────────────
 
-function NewTemplateButton({ onCreated }: { onCreated: () => void }) {
+function NewTemplateButton({ onCreated }: { onCreated: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", description: "", purpose: "INSPECTION" as ChecklistPurpose });
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const create = useAction(useCallback(async () => {
-    await checklistCatalogApi.createTemplate({
+    const created = await checklistCatalogApi.createTemplate({
       name: form.name, code: form.code || form.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 60),
       description: form.description || undefined, purpose: form.purpose,
       icon_url: iconUrl || undefined,
     });
-    setOpen(false); setForm({ name: "", code: "", description: "", purpose: "INSPECTION" }); setIconUrl(null); onCreated();
+    setOpen(false); setForm({ name: "", code: "", description: "", purpose: "INSPECTION" }); setIconUrl(null); onCreated(created.id);
   }, [form, iconUrl, onCreated]));
 
   return (
@@ -292,7 +247,7 @@ function NewTemplateButton({ onCreated }: { onCreated: () => void }) {
           <IconPicker label="Icon" context="checklist_icon" value={iconUrl} onChange={setIconUrl}/>
           <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)",
             border: "1px solid var(--border)", fontSize: 12, color: "var(--muted-text)" }}>
-            Templates start as an unmapped Draft. Runtime use requires an explicit Job-Type mapping (next step, in the Mappings tab).
+            Create a draft, add sections and items, then publish. Only published versions can be mapped to a job type.
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Btn>
@@ -308,224 +263,56 @@ function NewTemplateButton({ onCreated }: { onCreated: () => void }) {
 
 // ── Templates workspace (3-column) ───────────────────────────────────────
 
-function TemplatesWorkspace({ templates, loading, onRefetch, notify }: {
-  templates: ChecklistTemplateRow[]; loading: boolean; onRefetch: () => void;
-  notify: (msg: string, ok?: boolean) => void;
+function TemplatesWorkspace({ templates, loading, preferredTemplateId, onRefetch, notify }: {
+  templates: ChecklistTemplateRow[]; loading: boolean; preferredTemplateId: string | null;
+  onRefetch: () => void; notify: (message: string, ok?: boolean) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  const appliedPreferred = useRef<string | null>(null);
+  useEffect(() => {
+    if (preferredTemplateId && appliedPreferred.current !== preferredTemplateId && templates.some(row => row.id === preferredTemplateId)) {
+      appliedPreferred.current = preferredTemplateId;
+      setSelectedId(preferredTemplateId);
+    }
+    else if (!templates.some(row => row.id === selectedId)) setSelectedId(templates[0]?.id ?? null);
+  }, [templates, preferredTemplateId, selectedId]);
+  const selected = templates.find(row => row.id === selectedId);
   const [retireOpen, setRetireOpen] = useState(false);
-  const [retireReason, setRetireReason] = useState("");
-  const selected = templates.find(t => t.id === selectedId) ?? null;
-
-  const versionQuery = useApi(useCallback(
-    () => selectedId
-      ? (editing ? checklistCatalogApi.getOrCreateDraftVersion(selectedId) : checklistCatalogApi.getLatestVersion(selectedId))
-      : Promise.resolve(null),
-    [selectedId, editing]), [selectedId, editing]);
-  const version: ChecklistTemplateVersionDetail | null = versionQuery.data;
-
-  const publish = useAction(useCallback(async (changeSummary: string) => {
-    if (!version) return;
-    await checklistCatalogApi.publishVersion(version.id, changeSummary || undefined);
-    setEditing(false);
-    onRefetch(); notify("Version published.");
-  }, [version, versionQuery, onRefetch, notify]));
-
-  const archive = useAction(useCallback(async () => {
+  const [reason, setReason] = useState("");
+  const retire = useAction(async () => {
     if (!selected) return;
-    await checklistCatalogApi.archiveTemplate(selected.id, retireReason);
-    setRetireOpen(false); setRetireReason(""); setSelectedId(null);
-    onRefetch(); notify("Template retired and active mappings disabled.");
-  }, [selected, retireReason, onRefetch, notify]));
-
-  if (!loading && templates.length === 0) {
-    return (
-      <Card padding={40}>
-        <EmptyState
-          icon={<ClipboardList size={28} />}
-          title="No checklist templates yet"
-          description="Create your first template, then map it to an exact Job Type before it can be used on real jobs."
-        />
-      </Card>
-    );
-  }
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 280px", gap: 16, alignItems: "start" }}>
-      {/* Left: Template Library */}
-      <Card padding={0}>
-        <div style={{ padding: 14, borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>Template Library</div>
-        <div style={{ maxHeight: 560, overflowY: "auto" }}>
-          {templates.map(t => (
-            <div key={t.id} onClick={() => { setSelectedId(t.id); setEditing(false); }} style={{
-              padding: "12px 14px", cursor: "pointer",
-              borderLeft: selectedId === t.id ? "3px solid var(--primary)" : "3px solid transparent",
-              background: selectedId === t.id ? "var(--surface-sunken)" : "transparent",
-              borderBottom: "1px solid var(--border)",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{t.name}</span>
-                <Badge size="sm" variant={t.latest_version?.status === "PUBLISHED" ? "success" : t.latest_version?.status === "ARCHIVED" ? "muted" : "warning"}>
-                  {t.latest_version?.status ?? "DRAFT"}
-                </Badge>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted-text)", marginTop: 4 }}>
-                v{t.latest_version?.version_number ?? 1} · {t.mapping_count} mapping{t.mapping_count === 1 ? "" : "s"}
-              </div>
-            </div>
-          ))}
+    await checklistCatalogApi.archiveTemplate(selected.id, reason.trim());
+    setRetireOpen(false); setReason(""); onRefetch(); notify("Template retired. Existing job records are preserved.");
+  });
+  if (loading && !templates.length) return <Card padding={24}>Loading checklists…</Card>;
+  if (!templates.length) return <Card padding={32}><EmptyState icon={<ClipboardList/>} title="No templates match" description="Create a checklist template or adjust the filters."/></Card>;
+  return <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+    <Card padding={8} style={{ flex: "1 1 230px", maxWidth: 310 }}>
+      <div style={{ padding: 10, fontWeight: 700, fontSize: 13 }}>Templates</div>
+      {templates.map(row => <button key={row.id} onClick={() => setSelectedId(row.id)} aria-pressed={row.id === selectedId}
+        style={{ display: "block", width: "100%", textAlign: "left", padding: 14, marginBottom: 4, border: "1px solid var(--border)", borderRadius: 8, background: row.id === selectedId ? "var(--surface-sunken)" : "transparent", color: "var(--text-primary)", cursor: "pointer" }}>
+        <strong style={{ display: "block", marginBottom: 8 }}>{row.name}</strong>
+        <Badge size="sm" variant={row.latest_version?.status === "PUBLISHED" ? "success" : "warning"}>{row.latest_version?.status ?? "DRAFT"}</Badge>
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-secondary)" }}>{row.item_count ?? 0} items · {row.active_mapping_count ?? 0} active mappings</div>
+      </button>)}
+    </Card>
+    <Card padding={20} style={{ flex: "3 1 520px", minWidth: 0 }}>
+      {selected && <>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+          <div style={{ flex: 1 }}><h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{selected.name}</h2><small>{selected.code} · {selected.purpose.replaceAll("_", " ")}</small></div>
+          <Link href={`/admin/checklists/${selected.id}`}><Btn size="sm" variant="secondary">Details & history</Btn></Link>
+          {selected.status !== "archived" && <Btn size="sm" variant="ghost" onClick={() => setRetireOpen(true)}>Retire</Btn>}
         </div>
-      </Card>
-
-      {/* Center: Editor */}
-      <Card padding={0}>
-        {!selected ? (
-          <div style={{ padding: 40 }}>
-            <EmptyState icon={<ClipboardList size={24} />} title="Select a template" description="Choose a template from the library to edit its checklist items." />
-          </div>
-        ) : (
-          <div>
-            <div style={{ padding: 16, borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selected.name}</div>
-                <div style={{ fontSize: 12, color: "var(--muted-text)", marginTop: 2 }}>{selected.description || "No description."}</div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Link href={`/admin/checklists/${selected.id}`}><Btn size="xs" variant="secondary"><ExternalLink size={12}/> Details</Btn></Link>
-                {selected.status !== "archived" && (
-                  <>
-                  <Btn size="xs" variant="ghost" onClick={() => setRetireOpen(true)} loading={archive.loading}>
-                    <Archive size={12} style={{ marginRight: 4 }} /> Retire
-                  </Btn></>
-                )}
-              </div>
-            </div>
-            <div style={{ padding: 16 }}>
-              {version && version.status !== "DRAFT" && (
-                <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)",
-                  border: "1px solid var(--border)", fontSize: 12, color: "var(--muted-text)", marginBottom: 12 }}>
-                  Viewing immutable published v{version.version_number}. Start a draft to edit without changing live jobs.
-                  <span style={{ marginLeft: 10 }}><Btn size="xs" variant="secondary" onClick={() => setEditing(true)}>Create editable draft</Btn></span>
-                </div>
-              )}
-              {version?.sections.map(section => (
-                <div key={section.id} style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 8 }}>{section.title}</div>
-                  {section.items.map(item => (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
-                      border: "1px solid var(--border)", borderRadius: "var(--radius-md)", marginBottom: 6 }}>
-                      <Badge size="sm" variant="info">{item.item_type}</Badge>
-                      <span style={{ fontSize: 13, color: "var(--text)", flex: 1 }}>{item.label}</span>
-                      {item.is_required && <Badge size="sm" variant="warning">Required</Badge>}
-                      {item.evidence_required && <Badge size="sm" variant="muted">Evidence</Badge>}
-                      {item.condition_rules && <Badge size="sm" variant="muted">Conditional</Badge>}
-                    </div>
-                  ))}
-                  {version.status === "DRAFT" && <AddItemRow sectionId={section.id} onAdded={() => versionQuery.refetch()} />}
-                </div>
-              ))}
-              {version?.status === "DRAFT" && <AddSectionRow versionId={version.id} onAdded={() => versionQuery.refetch()} />}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-                <PublishControl disabled={!version || version.status !== "DRAFT"} loading={publish.loading}
-                  onPublish={summary => publish.execute(summary)} />
-              </div>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Right: Governance Inspector */}
-      <Card padding={16}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Governance Inspector</div>
-        {!selected ? (
-          <div style={{ fontSize: 12, color: "var(--muted-text)" }}>Select a template to view readiness and mapping impact.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 6 }}>Version</div>
-              <div style={{ fontSize: 13 }}>Current: <strong>{selected.latest_version?.version_number ?? "—"}</strong></div>
-              <div style={{ fontSize: 13 }}>Status: <Badge size="sm" variant={selected.latest_version?.status === "PUBLISHED" ? "success" : "warning"}>{selected.latest_version?.status ?? "DRAFT"}</Badge></div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 6 }}>Mappings</div>
-              <div style={{ fontSize: 13 }}>{selected.mapping_count} active Job-Type mapping{selected.mapping_count === 1 ? "" : "s"}</div>
-            </div>
-            <div style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--warning-bg)",
-              border: "1px solid var(--warning-border)", fontSize: 11, color: "var(--warning-text)" }}>
-              Work start still requires approved estimate. Checklist gates complement, never replace, the estimate-approval gate.
-            </div>
-          </div>
-        )}
-      </Card>
-      <Modal open={retireOpen} onClose={() => setRetireOpen(false)} title="Retire checklist template">
-        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Historical job instances remain immutable. Active mappings are disabled so new jobs stop receiving this checklist.</p>
-        <textarea value={retireReason} onChange={event => setRetireReason(event.target.value)} rows={3}
-          placeholder="Reason for retirement (minimum 5 characters)" style={{ ...selectStyle, resize: "vertical" }}/>
-        {archive.error && <p style={{ fontSize: 12, color: "var(--danger-text)" }}>{archive.error}</p>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <Btn variant="secondary" onClick={() => setRetireOpen(false)}>Cancel</Btn>
-          <Btn variant="danger" disabled={retireReason.trim().length < 5} loading={archive.loading} onClick={() => archive.execute()}>Retire template</Btn>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-function PublishControl({ disabled, loading, onPublish }: { disabled: boolean; loading: boolean; onPublish: (summary: string) => void }) {
-  const [summary, setSummary] = useState("");
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <input placeholder="Change summary (optional)" value={summary} onChange={e => setSummary(e.target.value)}
-        style={{ ...selectStyle, width: 220 }} />
-      <Btn size="sm" variant="primary" disabled={disabled} loading={loading} onClick={() => onPublish(summary)}>Publish Version</Btn>
-    </div>
-  );
-}
-
-function AddSectionRow({ versionId, onAdded }: { versionId: string | null; onAdded: () => void }) {
-  const [title, setTitle] = useState("");
-  const add = useAction(useCallback(async () => {
-    if (!versionId || !title.trim()) return;
-    await checklistCatalogApi.addSection(versionId, title.trim());
-    setTitle(""); onAdded();
-  }, [versionId, title, onAdded]));
-  return (
-    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-      <input placeholder="New section title" value={title} onChange={e => setTitle(e.target.value)} style={selectStyle} />
-      <Btn size="sm" variant="secondary" disabled={!title.trim()} loading={add.loading} onClick={() => add.execute()}>Add Section</Btn>
-    </div>
-  );
-}
-
-function AddItemRow({ sectionId, onAdded }: { sectionId: string; onAdded: () => void }) {
-  const [label, setLabel] = useState("");
-  const [itemType, setItemType] = useState<ChecklistItemType>("CHECKBOX");
-  const [required, setRequired] = useState(false);
-  const [evidence, setEvidence] = useState(false);
-  const add = useAction(useCallback(async () => {
-    if (!label.trim()) return;
-    await checklistCatalogApi.addItem(sectionId, {
-      item_type: itemType, label: label.trim(), is_required: required, evidence_required: evidence,
-    });
-    setLabel(""); setRequired(false); setEvidence(false); onAdded();
-  }, [sectionId, label, itemType, required, evidence, onAdded]));
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
-      <input placeholder="Item label" value={label} onChange={e => setLabel(e.target.value)} style={{ ...selectStyle, flex: 1, minWidth: 140 }} />
-      <select value={itemType} onChange={e => setItemType(e.target.value as ChecklistItemType)} style={{ ...selectStyle, width: 140 }}>
-        {ITEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
-      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-        <input type="checkbox" checked={required} onChange={e => setRequired(e.target.checked)} /> Required
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-        <input type="checkbox" checked={evidence} onChange={e => setEvidence(e.target.checked)} /> Evidence
-      </label>
-      <Btn size="xs" variant="secondary" disabled={!label.trim()} loading={add.loading} onClick={() => add.execute()}>Add Item</Btn>
-    </div>
-  );
+        <ChecklistTemplateEditor key={selected.id} templateId={selected.id} retired={selected.status === "archived"} onChanged={onRefetch}/>
+      </>}
+    </Card>
+    <Modal open={retireOpen} onClose={() => setRetireOpen(false)} title="Retire checklist template">
+      <p>Active mappings will be disabled. Existing job checklists remain unchanged.</p>
+      <textarea aria-label="Retirement reason" rows={3} style={selectStyle} value={reason} onChange={event => setReason(event.target.value)} placeholder="Reason (at least 5 characters)"/>
+      {retire.error && <p role="alert">{retire.error}</p>}
+      <Btn variant="danger" disabled={reason.trim().length < 5} loading={retire.loading} onClick={() => retire.execute()}>Retire template</Btn>
+    </Modal>
+  </div>;
 }
 
 // ── Job-Type Mappings tab ─────────────────────────────────────────────────
@@ -572,7 +359,7 @@ function MappingsTab({ mappings, loading, templates, onRefetch, notify }: {
           <Btn size="xs" variant="ghost" onClick={() => setDisableRow(row)}>
             Disable
           </Btn>
-        ) : <Btn size="xs" variant="ghost" onClick={async () => { await checklistCatalogApi.enableMapping(row.id); onRefetch(); notify("Mapping enabled."); }}>Enable</Btn>
+        ) : <Btn size="xs" variant="ghost" onClick={async () => { try { await checklistCatalogApi.enableMapping(row.id); onRefetch(); notify("Mapping enabled."); } catch (error) { notify(error instanceof Error ? error.message : "Could not enable mapping.", false); } }}>Enable</Btn>
       ),
     },
   ];
@@ -616,17 +403,20 @@ function NewMappingButton({ onCreated }: { onCreated: () => void }) {
     () => checklistCatalogApi.listPublishedTemplateOptions(templateSearch, 50),
     [templateSearch]), [templateSearch], { enabled: open });
   const publishedTemplates = templateOptions.data ?? [];
+  const selectedPurpose = publishedTemplates.find(row => row.latest_version?.id === templateVersionId)?.purpose;
+  const allowedGates = selectedPurpose ? CHECKLIST_GATES[selectedPurpose] : ["NONE" as ChecklistCompletionGate];
+  useEffect(() => { if (!allowedGates.includes(gate)) setGate("NONE"); }, [selectedPurpose]);
 
   const cats = useApi(useCallback(() => catalogApi.listCategories(true), []), [], { enabled: open });
   const catList: ServiceCategory[] = cats.data?.categories ?? [];
   const svcs = useApi(useCallback(
-    () => masterServiceId || !categoryId ? Promise.resolve({ services: [] as MasterService[] }) : catalogApi.listMasterServices(categoryId),
+    () => !categoryId ? Promise.resolve({ services: [] as MasterService[] }) : catalogApi.listMasterServices(categoryId),
     [categoryId]), [categoryId], { enabled: open && !!categoryId });
   const svcList: MasterService[] = svcs.data?.services ?? [];
   const jobTypes = useApi(useCallback(
     () => masterServiceId ? catalogWorkspaceApi.getJobTypesForService(masterServiceId) : Promise.resolve({ items: [] as MasterServiceJobTypeLink[] }),
     [masterServiceId]), [masterServiceId], { enabled: open && !!masterServiceId });
-  const jobTypeList: MasterServiceJobTypeLink[] = jobTypes.data?.items ?? [];
+  const jobTypeList: MasterServiceJobTypeLink[] = (jobTypes.data?.items ?? []).filter(row => row.is_active);
 
   const create = useAction(useCallback(async () => {
     await checklistCatalogApi.createMapping({
@@ -643,13 +433,13 @@ function NewMappingButton({ onCreated }: { onCreated: () => void }) {
       </Btn>
       <Modal open={open} onClose={() => setOpen(false)} title="New Job-Type Checklist Mapping" size="md">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {create.error && (
+          {(create.error || templateOptions.error || cats.error || svcs.error || jobTypes.error) && (
             <div style={{ padding: "10px 14px", borderRadius: 9, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
-              <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{create.error}</p>
+              <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{create.error || templateOptions.error || cats.error || svcs.error || jobTypes.error}</p>
             </div>
           )}
           <FieldRow label="Checklist Template Version (published only)">
-            <input value={templateSearch} onChange={event => setTemplateSearch(event.target.value)}
+            <input value={templateSearch} onChange={event => { setTemplateSearch(event.target.value); setTemplateVersionId(""); }}
               placeholder="Search checklist name or code" style={{ ...selectStyle, marginBottom: 8 }} />
             <select value={templateVersionId} onChange={e => setTemplateVersionId(e.target.value)} style={selectStyle}>
               <option value="">— Select —</option>
@@ -681,7 +471,7 @@ function NewMappingButton({ onCreated }: { onCreated: () => void }) {
             </FieldRow>
           )}
           <FieldRow label="Phase">
-            <input value={phase} onChange={e => setPhase(e.target.value)} placeholder="inspection" style={selectStyle} />
+            <select aria-label="Checklist phase" value={phase} onChange={e => setPhase(e.target.value)} style={selectStyle}>{CHECKLIST_PURPOSES.map(value => <option key={value} value={value.toLowerCase()}>{checklistLabel(value)}</option>)}</select>
           </FieldRow>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <FieldRow label="Usage">
@@ -697,7 +487,7 @@ function NewMappingButton({ onCreated }: { onCreated: () => void }) {
           </div>
           <FieldRow label="Completion Gate">
             <select value={gate} onChange={e => setGate(e.target.value as ChecklistCompletionGate)} style={selectStyle}>
-              {GATES.map(g => <option key={g} value={g}>{g.replace(/^REQUIRE_/, "").replace(/_/g, " ")}</option>)}
+              {allowedGates.map(g => <option key={g} value={g}>{checklistLabel(g)}</option>)}
             </select>
           </FieldRow>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -717,6 +507,8 @@ function NewMappingButton({ onCreated }: { onCreated: () => void }) {
 function ExecutionHealthTab() {
   const health = useApi(useCallback(() => checklistCatalogApi.getExecutionHealth(), []));
   const h = health.data;
+  if (health.error) return <Card><p role="alert">{health.error}</p><Btn onClick={health.refetch}>Retry</Btn></Card>;
+  if (health.loading) return <Card>Loading execution health…</Card>;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
       <SummaryCard icon={<ClipboardList />} label="Total Instances" value={h?.total_instances ?? 0} />

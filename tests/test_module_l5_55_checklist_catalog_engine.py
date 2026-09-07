@@ -119,7 +119,7 @@ class TestMappingValidation:
         db = AsyncMock()
         link = MagicMock(is_active=True)
         version = MagicMock(status=c.VERSION_PUBLISHED, checklist_template_id=uuid.uuid4())
-        template = MagicMock(purpose=c.PURPOSE_COMPLETION)
+        template = MagicMock(purpose=c.PURPOSE_COMPLETION, status=c.TEMPLATE_STATUS_ACTIVE)
         db.get = AsyncMock(side_effect=[link, version, template])
         with pytest.raises(ServiceOSException) as exc:
             await svc.create_mapping(
@@ -135,7 +135,7 @@ class TestMappingValidation:
         db = AsyncMock()
         link = MagicMock(is_active=True)
         version = MagicMock(status=c.VERSION_PUBLISHED, checklist_template_id=uuid.uuid4())
-        template = MagicMock(purpose=c.PURPOSE_INSPECTION)
+        template = MagicMock(purpose=c.PURPOSE_INSPECTION, status=c.TEMPLATE_STATUS_ACTIVE)
         db.get = AsyncMock(side_effect=[link, version, template])
         db.add = MagicMock()
         db.flush = AsyncMock()
