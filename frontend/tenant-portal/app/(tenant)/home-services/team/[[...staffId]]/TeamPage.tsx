@@ -95,7 +95,7 @@ function TeamDirectory() {
   return <><PageShell>
     <PageHeader eyebrow="" title="Staff & technicians"
       description="One operational roster for setup readiness, dispatch capacity, staff access and service delivery."
-      actions={<><Button variant="secondary" leftIcon={<Download size={14} />} disabled={!directory.data?.staff.length} onClick={exportPage}>Export</Button><Button variant="primary" leftIcon={<UserPlus size={14} />} disabled={noPlan || seatsFull} onClick={() => setAddOpen(true)}>Add team member</Button></>} />
+      actions={<><Button variant="secondary" leftIcon={<Download size={14} />} disabled={!directory.data?.staff.length} onClick={exportPage}>Export</Button><Button variant="primary" leftIcon={<UserPlus size={14} />} onClick={() => setAddOpen(true)}>Add team member</Button></>} />
     {directory.error && <Alert tone="danger">{directory.error}</Alert>}
     {/* The roster stays visible without a plan so the provider can see what a
         plan unlocks and reach the purchase -- it is locked, not hidden. */}
@@ -128,7 +128,7 @@ function TeamDirectory() {
       {directory.loading ? <div className="team-loading"><Skeleton height={72} /><Skeleton height={72} /><Skeleton height={72} /></div> : !directory.data?.staff.length ? <EmptyTeam filtered={hasFilters} onClear={clearFilters} onAdd={() => setAddOpen(true)} /> : <div className="team-roster-list">{directory.data.staff.map(row => <TeamRow key={row.staff_id} row={row} onOpen={() => router.push(`/home-services/team/${row.staff_id}`)} />)}</div>}
       <div className="team-pagination"><label>Rows <select value={limit} onChange={e => setLimit(Number(e.target.value))}><option>25</option><option>50</option><option>100</option></select></label><span>{directory.data ? `${directory.data.pagination.total ? cursor + 1 : 0}–${Math.min(cursor + limit, directory.data.pagination.total)} of ${directory.data.pagination.total}` : "0–0 of 0"}</span><Button variant="secondary" size="sm" aria-label="Previous page" disabled={cursor === 0} onClick={() => setCursor(directory.data?.pagination.previous_cursor ?? 0)}><ChevronLeft size={15} /></Button><Button variant="secondary" size="sm" aria-label="Next page" disabled={directory.data?.pagination.next_cursor == null} onClick={() => setCursor(directory.data?.pagination.next_cursor ?? cursor)}><ChevronRight size={15} /></Button></div>
     </Card>
-  </PageShell>{addOpen && <AddTeamMemberWizard existing={null} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); directory.refetch(); funding.refetch(); }} />}<TeamStyles /></>;
+  </PageShell>{addOpen && <AddTeamMemberWizard existing={null} technicianSeatAvailable={(topup.data?.available_seats ?? 0) > 0} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); directory.refetch(); funding.refetch(); topup.refetch(); }} />}<TeamStyles /></>;
 }
 
 function Filter({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {

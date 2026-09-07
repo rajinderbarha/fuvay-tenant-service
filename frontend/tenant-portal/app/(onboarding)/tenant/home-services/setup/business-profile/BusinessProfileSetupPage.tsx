@@ -14,8 +14,8 @@ import {
 } from "../../../../../../lib/api";
 
 const SETUP_STEPS = [
-  "overview", "business-profile", "documents", "services-pricing",
-  "coverage-availability", "staff", "finance", "review",
+  "business-profile", "documents", "services-pricing",
+  "plan", "staff", "coverage-availability", "finance", "review",
 ] as const;
 const STEP_NUMBER = SETUP_STEPS.indexOf("business-profile") + 1;
 const TOTAL_STEPS = SETUP_STEPS.length;
@@ -330,6 +330,9 @@ function BusinessProfileWorkspace() {
                   onChange={v => set("business_name", v)} error={fieldErrors.business_name}
                   placeholder="Public, customer-facing name"/>
               </div>
+              <div className="biz-profile-half"><Select label="Business type" value={form.business_type}
+                onChange={v => set("business_type", v)} options={entityTypeOptions}
+                placeholder="Select business type"/></div>
               <div className="biz-profile-row2">
                 <Input label="Registration number (optional)" value={form.registration_number}
                   onChange={v => set("registration_number", v)} placeholder="e.g. CIN, if applicable"/>
@@ -349,9 +352,6 @@ function BusinessProfileWorkspace() {
                 onChange={v => set("website_url", v)} error={fieldErrors.website_url}
                 placeholder="https://"/>
 
-              <div className="biz-profile-row2"><span/><Select label="Business type" value={form.business_type}
-                onChange={v => set("business_type", v)} options={entityTypeOptions}
-                placeholder="Select business type"/></div>
 
             </div>
           </Card>

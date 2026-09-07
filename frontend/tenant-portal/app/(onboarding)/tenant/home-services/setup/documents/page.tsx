@@ -138,7 +138,7 @@ export default function VerificationDocumentsPage() {
         </div>
       )}
 
-      <StepProgressBar step={3} total={8} />
+      <StepProgressBar step={2} total={8} />
 
       <div className="docs-grid">
         <div>

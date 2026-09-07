@@ -3002,6 +3002,9 @@ export interface ProviderAvailabilityRule {
   end_time: string;
   slot_duration_minutes: number | null;
   max_bookings_per_slot: number | null;
+  max_jobs_per_day?: number | null;
+  break_start_time?: string | null;
+  break_end_time?: string | null;
   is_active: boolean;
   created_at: string | null;
 }
@@ -3014,6 +3017,7 @@ export interface ProviderAvailabilityPayload {
   end_time: string;
   slot_duration_minutes?: number | null;
   max_bookings_per_slot?: number | null;
+  max_jobs_per_day?: number | null;
   is_active?: boolean;
 }
 

@@ -67,10 +67,10 @@ export const topupApi = {
    * Create the gateway order. No amount is sent — the server prices it from
    * the live catalogue, so a tampered client cannot buy seats cheaply.
    */
-  createOrder: () =>
+  createOrder: (planId?: string) =>
     apiFetch<TopupOrder>(
       "/v1/tenant/home-services/activation/funding/order",
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ plan_id: planId }) },
     ),
 };
 

@@ -62,7 +62,7 @@ from app.engines.home_service_assignment.eligibility import active_technician_sq
 MAX_SEARCH_DAYS = 62
 
 # Used only when a provider has rules but left slot length unset.
-FALLBACK_SLOT_MINUTES = 60
+FALLBACK_SLOT_MINUTES = 120
 
 # Backward-compatible export for older integrations/tests. The booking engine
 # no longer reads this value; capacity is derived solely from ready technicians.
@@ -182,7 +182,7 @@ async def _is_closed(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> bo
     return bool(row and row._mapping.get("full_day_closed"))
 
 
-async def _booked_counts(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> dict[str, int]:
+async def _booked_counts(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date, exclude_job_id: uuid.UUID | None = None) -> dict[str, int]:
     """How many live jobs the provider already holds per time window that day.
 
     Cancelled/failed jobs must not consume capacity -- otherwise a day of
@@ -191,10 +191,10 @@ async def _booked_counts(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -
     rows = (await db.execute(text(
         "SELECT scheduled_time_window, COUNT(*) AS n FROM service_jobs "
         "WHERE tenant_id=:tid AND scheduled_date=:d "
-        "AND scheduled_time_window IS NOT NULL "
+        "AND (CAST(:exclude_id AS uuid) IS NULL OR id <> CAST(:exclude_id AS uuid)) "
         "AND status NOT IN ('cancelled','failed','rejected') "
         "GROUP BY scheduled_time_window"
-    ), {"tid": str(tenant_id), "d": day})).fetchall()
+    ), {"tid": str(tenant_id), "d": day, "exclude_id": str(exclude_job_id) if exclude_job_id else None})).fetchall()
     return {r._mapping["scheduled_time_window"]: int(r._mapping["n"]) for r in rows}
 
 
@@ -203,9 +203,8 @@ def _slots_from_rule(rule: dict) -> list[tuple[dt.time, dt.time]]:
     end = _parse_hhmm(rule.get("end_time"))
     if not start or not end or start >= end:
         return []
-    minutes = rule.get("slot_duration_minutes") or FALLBACK_SLOT_MINUTES
-    if minutes <= 0:
-        minutes = FALLBACK_SLOT_MINUTES
+    # Home Services visits reserve two hours, even for legacy one-hour rules.
+    minutes = FALLBACK_SLOT_MINUTES
 
     slots: list[tuple[dt.time, dt.time]] = []
     cursor = dt.datetime.combine(dt.date.today(), start)
@@ -213,9 +212,44 @@ def _slots_from_rule(rule: dict) -> list[tuple[dt.time, dt.time]]:
     step = dt.timedelta(minutes=minutes)
     while cursor + step <= limit:
         nxt = cursor + step
+        break_start = _parse_hhmm(rule.get("break_start_time"))
+        break_end = _parse_hhmm(rule.get("break_end_time"))
+        if break_start and break_end and cursor.time() < break_end and nxt.time() > break_start:
+            cursor = dt.datetime.combine(cursor.date(), break_end)
+            continue
         slots.append((cursor.time(), nxt.time()))
         cursor = nxt
     return slots
+
+
+def _daily_remaining(rules: list[dict], technicians: int, booked: dict) -> int:
+    """Provider daily volume, bounded by whole two-hour windows and funded staff."""
+    windows = sorted({slot for rule in rules for slot in _slots_from_rule(rule)})
+    # Overlapping schedule rows do not create extra physical working hours.
+    count = 0
+    previous_end = None
+    for start, end in windows:
+        if previous_end is None or start >= previous_end:
+            count += 1
+            previous_end = end
+    physical_limit = count * max(0, technicians)
+    limits = [int(r["max_jobs_per_day"]) for r in rules if r.get("max_jobs_per_day") is not None]
+    limit = min([physical_limit, *limits])
+    return max(0, limit - sum(booked.values()))
+
+
+def _overlapping_bookings(booked: dict, start: dt.time, end: dt.time) -> int:
+    """Old or edited time-window labels must still occupy overlapping capacity."""
+    total = 0
+    for label, count in booked.items():
+        try:
+            left, right = label.split("-", 1)
+            booked_start, booked_end = _parse_hhmm(left), _parse_hhmm(right)
+        except (AttributeError, ValueError):
+            booked_start = booked_end = None
+        if not booked_start or not booked_end or (booked_start < end and booked_end > start):
+            total += count
+    return total
 
 
 async def assignable_technician_count(
@@ -342,6 +376,9 @@ async def find_earliest_available_slot(
 
         booked = await _booked_counts(db, tenant_id, target)
 
+        if _daily_remaining(rules, technicians, booked) <= 0:
+            continue
+
         for rule in rules:
             cap = _effective_cap(rule, technicians)
             for start, end in _slots_from_rule(rule):
@@ -351,7 +388,7 @@ async def find_earliest_available_slot(
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
-                if booked.get(label, 0) >= cap:
+                if _overlapping_bookings(booked, start, end) >= cap:
                     continue
                 return {
                     "date": target.isoformat(),
@@ -362,7 +399,7 @@ async def find_earliest_available_slot(
                         (dt.datetime.combine(target, end) - dt.datetime.combine(target, start)).total_seconds() // 60
                     ),
                     "capacity": cap,
-                    "already_booked": booked.get(label, 0),
+                    "already_booked": _overlapping_bookings(booked, start, end),
                     "days_ahead": offset,
                 }
     return None
@@ -431,6 +468,9 @@ async def list_available_slots(
             continue
 
         booked = await _booked_counts(db, tenant_id, target)
+        daily_remaining = _daily_remaining(rules, technicians, booked)
+        if daily_remaining <= 0:
+            continue
         found_today = False
 
         for rule in rules:
@@ -439,7 +479,7 @@ async def list_available_slots(
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
-                if booked.get(label, 0) >= cap:
+                if _overlapping_bookings(booked, start, end) >= cap:
                     continue
                 # Legacy/provider edits can leave overlapping active business-
                 # hour rows. A physical provider slot is still one choice;
@@ -459,7 +499,8 @@ async def list_available_slots(
                         (dt.datetime.combine(target, end) - dt.datetime.combine(target, start)).total_seconds() // 60
                     ),
                     "capacity": cap,
-                    "already_booked": booked.get(label, 0),
+                    "already_booked": _overlapping_bookings(booked, start, end),
+                    "daily_remaining": daily_remaining,
                     "days_ahead": offset,
                 })
 
@@ -475,6 +516,7 @@ async def list_available_slots(
 async def slot_has_capacity(
     db: AsyncSession, *, tenant_id: uuid.UUID, day: dt.date, time_window: str,
     master_service_id: uuid.UUID | None = None,
+    exclude_job_id: uuid.UUID | None = None,
 ) -> bool:
     """Re-check a specific slot at confirmation time.
 
@@ -496,10 +538,12 @@ async def slot_has_capacity(
     rules = await _provider_rules_for_day(db, tenant_id, dow)
     if not rules:
         return False
-    booked = (await _booked_counts(db, tenant_id, day)).get(time_window, 0)
+    booked = await _booked_counts(db, tenant_id, day, exclude_job_id=exclude_job_id)
+    if _daily_remaining(rules, technicians, booked) <= 0:
+        return False
     for rule in rules:
         cap = _effective_cap(rule, technicians)
         for start, end in _slots_from_rule(rule):
             if _window_label(start, end) == time_window:
-                return booked < cap
+                return _overlapping_bookings(booked, start, end) < cap
     return False

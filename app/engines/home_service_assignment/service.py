@@ -1327,6 +1327,11 @@ class HomeServiceJobAssignmentService:
             or job.scheduled_time_window != scheduled_time_window
         )
         if moving_slot:
+            from sqlalchemy import text as capacity_sql
+            await self.db.execute(
+                capacity_sql("SELECT pg_advisory_xact_lock(hashtextextended(:capacity_key, 0))"),
+                {"capacity_key": f"home-service-capacity:{tenant_id}"},
+            )
             from app.engines.home_service_booking.provider_slot_service import slot_has_capacity
             if not await slot_has_capacity(
                 self.db,
@@ -1334,6 +1339,7 @@ class HomeServiceJobAssignmentService:
                 day=scheduled_date,
                 time_window=scheduled_time_window,
                 master_service_id=job.offering_id,
+                exclude_job_id=job.id,
             ):
                 raise ValueError(ERR_SLOT_UNAVAILABLE)
 

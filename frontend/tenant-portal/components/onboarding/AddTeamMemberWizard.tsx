@@ -63,10 +63,11 @@ function humanizeJobType(value: string) {
   return value.split("_").filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join(" ");
 }
 
-export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
+export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeatAvailable = true }: {
   existing: ProviderTeamMember | null;
   onClose: () => void;
   onSaved: () => void;
+  technicianSeatAvailable?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -87,7 +88,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   const [photoCleared, setPhotoCleared] = useState(false);
 
   // ── Role & capacity ──
-  const [memberType, setMemberType] = useState<string>(existing?.member_type ?? "technician");
+  const [memberType, setMemberType] = useState<string>(existing?.member_type ?? (technicianSeatAvailable ? "technician" : "staff"));
   const [canReceive, setCanReceive] = useState<boolean>(existing?.can_receive_assignment ?? true);
   const [availableSkills, setAvailableSkills] = useState<CategoryTeamSkill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(existing?.skill_ids ?? []);
@@ -194,6 +195,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
   }, [onClose, saving]);
 
   function validate(): string | null {
+    if (isTechnician && existing?.member_type !== "technician" && !technicianSeatAvailable) return "Buy an available technician seat before adding a technician. Non-technician staff are free.";
     if (!fullName.trim()) return "Full name is required.";
     if (!email.trim() && !phone.trim()) return "Enter an email address or a mobile number.";
     if (!designation.trim()) return "Select a designation.";
@@ -343,11 +345,12 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved }: {
           </>}
           {activeSection === 1 && <>
           <SectionTitle>Role &amp; assignment</SectionTitle>
+          <p>Only technicians consume paid seats. Staff and managers are free.{!technicianSeatAvailable && existing?.member_type !== "technician" ? " Buy a technician seat on the plan page to unlock the technician role." : ""}</p>
           <Field label="Role" required>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
               {MEMBER_TYPES.map(t => (
                 <label key={t.value} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 8, border: `1px solid ${memberType === t.value ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
-                  <input type="radio" checked={memberType === t.value} onChange={() => {
+                  <input type="radio" disabled={t.value === "technician" && existing?.member_type !== "technician" && !technicianSeatAvailable} checked={memberType === t.value} onChange={() => {
                     setMemberType(t.value);
                     if (!(DESIGNATIONS_BY_MEMBER_TYPE[t.value] ?? []).includes(designation)) setDesignation("");
                   }}/>

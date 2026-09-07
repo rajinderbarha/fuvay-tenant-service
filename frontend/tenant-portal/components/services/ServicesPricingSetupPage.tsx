@@ -499,7 +499,7 @@ function ServicesPricingPageContent() {
         await homeServicesSetupApi.saveDraft(enrolled.tenant_service_id);
         setEnabledList(list => list.map(e => e.tenant_service_id === updated.tenant_service_id ? updated : e));
       }
-      router.push(returnTo || "/tenant/home-services/setup/coverage-availability");
+      router.push(returnTo || "/tenant/home-services/setup/plan");
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not save your services.");
     } finally {

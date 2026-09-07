@@ -13,6 +13,7 @@ const NEXT_ACTION_ROUTES: Record<string, string> = {
   EDIT_BUSINESS_PROFILE: "/tenant/home-services/setup/business-profile",
   EDIT_DOCUMENTS: "/tenant/home-services/setup/documents",
   EDIT_SERVICES_PRICING: "/tenant/home-services/setup/services-pricing",
+  BUY_TECHNICIAN_PLAN: "/tenant/home-services/setup/plan",
   EDIT_COVERAGE_AVAILABILITY: "/tenant/home-services/setup/coverage-availability",
   EDIT_STAFF: "/tenant/home-services/setup/staff",
   EDIT_FINANCE: "/tenant/home-services/setup/finance",
@@ -21,6 +22,7 @@ const NEXT_ACTION_ROUTES: Record<string, string> = {
 
 const SECTION_ROUTES: Record<string, string> = {
   BUSINESS_PROFILE: "/tenant/home-services/setup/business-profile",
+  TECHNICIAN_PLAN: "/tenant/home-services/setup/plan",
   DOCUMENTS: "/tenant/home-services/setup/documents",
   SERVICES_PRICING: "/tenant/home-services/setup/services-pricing",
   COVERAGE_AVAILABILITY: "/tenant/home-services/setup/coverage-availability",

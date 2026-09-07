@@ -110,6 +110,10 @@ async def get_seat_usage(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
 
 async def assert_seat_available(db: AsyncSession, tenant_id: uuid.UUID) -> None:
     """Raise if adding one more technician would exceed purchased seats."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:seat_key, 0))"),
+        {"seat_key": f"technician-seats:{tenant_id}"},
+    )
     usage = await get_seat_usage(db, tenant_id)
     if usage["available_seats"] <= 0:
         raise ServiceOSException(

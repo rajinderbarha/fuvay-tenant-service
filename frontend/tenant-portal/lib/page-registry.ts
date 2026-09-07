@@ -137,6 +137,11 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "onboarding",
     breadcrumbs: [{ label: "Setup", href: "/tenant/home-services/setup/overview" }, { label: "Staff & Technicians" }],
   },
+  "/tenant/home-services/setup/plan": {
+    title: "Technician Seat Plan",
+    section: "onboarding",
+    breadcrumbs: [{ label: "Setup", href: "/tenant/home-services/setup/overview" }, { label: "Technician Seat Plan" }],
+  },
   "/tenant/home-services/setup/finance": {
     title: "Finance Readiness",
     section: "onboarding",

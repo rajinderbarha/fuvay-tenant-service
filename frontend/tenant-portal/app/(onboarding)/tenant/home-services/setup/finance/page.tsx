@@ -376,7 +376,7 @@ export default function FinanceReadinessPage() {
       </div>
 
       <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "space-between", padding: "16px 0", marginTop: 24, background: "var(--bg-gradient)" }}>
-        <Link href="/tenant/home-services/setup/staff"><Btn variant="secondary">Back</Btn></Link>
+        <Link href="/tenant/home-services/setup/coverage-availability"><Btn variant="secondary">Back</Btn></Link>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="secondary" disabled={saving} onClick={() => save(false)}>Save draft</Btn>
           <Btn variant="primary" disabled={saving} onClick={() => save(true)}>

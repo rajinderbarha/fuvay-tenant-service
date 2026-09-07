@@ -48,10 +48,13 @@ export default function StaffTechniciansPage() {
   const [coverageFilter, setCoverageFilter] = useState("All");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<ProviderTeamMember | null>(null);
+  const [seats, setSeats] = useState<{ entitled: number; available: number; credit: number } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
+    topupApi.status().then(s => setSeats({ entitled: s.entitled_seats, available: s.available_seats, credit: s.credit_balance }))
+      .catch(() => setSeats(null));
     Promise.all([
       providerTeamMembersApi.list(),
       providerTeamMembersApi.readiness(),
@@ -64,16 +67,6 @@ export default function StaffTechniciansPage() {
 
   // Same gate as the Team workspace, so onboarding cannot quietly add
   // technicians the plan does not pay for and then fail at the API.
-  const [seats, setSeats] = useState<{ entitled: number; available: number; credit: number } | null>(null);
-  useEffect(() => {
-    topupApi.status()
-      .then(s => setSeats({
-        entitled: s.entitled_seats ?? 0,
-        available: s.available_seats ?? 0,
-        credit: s.credit_balance ?? 0,
-      }))
-      .catch(() => setSeats(null));  // never block setup on a finance read
-  }, []);
   const noPlan = seats?.entitled === 0;
   const seatsFull = !!seats && !noPlan && seats.available <= 0;
   const creditOut = !!seats && seats.credit <= 0;
@@ -168,12 +161,12 @@ export default function StaffTechniciansPage() {
         @media (max-width: 700px) { .staff-row { flex-wrap: wrap; } .staff-coverage-grid{grid-template-columns:1fr}.staff-actions{flex-wrap:wrap}.staff-actions>div{display:flex;flex:1}.staff-actions>div>*{flex:1} }
       `}</style>
       <PageHeader
-        eyebrow="Tenant onboarding · Step 6 of 8"
+        eyebrow="Tenant onboarding · Step 5 of 8"
         title="Staff & technicians"
         description="Add your team and assign the services they can perform."
         actions={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {counts && <Badge variant={counts.total === 0 ? "info" : counts.ready === counts.total ? "success" : "warning"}>{statusLine}</Badge>}
-          <Btn variant="primary" disabled={noPlan || seatsFull}
+          <Btn variant="primary"
                onClick={() => { setEditingMember(null); setWizardOpen(true); }}>
             <UserPlus size={15}/> Add team member
           </Btn>
@@ -202,7 +195,7 @@ export default function StaffTechniciansPage() {
               : seatsFull
               ? <>All {seats?.entitled} purchased seat{seats?.entitled === 1 ? "" : "s"} are in use. Buy another plan to add more technicians.</>
               : <><strong>Your team is suspended — the workspace is out of credit.</strong> Technicians cannot be activated or assigned work until you top up.</>}
-            {" "}<Link href="/home-services/finance">Open finance</Link>
+            {" "}Staff members do not consume paid seats. <Link href="/tenant/home-services/setup/plan">Buy technician seats</Link>
           </span>
         </div>
       )}
@@ -317,11 +310,11 @@ export default function StaffTechniciansPage() {
       </div>
 
       <div className="staff-actions">
-        <Link href="/tenant/home-services/setup/coverage-availability"><Btn variant="secondary">Back</Btn></Link>
+        <Link href="/tenant/home-services/setup/plan"><Btn variant="secondary">Back</Btn></Link>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="secondary" onClick={load}>Save draft</Btn>
           <Btn variant="primary"
-            onClick={() => router.push("/tenant/home-services/setup/finance")}>
+            onClick={() => router.push("/tenant/home-services/setup/coverage-availability")}>
             {coverageGaps.length > 0 ? "Continue for now" : "Save & continue"} <ChevronRight size={15}/>
           </Btn>
         </div>
@@ -329,6 +322,7 @@ export default function StaffTechniciansPage() {
 
       {wizardOpen && (
         <AddTeamMemberWizard
+          technicianSeatAvailable={!!seats && seats.available > 0}
           existing={editingMember}
           onClose={() => setWizardOpen(false)}
           onSaved={() => { setWizardOpen(false); load(); }}

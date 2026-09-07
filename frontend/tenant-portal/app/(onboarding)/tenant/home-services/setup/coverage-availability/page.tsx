@@ -13,10 +13,12 @@ import {
   ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
   type BookingWindowSettings, type AvailabilityException,
 } from "../../../../../../lib/api";
+import { topupApi } from "../../../../../../lib/api-topup";
+import { twoHourWindows } from "../../../../../../lib/booking-capacity";
 
 const SETUP_STEPS = [
-  "overview", "business-profile", "documents", "services-pricing",
-  "coverage-availability", "staff", "finance", "review",
+  "business-profile", "documents", "services-pricing",
+  "plan", "staff", "coverage-availability", "finance", "review",
 ] as const;
 const STEP_NUMBER = SETUP_STEPS.indexOf("coverage-availability") + 1;
 const TOTAL_STEPS = SETUP_STEPS.length;
@@ -44,6 +46,7 @@ function CoverageAvailabilityWorkspace() {
   const [exceptions, setExceptions] = useState<AvailabilityException[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [technicianCapacity, setTechnicianCapacity] = useState<number | null>(null);
 
   const [newPincode, setNewPincode] = useState("");
   const [addingPincode, setAddingPincode] = useState(false);
@@ -63,8 +66,10 @@ function CoverageAvailabilityWorkspace() {
       providerAvailabilityApi.list(),
       bookingWindowApi.get(),
       availabilityExceptionsApi.list(),
+      topupApi.status(),
     ])
-      .then(([a, r, bw, ex]) => {
+      .then(([a, r, bw, ex, seats]) => {
+        setTechnicianCapacity(Math.min(seats.entitled_seats, seats.used_seats));
         setAreas(a.areas);
         setRules(r.rules);
         setBookingWindow(bw);
@@ -80,7 +85,7 @@ function CoverageAvailabilityWorkspace() {
   const activeCoverageCount = activePincodes.length;
   const rulesByDay = useMemo(() => {
     const map = new Map<number, ProviderAvailabilityRule>();
-    for (const r of rules ?? []) if (r.is_active) map.set(r.day_of_week, r);
+    for (const r of rules ?? []) if (r.is_active && r.scope_type === "provider" && !r.scope_id) map.set(r.day_of_week, r);
     return map;
   }, [rules]);
   const openDaysCount = rulesByDay.size;
@@ -160,7 +165,7 @@ function CoverageAvailabilityWorkspace() {
           setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
         } else {
           const created = await providerAvailabilityApi.create({
-            scope_type: "provider", day_of_week: dayIdx, start_time: "09:00", end_time: "18:00",
+            scope_type: "provider", day_of_week: dayIdx, start_time: "09:00", end_time: "18:00", slot_duration_minutes: 120,
           });
           setRules(list => [...(list ?? []), created]);
         }
@@ -177,7 +182,7 @@ function CoverageAvailabilityWorkspace() {
     const existing = rulesByDay.get(dayIdx);
     if (!existing) return;
     try {
-      const updated = await providerAvailabilityApi.update(existing.id, { [field]: value });
+      const updated = await providerAvailabilityApi.update(existing.id, { [field]: value, slot_duration_minutes: 120 });
       setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not update the schedule time.");
@@ -192,9 +197,9 @@ function CoverageAvailabilityWorkspace() {
       for (const dayIdx of [2, 3, 4, 5]) {
         const existing = rulesByDay.get(dayIdx);
         if (existing) {
-          await providerAvailabilityApi.update(existing.id, { start_time: monday.start_time, end_time: monday.end_time, is_active: true });
+          await providerAvailabilityApi.update(existing.id, { start_time: monday.start_time, end_time: monday.end_time, slot_duration_minutes: 120, max_jobs_per_day: monday.max_jobs_per_day ?? null, is_active: true });
         } else {
-          await providerAvailabilityApi.create({ scope_type: "provider", day_of_week: dayIdx, start_time: monday.start_time, end_time: monday.end_time });
+          await providerAvailabilityApi.create({ scope_type: "provider", day_of_week: dayIdx, start_time: monday.start_time, end_time: monday.end_time, slot_duration_minutes: 120, max_jobs_per_day: monday.max_jobs_per_day ?? null });
         }
       }
       const r = await providerAvailabilityApi.list();
@@ -202,6 +207,20 @@ function CoverageAvailabilityWorkspace() {
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not copy Monday's hours.");
     }
+  }
+
+  async function handleDailyLimit(rule: ProviderAvailabilityRule, value: string) {
+    const maximum = twoHourWindows(rule.start_time, rule.end_time, rule.break_start_time, rule.break_end_time).length * (technicianCapacity ?? 0);
+    const limit = value.trim() ? Number(value) : null;
+    if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > maximum)) {
+      setError(`Daily jobs must be between 1 and ${maximum}, or leave blank for automatic capacity.`);
+      return;
+    }
+    try {
+      const updated = await providerAvailabilityApi.update(rule.id, { max_jobs_per_day: limit, slot_duration_minutes: 120 });
+      setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
+      setError(null);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save daily job limit."); }
   }
 
   async function handleBookingWindowChange(field: keyof BookingWindowSettings, value: string | boolean | number) {
@@ -247,7 +266,7 @@ function CoverageAvailabilityWorkspace() {
   }
 
   function handleBack() {
-    router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/services-pricing");
+    router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/staff");
   }
 
   async function handleSaveDraft() {
@@ -274,7 +293,13 @@ function CoverageAvailabilityWorkspace() {
       // here made unrelated service-pricing omissions trap the tenant on the
       // Coverage page. Review & Submit is the single publication boundary and
       // shows service-specific blockers with the appropriate edit action.
-      router.push("/tenant/home-services/setup/staff");
+      for (const rule of rulesByDay.values()) {
+        if (rule.slot_duration_minutes !== 120) await providerAvailabilityApi.update(rule.id, { slot_duration_minutes: 120 });
+      }
+      await bookingWindowApi.update({ slot_duration_minutes: 120 });
+      router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/finance");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save two-hour booking slots.");
     } finally {
       setSaving(false);
     }
@@ -423,9 +448,12 @@ function CoverageAvailabilityWorkspace() {
               <Btn variant="secondary" size="sm" onClick={handleCopyMondayToWeekdays}>Copy Monday to weekdays</Btn>
             </div>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Timezone: {bookingWindow.timezone}</p>
+            <p>Two-hour jobs · {technicianCapacity ?? 0} funded technicians · at most {technicianCapacity ?? 0} simultaneous bookings. Staff do not add booking capacity. Actual availability may be lower until technician documents are approved.</p>
             {DAYS.map(d => {
               const rule = rulesByDay.get(d.idx);
               const enabled = !!rule;
+              const windows = rule ? twoHourWindows(rule.start_time, rule.end_time, rule.break_start_time, rule.break_end_time) : [];
+              const dailyMaximum = windows.length * (technicianCapacity ?? 0);
               return (
                 <div key={d.idx} className="cov-day-row">
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
@@ -446,6 +474,15 @@ function CoverageAvailabilityWorkspace() {
                         style={{ height: 34, padding: "0 8px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)" }}/>
                     </>
                   ) : <span style={{ fontSize: 13, color: "var(--text-tertiary)", gridColumn: "span 2" }}>Closed</span>}
+                  {enabled && <div style={{ gridColumn: "1 / -1", fontSize: 13, paddingBottom: 12 }}>
+                    <p>{windows.join(" · ") || "No complete two-hour window"}</p>
+                    <p>{windows.length} windows × {technicianCapacity ?? 0} technicians = up to {dailyMaximum} jobs.</p>
+                    <label>Maximum jobs this day (whole business)
+                      <input key={`${rule!.id}:${rule!.max_jobs_per_day ?? "auto"}`} type="number" min={1} max={dailyMaximum || undefined}
+                        aria-label={`${d.name} daily job limit`} defaultValue={rule!.max_jobs_per_day ?? ""} placeholder={`Automatic (${dailyMaximum})`}
+                        onBlur={e => void handleDailyLimit(rule!, e.target.value)} style={{ marginLeft: 12, width: 160 }} />
+                    </label>
+                  </div>}
                 </div>
               );
             })}

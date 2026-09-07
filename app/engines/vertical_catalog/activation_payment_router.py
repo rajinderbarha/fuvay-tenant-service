@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,13 +51,18 @@ async def get_funding_quote_endpoint(
     return ok(await resolve_activation_funding_quote(db, _tid(user)), _rid(request))
 
 
+class FundingOrderRequest(BaseModel):
+    plan_id: uuid.UUID | None = None
+
+
 @router.post("/funding/order")
 async def create_funding_order_endpoint(
     request: Request,
+    body: FundingOrderRequest | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_tenant_owner_mutation),
 ):
-    return ok(await create_activation_funding_order(db, _tid(user)), _rid(request))
+    return ok(await create_activation_funding_order(db, _tid(user), plan_id=body.plan_id if body else None), _rid(request))
 
 
 class ConfirmFundingRequest(BaseModel):

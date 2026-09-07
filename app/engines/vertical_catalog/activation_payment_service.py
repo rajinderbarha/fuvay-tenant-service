@@ -148,10 +148,17 @@ async def resolve_activation_funding_quote(db: AsyncSession, tenant_id: uuid.UUI
     }
 
 
-async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID, *, plan_id: uuid.UUID | None = None) -> dict:
     """Create one checkout for the exact live shortfall and allocate it on capture."""
     vertical, policy = await _resolve_vertical_and_policy(db, tenant_id)
     quote = await resolve_activation_funding_quote(db, tenant_id)
+    if plan_id is not None:
+        selected = next((p for p in quote["available_plans"] if str(p["id"]) == str(plan_id)), None)
+        if selected is None:
+            raise ServiceOSException("TOPUP_PLAN_UNAVAILABLE", "This plan is no longer available. Refresh the plan list.", status_code=409)
+        # An explicit purchase may add seats even when current usage is funded.
+        # Prices and entitlements always come from the live server catalogue.
+        quote = {**quote, "suggested_plan": selected, "total_due": selected["total_amount"]}
     if not quote.get("suggested_plan"):
         raise ServiceOSException(
             ERR_ORDER_ALREADY_SATISFIED,
@@ -183,6 +190,7 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
             ActivationPaymentOrder.tenant_id == tenant_id,
             ActivationPaymentOrder.payment_kind == PAYMENT_KIND_FUNDING,
             ActivationPaymentOrder.status == STATUS_CREATED,
+            ActivationPaymentOrder.topup_plan_id == uuid.UUID(str(quote["suggested_plan"]["id"])),
             ActivationPaymentOrder.amount == gross_amount,
             ActivationPaymentOrder.credited_amount == _money(quote["suggested_plan"]["credited_amount"]),
             ActivationPaymentOrder.tax_amount == _money(quote["suggested_plan"]["gst_amount"]),

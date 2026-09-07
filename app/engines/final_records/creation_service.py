@@ -304,6 +304,12 @@ class HomeServiceFinalCreationService:
         promised_window = None
         summary_slot = (draft.booking_summary or {}).get("promised_slot") or {}
         if draft.selected_tenant_id:
+            # Capacity is shared across services and time windows (daily cap),
+            # including the fallback slot search. Serialize the entire decision.
+            await self.db.execute(
+                sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:capacity_key, 0))"),
+                {"capacity_key": f"home-service-capacity:{draft.selected_tenant_id}"},
+            )
             from app.engines.home_service_booking.provider_slot_service import (
                 find_earliest_available_slot, slot_has_capacity,
             )

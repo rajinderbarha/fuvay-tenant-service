@@ -180,11 +180,10 @@ def test_slots_are_generated_at_the_providers_configured_length():
 
 
 def test_a_partial_trailing_slot_is_never_offered():
-    """09:00-12:30 at 60min yields 3 full hours -- never a 30-minute stub the
-    provider did not agree to."""
+    """Legacy one-hour rules reserve two hours; trailing time is not bookable."""
     rule = {"start_time": "09:00", "end_time": "12:30", "slot_duration_minutes": 60}
     assert [_window_label(a, b) for a, b in _slots_from_rule(rule)] == [
-        "09:00-10:00", "10:00-11:00", "11:00-12:00",
+        "09:00-11:00",
     ]
 
 

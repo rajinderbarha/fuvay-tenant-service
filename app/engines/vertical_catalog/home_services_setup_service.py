@@ -31,7 +31,7 @@ HOME_SERVICES_VERTICAL_KEY = "home_services"
 # order used both for the checklist display and the next_action projection.
 _SECTION_ORDER = [
     "BUSINESS_PROFILE", "DOCUMENTS", "SERVICES_PRICING",
-    "COVERAGE_AVAILABILITY", "STAFF_TECHNICIANS", "FINANCE_READINESS",
+    "TECHNICIAN_PLAN", "STAFF_TECHNICIANS", "COVERAGE_AVAILABILITY", "FINANCE_READINESS",
     "REVIEW_SUBMIT",
 ]
 
@@ -39,6 +39,7 @@ _NEXT_ACTION_BY_SECTION = {
     "BUSINESS_PROFILE": "EDIT_BUSINESS_PROFILE",
     "DOCUMENTS": "EDIT_DOCUMENTS",
     "SERVICES_PRICING": "EDIT_SERVICES_PRICING",
+    "TECHNICIAN_PLAN": "BUY_TECHNICIAN_PLAN",
     "COVERAGE_AVAILABILITY": "EDIT_COVERAGE_AVAILABILITY",
     "STAFF_TECHNICIANS": "EDIT_STAFF",
     "FINANCE_READINESS": "EDIT_FINANCE",
@@ -239,6 +240,13 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          extra={"published_count": published_count, "priced_count": priced_count},
          blocking_reasons=[] if services_ready else
          [{"code": "NO_PRICED_SERVICE", "message": "No published, priced service offering yet."}])
+    from app.engines.vertical_catalog.topup_entitlement_service import live_seats
+    purchased_seats = await live_seats(db, tenant_id)
+    _add("TECHNICIAN_PLAN", False, purchased_seats > 0,
+         "Technician seat plan", "Buy seats before adding technicians; non-technician staff are free",
+         extra={"entitled_seats": purchased_seats}, blocking_reasons=[],
+         warnings=[] if purchased_seats > 0 else
+         [{"code": "TECHNICIAN_PLAN_REQUIRED", "message": "Purchase a plan before adding technicians or accepting bookings."}])
     _add("COVERAGE_AVAILABILITY", True, coverage_ready,
          "Coverage & availability", "Where and when your team works",
          extra={"active_areas": active_areas, "availability_rules": availability_count},
@@ -258,6 +266,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          blocking_reasons=[] if finance_ready else
          [{"code": "FINANCE_NOT_CONFIGURED", "message": "Finance readiness has not been configured yet."}])
 
+    sections.sort(key=lambda s: _SECTION_ORDER.index(s["key"]))
     required_sections = [s for s in sections if s["required"]]
     completed_required = sum(1 for s in required_sections if s["status"] == "complete")
     total_required = len(required_sections)
@@ -412,6 +421,7 @@ _ACTIONS_BY_STATUS = {
 _ACTOR_BY_ACTION = {"enrollment.submitted": "tenant"}
 
 _SNAPSHOT_LABELS = {
+    "TECHNICIAN_PLAN": "Technician seat plan",
     "BUSINESS_PROFILE": "Business profile", "DOCUMENTS": "Documents",
     "SERVICES_PRICING": "Services & pricing", "COVERAGE_AVAILABILITY": "Coverage & availability",
     "STAFF_TECHNICIANS": "Staff & technicians", "FINANCE_READINESS": "Finance readiness",

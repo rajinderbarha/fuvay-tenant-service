@@ -40,7 +40,7 @@ class TestCoverageAvailabilityDoesNotPublish:
         block = c[start:end]
         assert "activeCoverageCount === 0" in block
         assert "openDaysCount === 0" in block
-        assert 'router.push("/tenant/home-services/setup/staff")' in block
+        assert '"/tenant/home-services/setup/finance"' in block
         assert "listEnabled()" not in block
         assert "publish(" not in block
 

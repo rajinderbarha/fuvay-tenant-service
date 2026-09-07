@@ -16,7 +16,7 @@ import { authApi, clearSession, homeServicesSetupOverviewApi, providerNotifApi }
 
 type OnboardingNavId =
   | "overview" | "business-profile" | "documents" | "services-pricing"
-  | "coverage-availability" | "staff" | "finance" | "review"
+  | "plan" | "coverage-availability" | "staff" | "finance" | "review"
   | "application-status" | "submitted-setup" | "activation-center" | "messages" | "help";
 
 const NAV_ITEMS: { id: OnboardingNavId; href: string; label: string; icon: React.ReactNode }[] = [
@@ -24,8 +24,9 @@ const NAV_ITEMS: { id: OnboardingNavId; href: string; label: string; icon: React
   { id: "business-profile", href: "/tenant/home-services/setup/business-profile", label: "Business Profile", icon: <Building2 size={16}/> },
   { id: "documents", href: "/tenant/home-services/setup/documents", label: "Documents", icon: <FileText size={16}/> },
   { id: "services-pricing", href: "/tenant/home-services/setup/services-pricing", label: "Services & Pricing", icon: <Tag size={16}/> },
-  { id: "coverage-availability", href: "/tenant/home-services/setup/coverage-availability", label: "Coverage & Availability", icon: <MapPin size={16}/> },
+  { id: "plan", href: "/tenant/home-services/setup/plan", label: "Technician Seat Plan", icon: <Wallet size={16}/> },
   { id: "staff", href: "/tenant/home-services/setup/staff", label: "Staff & Technicians", icon: <Users2 size={16}/> },
+  { id: "coverage-availability", href: "/tenant/home-services/setup/coverage-availability", label: "Coverage & Availability", icon: <MapPin size={16}/> },
   { id: "finance", href: "/tenant/home-services/setup/finance", label: "Finance Readiness", icon: <Wallet size={16}/> },
   { id: "review", href: "/tenant/home-services/setup/review", label: "Review & Submit", icon: <ClipboardCheck size={16}/> },
 ];

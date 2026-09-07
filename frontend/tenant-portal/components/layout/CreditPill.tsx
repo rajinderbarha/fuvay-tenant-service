@@ -68,7 +68,7 @@ export function CreditPill() {
   async function buy(plan: TopupPlan) {
     setBusy(true); setErr(null); setDone(null);
     try {
-      const order = await topupApi.createOrder();
+      const order = await topupApi.createOrder(plan.id);
       await razorpay.open({
         keyId: order.key,
         orderId: order.order_id,

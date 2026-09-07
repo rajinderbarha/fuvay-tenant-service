@@ -476,6 +476,7 @@ function sectionEditRoute(key: string): string {
     DOCUMENTS: "/tenant/home-services/setup/documents",
     SERVICES_PRICING: "/tenant/home-services/setup/services-pricing",
     COVERAGE_AVAILABILITY: "/tenant/home-services/setup/coverage-availability",
+    TECHNICIAN_PLAN: "/tenant/home-services/setup/plan",
     STAFF_TECHNICIANS: "/tenant/home-services/setup/staff",
     FINANCE_READINESS: "/tenant/home-services/setup/finance",
   };
