@@ -131,6 +131,22 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # Every published service must be priced. Comparing only `> 0` let one
     # valid service hide any number of unpriced published services.
     services_ready = published_count > 0 and priced_count == published_count
+    # Step 3 saves a configuration, not a bookable offering. Coverage and
+    # hours are configured in step 6; full publication remains a review gate.
+    from sqlalchemy import select
+    from app.engines.admin_catalog.models import TenantService
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+    enabled_services = (await db.execute(select(TenantService).where(
+        TenantService.tenant_id == tenant_id, TenantService.is_enabled.is_(True),
+        TenantService.is_active.is_(True), TenantService.deleted_at.is_(None),
+    ))).scalars().all()
+    configured_count = 0
+    for offering in enabled_services:
+        validation = await TenantCatalogService(db, actor_tenant_id=tenant_id).validate_for_publish(offering.id)
+        if not any(e.get("code") not in {"MISSING_SERVICE_AREA", "MISSING_BUSINESS_HOURS"}
+                   for e in validation["errors"]):
+            configured_count += 1
+    services_ready = bool(enabled_services) and configured_count == len(enabled_services)
 
     # ── Coverage & Availability ───────────────────────────────────────────
     active_areas = (await db.execute(
@@ -149,8 +165,8 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         compute_service_coverage,
         compute_team_summary,
     )
-    team_summary = await compute_team_summary(db, tenant_id)
-    service_coverage = await compute_service_coverage(db, tenant_id)
+    team_summary = await compute_team_summary(db, tenant_id, include_availability=False)
+    service_coverage = await compute_service_coverage(db, tenant_id, team_summary=team_summary)
     # Kept under the existing response key for API compatibility, but this is
     # now the count of genuinely ready members rather than active name-only rows.
     active_staff = int(team_summary["counts"]["ready"])
@@ -227,12 +243,12 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          [{"code": "DOCUMENTS_PENDING_VERIFICATION", "message": "Required documents are uploaded but not yet verified by Admin."}])
     _add("SERVICES_PRICING", True, services_ready,
          "Services & pricing", "Choose services and set your own prices",
-         extra={"published_count": published_count, "priced_count": priced_count},
+         extra={"published_count": published_count, "priced_count": priced_count, "configured_count": configured_count},
          blocking_reasons=[] if services_ready else
-         [{"code": "NO_PRICED_SERVICE", "message": "No published, priced service offering yet."}])
+         [{"code": "NO_PRICED_SERVICE", "message": "Complete pricing and matching choices for every enabled service."}])
     from app.engines.vertical_catalog.topup_entitlement_service import live_seats
     purchased_seats = await live_seats(db, tenant_id)
-    _add("TECHNICIAN_PLAN", False, purchased_seats > 0,
+    _add("TECHNICIAN_PLAN", True, purchased_seats > 0,
          "Technician seat plan", "Buy seats before adding technicians; non-technician staff are free",
          extra={"entitled_seats": purchased_seats}, blocking_reasons=[],
          warnings=[] if purchased_seats > 0 else
@@ -275,6 +291,12 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # additional required setup section. Give it an explicit action state so
     # clients never count it as a sixth blocker.
     sections[-1]["status"] = "complete" if review_submit_complete else ("ready" if review_ready else "locked")
+
+    from app.engines.vertical_catalog.setup_sequence import prerequisite
+    for section in sections:
+        blocked = prerequisite(sections, section["key"])
+        section["locked"] = blocked is not None
+        section["prerequisite"] = blocked
 
     percentage = round((completed_required / total_required) * 100) if total_required else 0
     blocker_count = sum(len(s["blocking_reasons"]) for s in sections)

@@ -23,7 +23,9 @@ from app.engines.vertical_catalog.home_services_setup_service import (
 from app.engines.vertical_catalog.service import VerticalCatalogService
 from app.engines.vertical_catalog.declarations import get_declaration_status, accept_declarations
 
-router = APIRouter(prefix="/v1/tenant/home-services/setup", tags=["Tenant Home Services Setup"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/home-services/setup", tags=["Tenant Home Services Setup"])
 
 _svc = VerticalCatalogService()
 

@@ -23,7 +23,8 @@ def _read(path: str) -> str:
 class TestRouterStructure:
     def test_router_has_expected_endpoints(self):
         c = _read(ROUTER)
-        assert 'router = APIRouter(prefix="/v1/tenant/home-services/setup/finance"' in c
+        # Gained the shared setup-sequence gate (dependencies=[...]) ahead of prefix=.
+        assert 'prefix="/v1/tenant/home-services/setup/finance"' in c
         assert '@router.get("")' in c
         assert '@router.put("")' in c
 

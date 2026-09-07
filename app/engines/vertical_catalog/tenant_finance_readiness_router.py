@@ -34,7 +34,9 @@ from app.engines.invoice_payment.commission_service import resolve_provider_comm
 from app.engines.vertical_catalog.finance_policy_service import FinancePolicyResolutionError
 from app.engines.vertical_catalog.activation_payment_service import resolve_activation_funding_quote
 
-router = APIRouter(prefix="/v1/tenant/home-services/setup/finance", tags=["Tenant Finance Readiness"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/home-services/setup/finance", tags=["Tenant Finance Readiness"])
 
 
 def _tid(user: UserContext) -> uuid.UUID:

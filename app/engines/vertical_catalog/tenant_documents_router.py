@@ -32,7 +32,9 @@ from app.engines.vertical_catalog.document_requirements import (
     resolve_requirements, required_keys, is_business_profile_complete, POLICY_VERSION,
 )
 
-router = APIRouter(prefix="/v1/tenant/home-services/setup/documents", tags=["Tenant Verification Documents"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/home-services/setup/documents", tags=["Tenant Verification Documents"])
 
 DOCUMENT_MEDIA_CONTEXT = "provider_document"
 utcnow = lambda: datetime.now(timezone.utc)

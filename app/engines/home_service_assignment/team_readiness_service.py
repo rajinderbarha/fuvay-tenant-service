@@ -113,7 +113,7 @@ async def _validate_offering_ids(db: AsyncSession, tenant_id: uuid.UUID, offerin
 
 
 async def compute_members_readiness(
-    db: AsyncSession, tenant_id: uuid.UUID, members: list[dict]
+    db: AsyncSession, tenant_id: uuid.UUID, members: list[dict], *, include_availability: bool = True
 ) -> dict[str, dict]:
     """Resolve readiness for an already bounded roster page in three queries.
 
@@ -165,7 +165,7 @@ async def compute_members_readiness(
                 assigned = {str(value) for value in (m.get("supported_offering_ids") or [])}
                 if not (assigned & enabled_offering_ids):
                     missing.append("service_assignment")
-                if str(m["id"]) not in scheduled_member_ids:
+                if include_availability and str(m["id"]) not in scheduled_member_ids:
                     missing.append("availability")
             if missing:
                 order = ["identity", "role", "service_assignment", "availability"]
@@ -177,7 +177,7 @@ async def compute_members_readiness(
     return per_member
 
 
-async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
+async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID, *, include_availability: bool = True) -> dict:
     """Canonical complete onboarding roster readiness.
 
     Setup explicitly needs a complete per-member result.  High-volume
@@ -188,7 +188,7 @@ async def compute_team_summary(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         "SELECT * FROM provider_team_members WHERE tenant_id=:tid AND deleted_at IS NULL"
     ), {"tid": str(tenant_id)})).fetchall()
     members = [dict(r._mapping) for r in members_rows]
-    per_member = await compute_members_readiness(db, tenant_id, members)
+    per_member = await compute_members_readiness(db, tenant_id, members, include_availability=include_availability)
     counts = {"total": len(members), "ready": 0, "needs_setup": 0, "invitation_pending": 0, "disabled": 0}
     for readiness in per_member.values():
         if readiness["status"] == "ready": counts["ready"] += 1

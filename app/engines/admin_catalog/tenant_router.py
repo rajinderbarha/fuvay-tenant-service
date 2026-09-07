@@ -11,7 +11,9 @@ from app.dependencies.db import get_db
 from app.engines.admin_catalog.tenant_service import TenantCatalogService
 from app.schemas.base import ApiResponse, ok
 
-router = APIRouter(prefix="/v1/tenant/catalog", tags=["Tenant Service Catalog"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/catalog", tags=["Tenant Service Catalog"])
 ENGINE_ID = "admin_catalog"
 
 

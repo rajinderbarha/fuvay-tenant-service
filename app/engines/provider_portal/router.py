@@ -30,7 +30,9 @@ from app.engines.admin_catalog.skill_catalog_router import (
     validate_skill_ids,
 )
 
-router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
+from app.dependencies.setup_sequence import enforce_setup_sequence
+
+router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/provider", tags=["Provider Portal"])
 
 # Mirrors the provider_team_members.max_concurrent_jobs DB default (NOT NULL
 # DEFAULT 4). Kept as a named constant so the fallback is explicit at the one

@@ -69,7 +69,8 @@ export function useRazorpayCheckout() {
     name: string; description?: string;
     prefill?: { name?: string; email?: string; contact?: string };
   }): Promise<RazorpayResult> => {
-    if (!opts.keyId || !opts.orderId || !Number.isFinite(opts.amountPaise) || opts.amountPaise <= 0) throw new Error("Checkout order is incomplete. Refresh your plan and try again.");
+    if (!opts.keyId || opts.orderId?.startsWith("order_local_")) throw new Error("Razorpay is not configured on the server. Ask the administrator to configure the test Key ID and Key Secret.");
+    if (!opts.orderId || !Number.isFinite(opts.amountPaise) || opts.amountPaise <= 0) throw new Error("Checkout order is incomplete. Refresh your plan and try again.");
     if (!loadingRef.current) loadingRef.current = loadScript();
     try { await loadingRef.current; } finally { loadingRef.current = null; }
     if (!window.Razorpay) throw new Error("Razorpay checkout failed to load.");

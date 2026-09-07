@@ -75,7 +75,8 @@ class TestRouterStructure:
 
     def test_router_has_expected_endpoints(self):
         c = self._read()
-        assert 'router = APIRouter(prefix="/v1/tenant/home-services/setup/documents"' in c
+        # Gained the shared setup-sequence gate (dependencies=[...]) ahead of prefix=.
+        assert 'prefix="/v1/tenant/home-services/setup/documents"' in c
         assert '@router.get("/requirements")' in c
         assert '@router.post("")' in c
         assert '@router.delete("/{document_id}")' in c
