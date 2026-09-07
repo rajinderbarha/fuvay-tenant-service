@@ -5,6 +5,25 @@ import { useRazorpayCheckout } from "./useRazorpayCheckout";
 const order = { keyId: "rzp_test_key", orderId: "order_test", amountPaise: 10000, name: "Provider seats" };
 afterEach(() => { delete window.Razorpay; document.querySelectorAll('script[src*="razorpay"]').forEach(s => s.remove()); vi.useRealTimers(); });
 
+it.each([{ ...order, keyId: "" }, { ...order, orderId: "order_local_placeholder" }])("rejects incomplete server checkout configuration without opening an overlay", async invalid => {
+  const constructor = vi.fn();
+  window.Razorpay = class { constructor() { constructor(); } open() {} };
+  const { result } = renderHook(() => useRazorpayCheckout());
+  await expect(result.current.open(invalid)).rejects.toThrow(/configured|configuration/);
+  expect(constructor).not.toHaveBeenCalled();
+});
+
+it("allows dismissal without reporting a successful payment", async () => {
+  let options: any;
+  window.Razorpay = class { constructor(opts: any) { options = opts; } open() {} };
+  const { result } = renderHook(() => useRazorpayCheckout());
+  const pending = result.current.open(order);
+  const rejected = expect(pending).rejects.toThrow(/closed|cancel/i);
+  await Promise.resolve();
+  options.modal.ondismiss();
+  await rejected;
+});
+
 it("opens an overlay without redirecting and resolves signed payment details", async () => {
   let options: any;
   const open = vi.fn();

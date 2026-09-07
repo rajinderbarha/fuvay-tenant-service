@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 import structlog
 from fastapi import APIRouter, Depends, Request, status
+from app.dependencies.setup_sequence import enforce_setup_sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission, require_tenant_mutation_permission
@@ -147,7 +148,7 @@ async def list_tenant_service_areas(
     return ok(await s.list_service_areas(uuid.UUID(u.tenant_id)), _rid(r), ENGINE_ID)
 
 
-@router.post("/v1/tenant/service-areas", tags=["Tenant Service Areas"],
+@router.post("/v1/tenant/service-areas", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
              summary="Create a service area", status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def create_tenant_service_area(
@@ -185,7 +186,7 @@ async def get_tenant_service_area(
     return ok(await s.get_service_area_dict(area_id), _rid(r), ENGINE_ID)
 
 
-@router.put("/v1/tenant/service-areas/{area_id}", tags=["Tenant Service Areas"],
+@router.put("/v1/tenant/service-areas/{area_id}", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
             summary="Update a service area", response_model=ApiResponse[dict])
 async def update_tenant_service_area(
     area_id: uuid.UUID, body: ServiceAreaUpdate, r: Request,
@@ -195,7 +196,7 @@ async def update_tenant_service_area(
     return ok(await s.update_service_area(area_id, payload), _rid(r), ENGINE_ID)
 
 
-@router.delete("/v1/tenant/service-areas/{area_id}", tags=["Tenant Service Areas"],
+@router.delete("/v1/tenant/service-areas/{area_id}", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
                summary="Deactivate a service area", response_model=ApiResponse[dict])
 async def delete_tenant_service_area(
     area_id: uuid.UUID, r: Request,
@@ -204,7 +205,7 @@ async def delete_tenant_service_area(
     return ok(await s.deactivate_service_area(area_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/v1/tenant/service-areas/{area_id}/set-primary", tags=["Tenant Service Areas"],
+@router.post("/v1/tenant/service-areas/{area_id}/set-primary", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
              summary="Set a service area as the primary coverage area", response_model=ApiResponse[dict])
 async def set_primary_tenant_service_area(
     area_id: uuid.UUID, r: Request,
@@ -213,7 +214,7 @@ async def set_primary_tenant_service_area(
     return ok(await s.set_primary_service_area(area_id), _rid(r), ENGINE_ID)
 
 
-@router.post("/v1/tenant/service-areas/{area_id}/services", tags=["Tenant Service Areas"],
+@router.post("/v1/tenant/service-areas/{area_id}/services", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
              summary="Add a service mapping to an area", status_code=status.HTTP_201_CREATED,
              response_model=ApiResponse[dict])
 async def add_service_mapping(
@@ -233,7 +234,7 @@ async def list_service_mappings(
     return ok(await s.list_service_mappings(area_id), _rid(r), ENGINE_ID)
 
 
-@router.put("/v1/tenant/service-areas/{area_id}/services/{mapping_id}", tags=["Tenant Service Areas"],
+@router.put("/v1/tenant/service-areas/{area_id}/services/{mapping_id}", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
             summary="Update a service mapping", response_model=ApiResponse[dict])
 async def update_service_mapping(
     area_id: uuid.UUID, mapping_id: uuid.UUID, body: ServiceMappingUpdate, r: Request,
@@ -243,7 +244,7 @@ async def update_service_mapping(
     return ok(await s.update_service_mapping(area_id, mapping_id, payload), _rid(r), ENGINE_ID)
 
 
-@router.delete("/v1/tenant/service-areas/{area_id}/services/{mapping_id}", tags=["Tenant Service Areas"],
+@router.delete("/v1/tenant/service-areas/{area_id}/services/{mapping_id}", tags=["Tenant Service Areas"], dependencies=[Depends(enforce_setup_sequence)],
                summary="Remove a service mapping", response_model=ApiResponse[dict])
 async def delete_service_mapping(
     area_id: uuid.UUID, mapping_id: uuid.UUID, r: Request,

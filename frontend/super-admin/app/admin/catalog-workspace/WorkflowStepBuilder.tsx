@@ -29,9 +29,10 @@ const APP_LABEL: Record<string, string> = {
   staff_app: "Technician app", admin: "Admin", system: "System",
 };
 
+let stepSequence = 0;
 function blankStep(order: number): WorkflowStepDef {
   return {
-    step_key: "", step_name: "", maps_to_status: null,
+    step_key: `step_${Date.now()}_${++stepSequence}`, step_name: "", maps_to_status: null,
     owner_app: "staff_app", owner_role: "technician",
     customer_visible: false, tenant_visible: true, staff_visible: true, admin_visible: true,
     requires_note: false, requires_photo: false, requires_approval: false,
@@ -83,7 +84,7 @@ export function WorkflowStepBuilder({
         steps: cleaned, transitions,
       });
       setDirty(false);
-      notify("Workflow steps saved as a new version.");
+      notify("Journey version published for new jobs. Existing jobs are unchanged.");
       review.refetch();
       onSaved();
     } catch (e) {
@@ -130,24 +131,32 @@ export function WorkflowStepBuilder({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
         gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>Cross-app journey</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Cross-app journey · Optional</div>
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "3px 0 0", maxWidth: 640 }}>
-            The ordered steps this job runs through. Each step belongs to one app and is shown
-            only to the audiences you tick, so internal work never reaches the customer.
-            Editing publishes a new version — jobs already running keep the journey they started on.
+            Leave this empty to use the standard platform journey. Customize it only when you need
+            different stage labels or audience visibility. Publishing creates a new workflow version
+            for new jobs; jobs already running keep their original journey.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {workflow.version_number ? <Badge variant="muted" size="sm">v{workflow.version_number}</Badge> : null}
-          <Btn size="sm" variant="secondary" disabled={!canWrite}
+          <Btn size="sm" variant="secondary" disabled={!canWrite || options.loading || !!options.error || save.loading}
             onClick={() => { setSteps(prev => [...prev, blankStep(prev.length + 1)]); setDirty(true); }}>
             <Plus size={13}/> Add step
           </Btn>
-          <Btn size="sm" disabled={!canWrite || !dirty || save.loading} onClick={() => save.execute()}>
-            {save.loading ? "Saving…" : "Save journey"}
+          <Btn size="sm" disabled={!canWrite || !dirty || save.loading || !!options.error} onClick={() => save.execute()}>
+            {save.loading ? "Publishing…" : "Publish journey version"}
           </Btn>
+          {!!steps.length && <Btn size="sm" variant="secondary" disabled={!canWrite || save.loading}
+            onClick={() => { setSteps([]); setTransitions([]); setDirty(true); }}>
+            Use standard journey
+          </Btn>}
         </div>
       </div>
+
+      {dirty && <p role="status">Unpublished journey changes. Publishing updates the workflow version separately from the full blueprint release.</p>}
+      {(options.error || review.error) && <p role="alert">{options.error || review.error} <button type="button" onClick={() => { options.refetch(); review.refetch(); }}>Retry journey checks</button></p>}
+      {!dirty && !!review.data?.errors.length && <div role="alert">{review.data.errors.map((message, index) => <p key={index}>{message}</p>)}</div>}
 
       {error && (
         <div role="alert" style={{ padding: "9px 12px", marginBottom: 10, borderRadius: "var(--radius-md)",
@@ -186,7 +195,7 @@ export function WorkflowStepBuilder({
         <Card padding={20}>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
             No journey defined. This job type falls back to the platform&apos;s standard stage
-            sequence. Add steps to control what each app shows and who acts at every stage.
+            sequence. No extra setup is required here. Workflow and checklist requirements still apply.
           </p>
         </Card>
       ) : (
@@ -195,13 +204,13 @@ export function WorkflowStepBuilder({
             <Card key={i} padding={12}>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 18 }}>
-                  <Btn size="xs" variant="ghost" disabled={!canWrite || i === 0} onClick={() => move(i, -1)}>
+                  <Btn size="xs" variant="ghost" aria-label={`Move step ${i + 1} up`} disabled={!canWrite || i === 0} onClick={() => move(i, -1)}>
                     <ArrowUp size={12}/>
                   </Btn>
                   <span style={{ fontSize: 11, textAlign: "center", color: "var(--text-tertiary)", fontWeight: 700 }}>
                     {i + 1}
                   </span>
-                  <Btn size="xs" variant="ghost" disabled={!canWrite || i === steps.length - 1} onClick={() => move(i, 1)}>
+                  <Btn size="xs" variant="ghost" aria-label={`Move step ${i + 1} down`} disabled={!canWrite || i === steps.length - 1} onClick={() => move(i, 1)}>
                     <ArrowDown size={12}/>
                   </Btn>
                 </div>
@@ -209,18 +218,18 @@ export function WorkflowStepBuilder({
                 <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 10 }}>
                     <Input label="Step name" value={s.step_name} disabled={!canWrite}
-                      onChange={v => patch(i, { step_name: v, step_key: s.step_key || keyFromName(v) })}
+                      onChange={v => patch(i, { step_name: v })}
                       placeholder="e.g. Technician Assigned"/>
-                    <Select label="Owned by" value={s.owner_app} disabled={!canWrite}
+                    <Select label="Responsible app" value={s.owner_app} disabled={!canWrite}
                       onChange={v => patch(i, { owner_app: v as WorkflowOwnerApp })} options={appOptions}/>
-                    <Select label="Acted by" value={s.owner_role} disabled={!canWrite}
+                    <Select label="Responsible role (label)" value={s.owner_role} disabled={!canWrite}
                       onChange={v => patch(i, { owner_role: v as WorkflowOwnerRole })} options={roleOptions}/>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 10 }}>
-                    <Select label="Marks the job as" value={s.maps_to_status ?? ""} disabled={!canWrite}
+                    <Select label="Represents job status" value={s.maps_to_status ?? ""} disabled={!canWrite}
                       onChange={v => patch(i, { maps_to_status: v || null })} options={statusOptions}/>
-                    <Input label="Step SLA (minutes)" type="number" disabled={!canWrite}
+                    <Input label="SLA guidance (minutes; not enforced)" type="number" disabled={!canWrite}
                       value={s.sla_minutes == null ? "" : String(s.sla_minutes)}
                       onChange={v => patch(i, { sla_minutes: v ? Number(v) : null })}/>
                   </div>
@@ -240,7 +249,7 @@ export function WorkflowStepBuilder({
 
                   <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)",
-                      textTransform: "uppercase", letterSpacing: "0.05em" }}>Requires</span>
+                      textTransform: "uppercase", letterSpacing: "0.05em" }}>Guidance only (not enforced)</span>
                     {([["requires_photo", "Photo"], ["requires_note", "Note"],
                        ["requires_approval", "Approval"]] as const).map(([k, label]) => (
                       <label key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
@@ -250,6 +259,7 @@ export function WorkflowStepBuilder({
                       </label>
                     ))}
                   </div>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>For mandatory photos or notes, use Checklists. For estimate approval, use Workflow settings. These journey annotations do not block actions or send reminders.</p>
                 </div>
 
                 <Btn size="xs" variant="ghost" disabled={!canWrite} onClick={() => remove(i)}
@@ -281,8 +291,8 @@ export function WorkflowStepBuilder({
           </div>
           {transitions.length === 0 ? (
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-              No transitions defined. Steps still render in order; transitions record which role
-              may advance the job and what the action is called in each app.
+              No custom transitions: platform permissions and status transitions apply.
+              Adding transitions restricts moves between mapped statuses to the listed edges and roles.
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -295,13 +305,13 @@ export function WorkflowStepBuilder({
                     <Select label="To" value={t.to_step_key} disabled={!canWrite}
                       onChange={v => { setTransitions(p => p.map((x, j) => j === i ? { ...x, to_step_key: v } : x)); setDirty(true); }}
                       options={stepOptions}/>
-                    <Input label="Action label" value={t.action_label ?? ""} disabled={!canWrite}
+                    <Input label="Action description (not a button)" value={t.action_label ?? ""} disabled={!canWrite}
                       onChange={v => { setTransitions(p => p.map((x, j) => j === i ? { ...x, action_label: v || null } : x)); setDirty(true); }}
                       placeholder="e.g. Start Travel"/>
                     <Select label="Allowed role" value={t.allowed_role} disabled={!canWrite}
                       onChange={v => { setTransitions(p => p.map((x, j) => j === i ? { ...x, allowed_role: v as WorkflowOwnerRole } : x)); setDirty(true); }}
                       options={roleOptions}/>
-                    <Btn size="xs" variant="ghost" disabled={!canWrite}
+                    <Btn size="xs" variant="ghost" aria-label={`Remove transition ${i + 1}`} disabled={!canWrite}
                       onClick={() => { setTransitions(p => p.filter((_, j) => j !== i)); setDirty(true); }}>
                       <X size={12}/>
                     </Btn>

@@ -17,7 +17,10 @@ export default function TechnicianPlanPage() {
   const [busy, setBusy] = useState(false);
   const checkout = useRazorpayCheckout();
   const refresh = useCallback(async () => {
-    try { setStatus(await topupApi.status()); }
+    try {
+      setStatus(await topupApi.status());
+      window.dispatchEvent(new Event("home-services-setup-updated"));
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Could not load technician plans."); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -64,7 +67,9 @@ export default function TechnicianPlanPage() {
     {status && status.plans.length === 0 && <p>No technician plan is published yet. Ask the administrator to publish a plan.</p>}
     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
       <Link href="/tenant/home-services/setup/services-pricing">Back to services</Link>
-      <Link href="/tenant/home-services/setup/staff">{status && status.entitled_seats > 0 ? "Continue to team setup" : "Add non-technician staff for now"}</Link>
+      {status && status.entitled_seats > 0
+        ? <Link href="/tenant/home-services/setup/staff">Continue to team setup</Link>
+        : <p>Purchase a technician seat plan to unlock team setup. Office staff and managers do not consume seats.</p>}
     </div>
   </PageShell></OnboardingShell>;
 }

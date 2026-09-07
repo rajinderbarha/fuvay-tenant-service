@@ -14,7 +14,7 @@ import {
 import { RepairEstimateGuidanceEditor } from "./RepairEstimateGuidanceEditor";
 import { Card, Btn, Badge, Skeleton, Input } from "../shared/ui";
 import {
-  homeServicesSetupApi, ServiceOSError,
+  homeServicesSetupApi, homeServicesSetupOverviewApi, ServiceOSError,
   type AdminMasterServiceRow, type TenantEnabledService,
   type HsSetupAvailableType, type HsSetupBrand, type HsTypePricing, type HsBrandPricing,
 } from "../../lib/api";
@@ -524,6 +524,13 @@ function ServicesPricingPageContent() {
         await homeServicesSetupApi.saveDraft(enrolled.tenant_service_id);
         setEnabledList(list => list.map(e => e.tenant_service_id === updated.tenant_service_id ? updated : e));
       }
+      const overview = await homeServicesSetupOverviewApi.getOverview();
+      window.dispatchEvent(new Event("home-services-setup-updated"));
+      const serviceStep = overview.sections.find(section => section.key === "SERVICES_PRICING");
+      if (!(returnTo && overview.vertical?.status === "active") && serviceStep?.status !== "complete") {
+        setError(serviceStep?.blocking_reasons.map(reason => reason.message).join(" ") || "Choose and fully configure at least one service before continuing.");
+        return;
+      }
       router.push(returnTo || "/tenant/home-services/setup/plan");
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not save your services.");
@@ -541,7 +548,7 @@ function ServicesPricingPageContent() {
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <PageShell>
           <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
-          {!returnTo && <ServicesSetupProgress revision={enabledList} />}
+          {!returnTo && <ServicesSetupProgress revision={enabledList} consultationFee={savedConsultationFee} />}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 20 }}>
             <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
           </div>
@@ -555,7 +562,7 @@ function ServicesPricingPageContent() {
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <PageShell>
           <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
-          {!returnTo && <ServicesSetupProgress revision={enabledList} />}
+          {!returnTo && <ServicesSetupProgress revision={enabledList} consultationFee={savedConsultationFee} />}
           <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -601,7 +608,7 @@ function ServicesPricingPageContent() {
             {returnTo && <Btn variant="secondary" onClick={handleBack}>Back to workspace</Btn>}
           </>}
         />
-        {!returnTo && <ServicesSetupProgress revision={enabledList} />}
+        {!returnTo && <ServicesSetupProgress revision={enabledList} consultationFee={savedConsultationFee} />}
       <div className="pricing-experience">
         {error && (
           <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 14px", marginTop: 14, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>

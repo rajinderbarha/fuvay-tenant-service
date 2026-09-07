@@ -13,6 +13,8 @@ import { DefaultAvatar } from "../shared/ProfilePhotoUploader";
 import { Breadcrumbs } from "../layout/Breadcrumbs";
 import { CreditPill } from "../layout/CreditPill";
 import { authApi, clearSession, homeServicesSetupOverviewApi, providerNotifApi } from "../../lib/api";
+import type { HomeServicesSetupOverview } from "../../lib/api";
+import { setupPrerequisite } from "../../lib/setup-sequence";
 
 type OnboardingNavId =
   | "overview" | "business-profile" | "documents" | "services-pricing"
@@ -66,9 +68,8 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
   children: React.ReactNode;
   activeNav: OnboardingNavId;
   restricted?: boolean;
-  /** Active tenants may reuse a setup editor from an operational workspace.
-   * Their onboarding overview is intentionally locked (409), so that mode
-   * must not make the setup-progress request. */
+  /** Hides the overall meter in operational editors. The read-only overview
+   * still determines lifecycle and prerequisites; hiding UI cannot bypass setup. */
   showProgress?: boolean;
 }) {
   const navItems = restricted ? RESTRICTED_NAV_ITEMS : NAV_ITEMS;
@@ -84,22 +85,30 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
    * meaningless.
    */
   const [progress, setProgress] = useState<{ pct: number; done: number; total: number } | null>(null);
-  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
+  const [overview, setOverview] = useState<HomeServicesSetupOverview | null>(null);
   const [progressFailed, setProgressFailed] = useState(false);
   const [progressRetry, setProgressRetry] = useState(0);
-  const profileGateEnabled = !restricted && showProgress;
-  const isLaterStep = (id: OnboardingNavId) => ["documents", "services-pricing", "plan", "staff", "coverage-availability", "finance", "review"].includes(id);
+  const sequenceGateEnabled = !restricted;
+  const blockedStep = sequenceGateEnabled ? setupPrerequisite(overview, activeNav) : null;
   useEffect(() => {
-    if (restricted || !showProgress) return;
+    const refresh = () => setProgressRetry(n => n + 1);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("home-services-setup-updated", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("home-services-setup-updated", refresh);
+    };
+  }, []);
+  useEffect(() => {
+    if (restricted) return;
     let cancelled = false;
     setProgressFailed(false);
     homeServicesSetupOverviewApi
       .getOverview()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .then((o: any) => {
+      .then(o => {
         const pr = o?.progress;
         if (cancelled) return;
-        setProfileComplete(o?.sections?.find((section: { key: string }) => section.key === "BUSINESS_PROFILE")?.status === "complete");
+        setOverview(o);
         if (!pr) return;
         const total = Number(pr.total_required ?? 0);
         if (!total) return;
@@ -109,9 +118,8 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           total,
         });
       })
-      // A missing progress bar must never break the shell the tenant is
-      // trying to complete setup in.
-      .catch(() => { if (!cancelled) { setProfileComplete(null); setProgressFailed(true); } });
+      // Later setup pages fail closed; the first step and retry remain usable.
+      .catch(() => { if (!cancelled) { setOverview(null); setProgressFailed(true); } });
     return () => { cancelled = true; };
   }, [restricted, showProgress, activeNav, progressRetry]);
   const tenant = useTenant();
@@ -190,7 +198,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           </button>
         </div>
 
-        {progress && (
+        {showProgress && progress && (
           <div style={{ padding: "14px 18px 4px", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color: "var(--sidebar-category)" }}>
@@ -223,11 +231,12 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           </p>
           {navItems.map(item => {
             const active = activeNav === item.id;
-            const locked = profileGateEnabled && profileComplete !== true && isLaterStep(item.id);
+            const prerequisite = sequenceGateEnabled ? setupPrerequisite(overview, item.id) : null;
+            const locked = !!prerequisite;
             return (
               <Link key={item.id} href={item.href} aria-current={active ? "page" : undefined}
                 aria-disabled={locked || undefined}
-                title={locked ? "Complete Business Profile to 100% first" : undefined}
+                title={prerequisite ? `Complete ${prerequisite.label} to 100% first` : undefined}
                 onClick={event => { if (locked) event.preventDefault(); else setDrawerOpen(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "9px 10px",
@@ -336,11 +345,11 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
         <main className="provider-main onboarding-main-pad" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
           <div className="provider-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>
-            {profileGateEnabled && isLaterStep(activeNav) && profileComplete !== true ? (
+            {blockedStep ? (
               <section role="status" style={{ padding: 24, marginTop: 16, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)" }}>
-                <h2>{profileComplete === false ? "Complete Business Profile first" : progressFailed ? "Could not check setup progress" : "Checking your business profile…"}</h2>
-                <p>Your saved Business Profile must be 100% complete before you can continue to the next setup step.</p>
-                <Link href="/tenant/home-services/setup/business-profile">Go to Business Profile</Link>
+                <h2>{overview ? `Complete ${blockedStep.label} first` : progressFailed ? "Could not check setup progress" : "Checking setup progress…"}</h2>
+                <p>Complete each step to 100% before moving to the next. Overall onboarding does not need to be 100% yet.</p>
+                {overview && <Link href={blockedStep.route}>Go to {blockedStep.label}</Link>}
                 {progressFailed && <button type="button" onClick={() => setProgressRetry(n => n + 1)} style={{ marginLeft: 16 }}>Retry</button>}
               </section>
             ) : children}

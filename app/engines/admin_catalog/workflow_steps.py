@@ -18,8 +18,9 @@ and are never used to infer progress.
 
 Nothing here invents a second state machine. `JOB_TRANSITIONS` remains the
 authority on what job status changes are legal; a step sequence describes and
-presents that journey per audience, and adds requirements (photo, note,
-approval) on top.
+presents that journey per audience. Custom transition edges and allowed roles
+constrain execution; photo/note/approval/SLA annotations are descriptive only.
+Enforced evidence and approval belong to checklist and workflow capabilities.
 """
 from __future__ import annotations
 
@@ -87,6 +88,9 @@ def validate_steps(steps: Any) -> list[dict]:
                     f"Use one of: {', '.join(sorted(CANONICAL_JOB_STATUSES))}, or omit it "
                     f"for a step outside the job lifecycle.")
 
+        sla = raw.get("sla_minutes")
+        if sla is not None and (isinstance(sla, bool) or not isinstance(sla, int) or sla <= 0):
+            raise ValueError(f"steps[{i}].sla_minutes must be a positive whole number or null.")
         cleaned.append({
             "step_key": step_key,
             "step_name": str(raw["step_name"]).strip(),
@@ -100,7 +104,7 @@ def validate_steps(steps: Any) -> list[dict]:
             "requires_note": bool(raw.get("requires_note", False)),
             "requires_photo": bool(raw.get("requires_photo", False)),
             "requires_approval": bool(raw.get("requires_approval", False)),
-            "sla_minutes": int(raw["sla_minutes"]) if raw.get("sla_minutes") else None,
+            "sla_minutes": sla,
             "display_order": int(raw.get("display_order", i + 1) or i + 1),
         })
 
@@ -152,21 +156,21 @@ def validate_workflow_steps(steps: Any, transitions: Any) -> tuple[list[dict], l
     """Validate a whole definition. Returns (steps, transitions)."""
     clean_steps = validate_steps(steps)
     clean_transitions = validate_transitions(transitions, clean_steps)
+    review = check_definition(clean_steps, clean_transitions)
+    if review["errors"]:
+        raise ValueError(" ".join(review["errors"]))
     return clean_steps, clean_transitions
 
 
 def check_definition(steps: list[dict], transitions: list[dict]) -> dict:
-    """Non-fatal review of a definition: is it coherent enough to run?
-
-    Separate from validation because these are judgements an admin may
-    knowingly accept (a workflow still being drafted), not structural errors.
-    """
+    """Review a definition, distinguishing publishing blockers from guidance."""
     errors: list[str] = []
     warnings: list[str] = []
 
     if not steps:
-        errors.append("No steps defined — this workflow describes nothing.")
-        return {"valid": False, "errors": errors, "warnings": warnings}
+        if transitions:
+            errors.append("Transitions require custom journey steps.")
+        return {"valid": not errors, "errors": errors, "warnings": warnings}
 
     mapped = [s for s in steps if s["maps_to_status"]]
     if not mapped:
@@ -177,7 +181,7 @@ def check_definition(steps: list[dict], transitions: list[dict]) -> dict:
     duplicates = {s["maps_to_status"] for s in mapped
                   if [x["maps_to_status"] for x in mapped].count(s["maps_to_status"]) > 1}
     for status in sorted(duplicates):
-        warnings.append(f"More than one step maps to job status '{status}' — "
+        errors.append(f"More than one step maps to job status '{status}' — "
                         f"progress for that status is ambiguous.")
 
     for app in ("customer_app", "tenant_app", "staff_app"):
@@ -198,18 +202,27 @@ def check_definition(steps: list[dict], transitions: list[dict]) -> dict:
             # ASCII arrow deliberately: this text is returned by the API and
             # written to logs, and a non-ASCII arrow raises UnicodeEncodeError
             # on any cp1252 console or log handler in the path.
-            warnings.append(
+            errors.append(
                 f"\"{by_key[t['from_step_key']]['step_name']}\" -> "
                 f"\"{by_key[t['to_step_key']]['step_name']}\" is not a job status change the "
                 f"platform allows ({src} -> {dst}), so this transition can never fire.")
 
     # Steps nothing can reach, ignoring the first step which is the entry point.
     if transitions:
-        reachable = {steps[0]["step_key"]} | {t["to_step_key"] for t in transitions}
+        reachable = {steps[0]["step_key"]}
+        while True:
+            expanded = reachable | {t["to_step_key"] for t in transitions if t["from_step_key"] in reachable}
+            if expanded == reachable:
+                break
+            reachable = expanded
         for s in steps[1:]:
             if s["step_key"] not in reachable:
                 warnings.append(f"Step '{s['step_name']}' is unreachable — no transition leads to it.")
 
+    if any(s.get("requires_photo") or s.get("requires_note") or s.get("requires_approval") or s.get("sla_minutes") for s in steps):
+        warnings.append("Journey photo/note/approval and SLA fields are descriptive only, not execution gates. Configure enforced evidence in Checklists and approval in Workflow settings.")
+    if any(t.get("requires_reason") or t.get("triggers_notification") or t.get("auto_transition") for t in transitions):
+        warnings.append("Journey reason, notification and auto-transition metadata does not trigger automation. Platform actions and notification rules remain authoritative.")
     return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
@@ -222,6 +235,8 @@ def check_capability_alignment(workflow: dict) -> list[str]:
     providers and technicians.
     """
     steps = list(workflow.get("steps_json") or workflow.get("steps") or [])
+    if not steps:
+        return []  # Optional custom journey: the standard runtime still enforces approval.
     mapped_statuses = {str(step.get("maps_to_status")) for step in steps if step.get("maps_to_status")}
     errors: list[str] = []
     if workflow.get("quote_approval_required") and "quote_required" not in mapped_statuses:
@@ -332,6 +347,11 @@ def annotate_progress(steps: list[dict], current_status: str | None,
     reached = reached_statuses or set()
     out: list[dict] = []
     seen_current = False
+    # A partial custom journey may omit the current runtime status. In that
+    # case, future steps are still pending, not skipped.
+    has_current = any(s.get("maps_to_status") == current_status and current_status
+                      or s.get("step_key") == "provider_accepted" and current_status == "accepted"
+                      for s in steps)
     for step in steps:
         status = step.get("maps_to_status")
         step_key = step.get("step_key")
@@ -360,7 +380,7 @@ def annotate_progress(steps: list[dict], current_status: str | None,
             seen_current = True
         elif status and status in reached:
             state = "done"
-        elif status and not seen_current and current_status and status not in reached:
+        elif status and has_current and not seen_current and current_status and status not in reached:
             # Before the current step but never actually reached — the workflow
             # skipped it. Say so rather than implying it was completed.
             state = "skipped"

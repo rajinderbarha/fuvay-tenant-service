@@ -51,4 +51,4 @@ def test_live_workflow_router_and_frontend_builder_exist():
     builder = _read(WORKFLOW_BUILDER)
     assert '"/{service_id}/job-types/{job_type_id}/workflow"' in router
     assert "getWorkflowStepOptions" in builder
-    assert "Save journey" in builder
+    assert "Publish journey version" in builder

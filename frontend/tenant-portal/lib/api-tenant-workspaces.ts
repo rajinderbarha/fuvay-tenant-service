@@ -798,6 +798,10 @@ export interface HomeServicesSetupSection {
   required: boolean;
   status: "not_started" | "complete" | "optional" | "blocked" | "locked" | "ready";
   locked?: boolean;
+  percentage?: number;
+  configured_count?: number;
+  enabled_count?: number;
+  prerequisite?: { key: string; label: string; route: string } | null;
   blocking_reasons: Array<{ code: string; message: string }>;
   warnings: Array<{ code: string; message: string }>;
   next_action: string;

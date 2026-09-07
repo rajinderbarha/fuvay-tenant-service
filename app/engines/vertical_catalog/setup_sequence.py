@@ -8,6 +8,8 @@ STEPS = [
 
 
 def prerequisite(sections: list[dict], target: str) -> dict | None:
+    if target not in {key for key, _ in STEPS}:
+        raise ValueError(f"Unknown setup section: {target}")
     by_key = {s["key"]: s for s in sections}
     for key, slug in STEPS:
         if key == target:
@@ -24,10 +26,13 @@ def mutation_step(path: str, method: str) -> str | None:
         return None
     if path.startswith("/v1/tenant/home-services/setup/documents"):
         return "DOCUMENTS"
-    if path.startswith("/v1/tenant/catalog/"):
+    if path.startswith(("/v1/tenant/catalog/", "/v1/provider/offerings/enabled")):
         return "SERVICES_PRICING"
-    if path == "/v1/tenant/home-services/activation/funding/order":
+    if path in {"/v1/tenant/home-services/activation/funding/order",
+                "/v1/tenant/home-services/activation/credit-package/order"}:
         return "TECHNICIAN_PLAN"
+    if path == "/v1/provider/team-members/activate":
+        return None  # Token-based invitation acceptance is not an owner setup edit.
     if path.startswith("/v1/provider/team-members"):
         return "STAFF_TECHNICIANS"
     if path.startswith(("/v1/provider/availability", "/v1/provider/booking-window",

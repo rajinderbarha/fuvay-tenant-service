@@ -128,9 +128,6 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         text(PUBLISHED_PRICED_SERVICES_SQL),
         {"tid": str(tenant_id)},
     )).scalar() or 0
-    # Every published service must be priced. Comparing only `> 0` let one
-    # valid service hide any number of unpriced published services.
-    services_ready = published_count > 0 and priced_count == published_count
     # Step 3 saves a configuration, not a bookable offering. Coverage and
     # hours are configured in step 6; full publication remains a review gate.
     from sqlalchemy import select
@@ -140,13 +137,13 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         TenantService.tenant_id == tenant_id, TenantService.is_enabled.is_(True),
         TenantService.is_active.is_(True), TenantService.deleted_at.is_(None),
     ))).scalars().all()
-    configured_count = 0
+    from app.engines.vertical_catalog.service_setup_readiness import service_setup_readiness
+    validations = []
+    catalog = TenantCatalogService(db, actor_tenant_id=tenant_id)
     for offering in enabled_services:
-        validation = await TenantCatalogService(db, actor_tenant_id=tenant_id).validate_for_publish(offering.id)
-        if not any(e.get("code") not in {"MISSING_SERVICE_AREA", "MISSING_BUSINESS_HOURS"}
-                   for e in validation["errors"]):
-            configured_count += 1
-    services_ready = bool(enabled_services) and configured_count == len(enabled_services)
+        validations.append((str(offering.id), await catalog.validate_for_publish(offering.id)))
+    service_progress = service_setup_readiness(validations)
+    services_ready = service_progress["complete"]
 
     # ── Coverage & Availability ───────────────────────────────────────────
     active_areas = (await db.execute(
@@ -170,12 +167,10 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # Kept under the existing response key for API compatibility, but this is
     # now the count of genuinely ready members rather than active name-only rows.
     active_staff = int(team_summary["counts"]["ready"])
-    # Technician seats are an optional top-up purchased after approval.  With
-    # zero starter seats, making this section required for review created an
-    # impossible loop: the tenant could not add a technician without a plan,
-    # but could not reach approval while it had no technician.  Keep readiness
-    # visible here, but gate customer bookability (where capacity matters)
-    # instead of business verification.
+    # Seats are bought in step 4 and business hours follow in step 6 as a
+    # separate operational gate. Kept optional for approval (not just for
+    # ordering) per product decision -- see
+    # test_approval_setup_does_not_deadlock_on_optional_paid_seat.
     staff_required = False
     staff_ready = active_staff > 0 and all(
         row["ready_technician_count"] > 0 for row in service_coverage
@@ -188,13 +183,8 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         {"tid": str(tenant_id)},
     )).fetchone()
     entitled_seats = int(billing_row.entitled_seats) if billing_row and billing_row.entitled_seats else 0
-    # Seats are only ever bought after admin approval -- their absence here
-    # is never a blocker to submitting for review. Completion is instead the
-    # tenant's own Finance Readiness step (direct payment methods + invoice
-    # details) -- a tenant_billing row is created independently (activation/
-    # package flows) and was never something this step's page writes, so
-    # gating on it here made the section permanently "not started" no matter
-    # what the tenant filled in on the actual Finance Readiness page.
+    # Seat purchases belong to the plan step. Finance completion is based on
+    # this page's own saved collection methods and invoice details.
     finance_row = (await db.execute(
         text("SELECT accepts_cash, accepts_upi, accepts_card_at_service_location, "
              "accepts_bank_transfer, invoice_business_name, invoice_prefix "
@@ -243,15 +233,16 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          [{"code": "DOCUMENTS_PENDING_VERIFICATION", "message": "Required documents are uploaded but not yet verified by Admin."}])
     _add("SERVICES_PRICING", True, services_ready,
          "Services & pricing", "Choose services and set your own prices",
-         extra={"published_count": published_count, "priced_count": priced_count, "configured_count": configured_count},
-         blocking_reasons=[] if services_ready else
-         [{"code": "NO_PRICED_SERVICE", "message": "Complete pricing and matching choices for every enabled service."}])
+         extra={"published_count": published_count, "priced_count": priced_count,
+                "configured_count": service_progress["configured_count"],
+                "enabled_count": service_progress["enabled_count"],
+                "percentage": service_progress["percentage"]},
+         blocking_reasons=service_progress["blocking_reasons"])
     from app.engines.vertical_catalog.topup_entitlement_service import live_seats
     purchased_seats = await live_seats(db, tenant_id)
     _add("TECHNICIAN_PLAN", True, purchased_seats > 0,
          "Technician seat plan", "Buy seats before adding technicians; non-technician staff are free",
-         extra={"entitled_seats": purchased_seats}, blocking_reasons=[],
-         warnings=[] if purchased_seats > 0 else
+         extra={"entitled_seats": purchased_seats}, blocking_reasons=[] if purchased_seats > 0 else
          [{"code": "TECHNICIAN_PLAN_REQUIRED", "message": "Purchase a plan before adding technicians or accepting bookings."}])
     _add("COVERAGE_AVAILABILITY", True, coverage_ready,
          "Coverage & availability", "Where and when your team works",
@@ -261,8 +252,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     _add("STAFF_TECHNICIANS", staff_required, staff_ready,
          "Staff & technicians", "Add the people who deliver services",
          extra={"active_staff": active_staff},
-         blocking_reasons=[],
-         warnings=[] if staff_ready else
+         blocking_reasons=[] if staff_ready else
          [{"code": "NO_READY_STAFF", "message":
            "Buy a technician seat and add a ready technician before receiving bookings."}])
     _add("FINANCE_READINESS", True, finance_ready,
@@ -287,9 +277,8 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          extra={"locked": not review_ready and enrollment["status"] in ("draft_setup", "draft", "changes_requested"),
                 "declarations_accepted": declarations["all_accepted"]},
          blocking_reasons=[])
-    # Review is an action derived from the five/six setup sections, not an
-    # additional required setup section. Give it an explicit action state so
-    # clients never count it as a sixth blocker.
+    # Review is an action derived from the seven setup sections, not another
+    # required section counted in the overall percentage.
     sections[-1]["status"] = "complete" if review_submit_complete else ("ready" if review_ready else "locked")
 
     from app.engines.vertical_catalog.setup_sequence import prerequisite

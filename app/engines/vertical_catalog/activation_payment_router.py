@@ -31,7 +31,7 @@ from app.engines.vertical_catalog.activation_payment_service import (
 
 from app.dependencies.setup_sequence import enforce_setup_sequence
 
-router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/tenant/home-services/activation", tags=["Tenant Activation Payments"])
+router = APIRouter(prefix="/v1/tenant/home-services/activation", tags=["Tenant Activation Payments"])
 
 
 def _tid(user: UserContext) -> uuid.UUID:
@@ -57,7 +57,7 @@ class FundingOrderRequest(BaseModel):
     plan_id: uuid.UUID | None = None
 
 
-@router.post("/funding/order")
+@router.post("/funding/order", dependencies=[Depends(enforce_setup_sequence)])
 async def create_funding_order_endpoint(
     request: Request,
     body: FundingOrderRequest | None = Body(default=None),
@@ -108,7 +108,7 @@ async def reconcile_funding_endpoint(
 # by POST /activation-funding/order.
 
 
-@router.post("/credit-package/order")
+@router.post("/credit-package/order", dependencies=[Depends(enforce_setup_sequence)])
 async def create_credit_order_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),

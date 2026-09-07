@@ -7,13 +7,15 @@ const api = vi.hoisted(() => ({
   updatePricingPolicy: vi.fn(), updateEnabledService: vi.fn(), saveDraft: vi.fn(),
   getAvailableTypes: vi.fn(), getAvailableBrands: vi.fn(), getTypePricing: vi.fn(),
   getBrandPricing: vi.fn(), setTypes: vi.fn(), setBrands: vi.fn(),
+  getOverview: vi.fn(), push: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: api.push, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("../../../lib/api", () => ({
   homeServicesSetupApi: api, ServiceOSError: class extends Error {},
+  homeServicesSetupOverviewApi: { getOverview: api.getOverview },
 }));
 vi.mock("../../onboarding/OnboardingShell", () => ({
   OnboardingShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -48,6 +50,25 @@ beforeEach(() => {
   api.getAvailableBrands.mockResolvedValue({ brands: [{ brand_id: "brand", name: "Test brand", is_enabled: true }] });
   api.updateEnabledService.mockResolvedValue(enrolled);
   api.saveDraft.mockResolvedValue(enrolled);
+  api.getOverview.mockResolvedValue({ progress: { percentage: 40 }, sections: [{ key: "SERVICES_PRICING", status: "complete", blocking_reasons: [] }] });
+});
+
+it("continues after the service step is complete even when overall progress is 40%", async () => {
+  render(<ServicesPricingSetupPage />);
+  await screen.findByRole("checkbox", { name: "Split AC" });
+  fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
+  await waitFor(() => expect(api.push).toHaveBeenCalledWith("/tenant/home-services/setup/plan"));
+  expect(api.saveDraft).toHaveBeenCalledWith("tenant-service");
+  expect(api.getOverview).toHaveBeenCalledOnce();
+});
+
+it("does not continue if another enabled service still needs setup", async () => {
+  api.getOverview.mockResolvedValue({ sections: [{ key: "SERVICES_PRICING", status: "not_started", blocking_reasons: [{ message: "Configure the repair inspection fee." }] }] });
+  render(<ServicesPricingSetupPage />);
+  await screen.findByRole("checkbox", { name: "Split AC" });
+  fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
+  expect(await screen.findByText("Configure the repair inspection fee.")).toBeInTheDocument();
+  expect(api.push).not.toHaveBeenCalled();
 });
 
 it("shows one provider-level fee, with matching controls but no per-consultation amount", async () => {

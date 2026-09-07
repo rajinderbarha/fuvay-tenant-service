@@ -460,10 +460,24 @@ class VerticalCatalogService:
                 status_code=422,
             )
 
+        # Step 3 only validates service configuration. Now that coverage and
+        # hours exist, run full publication in the SAME review transaction.
+        # A direct submit request must not hand unbookable drafts to Admin.
+        if vertical_key == "home_services":
+            from app.engines.admin_catalog.models import TenantService
+            from app.engines.admin_catalog.tenant_service import TenantCatalogService
+            offerings = (await db.execute(select(TenantService).where(
+                TenantService.tenant_id == uuid.UUID(str(tenant_id)),
+                TenantService.is_enabled.is_(True), TenantService.is_active.is_(True),
+                TenantService.deleted_at.is_(None),
+            ))).scalars().all()
+            catalog = TenantCatalogService(db, actor_tenant_id=uuid.UUID(str(tenant_id)))
+            for offering in offerings:
+                await catalog.publish_service(offering.id)
+
         # The legacy Admin onboarding workspace is intentionally retained,
         # but it reads Tenant.verification_status. Keep it synchronized with
-        # the canonical vertical enrollment in the same transaction committed
-        # by transition_enrollment below.
+        # the canonical vertical enrollment in the same request transaction.
         await db.execute(
             text(
                 "UPDATE tenants SET verification_status='pending', "
