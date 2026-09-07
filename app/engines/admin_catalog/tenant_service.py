@@ -684,9 +684,14 @@ class TenantCatalogService:
                 self.db, tenant_id, svc.service_group_id
             )
             if not has_entitlement:
+                has_entitlement = await entitlement_service.ensure_registration_category_access(
+                    self.db, tenant_id=tenant_id, category_id=svc.service_group_id,
+                    actor_id=self.actor_id, actor_role=self.actor_role, request_id=self.request_id,
+                )
+            if not has_entitlement:
                 raise ServiceOSException(
                     "CATEGORY_NOT_ENTITLED",
-                    "Your tenant does not have an active entitlement for this service's category.",
+                    "Access to this service group is not active for your workspace. Ask an administrator to review Home Services category access. Technician-seat plans do not unlock service categories.",
                     status_code=403,
                 )
 

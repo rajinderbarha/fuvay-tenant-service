@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import ServiceGroup, ServiceCategory
@@ -99,6 +99,81 @@ class EntitlementService:
         entitled = await self.get_entitled_tenant_ids_for_category(db, category_id, tenant_ids=[tenant_id])
         return tenant_id in entitled
 
+    async def ensure_registration_category_access(
+        self, db: AsyncSession, *, tenant_id: uuid.UUID, category_id: uuid.UUID,
+        actor_id: uuid.UUID | None = None, actor_role: str | None = None,
+        request_id: str | None = None,
+    ) -> bool:
+        """Fill an absent signup grant on an explicit service-enable request.
+
+        Home Services registration already includes its active service groups.
+        Older registrations and groups added after signup can lack these rows.
+        Repair only missing rows, never an explicit inactive/expired grant.
+        Persist the canonical grants so matching and confirmation agree. Seats,
+        provider approval and service publication remain independent gates.
+        The caller owns the transaction; no partial setup is committed here.
+        """
+        from app.engines.tenant_engine.models import Tenant
+        from app.engines.public_registration.models import PendingTenantRegistration
+        from app.engines.vertical_catalog.models import TenantVerticalEnrollment
+
+        # Serialize concurrent clicks for this tenant, including two groups.
+        tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id)
+                                  .with_for_update())).scalar_one_or_none()
+        if not tenant or tenant.status not in {'onboarding_pending', 'under_review', 'awaiting_documents', 'active', 'trial', 'pending_activation'}:
+            return False
+        if await self.has_category_entitlement(db, tenant_id, category_id):
+            return True
+        group = await db.get(ServiceGroup, category_id)
+        if not group or group.status != 'active' or group.deleted_at:
+            return False
+        category = await db.get(ServiceCategory, group.category_id)
+        if not category or not category.is_active or (category.vertical_type or category.category_type) != 'home_services':
+            return False
+        vertical = (await db.execute(select(Vertical).where(Vertical.key == 'home_services'))).scalar_one_or_none()
+        if not vertical or not vertical.is_enabled:
+            return False
+        # Any existing category decision wins, including suspended/expired and
+        # future-dated rows. Never turn a denied entitlement back on implicitly.
+        category_row = (await db.execute(select(TenantCategoryEntitlement).where(
+            TenantCategoryEntitlement.tenant_id == tenant_id,
+            TenantCategoryEntitlement.category_id == category_id).limit(1))).scalar_one_or_none()
+        if category_row is not None:
+            return False
+        module = (await db.execute(select(TenantModuleEntitlement).where(
+            TenantModuleEntitlement.tenant_id == tenant_id,
+            TenantModuleEntitlement.module_id == vertical.id)
+            .order_by(TenantModuleEntitlement.created_at.desc()).limit(1))).scalar_one_or_none()
+        if module is not None and not _is_effective(module):
+            return False
+        enrollment = (await db.execute(select(TenantVerticalEnrollment).where(
+            TenantVerticalEnrollment.tenant_id == tenant_id,
+            TenantVerticalEnrollment.vertical_id == vertical.id))).scalar_one_or_none()
+        if not enrollment or enrollment.status not in {
+            'draft_setup', 'draft', 'submitted', 'under_review', 'changes_requested',
+            'approved', 'approved_pending_activation', 'activation_requirements_pending', 'activating', 'active',
+        }:
+            return False
+        policy_grant = module is not None and (module.configuration or {}).get('grant_policy') == 'active_vertical_service_groups'
+        if not policy_grant:
+            # A bare enrollment is not proof of entitlement: old self-signups
+            # must be backed by an actual completed registration in this vertical.
+            registration = (await db.execute(select(PendingTenantRegistration.id).where(
+                PendingTenantRegistration.created_tenant_id == tenant_id,
+                PendingTenantRegistration.status == 'completed',
+                PendingTenantRegistration.selected_vertical_key == 'home_services',
+            ).limit(1))).scalar_one_or_none()
+            if registration is None or (module is not None and module.source != 'tenant_registration'):
+                return False
+        if module is None:
+            await self.assign_module_entitlement(db, tenant_id=tenant_id, module_key='home_services',
+                actor_id=actor_id, actor_role=actor_role, request_id=request_id,
+                source='tenant_registration', configuration={'grant_policy':'active_vertical_service_groups'}, commit=False)
+        await self.assign_category_entitlement(db, tenant_id=tenant_id, category_id=category_id,
+            actor_id=actor_id, actor_role=actor_role, request_id=request_id,
+            source='tenant_registration', configuration={'grant_policy':'active_vertical_service_groups'}, commit=False)
+        return await self.has_category_entitlement(db, tenant_id, category_id)
+
     async def get_entitled_tenant_ids_for_category(
         self, db: AsyncSession, category_id: uuid.UUID, *, tenant_ids: list[uuid.UUID] | None = None,
     ) -> set[uuid.UUID]:
@@ -129,10 +204,14 @@ class EntitlementService:
             .join(Vertical, Vertical.id == TenantModuleEntitlement.module_id)
             .where(
                 TenantCategoryEntitlement.category_id == category_id,
+                TenantModuleEntitlement.tenant_id == TenantCategoryEntitlement.tenant_id,
+                Vertical.key == func.coalesce(func.nullif(ServiceCategory.vertical_type, ''), ServiceCategory.category_type),
                 TenantCategoryEntitlement.status == "ACTIVE",
                 TenantModuleEntitlement.status == "ACTIVE",
                 Vertical.is_enabled.is_(True),
                 ServiceCategory.is_active.is_(True),
+                ServiceGroup.status == 'active',
+                ServiceGroup.deleted_at.is_(None),
                 (TenantCategoryEntitlement.effective_from.is_(None)) | (TenantCategoryEntitlement.effective_from <= now),
                 (TenantCategoryEntitlement.effective_until.is_(None)) | (TenantCategoryEntitlement.effective_until >= now),
                 (TenantModuleEntitlement.effective_from.is_(None)) | (TenantModuleEntitlement.effective_from <= now),
@@ -168,16 +247,20 @@ class EntitlementService:
         module_row = (await db.execute(
             select(TenantModuleEntitlement).where(TenantModuleEntitlement.id == row.module_entitlement_id)
         )).scalar_one_or_none()
-        if not module_row or module_row.status != "ACTIVE" or not _is_effective(module_row):
+        if not module_row or module_row.tenant_id != tenant_id or module_row.status != "ACTIVE" or not _is_effective(module_row):
             return "TENANT_MODULE_NOT_ENTITLED"
         group = (await db.execute(select(ServiceGroup).where(ServiceGroup.id == category_id))).scalar_one_or_none()
         vertical = (await db.execute(select(Vertical).where(Vertical.id == module_row.module_id))).scalar_one_or_none()
-        if vertical and not vertical.is_enabled:
+        if not vertical or not vertical.is_enabled:
             return "GLOBAL_MODULE_INACTIVE"
+        if not group or group.status != 'active' or group.deleted_at:
+            return "GLOBAL_CATEGORY_INACTIVE"
         if group:
             cat = (await db.execute(select(ServiceCategory).where(ServiceCategory.id == group.category_id))).scalar_one_or_none()
-            if cat and not cat.is_active:
+            if not cat or not cat.is_active:
                 return "GLOBAL_CATEGORY_INACTIVE"
+            if (cat.vertical_type or cat.category_type) != vertical.key:
+                return "TENANT_MODULE_NOT_ENTITLED"
         return None
 
     async def resolve_effective_entitlements(self, db: AsyncSession, tenant_id: uuid.UUID, *, effective_only: bool = True) -> dict[str, Any]:

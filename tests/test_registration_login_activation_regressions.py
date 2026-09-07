@@ -1,5 +1,6 @@
 """Behavioral coverage for registration, login and delayed activation."""
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,7 +37,10 @@ async def test_editing_verified_signup_contacts_requires_new_verification():
 
 @pytest.mark.asyncio
 async def test_enrollment_transition_does_not_commit_partial_approval():
-    row = SimpleNamespace(id=uuid.uuid4(), tenant_id=uuid.uuid4(), vertical_id=uuid.uuid4(), status="submitted")
+    # submitted_at populated -- a real "submitted" row always has it; the
+    # submission gate added in a93de26 checks this field, not status alone.
+    row = SimpleNamespace(id=uuid.uuid4(), tenant_id=uuid.uuid4(), vertical_id=uuid.uuid4(),
+                          status="submitted", submitted_at=datetime.now(timezone.utc))
     result = MagicMock()
     result.scalar_one_or_none.return_value = row
     db = MagicMock(execute=AsyncMock(return_value=result), flush=AsyncMock(), commit=AsyncMock(), refresh=AsyncMock())
