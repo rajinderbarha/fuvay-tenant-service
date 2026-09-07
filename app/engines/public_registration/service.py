@@ -192,7 +192,7 @@ class RegistrationService:
     async def _send_otps(self, pending: PendingTenantRegistration, channels: tuple[str, ...] = ("mobile", "email")) -> dict[str, str]:
         """Sends (or, outside production, simulates) OTPs for the given channels.
         Returns dev codes actually generated this call — never returned to the
-        caller unless settings.DEBUG is on; production always leaves this empty
+        caller unless signup simulation is enabled; production always leaves this empty
         regardless of DEBUG, so a misconfigured env var can't leak codes."""
         s = get_settings()
         dev_codes: dict[str, str] = {}
@@ -221,7 +221,9 @@ class RegistrationService:
                 purpose=purpose, recipient_hash=hash_recipient(recipient),
                 hashed_otp=otp_hashed, expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
             ))
-            if s.DEBUG and s.APP_ENV not in ("staging", "production"):
+            if s.APP_ENV != "production" and (
+                s.SIGNUP_DEV_OTP_ENABLED or (s.DEBUG and s.APP_ENV in ("development", "testing"))
+            ):
                 # Dev/staging: never attempt real delivery (Twilio trial/sandbox
                 # numbers routinely report success without the SMS ever
                 # arriving) — always surface the code directly instead.

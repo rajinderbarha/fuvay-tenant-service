@@ -1,6 +1,10 @@
 services:
 
   api:
+    environment:
+      # Temporary IP-based development deployment; disable after OTP setup.
+      # The backend always ignores this switch in APP_ENV=production.
+      SIGNUP_DEV_OTP_ENABLED: ${SIGNUP_DEV_OTP_ENABLED:-true}
     ports:
       - "8000:8000"
 

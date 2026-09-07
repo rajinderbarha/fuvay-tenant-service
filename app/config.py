@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "rc-1"
     APP_ENV: Literal["development", "staging", "production", "testing"] = "development"
     DEBUG: bool = False  # Must stay False; only override to True in dev via .env
+    # Explicit signup simulator for development/staging without SMS or email.
+    # Never effective in production, even if accidentally configured there.
+    SIGNUP_DEV_OTP_ENABLED: bool = False
     SECRET_KEY: str = "dev-secret-key-change-in-production"
 
     # ── API ────────────────────────────────────────────────────────
