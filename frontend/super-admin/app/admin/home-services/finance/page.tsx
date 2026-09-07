@@ -1237,7 +1237,7 @@ function TopupPackagesSection({ onToast }: { onToast: (msg: string, variant?: To
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
         What a provider buys to operate: wallet credit plus the technician seats that decide how many
         jobs they can run in one slot. Offered during onboarding and from the provider&apos;s header —
-        never required to activate. Edited here or at <code>/admin/topup-plans</code>; both are the same catalogue.
+        never required to activate. <a href="/admin/topup-plans">Manage provider technician plans</a> to set pricing, seats and validity; both editors use the same catalogue.
       </p>
 
       {pkgsApi.loading ? (

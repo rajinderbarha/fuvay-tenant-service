@@ -6,14 +6,7 @@
  * records HOW the tenant accepts it (direct payment methods) and the
  * tenant's invoice preferences.
  *
- * Top-up plan (usage credit + technician seats): paid here via the same real
- * Razorpay flow the Activation Center uses (activationPaymentApi +
- * useRazorpayCheckout, backend: app.engines.vertical_catalog.
- * activation_payment_router — order creation + HMAC-verified webhook
- * confirmation, tenant.billing is only ever updated server-side). Product
- * decision (2026-08-04): pre-approval payment is allowed here, not just
- * post-approval on the Activation Center — required amounts are resolved
- * from the published finance policy regardless of enrollment status.
+ * Technician purchases are handled in the Technician Seat Plan step.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -28,16 +21,13 @@ import { StepProgressBar } from "../../../../../../components/onboarding/StepPro
 import { Card, Btn, Badge, Skeleton } from "../../../../../../components/shared/ui";
 import { PageHeader, PageShell } from "@serviceos/design-system";
 import {
-  financeReadinessApi, activationPaymentApi, ServiceOSError,
+  financeReadinessApi, ServiceOSError,
   type FinanceReadinessManifest, type FinanceReadinessDirectPayment,
 } from "../../../../../../lib/api";
-import { useRazorpayCheckout } from "../../../../../../hooks/useRazorpayCheckout";
 
 const METHODS: { key: keyof FinanceReadinessDirectPayment; label: string; icon: React.ReactNode; disabled?: boolean }[] = [
   { key: "accepts_cash", label: "Cash", icon: <Banknote size={20}/> },
   { key: "accepts_upi", label: "UPI", icon: <Smartphone size={20}/> },
-  { key: "accepts_card_at_service_location", label: "Card at service location", icon: <CreditCard size={20}/>, disabled: true },
-  { key: "accepts_bank_transfer", label: "Bank transfer", icon: <Landmark size={20}/> },
 ];
 
 export default function FinanceReadinessPage() {
@@ -47,73 +37,24 @@ export default function FinanceReadinessPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [paying, setPaying] = useState(false);
-  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
-  const { open: openCheckout } = useRazorpayCheckout();
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
     financeReadinessApi.get()
-      .then(m => { setManifest(m); setForm(m.direct_payment); })
+      .then(m => { setManifest(m); setForm({ ...m.direct_payment, accepts_card_at_service_location: false, accepts_bank_transfer: false }); })
       .catch(e => setError(e instanceof ServiceOSError ? e.message : "We couldn't load your finance readiness."))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  async function payActivation() {
-    setPaymentNotice(null);
-    setPaying(true);
-    let startedOrderId: string | null = null;
-    try {
-      const order = await activationPaymentApi.createFundingOrder();
-      if (order.already_confirmed) {
-        setPaymentNotice("Your earlier payment was found and confirmed. Balances have been refreshed.");
-        load();
-        return;
-      }
-      startedOrderId = order.order_id;
-
-      // The signed order/payment tuple is verified by the backend. The
-      // browser never supplies an amount or a seat/credit allocation.
-      const payment = await openCheckout({
-        keyId: order.key, orderId: order.order_id, amountPaise: order.amount_paise,
-        currency: order.currency, name: "Fuvay — Home Services Activation",
-        description: order.quote?.checkout_mode === "credits_only"
-          ? "Starter usage credits"
-          : "Top-up plan",
-      });
-      await activationPaymentApi.confirmFunding(payment);
-      setPaymentNotice("Payment confirmed. Your usage credit and technician seats have been updated.");
-      load();
-    } catch (e: unknown) {
-      if (startedOrderId) {
-        try {
-          const reconciled = await activationPaymentApi.reconcileFunding(startedOrderId);
-          if (reconciled.status === "captured" || reconciled.captured) {
-            setPaymentNotice("Payment was captured and has now been reconciled successfully.");
-            load();
-            return;
-          }
-        } catch {
-          // Preserve the original Checkout error below. The user can safely
-          // retry; order creation also reconciles before reusing an order.
-        }
-      }
-      setPaymentNotice(e instanceof ServiceOSError ? e.message
-        : (e instanceof Error ? e.message : "Payment could not be started."));
-    } finally {
-      setPaying(false);
-    }
-  }
-
   async function save(andContinue: boolean) {
     if (!form) return;
     setSaving(true);
     setError("");
     try {
-      const m = await financeReadinessApi.save(form);
+      const m = await financeReadinessApi.save({ ...form, accepts_card_at_service_location: false, accepts_bank_transfer: false });
       setManifest(m);
       setForm(m.direct_payment);
       if (andContinue) router.push("/tenant/home-services/setup/review");
@@ -138,7 +79,6 @@ export default function FinanceReadinessPage() {
   const actionsRemaining =
     (manifest.checks.direct_methods_selected ? 0 : 1) +
     (manifest.checks.invoice_details_complete ? 0 : 1);
-  const funding = manifest.activation_requirements.funding_quote;
   const money = (value: number) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
   return (
@@ -263,77 +203,7 @@ export default function FinanceReadinessPage() {
             </div>
           </Card>
 
-          <Card style={{ marginTop: 16 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-              <div>
-                <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Activation funding</p>
-                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>One secure checkout — usage credit and technician seats, recorded separately.</p>
-              </div>
-              {funding && <Badge variant={funding.can_pay ? "warning" : "success"}>{funding.can_pay ? "Payment required" : "Fully funded"}</Badge>}
-            </div>
-            {paymentNotice && (
-              <div role="status" style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 12 }}>
-                <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
-                <span>{paymentNotice}</span>
-              </div>
-            )}
-            {funding ? (
-              <>
-                <div className="fin-funding-grid">
-                  <div className="fin-funding-account">
-                    <div className="fin-funding-icon"><ShieldCheck size={18}/></div>
-                    <div style={{ minWidth: 0 }}>
-                      <p className="fin-funding-label">Technician seats</p>
-                      <p className="fin-funding-value">{funding.entitled_seats} <span>purchased</span></p>
-                      <p className="fin-funding-note">{funding.qualifying_technician_count} qualifying technician{funding.qualifying_technician_count === 1 ? "" : "s"} · one seat lets one technician take one job per slot</p>
-                    </div>
-                    <CheckCircle2 size={17} style={{ color: funding.seats_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
-                  </div>
-                  <div className="fin-funding-account">
-                    <div className="fin-funding-icon"><Wallet size={18}/></div>
-                    <div style={{ minWidth: 0 }}>
-                      <p className="fin-funding-label">Usage credit wallet</p>
-                      <p className="fin-funding-value">{money(funding.credit_balance)} <span>available</span></p>
-                      <p className="fin-funding-note">Starter balance {money(funding.starter_credit_base)} · used for job-completion charges</p>
-                    </div>
-                    <CheckCircle2 size={17} style={{ color: funding.credits_funded ? "var(--success)" : "var(--warning)", marginLeft: "auto" }}/>
-                  </div>
-                </div>
 
-                {funding.can_pay ? (
-                  <div className="fin-checkout-box">
-                    <div style={{ marginBottom: 12 }}>
-                      <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 3px" }}>{funding.checkout_label}</p>
-                      <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0 }}>Calculated live from your approved finance policy and qualifying team.</p>
-                    </div>
-                    {funding.suggested_plan && (
-                      <>
-                        <FundingLine label={`${funding.suggested_plan.name} · ${funding.suggested_plan.seats} seat(s)`}
-                          value={money(funding.suggested_plan.credited_amount)}/>
-                        <FundingLine label={`GST (${funding.suggested_plan.gst_percent}%)`}
-                          value={money(funding.suggested_plan.gst_amount)}/>
-                      </>
-                    )}
-                    <div className="fin-funding-total"><span>Payable now</span><strong>{money(funding.total_due)}</strong></div>
-                    <Btn variant="primary" disabled={paying} onClick={payActivation} style={{ width: "100%", justifyContent: "center", marginTop: 12 }}>
-                      {paying ? "Opening secure checkout…" : `${funding.checkout_label} · ${money(funding.total_due)}`}
-                    </Btn>
-                    <p style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 10.5, color: "var(--text-tertiary)", margin: "9px 0 0" }}>
-                      <ShieldCheck size={12}/> Amounts are locked server-side and confirmed by the payment gateway.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="fin-funded-banner"><CheckCircle2 size={18}/><div><strong>Activation funding complete</strong><span>Your seats are covered and starter credits are available.</span></div></div>
-                )}
-              </>
-            ) : (
-              <div role="alert" className="fin-policy-unavailable"><AlertTriangle size={16}/><span>The activation finance policy is not available yet. Contact support before making a payment.</span></div>
-            )}
-            <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", marginTop: 10 }}>
-              <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: "var(--text-tertiary)" }}/>
-              <span>Usage credit is spent on job-completion charges; new bookings pause if it falls below the policy floor. GST is never added to spendable credit.</span>
-            </div>
-          </Card>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

@@ -247,14 +247,12 @@ function OnboardingQueueTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
         <SummaryCard label="Total in Queue" value={summary?.total ?? 0} onClick={() => filterBy(undefined)} />
-        <SummaryCard label="Not Submitted" value={summary?.not_submitted ?? 0} onClick={() => filterBy("not_submitted")} />
         <SummaryCard label="Pending Review" value={summary?.pending_review ?? 0} tone="warning" onClick={() => filterBy("pending_review")} />
         <SummaryCard label="Changes Requested" value={summary?.changes_requested ?? 0} tone="warning" onClick={() => filterBy("changes_requested")} />
         <SummaryCard label="Rejected" value={summary?.rejected ?? 0} tone="danger" onClick={() => filterBy("rejected")} />
       </div>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        A &quot;New Business Request&quot; is a provider that registered and holds a Home Services assignment but
-        has not yet submitted for review — shown here as Not Submitted, view-only until they submit.
+        Only providers who have submitted setup for approval appear here. Incomplete registrations stay in the provider directory, outside the approval queue.
       </p>
 
       <div style={{ display: "flex", gap: 10 }}>

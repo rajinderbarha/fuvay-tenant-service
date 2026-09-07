@@ -81,7 +81,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
   const [fullName, setFullName] = useState(existing?.full_name ?? "");
   const [phone, setPhone] = useState(existing?.phone ?? "");
   const [email, setEmail] = useState(existing?.email ?? "");
-  const [designation, setDesignation] = useState(existing?.designation ?? "");
   const [photoAsset, setPhotoAsset] = useState<MediaAsset | null>(null);
   // Distinguishes "left the existing photo alone" from "explicitly cleared it",
   // so an edit that removes the photo actually persists the removal.
@@ -117,10 +116,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
 
   const isTechnician = memberType === "technician";
   const hasDeliverableEmail = email.trim().length > 0;
-  const designationOptions = React.useMemo(() => {
-    const values = DESIGNATIONS_BY_MEMBER_TYPE[memberType] ?? [];
-    return designation && !values.includes(designation) ? [designation, ...values] : values;
-  }, [memberType, designation]);
   const groupedServices = React.useMemo(() => {
     const byMasterService = new Map<string, {
       id: string;
@@ -198,7 +193,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
     if (isTechnician && existing?.member_type !== "technician" && !technicianSeatAvailable) return "Buy an available technician seat before adding a technician. Non-technician staff are free.";
     if (!fullName.trim()) return "Full name is required.";
     if (!email.trim() && !phone.trim()) return "Enter an email address or a mobile number.";
-    if (!designation.trim()) return "Select a designation.";
     if (isTechnician && servicesLoading) return "Wait for the enabled services to finish loading.";
     if (isTechnician && servicesLoadFailed) return "Enabled services could not be loaded. Close this dialog and try again.";
     if (isTechnician && availableServices.length === 0) return "Configure at least one enabled service before adding a technician.";
@@ -227,7 +221,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
       full_name: fullName.trim(),
       phone: phone.trim() || null,
       email: email.trim() || null,
-      designation: designation.trim() || null,
+      designation: null,
       can_receive_assignment: canReceive,
       skill_ids: isTechnician ? selectedSkillIds : [],
       supported_offering_ids: isTechnician ? selectedOfferingIds : [],
@@ -324,13 +318,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
           </Field>
           <Row>
             <Field label="Full name" required><Input value={fullName} onChange={setFullName} placeholder="Enter full name"/></Field>
-            <Field label="Designation" required hint="Shown to customers and used in team directories.">
-              <select value={designation} onChange={event => setDesignation(event.target.value)}
-                style={{ width: "100%", height: 40, padding: "0 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)" }}>
-                <option value="">Select designation</option>
-                {designationOptions.map(value => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </Field>
           </Row>
           <Row>
             <Field label="Mobile number" hint="Email or mobile is required">
@@ -352,7 +339,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
                 <label key={t.value} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 8, border: `1px solid ${memberType === t.value ? "var(--brand)" : "var(--border)"}`, cursor: "pointer" }}>
                   <input type="radio" disabled={t.value === "technician" && existing?.member_type !== "technician" && !technicianSeatAvailable} checked={memberType === t.value} onChange={() => {
                     setMemberType(t.value);
-                    if (!(DESIGNATIONS_BY_MEMBER_TYPE[t.value] ?? []).includes(designation)) setDesignation("");
                   }}/>
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t.label}</p>
@@ -500,7 +486,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
             <>
               <SectionTitle>Weekly availability</SectionTitle>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-                This technician will use the business hours configured in Coverage &amp; availability. Each inherited open day creates one technician place in each matching slot; individual availability can be customized after setup.
+                This technician automatically follows the business hours in Coverage &amp; availability, including future changes. Each complete two-hour window supports one job per technician, subject to the shared daily limit. Business holidays close booking for everyone.
               </p>
             </>
           )}

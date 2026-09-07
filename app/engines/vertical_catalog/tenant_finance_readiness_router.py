@@ -54,7 +54,7 @@ def _row_dict(r: TenantFinanceReadiness | None) -> dict:
     if not r:
         return {
             "accepts_cash": True, "accepts_upi": True,
-            "accepts_card_at_service_location": False, "accepts_bank_transfer": True,
+            "accepts_card_at_service_location": False, "accepts_bank_transfer": False,
             "payment_confirmation_required": True,
             "invoice_business_name": None, "invoice_prefix": None,
             "issue_customer_receipt": True,
@@ -112,7 +112,6 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
     readiness_row = await _row(db, tid)
     methods_selected = readiness_row is not None and any([
         readiness_row.accepts_cash, readiness_row.accepts_upi,
-        readiness_row.accepts_card_at_service_location, readiness_row.accepts_bank_transfer,
     ])
     invoice_name = (readiness_row.invoice_business_name if readiness_row and readiness_row.invoice_business_name
                     else (profile_row.trade_name if profile_row else None) or tenant_row.business_name)
@@ -199,7 +198,7 @@ class SaveFinanceReadinessRequest(BaseModel):
     accepts_cash: bool = True
     accepts_upi: bool = True
     accepts_card_at_service_location: bool = False
-    accepts_bank_transfer: bool = True
+    accepts_bank_transfer: bool = False
     payment_confirmation_required: bool = True
     invoice_business_name: str | None = Field(default=None, max_length=255)
     invoice_prefix: str | None = Field(default=None, max_length=20)
@@ -237,8 +236,8 @@ async def save_finance_readiness(
 
     row.accepts_cash = body.accepts_cash
     row.accepts_upi = body.accepts_upi
-    row.accepts_card_at_service_location = body.accepts_card_at_service_location
-    row.accepts_bank_transfer = body.accepts_bank_transfer
+    row.accepts_card_at_service_location = False
+    row.accepts_bank_transfer = False
     row.payment_confirmation_required = body.payment_confirmation_required
     row.invoice_business_name = body.invoice_business_name
     row.invoice_prefix = body.invoice_prefix

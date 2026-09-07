@@ -273,6 +273,13 @@ _READINESS_MAP = {
 _QUEUE_BASE_WHERE = """
     t.terminated_at IS NULL
     AND t.archived_at IS NULL
+    AND t.verification_status IN ('pending', 'under_review', 'changes_requested', 'rejected', 'approved', 'verified')
+    AND (LOWER(COALESCE(t.vertical, '')) <> 'home_services' OR EXISTS (
+        SELECT 1 FROM tenant_vertical_enrollments e
+        JOIN verticals v ON v.id=e.vertical_id
+        WHERE e.tenant_id=t.id AND v.key='home_services'
+          AND e.submitted_at IS NOT NULL AND e.status NOT IN ('draft', 'draft_setup')
+    ))
     AND NOT (t.status = 'active' AND t.verification_status IN ('approved', 'verified'))
 """
 
@@ -305,6 +312,15 @@ FROM tenants t
 LEFT JOIN users u            ON u.id  = t.owner_user_id
 LEFT JOIN service_categories sc ON sc.id = t.category_id
 WHERE """ + _QUEUE_BASE_WHERE
+
+
+async def _require_submitted_review(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    result = await db.execute(text(
+        "SELECT t.id FROM tenants t WHERE " + _QUEUE_BASE_WHERE +
+        " AND t.id=:tid AND t.verification_status IN ('pending', 'under_review')"
+    ), {"tid": str(tenant_id)})
+    if not result.scalar():
+        raise HTTPException(status_code=409, detail="Provider must submit setup for approval before Admin can review it.")
 
 
 def _enrich_row(row: dict) -> dict:
@@ -566,13 +582,18 @@ async def list_provider_onboarding(
 
     full_q = base + filters
 
-    # Summary counts (across all queue members, ignoring page filters)
+    # Summary counts share the submission gate and selected vertical.
+    summary_where = _QUEUE_BASE_WHERE
+    summary_params = {}
+    if vertical_type:
+        summary_where += " AND LOWER(t.vertical)=:vtype"
+        summary_params["vtype"] = vertical_type.lower()
     summary_res = await db.execute(text(f"""
         SELECT t.verification_status, COUNT(*) AS cnt
         FROM tenants t
-        WHERE {_QUEUE_BASE_WHERE}
+        WHERE {summary_where}
         GROUP BY t.verification_status
-    """))
+    """), summary_params)
     summary_raw = {row[0]: int(row[1]) for row in summary_res.fetchall()}
     summary = {
         "pending_review":     sum(summary_raw.get(vs, 0) for vs in ("pending", "under_review")),
@@ -637,6 +658,7 @@ async def review_provider_onboarding_document(
     user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
 ):
     """Review one current business document from the Admin onboarding queue."""
+    await _require_submitted_review(db, tenant_id)
     decision = str(payload.get("decision") or "").strip().lower()
     reason = str(payload.get("reason") or "").strip()
     if decision not in ("verified", "changes_requested", "rejected"):
@@ -771,6 +793,7 @@ async def approve_provider_onboarding(
     user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
+    await _require_submitted_review(db, tenant_id)
     # Preserve the inexpensive legacy profile projection check for a precise
     # early error, then enforce the complete Admin review contract below.
     chk = await db.execute(
@@ -854,6 +877,7 @@ async def reject_provider_onboarding(
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     if not payload.get("reason"):
         raise HTTPException(status_code=422, detail="reason is required to reject a tenant application.")
+    await _require_submitted_review(db, tenant_id)
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")
     result = await svc.reject_verification(tenant_id, reason=payload.get("reason", ""))
@@ -873,6 +897,7 @@ async def request_changes_provider_onboarding(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.TENANT_REQUEST_MORE_INFO)),
 ):
+    await _require_submitted_review(db, tenant_id)
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     from app.engines.tenant_engine.admin_service import AdminTenantService
     svc = AdminTenantService(db=db, request_id=rid, actor_id=user.user_id, actor_role="super_admin")

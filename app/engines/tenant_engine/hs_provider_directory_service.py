@@ -31,6 +31,7 @@ from sqlalchemy import select, func, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.tenant_engine.models import Tenant, TenantBilling
+from app.engines.vertical_catalog.models import TenantVerticalEnrollment, Vertical
 from app.engines.final_records.models import ServiceJob
 from app.exceptions import NotFoundException
 
@@ -85,7 +86,11 @@ class HomeServicesProviderDirectoryService:
         base = self._base_query(q=q).subquery()
         counts = (await self.db.execute(select(
             func.count().label("total_providers"),
-            func.count().filter(base.c.verification_status.in_(("not_started", "pending"))).label("pending_verification"),
+            func.count().filter(base.c.verification_status.in_(("pending", "under_review")), exists(
+                select(1).select_from(TenantVerticalEnrollment).join(Vertical, Vertical.id == TenantVerticalEnrollment.vertical_id)
+                .where(TenantVerticalEnrollment.tenant_id == base.c.id, Vertical.key == 'home_services',
+                       TenantVerticalEnrollment.submitted_at.is_not(None), TenantVerticalEnrollment.status == 'submitted')
+            )).label("pending_verification"),
             func.count().filter(base.c.status == "active").label("active"),
             func.count().filter(base.c.status.in_(SETUP_INCOMPLETE_STATUSES)).label("setup_incomplete"),
             func.count().filter(base.c.verification_status == "changes_requested").label("changes_requested"),

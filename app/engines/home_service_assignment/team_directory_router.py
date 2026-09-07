@@ -168,7 +168,7 @@ async def list_team(
         "EXISTS (SELECT 1 FROM tenant_services ts WHERE ts.tenant_id=ptm.tenant_id AND ts.is_enabled=true "
         "AND ts.deleted_at IS NULL AND COALESCE(ptm.supported_offering_ids,'[]'::jsonb) ? ts.id::text) "
         "AND EXISTS (SELECT 1 FROM provider_availability_rules par WHERE par.tenant_id=ptm.tenant_id "
-        "AND par.scope_type='staff_member' AND par.scope_id=ptm.id AND par.is_active=true))) "
+        "AND par.scope_type='provider' AND par.scope_id IS NULL AND par.is_active=true))) "
         "AND (ptm.user_id IS NULL OR COALESCE(u.is_active,true)=true)"
     )
     if readiness:
@@ -422,9 +422,9 @@ async def get_staff_availability(
     m = await _load_member(db, tid, staff_id)
     weekly = (await db.execute(text(
         "SELECT id, day_of_week, start_time, end_time, slot_duration_minutes, "
-        "max_jobs_per_day, timezone, emergency_available, is_active "
-        "FROM provider_availability_rules WHERE tenant_id=:tid AND scope_type='staff_member' "
-        "AND scope_id=:sid ORDER BY day_of_week, start_time"
+        "max_jobs_per_day, break_start_time, break_end_time, timezone, emergency_available, is_active "
+        "FROM provider_availability_rules WHERE tenant_id=:tid AND scope_type='provider' "
+        "AND scope_id IS NULL ORDER BY day_of_week, start_time"
     ), {"tid": str(tid), "sid": str(staff_id)})).fetchall()
     time_off = (await db.execute(text(
         "SELECT id, start_date, end_date, all_day, start_time, end_time, reason, status "
@@ -436,12 +436,26 @@ async def get_staff_availability(
         "FROM staff_availability_overrides WHERE tenant_id=:tid AND staff_member_id=:sid "
         "AND override_date>=CURRENT_DATE ORDER BY override_date LIMIT 100"
     ), {"tid": str(tid), "sid": str(staff_id)})).fetchall()
+    from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
+    weekly_rules = []
+    for row in weekly:
+        rule = dict(row._mapping)
+        rule["provider_daily_limit"] = rule.get("max_jobs_per_day")
+        rule["max_jobs_per_day"] = len(_slots_from_rule(rule)) if rule["is_active"] else 0
+        rule["slot_duration_minutes"] = 120
+        rule["inherited_from_business"] = True
+        weekly_rules.append(rule)
+    holidays = (await db.execute(text(
+        "SELECT date, reason, full_day_closed FROM tenant_availability_exceptions "
+        "WHERE tenant_id=:tid AND status='active' AND date>=CURRENT_DATE ORDER BY date"
+    ), {"tid": str(tid)})).fetchall()
     return ok({
         "staff_id": str(staff_id),
         "presence": m.get("availability_state") or "available",
         "presence_updated_at": m.get("availability_updated_at"),
         "can_receive_assignment": bool(m.get("can_receive_assignment")),
-        "weekly_rules": [dict(row._mapping) for row in weekly],
+        "weekly_rules": weekly_rules,
+        "business_holidays": [dict(row._mapping) for row in holidays],
         "time_off": [dict(row._mapping) for row in time_off],
         "overrides": [dict(row._mapping) for row in overrides],
     }, request_id=_rid(request))

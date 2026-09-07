@@ -14,3 +14,9 @@ export function twoHourWindows(start: string, end: string, breakStart?: string |
   }
   return windows;
 }
+
+export function allocateDailySlots(windows: string[], technicians: number, dailyLimit?: number | null) {
+  const total = Math.max(0, Math.min(windows.length * technicians, dailyLimit ?? windows.length * technicians));
+  const base = windows.length ? Math.floor(total / windows.length) : 0;
+  return windows.map((window, index) => ({ window, capacity: base + (index < total % windows.length ? 1 : 0) }));
+}

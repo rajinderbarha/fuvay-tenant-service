@@ -84,15 +84,23 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
    * meaningless.
    */
   const [progress, setProgress] = useState<{ pct: number; done: number; total: number } | null>(null);
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
+  const [progressFailed, setProgressFailed] = useState(false);
+  const [progressRetry, setProgressRetry] = useState(0);
+  const profileGateEnabled = !restricted && showProgress;
+  const isLaterStep = (id: OnboardingNavId) => ["documents", "services-pricing", "plan", "staff", "coverage-availability", "finance", "review"].includes(id);
   useEffect(() => {
     if (restricted || !showProgress) return;
     let cancelled = false;
+    setProgressFailed(false);
     homeServicesSetupOverviewApi
       .getOverview()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((o: any) => {
         const pr = o?.progress;
-        if (cancelled || !pr) return;
+        if (cancelled) return;
+        setProfileComplete(o?.sections?.find((section: { key: string }) => section.key === "BUSINESS_PROFILE")?.status === "complete");
+        if (!pr) return;
         const total = Number(pr.total_required ?? 0);
         if (!total) return;
         setProgress({
@@ -103,9 +111,9 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
       })
       // A missing progress bar must never break the shell the tenant is
       // trying to complete setup in.
-      .catch(() => {});
+      .catch(() => { if (!cancelled) { setProfileComplete(null); setProgressFailed(true); } });
     return () => { cancelled = true; };
-  }, [restricted, showProgress]);
+  }, [restricted, showProgress, activeNav, progressRetry]);
   const tenant = useTenant();
   const { theme, toggle } = useTheme();
   const [myName, setMyName] = useState("");
@@ -215,9 +223,12 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
           </p>
           {navItems.map(item => {
             const active = activeNav === item.id;
+            const locked = profileGateEnabled && profileComplete !== true && isLaterStep(item.id);
             return (
               <Link key={item.id} href={item.href} aria-current={active ? "page" : undefined}
-                onClick={() => setDrawerOpen(false)}
+                aria-disabled={locked || undefined}
+                title={locked ? "Complete Business Profile to 100% first" : undefined}
+                onClick={event => { if (locked) event.preventDefault(); else setDrawerOpen(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "9px 10px",
                   borderRadius: "var(--radius-full)", textDecoration: "none",
@@ -225,6 +236,7 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
                   color: active ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
                   fontWeight: active ? 600 : 400, fontSize: 13, marginBottom: 2,
                   minHeight: 44,
+                  opacity: locked ? 0.5 : 1,
                 }}>
                 <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>{item.icon}</span>
                 <span>{item.label}</span>
@@ -324,7 +336,14 @@ export function OnboardingShell({ children, activeNav, restricted = false, showP
         <main className="provider-main onboarding-main-pad" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
           <div className="provider-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
             <Breadcrumbs/>
-            {children}
+            {profileGateEnabled && isLaterStep(activeNav) && profileComplete !== true ? (
+              <section role="status" style={{ padding: 24, marginTop: 16, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)" }}>
+                <h2>{profileComplete === false ? "Complete Business Profile first" : progressFailed ? "Could not check setup progress" : "Checking your business profile…"}</h2>
+                <p>Your saved Business Profile must be 100% complete before you can continue to the next setup step.</p>
+                <Link href="/tenant/home-services/setup/business-profile">Go to Business Profile</Link>
+                {progressFailed && <button type="button" onClick={() => setProgressRetry(n => n + 1)} style={{ marginLeft: 16 }}>Retry</button>}
+              </section>
+            ) : children}
           </div>
         </main>
       </div>

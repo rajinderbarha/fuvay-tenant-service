@@ -252,6 +252,35 @@ def _overlapping_bookings(booked: dict, start: dt.time, end: dt.time) -> int:
     return total
 
 
+def _slot_allocation(rules: list[dict], technicians: int) -> dict:
+    """Spread the provider's daily volume evenly across complete work windows."""
+    windows = []
+    for start, end in sorted({slot for rule in rules for slot in _slots_from_rule(rule)}):
+        if not windows or start >= windows[-1][1]:
+            windows.append((start, end))
+    if not windows:
+        return {}
+    limit = _daily_remaining(rules, technicians, {})
+    base, extra = divmod(limit, len(windows))
+    return {window: base + (index < extra) for index, window in enumerate(windows)}
+
+
+async def daily_slot_preview(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> dict:
+    closed = await _is_closed(db, tenant_id, day)
+    if closed:
+        return {"date": day.isoformat(), "closed": True, "slots": [], "daily_remaining": 0}
+    rules = await _provider_rules_for_day(db, tenant_id, day.isoweekday() % 7)
+    technicians = await assignable_technician_count(db, tenant_id, day=day)
+    booked = await _booked_counts(db, tenant_id, day)
+    remaining = _daily_remaining(rules, technicians, booked)
+    return {"date": day.isoformat(), "closed": not bool(rules), "daily_remaining": remaining,
+            "technicians": max(0, technicians), "slots": [
+                {"time_window": _window_label(start, end), "capacity": capacity,
+                 "already_booked": _overlapping_bookings(booked, start, end),
+                 "available_slots": min(remaining, max(0, capacity - _overlapping_bookings(booked, start, end)))}
+                for (start, end), capacity in _slot_allocation(rules, technicians).items()]}
+
+
 async def assignable_technician_count(
     db: AsyncSession,
     tenant_id: uuid.UUID,
@@ -380,8 +409,8 @@ async def find_earliest_available_slot(
             continue
 
         for rule in rules:
-            cap = _effective_cap(rule, technicians)
             for start, end in _slots_from_rule(rule):
+                cap = _slot_allocation(rules, technicians).get((start, end), 0)
                 # Never offer a window inside the notice period. With
                 # emergency + opted-in this reduces to "has not started yet",
                 # which is still a real constraint.
@@ -399,6 +428,7 @@ async def find_earliest_available_slot(
                         (dt.datetime.combine(target, end) - dt.datetime.combine(target, start)).total_seconds() // 60
                     ),
                     "capacity": cap,
+                    "available_slots": min(max(0, cap - _overlapping_bookings(booked, start, end)), _daily_remaining(rules, technicians, booked)),
                     "already_booked": _overlapping_bookings(booked, start, end),
                     "days_ahead": offset,
                 }
@@ -474,8 +504,8 @@ async def list_available_slots(
         found_today = False
 
         for rule in rules:
-            cap = _effective_cap(rule, technicians)
             for start, end in _slots_from_rule(rule):
+                cap = _slot_allocation(rules, technicians).get((start, end), 0)
                 if dt.datetime.combine(target, start) < cutoff:
                     continue
                 label = _window_label(start, end)
@@ -501,6 +531,7 @@ async def list_available_slots(
                     "capacity": cap,
                     "already_booked": _overlapping_bookings(booked, start, end),
                     "daily_remaining": daily_remaining,
+                    "available_slots": min(max(0, cap - _overlapping_bookings(booked, start, end)), daily_remaining),
                     "days_ahead": offset,
                 })
 
@@ -542,8 +573,8 @@ async def slot_has_capacity(
     if _daily_remaining(rules, technicians, booked) <= 0:
         return False
     for rule in rules:
-        cap = _effective_cap(rule, technicians)
         for start, end in _slots_from_rule(rule):
+            cap = _slot_allocation(rules, technicians).get((start, end), 0)
             if _window_label(start, end) == time_window:
                 return _overlapping_bookings(booked, start, end) < cap
     return False

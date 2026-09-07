@@ -9,7 +9,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -51,12 +51,10 @@ DESIGNATIONS_BY_MEMBER_TYPE = {
 settings = get_settings()
 
 
-def _validate_designation(member_type: str, value: Any) -> str:
+def _validate_designation(member_type: str, value: Any) -> str | None:
     designation = str(value or "").strip()
     if not designation:
-        raise ServiceOSException(
-            "TEAM_DESIGNATION_REQUIRED", "Select a designation for this team member.", status_code=422,
-        )
+        return None  # Role and assignment are authoritative; designation is optional legacy data.
     if designation not in DESIGNATIONS_BY_MEMBER_TYPE.get(member_type, set()):
         raise ServiceOSException(
             "INVALID_TEAM_DESIGNATION",
@@ -215,29 +213,8 @@ async def create_team_member(
             status_code=422,
         )
 
-    # Technician creation during onboarding is atomic with schedule setup.
-    # The earlier frontend created the member first and copied hours through
-    # separate requests; a dropped request left an incomplete roster row that
-    # blocked Review. Load the provider schedule before inserting anything and
-    # write both records in this transaction.
-    inherit_business_hours = (
-        member_type == "technician" and payload.get("inherit_business_hours", False) is True
-    )
-    business_rules = []
-    if inherit_business_hours:
-        business_rules = (await db.execute(text(
-            "SELECT day_of_week, start_time, end_time, slot_duration_minutes, "
-            "break_start_time, break_end_time, max_jobs_per_day, timezone, emergency_available "
-            "FROM provider_availability_rules WHERE tenant_id=:tid "
-            "AND scope_type='provider' AND scope_id IS NULL AND is_active=true "
-            "ORDER BY day_of_week, start_time"
-        ), {"tid": str(tid)})).fetchall()
-        if not business_rules:
-            raise ServiceOSException(
-                "BUSINESS_HOURS_REQUIRED",
-                "Configure Coverage & availability before adding a technician.",
-                status_code=422,
-            )
+    # Technicians resolve business hours dynamically. Team creation precedes
+    # coverage setup, so no schedule is required or copied during this step.
 
     # Capacity is validated the same way the PUT path validates it -- it
     # feeds the assignment resolver, and 0/negative would make the member
@@ -320,23 +297,6 @@ async def create_team_member(
         "reports_desig": payload.get("reports_to_designation"),
     })
 
-    for rule in business_rules:
-        await db.execute(text("""
-            INSERT INTO provider_availability_rules
-                (id, tenant_id, scope_type, scope_id, day_of_week, start_time, end_time,
-                 slot_duration_minutes, max_bookings_per_slot, is_active, category_id,
-                 break_start_time, break_end_time, max_jobs_per_day, timezone, emergency_available)
-            VALUES (:id, :tid, 'staff_member', :scope_id, :dow, :start, :end,
-                    :slot, NULL, true, :cat_id, :break_start, :break_end,
-                    :max_jobs, :timezone, :emergency)
-        """), {
-            "id": str(uuid.uuid4()), "tid": str(tid), "scope_id": new_id,
-            "dow": rule.day_of_week, "start": rule.start_time, "end": rule.end_time,
-            "slot": rule.slot_duration_minutes, "cat_id": cat_id,
-            "break_start": rule.break_start_time, "break_end": rule.break_end_time,
-            "max_jobs": rule.max_jobs_per_day, "timezone": rule.timezone,
-            "emergency": rule.emergency_available,
-        })
     await replace_member_skills(
         db, tenant_id=tid, member_id=uuid.UUID(new_id), selected=selected_skills,
         actor_id=user.user_id,
@@ -927,24 +887,8 @@ async def list_availability(
     select_clause = "SELECT *"
     order_by = "day_of_week, start_time"
     if str(user.role) in ("Role.STAFF", "Role.TECHNICIAN", "staff", "technician"):
-        staff_id = (await db.execute(text(
-            "SELECT id FROM provider_team_members "
-            "WHERE tenant_id=:tid AND user_id=:uid AND deleted_at IS NULL LIMIT 1"
-        ), {"tid": str(tid), "uid": user.user_id})).scalar()
-        if staff_id:
-            staff_rule_count = (await db.execute(text(
-                "SELECT count(*) FROM provider_availability_rules "
-                "WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid"
-            ), {"tid": str(tid), "sid": str(staff_id)})).scalar() or 0
-            if staff_rule_count:
-                where += " AND scope_type='staff_member' AND scope_id=:sid"
-                params["sid"] = str(staff_id)
-            else:
-                # A technician without a personal override inherits only the
-                # provider's business hours, never another technician's rows.
-                where += " AND scope_type='provider'"
-        else:
-            where += " AND scope_type='provider'"
+        # All technicians inherit the current business schedule.
+        where += " AND scope_type='provider' AND scope_id IS NULL"
         # Setup presets can leave historical rows for the same weekday. The
         # staff view is an effective weekly schedule, not the provider's rule
         # editor, so expose only the newest row for each day.
@@ -955,7 +899,23 @@ async def list_availability(
         params,
     )
     rows = [dict(r._mapping) for r in result.fetchall()]
+    if str(user.role) in ("Role.STAFF", "Role.TECHNICIAN", "staff", "technician"):
+        from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
+        for rule in rows:
+            rule["provider_daily_limit"] = rule.get("max_jobs_per_day")
+            rule["max_jobs_per_day"] = len(_slots_from_rule(rule)) if rule.get("is_active") else 0
+            rule["slot_duration_minutes"] = 120
+            rule["inherited_from_business"] = True
     return ok({"rules": rows, "count": len(rows)}, request_id=rid)
+
+
+@router.get("/availability/slot-preview")
+async def preview_business_slots(
+    day: date, request: Request,
+    db: AsyncSession = Depends(get_db), user: UserContext = Depends(get_current_user),
+):
+    from app.engines.home_service_booking.provider_slot_service import daily_slot_preview
+    return ok(await daily_slot_preview(db, _tid(user), day), request_id=getattr(request.state, "request_id", None))
 
 
 async def _validate_slot_capacity(db, tenant_id, max_bookings_per_slot) -> None:
@@ -1003,6 +963,18 @@ async def _validate_slot_capacity(db, tenant_id, max_bookings_per_slot) -> None:
         )
 
 
+async def _validate_daily_job_capacity(db, tid, rule):
+    if rule.get("scope_type", "provider") != "provider" or rule.get("max_jobs_per_day") is None:
+        return
+    from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
+    from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
+    usage = await get_seat_usage(db, tid)
+    maximum = len(_slots_from_rule(rule)) * min(usage["entitled_seats"], usage["used_seats"])
+    requested = rule["max_jobs_per_day"]
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1 or requested > maximum:
+        raise ServiceOSException("DAILY_CAPACITY_EXCEEDS_TEAM", f"Maximum jobs per day must be a whole number between 1 and {maximum}. Leave it automatic if no technician capacity is configured.", status_code=422)
+
+
 @router.post("/availability", status_code=201)
 async def create_availability(
     payload: dict, request: Request,
@@ -1018,6 +990,7 @@ async def create_availability(
     if payload.get("max_jobs_per_day") is not None and payload["max_jobs_per_day"] <= 0:
         raise ServiceOSException("INVALID_MAX_JOBS_PER_DAY", "max_jobs_per_day must be positive.", status_code=422)
     await _validate_slot_capacity(db, tid, payload.get("max_bookings_per_slot"))
+    await _validate_daily_job_capacity(db, tid, payload)
     new_id = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO provider_availability_rules
@@ -1101,6 +1074,12 @@ async def update_availability(
     allowed = {"scope_type", "scope_id", "day_of_week", "start_time", "end_time", "slot_duration_minutes",
                "max_bookings_per_slot", "is_active", "break_start_time", "break_end_time",
                "max_jobs_per_day", "timezone", "emergency_available"}
+    if payload.keys() & {"max_jobs_per_day", "start_time", "end_time", "break_start_time", "break_end_time"}:
+        capacity_row = (await db.execute(text(
+            "SELECT * FROM provider_availability_rules WHERE id=:id AND tenant_id=:tid"
+        ), {"id": str(rule_id), "tid": str(tid)})).fetchone()
+        if capacity_row:
+            await _validate_daily_job_capacity(db, tid, {**dict(capacity_row._mapping), **payload})
     # Same ceiling on edit as on create: raising an existing rule past the team is the
     # likelier route to an impossible promise, since the rule already exists and looks
     # settled.

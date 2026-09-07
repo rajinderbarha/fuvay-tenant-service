@@ -773,6 +773,9 @@ class AdminTenantService:
 
     async def verify_tenant(self, tenant_id: uuid.UUID) -> dict:
         t = await self._get_tenant(tenant_id)
+        if t.vertical == "home_services":
+            from app.engines.provider_portal.admin_router import _require_submitted_review
+            await _require_submitted_review(self.db, tenant_id)
         if t.verification_status not in ("pending", "under_review", "changes_requested"):
             raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
                                      f"Cannot verify tenant in '{t.verification_status}' status.")
@@ -786,6 +789,9 @@ class AdminTenantService:
 
     async def reject_verification(self, tenant_id: uuid.UUID, reason: str) -> dict:
         t = await self._get_tenant(tenant_id)
+        if t.vertical == "home_services":
+            from app.engines.provider_portal.admin_router import _require_submitted_review
+            await _require_submitted_review(self.db, tenant_id)
         if t.verification_status not in ("pending", "under_review", "changes_requested"):
             raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
                                      f"Cannot reject tenant in '{t.verification_status}' status.")
@@ -1368,6 +1374,9 @@ class AdminTenantService:
         if not reason or not reason.strip():
             raise ServiceOSException("REASON_REQUIRED", "Reason is required for requesting changes.")
         t = await self._get_tenant(tenant_id)
+        if t.vertical == "home_services":
+            from app.engines.provider_portal.admin_router import _require_submitted_review
+            await _require_submitted_review(self.db, tenant_id)
         if t.verification_status not in ("pending", "under_review", "changes_requested"):
             raise ServiceOSException("TENANT_VERIFICATION_INVALID_STATUS",
                                      f"Cannot request changes in '{t.verification_status}' status.")

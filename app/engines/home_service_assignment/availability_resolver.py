@@ -87,15 +87,16 @@ async def _fetch_tenant_exception(db: AsyncSession, tenant_id: uuid.UUID, target
 
 
 async def _fetch_staff_pattern(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID, dow: int) -> dict | None:
-    cache = db.info.get("availability_resolution_cache")
-    if cache and cache["tenant_id"] == str(tenant_id):
-        return cache["staff_patterns"].get((str(staff_id), dow))
-    row = (await db.execute(text(
-        "SELECT * FROM provider_availability_rules "
-        "WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid "
-        "AND day_of_week=:dow AND is_active=true"
-    ), {"tid": str(tenant_id), "sid": str(staff_id), "dow": dow})).fetchone()
-    return dict(row._mapping) if row else None
+    # Resolve from business hours each time, not a snapshot copied at creation.
+    # Time off and dated overrides are applied separately by resolve_staff_day.
+    rules = await _fetch_business_hours(db, tenant_id, dow)
+    if not rules:
+        return None
+    from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
+    rule = dict(rules[0])
+    rule["slot_duration_minutes"] = 120
+    rule["max_jobs_per_day"] = len(_slots_from_rule(rule))
+    return rule
 
 
 async def _fetch_staff(db: AsyncSession, tenant_id: uuid.UUID, staff_id: uuid.UUID) -> dict | None:
@@ -523,7 +524,7 @@ async def resolve_staff_day(
         reasons.append(R_STAFF_INACTIVE)
         return unavailable_result()
 
-    concurrent_cap = staff.get("max_concurrent_jobs")
+    concurrent_cap = 1
     # Same keys the fully-resolved result carries, so a caller reading `used` does not
     # have to know whether the day happened to end early.
     result["concurrent_capacity"] = {

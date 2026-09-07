@@ -36,6 +36,7 @@ const emptyForm = {
   gst_percent: "18",
   description: "",
   sort_order: "0",
+  validity_days: "0",
   is_active: true,
   is_default: false,
 };
@@ -98,6 +99,7 @@ export default function TopupPlansConsole() {
       gst_percent: String(p.gst_percent),
       description: p.description ?? "",
       sort_order: String(p.sort_order),
+      validity_days: String(p.validity_days ?? 0),
       is_active: p.is_active,
       is_default: p.is_default,
     });
@@ -113,6 +115,7 @@ export default function TopupPlansConsole() {
       gst_percent: Number(form.gst_percent),
       description: form.description.trim() || null,
       sort_order: Number(form.sort_order) || 0,
+      validity_days: Number(form.validity_days),
       is_active: form.is_active,
       is_default: form.is_default,
     };
@@ -124,13 +127,16 @@ export default function TopupPlansConsole() {
     });
   }
 
-  const canSave = form.name.trim().length >= 2 && preview.base > 0 && preview.seats >= 0;
+  const canSave = form.name.trim().length >= 2 && Number.isFinite(preview.base) && preview.base > 0
+    && Number.isInteger(Number(form.seats)) && Number(form.seats) >= 0
+    && Number.isFinite(Number(form.gst_percent)) && Number(form.gst_percent) >= 0 && Number(form.gst_percent) <= 100
+    && Number.isInteger(Number(form.validity_days)) && Number(form.validity_days) >= 0 && Number(form.validity_days) <= 3650;
 
   return (
     <AdminLayout>
       <SectionHeader
-        title="Top-up Plans"
-        subtitle="What a Home Services provider buys to operate: wallet credit plus the technician seats that set how many jobs they can run at once."
+        title="Provider Technician Plans"
+        subtitle="Create the plans providers select during onboarding. Set the price, technician seats and validity, then enable Offered to providers to publish. Staff and managers do not consume paid seats."
         actions={
           <Btn onClick={startCreate} disabled={busy}>
             <Plus size={15} /> New plan
@@ -180,7 +186,7 @@ export default function TopupPlansConsole() {
           {!list.loading && plans.length === 0 && (
             <Card>
               <div style={{ padding: 30, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
-                No top-up plans yet. Without one, no provider can activate — create the first plan.
+                No plans yet. Create a plan and enable Offered to providers so providers can purchase technician seats during setup.
               </div>
             </Card>
           )}
@@ -213,6 +219,7 @@ export default function TopupPlansConsole() {
                   <Stat label={`GST @ ${p.gst_percent}%`} value={inr(p.gst_amount)} />
                   <Stat label="Wallet credit" value={inr(p.credited_amount)} icon={<Wallet size={12} />} />
                   <Stat label="Technician seats" value={String(p.seats)} icon={<Users size={12} />} />
+                  <Stat label="Validity" value={p.validity_days ? `${p.validity_days} days` : "No expiry"} />
                   <Stat label="Jobs per slot" value={String(p.seats)} />
                 </div>
               </div>
@@ -244,6 +251,8 @@ export default function TopupPlansConsole() {
               </div>
               <Textarea label="Description" rows={3} value={form.description}
                         onChange={v => setForm({ ...form, description: v })} />
+              <Input label="Validity in days (0 = no expiry)" type="number" value={form.validity_days}
+                     onChange={v => setForm({ ...form, validity_days: v })} />
 
               {/* The split, before saving — not after. */}
               <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12,
@@ -252,6 +261,8 @@ export default function TopupPlansConsole() {
                 <Row label={`of which GST (${form.gst_percent || 0}%)`} value={inr(preview.gst)} muted />
                 <Row label="Reaches their wallet" value={inr(preview.base)} />
                 <Row label="Technicians they may add" value={`${preview.seats}`} />
+                <Row label="Staff and managers" value="No paid seats required" />
+                <Row label="Validity" value={Number(form.validity_days) > 0 ? `${form.validity_days} days` : "No expiry"} />
                 <Row label="Jobs bookable per slot" value={`${preview.seats}`} muted />
               </div>
 

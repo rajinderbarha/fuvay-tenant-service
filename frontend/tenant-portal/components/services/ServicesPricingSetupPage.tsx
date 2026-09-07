@@ -6,6 +6,7 @@ import {
   Search, ArrowRight, RefreshCw, Save,
 } from "lucide-react";
 import { OnboardingShell } from "../onboarding/OnboardingShell";
+import { ServicesSetupProgress } from "./ServicesSetupProgress";
 import { ServiceRequirementsPanel } from "./ServiceRequirementsPanel";
 import {
   InlineDimensionPricingEditor, type InlineDimensionPricingEditorHandle,
@@ -516,6 +517,7 @@ function ServicesPricingPageContent() {
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <PageShell>
           <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
+          {!returnTo && <ServicesSetupProgress revision={enabledList} />}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 20 }}>
             <Skeleton height={520}/><Skeleton height={520}/><Skeleton height={520}/>
           </div>
@@ -529,6 +531,7 @@ function ServicesPricingPageContent() {
       <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
         <PageShell>
           <PageHeader title="Services & pricing" description="Choose what you provide and set your own prices." />
+          {!returnTo && <ServicesSetupProgress revision={enabledList} />}
           <Card>
           <div role="alert" style={{ textAlign: "center", padding: "32px 16px" }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>
@@ -562,6 +565,7 @@ function ServicesPricingPageContent() {
     <OnboardingShell activeNav="services-pricing" showProgress={!returnTo}>
       <PageShell>
         <PageHeader
+          eyebrow={!returnTo ? "Tenant onboarding · Step 3 of 8" : undefined}
           title="Services & pricing"
           description="Choose what you provide and set your own prices. Repairs start with an inspection; fixed-scope jobs show a real price at booking."
           actions={<>
@@ -571,6 +575,7 @@ function ServicesPricingPageContent() {
             {returnTo && <Btn variant="secondary" onClick={handleBack}>Back to workspace</Btn>}
           </>}
         />
+        {!returnTo && <ServicesSetupProgress revision={enabledList} />}
       <div className="pricing-experience">
         {error && (
           <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 14px", marginTop: 14, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 12 }}>

@@ -40,7 +40,7 @@ export default function TechnicianPlanPage() {
   }
 
   return <OnboardingShell activeNav="plan"><PageShell>
-    <PageHeader title="Choose your technician seat plan" description="Buy seats first, add your technicians next, then configure the hours and daily jobs your team can deliver." />
+    <PageHeader title="Choose your technician seat plan" description="Select a plan published by the administrator. Buy seats first, add your technicians next, then configure your team's working hours." />
     <StepProgressBar step={4} total={8} />
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -53,10 +53,11 @@ export default function TechnicianPlanPage() {
     </Card>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 16 }}>
       {status?.plans.map(plan => <Card key={plan.id}>
-        <h2>{plan.name}</h2><p>{plan.description}</p>
+        <h2>{plan.name}{plan.is_default ? " · Recommended" : ""}</h2><p>{plan.description}</p>
         <p><strong>{plan.seats} technician seats</strong> · Staff members free</p>
         <p>{inr(plan.total_amount)} including {inr(plan.gst_amount)} GST</p>
         <p>Includes {inr(plan.credited_amount)} usage credit under this plan.</p>
+        <p>Validity: {plan.validity_days ? `${plan.validity_days} days` : "No expiry"}</p>
         <Btn variant="primary" disabled={busy} onClick={() => void buy(plan)}>Buy this plan</Btn>
       </Card>)}
     </div>

@@ -196,7 +196,6 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     )).fetchone()
     finance_methods_selected = finance_row is not None and any([
         finance_row.accepts_cash, finance_row.accepts_upi,
-        finance_row.accepts_card_at_service_location, finance_row.accepts_bank_transfer,
     ])
     finance_invoice_name = (finance_row.invoice_business_name if finance_row and finance_row.invoice_business_name
                              else (tenant_row.business_name if tenant_row else None))
@@ -260,7 +259,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
          [{"code": "NO_READY_STAFF", "message":
            "Buy a technician seat and add a ready technician before receiving bookings."}])
     _add("FINANCE_READINESS", True, finance_ready,
-         "Finance readiness", "Top-up credit, technician seats and payment policy",
+         "Finance readiness", "Cash/UPI collection and invoice details; technician purchases are managed in the seat plan",
          extra={"entitled_seats": entitled_seats,
                 "topup_due_after_approval": entitled_seats <= 0},
          blocking_reasons=[] if finance_ready else

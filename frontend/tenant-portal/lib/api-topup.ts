@@ -25,6 +25,8 @@ export interface TopupPlan {
   seats: number;
   currency: string;
   is_default: boolean;
+  validity_days?: number;
+  never_expires?: boolean;
   sort_order: number;
 }
 

@@ -3022,6 +3022,7 @@ export interface ProviderAvailabilityPayload {
 }
 
 export const providerAvailabilityApi = {
+  slotPreview: (day: string) => apiFetch<{ date: string; closed: boolean; daily_remaining: number; slots: Array<{ time_window: string; capacity: number; already_booked: number; available_slots: number }> }>(`/v1/provider/availability/slot-preview?day=${encodeURIComponent(day)}`),
   list: () =>
     apiFetch<{ rules: ProviderAvailabilityRule[]; count: number }>("/v1/provider/availability"),
   create: (payload: ProviderAvailabilityPayload) =>
@@ -3303,6 +3304,7 @@ export interface ProviderSlot {
   slot_minutes?: number;
   capacity?: number;
   already_booked?: number;
+  available_slots?: number;
   days_ahead?: number;
 }
 

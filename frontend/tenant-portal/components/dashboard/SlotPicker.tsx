@@ -25,6 +25,7 @@ export interface SlotPickerProps {
 /** " (1 left)" when both numbers are present, and nothing at all otherwise -- an invented
  * capacity is worse than no capacity shown. */
 function remainingOf(slot: ProviderSlot): string {
+  if (typeof slot.available_slots === "number") return ` (${slot.available_slots} slots available)`;
   if (typeof slot.capacity !== "number" || typeof slot.already_booked !== "number") return "";
   const left = slot.capacity - slot.already_booked;
   return left > 0 ? ` (${left} left)` : "";

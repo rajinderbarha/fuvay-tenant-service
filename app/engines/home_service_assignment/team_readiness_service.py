@@ -73,7 +73,7 @@ async def compute_member_readiness(db: AsyncSession, tenant_id: uuid.UUID, membe
 
         has_availability = (await db.execute(text(
             "SELECT 1 FROM provider_availability_rules "
-            "WHERE tenant_id=:tid AND scope_type='staff_member' AND scope_id=:sid AND is_active=true LIMIT 1"
+            "WHERE tenant_id=:tid AND scope_type='provider' AND scope_id IS NULL AND is_active=true LIMIT 1"
         ), {"tid": str(tenant_id), "sid": member["id"]})).fetchone()
         if not has_availability:
             missing.append("availability")
@@ -134,9 +134,9 @@ async def compute_members_readiness(
     member_ids = [str(m["id"]) for m in members]
     scheduled_member_ids = {
         str(r[0]) for r in (await db.execute(text(
-            "SELECT DISTINCT scope_id::text FROM provider_availability_rules "
-            "WHERE tenant_id=:tid AND scope_type='staff_member' "
-            "AND scope_id = ANY(CAST(:member_ids AS uuid[])) AND is_active=true"
+            "SELECT ptm.id::text FROM provider_team_members ptm WHERE ptm.tenant_id=:tid "
+            "AND ptm.id = ANY(CAST(:member_ids AS uuid[])) AND EXISTS (SELECT 1 FROM provider_availability_rules par "
+            "WHERE par.tenant_id=ptm.tenant_id AND par.scope_type='provider' AND par.scope_id IS NULL AND par.is_active=true)"
         ), {"tid": str(tenant_id), "member_ids": member_ids})).fetchall()
     }
     user_ids = [str(m["user_id"]) for m in members if m.get("user_id")]

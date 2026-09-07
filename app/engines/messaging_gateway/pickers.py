@@ -242,7 +242,8 @@ def _slot_rows(slots: list[dict], emergency: bool, section: str,
         rows.append({
             "id": _join(*parts),
             "title": f"{_day_label(date_iso)} {window}",
-            "description": note if emergency else None,
+            "description": " · ".join(filter(None, [note if emergency else None,
+                f"{slot['available_slots']} slots available" if slot.get("available_slots") is not None else None])) or None,
             "section": section,
         })
     return rows

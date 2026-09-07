@@ -14,7 +14,7 @@ import {
   type BookingWindowSettings, type AvailabilityException,
 } from "../../../../../../lib/api";
 import { topupApi } from "../../../../../../lib/api-topup";
-import { twoHourWindows } from "../../../../../../lib/booking-capacity";
+import { twoHourWindows, allocateDailySlots } from "../../../../../../lib/booking-capacity";
 
 const SETUP_STEPS = [
   "business-profile", "documents", "services-pricing",
@@ -47,6 +47,19 @@ function CoverageAvailabilityWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [technicianCapacity, setTechnicianCapacity] = useState<number | null>(null);
+  const [previewDay, setPreviewDay] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [slotPreview, setSlotPreview] = useState<Awaited<ReturnType<typeof providerAvailabilityApi.slotPreview>> | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewRevision, setPreviewRevision] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => providerAvailabilityApi.slotPreview(previewDay).then(data => {
+      if (!cancelled) { setSlotPreview(data); setPreviewError(""); }
+    }).catch(() => { if (!cancelled) { setSlotPreview(null); setPreviewError("Could not load live slots."); } });
+    void refresh();
+    const timer = setInterval(() => { void refresh(); }, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [previewDay, previewRevision, rules, exceptions]);
 
   const [newPincode, setNewPincode] = useState("");
   const [addingPincode, setAddingPincode] = useState(false);
@@ -475,11 +488,12 @@ function CoverageAvailabilityWorkspace() {
                     </>
                   ) : <span style={{ fontSize: 13, color: "var(--text-tertiary)", gridColumn: "span 2" }}>Closed</span>}
                   {enabled && <div style={{ gridColumn: "1 / -1", fontSize: 13, paddingBottom: 12 }}>
-                    <p>{windows.join(" · ") || "No complete two-hour window"}</p>
+                    <p>{allocateDailySlots(windows, technicianCapacity ?? 0, rule!.max_jobs_per_day).map(slot => `${slot.window}: ${slot.capacity} booking places`).join(" · ") || "No complete two-hour window"}</p>
                     <p>{windows.length} windows × {technicianCapacity ?? 0} technicians = up to {dailyMaximum} jobs.</p>
                     <label>Maximum jobs this day (whole business)
                       <input key={`${rule!.id}:${rule!.max_jobs_per_day ?? "auto"}`} type="number" min={1} max={dailyMaximum || undefined}
                         aria-label={`${d.name} daily job limit`} defaultValue={rule!.max_jobs_per_day ?? ""} placeholder={`Automatic (${dailyMaximum})`}
+                        onChange={e => { if (Number(e.target.value) > dailyMaximum) e.target.value = String(dailyMaximum); }}
                         onBlur={e => void handleDailyLimit(rule!, e.target.value)} style={{ marginLeft: 12, width: 160 }} />
                     </label>
                   </div>}
@@ -489,7 +503,16 @@ function CoverageAvailabilityWorkspace() {
           </Card>
 
           <Card style={{ marginBottom: 20 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Booking controls</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Live booking places</h2>
+            <label>Preview date <input type="date" value={previewDay} onChange={e => { if (e.target.value) setPreviewDay(e.target.value); }} /></label>
+            <Btn variant="secondary" onClick={() => setPreviewRevision(n => n + 1)}>Refresh slots</Btn>
+            {previewError && <p role="alert">{previewError}</p>}
+            {slotPreview?.closed ? <p>Closed / holiday — no slots available.</p> : <>
+              <p>{slotPreview?.daily_remaining ?? 0} booking places remaining this day. Counts refresh every 30 seconds.</p>
+              {slotPreview?.slots.map(slot => <p key={slot.time_window}><strong>{slot.time_window}</strong> — {slot.available_slots} slots available ({slot.already_booked} booked / {slot.capacity} capacity)</p>)}
+              {slotPreview?.slots.length === 0 && <p>No bookable slots. Add funded, verified technicians and configure business hours.</p>}
+            </>}
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "20px 0 14px", color: "var(--text-primary)" }}>Booking controls</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
               <Input label="Minimum notice (minutes)" type="number" value={String(bookingWindow.minimum_notice_minutes)}
                 onChange={v => handleBookingWindowChange("minimum_notice_minutes", Number(v))}/>

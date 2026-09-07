@@ -215,6 +215,11 @@ function BusinessProfileWorkspace() {
           : "Your business profile changes are now saved.");
         load();
       } else {
+        const overview = await homeServicesSetupOverviewApi.getOverview();
+        if (overview.sections.find(section => section.key === "BUSINESS_PROFILE")?.status !== "complete") {
+          setError("Complete and save all required business profile fields to reach 100% before continuing.");
+          return;
+        }
         router.push("/tenant/home-services/setup/documents");
       }
     } catch (e) {

@@ -384,6 +384,11 @@ class VerticalCatalogService:
         )).scalar_one_or_none()
         if not row:
             raise ValueError("Enrollment not found")
+        if new_status in ("approved_pending_activation", "rejected", "changes_requested") and (
+            not row.submitted_at or row.status in ("draft", "draft_setup")
+        ):
+            from app.exceptions import ServiceOSException
+            raise ServiceOSException("PROVIDER_NOT_SUBMITTED", "Provider must submit setup before an Admin review decision.", status_code=409)
         before = self._enrollment_dict(row)
         now = datetime.now(timezone.utc)
         row.status = new_status
