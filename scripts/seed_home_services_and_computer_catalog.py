@@ -526,7 +526,19 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
     link_id = uuid.UUID(link["id"])
     job_type_id = uuid.UUID(link["job_type_id"])
 
-    await jt_svc.set_workflow(master_service_id, job_type_id, {"pricing_behavior": jt_spec["pricing_behavior"]})
+    pricing_behavior = jt_spec["pricing_behavior"]
+    await jt_svc.set_workflow(master_service_id, job_type_id, {
+        "pricing_behavior": pricing_behavior,
+        # Every job type here is an on-site technician visit -- these must
+        # be on, not left at their False default, or the booking flow never
+        # actually enforces scheduling/address/service-area/technician
+        # assignment for a real appointment.
+        "technician_required": True, "schedule_required": True, "address_required": True,
+        "service_area_required": True, "availability_required": True,
+        "checklist_required": True,  # every job type here has a real authored checklist
+        "inspection_required": pricing_behavior == "inspection_required",
+        "quote_approval_required": pricing_behavior in {"inspection_required", "custom_quote"},
+    })
 
     from app.exceptions import ServiceOSException as _SOE
     if jt_spec.get("type_required"):
