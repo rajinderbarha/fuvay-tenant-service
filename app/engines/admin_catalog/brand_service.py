@@ -512,26 +512,31 @@ class BrandService:
                 skipped.append({"service_id": svc_id_str, "reason": "service_not_found_or_inactive"})
                 continue
 
-            # Check duplicate
-            dup = await self.db.execute(
+            # The service/brand pair is unique across soft deletion. Restore an
+            # inactive row instead of inserting a conflicting duplicate.
+            existing = (await self.db.execute(
                 select(MasterServiceBrand).where(
                     MasterServiceBrand.master_service_id == svc_id,
                     MasterServiceBrand.brand_id == brand_id,
-                    MasterServiceBrand.is_active == True,
                 )
-            )
-            if dup.scalar_one_or_none():
+            )).scalar_one_or_none()
+            if existing and existing.is_active and existing.status == "active":
                 skipped.append({"service_id": svc_id_str, "reason": "already_mapped"})
                 continue
-
-            m = MasterServiceBrand(
-                master_service_id=svc_id,
-                brand_id=brand_id,
-                is_required=False,
-                is_default=False,
-                is_active=True,
-            )
-            self.db.add(m)
+            if existing:
+                existing.is_active = True
+                existing.status = "active"
+            else:
+                self.db.add(MasterServiceBrand(
+                    master_service_id=svc_id,
+                    brand_id=brand_id,
+                    is_required=False,
+                    is_default=False,
+                    is_active=True,
+                    status="active",
+                ))
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            await bump_tenant_setup_revision(self.db, svc_id)
             mapped.append(svc_id_str)
 
         await self.db.flush()
@@ -580,6 +585,9 @@ class BrandService:
         if not m:
             raise NotFoundException("BrandServiceMapping", f"{brand_id}/{service_id}")
         m.is_active = False
+        m.status = "inactive"
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
         await self._audit("brand.unmapped_from_service", "brand", brand_id,
                           new_value={"service_id": str(service_id)})

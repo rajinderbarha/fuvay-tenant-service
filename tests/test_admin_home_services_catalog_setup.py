@@ -58,10 +58,18 @@ def test_questions_problems_and_checklists_use_real_apis():
         "listQuestions",
         "listIssueTypesV2",
         "listMappingsDirectory",
-        "createMapping",
-        "publishVersion",
     ):
         assert marker in WORKSPACE
+    # createMapping / publishVersion moved into their own extracted form
+    # components when the checklist authoring UI was pulled out of this page.
+    add_checklist_mapping = (
+        ROOT / "frontend/super-admin/components/catalog/AddChecklistMappingForm.tsx"
+    ).read_text(encoding="utf-8-sig")
+    assert "createMapping" in add_checklist_mapping
+    template_editor = (
+        ROOT / "frontend/super-admin/components/catalog/ChecklistTemplateEditor.tsx"
+    ).read_text(encoding="utf-8-sig")
+    assert "publishVersion" in template_editor
 
 
 def test_tenant_rules_reuse_canonical_workflow_and_dimensions():

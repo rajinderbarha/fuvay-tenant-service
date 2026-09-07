@@ -1518,12 +1518,16 @@ export const catalogApi = {
   mapServiceType: (serviceId: string, serviceTypeId: string, isRequired = false) =>
     apiFetch<{ mapping_id:string }>(`/v1/admin/master-services/${serviceId}/types`,
       { method:"POST", body:JSON.stringify({ service_type_id: serviceTypeId, is_required: isRequired }) }),
+  unmapServiceType: (serviceId: string, mappingId: string) =>
+    apiFetch<{ deleted:boolean; mapping_id:string }>(`/v1/admin/master-services/${serviceId}/types/${mappingId}`, { method:"DELETE" }),
   listBrandMappings: (serviceId: string) =>
     apiFetch<{ brands: { mapping_id:string; brand_id:string; name:string; is_required:boolean }[] }>(
       `/v1/admin/master-services/${serviceId}/brands`),
   mapBrand: (serviceId: string, brandId: string, isRequired = false) =>
     apiFetch<{ mapping_id:string }>(`/v1/admin/master-services/${serviceId}/brands`,
       { method:"POST", body:JSON.stringify({ brand_id: brandId, is_required: isRequired }) }),
+  unmapBrand: (serviceId: string, mappingId: string) =>
+    apiFetch<{ deleted:boolean; mapping_id:string }>(`/v1/admin/master-services/${serviceId}/brands/${mappingId}`, { method:"DELETE" }),
 
   // Cache management
   invalidateCache: (tenantId: string) =>

@@ -2036,7 +2036,9 @@ class AdminCatalogService:
             select(MasterServiceType, ServiceType)
             .join(ServiceType, ServiceType.id == MasterServiceType.service_type_id)
             .where(MasterServiceType.master_service_id == service_id,
-                   MasterServiceType.is_active == True))
+                   MasterServiceType.is_active.is_(True),
+                   ServiceType.is_active.is_(True),
+                   ServiceType.deleted_at.is_(None)))
         rows = result.all()
         return {"types": [
             {"mapping_id": str(m.id), "service_type_id": str(m.service_type_id),
@@ -2073,21 +2075,30 @@ class AdminCatalogService:
             select(ServiceType).where(ServiceType.id == type_id, ServiceType.is_active == True, ServiceType.deleted_at.is_(None)))
         if not type_res.scalar_one_or_none():
             raise ServiceOSException("SERVICE_TYPE_INACTIVE", "Service type not found or inactive.", status_code=422)
-        # check duplicate
-        dup = await self.db.execute(
+        # The mapping pair is unique even after a soft delete. Reactivate the
+        # existing row so an Admin can safely uncheck and later re-check it.
+        existing = (await self.db.execute(
             select(MasterServiceType).where(
                 MasterServiceType.master_service_id == service_id,
-                MasterServiceType.service_type_id == type_id,
-                MasterServiceType.is_active == True))
-        if dup.scalar_one_or_none():
+                MasterServiceType.service_type_id == type_id)
+        )).scalar_one_or_none()
+        if existing and existing.is_active:
             raise ServiceOSException("MAPPING_DUPLICATE", "This type is already mapped to the service.", status_code=409)
-        mapping = MasterServiceType(
-            master_service_id=service_id, service_type_id=type_id,
-            is_required=bool(data.get("is_required", False)),
-            is_default=bool(data.get("is_default", False)),
-            is_active=True,
-        )
-        self.db.add(mapping)
+        if existing:
+            mapping = existing
+            mapping.is_active = True
+            mapping.is_required = bool(data.get("is_required", False))
+            mapping.is_default = bool(data.get("is_default", False))
+        else:
+            mapping = MasterServiceType(
+                master_service_id=service_id, service_type_id=type_id,
+                is_required=bool(data.get("is_required", False)),
+                is_default=bool(data.get("is_default", False)),
+                is_active=True,
+            )
+            self.db.add(mapping)
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
         return {"mapping_id": str(mapping.id), "service_type_id": str(type_id)}
 
@@ -2100,6 +2111,8 @@ class AdminCatalogService:
         if not mapping:
             raise NotFoundException("MasterServiceType", str(mapping_id))
         mapping.is_active = False
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
         return {"deleted": True, "mapping_id": str(mapping_id)}
 
@@ -2109,7 +2122,10 @@ class AdminCatalogService:
             select(MasterServiceBrand, Brand)
             .join(Brand, Brand.id == MasterServiceBrand.brand_id)
             .where(MasterServiceBrand.master_service_id == service_id,
-                   MasterServiceBrand.is_active == True))
+                   MasterServiceBrand.is_active.is_(True),
+                   MasterServiceBrand.status == "active",
+                   Brand.is_active.is_(True),
+                   Brand.deleted_at.is_(None)))
         rows = result.all()
         return {"brands": [
             {"mapping_id": str(m.id), "brand_id": str(m.brand_id),
@@ -2124,20 +2140,32 @@ class AdminCatalogService:
             select(Brand).where(Brand.id == brand_id, Brand.is_active == True, Brand.deleted_at.is_(None)))
         if not brand_res.scalar_one_or_none():
             raise ServiceOSException("BRAND_INACTIVE", "Brand not found or inactive.", status_code=422)
-        dup = await self.db.execute(
+        # Reactivate a soft-deleted unique pair instead of attempting an
+        # insert that would violate uq_msb_service_brand.
+        existing = (await self.db.execute(
             select(MasterServiceBrand).where(
                 MasterServiceBrand.master_service_id == service_id,
-                MasterServiceBrand.brand_id == brand_id,
-                MasterServiceBrand.is_active == True))
-        if dup.scalar_one_or_none():
+                MasterServiceBrand.brand_id == brand_id)
+        )).scalar_one_or_none()
+        if existing and existing.is_active and existing.status == "active":
             raise ServiceOSException("MAPPING_DUPLICATE", "This brand is already mapped to the service.", status_code=409)
-        mapping = MasterServiceBrand(
-            master_service_id=service_id, brand_id=brand_id,
-            is_required=bool(data.get("is_required", False)),
-            is_default=bool(data.get("is_default", False)),
-            is_active=True,
-        )
-        self.db.add(mapping)
+        if existing:
+            mapping = existing
+            mapping.is_active = True
+            mapping.status = "active"
+            mapping.is_required = bool(data.get("is_required", False))
+            mapping.is_default = bool(data.get("is_default", False))
+        else:
+            mapping = MasterServiceBrand(
+                master_service_id=service_id, brand_id=brand_id,
+                is_required=bool(data.get("is_required", False)),
+                is_default=bool(data.get("is_default", False)),
+                is_active=True,
+                status="active",
+            )
+            self.db.add(mapping)
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
         return {"mapping_id": str(mapping.id), "brand_id": str(brand_id)}
 
@@ -2150,6 +2178,9 @@ class AdminCatalogService:
         if not mapping:
             raise NotFoundException("MasterServiceBrand", str(mapping_id))
         mapping.is_active = False
+        mapping.status = "inactive"
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
         return {"deleted": True, "mapping_id": str(mapping_id)}
 

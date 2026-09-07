@@ -444,6 +444,7 @@ class TypesService:
 
     async def _sync_type_mapping(self, m: ServiceTypeMapping, active: bool) -> None:
         service_ids = await self._mapping_service_ids(m.category_id, m.service_group_id, m.service_id)
+        changed_service_ids: set[uuid.UUID] = set()
         for service_id in service_ids:
             if not active and await self._type_has_other_scope(m, service_id):
                 continue
@@ -452,10 +453,17 @@ class TypesService:
                 MasterServiceType.service_type_id == m.type_id,
             ))).scalar_one_or_none()
             if row:
-                row.is_active = active
+                if row.is_active != active:
+                    row.is_active = active
+                    changed_service_ids.add(service_id)
             elif active:
                 self.db.add(MasterServiceType(master_service_id=service_id,
                                                service_type_id=m.type_id, is_active=True))
+                changed_service_ids.add(service_id)
+        if changed_service_ids:
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            for service_id in changed_service_ids:
+                await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
 
     async def _type_has_other_scope(self, mapping: ServiceTypeMapping, service_id: uuid.UUID) -> bool:
@@ -471,6 +479,7 @@ class TypesService:
 
     async def _sync_brand_mapping(self, m: BrandMapping, active: bool) -> None:
         service_ids = await self._mapping_service_ids(m.category_id, m.service_group_id, m.service_id)
+        changed_service_ids: set[uuid.UUID] = set()
         for service_id in service_ids:
             if not active and await self._brand_has_other_scope(m, service_id):
                 continue
@@ -479,12 +488,20 @@ class TypesService:
                 MasterServiceBrand.brand_id == m.brand_id,
             ))).scalar_one_or_none()
             if row:
-                row.is_active = active
-                row.status = "active" if active else "inactive"
+                next_status = "active" if active else "inactive"
+                if row.is_active != active or row.status != next_status:
+                    row.is_active = active
+                    row.status = next_status
+                    changed_service_ids.add(service_id)
             elif active:
                 self.db.add(MasterServiceBrand(master_service_id=service_id,
                     brand_id=m.brand_id, is_active=True, status="active",
                     created_by_user_id=self.actor_id))
+                changed_service_ids.add(service_id)
+        if changed_service_ids:
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            for service_id in changed_service_ids:
+                await bump_tenant_setup_revision(self.db, service_id)
         await self.db.flush()
 
     async def _brand_has_other_scope(self, mapping: BrandMapping, service_id: uuid.UUID) -> bool:

@@ -979,9 +979,13 @@ class TenantCatalogService:
 
         # Validate all type_ids are mapped to the master service
         admin_types_res = await self.db.execute(
-            select(MasterServiceType).where(
+            select(MasterServiceType)
+            .join(ServiceType, ServiceType.id == MasterServiceType.service_type_id)
+            .where(
                 MasterServiceType.master_service_id == ts.master_service_id,
-                MasterServiceType.is_active == True))
+                MasterServiceType.is_active.is_(True),
+                ServiceType.is_active.is_(True),
+                ServiceType.deleted_at.is_(None)))
         allowed_type_ids = {str(m.service_type_id) for m in admin_types_res.scalars().all()}
 
         for tid in type_ids:
@@ -1089,9 +1093,14 @@ class TenantCatalogService:
 
         # Validate brands are mapped to master service
         admin_brands_res = await self.db.execute(
-            select(MasterServiceBrand).where(
+            select(MasterServiceBrand)
+            .join(Brand, Brand.id == MasterServiceBrand.brand_id)
+            .where(
                 MasterServiceBrand.master_service_id == ts.master_service_id,
-                MasterServiceBrand.is_active == True))
+                MasterServiceBrand.is_active.is_(True),
+                MasterServiceBrand.status == "active",
+                Brand.is_active.is_(True),
+                Brand.deleted_at.is_(None)))
         allowed_brand_ids = {str(m.brand_id) for m in admin_brands_res.scalars().all()}
 
         for bid in brand_ids:

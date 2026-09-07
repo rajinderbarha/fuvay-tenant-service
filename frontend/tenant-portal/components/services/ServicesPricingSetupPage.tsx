@@ -33,6 +33,22 @@ function isInspectionPricingModel(model?: string | null) {
     .includes(model || "");
 }
 
+export function offeringPriceSummary(
+  service: Pick<AdminMasterServiceRow, "job_type" | "pricing_model">,
+  enabled: Pick<TenantEnabledService, "tenant_min_price" | "tenant_max_price" | "tenant_visit_fee"> | null | undefined,
+  consultationFee: number | null,
+) {
+  if (String(service.job_type).toLowerCase() === "consultation") {
+    return Number(consultationFee) > 0 ? "Provider-wide fee configured" : "Set provider-wide fee above";
+  }
+  if (isInspectionPricingModel(service.pricing_model)) {
+    return enabled?.tenant_visit_fee ? `${money(enabled.tenant_visit_fee)} inspection` : "No charge set";
+  }
+  if (!enabled?.tenant_min_price) return "No price set";
+  if (service.pricing_model === "fixed") return money(enabled.tenant_min_price);
+  return `${money(enabled.tenant_min_price)}–${money(enabled.tenant_max_price)}`;
+}
+
 export default function ServicesPricingSetupPage() {
   return (
     <Suspense fallback={null}>
@@ -177,6 +193,11 @@ function ServicesPricingPageContent() {
   const isInspectionMode = !isConsultationMode && isInspectionPricingModel(selectedService?.pricing_model);
   const isFixedPriceMode = !isConsultationMode && selectedService?.pricing_model === "fixed";
   const isMatchingOnly = isInspectionMode || isConsultationMode;
+  // The current Admin blueprint is authoritative. Stored tenant flags are a
+  // snapshot from enrollment and may be stale after an Admin publishes a
+  // changed Type/Brand requirement.
+  const requiresType = selectedService?.is_type_required ?? enrolled?.requires_type ?? false;
+  const requiresBrand = selectedService?.is_brand_required ?? enrolled?.requires_brand ?? false;
 
   // Load type/brand detail whenever the enrolled tenant_service changes.
   useEffect(() => {
@@ -194,18 +215,18 @@ function ServicesPricingPageContent() {
     setDetailLoading(true);
     const tsid = enrolled.tenant_service_id;
     Promise.all([
-      enrolled.requires_type ? homeServicesSetupApi.getAvailableTypes(tsid) : Promise.resolve({ types: [] }),
-      enrolled.requires_brand ? homeServicesSetupApi.getAvailableBrands(tsid) : Promise.resolve({ brands: [] }),
-      enrolled.requires_type && !isMatchingOnly ? homeServicesSetupApi.getTypePricing(tsid) : Promise.resolve({ types: [] }),
+      requiresType ? homeServicesSetupApi.getAvailableTypes(tsid) : Promise.resolve({ types: [] }),
+      requiresBrand ? homeServicesSetupApi.getAvailableBrands(tsid) : Promise.resolve({ brands: [] }),
+      requiresType && !isMatchingOnly ? homeServicesSetupApi.getTypePricing(tsid) : Promise.resolve({ types: [] }),
       // Brand pricing must be scoped per type for type-required services
       // (the backend rejects a type-less brand override in that case) --
       // fetched below, once typePricing tells us which types are selected.
-      enrolled.requires_brand && !enrolled.requires_type && !isMatchingOnly ? homeServicesSetupApi.getBrandPricing(tsid) : Promise.resolve({ brands: [] }),
+      requiresBrand && !requiresType && !isMatchingOnly ? homeServicesSetupApi.getBrandPricing(tsid) : Promise.resolve({ brands: [] }),
     ])
       .then(async ([t, b, tp, bp]) => {
         setTypes(t.types); setBrands(b.brands);
         setTypePricing(tp.types); setBrandPricing(bp.brands);
-        if (!isMatchingOnly && enrolled.requires_brand && enrolled.requires_type && tp.types.length > 0) {
+        if (!isMatchingOnly && requiresBrand && requiresType && tp.types.length > 0) {
           await reloadBrandPricingByType(tsid, tp.types, b.brands);
         }
       })
@@ -216,7 +237,7 @@ function ServicesPricingPageContent() {
           : "We couldn't load the Admin-approved Types and Brands for this service.");
       })
       .finally(() => setDetailLoading(false));
-  }, [enrolled?.tenant_service_id, isMatchingOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enrolled?.tenant_service_id, isMatchingOnly, requiresType, requiresBrand]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSaveConsultationFee() {
     const fee = Number(consultationFee);
@@ -393,7 +414,7 @@ function ServicesPricingPageContent() {
     ]);
     setTypes(avail.types);
     setTypePricing(tp.types);
-    if (!isMatchingOnly && enrolled.requires_brand && brands) await reloadBrandPricingByType(enrolled.tenant_service_id, tp.types, brands);
+    if (!isMatchingOnly && requiresBrand && brands) await reloadBrandPricingByType(enrolled.tenant_service_id, tp.types, brands);
   }
 
   async function toggleBrand(brand: HsSetupBrand) {
@@ -406,7 +427,7 @@ function ServicesPricingPageContent() {
     if (isMatchingOnly) {
       setBrandPricing([]);
       setBrandPricingByType({});
-    } else if (enrolled.requires_type) {
+    } else if (requiresType) {
       await reloadBrandPricingByType(enrolled.tenant_service_id, typePricing ?? [], avail.brands);
     } else {
       const bp = await homeServicesSetupApi.getBrandPricing(enrolled.tenant_service_id);
@@ -661,7 +682,7 @@ function ServicesPricingPageContent() {
                       <button key={key} className="pricing-offering-row" aria-current={selected ? "page" : undefined} onClick={() => { setSelectedGroupId(group.id); setSelectedServiceId(key); }}>
                         <span className="pricing-offering-copy">
                           <span className="pricing-offering-name">{service.service_name}</span>
-                          <span className="pricing-offering-meta">{service.job_type_label ?? service.job_type} · {String(service.job_type).toLowerCase() === "consultation" ? (Number(savedConsultationFee) > 0 ? "Provider-wide fee configured" : "Set provider-wide fee above") : isInspectionPricingModel(service.pricing_model) ? (serviceEnabled?.tenant_visit_fee ? `${money(serviceEnabled.tenant_visit_fee)} inspection` : "No charge set") : serviceEnabled?.tenant_min_price ? `${money(serviceEnabled.tenant_min_price)}–${money(serviceEnabled.tenant_max_price)}` : "No price set"}</span>
+                          <span className="pricing-offering-meta">{service.job_type_label ?? service.job_type} · {offeringPriceSummary(service, serviceEnabled, savedConsultationFee)}</span>
                         </span>
                         <span className={`pricing-status-chip${warning ? " is-warning" : serviceEnabled?.setup_status === "published" ? " is-live" : ""}`}>{warning ? "Fix" : serviceEnabled?.setup_status === "published" ? "Live" : "Draft"}</span>
                       </button>
@@ -720,8 +741,8 @@ function ServicesPricingPageContent() {
                         <label className="pricing-field-label"><span>Warranty</span><span className="pricing-field-control"><input aria-label="Service warranty days" type="number" min={5} value={warrantyDays} onChange={event => setWarrantyDays(event.target.value)} placeholder="5"/><span className="pricing-field-suffix">days</span></span><span className="pricing-field-hint">On the work you did · platform minimum is 5 days.</span></label>
                       </div>
                       {isInspectionMode && <RepairEstimateGuidanceEditor enabled={showEstimateRange} minimum={defaultMin} maximum={defaultMax} disabled={savingPrice} onEnabledChange={setShowEstimateRange} onMinimumChange={setDefaultMin} onMaximumChange={setDefaultMax}/>} 
-                      {!isMatchingOnly && <SetupDimensionsInlineEditor editorRef={dimensionEditorRef} selectedService={selectedService} enrolled={enrolled} isInspectionMode={false} types={types ?? []} brands={brands ?? []} typePricing={typePricing ?? []} brandPricing={brandPricing ?? []} brandPricingByType={brandPricingByType} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange} handleClearTypePrices={handleClearTypePrices} handleClearBrandPrice={handleClearBrandPrice} setTypes={setTypes} setBrands={setBrands}/>}
-                      {isMatchingOnly && <fieldset disabled={savingMatching} style={{ border: 0, padding: 0, margin: 0 }}><SetupDimensionsEditor selectedService={selectedService} enrolled={enrolled} isInspectionMode={true} types={types ?? []} brands={brands ?? []} typePricing={[]} brandPricing={[]} brandPricingByType={{}} brandOverrideOpen={brandOverrideOpen} setBrandOverrideOpen={setBrandOverrideOpen} toggleType={type => saveMatchingSelection(() => toggleType(type))} toggleBrand={brand => saveMatchingSelection(() => toggleBrand(brand))} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange}/></fieldset>}
+                      {!isMatchingOnly && <SetupDimensionsInlineEditor editorRef={dimensionEditorRef} selectedService={selectedService} enrolled={{ ...enrolled, requires_type: requiresType, requires_brand: requiresBrand }} isInspectionMode={false} types={types ?? []} brands={brands ?? []} typePricing={typePricing ?? []} brandPricing={brandPricing ?? []} brandPricingByType={brandPricingByType} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange} handleClearTypePrices={handleClearTypePrices} handleClearBrandPrice={handleClearBrandPrice} setTypes={setTypes} setBrands={setBrands}/>}
+                      {isMatchingOnly && <fieldset disabled={savingMatching} style={{ border: 0, padding: 0, margin: 0 }}><SetupDimensionsEditor selectedService={selectedService} enrolled={{ ...enrolled, requires_type: requiresType, requires_brand: requiresBrand }} isInspectionMode={true} types={types ?? []} brands={brands ?? []} typePricing={[]} brandPricing={[]} brandPricingByType={{}} brandOverrideOpen={brandOverrideOpen} setBrandOverrideOpen={setBrandOverrideOpen} toggleType={type => saveMatchingSelection(() => toggleType(type))} toggleBrand={brand => saveMatchingSelection(() => toggleBrand(brand))} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange}/></fieldset>}
                     </section>
 
                     {selectedService.job_type_id && <details className="pricing-collapsible"><summary><span><span className="pricing-collapsible-title">Set by the platform</span><span className="pricing-collapsible-copy">Booking questions, customer problems and technician checklist · Read-only.</span></span></summary><div className="pricing-collapsible-body"><ServiceRequirementsPanel masterServiceId={selectedService.service_id} jobTypeId={selectedService.job_type_id}/></div></details>}

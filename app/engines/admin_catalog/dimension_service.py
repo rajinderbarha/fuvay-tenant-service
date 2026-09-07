@@ -144,13 +144,32 @@ class CatalogDimensionService:
                 )
                 .group_by(CatalogDimensionValue.dimension_id)
             )).all())
+        # Type and Brand are global libraries, but the values usable by a
+        # tenant are the active mappings for THIS master service. Counting
+        # every global value made a blueprint look ready even when the tenant
+        # API correctly returned no options for the service.
         needs_types = any(d.legacy_source == "service_types" for d in dims)
         needs_brands = any(d.legacy_source == "brands" for d in dims)
         type_count = int(await self.db.scalar(
-            select(func.count(ServiceType.id)).where(ServiceType.is_active == True)  # noqa: E712
+            select(func.count(MasterServiceType.id))
+            .join(ServiceType, ServiceType.id == MasterServiceType.service_type_id)
+            .where(
+                MasterServiceType.master_service_id == master_service_id,
+                MasterServiceType.is_active.is_(True),
+                ServiceType.is_active.is_(True),
+                ServiceType.deleted_at.is_(None),
+            )
         ) or 0) if needs_types else 0
         brand_count = int(await self.db.scalar(
-            select(func.count(Brand.id)).where(Brand.is_active == True)  # noqa: E712
+            select(func.count(MasterServiceBrand.id))
+            .join(Brand, Brand.id == MasterServiceBrand.brand_id)
+            .where(
+                MasterServiceBrand.master_service_id == master_service_id,
+                MasterServiceBrand.is_active.is_(True),
+                MasterServiceBrand.status == "active",
+                Brand.is_active.is_(True),
+                Brand.deleted_at.is_(None),
+            )
         ) or 0) if needs_brands else 0
 
         items = []

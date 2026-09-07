@@ -1,6 +1,7 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
@@ -11,7 +12,7 @@ import { ServiceFamilyIdentity } from "../../../components/catalog/ServiceFamily
 import { AddChecklistMappingForm } from "../../../components/catalog/AddChecklistMappingForm";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
-  homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
+  homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi, catalogApi,
   type HsConsoleService, type CatalogJobType, type DimensionGridRow, type CatalogDimensionDef,
   type BlueprintReadiness, type BlueprintImpactReport, type BlueprintDraftStatus, type CatalogQuestionItem,
   type CatalogIssueTypeMapping, type ServiceJobWorkflow,
@@ -795,7 +796,7 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
                 {expandedValuesFor === row.dimension.id && (
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     <td colSpan={7} style={{ padding: "0 10px 12px" }}>
-                      <DimensionValuesPanel dimension={row.dimension} canWrite={canWrite}
+                      <DimensionValuesPanel dimension={row.dimension} masterServiceId={masterServiceId} canWrite={canWrite}
                         onChanged={() => { gridApi.refetch(); onChanged(); }} notify={notify}/>
                     </td>
                   </tr>
@@ -856,15 +857,50 @@ function AddDimensionForm({ onAdded, onError }: { onAdded: () => void; onError: 
   );
 }
 
-function DimensionValuesPanel({ dimension, canWrite, onChanged, notify }: {
-  dimension: CatalogDimensionDef; canWrite: boolean;
+function DimensionValuesPanel({ dimension, masterServiceId, canWrite, onChanged, notify }: {
+  dimension: CatalogDimensionDef; masterServiceId: string; canWrite: boolean;
   onChanged: () => void; notify: (m: string, t?: "success" | "error") => void;
 }) {
-  const valuesApi = useApi(useCallback(() => catalogWorkspaceApi.listDimensionValues(dimension.id), [dimension.id]), [dimension.id]);
+  const valuesApi = useApi(useCallback(
+    () => dimension.legacy_source ? Promise.resolve({ dimension, legacy: true, values: [] }) : catalogWorkspaceApi.listDimensionValues(dimension.id),
+    [dimension.id, dimension.legacy_source]), [dimension.id, dimension.legacy_source]);
   const addAction = useAction(catalogWorkspaceApi.addDimensionValue);
   const [label, setLabel] = useState("");
   const isLegacy = !!dimension.legacy_source;
   const values = valuesApi.data?.values ?? [];
+  const exactValues = useApi(useCallback(async () => {
+    if (dimension.legacy_source === "brands") {
+      const [library, mapped] = await Promise.all([
+        catalogApi.listBrands({ status: "active", page: 1, page_size: 200 }),
+        catalogApi.listBrandMappings(masterServiceId),
+      ]);
+      return {
+        options: library.brands.map(row => ({ id: row.brand_id, label: row.display_name || row.name })),
+        mapped: mapped.brands.map(row => ({ id: row.brand_id, mappingId: row.mapping_id })),
+      };
+    }
+    if (dimension.legacy_source === "service_types") {
+      const [library, mapped] = await Promise.all([
+        catalogApi.listServiceTypes(), catalogApi.listServiceTypeMappings(masterServiceId),
+      ]);
+      return {
+        options: library.types.filter(row => row.is_active).map(row => ({ id: row.type_id, label: row.name })),
+        mapped: mapped.types.map(row => ({ id: row.service_type_id, mappingId: row.mapping_id })),
+      };
+    }
+    return { options: [] as { id: string; label: string }[], mapped: [] as { id: string; mappingId: string }[] };
+  }, [dimension.legacy_source, masterServiceId]), [dimension.legacy_source, masterServiceId], { enabled: isLegacy });
+  const toggleLegacy = useAction(useCallback(async (id: string, mappingId?: string) => {
+    if (dimension.legacy_source === "brands") {
+      if (mappingId) await catalogApi.unmapBrand(masterServiceId, mappingId);
+      else await catalogApi.mapBrand(masterServiceId, id);
+    } else if (dimension.legacy_source === "service_types") {
+      if (mappingId) await catalogApi.unmapServiceType(masterServiceId, mappingId);
+      else await catalogApi.mapServiceType(masterServiceId, id);
+    }
+    await exactValues.refetch();
+    onChanged();
+  }, [dimension.legacy_source, masterServiceId, exactValues, onChanged]));
 
   async function addValue() {
     const code = slugifyKey(label);
@@ -874,15 +910,32 @@ function DimensionValuesPanel({ dimension, canWrite, onChanged, notify }: {
     else notify("Couldn't add value.", "error");
   }
 
-  if (valuesApi.error) return <SectionError title="Couldn't load values" error={valuesApi.error} requestId={valuesApi.requestId} onRetry={valuesApi.refetch}/>;
-  if (valuesApi.loading) return <Skeleton height={60}/>;
+  if (valuesApi.error || exactValues.error) return <SectionError title="Couldn't load values" error={valuesApi.error || exactValues.error || "Unknown error"} requestId={valuesApi.requestId || exactValues.requestId} onRetry={() => { valuesApi.refetch(); exactValues.refetch(); }}/>;
+  if (valuesApi.loading || (isLegacy && exactValues.loading)) return <Skeleton height={60}/>;
 
   return (
     <div style={{ padding: 10, borderRadius: 8, background: "var(--surface)", border: "1px solid var(--border)" }}>
       {isLegacy ? (
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-          Values for {dimension.name} are managed in the {dimension.legacy_source} catalog, not here.
-        </p>
+        <div style={{ display: "grid", gap: 10 }}>
+          <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
+            Select the {dimension.name.toLowerCase()} values supported by this service. These exact choices are what providers receive during setup; the setting applies to every job type under this service where the dimension is enabled.
+          </p>
+          {toggleLegacy.error && <p role="alert" style={{ color: "var(--danger-text)", margin: 0, fontSize: 12 }}>{toggleLegacy.error}</p>}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {(exactValues.data?.options ?? []).map(option => {
+              const mapped = exactValues.data?.mapped.find(row => row.id === option.id);
+              return <label key={option.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 9px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, cursor: canWrite ? "pointer" : "default" }}>
+                <input type="checkbox" checked={!!mapped} disabled={!canWrite || toggleLegacy.loading}
+                  onChange={() => toggleLegacy.execute(option.id, mapped?.mappingId)}/>
+                {option.label}
+              </label>;
+            })}
+            {(exactValues.data?.options ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--warning-text)" }}>No active {dimension.name.toLowerCase()} values exist. Create them in Types & Brands first.</span>}
+          </div>
+          <Link href={`/admin/types-brands?tab=${dimension.legacy_source === "brands" ? "brands" : "types"}`} style={{ fontSize: 12 }}>
+            Open the {dimension.name} library
+          </Link>
+        </div>
       ) : (
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
