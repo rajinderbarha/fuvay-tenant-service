@@ -122,6 +122,10 @@ class RegistrationService:
         # Idempotent resume via registration_id
         if registration_id:
             pending = await self._get_pending(registration_id)
+            if pending.email != email_n:
+                pending.email_verified = False
+            if pending.mobile != mobile_n:
+                pending.mobile_verified = False
             pending.full_name = full_name
             pending.email = email_n
             pending.mobile = mobile_n
@@ -155,6 +159,12 @@ class RegistrationService:
         )).scalars().first()
         if existing_pending:
             existing_pending.full_name = full_name
+            # A restarted flow must verify possession again before changed
+            # credentials can be used to create the workspace.
+            existing_pending.email = email_n
+            existing_pending.mobile = mobile_n
+            existing_pending.email_verified = False
+            existing_pending.mobile_verified = False
             existing_pending.hashed_password = hash_password(password)
             existing_pending.authorized_declaration = False
             existing_pending.tos_privacy_accepted = False
@@ -211,7 +221,7 @@ class RegistrationService:
                 purpose=purpose, recipient_hash=hash_recipient(recipient),
                 hashed_otp=otp_hashed, expires_at=utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES),
             ))
-            if s.DEBUG:
+            if s.DEBUG and s.APP_ENV not in ("staging", "production"):
                 # Dev/staging: never attempt real delivery (Twilio trial/sandbox
                 # numbers routinely report success without the SMS ever
                 # arriving) — always surface the code directly instead.

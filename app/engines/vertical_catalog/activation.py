@@ -254,7 +254,15 @@ async def try_auto_activate(db: AsyncSession, tenant_id: uuid.UUID,
         # already live), so the orchestrator's remaining job is the state
         # transition + audit + notification, done atomically.
         await svc.transition_enrollment(db, uuid.UUID(enrollment["id"]), "activating", actor_id=actor_id)
-        return await svc.transition_enrollment(db, uuid.UUID(enrollment["id"]), "active", actor_id=actor_id)
+        result = await svc.transition_enrollment(db, uuid.UUID(enrollment["id"]), "active", actor_id=actor_id)
+        # Activation can happen later than approval, after a missing gate is
+        # resolved. Keep the account projection used by access checks in sync.
+        await db.execute(text(
+            "UPDATE tenants SET status='active', activated_at=COALESCE(activated_at, NOW()), updated_at=NOW() "
+            "WHERE id=:tid AND verification_status='approved' "
+            "AND status IN ('pending_activation', 'under_review', 'active')"
+        ), {"tid": str(tenant_id)})
+        return result
 
     if enrollment["status"] != "activation_requirements_pending":
         return await svc.transition_enrollment(

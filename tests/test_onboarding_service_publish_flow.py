@@ -19,7 +19,7 @@ REVIEW_PAGE = os.path.join(
     BASE, "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/review/page.tsx"
 )
 SERVICES_PRICING_PAGE = os.path.join(
-    BASE, "frontend/tenant-portal/app/(onboarding)/tenant/home-services/setup/services-pricing/page.tsx"
+    BASE, "frontend/tenant-portal/components/services/ServicesPricingSetupPage.tsx"
 )
 
 

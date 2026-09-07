@@ -890,6 +890,7 @@ class AuthService:
                 else None
             ),
             "redirect_to": "/change-password-required" if requires_change else None,
+            **(await self.resolve_post_login_destination(user)),
         }
 
     async def verify_phone_otp_login(
@@ -1050,6 +1051,7 @@ class AuthService:
         )
         requires_change = user.force_password_change or user.password_reset_required or user.temporary_password_active
         return {
+            **(await self.resolve_post_login_destination(user)),
             "access_token": tokens["access_token"],
             "refresh_token": tokens["refresh_token"] if not requires_change else None,
             "user": self._user_to_profile(user),

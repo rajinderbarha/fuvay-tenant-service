@@ -172,7 +172,7 @@ async function apiFetchMultipart<T>(path: string, formData: FormData, method: "P
 export const authApi = {
   // Session
   login:   (email: string, password: string) =>
-    apiFetch<{ access_token: string; refresh_token: string | null; user: TenantUser; tenant: TenantCtx; requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string; next_destination?: string; reason_code?: string }>(
+    apiFetch<{ mfa_required?: boolean; mfa_challenge_token?: string; access_token: string; refresh_token: string | null; user: TenantUser; tenant: TenantCtx; requires_password_change?: boolean; password_change_reason?: string; redirect_to?: string; next_destination?: string; reason_code?: string }>(
       "/v1/auth/login", { method:"POST", body:JSON.stringify({ email, password }) }, true),
   me:      () => apiFetch<TenantUser>("/v1/auth/me"),
   updateMe:(data: Partial<TenantUser>) =>
@@ -190,6 +190,9 @@ export const authApi = {
       "/v1/auth/otp/verify", { method:"POST", body:JSON.stringify({ phone, otp }) }, true),
 
   // MFA
+  completeMfaLogin: (mfa_challenge_token: string, code: string, remember_device: boolean) =>
+    apiFetch<{ access_token: string; refresh_token: string | null; user: TenantUser; tenant: TenantCtx; requires_password_change?: boolean; next_destination?: string }>(
+      "/v1/auth/mfa/verify", { method: "POST", body: JSON.stringify({ mfa_challenge_token, code, remember_device }) }, true),
   setupMfa:              () => apiFetch<MfaSetup>("/v1/auth/mfa/setup", { method:"POST" }),
   confirmMfa:            (code: string) =>
     apiFetch<MfaConfirm>("/v1/auth/mfa/confirm", { method:"POST", body:JSON.stringify({ code }) }),

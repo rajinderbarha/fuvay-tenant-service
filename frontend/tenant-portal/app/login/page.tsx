@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { Alert } from "@serviceos/design-system";
 import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Smartphone, UserCheck, Wrench } from "lucide-react";
-import { authApi, publicSignupStatusApi } from "../../lib/api";
+import { authApi } from "../../lib/api";
 import styles from "./login.module.css";
 
 const FEATURES = [
@@ -34,15 +34,29 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
     if (!email || !password) { setError("Both fields required."); return; }
     setLoading(true); setError("");
     try {
-      const response = await authApi.login(email, password);
+      const response = mfaChallenge
+        ? await authApi.completeMfaLogin(mfaChallenge, mfaCode.trim(), remember)
+        : await authApi.login(email, password);
+      if ("mfa_required" in response && response.mfa_required && "mfa_challenge_token" in response) {
+        if (typeof response.mfa_challenge_token !== "string" || !response.mfa_challenge_token) throw new Error("Verification could not be started. Please sign in again.");
+        setMfaChallenge(response.mfa_challenge_token);
+        return;
+      }
+      if (!response.access_token || !response.user) throw new Error("No login session was returned. Please try again.");
+      if (["admin_dashboard", "technician_app", "access_rejected"].includes(response.next_destination ?? "")) {
+        throw new Error("Please sign in using the portal or app assigned to your account.");
+      }
       localStorage.setItem("serviceos_tenant_token", response.access_token);
       if (response.refresh_token) localStorage.setItem("serviceos_tenant_refresh", response.refresh_token);
+      else localStorage.removeItem("serviceos_tenant_refresh");
       localStorage.setItem("serviceos_remember_device", remember ? "1" : "0");
       const user = response.user;
       localStorage.setItem("serviceos_user_id", user?.id ?? user?.user_id ?? "");
@@ -63,14 +77,7 @@ export default function LoginPage() {
       const projectedRoute = response.next_destination ? routes[response.next_destination] : undefined;
       window.location.href = projectedRoute ?? (!user?.onboarding_complete && tenant?.vertical === "home_services" ? "/tenant/home-services/setup/overview" : "/dashboard");
     } catch (loginError: unknown) {
-      let message = loginError instanceof Error ? loginError.message : "Login failed. Check credentials.";
-      try {
-        const status = await publicSignupStatusApi.lookupByEmail(email);
-        if (status.exists && status.status !== "activated") message = status.status === "rejected"
-          ? "Your business signup request was not approved. Contact support for details."
-          : "Your signup request is still under review. You'll receive your login details by email once it's approved.";
-      } catch { /* Keep the authentication error. */ }
-      setError(message);
+      setError(loginError instanceof Error ? loginError.message : "Login failed. Check credentials.");
     } finally { setLoading(false); }
   }
 
@@ -99,6 +106,12 @@ export default function LoginPage() {
           <p>Sign in to continue managing your business. You&apos;ll be taken to your current setup, review or active workspace.</p></header>
         {error && <Alert tone="danger" title="Sign in failed">{error}</Alert>}
         <form className={styles.form} onSubmit={handleLogin}>
+          {mfaChallenge && <>
+            <LoginField id="tenant-mfa" label="Authenticator or backup code" type="text" autoComplete="one-time-code"
+              value={mfaCode} onChange={setMfaCode} placeholder="Enter your verification code" icon={<ShieldCheck size={16} />} />
+            <button type="button" onClick={() => { setMfaChallenge(""); setMfaCode(""); setError(""); }}>Use a different account</button>
+          </>}
+          <div style={{ display: mfaChallenge ? "none" : "contents" }}>
           <LoginField id="tenant-identifier" label="Email or mobile number" type="text" inputMode="email" autoComplete="username"
             value={email} onChange={setEmail} placeholder="provider@servicesos.in" icon={<Mail size={16} />} />
           <LoginField id="tenant-password" label="Password" type={showPassword ? "text" : "password"} autoComplete="current-password"
@@ -109,6 +122,7 @@ export default function LoginPage() {
           <div className={styles.formOptions}>
             <label className={styles.rememberOption}><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span>Remember this device</span></label>
             <Link href="/forgot-password">Forgot password?</Link>
+          </div>
           </div>
           <button className={styles.submitButton} type="submit" disabled={loading}><span>{loading ? "Signing in…" : "Sign in"}</span>{!loading && <ArrowRight size={16} aria-hidden="true" />}</button>
           <div className={styles.divider} aria-hidden="true"><span /><b>or</b><span /></div>

@@ -33,6 +33,17 @@ class LoginRequest(BaseModel):
     @classmethod
     def _normalise_email(cls, v: str) -> str:
         v = v.strip().lower()
+        if "@" not in v:
+            # Signup stores E.164; accept the same Indian local formats here.
+            digits = _re.sub(r"[\s()-]", "", v)
+            if _re.fullmatch(r"\d{10}", digits):
+                v = "+91" + digits
+            elif _re.fullmatch(r"0\d{10}", digits):
+                v = "+91" + digits[1:]
+            elif _re.fullmatch(r"91\d{10}", digits):
+                v = "+" + digits
+            else:
+                v = digits
         if not (_EMAIL_RE.match(v) or _re.match(r"^\+?[1-9]\d{7,14}$", v)):
             raise ValueError("Invalid email address or mobile number")
         return v

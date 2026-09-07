@@ -364,7 +364,8 @@ export default function RegisterPage() {
     if (!stepValid("review") || !registrationId) { setError("Please confirm both required checkboxes."); return; }
     setSubmitting(true); setError("");
     try {
-      const idempotencyKey = (globalThis.crypto?.randomUUID?.() ?? `${registrationId}-${Date.now()}`);
+      // Stable across retries and reloads after a lost completion response.
+      const idempotencyKey = `signup-complete:${registrationId}`;
       const res = await publicSignupApi.complete(
         registrationId, idempotencyKey, form.authorized, form.agreedTerms, form.marketingOptIn,
       );

@@ -406,7 +406,9 @@ class VerticalCatalogService:
         db.add(VerticalAuditLog(vertical_id=row.vertical_id, tenant_id=row.tenant_id, actor_id=actor_id,
                                  action_type=f"enrollment.{new_status}", before_state=before,
                                  after_state=self._enrollment_dict(row), notes=reason))
-        await db.commit()
+        # The caller owns the transaction: review, documents and activation
+        # must either all succeed or all roll back together.
+        await db.flush()
         await db.refresh(row)
         return self._enrollment_dict(row)
 
