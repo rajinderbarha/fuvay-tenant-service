@@ -39,7 +39,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_CONFIRM, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING, PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
-    PICK_TRACK,
+    PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
 
@@ -322,6 +322,13 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
     needed to do so in its own id.
     """
     kind, _, rest = reply_id.partition(PICKER_SEP)
+
+    if kind == PICK_ADDON:
+        from app.engines.messaging_gateway import addons
+        result = await addons.handle(db, thread, draft, channel, rest)
+        if result is not None:
+            return result
+        return await _next_step(db, thread, executor, await _draft(db, thread), channel, 0, identity)
 
     if kind == PICK_RESTART:
         return await _restart(db, thread, executor, channel, identity)
@@ -706,7 +713,9 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
         and not thread.customer_id
         and thread.channel != "whatsapp"
         and draft
-        and draft.get("preferred_date")
+        and (draft.get("preferred_date") or (
+            draft.get('selected_tenant_id') and 'required_fields' in draft
+            and 'preferred_date' not in draft['required_fields']))
     ):
         # Ordered to mirror `_next_step`: the number is asked for only once
         # the booking is otherwise complete, so nothing typed here can still
@@ -738,6 +747,9 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
 
 
 async def _confirm(db, thread, executor, draft: dict):
+    from app.engines.messaging_gateway.addons import needs_review
+    if needs_review(draft):
+        return 'Review your add-ons and the updated total before confirming.', 0, draft
     result = await executor._tool_confirm_home_service_booking(
         draft_id=str(draft["id"]), confirmation_phrase=CONFIRM_PHRASE,
     )
@@ -1166,7 +1178,7 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     if not draft.get("selected_tenant_id"):
         return await _match_step(db, thread, executor, draft, channel, page)
 
-    if not draft.get("preferred_date"):
+    if not draft.get("preferred_date") and ('required_fields' not in draft or 'preferred_date' in draft['required_fields']):
         # A provider is matched but has no bookable capacity in the horizon.
         return Turn(NO_SLOTS)
 
@@ -1182,6 +1194,10 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
             return _otp_step(identity, thread)
         return Turn(ASK_PHONE)
 
+    from app.engines.messaging_gateway import addons
+    addon_step = await addons.step(db, thread, draft, channel)
+    if addon_step is not None:
+        return addon_step
     return await _confirm_step(executor, draft, thread)
 
 
@@ -1364,6 +1380,8 @@ async def _match_step(db, thread, executor, draft: dict, channel: str, page: int
     draft = await _draft(db, thread)
     if not draft:
         return Turn(NOTHING_HERE)
+    if draft.get('selected_tenant_id') and 'required_fields' in draft and 'preferred_date' not in draft['required_fields']:
+        return await _next_step(db, thread, executor, draft, channel, 0)
 
     lines = []
     if price.get("display_price"):
@@ -1386,6 +1404,9 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
     # ...}; the fields worth showing are one level in.
     envelope = result.get("summary") or {}
     summary = envelope.get("booking_summary") or envelope
+    if result.get('error') or summary.get('ready_for_confirmation') is False:
+        missing = ', '.join(summary.get('missing') or [])
+        return Turn(result.get('error') or f"Please complete your booking details before confirming{': ' + missing if missing else '.'}")
     price = summary.get("price_estimate") or {}
     lines = ["Please check your booking:"]
     for label, value in (
@@ -1401,12 +1422,16 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
     ):
         if value:
             lines.append(f"{label}: {value}")
+    for addon in price.get('addon_lines', []):
+        lines.append(f"Add-on: {addon['name']} × {addon['quantity']} — INR {addon['total']}")
+    rows = [{"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Confirm booking"}]
+    if price.get('social_addons_reviewed'):
+        from app.engines.messaging_gateway.addons import _id
+        rows.append({'id': _id(draft, 'page', 0), 'title': 'Edit add-ons'})
+    rows.append({"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Start over"})
     return Turn("\n".join(lines), {
         "body": "Shall I confirm this booking?",
-        "rows": [
-            {"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Confirm booking"},
-            {"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Start over"},
-        ],
+        "rows": rows,
         "list_button": "Choose",
         "section_title": "Confirm",
         "presentation": "buttons",
@@ -1452,12 +1477,8 @@ async def _draft(db, thread) -> dict | None:
     required = ["issue_summary", "city"]
     offering = await db.get(MasterService, row.offering_id) if row.offering_id else None
     if offering is not None:
-        if offering.is_type_required:
-            required.append("offering_type_id")
-        if offering.is_brand_required:
-            required.append("brand_id")
-        if offering.requires_schedule:
-            required.append("preferred_date")
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        required = await HomeServiceChatbotBookingService(db)._get_required_field_list(offering, row)
     data["required_fields"] = required
     return data
 

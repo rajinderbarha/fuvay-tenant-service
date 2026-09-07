@@ -23,6 +23,8 @@ instead of a `GeoZone` model that was never defined anywhere in `geo.models`.
 
 """
 import inspect
+import os
+import pytest
 
 from app.engines.ai_conversation.backend_tools import BackendToolExecutor
 
@@ -54,35 +56,37 @@ def test_broken_imports_actually_resolve():
     from app.engines.media.models import MediaFile  # noqa: F401
 
 
+@pytest.mark.skipif(os.environ.get('RUN_LIVE_CATALOG_DIAGNOSTICS') != '1', reason='Explicit opt-in required for live catalog diagnostics')
 class TestLive:
     async def test_tools_return_real_data_not_silent_fallback(self):
         import pytest
         from sqlalchemy import select, func
         from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-        from app.engines.admin_catalog.models import ServiceCategory, MasterOffering
+        from app.config import get_settings
+        from app.engines.admin_catalog.models import ServiceCategory, MasterService, ServiceIssueMapping
+        from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
 
         try:
-            engine = create_async_engine(
-                "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/serviceos")
+            engine = create_async_engine(get_settings().DATABASE_URL, echo=False)
             Session = async_sessionmaker(engine, expire_on_commit=False)
         except Exception:
             pytest.skip("db not reachable")
 
-        async with Session() as db:
-            r = await db.execute(
-                select(MasterOffering).where(MasterOffering.is_active == True).limit(1))
-            offering = r.scalars().first()
-            if not offering:
-                pytest.skip("no active master_offerings in this environment")
-            cat_r = await db.execute(
-                select(ServiceCategory).where(ServiceCategory.id == offering.category_id))
-            category = cat_r.scalars().first()
-
-            tool = BackendToolExecutor(db, customer_id=None)
-            result = await tool._tool_get_category_offerings(
-                category.name.lower().replace(" ", "-"))
-            assert "note" not in result
-            assert result["total"] >= 1
-            assert any(o["name"] == offering.name for o in result["offerings"])
-        await engine.dispose()
+        try:
+            async with Session() as db:
+                r = await db.execute(select(MasterService).where(
+                    MasterService.is_active.is_(True), _publisher_filter(None),
+                    MasterService.id.in_(select(ServiceIssueMapping.master_service_id).where(ServiceIssueMapping.status == 'active')),
+                ).limit(1))
+                offering = r.scalars().first()
+                if not offering:
+                    pytest.skip('No published, bookable service exists in this diagnostic database.')
+                category = await db.get(ServiceCategory, offering.category_id)
+                tool = BackendToolExecutor(db, customer_id=None)
+                result = await tool._tool_get_category_offerings(category.slug)
+                assert 'note' not in result
+                assert result['total'] >= 1
+                assert any(o['id'] == str(offering.id) for o in result['offerings'])
+        finally:
+            await engine.dispose()
 

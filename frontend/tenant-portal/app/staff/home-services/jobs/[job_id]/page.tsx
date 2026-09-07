@@ -105,6 +105,7 @@ export default function StaffHomeServiceJobDetailPage() {
               {checklists.data && checklists.data.length > 0 && (
                 <ChecklistCard instances={checklists.data} onRefetch={() => { checklists.refetch(); job.refetch(); }} />
               )}
+              {['inspection_done', 'quote_required'].includes(j.status) && <CatalogAddons jobId={jobId} />}
 
               {canRequestParts && (
                 <Card>
@@ -230,6 +231,30 @@ function Row({ label, value }: { label: string; value?: string | null }) {
 // applicable to this exact job + phase. This is a response/evidence
 // capture surface for technicians -- not the reusable template editor
 // (that lives in the platform-admin Checklist Library).
+function CatalogAddons({ jobId }: { jobId: string }) {
+  const data = useApi(useCallback(() => homeServiceStaffJobsApi.catalogAddons(jobId), [jobId]), [jobId]);
+  const [mappingId, setMappingId] = useState("");
+  const [quoteId, setQuoteId] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [notice, setNotice] = useState("");
+  const option = data.data?.options.find(o => o.mapping_id === mappingId);
+  const add = useAction(useCallback(() => homeServiceStaffJobsApi.addCatalogAddon(jobId, { quote_id: quoteId, mapping_id: mappingId, quantity }), [jobId, quoteId, mappingId, quantity]),
+    { onSuccess: () => { setNotice("Added to the estimate. It must follow the provider/customer approval flow before charging."); setMappingId(""); data.refetch(); } });
+  return <Card padding="sm"><h3>Catalog add-ons</h3>
+    <p>After inspection, add a platform-permitted extra to an editable estimate. Prices come from your provider's catalog.</p>
+    {data.error && <p role="alert">{data.error}</p>}{add.error && <p role="alert">{add.error}</p>}{notice && <p role="status">{notice}</p>}
+    {data.loading ? <p>Loading add-ons…</p> : !data.data?.options.length ? <p>No technician add-ons are configured for this job type.</p> : <>
+      <select aria-label="Catalog add-on" value={mappingId} onChange={e => { setMappingId(e.target.value); setQuantity(data.data?.options.find(o => o.mapping_id === e.target.value)?.minimum_quantity ?? 1); }} style={inputStyle}>
+        <option value="">Select add-on</option>{data.data.options.map(o => <option key={o.mapping_id} value={o.mapping_id}>{o.name}</option>)}
+      </select>
+      <input aria-label="Add-on quantity" type="number" min={option?.minimum_quantity ?? 1} max={option?.maximum_quantity ?? undefined} step={1} disabled={!option?.quantity_supported} value={quantity} onChange={e => setQuantity(Number(e.target.value))} style={inputStyle}/>
+      <select aria-label="Editable estimate" value={quoteId} onChange={e => setQuoteId(e.target.value)} style={inputStyle}><option value="">Select estimate</option>{data.data.quotes.map(q => <option key={q.id} value={q.id}>{q.quote_number}</option>)}</select>
+      {!data.data.quotes.length && <p>Ask your provider to prepare an editable estimate first. Approved estimates cannot be changed here.</p>}
+      <Btn loading={add.loading} disabled={!mappingId || !quoteId || !Number.isInteger(quantity) || quantity < 1} onClick={() => add.execute()}>Add to estimate</Btn>
+    </>}
+  </Card>;
+}
+
 function ChecklistCard({ instances, onRefetch }: { instances: ChecklistInstanceDetail[]; onRefetch: () => void }) {
   return (
     <>

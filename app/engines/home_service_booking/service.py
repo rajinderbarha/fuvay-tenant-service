@@ -271,7 +271,7 @@ class HomeServiceChatbotBookingService:
         result["offering_slug"]          = offering.slug
         result["category_name"]          = cat.name
         result["category_slug"]          = cat.slug
-        result["required_fields"]        = self._get_required_field_list(offering)
+        result["required_fields"]        = await self._get_required_field_list(offering, draft)
         result["pricing_model"]          = offering.pricing_model
         result["default_visit_fee"]      = float(offering.visit_fee)
         result["default_base_price"]     = float(offering.base_price)
@@ -730,7 +730,7 @@ class HomeServiceChatbotBookingService:
         """Return validation result with missing field names."""
         draft   = await self._require_draft(draft_id, customer_id)
         offering = await self._get_offering(draft.offering_id)
-        missing = self._compute_missing_fields(draft, offering)
+        missing = await self._compute_missing_fields(draft, offering)
         return {
             "valid": len(missing) == 0,
             "missing_fields": missing,
@@ -746,7 +746,7 @@ class HomeServiceChatbotBookingService:
         """Return a list of field names still needed to proceed."""
         draft    = await self._require_draft(draft_id, customer_id)
         offering = await self._get_offering(draft.offering_id)
-        return self._compute_missing_fields(draft, offering)
+        return await self._compute_missing_fields(draft, offering)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 7. CHECK SERVICEABILITY
@@ -815,6 +815,9 @@ class HomeServiceChatbotBookingService:
 
         try:
             snapshot = await self._compute_price_snapshot(draft, offering)
+            if snapshot.get("selected_addons") and snapshot.get("pricing_mode") != "inspection":
+                snapshot["standard_price"] = snapshot["customer_total"]
+            draft.booking_summary = None  # Re-estimating invalidates the previously accepted amount.
             draft.price_snapshot = snapshot
             draft.price_status   = PRICE_STATUS_ESTIMATED
             draft.status         = DRAFT_STATUS_PRICE_ESTIMATED
@@ -929,6 +932,9 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        if draft.selected_tenant_id != uuid.UUID(match["provider_ref"]):
+            draft.price_snapshot = None
+            draft.booking_summary = None
         draft.selected_tenant_id       = uuid.UUID(match["provider_ref"])
         draft.selected_provider_snapshot = match
         draft.updated_at               = utcnow()
@@ -1046,7 +1052,9 @@ class HomeServiceChatbotBookingService:
         # persists the visit-fee contract itself, after the provider is known;
         # it never depends on a provider-neutral estimate running first.
         offering = await self._get_offering(master_service_id)
-        pricing_model = await self._effective_pricing_model(offering, job_type_id)
+        pricing_draft = await self._require_draft(draft_id, customer_id) if draft_id else None
+        pricing_model = await self._effective_pricing_model(offering, job_type_id,
+            getattr(pricing_draft, 'service_job_workflow_id', None))
         inspection_mode = pricing_model == PRICING_MODEL_VISIT_FEE
 
         standard_price: Decimal | None = None
@@ -1122,6 +1130,10 @@ class HomeServiceChatbotBookingService:
         if draft_id is not None:
             draft = await self._require_draft(draft_id, customer_id)
             self._assert_not_terminal(draft)
+            # Provider prices and add-on support cannot transfer between providers.
+            if draft.selected_tenant_id != selected_tenant_id:
+                draft.price_snapshot = None
+            draft.booking_summary = None
             draft.selected_tenant_id = selected_tenant_id
             # matching_score_snapshot is internal — stored on the draft (backend-
             # only field), never returned verbatim by the customer-facing API.
@@ -1138,6 +1150,9 @@ class HomeServiceChatbotBookingService:
             # snapshot without a usable price and made every
             # inspection booking impossible to confirm.
             base_snapshot = await self._compute_price_snapshot(draft, offering)
+            if base_snapshot.get("selected_addons") and not inspection_mode:
+                standard_price = Decimal(str(base_snapshot["customer_total"]))
+                result["standard_price"] = float(standard_price)
             draft.price_snapshot = {
                 **base_snapshot,
                 "standard_price": float(standard_price) if standard_price is not None else None,
@@ -1162,6 +1177,60 @@ class HomeServiceChatbotBookingService:
             result["draft_status"] = draft.status
 
         return result
+
+    async def get_addons(self, draft_id, customer_id=None):
+        """Same provider-priced options for native and verified social booking contexts."""
+        from fastapi import HTTPException
+        from app.engines.admin_catalog.service_option_service import ServiceOptionService
+        from app.engines.admin_catalog.addon_runtime import resolve_addons
+        draft = await self._require_draft(draft_id, customer_id)
+        self._assert_not_terminal(draft)
+        if not draft.selected_tenant_id or not draft.job_type_id:
+            raise ServiceOSException('ADDON_PROVIDER_REQUIRED', 'Select a provider and job type first.', status_code=422)
+        offering = await self._get_offering(draft.offering_id)
+        if await self._effective_pricing_model(offering, draft.job_type_id, draft.service_job_workflow_id) == PRICING_MODEL_VISIT_FEE:
+            return {'options': [], 'selected_addons': [], 'estimate_required': True}
+        options = await ServiceOptionService(self.db, None, None, self.request_id).get_customer_options(
+            draft.offering_id, job_type_id=draft.job_type_id, tenant_id=draft.selected_tenant_id)
+        eligible = []
+        for option in options:
+            quantity = (option.get('minimum_quantity') or 1) if option.get('quantity_supported') else 1
+            try:
+                lines = await resolve_addons(self.db, tenant_id=draft.selected_tenant_id, service_id=draft.offering_id,
+                    job_type_id=draft.job_type_id, selections=[{'mapping_id': option['service_option_mapping_id'], 'quantity': quantity}])
+            except (ServiceOSException, HTTPException):
+                continue
+            eligible.append({**option, 'unit_price': lines[0]['unit_price'], 'currency': 'INR'})
+        return {'options': eligible, 'selected_addons': (draft.price_snapshot or {}).get('selected_addons', [])}
+
+    async def set_addons(self, draft_id, customer_id, selections):
+        draft = await self._require_draft(draft_id, customer_id)
+        self._assert_not_terminal(draft)
+        if not draft.selected_tenant_id or not draft.job_type_id:
+            raise ServiceOSException("ADDON_PROVIDER_REQUIRED", "Select a provider and job type before selecting add-ons.", status_code=422)
+        from app.engines.admin_catalog.addon_runtime import resolve_addons
+        lines = await resolve_addons(self.db, tenant_id=draft.selected_tenant_id, service_id=draft.offering_id,
+                                     job_type_id=draft.job_type_id, selections=selections)
+        selected = [{"mapping_id": line["mapping_id"], "quantity": line["quantity"]} for line in lines]
+        previous_snapshot = draft.price_snapshot
+        offering = await self._get_offering(draft.offering_id)
+        try:
+            draft.price_snapshot = {**(previous_snapshot or {}), "selected_addons": selected}
+            draft.price_snapshot = await self._compute_price_snapshot(draft, offering)
+        except Exception:
+            # Chat catches domain errors and commits its message. Do not let
+            # an unsuccessful estimate leak a half-applied add-on selection.
+            draft.price_snapshot = previous_snapshot
+            raise
+        draft.price_snapshot = {**draft.price_snapshot, "standard_price":
+            draft.price_snapshot["customer_total"] if draft.price_snapshot.get("pricing_mode") != "inspection" else None}
+        draft.booking_summary = None  # A changed price must be explicitly accepted again.
+        draft.status = DRAFT_STATUS_PROVIDER_MATCHED
+        draft.updated_at = utcnow()
+        await self._emit_event(draft_id=draft.id, actor_type=ACTOR_CUSTOMER, event_type=EVENT_PRICE_ESTIMATED,
+                              new_value={"selected_addons": selected}, message="Customer updated add-on selection; price confirmation required.")
+        await self.db.commit()
+        return {"price_snapshot": draft.price_snapshot, "requires_price_confirmation": True}
 
     async def confirm_price_choice(
         self,
@@ -1190,6 +1259,8 @@ class HomeServiceChatbotBookingService:
             raise ServiceOSException("INVALID_PRICE_TIER",
                 "'standard' is only valid for fixed-price bookings with a resolved price.",
                 status_code=422)
+        from app.engines.admin_catalog.addon_runtime import validate_frozen_addons
+        await validate_frozen_addons(self.db, draft)
         agreed_price = Decimal(str(draft.price_snapshot["standard_price"]))
         platform_fee_amount = float(draft.price_snapshot.get("platform_fee") or 0)
 
@@ -1278,6 +1349,7 @@ class HomeServiceChatbotBookingService:
 
         existing = draft.booking_summary or {}
         job_type_error = await self._validate_job_type_context(draft)
+        required_missing = await self._compute_missing_fields(draft, offering)
 
         # Pricing readiness has two genuinely different, mutually exclusive
         # shapes: a fixed-price offering is ready once the customer has
@@ -1357,21 +1429,13 @@ class HomeServiceChatbotBookingService:
                 and bool(draft.selected_tenant_id)
                 and pricing_ready
                 and job_type_error is None
-                and (
-                    not offering.requires_schedule
-                    or bool(draft.preferred_date and draft.preferred_time_window)
-                )
+                and not required_missing
             ),
             # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 6): the
             # customer-facing field-level readiness contract.
             "missing": (
                 (["job_type"] if job_type_error else [])
-                + (
-                    ["preferred_date", "preferred_time_window"]
-                    if offering.requires_schedule
-                    and not (draft.preferred_date and draft.preferred_time_window)
-                    else []
-                )
+                + required_missing
             ),
             "errors":  ([job_type_error] if job_type_error else []),
             # The real, capacity-checked slot this provider can actually
@@ -1611,7 +1675,7 @@ class HomeServiceChatbotBookingService:
         draft    = await self._require_draft(draft_id, customer_id)
         self._assert_not_terminal(draft)
         offering = await self._get_offering(draft.offering_id)
-        missing  = self._compute_missing_fields(draft, offering)
+        missing  = await self._compute_missing_fields(draft, offering)
 
         if missing:
             raise ServiceOSException(
@@ -2006,31 +2070,30 @@ class HomeServiceChatbotBookingService:
                 "Offering not found or inactive.", status_code=404)
         return offering
 
-    def _get_required_field_list(self, offering) -> list[str]:
-        """Return list of required field names based on offering config."""
+    async def _get_required_field_list(self, offering, draft) -> list[str]:
+        """Customer-facing dimensions and the booking's frozen workflow own requirements."""
+        from app.engines.admin_catalog.tenant_service import TenantCatalogService
+        from app.engines.admin_catalog.models import ServiceJobWorkflow
+        rules = await TenantCatalogService(self.db)._dimension_rules(offering.id, draft.job_type_id)
+        workflow = await self.db.get(ServiceJobWorkflow, draft.service_job_workflow_id) if draft.service_job_workflow_id else None
+        def required(key, legacy):
+            rule = rules.get(key)
+            return bool(rule.get("enabled") and rule.get("ask_customer") and rule.get("required")) if rule is not None else bool(legacy)
         fields = ["issue_summary", "city"]
-        if offering.is_type_required:
+        if required("type", offering.is_type_required):
             fields.append("offering_type_id")
-        if offering.is_brand_required:
+        if required("brand", offering.is_brand_required):
             fields.append("brand_id")
-        if offering.requires_schedule:
-            fields.append("preferred_date")
+        if (workflow.schedule_required if workflow else offering.requires_schedule):
+            fields.extend(["preferred_date", "preferred_time_window"])
+        if (workflow.address_required if workflow else getattr(offering, "requires_address", False)):
+            fields.append("address_snapshot")
         return fields
 
-    def _compute_missing_fields(self, draft: HomeServiceBookingDraft, offering) -> list[str]:
+    async def _compute_missing_fields(self, draft: HomeServiceBookingDraft, offering) -> list[str]:
         """Return names of required fields not yet filled."""
-        missing = []
-        if not draft.issue_summary:
-            missing.append("issue_summary")
-        if not draft.city:
-            missing.append("city")
-        if offering.is_type_required and not draft.offering_type_id:
-            missing.append("offering_type_id")
-        if offering.is_brand_required and not draft.brand_id:
-            missing.append("brand_id")
-        if offering.requires_schedule and not draft.preferred_date:
-            missing.append("preferred_date")
-        return missing
+        fields = await self._get_required_field_list(offering, draft)
+        return [field for field in fields if not getattr(draft, field, None)]
 
     async def _resolve_selected_tenant_price(self, draft: HomeServiceBookingDraft) -> dict | None:
         """When a specific tenant is already selected on this draft, prefer
@@ -2141,7 +2204,7 @@ class HomeServiceChatbotBookingService:
             )
         return float(fee)
 
-    async def _effective_pricing_model(self, offering, job_type_id: uuid.UUID | None) -> str:
+    async def _effective_pricing_model(self, offering, job_type_id: uuid.UUID | None, workflow_id: uuid.UUID | None = None) -> str:
         """Resolve pricing behavior from the exact published Job-Type rules.
 
         MasterService.pricing_model remains a compatibility default for old
@@ -2150,6 +2213,14 @@ class HomeServiceChatbotBookingService:
         """
         if job_type_id:
             from app.engines.admin_catalog.models import ServiceJobWorkflow
+            if workflow_id:
+                workflow = await self.db.get(ServiceJobWorkflow, workflow_id)
+                if not workflow or workflow.master_service_id != offering.id or workflow.job_type_id != job_type_id:
+                    raise ServiceOSException('BOOKING_WORKFLOW_INVALID', 'The saved booking workflow is unavailable.', status_code=409)
+                if workflow.pricing_behavior in {'inspection_required', 'custom_quote'}:
+                    return PRICING_MODEL_VISIT_FEE
+                if workflow.pricing_behavior in {'fixed', 'range'}:
+                    return PRICING_MODEL_FIXED
             behavior = (await self.db.execute(
                 select(ServiceJobWorkflow.pricing_behavior).where(
                     ServiceJobWorkflow.master_service_id == offering.id,
@@ -2187,7 +2258,7 @@ class HomeServiceChatbotBookingService:
         )).scalars().first()
 
         floor_price  = float(floor_row.floor_price) if floor_row else 0.0
-        pricing_model = await self._effective_pricing_model(offering, draft.job_type_id)
+        pricing_model = await self._effective_pricing_model(offering, draft.job_type_id, draft.service_job_workflow_id)
         consultation_fee = await self._resolve_provider_consultation_fee(draft)
 
         # Pricing MODE is decided by the offering's own `pricing_model` --
@@ -2254,6 +2325,20 @@ class HomeServiceChatbotBookingService:
             min_price = float(offering.min_price) if offering.min_price else base
             max_price = float(offering.max_price) if offering.max_price else None
             note  = "Estimated price (admin estimate — no tenant assigned yet)."
+
+        from app.engines.admin_catalog.addon_runtime import resolve_addons
+        selected_addons = (draft.price_snapshot or {}).get("selected_addons", [])
+        addon_lines = await resolve_addons(self.db, tenant_id=draft.selected_tenant_id,
+            service_id=draft.offering_id, job_type_id=draft.job_type_id, selections=selected_addons) if selected_addons else []
+        if addon_lines and pricing_model == PRICING_MODEL_VISIT_FEE:
+            raise ServiceOSException("ADDON_ESTIMATE_REQUIRED", "Add-ons for inspection jobs must be included in the customer-approved estimate.", status_code=422)
+        addon_total = sum((Decimal(line["total"]) for line in addon_lines), Decimal("0"))
+        service_base = base
+        base = float(Decimal(str(base)) + addon_total)
+        if min_price is not None:
+            min_price = float(Decimal(str(min_price)) + addon_total)
+        if max_price is not None:
+            max_price = float(Decimal(str(max_price)) + addon_total)
 
         # Home Services Monetization is the sole customer-fee authority.
         # Category rows no longer carry a second, conflicting finance setup.
@@ -2334,7 +2419,11 @@ class HomeServiceChatbotBookingService:
                 "condition":      "work_amount_exceeds_visit_fee",
                 "if_declined":    "visit_fee_only",
             } if requires_inspection_estimate and base else None,
-            "base_price":      base,          # service price (provider basis)
+            "base_price":      base,          # service and selected add-ons (provider basis)
+            "service_base_price": service_base,
+            "selected_addons": selected_addons,
+            "addon_lines": addon_lines,
+            "addon_total": float(addon_total),
             "min_price":       min_price,
             "max_price":       max_price,
             "currency":        "INR",
@@ -2493,7 +2582,7 @@ class HomeServiceChatbotBookingService:
         if offering:
             result["offering_name"]      = offering.service_name
             result["offering_slug"]      = offering.slug
-            result["required_fields"]    = self._get_required_field_list(offering)
+            result["required_fields"]    = await self._get_required_field_list(offering, draft)
             result["pricing_model"]      = offering.pricing_model
         cat = await self.db.get(ServiceCategory, draft.category_id)
         if cat:

@@ -224,8 +224,7 @@ _ROOT = os.path.join(os.path.dirname(__file__), "..")
 ADMIN_FORM_PATH = os.path.join(_ROOT, "frontend", "super-admin", "app", "admin", "service-options", "page.tsx")
 WORKSPACE_PATH = os.path.join(_ROOT, "frontend", "super-admin", "app", "admin", "catalog-workspace", "page.tsx")
 TENANT_WIZARD_PATH = os.path.join(
-    _ROOT, "frontend", "tenant-portal", "app", "(tenant)", "home-services",
-    "services", "[[...serviceId]]", "page.tsx",
+    _ROOT, "frontend", "tenant-portal", "components", "services", "ServicesPricingPage.tsx",
 )
 ADMIN_API_PATH = os.path.join(_ROOT, "frontend", "super-admin", "lib", "api.ts")
 

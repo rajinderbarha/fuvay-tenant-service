@@ -5,44 +5,21 @@ import type { CSSProperties } from "react";
 type Tone = "auto" | "onLight" | "onDark";
 type Props = { compact?: boolean; height?: number; className?: string; tone?: Tone; tagline?: boolean };
 
-/** The "Far Away in Fare Way" tagline is ~14% of the artwork's height, so it
- *  renders about 4px tall at the 28-46px heights the shells use -- vector-sharp
- *  but far too small to resolve, which reads as a blurry smudge. Only show it
- *  where it can actually be read. */
-const TAGLINE_MIN_HEIGHT = 64;
-
-/** Official Fuvay artwork.
- *
- *  The lockup's wordmark is pure white, so it only reads on a dark surface.
- *  It used to be wrapped in a #071633 chip to guarantee that, which meant a
- *  navy box sat on top of every light surface (most visibly the tenant
- *  sidebar, which is #FFFFFF). Instead we ship a second render of the same
- *  artwork with the wordmark in brand navy -- fuvay-logo-onlight.svg -- and
- *  pick between them.
- *
- *  Both variants are always in the DOM and one is hidden in CSS, so the swap
- *  costs no hydration flash (data-theme is set on <html> before hydration).
- *  Note the visibility MUST stay in the stylesheet: an inline display on the
- *  <img> outranks these class rules and renders both logos at once.
- *
- *  tone="auto" follows the theme. Force a tone for surfaces that do not:
- *  the admin sidebar and admin login panel are navy in both themes.
- *
- *  Compact mode crops to the symbol, which is #0563FE blue in both variants.
- */
+/** Official supplied green artwork: white wordmark on dark surfaces and black
+ * wordmark on light surfaces. Compact sidebars crop to the original symbol.
+ * Visibility stays in CSS to follow the theme without a hydration flash. */
 export default function FuvayLogo({
   compact = false,
   height = 34,
   className,
   tone = "auto",
-  tagline = height >= TAGLINE_MIN_HEIGHT,
 }: Props) {
-  const base = tagline ? "/brand/fuvay-logo" : "/brand/fuvay-logo-notagline";
+  // Preserve the supplied artwork, including its tagline, in every full lockup.
 
-  // No `display` here on purpose -- see the note above.
-  const imgStyle: CSSProperties = { height, width: "auto", maxWidth: "none" };
+  // Keep display in the stylesheet so exactly one theme variant is visible.
+  const imgStyle: CSSProperties = { height, width: "auto", maxWidth: "none", flexShrink: 0 };
   const wrapStyle: CSSProperties = compact
-    ? { width: height + 10, height, overflow: "hidden", display: "inline-block", flexShrink: 0 }
+    ? { width: height * 456 / 433, height, overflow: "hidden", display: "inline-block", flexShrink: 0 }
     : { display: "inline-flex", lineHeight: 0 };
 
   return (
@@ -67,13 +44,13 @@ export default function FuvayLogo({
       `}</style>
       <img
         className="fuvay-art-light"
-        src={`${base}-onlight.svg`}
+        src="/brand/fuvay-green-light.png"
         alt={compact ? "" : "Fuvay"}
         style={imgStyle}
       />
       <img
         className="fuvay-art-dark"
-        src={`${base}.svg`}
+        src="/brand/fuvay-green-dark.png"
         alt={compact ? "" : "Fuvay"}
         style={imgStyle}
       />

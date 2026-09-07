@@ -3,12 +3,12 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Request, HTTPException
+from pydantic import BaseModel, Field
 
 from sqlalchemy import select
 
-from app.dependencies.auth import get_current_user, require_customer, require_super_admin
+from app.dependencies.auth import get_current_user, require_customer, require_super_admin, require_staff_or_above
 from app.dependencies.db import get_db
 from app.dependencies.vertical_guard import require_vertical_enabled
 from app.core.permissions import P, require_permission, require_staff_or_above_mutation
@@ -51,6 +51,82 @@ async def _staff_member_id(user, db) -> uuid.UUID:
 
 class AcceptBody(BaseModel):
     pass
+
+
+class CatalogAddonBody(BaseModel):
+    quote_id: uuid.UUID
+    mapping_id: uuid.UUID
+    quantity: int = Field(default=1, strict=True, gt=0)
+
+
+@staff_router.get("/{job_id}/catalog-addons")
+async def staff_catalog_addons(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above), db=Depends(get_db)):
+    from app.engines.admin_catalog.models import ServiceOptionMapping, MasterServiceOption
+    from app.engines.admin_catalog.addon_runtime import resolve_addons
+    from app.engines.quote_checklist.models import ServiceJobQuote
+    from app.engines.quote_checklist.quote_service import ITEM_EDITABLE_QUOTE_STATUSES
+    if not user.tenant_id:
+        raise ServiceOSException('ADDON_TENANT_REQUIRED', 'A provider-scoped staff account is required.', status_code=403)
+    job = await _svc._get_job(db, job_id, uuid.UUID(str(user.tenant_id)))
+    _svc._assert_staff_owns_job(job, await _staff_member_id(user, db))
+    rows = (await db.execute(select(ServiceOptionMapping).where(
+        ServiceOptionMapping.master_service_id == job.offering_id,
+        ServiceOptionMapping.job_type_id == job.job_type_id,
+        ServiceOptionMapping.technician_selectable.is_(True), ServiceOptionMapping.available_after_inspection.is_(True),
+        ServiceOptionMapping.status == 'active', ServiceOptionMapping.deleted_at.is_(None),
+        ServiceOptionMapping.usage != 'DISABLED'))).scalars().all()
+    options = []
+    for row in rows:
+        option = await db.get(MasterServiceOption, row.service_option_id)
+        if option and option.status == 'active':
+            try:
+                await resolve_addons(db, tenant_id=job.tenant_id, service_id=job.offering_id, job_type_id=job.job_type_id,
+                    selections=[{'mapping_id': str(row.id), 'quantity': (row.minimum_quantity or 1) if row.quantity_supported else 1}], actor='technician')
+            except (ServiceOSException, HTTPException):
+                continue
+            options.append({'mapping_id': str(row.id), 'name': option.name, 'quantity_supported': row.quantity_supported,
+                            'minimum_quantity': row.minimum_quantity or 1, 'maximum_quantity': row.maximum_quantity})
+    quotes = (await db.execute(select(ServiceJobQuote).where(ServiceJobQuote.job_id == job.id,
+        ServiceJobQuote.tenant_id == job.tenant_id, ServiceJobQuote.is_current.is_(True),
+        ServiceJobQuote.status.in_(ITEM_EDITABLE_QUOTE_STATUSES)))).scalars().all()
+    return ok({'options': options, 'quotes': [{'id': str(q.id), 'quote_number': q.quote_number} for q in quotes]}, getattr(r.state, 'request_id', None), 'staff-addons')
+
+
+@staff_router.post("/{job_id}/catalog-addons")
+async def staff_add_catalog_addon(job_id: uuid.UUID, body: CatalogAddonBody, r: Request,
+    user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+    from app.engines.admin_catalog.addon_runtime import resolve_addons
+    from app.engines.quote_checklist.quote_service import ServiceJobQuoteService, ITEM_EDITABLE_QUOTE_STATUSES
+    from app.engines.quote_checklist.models import ServiceJobQuoteItem
+    if not user.tenant_id:
+        raise ServiceOSException('ADDON_TENANT_REQUIRED', 'A provider-scoped staff account is required.', status_code=403)
+    job = await _svc._get_job(db, job_id, uuid.UUID(str(user.tenant_id)))
+    _svc._assert_staff_owns_job(job, await _staff_member_id(user, db))
+    if job.status not in ('inspection_done', 'quote_required'):
+        raise ServiceOSException('ADDON_INSPECTION_REQUIRED', 'Select add-ons after inspection, before work starts.', status_code=409)
+    quote_service = ServiceJobQuoteService()
+    try:
+        quote = await quote_service._get_quote(db, str(body.quote_id), for_update=True)
+    except ValueError:
+        raise ServiceOSException('ADDON_QUOTE_NOT_FOUND', 'Estimate not found.', status_code=404)
+    if quote.job_id != job.id or quote.tenant_id != job.tenant_id:
+        raise ServiceOSException('ADDON_QUOTE_ACCESS_DENIED', 'The estimate does not belong to this job.', status_code=403)
+    if not quote.is_current or quote.status not in ITEM_EDITABLE_QUOTE_STATUSES or quote.locked_at is not None:
+        raise ServiceOSException('ADDON_QUOTE_NOT_EDITABLE', 'Only a current, unlocked draft estimate can be changed.', status_code=409)
+    description = f"Catalog add-on {body.mapping_id}"
+    existing = await db.scalar(select(ServiceJobQuoteItem.id).where(
+        ServiceJobQuoteItem.quote_id == quote.id, ServiceJobQuoteItem.item_description == description))
+    if existing:
+        raise ServiceOSException('ADDON_ALREADY_ADDED', 'This add-on is already on the estimate. Edit its quantity there.', status_code=409)
+    lines = await resolve_addons(db, tenant_id=job.tenant_id, service_id=job.offering_id, job_type_id=job.job_type_id,
+                                selections=[{'mapping_id': str(body.mapping_id), 'quantity': body.quantity}], actor='technician')
+    line = lines[0]
+    data = await quote_service.add_item(db, str(quote.id), str(job.tenant_id), item_type='service',
+        item_name=line['name'], item_description=description, quantity=body.quantity,
+        unit_price=float(line['unit_price']), is_required=True, is_customer_visible=True,
+        user_id=str(user.user_id), request_id=getattr(r.state, 'request_id', None))
+    await db.commit()
+    return ok(data, getattr(r.state, 'request_id', None), 'staff-addon-estimate-item')
 
 
 class RejectBody(BaseModel):

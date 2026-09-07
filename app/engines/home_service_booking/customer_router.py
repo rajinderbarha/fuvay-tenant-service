@@ -45,6 +45,18 @@ def _rid(r: Request) -> str:
     return getattr(r.state, "request_id", "—")
 
 
+@router.get("/{draft_id}/addons", response_model=ApiResponse[dict])
+async def available_addons(draft_id: uuid.UUID, r: Request,
+    svc: HomeServiceChatbotBookingService = Depends(_svc), user: UserContext = Depends(require_customer)):
+    return ok(await svc.get_addons(draft_id, uuid.UUID(user.user_id)), _rid(r), "home_service_booking")
+
+
+@router.put("/{draft_id}/addons", response_model=ApiResponse[dict])
+async def select_addons(draft_id: uuid.UUID, body: dict, r: Request,
+    svc: HomeServiceChatbotBookingService = Depends(_svc), user: UserContext = Depends(require_customer)):
+    return ok(await svc.set_addons(draft_id, uuid.UUID(user.user_id), body.get("selections")), _rid(r), "home_service_booking")
+
+
 # ── GET /assistant-bootstrap — backend-first Booking Assistant bootstrap ─────
 @assistant_bootstrap_router.get(
     "/assistant-bootstrap",

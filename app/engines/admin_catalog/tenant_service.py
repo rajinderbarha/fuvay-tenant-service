@@ -9,7 +9,7 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, select, func, text
+from sqlalchemy import and_, or_, select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -146,7 +146,7 @@ class TenantCatalogService:
             .join(CatalogDimension, CatalogDimension.id == ServiceJobDimension.dimension_id)
             .where(
                 ServiceJobDimension.master_service_id == master_service_id,
-                ServiceJobDimension.job_type_id.in_([job_type_id, None])
+                or_(ServiceJobDimension.job_type_id == job_type_id, ServiceJobDimension.job_type_id.is_(None))
                 if job_type_id else ServiceJobDimension.job_type_id.is_(None),
             )
         )).all()

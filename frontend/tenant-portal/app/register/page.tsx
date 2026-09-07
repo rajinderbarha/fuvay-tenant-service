@@ -20,6 +20,7 @@
  */
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 import Script from "next/script";
 import {
   Building2, CheckCircle2, Clock, Eye, EyeOff, Lock, Mail,
@@ -390,7 +391,7 @@ export default function RegisterPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <Link className={styles.wordmark} href="/" aria-label="Fuvay home">
-          <span className={styles.wordmarkIcon}>F</span><span>Fuvay</span>
+          <FuvayLogo height={42} tone="onLight" />
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <span className={styles.headerPrompt} style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Already have an account?</span>

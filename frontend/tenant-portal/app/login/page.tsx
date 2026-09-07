@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import FuvayLogo from "../../components/brand/FuvayLogo";
 import { Alert } from "@serviceos/design-system";
 import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Smartphone, UserCheck, Wrench } from "lucide-react";
 import { authApi } from "../../lib/api";
@@ -85,7 +86,7 @@ export default function LoginPage() {
     <section className={styles.storyPanel} aria-labelledby="login-story-title">
       <div className={styles.glowTop} aria-hidden="true" /><div className={styles.glowBottom} aria-hidden="true" />
       <div className={styles.storyIntro}>
-        <Link className={styles.wordmark} href="/" aria-label="Fuvay home"><span className={styles.wordmarkIcon}>F</span><span>Fuvay</span></Link>
+        <Link className={styles.wordmark} href="/" aria-label="Fuvay home"><FuvayLogo height={42} tone="onDark" /></Link>
         <div className={styles.storyCopy}>
           <p className={styles.eyebrow}>Tenant portal</p>
           <h1 id="login-story-title">Run every service business from one workspace.</h1>

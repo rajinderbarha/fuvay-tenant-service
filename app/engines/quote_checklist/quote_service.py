@@ -95,8 +95,11 @@ class ServiceJobQuoteService:
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
-    async def _get_quote(self, db: AsyncSession, quote_id: str) -> ServiceJobQuote:
-        res = await db.execute(select(ServiceJobQuote).where(ServiceJobQuote.id == uuid.UUID(quote_id)))
+    async def _get_quote(self, db: AsyncSession, quote_id: str, *, for_update: bool = False) -> ServiceJobQuote:
+        query = select(ServiceJobQuote).where(ServiceJobQuote.id == uuid.UUID(quote_id))
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        res = await db.execute(query)
         q = res.scalar_one_or_none()
         if not q:
             raise ValueError(ERR_QUOTE_NOT_FOUND)
@@ -309,7 +312,7 @@ class ServiceJobQuoteService:
         quantity: float, unit_price: float, is_required: bool,
         is_customer_visible: bool, user_id: str, request_id: str | None,
     ) -> dict:
-        q = await self._get_quote(db, quote_id)
+        q = await self._get_quote(db, quote_id, for_update=True)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
         if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
@@ -368,7 +371,7 @@ class ServiceJobQuoteService:
         quantity: float | None, unit_price: float | None,
         is_customer_visible: bool | None, user_id: str, request_id: str | None,
     ) -> dict:
-        q = await self._get_quote(db, quote_id)
+        q = await self._get_quote(db, quote_id, for_update=True)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
         if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
@@ -415,7 +418,7 @@ class ServiceJobQuoteService:
         self, db: AsyncSession, quote_id: str, item_id: str,
         tenant_id: str, user_id: str, request_id: str | None,
     ) -> dict:
-        q = await self._get_quote(db, quote_id)
+        q = await self._get_quote(db, quote_id, for_update=True)
         self._assert_tenant(q, tenant_id)
         self._assert_not_locked(q)
         if q.status not in ITEM_EDITABLE_QUOTE_STATUSES:
@@ -448,7 +451,7 @@ class ServiceJobQuoteService:
         self, db: AsyncSession, quote_id: str, tenant_id: str,
         customer_notes: str | None, user_id: str, request_id: str | None,
     ) -> dict:
-        q = await self._get_quote(db, quote_id)
+        q = await self._get_quote(db, quote_id, for_update=True)
         self._assert_tenant(q, tenant_id)
         # must have items
         res = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
@@ -489,7 +492,7 @@ class ServiceJobQuoteService:
         self, db: AsyncSession, quote_id: str, customer_id: str,
         idempotency_key: str, user_id: str, request_id: str | None,
     ) -> dict:
-        q = await self._get_quote(db, quote_id)
+        q = await self._get_quote(db, quote_id, for_update=True)
         if str(q.customer_id) != customer_id:
             raise ValueError(ERR_QUOTE_CUSTOMER_APPROVAL_NOT_ALLOWED)
         # Phase 2A: a superseded quote (a newer revision now exists) can

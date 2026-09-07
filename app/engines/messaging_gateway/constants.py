@@ -153,11 +153,12 @@ PICK_QUOTE = "qt"         # qt|<quote_id>|approve / decline / revise
 PICK_HANDOVER = "ho"      # ho|<job_id>|acknowledge
 PICK_PAYMENT = "pay"      # pay|<payment_id>|confirm / not_paid
 PICK_PHONE = "phone"      # phone|change — discard pending OTP and enter another number
+PICK_ADDON = "ao"         # ao|draft_id|price_token|action|mapping_id|quantity
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
     PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_EMERGENCY,
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
-    PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE,
+    PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
 )
 
 #: WhatsApp only allows a business-initiated message outside this window via a

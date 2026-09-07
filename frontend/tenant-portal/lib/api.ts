@@ -4621,6 +4621,8 @@ export interface HomeServiceJobDetail {
 }
 
 export const homeServiceStaffJobsApi = {
+  catalogAddons: (jobId: string) => apiFetch<{ options: Array<{ mapping_id: string; name: string; quantity_supported: boolean; minimum_quantity: number; maximum_quantity: number | null }>; quotes: Array<{ id: string; quote_number: string }> }>(`/v1/staff/service-jobs/${jobId}/catalog-addons`),
+  addCatalogAddon: (jobId: string, body: { quote_id: string; mapping_id: string; quantity: number }) => apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/catalog-addons`, { method: "POST", body: JSON.stringify(body) }),
   list: () => apiFetch<{ jobs: HomeServiceJobItem[]; count: number }>("/v1/staff/service-jobs"),
   get: async (jobId: string) =>
     unwrapStaffJobResult<HomeServiceJobDetail>(await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}`)),

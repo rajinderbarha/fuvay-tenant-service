@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -127,9 +127,9 @@ class CatalogDimensionService:
         cfg_rows = (await self.db.execute(
             select(ServiceJobDimension).where(
                 ServiceJobDimension.master_service_id == master_service_id,
-                ServiceJobDimension.job_type_id == job_type_id
+                or_(ServiceJobDimension.job_type_id == job_type_id, ServiceJobDimension.job_type_id.is_(None))
                 if job_type_id else ServiceJobDimension.job_type_id.is_(None)))).scalars().all()
-        by_dim = {str(c.dimension_id): c for c in cfg_rows}
+        by_dim = {str(c.dimension_id): c for c in sorted(cfg_rows, key=lambda c: c.job_type_id is not None)}
 
         # Batch all value counts. This replaces one COUNT query per dimension,
         # which made readiness latency grow linearly with the platform schema.
@@ -220,11 +220,27 @@ class CatalogDimensionService:
 
         checks: list[dict] = []
 
-        # 1. Workflow: pricing_model is set.
+        # Current job-type workflow owns behavior, not the retired master field.
+        from app.engines.admin_catalog.models import ServiceJobWorkflow, MasterServiceJobType
+        workflow_query = select(ServiceJobWorkflow).where(
+            ServiceJobWorkflow.master_service_id == master_service_id,
+            ServiceJobWorkflow.is_current.is_(True), ServiceJobWorkflow.status == "published",
+        )
+        if job_type_id:
+            workflow_query = workflow_query.where(ServiceJobWorkflow.job_type_id == job_type_id)
+        workflows = (await self.db.execute(workflow_query)).scalars().all()
+        linked_query = select(MasterServiceJobType.job_type_id).where(
+            MasterServiceJobType.master_service_id == master_service_id, MasterServiceJobType.is_active.is_(True))
+        if job_type_id:
+            linked_query = linked_query.where(MasterServiceJobType.job_type_id == job_type_id)
+        linked = set((await self.db.execute(linked_query)).scalars().all())
+        from app.engines.admin_catalog.job_type_blueprint_service import PRICING_BEHAVIORS
+        configured = {w.job_type_id for w in workflows if w.pricing_behavior in PRICING_BEHAVIORS}
+        workflow_ready = bool(linked) and linked.issubset(configured)
         checks.append({
             "key": "workflow", "label": "Workflow configured",
-            "passed": bool(svc.pricing_model),
-            "detail": None if svc.pricing_model else "No pricing model selected for this service.",
+            "passed": workflow_ready,
+            "detail": None if workflow_ready else "Configure and save a valid workflow for every active job type.",
         })
 
         # 2. Dimensions valid: every enabled dimension has at least one value.
@@ -237,11 +253,19 @@ class CatalogDimensionService:
             "detail": None if dims_valid else "An enabled dimension has no values configured.",
         })
 
-        # 3. Problems mapped: at least one active issue type for this service.
+        # 3. Count usable mappings, not unrelated legacy issue definitions.
+        from app.engines.admin_catalog.models import ServiceIssueMapping
+        issue_query = select(func.count(ServiceIssueMapping.id)).join(
+            MasterIssueType, MasterIssueType.id == ServiceIssueMapping.issue_type_id).where(
+            ServiceIssueMapping.master_service_id == master_service_id,
+            ServiceIssueMapping.status == 'active', ServiceIssueMapping.deleted_at.is_(None),
+            ServiceIssueMapping.customer_visible.is_(True), MasterIssueType.is_active.is_(True),
+            MasterIssueType.status == 'active', MasterIssueType.customer_visible.is_(True))
+        if job_type_id:
+            issue_query = issue_query.where(or_(ServiceIssueMapping.job_type_id == job_type_id,
+                                                ServiceIssueMapping.job_type_id.is_(None)))
         issue_count = (await self.db.execute(
-            select(func.count(MasterIssueType.id)).where(
-                MasterIssueType.master_service_id == master_service_id,
-                MasterIssueType.is_active == True))).scalar() or 0  # noqa: E712
+            issue_query)).scalar() or 0
         checks.append({
             "key": "problems", "label": "Problems mapped",
             "passed": issue_count > 0,

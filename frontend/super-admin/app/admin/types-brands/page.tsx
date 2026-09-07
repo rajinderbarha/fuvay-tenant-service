@@ -103,11 +103,11 @@ export default function TypesBrandsPage() {
   useEffect(() => { if (requested && validTabs.includes(requested)) setTab(requested); }, [requested]);
 
   const tabs: { key: Tab; label: string }[] = [
-    { key:"types",          label:"Service Types" },
-    { key:"brands",         label:"Brands" },
-    { key:"brand-requests", label:"Brand Requests" },
-    { key:"type-mappings",  label:"Type Mappings" },
-    { key:"brand-mappings", label:"Brand-Service Mapping" },
+    { key:"types",          label:"1. Create Types" },
+    { key:"brands",         label:"2. Create Brands" },
+    { key:"type-mappings",  label:"3. Map Types to Services" },
+    { key:"brand-mappings", label:"4. Map Brands to Services" },
+    { key:"brand-requests", label:"Provider Requests (ongoing)" },
   ];
 
   return (
@@ -117,9 +117,10 @@ export default function TypesBrandsPage() {
         subtitle="Master data for service variants and product brands — create once, map across services."
       />
       <HomeServicesCatalogNav active="types-brands" />
+      <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 14 }}>Create library values first, then map them to master services. Provider Requests is an ongoing review inbox, not a required catalog setup step.</p>
 
       {/* Tab bar */}
-      <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:"2px solid var(--border)", paddingBottom:0 }}>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:20, borderBottom:"2px solid var(--border)", paddingBottom:0 }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); router.replace(`/admin/types-brands?tab=${t.key}`); }} style={{
             padding:"10px 20px", border:"none", background:"none", cursor:"pointer",

@@ -206,6 +206,13 @@ class HomeServiceFinalCreationService:
         job_type_error = await HomeServiceChatbotBookingService(db=self.db)._validate_job_type_context(draft)
         if job_type_error:
             raise ValueError(job_type_error["code"])
+        booking_service = HomeServiceChatbotBookingService(db=self.db)
+        offering = await booking_service._get_offering(draft.offering_id)
+        missing = await booking_service._compute_missing_fields(draft, offering)
+        if missing:
+            raise ServiceOSException("REQUIRED_FIELD_MISSING", "Complete booking details: " + ", ".join(missing), status_code=422)
+        from app.engines.admin_catalog.addon_runtime import validate_frozen_addons
+        await validate_frozen_addons(self.db, draft)
 
         # 3. Generate numbers
         booking_number = await generate_booking_number(self.db)

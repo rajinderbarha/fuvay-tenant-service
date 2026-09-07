@@ -590,6 +590,7 @@ export default function CategoriesPage() {
         }
       />
 
+      <HomeServicesCatalogNav active="categories" />
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {toast && (
@@ -701,8 +702,6 @@ export default function CategoriesPage() {
           setPage(1);
         }}
       />
-
-      <HomeServicesCatalogNav active="categories" />
 
       {/* Bulk action bar */}
       {selected.size > 0 && (

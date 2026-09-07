@@ -1,9 +1,10 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
+import { BLUEPRINT_SETUP_STEPS } from "../../../components/catalog/catalog-setup-sequence";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
@@ -51,16 +52,9 @@ function Skeleton({ height = 60 }: { height?: number }) {
   return <div style={{ height, background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", animation: "pulse 1.5s ease-in-out infinite" }}/>;
 }
 
-const WORKSPACE_TABS = [
-  { key: "overview", label: "Overview", icon: ClipboardList },
-  { key: "problems", label: "Problems & Questions", icon: HelpCircle },
-  { key: "dimensions", label: "Dimensions", icon: SlidersHorizontal },
-  { key: "options", label: "Options & Add-ons", icon: ListChecks },
-  { key: "checklist", label: "Checklist", icon: ListChecks },
-  { key: "workflow", label: "Workflow", icon: SlidersHorizontal },
-  { key: "preview", label: "Preview", icon: Search },
-  { key: "tenant_rules", label: "Tenant Setup Rules", icon: ListChecks },
-] as const;
+const WORKSPACE_TABS = BLUEPRINT_SETUP_STEPS.map(step => ({ ...step,
+  icon: step.key === "overview" ? ClipboardList : step.key === "preview" ? Search : step.key === "problems" ? HelpCircle : ListChecks,
+}));
 type WorkspaceTabKey = typeof WORKSPACE_TABS[number]["key"];
 
 function isWorkspaceTabKey(value: string | null): value is WorkspaceTabKey {
@@ -94,7 +88,7 @@ export default function AdminCatalogWorkspacePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedJobTypeId, setSelectedJobTypeId] = useState<string | null>(null);
   const [showAddJobType, setShowAddJobType] = useState(false);
-  const [tab, setTab] = useState<WorkspaceTabKey>("dimensions");
+  const [tab, setTab] = useState<WorkspaceTabKey>("overview");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   function notify(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500);
@@ -130,6 +124,14 @@ export default function AdminCatalogWorkspacePage() {
     [selectedId], { enabled: !!selectedId },
   );
   const serviceJobTypeLinks = (serviceJobTypesApi.data?.items ?? []).filter(l => l.is_active);
+  const initializedService = useRef<string | null>(null);
+  useEffect(() => {
+    const first = serviceJobTypeLinks.find(link => link.master_service_id === selectedId);
+    if (selectedId && first && initializedService.current !== selectedId) {
+      initializedService.current = selectedId;
+      setSelectedJobTypeId(first.job_type_id);
+    }
+  }, [selectedId, serviceJobTypeLinks]);
 
   const readinessApi = useApi(
     useCallback(() => selectedId ? catalogWorkspaceApi.getReadiness(selectedId, selectedJobTypeId) : Promise.resolve(null as unknown as BlueprintReadiness),
@@ -162,7 +164,8 @@ export default function AdminCatalogWorkspacePage() {
   function selectService(id: string) {
     setSelectedId(id);
     setSelectedJobTypeId(null);
-    setTab(isWorkspaceTabKey(requestedTab) ? requestedTab : "dimensions");
+    initializedService.current = null;
+    setTab(isWorkspaceTabKey(requestedTab) ? requestedTab : "overview");
   }
 
   if (!perm.loading && !canRead) {
@@ -205,7 +208,7 @@ export default function AdminCatalogWorkspacePage() {
       )}
 
       <div style={{ marginBottom: "var(--layout-page-gap)" }}>
-        <SectionHeader eyebrow="Catalog" context="Home Services" title="Catalog Workspace"
+        <SectionHeader eyebrow="Catalog setup · Step 6" context="Home Services" title="Blueprint Setup"
           description="Configure platform-owned service behavior, customer questions, options, checklists, and tenant setup rules. Price amounts remain tenant-owned."
           actions={<Btn variant="secondary" onClick={() => { listApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}>
             <RefreshCw size={12}/> Refresh
@@ -276,12 +279,12 @@ export default function AdminCatalogWorkspacePage() {
                   {draftApi.data && draftApi.data.has_pending_changes && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--warning-bg, var(--surface-sunken))", color: "var(--warning-text, var(--text-secondary))", border: "1px solid var(--border)" }}>
-                        Identity draft · {draftApi.data.pending_change_count}
+                        Unreleased changes · {draftApi.data.pending_change_count}
                       </span>
                       {canWrite && (
                         <button onClick={handlePublish} disabled={publishAction.loading}
                           style={{ fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white", cursor: publishAction.loading ? "default" : "pointer" }}>
-                          {publishAction.loading ? "Publishing..." : "Publish identity"}
+                          {publishAction.loading ? "Publishing..." : "Publish reviewed blueprint"}
                         </button>
                       )}
                     </div>
@@ -290,7 +293,7 @@ export default function AdminCatalogWorkspacePage() {
                 {serviceJobTypesApi.loading ? <Skeleton height={30}/> : (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     <button className={`cw-jt-tab ${selectedJobTypeId === null ? "active" : ""}`} onClick={() => setSelectedJobTypeId(null)}>
-                      All job types
+                      Service-wide defaults (advanced)
                     </button>
                     {serviceJobTypeLinks.map(link => (
                       <button key={link.job_type_id} className={`cw-jt-tab ${selectedJobTypeId === link.job_type_id ? "active" : ""}`} onClick={() => setSelectedJobTypeId(link.job_type_id)}
@@ -313,13 +316,16 @@ export default function AdminCatalogWorkspacePage() {
                 )}
               </div>
 
-              <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 16, overflowX: "auto" }}>
-                {WORKSPACE_TABS.map(t => (
-                  <button key={t.key} className={`cw-wtab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
-                    <t.icon size={13}/> {t.label}
+              <div role="tablist" aria-label="Blueprint setup sections" style={{ display: "flex", flexWrap: "wrap", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 12 }}>
+                {WORKSPACE_TABS.map((t, index) => (
+                  <button role="tab" aria-selected={tab === t.key} key={t.key} className={`cw-wtab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+                    <t.icon size={13}/> {index + 1}. {t.label}
                   </button>
                 ))}
               </div>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 16px", lineHeight: 1.6 }}>
+                {WORKSPACE_TABS.find(item => item.key === tab)?.help}
+              </p>
 
               {tab === "overview" && (
                 <OverviewTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId}
@@ -329,31 +335,53 @@ export default function AdminCatalogWorkspacePage() {
               )}
               {tab === "dimensions" && (
                 <DimensionsTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
-                  notify={notify} onChanged={() => { readinessApi.refetch(); }}/>
+                  notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
               {tab === "problems" && (
                 <ProblemsQuestionsTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
-                  notify={notify} onChanged={() => { readinessApi.refetch(); }}/>
+                  notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
               {tab === "options" && (
                 <OptionsTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
-                  notify={notify} onChanged={() => { readinessApi.refetch(); }}/>
+                  notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
               {tab === "checklist" && (
                 <ChecklistTab masterServiceJobTypeId={serviceJobTypeLinks.find(l => l.job_type_id === selectedJobTypeId)?.id ?? null}
-                  canWrite={canWrite} notify={notify} onChanged={() => { readinessApi.refetch(); }}/>
+                  canWrite={canWrite} notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
               {tab === "workflow" && (
                 <WorkflowTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
-                  notify={notify} onChanged={() => { readinessApi.refetch(); }}/>
+                  notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
               {tab === "preview" && (
-                <PreviewTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId}/>
+                <>
+                  <PreviewTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId}/>
+                  <section aria-label="Publishing checklist" style={{ marginTop: 18, padding: 16, border: "1px solid var(--border)", borderRadius: 10 }}>
+                    <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>How to finish and publish</h3>
+                    <ol style={{ paddingLeft: 20, fontSize: 12, lineHeight: 1.8 }}>
+                      <li>Confirm each section has saved successfully. Most settings save individually; they are not held for one final release.</li>
+                      <li>In Workflow, save the journey and check its audience warnings. Existing jobs keep their recorded journey version.</li>
+                      <li>If a checklist is needed, publish its library version and map that version in Checklist.</li>
+                      <li>Finish these checks for every active job type, then publish the reviewed blueprint below. The server validates workflows and checklist mappings and records the configuration in one service-wide release version.</li>
+                      <li>Providers must still configure their prices and meet their own setup/approval requirements.</li>
+                    </ol>
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>This creates a validated release record, not an atomic go-live switch: individual settings still take effect when saved. Existing jobs retain their workflow snapshot. Readiness is not a substitute for testing a booking.</p>
+                    {publishAction.error && <div role="alert"><p>{publishAction.error}</p>{Array.isArray(publishAction.context?.blockers) && <ul>{publishAction.context.blockers.map((blocker, i) => <li key={i}>{String(blocker)}</li>)}</ul>}</div>}
+                    {draftApi.loading ? <p>Loading blueprint publication status…</p> : draftApi.error ? <SectionError title="Could not load publication status" error={draftApi.error} onRetry={draftApi.refetch}/> : draftApi.data && <>
+                      <p style={{ fontSize: 12 }}>Published blueprint: {draftApi.data.current_published_version == null ? "None" : `v${draftApi.data.current_published_version}`} · {draftApi.data.has_pending_changes ? `${draftApi.data.pending_change_count} changed sections` : "No pending changes"}</p>
+                      {canWrite && <Btn variant="primary" disabled={!draftApi.data.has_pending_changes || publishAction.loading} onClick={handlePublish}>{publishAction.loading ? "Publishing blueprint…" : "Publish reviewed blueprint"}</Btn>}
+                    </>}
+                  </section>
+                </>
               )}
               {tab === "tenant_rules" && (
                 <TenantSetupRulesTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
                   notify={notify} onChanged={() => { listApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}/>
               )}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 22, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                <Btn variant="secondary" disabled={tab === WORKSPACE_TABS[0].key} onClick={() => setTab(WORKSPACE_TABS[WORKSPACE_TABS.findIndex(item => item.key === tab) - 1].key)}>Previous section</Btn>
+                {tab !== "preview" && <Btn variant="secondary" onClick={() => setTab(WORKSPACE_TABS[WORKSPACE_TABS.findIndex(item => item.key === tab) + 1].key)}>Next: {WORKSPACE_TABS[WORKSPACE_TABS.findIndex(item => item.key === tab) + 1]?.label}</Btn>}
+              </div>
             </>
           )}
         </div>
@@ -769,7 +797,7 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     <td colSpan={7} style={{ padding: "0 10px 12px" }}>
                       <DimensionValuesPanel dimension={row.dimension} canWrite={canWrite}
-                        onChanged={() => gridApi.refetch()} notify={notify}/>
+                        onChanged={() => { gridApi.refetch(); onChanged(); }} notify={notify}/>
                     </td>
                   </tr>
                 )}
@@ -1598,27 +1626,32 @@ function PreviewTab({ masterServiceId, jobTypeId }: { masterServiceId: string; j
   }
 
   const enabledDims = (dimApi.data?.dimensions ?? []).filter(d => d.config.enabled);
-  const requiredDims = enabledDims.filter(d => d.config.required);
+  const tenantDims = enabledDims.filter(d => d.config.show_during_tenant_setup);
+  const customerDims = enabledDims.filter(d => d.config.ask_customer);
   const options = optionsApi.data ?? [];
   const questions = questionsApi.data?.questions ?? [];
+  if (dimApi.error || optionsApi.error || questionsApi.error) return <SectionError
+    title="Could not load the complete review" error={dimApi.error || optionsApi.error || questionsApi.error || "Unknown error"}
+    onRetry={() => { dimApi.refetch(); optionsApi.refetch(); questionsApi.refetch(); }}/>;
+  if (dimApi.loading || optionsApi.loading || questionsApi.loading) return <Skeleton height={220}/>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        Preview simulates the derived experience from current draft configuration. Nothing here is saved or booked.
+        Read-only configuration summary, not an interactive booking test. Conditional question rules are not evaluated here. Nothing here is saved or booked.
       </p>
       <PreviewSection title="Tenant Setup Preview">
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-primary)" }}>
-          {enabledDims.length === 0 && <li>No dimension step (Type/Brand disabled for this job type).</li>}
-          {enabledDims.map(d => <li key={d.dimension.id}>{d.dimension.name} — {d.config.required ? "required" : "optional"} for tenant setup</li>)}
+          {tenantDims.length === 0 && <li>No provider-facing dimension step for this job type.</li>}
+          {tenantDims.map(d => <li key={d.dimension.id}>{d.dimension.name} — {d.config.required ? "required" : "optional"} for tenant setup</li>)}
           {options.length === 0 && <li>No options step (no options mapped to this job type).</li>}
           {options.length > 0 && <li>{options.length} option(s) available for the tenant to enable and price.</li>}
         </ul>
       </PreviewSection>
       <PreviewSection title="Customer Booking Preview">
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-primary)" }}>
-          {requiredDims.map(d => <li key={d.dimension.id}>Customer selects {d.dimension.name}</li>)}
-          {questions.filter(q => q.customer_visible).map(q => <li key={q.id}>{q.label}{q.required ? " (required)" : ""}</li>)}
+          {customerDims.map(d => <li key={d.dimension.id}>Customer selects {d.dimension.name}{d.config.required ? " (required)" : " (optional)"}</li>)}
+          {questions.filter(q => q.customer_visible && q.is_active).map(q => <li key={q.id}>{q.label}{q.required ? " (required)" : ""}{q.rules.length > 0 ? " · conditional" : ""}</li>)}
           {options.filter(o => o.customer_selectable).map(o => <li key={o.id}>Customer may add: {o.option.name}</li>)}
         </ul>
       </PreviewSection>

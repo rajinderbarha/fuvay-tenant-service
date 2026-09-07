@@ -425,7 +425,7 @@ class MessagingGatewayService:
             if sent:
                 thread.last_outbound_at = datetime.now(timezone.utc)
 
-        if picker and not thread.opted_out:
+        if picker and not thread.opted_out and (not reply or sent):
             cta = picker.get("cta_url") if msg.channel == "whatsapp" else None
             if cta:
                 cta_result = await meta_client.send_cta_url(

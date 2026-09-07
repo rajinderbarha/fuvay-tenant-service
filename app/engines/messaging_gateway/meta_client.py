@@ -461,8 +461,15 @@ async def send_text(
     url, token = endpoint
 
     body = text.strip()
-    if len(body) > MAX_OUTBOUND_CHARS:
-        body = body[: MAX_OUTBOUND_CHARS - 1].rstrip() + "…"
+    chunk_size = min(MAX_OUTBOUND_CHARS, 900) if channel == CHANNEL_INSTAGRAM else MAX_OUTBOUND_CHARS
+    if len(body) > chunk_size:
+        # Financial summaries must not silently lose selected line items.
+        result = {'sent': True}
+        for offset in range(0, len(body), chunk_size):
+            result = await send_text(to, body[offset:offset + chunk_size], channel=channel, config=config)
+            if not result.get('sent'):
+                return result
+        return result
 
     if channel == CHANNEL_INSTAGRAM:
         payload = {"recipient": {"id": to}, "message": {"text": body}}

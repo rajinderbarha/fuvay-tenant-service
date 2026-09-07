@@ -29,6 +29,7 @@ _FIELD_LABELS = {
     "requires_brand": "Brand required",
     "pricing_model": "Pricing model",
     "is_active": "Active",
+    "workspace": "Job types, dimensions, questions, options, checklists and workflows",
 }
 
 
@@ -125,6 +126,8 @@ class BlueprintImpactService:
 
         admin_svc = AdminCatalogService(self.db)
         live = admin_svc._blueprint_snapshot(svc)  # noqa: SLF001 -- same engine, shared snapshot logic
+        from app.engines.admin_catalog.blueprint_release import build_release_manifest
+        live["workspace"] = await build_release_manifest(self.db, master_service_id)
         latest = (await self.db.execute(
             select(ServiceBlueprintVersion).where(
                 ServiceBlueprintVersion.master_service_id == master_service_id,
@@ -147,7 +150,7 @@ class BlueprintImpactService:
     async def publish_draft(self, master_service_id: uuid.UUID, actor_id: uuid.UUID | None = None) -> dict:
         from app.engines.admin_catalog.service import AdminCatalogService
         svc = (await self.db.execute(
-            select(MasterService).where(MasterService.id == master_service_id))).scalar_one_or_none()
+            select(MasterService).where(MasterService.id == master_service_id).with_for_update())).scalar_one_or_none()
         if not svc:
             raise NotFoundException("MasterService", str(master_service_id))
 
@@ -159,11 +162,21 @@ class BlueprintImpactService:
             ).order_by(ServiceBlueprintVersion.version_number.desc()).limit(1))).scalar_one_or_none()
         before = latest.snapshot if latest else {}
 
-        new_version = await admin_svc._publish_new_blueprint_version_if_structural_change(  # noqa: SLF001
-            svc, before, actor_id)
-        if new_version is None:
+        from app.engines.admin_catalog.blueprint_release import build_release_manifest, validate_release
+        from app.models.base import utcnow
+        await validate_release(self.db, master_service_id)
+        after = {**admin_svc._blueprint_snapshot(svc), "workspace": await build_release_manifest(self.db, master_service_id)}
+        if after == before:
             raise ServiceOSException("NO_PENDING_CHANGES",
                 "There are no pending structural changes to publish.", status_code=409)
+        if latest:
+            latest.status = "superseded"
+        new_version = ServiceBlueprintVersion(master_service_id=master_service_id,
+            version_number=latest.version_number + 1 if latest else 1, status="published", snapshot=after,
+            change_summary="Validated full blueprint release: " + ", ".join(key for key in after if after[key] != before.get(key)),
+            published_at=utcnow(), published_by_user_id=actor_id)
+        self.db.add(new_version)
+        await self.db.flush()
         await self.db.commit()
         return {"published": True, "version_number": new_version.version_number,
                 "change_summary": new_version.change_summary}

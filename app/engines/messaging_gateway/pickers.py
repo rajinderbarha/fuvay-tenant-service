@@ -159,6 +159,8 @@ async def _slot_picker(
     """
     if draft.get("preferred_date") and not emergency:
         return None  # already chosen; nothing to pick
+    if 'required_fields' in draft and 'preferred_date' not in draft['required_fields']:
+        return None  # The saved workflow does not ask for a scheduled slot.
     if not draft.get("selected_tenant_id") and not draft.get("selected_provider_snapshot"):
         return None  # no provider yet — `list_available_slots` would be empty
 

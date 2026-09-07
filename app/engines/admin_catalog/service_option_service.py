@@ -1080,6 +1080,8 @@ class ServiceOptionService:
             unit_price = row.minimum_price
         if unit_price is None:
             raise HTTPException(status.HTTP_409_CONFLICT, "Tenant price is misconfigured")
+        if not unit_price.is_finite() or unit_price < 0:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Tenant price must be finite and non-negative")
 
         total = (unit_price * quantity).quantize(Decimal("0.01"))
         return {
@@ -1106,6 +1108,7 @@ class ServiceOptionService:
         conditions = [ServiceOptionMapping.status == "active",
                       ServiceOptionMapping.usage != "DISABLED",
                       ServiceOptionMapping.customer_selectable == True,
+                      ServiceOptionMapping.available_before_booking == True,
                       ServiceOptionMapping.deleted_at.is_(None),
                       MasterServiceOption.status == "active"]
         if master_service_id:
