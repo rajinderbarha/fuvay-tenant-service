@@ -34,10 +34,6 @@ const MODULES: ModuleDef[] = [
     icon: <FolderTree size={18}/>, description: "Provider-submitted new-brand requests awaiting admin review and approval." },
   { key: "brand-templates", label: "Brand Templates", href: "/admin/service-setup/brand-templates",
     icon: <Sparkles size={18}/>, description: "Starter brand sets seeded per vertical to speed up brand-required service onboarding." },
-  { key: "option-groups", label: "Option Groups", href: "/admin/service-setup/option-groups",
-    icon: <Settings size={18}/>, description: "Grouping of service options (e.g. AC Tonnage, Vehicle Type) used to build provider-facing option pickers." },
-  { key: "service-options", label: "Service Options", href: "/admin/service-setup/service-options",
-    icon: <Settings size={18}/>, description: "Individual selectable options a customer picks when booking, mapped to services and job-type setup." },
   // "Issue Types" removed from this hub at explicit user request. The
   // /admin/service-setup/issue-types route and its /v1/admin/issue-types-v2
   // API stay live (both verified 200) -- unlinked only, matching the rest of

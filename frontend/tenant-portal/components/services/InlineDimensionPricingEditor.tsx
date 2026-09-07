@@ -9,6 +9,7 @@ export interface InlinePriceType {
   name: string;
   price: number | null;
   enabled?: boolean;
+  brandCoverage?: { mode: "all" | "selected"; brand_ids: string[] } | null;
 }
 
 export interface InlinePriceBrand {
@@ -36,7 +37,7 @@ interface Props {
   brands: InlinePriceBrand[];
   exceptions: InlineBrandException[];
   loading?: boolean;
-  onSaveTypes?: (typeIds: string[]) => Promise<unknown>;
+  onSaveTypes?: (typeIds: string[], brandCoverageByType: Record<string, { mode: "all" | "selected"; brand_ids: string[] }>) => Promise<unknown>;
   onSaveBrands?: (brandIds: string[]) => Promise<unknown>;
   onSaveType: (typeId: string, price: number) => Promise<unknown>;
   onClearType: (typeId: string) => Promise<unknown>;
@@ -70,15 +71,24 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
 
     const initialKey = useMemo(() => JSON.stringify({ basePrice, types, brands, exceptions }), [basePrice, types, brands, exceptions]);
     useEffect(() => {
+      // Individual save requests refresh props while the remaining requests
+      // are still running. Never overwrite the user's in-flight selection.
+      if (dirty || saving) return;
       const enabledTypeIds = types.filter(type => type.enabled !== false).map(type => type.id);
       const pricedTypeIds = types.filter(type => type.price != null).map(type => type.id);
       const initialModes: Record<string, BrandMode> = {};
       const initialBrands: Record<string, string[]> = {};
       const initialBrandValues: Record<string, string> = {};
+      const enabledBrands = brands.filter(brand => brand.enabled !== false).map(brand => brand.id);
+      const hasSavedSubset = enabledBrands.length > 0 && enabledBrands.length < brands.length;
       for (const type of types) {
         const typeExceptions = exceptions.filter(row => row.typeId === type.id);
-        initialModes[type.id] = typeExceptions.length ? "specific" : "all";
-        initialBrands[type.id] = typeExceptions.map(row => row.brandId);
+        initialModes[type.id] = type.brandCoverage
+          ? type.brandCoverage.mode === "selected" ? "specific" : "all"
+          : hasSavedSubset ? "specific" : "all";
+        initialBrands[type.id] = type.brandCoverage
+          ? type.brandCoverage.brand_ids.filter(id => brands.some(brand => brand.id === id))
+          : hasSavedSubset ? enabledBrands : [];
         typeExceptions.forEach(row => { initialBrandValues[`${type.id}:${row.brandId}`] = String(row.price ?? ""); });
       }
       setVaryByType(pricedTypeIds.length > 0);
@@ -90,11 +100,11 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
       setDirty(false);
     // The serialized server snapshot is the reset boundary. Local clicks do not alter it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialKey]);
+    }, [initialKey, dirty, saving]);
 
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
-    const eligibleBrands = useMemo(() => brands.filter(brand => brand.canOverride !== false), [brands]);
+    const eligibleBrands = brands; // Matching support does not depend on permission to override price.
     const activeTypes = types.filter(type => activeTypeIds.includes(type.id));
 
     function change(mutator: () => void) {
@@ -127,17 +137,35 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
 
     useImperativeHandle(ref, () => ({
       save: async () => {
-        if (!dirty) return;
+        if (loading || saving) throw new Error("Wait for service choices to finish loading or saving.");
+        const everyBrandId = brands.map(brand => brand.id);
+        const savedBrandIds = brands.filter(brand => brand.enabled !== false).map(brand => brand.id);
+        const usesAllBrands = activeTypeIds.some(typeId => (brandModes[typeId] ?? "all") === "all");
+        const coverage = Object.fromEntries(activeTypeIds.map(typeId => [typeId, {
+          mode: (brandModes[typeId] ?? "all") === "all" ? "all" as const : "selected" as const,
+          brand_ids: (brandModes[typeId] ?? "all") === "all" ? [] : (selectedBrands[typeId] ?? []),
+        }]));
+        const desiredBrandIds = !types.length
+          ? (savedBrandIds.length ? savedBrandIds : everyBrandId)
+          : usesAllBrands
+          ? everyBrandId
+          : Array.from(new Set(activeTypeIds.flatMap(typeId => selectedBrands[typeId] ?? [])));
+        // The default visible "All brands" is a selection too. Persist it
+        // on Save even if the user only edited the service's base price.
+        const matchingChanged = (brands.length > 0 && activeTypes.some(type => JSON.stringify(type.brandCoverage) !== JSON.stringify(coverage[type.id])))
+          || desiredBrandIds.length !== savedBrandIds.length
+          || desiredBrandIds.some(id => !savedBrandIds.includes(id))
+          || activeTypeIds.some(id => !types.some(type => type.id === id && type.enabled !== false));
+        if (!dirty && !matchingChanged) return;
+        if (brands.length) {
+          const empty = activeTypes.find(type => brandModes[type.id] === "specific" && !(selectedBrands[type.id]?.length));
+          if (empty) throw new Error(`Select at least one supported brand for ${empty.name}, or choose All brands.`);
+        }
         setSaving(true);
         try {
-          if (onSaveTypes) await onSaveTypes(activeTypeIds);
-
-          const everyBrandId = brands.map(brand => brand.id);
-          const usesAllBrands = !varyByType || activeTypeIds.some(typeId => (brandModes[typeId] ?? "all") === "all");
-          const desiredBrandIds = usesAllBrands
-            ? everyBrandId
-            : Array.from(new Set(activeTypeIds.flatMap(typeId => selectedBrands[typeId] ?? [])));
+          if (onSaveTypes) await onSaveTypes(activeTypeIds, brands.length ? coverage : {});
           if (onSaveBrands) await onSaveBrands(desiredBrandIds);
+          if (!dirty) return; // Matching repair must not clear saved prices.
 
           if (!varyByType) {
             await onClearTypePrices();
@@ -173,7 +201,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
         }
       },
     }), [
-      dirty, activeTypeIds, activeTypes, varyByType, brandModes, selectedBrands,
+      dirty, loading, saving, types, activeTypeIds, activeTypes, varyByType, brandModes, selectedBrands,
       typeValues, brandValues, brands, exceptions, onSaveTypes, onSaveBrands,
       onSaveType, onClearType, onClearTypePrices, onSaveBrand, onClearBrand,
     ]);
@@ -191,7 +219,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                 onClick={() => change(() => setVaryByType(value => !value))}><span /></button>
             </div>
 
-            {varyByType && (
+            {(
               <>
                 <div className="pricing-dimension-choice-block">
                   <p>Which types do you actually service? Unselected types stay hidden from customers.</p>
@@ -212,10 +240,10 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                       <section className="pricing-type-card" key={type.id}>
                         <div className="pricing-type-card-head">
                           <strong>{type.name}</strong>
-                          <span className="pricing-compact-money"><span>₹</span><input aria-label={`${type.name} price`} type="number" min={1}
+                          {varyByType && <span className="pricing-compact-money"><span>₹</span><input aria-label={`${type.name} price`} type="number" min={1}
                             value={typeValues[type.id] ?? ""} disabled={saving}
                             onChange={event => change(() => setTypeValues(current => ({ ...current, [type.id]: event.target.value })))}
-                            placeholder={basePrice != null ? String(basePrice) : "—"} /></span>
+                            placeholder={basePrice != null ? String(basePrice) : "—"} /></span>}
                         </div>
 
                         {brands.length > 0 && (
@@ -227,7 +255,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                             <p className="pricing-type-brand-hint">
                               {mode === "all"
                                 ? `Every brand of ${type.name} pays ₹${inheritedPrice?.toLocaleString("en-IN") ?? "—"}.`
-                                : `Pick the brands of ${type.name} you actually service, each with its own price.`}
+                                : `Pick the brands of ${type.name} you actually service. Prices inherit unless overridden.`}
                             </p>
                             {mode === "specific" && (
                               <>
@@ -237,7 +265,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                                       onClick={() => toggleBrand(type.id, brand.id)}>{brand.name}</button>
                                   ))}
                                 </div>
-                                {selected.length > 0 && (
+                                {varyByType && selected.length > 0 && (
                                   <div className="pricing-brand-price-list">
                                     {selected.map(brandId => {
                                       const brand = eligibleBrands.find(candidate => candidate.id === brandId);
@@ -247,7 +275,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                                         <label className="pricing-compact-price-row" key={brandId}>
                                           <span>{brand.name}</span>
                                           <span className="pricing-compact-money"><span>₹</span><input aria-label={`${type.name} ${brand.name} price`} type="number" min={1}
-                                            value={brandValues[key] ?? ""} disabled={saving}
+                                            value={brandValues[key] ?? ""} disabled={saving || brand.canOverride === false}
                                             onChange={event => change(() => setBrandValues(current => ({ ...current, [key]: event.target.value })))}
                                             placeholder={inheritedPrice != null ? String(inheritedPrice) : "—"} /></span>
                                         </label>

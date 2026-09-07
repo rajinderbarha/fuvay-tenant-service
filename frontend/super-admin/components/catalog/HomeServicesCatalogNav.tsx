@@ -9,10 +9,10 @@ import {
 const ITEMS = [
   { key: "categories", label: "Categories", href: "/admin/categories", icon: Layers3 },
   { key: "groups", label: "Service Groups", href: "/admin/service-groups", icon: FolderTree },
-  { key: "services", label: "Master Services", href: "/admin/master-services", icon: Boxes },
+  { key: "services", label: "Service Families", href: "/admin/master-services", icon: Boxes },
   { key: "types-brands", label: "Types & Brands", href: "/admin/types-brands", icon: Tags },
   { key: "checklists", label: "Checklists", href: "/admin/checklists", icon: ClipboardCheck },
-  { key: "workspace", label: "Blueprint Setup", href: "/admin/catalog-workspace", icon: GitBranch },
+  { key: "workspace", label: "Job-Type Blueprints", href: "/admin/catalog-workspace", icon: GitBranch },
 ] as const;
 
 export type HomeServicesCatalogSection = typeof ITEMS[number]["key"];

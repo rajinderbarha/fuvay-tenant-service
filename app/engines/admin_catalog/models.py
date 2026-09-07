@@ -986,6 +986,9 @@ class TenantServiceType(ServiceOSBase):
     tenant_service_id:      Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     service_type_id:        Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     is_enabled:             Mapped[bool]           = mapped_column(Boolean, default=True, nullable=False)
+    # NULL preserves legacy service-wide coverage. Explicit coverage is
+    # independent of price overrides: {mode: all|selected, brand_ids: [...]}.
+    brand_coverage:         Mapped[dict | None]    = mapped_column(JSONB(none_as_null=True), nullable=True)
     tenant_price_adjustment:Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     tenant_min_price:       Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     tenant_max_price:       Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)

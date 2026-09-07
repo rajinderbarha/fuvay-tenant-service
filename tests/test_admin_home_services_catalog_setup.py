@@ -24,21 +24,25 @@ def test_legacy_route_is_deleted():
 def test_navigation_points_to_canonical_workspace_only():
     combined = LAYOUT
     assert '"hs-service-catalog"' in combined
-    assert 'label: "Service Catalog"' in combined
+    # Renamed to match the page's own title: a service family can now carry
+    # several job types, so "Service Catalog" undersold what this configures.
+    assert 'label: "Job-Type Blueprints"' in combined
     assert 'href: "/admin/catalog-workspace"' in combined
     assert '"Bargain Rules"' not in combined
 
 
 def test_workspace_owns_every_catalog_configuration_surface():
+    # "Options & Add-ons" retired -- add-ons are no longer part of provider
+    # setup or its completion gates (tenant_service.py, same decision).
     for label in (
         "Dimensions",
         "Problems & Questions",
-        "Options & Add-ons",
         "Checklist",
         "Workflow",
         "Tenant Setup Rules",
     ):
         assert label in WORKSPACE
+    assert "Options & Add-ons" not in WORKSPACE
 
 
 def test_workflow_is_job_type_scoped_and_does_not_set_price_amounts():

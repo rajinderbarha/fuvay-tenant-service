@@ -32,7 +32,7 @@ from app.engines.admin_catalog.skill_catalog_router import (
 
 from app.dependencies.setup_sequence import enforce_setup_sequence
 
-router = APIRouter(dependencies=[Depends(enforce_setup_sequence)], prefix="/v1/provider", tags=["Provider Portal"])
+router = APIRouter(prefix="/v1/provider", tags=["Provider Portal"])
 
 # Mirrors the provider_team_members.max_concurrent_jobs DB default (NOT NULL
 # DEFAULT 4). Kept as a named constant so the fallback is explicit at the one
@@ -171,7 +171,7 @@ async def list_team_members(
     return ok({"members": rows, "count": len(rows)}, request_id=rid)
 
 
-@router.post("/team-members", status_code=201)
+@router.post("/team-members", status_code=201, dependencies=[Depends(enforce_setup_sequence)])
 async def create_team_member(
     payload: dict,
     request: Request,
@@ -431,7 +431,7 @@ async def get_team_member(
     return ok(member, request_id=rid)
 
 
-@router.put("/team-members/{member_id}")
+@router.put("/team-members/{member_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def update_team_member(
     member_id: uuid.UUID,
     payload: dict,
@@ -567,7 +567,7 @@ async def update_team_member(
     return ok(member, request_id=rid)
 
 
-@router.delete("/team-members/{member_id}")
+@router.delete("/team-members/{member_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def delete_team_member(
     member_id: uuid.UUID,
     request: Request,
@@ -591,7 +591,7 @@ async def delete_team_member(
     return ok({"deleted": True}, request_id=rid)
 
 
-@router.post("/team-members/{member_id}/activate")
+@router.post("/team-members/{member_id}/activate", dependencies=[Depends(enforce_setup_sequence)])
 async def activate_team_member(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -654,7 +654,7 @@ async def activate_team_member(
     return ok(_member_row(fetched), request_id=rid)
 
 
-@router.post("/team-members/{member_id}/deactivate")
+@router.post("/team-members/{member_id}/deactivate", dependencies=[Depends(enforce_setup_sequence)])
 async def deactivate_team_member(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -721,7 +721,7 @@ async def deactivate_team_member(
 _MEMBER_TYPE_TO_ROLE = {"technician": "technician"}
 
 
-@router.post("/team-members/{member_id}/create-login")
+@router.post("/team-members/{member_id}/create-login", dependencies=[Depends(enforce_setup_sequence)])
 async def create_member_login(
     member_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -978,7 +978,7 @@ async def _validate_daily_job_capacity(db, tid, rule):
         raise ServiceOSException("DAILY_CAPACITY_EXCEEDS_TEAM", f"Maximum jobs per day must be a whole number between 1 and {maximum}. Leave it automatic if no technician capacity is configured.", status_code=422)
 
 
-@router.post("/availability", status_code=201)
+@router.post("/availability", status_code=201, dependencies=[Depends(enforce_setup_sequence)])
 async def create_availability(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1066,7 +1066,7 @@ async def get_availability(
     return ok(dict(r._mapping), request_id=rid)
 
 
-@router.put("/availability/{rule_id}")
+@router.put("/availability/{rule_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def update_availability(
     rule_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1117,7 +1117,7 @@ async def update_availability(
     return ok(dict(fetched._mapping), request_id=rid)
 
 
-@router.delete("/availability/{rule_id}")
+@router.delete("/availability/{rule_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def delete_availability(
     rule_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1160,7 +1160,7 @@ def _validate_exception_payload(payload: dict) -> None:
                 "Exception end time must be after start time.", status_code=422)
 
 
-@router.post("/availability/exceptions", status_code=201)
+@router.post("/availability/exceptions", status_code=201, dependencies=[Depends(enforce_setup_sequence)])
 async def create_availability_exception(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1189,7 +1189,7 @@ async def create_availability_exception(
     return ok(dict(row.fetchone()._mapping), request_id=rid)
 
 
-@router.put("/availability/exceptions/{exception_id}")
+@router.put("/availability/exceptions/{exception_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def update_availability_exception(
     exception_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1222,7 +1222,7 @@ async def update_availability_exception(
     return ok(dict(row.fetchone()._mapping), request_id=rid)
 
 
-@router.delete("/availability/exceptions/{exception_id}")
+@router.delete("/availability/exceptions/{exception_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def delete_availability_exception(
     exception_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1271,7 +1271,7 @@ def _validate_booking_window(payload: dict) -> None:
         raise ServiceOSException("INVALID_BUFFER_MINUTES", "buffer_minutes_between_jobs must be >= 0.", status_code=422)
 
 
-@router.put("/booking-window")
+@router.put("/booking-window", dependencies=[Depends(enforce_setup_sequence)])
 async def update_booking_window(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1329,7 +1329,7 @@ async def get_area_coverage(
     return ok({"coverage": rows, "count": len(rows)}, request_id=rid)
 
 
-@router.put("/service-areas/{area_id}/coverage")
+@router.put("/service-areas/{area_id}/coverage", dependencies=[Depends(enforce_setup_sequence)])
 async def set_area_coverage(
     area_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1408,7 +1408,7 @@ _PRESET_DEFS: dict[str, dict] = {
 }
 
 
-@router.post("/availability/preset/{preset_key}", status_code=200)
+@router.post("/availability/preset/{preset_key}", status_code=200, dependencies=[Depends(enforce_setup_sequence)])
 async def apply_availability_preset(
     preset_key: str, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1456,7 +1456,7 @@ async def apply_availability_preset(
     return ok({"preset_key": preset_key, "status": "applied", "rule_count": len(created_ids)}, request_id=rid)
 
 
-@router.delete("/availability/preset/{preset_key}", status_code=200)
+@router.delete("/availability/preset/{preset_key}", status_code=200, dependencies=[Depends(enforce_setup_sequence)])
 async def delete_availability_preset(
     preset_key: str, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1665,7 +1665,7 @@ async def list_enabled_offerings(
     return ok({"offerings": rows, "count": len(rows)}, request_id=rid)
 
 
-@router.post("/offerings/enabled", status_code=201)
+@router.post("/offerings/enabled", status_code=201, dependencies=[Depends(enforce_setup_sequence)])
 async def enable_offering(
     payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1720,7 +1720,7 @@ async def get_enabled_offering(
     return ok(rows[0], request_id=rid)
 
 
-@router.put("/offerings/enabled/{offering_id}")
+@router.put("/offerings/enabled/{offering_id}", dependencies=[Depends(enforce_setup_sequence)])
 async def update_enabled_offering(
     offering_id: uuid.UUID, payload: dict, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1761,7 +1761,7 @@ async def update_enabled_offering(
     return ok(rows[0], request_id=rid)
 
 
-@router.post("/offerings/enabled/{offering_id}/activate")
+@router.post("/offerings/enabled/{offering_id}/activate", dependencies=[Depends(enforce_setup_sequence)])
 async def activate_offering(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1787,7 +1787,7 @@ async def activate_offering(
     return ok(rows[0], request_id=rid)
 
 
-@router.post("/offerings/enabled/{offering_id}/deactivate")
+@router.post("/offerings/enabled/{offering_id}/deactivate", dependencies=[Depends(enforce_setup_sequence)])
 async def deactivate_offering(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1806,7 +1806,7 @@ async def deactivate_offering(
     return ok(rows[0], request_id=rid)
 
 
-@router.post("/offerings/enabled/{offering_id}/refresh-readiness")
+@router.post("/offerings/enabled/{offering_id}/refresh-readiness", dependencies=[Depends(enforce_setup_sequence)])
 async def refresh_offering_readiness(
     offering_id: uuid.UUID, request: Request,
     db: AsyncSession = Depends(get_db),

@@ -38,7 +38,6 @@ const VERTICAL_MODULES: Record<string, { key: string; label: string }[]> = {
     { key: "service_types", label: "Service Types" },
     { key: "brands", label: "Brands" },
     { key: "issue_types", label: "Issue Types" },
-    { key: "service_options", label: "Service Options / Add-ons" },
     { key: "checklists", label: "Checklists" },
     { key: "provider_setup_rules", label: "Provider Setup Rules" },
     { key: "pricing_defaults", label: "Pricing Defaults" },

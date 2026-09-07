@@ -11,11 +11,15 @@ def read(path: str) -> str:
 
 def test_workspace_queries_are_bounded_debounced_and_context_scoped():
     page = read("frontend/super-admin/app/admin/catalog-workspace/page.tsx")
+    add_job_type = read("frontend/super-admin/components/catalog/AddServiceJobType.tsx")
     api = read("frontend/super-admin/lib/api.ts")
     router = read("app/engines/checklist_catalog/admin_router.py")
     assert "debouncedServiceQuery" in page
     assert "servicePageSize" in page and "Services per page" in page
-    assert "debouncedJobTypeQuery" in page and "pageSize: 50" in page
+    # Attaching a job type is now a bounded pick from the curated,
+    # runtime-supported set (job_type_blueprint_service.py rejects anything
+    # else) -- not a searchable, debounced, ad-hoc-creatable picker.
+    assert "pageSize: 100" in add_job_type and "runtime_supported" in add_job_type
     assert "listPublishedTemplateOptions" in page
     assert "listMappingsDirectory" in page
     assert "master_service_job_type_id: masterServiceJobTypeId" in page

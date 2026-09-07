@@ -54,7 +54,7 @@ const VERTICAL_MODULES: Record<string, string[]> = {
   home_services: [
     "categories", "display_groups", "documents", "media_assets", "visibility_rules", "workflow_mapping",
     "service_groups", "master_services", "service_types", "brands", "issue_types",
-    "service_options", "checklists", "provider_setup_rules", "pricing_defaults", "job_workflow",
+    "checklists", "provider_setup_rules", "pricing_defaults", "job_workflow",
   ],
   coaching_ielts: [
     "categories", "display_groups", "documents", "media_assets", "visibility_rules", "workflow_mapping",

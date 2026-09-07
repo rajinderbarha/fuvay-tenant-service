@@ -9,7 +9,7 @@ MODELS = (ROOT / "app/engines/admin_catalog/models.py").read_text(encoding="utf-
 CUSTOM_CATALOG = (ROOT / "app/engines/service_catalog/service.py").read_text(encoding="utf-8-sig")
 MATCHER = (ROOT / "app/engines/home_service_booking/matching_engine.py").read_text(encoding="utf-8-sig")
 PAGE = (
-    ROOT / "frontend/tenant-portal/app/(tenant)/home-services/services/[[...serviceId]]/page.tsx"
+    ROOT / "frontend/tenant-portal/components/services/ServicesPricingPage.tsx"
 ).read_text(encoding="utf-8-sig")
 MIGRATION = (ROOT / "alembic/versions/338_tenant_option_price_exact_mapping.py").read_text(encoding="utf-8-sig")
 
@@ -51,14 +51,14 @@ def test_option_prices_are_unique_per_exact_mapping():
     assert "uq_tsso_tenant_mapping_active" in MIGRATION
 
 
-def test_publish_blocks_missing_required_options_and_maps_coverage():
-    assert "REQUIRED_SERVICE_OPTION_NOT_CONFIGURED" in TENANT_CATALOG
-    assert "REQUIRED_SERVICE_OPTION_PRICE_MISSING" in TENANT_CATALOG
+def test_addons_no_longer_block_setup_and_publication_still_maps_coverage():
+    assert "REQUIRED_SERVICE_OPTION_NOT_CONFIGURED" not in TENANT_CATALOG
+    assert "REQUIRED_SERVICE_OPTION_PRICE_MISSING" not in TENANT_CATALOG
     assert "TenantServiceAreaService(" in TENANT_CATALOG
 
 
-def test_canonical_services_workspace_owns_option_pricing():
-    assert "ServiceOptionsTab" in PAGE
-    assert "getAvailableForService(masterServiceId, jobTypeId)" in PAGE
-    assert "setOptionPrice" in PAGE
+def test_canonical_services_workspace_removes_addon_setup():
+    assert "ServiceOptionsTab" not in PAGE
+    assert "getAvailableForService(masterServiceId, jobTypeId)" not in PAGE
+    assert "setOptionPrice" not in PAGE
     assert "homeServicesSetupApi.publish" in PAGE

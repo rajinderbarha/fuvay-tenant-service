@@ -100,12 +100,15 @@ class TestStandalonePageRetirement:
         assert 'href: "/admin/service-options"' not in content
         assert 'href: "/admin/issue-types"' not in content
 
-    def test_catalog_workspace_has_options_checklist_workflow_preview_tabs(self):
+    def test_catalog_workspace_has_checklist_workflow_preview_tabs(self):
         path = os.path.join(self._frontend_root(), "app", "admin", "catalog-workspace", "page.tsx")
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        for key in ('"overview"', '"options"', '"checklist"', '"workflow"', '"preview"', '"problems"', '"dimensions"'):
+        # "options" was retired -- add-ons are no longer part of provider
+        # setup or its completion gates (tenant_service.py, same change).
+        for key in ('"overview"', '"checklist"', '"workflow"', '"preview"', '"problems"', '"dimensions"'):
             assert key in content, f"Blueprint missing expected tab key {key}"
+        assert '"options"' not in content
 
 
 class TestOptionsAddOnsIsJobTypeExact:

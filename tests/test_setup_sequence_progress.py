@@ -64,12 +64,21 @@ def test_settlement_and_invitation_are_not_setup_edits(path):
     assert mutation_step(path, "POST") is None
 
 
+def test_provider_router_guards_setup_edits_but_not_public_invitation_acceptance():
+    from app.engines.provider_portal.router import router
+    from app.dependencies.setup_sequence import enforce_setup_sequence
+    for route in router.routes:
+        matched = any(mutation_step(route.path, method) for method in route.methods)
+        guarded = any(dependency.dependency is enforce_setup_sequence for dependency in route.dependencies)
+        assert guarded == matched, route.path
+
+
 @pytest.mark.asyncio
 async def test_non_setup_route_does_not_resolve_owner_auth():
     from app.dependencies.setup_sequence import enforce_setup_sequence
     request = Request({"type": "http", "path": "/v1/provider/team-members/activate", "method": "POST", "headers": []})
     with patch("app.dependencies.setup_sequence.get_current_user", new_callable=AsyncMock) as auth:
-        await enforce_setup_sequence(request, db=AsyncMock())
+        await enforce_setup_sequence(request, user=None, db=AsyncMock())
     auth.assert_not_awaited()
 
 
@@ -91,10 +100,10 @@ async def test_backend_rejects_later_edit_but_allows_active_operations(status, b
          patch("app.engines.vertical_catalog.home_services_setup_service.get_setup_overview", AsyncMock(return_value={"sections": []})):
         if blocked:
             with pytest.raises(ServiceOSException) as exc:
-                await enforce_setup_sequence(request, db=db)
+                await enforce_setup_sequence(request, user=user, db=db)
             assert exc.value.error_code == "SETUP_PREVIOUS_STEP_INCOMPLETE"
         else:
-            await enforce_setup_sequence(request, db=db)
+            await enforce_setup_sequence(request, user=user, db=db)
 
 
 @pytest.mark.asyncio

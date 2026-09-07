@@ -951,6 +951,7 @@ class TenantCatalogService:
              "mapping_id": str(tst.id if tst else mst.id),
              "service_type_id": str(mst.service_type_id),
              "name": st.name, "is_enabled": bool(tst and tst.is_enabled),
+             "brand_coverage": tst.brand_coverage if tst else None,
              "is_required": bool(mst.is_required),
              "is_default": bool(mst.is_default),
              "tenant_price_adjustment": (
@@ -960,7 +961,8 @@ class TenantCatalogService:
             for mst, st, tst in rows
         ]}
 
-    async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str]) -> dict:
+    async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str],
+                                       brand_coverage_by_type: dict | None = None) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
 
@@ -976,6 +978,23 @@ class TenantCatalogService:
                 raise ServiceOSException("SERVICE_TYPE_NOT_SUPPORTED",
                     f"Type {tid} is not mapped to this service by admin.", status_code=422)
 
+        # Validate the entire selection before mutating anything. Coverage is
+        # stored on the type, never inferred from a brand price row.
+        coverage = {}
+        if brand_coverage_by_type is not None:
+            if not isinstance(brand_coverage_by_type, dict) or set(brand_coverage_by_type) - set(type_ids):
+                raise ServiceOSException("INVALID_BRAND_COVERAGE", "Brand coverage must belong to selected types.", status_code=422)
+            allowed = {row["brand_id"] for row in (await self.get_tenant_service_brands(tenant_service_id))["brands"]}
+            for tid, value in brand_coverage_by_type.items():
+                if not isinstance(value, dict) or value.get("mode") not in {"all", "selected"}:
+                    raise ServiceOSException("INVALID_BRAND_COVERAGE", "Choose all or selected brands for each type.", status_code=422)
+                ids = value.get("brand_ids", [])
+                if not isinstance(ids, list) or any(not isinstance(bid, str) or bid not in allowed for bid in ids):
+                    raise ServiceOSException("BRAND_NOT_SUPPORTED", "Select only active brands mapped by admin.", status_code=422)
+                if value["mode"] == "selected" and not ids:
+                    raise ServiceOSException("MISSING_REQUIRED_BRAND_SELECTION", "Select at least one supported brand for each type, or choose All brands.", status_code=422)
+                coverage[tid] = {"mode": value["mode"], "brand_ids": sorted(set(ids)) if value["mode"] == "selected" else []}
+
         # Deactivate all existing, then upsert new ones
         existing_res = await self.db.execute(
             select(TenantServiceType).where(TenantServiceType.tenant_service_id == tenant_service_id))
@@ -985,10 +1004,12 @@ class TenantCatalogService:
             type_uuid = uuid.UUID(tid)
             if tid in existing_map:
                 existing_map[tid].is_enabled = True
+                if tid in coverage:
+                    existing_map[tid].brand_coverage = coverage[tid]
             else:
                 tst = TenantServiceType(
                     tenant_id=ts.tenant_id, tenant_service_id=tenant_service_id,
-                    service_type_id=type_uuid, is_enabled=True)
+                    service_type_id=type_uuid, is_enabled=True, brand_coverage=coverage.get(tid))
                 self.db.add(tst)
 
         # Disable ones not in new list
@@ -1004,11 +1025,11 @@ class TenantCatalogService:
     # ═══════════════════════════════════════════════════════════
 
     async def get_tenant_service_brands(self, tenant_service_id: uuid.UUID) -> dict:
-        """Brand *enablement* is type-independent (a tenant supports LG or
-        not, regardless of which types they price it for) — restricted to
-        the service_type_id IS NULL marker row per brand so this list isn't
-        polluted by the per-type pricing rows created via set_brand_pricing
-        (migration 120 — Type-Dependent Brand Pricing)."""
+        """Active admin candidates with service-wide selection markers.
+
+        Explicit per-type matching coverage is returned by the types endpoint.
+        Scoped price rows must never become service-wide support markers.
+        """
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
         # Like Types, this is the Admin-authorized candidate list with the
@@ -1038,7 +1059,11 @@ class TenantCatalogService:
         rows = res.all()
         return {"brands": [
             {"id": str(tsb.id if tsb else msb.id), "brand_id": str(msb.brand_id),
-             "name": b.name, "is_enabled": bool(tsb and tsb.is_enabled),
+             "name": b.name, "is_enabled": (
+                 True if ts.brand_coverage_mode == "all" else
+                 not bool(tsb and tsb.is_enabled) if ts.brand_coverage_mode == "all_except" else
+                 bool(tsb and tsb.is_enabled)
+             ),
              "tenant_price_adjustment": (
                  float(tsb.tenant_price_adjustment)
                  if tsb and tsb.tenant_price_adjustment is not None else None
@@ -1084,6 +1109,8 @@ class TenantCatalogService:
             if bid not in brand_ids:
                 tsb.is_enabled = False
 
+        # This endpoint receives the explicit supported set, never exclusions.
+        ts.brand_coverage_mode = "selected"
         await self.db.flush()
         return await self.get_tenant_service_brands(tenant_service_id)
 
@@ -1403,15 +1430,70 @@ class TenantCatalogService:
         row_exists = r.scalar_one_or_none() is not None
         return (not row_exists) if ts.type_coverage_mode == "all_except" else row_exists
 
-    async def is_brand_supported(self, ts: TenantService, brand_id: uuid.UUID) -> bool:
+    async def is_brand_supported(self, ts: TenantService, brand_id: uuid.UUID,
+                                 service_type_id: uuid.UUID | None = None) -> bool:
+        if service_type_id is not None:
+            coverage = (await self.db.execute(select(TenantServiceType.brand_coverage).where(
+                TenantServiceType.tenant_service_id == ts.id,
+                TenantServiceType.service_type_id == service_type_id,
+            ))).scalar_one_or_none()
+            if coverage is not None:
+                if not await self.is_type_supported(ts, service_type_id):
+                    return False
+                if coverage.get("mode") == "selected" and str(brand_id) not in coverage.get("brand_ids", []):
+                    return False
+                # Even All brands only covers current, active admin mappings.
+                return (await self.db.execute(select(MasterServiceBrand.id).join(
+                    Brand, Brand.id == MasterServiceBrand.brand_id,
+                ).where(
+                    MasterServiceBrand.master_service_id == ts.master_service_id,
+                    MasterServiceBrand.brand_id == brand_id,
+                    MasterServiceBrand.is_active.is_(True), MasterServiceBrand.status == "active",
+                    Brand.is_active.is_(True), Brand.deleted_at.is_(None),
+                ).limit(1))).scalar_one_or_none() is not None
         if ts.brand_coverage_mode == "all":
             return True
         r = await self.db.execute(select(TenantServiceBrand.id).where(
             TenantServiceBrand.tenant_service_id == ts.id,
             TenantServiceBrand.brand_id == brand_id,
+            TenantServiceBrand.service_type_id.is_(None),
             TenantServiceBrand.is_enabled == True).limit(1))
         row_exists = r.scalar_one_or_none() is not None
         return (not row_exists) if ts.brand_coverage_mode == "all_except" else row_exists
+
+    async def _has_supported_brand(self, ts: TenantService) -> bool:
+        """Required brands mean a non-empty effective supported set, not rows.
+
+        ALL needs no marker rows; ALL_EXCEPT rows represent exclusions. Only
+        active brands mapped by Admin count, never unrelated tenant records.
+        """
+        if getattr(ts, "requires_type", False):
+            scoped_types = (await self.db.execute(select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == ts.id,
+                TenantServiceType.is_enabled.is_(True),
+                TenantServiceType.brand_coverage.is_not(None),
+            ))).scalars().all()
+            if scoped_types:
+                candidates = (await self.get_tenant_service_brands(ts.id))["brands"]
+                if any((row.brand_coverage or {}).get("mode") == "all" or brand["brand_id"] in (row.brand_coverage or {}).get("brand_ids", [])
+                       for row in scoped_types for brand in candidates):
+                    return True
+        selected = select(TenantServiceBrand.id).where(
+            TenantServiceBrand.tenant_service_id == ts.id,
+            TenantServiceBrand.brand_id == Brand.id,
+            TenantServiceBrand.service_type_id.is_(None),
+            TenantServiceBrand.is_enabled.is_(True),
+        ).correlate(Brand).exists()
+        statement = select(func.count()).select_from(Brand).join(
+            MasterServiceBrand, MasterServiceBrand.brand_id == Brand.id,
+        ).where(
+            MasterServiceBrand.master_service_id == ts.master_service_id,
+            MasterServiceBrand.is_active.is_(True), MasterServiceBrand.status == "active",
+            Brand.is_active.is_(True), Brand.deleted_at.is_(None),
+        )
+        if ts.brand_coverage_mode != "all":
+            statement = statement.where(~selected if ts.brand_coverage_mode == "all_except" else selected)
+        return int((await self.db.execute(statement)).scalar() or 0) > 0
 
     async def update_last_active_step(self, tenant_service_id: uuid.UUID, step: str) -> dict:
         """Minimal draft/resume pointer: remembers which wizard step the
@@ -1514,7 +1596,8 @@ class TenantCatalogService:
             brands_r = await self.db.execute(select(Brand.id, Brand.name).join(
                 MasterServiceBrand, MasterServiceBrand.brand_id == Brand.id
             ).where(MasterServiceBrand.master_service_id == ts.master_service_id,
-                    MasterServiceBrand.is_active == True)) if requires_brand else None
+                    MasterServiceBrand.is_active.is_(True), MasterServiceBrand.status == "active",
+                    Brand.is_active.is_(True), Brand.deleted_at.is_(None))) if requires_brand else None
             candidate_brands = brands_r.all() if brands_r else [(None, None)]
 
             # A required dimension with zero admin-configured values is
@@ -1532,14 +1615,14 @@ class TenantCatalogService:
                 errors.append({
                     "step": "coverage", "job_type_id": job_type_label, "dimension_path": {},
                     "code": "NO_BRANDS_CONFIGURED",
-                    "message": "This service requires a Brand, but no brands are configured for it yet.",
+                    "message": "Admin must map at least one active brand to this service in the catalog. No supported brands are available for you to select yet.",
                 })
 
             for type_id, type_name in candidate_types:
                 if type_id is not None and not await self.is_type_supported(ts, type_id):
                     continue
                 for brand_id, brand_name in candidate_brands:
-                    if brand_id is not None and not await self.is_brand_supported(ts, brand_id):
+                    if brand_id is not None and not await self.is_brand_supported(ts, brand_id, type_id):
                         continue
                     result = await self.resolve_tenant_price(tenant_service_id, type_id, brand_id)
                     if not result["resolved"]:
@@ -1586,65 +1669,7 @@ class TenantCatalogService:
                         "message": "Brand override price range is incomplete.",
                     })
 
-        if has_authoritative_blueprint and ts.job_type_id:
-            required_option_mappings = (await self.db.scalars(
-                select(ServiceOptionMapping).where(
-                    ServiceOptionMapping.master_service_id == ts.master_service_id,
-                    ServiceOptionMapping.job_type_id == ts.job_type_id,
-                    ServiceOptionMapping.status == "active",
-                    ServiceOptionMapping.usage == "REQUIRED",
-                    ServiceOptionMapping.tenant_selectable.is_(True),
-                    ServiceOptionMapping.deleted_at.is_(None),
-                )
-            )).all()
-            option_rows: dict[uuid.UUID, TenantSupportedServiceOption] = {}
-            if required_option_mappings:
-                configured_rows = (await self.db.scalars(
-                    select(TenantSupportedServiceOption).where(
-                        TenantSupportedServiceOption.tenant_id == ts.tenant_id,
-                        TenantSupportedServiceOption.service_option_mapping_id.in_(
-                            [mapping.id for mapping in required_option_mappings]
-                        ),
-                        TenantSupportedServiceOption.deleted_at.is_(None),
-                    )
-                )).all()
-                option_rows = {
-                    row.service_option_mapping_id: row
-                    for row in configured_rows
-                    if row.service_option_mapping_id
-                }
-
-            for mapping in required_option_mappings:
-                row = option_rows.get(mapping.id)
-                if row is None or row.status != "active":
-                    errors.append({
-                        "step": "service_options",
-                        "job_type_id": str(ts.job_type_id),
-                        "dimension_path": {"service_option_mapping_id": str(mapping.id)},
-                        "code": "REQUIRED_SERVICE_OPTION_NOT_CONFIGURED",
-                        "message": "Configure every required service option before publishing.",
-                    })
-                    continue
-                if not mapping.affects_estimate:
-                    continue
-                price_valid = (
-                    (row.pricing_model == "FIXED" and row.fixed_price is not None)
-                    or (row.pricing_model == "PER_UNIT" and row.unit_price is not None)
-                    or (
-                        row.pricing_model == "RANGE"
-                        and row.minimum_price is not None
-                        and row.maximum_price is not None
-                        and row.minimum_price <= row.maximum_price
-                    )
-                )
-                if not price_valid:
-                    errors.append({
-                        "step": "service_options",
-                        "job_type_id": str(ts.job_type_id),
-                        "dimension_path": {"service_option_mapping_id": str(mapping.id)},
-                        "code": "REQUIRED_SERVICE_OPTION_PRICE_MISSING",
-                        "message": "Set a valid provider price for every required service option.",
-                    })
+        # Add-ons are no longer part of provider setup or its completion gates.
 
         if has_authoritative_blueprint:
             # These are the same normalized setup gates edited by Admin's
@@ -1662,16 +1687,31 @@ class TenantCatalogService:
                                    "dimension_path": {"dimension": "type"}, "code": "MISSING_REQUIRED_TYPE_SELECTION",
                                    "message": "Select at least one supported service type."})
             if requires_brand:
-                count = int((await self.db.execute(
-                    select(func.count()).select_from(TenantServiceBrand).where(
-                        TenantServiceBrand.tenant_service_id == tenant_service_id,
-                        TenantServiceBrand.is_enabled.is_(True),
-                    )
-                )).scalar() or 0)
-                if count == 0:
+                if not any(error["code"] == "NO_BRANDS_CONFIGURED" for error in errors) and not await self._has_supported_brand(ts):
                     errors.append({"step": "coverage", "job_type_id": None,
                                    "dimension_path": {"dimension": "brand"}, "code": "MISSING_REQUIRED_BRAND_SELECTION",
                                    "message": "Select at least one supported brand."})
+                if requires_type:
+                    scoped_types = (await self.db.execute(select(TenantServiceType, ServiceType.name).join(
+                        ServiceType, ServiceType.id == TenantServiceType.service_type_id,
+                    ).where(
+                        TenantServiceType.tenant_service_id == tenant_service_id,
+                        TenantServiceType.is_enabled.is_(True),
+                        TenantServiceType.brand_coverage.is_not(None),
+                    ))).all()
+                    active_brands = None
+                    for selected_type, type_name in scoped_types:
+                        if active_brands is None:
+                            active_brands = (await self.get_tenant_service_brands(tenant_service_id))["brands"]
+                        coverage = selected_type.brand_coverage
+                        if coverage is None:
+                            continue
+                        if not any(coverage.get("mode") == "all" or brand["brand_id"] in coverage.get("brand_ids", [])
+                                   for brand in active_brands):
+                            errors.append({"step": "coverage", "job_type_id": str(ts.job_type_id),
+                                           "dimension_path": {"type": type_name},
+                                           "code": "MISSING_REQUIRED_BRAND_SELECTION",
+                                           "message": f"Select at least one active supported brand for {type_name}."})
             if blueprint["requires_service_area"]:
                 count = int((await self.db.execute(
                     select(func.count()).select_from(TenantServiceArea).where(
@@ -1695,6 +1735,8 @@ class TenantCatalogService:
 
         return {
             "valid": len(errors) == 0,
+            "service_name": getattr(master, "service_name", None),
+            "job_type": ts.job_type,
             "errors": errors,
             "setup_update_required": bool(
                 has_authoritative_blueprint
@@ -1803,7 +1845,7 @@ class TenantCatalogService:
         # available to customers."
         if service_type_id is not None and not await self.is_type_supported(ts, service_type_id):
             return {"resolved": False, "reason": "COMBINATION_NOT_SUPPORTED"}
-        if brand_id is not None and not await self.is_brand_supported(ts, brand_id):
+        if brand_id is not None and not await self.is_brand_supported(ts, brand_id, service_type_id):
             return {"resolved": False, "reason": "COMBINATION_NOT_SUPPORTED"}
 
         def _found(rule_id, source: str, min_price, max_price) -> dict:
@@ -1926,7 +1968,7 @@ class TenantCatalogService:
                 TenantServiceBrand.tenant_service_id == tenant_service_id,
                 TenantServiceBrand.is_enabled == True))
         brands = brands_res.scalars().all()
-        if requires_brand and not brands:
+        if requires_brand and not await self._has_supported_brand(ts):
             missing.append({"field": "brands", "message": "Select at least one supported brand."})
         for b in brands:
             has_partial = (b.tenant_min_price is None) != (b.tenant_max_price is None)

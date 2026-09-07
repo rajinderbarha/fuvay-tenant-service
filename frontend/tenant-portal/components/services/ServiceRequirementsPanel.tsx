@@ -17,7 +17,7 @@
  * affordance it couldn't honour.
  */
 import React, { useCallback } from "react";
-import { ClipboardList, HelpCircle, AlertTriangle, Camera, Info, PackagePlus } from "lucide-react";
+import { ClipboardList, HelpCircle, AlertTriangle, Camera, Info } from "lucide-react";
 import { masterCatalogApi, type ServiceRequirements } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 
@@ -52,8 +52,7 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
     );
   }
 
-  const serviceOptions = d.service_options ?? [];
-  const empty = d.problems.length === 0 && d.questions.length === 0 && serviceOptions.length === 0 && d.checklists.length === 0;
+  const empty = d.problems.length === 0 && d.questions.length === 0 && d.checklists.length === 0;
 
   return (
     <div>
@@ -65,31 +64,8 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
 
       {empty && (
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 14 }}>
-          No problems, options, questions or checklists have been configured for this service yet.
+          No problems, questions or checklists have been configured for this service yet.
         </p>
-      )}
-
-      {serviceOptions.length > 0 && (
-        <div style={SECTION}>
-          <div style={HEAD}>
-            <PackagePlus size={14} style={{ color: "var(--brand)" }} />
-            Options and add-ons ({serviceOptions.length})
-          </div>
-          {serviceOptions.map(option => (
-            <div key={option.mapping_id} style={ROW}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ color: "var(--text-primary)" }}>{option.name ?? "—"}</span>
-                {option.usage && <span style={CHIP}>{option.usage}</span>}
-                {option.customer_selectable && <span style={CHIP}>CUSTOMER</span>}
-                {option.technician_selectable && <span style={CHIP}>TECHNICIAN</span>}
-                {option.quantity_supported && <span style={CHIP}>QUANTITY · {option.measurement_unit ?? "unit"}</span>}
-              </div>
-              {option.description && (
-                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{option.description}</p>
-              )}
-            </div>
-          ))}
-        </div>
       )}
 
       {d.problems.length > 0 && (

@@ -509,6 +509,7 @@ export interface HsPricePreview {
 }
 
 export interface HsSetupType {
+  brand_coverage?: { mode: "all" | "selected"; brand_ids: string[] } | null;
   id: string;
   /** Kept as an alias of `id` -- older callers use this name. */
   mapping_id: string;
@@ -581,9 +582,9 @@ export const homeServicesSetupApi = {
     apiFetch<{ brands: HsSetupBrand[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands`),
   getTypes: (tenantServiceId: string) =>
     apiFetch<{ types: HsSetupType[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/types`),
-  setTypes: (tenantServiceId: string, typeIds: string[]) =>
+  setTypes: (tenantServiceId: string, typeIds: string[], brandCoverageByType?: Record<string, { mode: "all" | "selected"; brand_ids: string[] }>) =>
     apiFetch<{ types: HsSetupType[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/types`,
-      { method: "PUT", body: JSON.stringify({ type_ids: typeIds }) }),
+      { method: "PUT", body: JSON.stringify({ type_ids: typeIds, brand_coverage_by_type: brandCoverageByType }) }),
   getBrands: (tenantServiceId: string) =>
     apiFetch<{ brands: HsSetupBrand[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands`),
   setBrands: (tenantServiceId: string, brandIds: string[]) =>

@@ -378,10 +378,12 @@ def test_ms_page_create_form_submits_service_group_id():
     snippet = src[idx:idx+1000]
     assert "service_group_id" in snippet, "Create form must submit service_group_id"
 
-def test_ms_page_job_type_filter_buttons():
-    """By-job-type breakdown should be clickable filter chips."""
+def test_ms_page_no_single_job_type_breakdown():
+    """A service family can carry several job types (AddServiceJobType /
+    Job-Type Blueprints), so a by-job-type breakdown assuming one scalar
+    job_type per family no longer applies here -- retired with that model."""
     src = _read(MS_PAGE)
-    assert "by_job_type" in src
+    assert "by_job_type" not in src
 
 def test_ms_page_no_tailwind():
     src = _read(MS_PAGE)

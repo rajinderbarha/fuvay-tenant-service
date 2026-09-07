@@ -504,6 +504,17 @@ async def _passes_full_eligibility_gate(
     if published_offering_id is None:
         return False, "OFFERING_NOT_PUBLISHED"
 
+    # Area-wide wildcard coverage must not widen the exact offering's type /
+    # brand selection. Reuse the same policy as tenant setup and pricing.
+    if offering_type_id or brand_id:
+        from app.engines.admin_catalog.tenant_service import TenantCatalogService
+        offering = await db.get(TenantService, published_offering_id)
+        catalog = TenantCatalogService(db, request_id="matching")
+        if offering_type_id and not await catalog.is_type_supported(offering, offering_type_id):
+            return False, "TYPE_NOT_SUPPORTED"
+        if brand_id and not await catalog.is_brand_supported(offering, brand_id, offering_type_id):
+            return False, "BRAND_NOT_SUPPORTED"
+
     # 1. Canonical bookability (HS4B) — single source of truth.
     bookable_row = (await db.execute(text(
         "SELECT is_bookable, bookability_blockers FROM provider_visibility_statuses WHERE tenant_id=:tid "

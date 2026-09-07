@@ -147,19 +147,25 @@ async def resolve_exact_serviceability(
     # tenant's offering row -- not the admin catalog brand list).
     tenant_service_brand_id: str | None = None
     if brand_id:
+        from app.engines.admin_catalog.tenant_service import TenantCatalogService
+        catalog = TenantCatalogService(db, request_id="exact-serviceability")
+        supported = await catalog.is_brand_supported(offering, brand_id, service_type_id)
         brand_row = (await db.execute(
             select(TenantServiceBrand).where(
                 TenantServiceBrand.tenant_service_id == offering.id,
                 TenantServiceBrand.brand_id == brand_id,
+                TenantServiceBrand.service_type_id.is_(None),
                 TenantServiceBrand.is_enabled.is_(True),
             )
         )).scalars().first()
-        result["brand_supported"] = bool(brand_row)
-        if not brand_row:
+        result["brand_supported"] = supported
+        if not supported:
             reasons.append(R_BRAND_NOT_SUPPORTED)
             result["reasons"] = reasons
             return result
-        tenant_service_brand_id = str(brand_row.id)
+        # Keep a selected brand context even for All coverage without marker
+        # rows, so a technician's explicit restrictions cannot be bypassed.
+        tenant_service_brand_id = str(brand_row.id) if brand_row else str(brand_id)
 
     # Step: tenant-scoped type support (tenant_service_types)
     tenant_service_type_id: str | None = None

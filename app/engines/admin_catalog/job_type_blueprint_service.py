@@ -87,6 +87,12 @@ class JobTypeBlueprintService:
             select(JobTypeDefinition).where(JobTypeDefinition.id == job_type_id))).scalar_one_or_none()
         if not jt:
             raise NotFoundException("JobTypeDefinition", str(job_type_id))
+        if not jt.is_active or jt.key not in RUNTIME_KNOWN_KEYS:
+            raise ServiceOSException(
+                "JOB_TYPE_NOT_RUNTIME_SUPPORTED",
+                "Choose an active job type supported by booking and technician workflows. Custom runtime development is not a catalog setup step.",
+                status_code=422,
+            )
         existing = (await self.db.execute(select(MasterServiceJobType).where(
             MasterServiceJobType.master_service_id == master_service_id,
             MasterServiceJobType.job_type_id == job_type_id))).scalar_one_or_none()

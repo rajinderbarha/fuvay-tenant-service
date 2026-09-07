@@ -187,7 +187,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
   const canSave = !!name.trim() && !!categoryId && !!groupId;
 
   return (
-    <Modal open={open} onClose={onClose} title="New Master Service">
+    <Modal open={open} onClose={onClose} title="New Service Family">
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {createAction.error && (
           <div style={{ padding: "10px 14px", borderRadius: "var(--radius-md)", background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>
@@ -211,6 +211,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
           </div>
         )}
         <Input label="Service Name *" placeholder="e.g. Air Conditioner" value={name} onChange={setName}/>
+        <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>Name the family, not the task: Air Conditioner, not AC Installation. Add Installation, Repair or Maintenance in Job-Type Blueprints. A service group is only an organisational folder; there is no separate master group to create.</p>
         {/* Labelled "Category" to match the filter bar, the edit modal and the
             Categories page — this one field called itself "Business Vertical"
             while everything else called the same thing a Category. */}
@@ -535,8 +536,8 @@ export default function MasterServicesPage() {
     <AdminLayout activeNav="master-services">
       <div className={`${styles.page} catalog-admin-page`}>
       <SectionHeader
-        title="Master Services"
-        subtitle="Own the canonical service hierarchy, runtime readiness and provider adoption from one governed directory. Job-type behavior stays in Catalog Workspace; providers own their price amounts."
+        title="Service Families"
+        subtitle="Create each service family once. Configure Installation, Repair and other work in Job-Type Blueprints. Groups organise families; providers set their prices."
         icon={<Layers3 />}
         actions={<>
           <Btn variant="secondary" size="sm" onClick={() => { services.refetch(); summary.refetch(); }}>
@@ -561,8 +562,10 @@ export default function MasterServicesPage() {
         onApplyView={(filters, sort) => {
           const nextQuery = String(filters.q ?? filters.search ?? "");
           setQInput(nextQuery); setQ(nextQuery); setCategoryFilter(String(filters.category_id ?? ""));
-          setGroupFilter(String(filters.service_group_id ?? "")); setJobTypeFilter(String(filters.job_type ?? ""));
-          setPricingModelFilter(String(filters.pricing_model ?? "")); setIsActiveFilter(String(filters.is_active ?? ""));
+          setGroupFilter(String(filters.service_group_id ?? "")); setJobTypeFilter("");
+          // Old saved directory views must not silently filter service families
+          // using the retired scalar job-type/pricing columns.
+          setPricingModelFilter(""); setIsActiveFilter(String(filters.is_active ?? ""));
           setLifecycleFilter(filters.lifecycle === "retired" ? "retired" : "current");
           setReadinessFilter(String(filters.readiness ?? "")); setHasProvidersFilter(String(filters.has_providers ?? ""));
           setSortBy(String(sort.sort_by ?? "display_order")); setSortDir(String(sort.sort_direction ?? "asc") as "asc"|"desc"); setPage(1);
@@ -609,22 +612,6 @@ export default function MasterServicesPage() {
 
       {lifecycleFilter === "current" && selectedIds.length > 0 && <Card padding={12} style={{ marginBottom:14, borderColor:"var(--brand)" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}><span style={{ fontSize:13, fontWeight:650 }}>{selectedIds.length} selected</span><div style={{ display:"flex", gap:8 }}><Btn size="sm" variant="secondary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("activate")}>Activate</Btn><Btn size="sm" variant="secondary" loading={bulkAction.loading} onClick={()=>bulkAction.execute("deactivate")}>Deactivate</Btn><Btn size="sm" variant="ghost" onClick={()=>setSelectedIds([])}>Clear</Btn></div></div>{bulkAction.error && <p style={{ color:"var(--danger-text)", fontSize:12 }}>{bulkAction.error}</p>}</Card>}
 
-      {/* By job type breakdown */}
-      {s?.by_job_type && Object.keys(s.by_job_type).length > 0 && (
-        <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {Object.entries(s.by_job_type).map(([jt, count]) => (
-            <button key={jt} onClick={() => { setJobTypeFilter(jobTypeFilter === jt ? "" : jt); setPage(1); }} style={{
-              padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 500,
-              border: `1px solid ${jobTypeFilter === jt ? "var(--brand, #1a56db)" : "var(--border)"}`,
-              background: jobTypeFilter === jt ? "var(--brand-muted, rgba(26,86,219,.08))" : "var(--surface)",
-              color: jobTypeFilter === jt ? "var(--brand, #1a56db)" : "var(--text-secondary)",
-              cursor: "pointer",
-            }}>
-              {JOB_TYPES.find(j => j.value === jt)?.label ?? jt}: {count as number}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Filters */}
       <div className={styles.filterShell}>
@@ -677,16 +664,6 @@ export default function MasterServicesPage() {
 
         {showAdvanced && (
           <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-            <div style={{ minWidth: 160 }}>
-              {/* setPage(1) like every other filter — without it, changing job
-                  type while on page 3 asked for page 3 of a shorter list. */}
-              <Select label="Job Type" value={jobTypeFilter} onChange={v => { setJobTypeFilter(v); setPage(1); }}
-                options={[{ value: "", label: "All Job Types" }, ...JOB_TYPES]} />
-            </div>
-            <div style={{ minWidth: 180 }}>
-              <Select label="Pricing Model" value={pricingModelFilter} onChange={v => { setPricingModelFilter(v); setPage(1); }}
-                options={[{ value: "", label: "All Models" }, ...PRICING_MODELS]} />
-            </div>
             <div style={{ minWidth: 190 }}>
               <Select label="Runtime Readiness" value={readinessFilter} onChange={v=>{setReadinessFilter(v);setPage(1)}} options={[{value:"",label:"All readiness"},{value:"ready",label:"Ready"},{value:"missing_job_types",label:"Missing job types"},{value:"missing_workflows",label:"Missing workflow"},{value:"category_inactive",label:"Category inactive"},{value:"group_unavailable",label:"Group unavailable"},{value:"inactive",label:"Inactive"}]}/>
             </div>

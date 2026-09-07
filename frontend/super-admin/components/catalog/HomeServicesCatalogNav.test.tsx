@@ -12,7 +12,7 @@ describe("guided catalog setup", () => {
       "categories", "groups", "services", "types-brands", "checklists", "workspace",
     ]);
     expect(BLUEPRINT_SETUP_STEPS.map(step => step.key)).toEqual([
-      "overview", "workflow", "dimensions", "problems", "options", "checklist", "tenant_rules", "preview",
+      "overview", "workflow", "dimensions", "problems", "checklist", "tenant_rules", "preview",
     ]);
   });
 

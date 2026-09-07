@@ -161,7 +161,8 @@ async def set_tenant_service_types(tenant_service_id: uuid.UUID, r: Request,
                                     s: TenantCatalogService = Depends(_svc)):
     body = await r.json()
     type_ids = body.get("type_ids", [])
-    return ok(await s.set_tenant_service_types(tenant_service_id, type_ids), _rid(r), ENGINE_ID)
+    return ok(await s.set_tenant_service_types(
+        tenant_service_id, type_ids, body.get("brand_coverage_by_type")), _rid(r), ENGINE_ID)
 
 
 # ── Tenant Service Brands ─────────────────────────────────────────────────────

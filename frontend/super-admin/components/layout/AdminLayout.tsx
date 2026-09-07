@@ -168,7 +168,7 @@ const HOME_SERVICES_EXTRA_ITEMS: NavItem[] = [
   // flags (jobs_field_ops / security_deposit / usage_credits), which
   // correctly cover every field-ops-style vertical, not just literal
   // "home_services". See the Operations/Finance group comments above.
-  { id: "hs-service-catalog", href: "/admin/catalog-workspace", label: "Service Catalog", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
+  { id: "hs-service-catalog", href: "/admin/catalog-workspace", label: "Job-Type Blueprints", icon: <ListChecks size={16}/>, requiredPermission: SUPER_ADMIN_ONLY },
   // Retired admin pricing/tier surfaces were removed per product decision:
   // this platform uses provider-owned prices plus Home Services Finance, not
   // admin-defined min/max/base customer price boundaries.

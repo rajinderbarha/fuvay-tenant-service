@@ -3,7 +3,7 @@ import uuid
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.dependencies.auth import get_current_user, bearer_scheme
+from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
 from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment
 from app.engines.vertical_catalog.setup_sequence import mutation_step, prerequisite
@@ -11,13 +11,13 @@ from app.exceptions import ServiceOSException
 
 
 async def enforce_setup_sequence(request: Request,
+                                 user: UserContext = Depends(get_current_user),
                                  db: AsyncSession = Depends(get_db)):
     target = mutation_step(request.url.path, request.method)
     if not target:
         return
-    # Resolve auth only for matched edits. Shared routers also contain public
-    # invitation endpoints; a router-wide auth dependency would break them.
-    user = await get_current_user(await bearer_scheme(request))
+    # Use the request's normal, cached auth dependency. Mixed public routers
+    # attach this guard only to protected setup mutations, never invitations.
     if not user.tenant_id or user.role == "super_admin" or user.role.startswith("admin_"):
         return
     enrollment = (await db.execute(

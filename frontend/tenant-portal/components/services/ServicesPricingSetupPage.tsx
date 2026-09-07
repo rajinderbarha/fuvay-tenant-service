@@ -508,7 +508,7 @@ function ServicesPricingPageContent() {
       await homeServicesSetupApi.saveDraft(enrolled.tenant_service_id);
       setEnabledList(list => list.map(e => e.tenant_service_id === updated.tenant_service_id ? updated : e));
     } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not save draft.");
+      setError(err instanceof Error ? err.message : "Could not save draft.");
     } finally {
       setSaving(false);
     }
@@ -533,7 +533,7 @@ function ServicesPricingPageContent() {
       }
       router.push(returnTo || "/tenant/home-services/setup/plan");
     } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not save your services.");
+      setError(err instanceof Error ? err.message : "Could not save your services.");
     } finally {
       setSaving(false);
     }
@@ -853,12 +853,14 @@ function SetupDimensionsInlineEditor({ editorRef, selectedService, enrolled, isI
     <div>
       {!isInspectionMode && (
         <InlineDimensionPricingEditor
+          key={enrolled.tenant_service_id}
           ref={editorRef}
           basePrice={enrolled.tenant_min_price ?? null}
           types={types.map(type => ({
             id: type.service_type_id,
             name: type.name,
             enabled: type.is_enabled,
+            brandCoverage: type.brand_coverage,
             price: typePricing.find(priced => priced.service_type_id === type.service_type_id)?.tenant_min_price ?? null,
           }))}
           brands={brands.map(brand => ({
@@ -868,8 +870,8 @@ function SetupDimensionsInlineEditor({ editorRef, selectedService, enrolled, isI
             enabled: brand.is_enabled,
           }))}
           exceptions={exceptions}
-          onSaveTypes={async typeIds => {
-            const result = await homeServicesSetupApi.setTypes(enrolled.tenant_service_id, typeIds);
+          onSaveTypes={async (typeIds, coverage) => {
+            const result = await homeServicesSetupApi.setTypes(enrolled.tenant_service_id, typeIds, coverage);
             updateTypesState?.(result.types);
           }}
           onSaveBrands={async brandIds => {

@@ -5,12 +5,15 @@ import { useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import HomeServicesCatalogNav from "../../../components/catalog/HomeServicesCatalogNav";
 import { BLUEPRINT_SETUP_STEPS } from "../../../components/catalog/catalog-setup-sequence";
+import { AddServiceJobType } from "../../../components/catalog/AddServiceJobType";
+import { preferredJobType } from "../../../components/catalog/service-family";
+import { ServiceFamilyIdentity } from "../../../components/catalog/ServiceFamilyIdentity";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi,
   type HsConsoleService, type CatalogJobType, type DimensionGridRow, type CatalogDimensionDef,
   type BlueprintReadiness, type BlueprintImpactReport, type BlueprintDraftStatus, type CatalogQuestionItem,
-  type CatalogIssueTypeMapping, type CatalogOptionMapping, type ServiceJobWorkflow,
+  type CatalogIssueTypeMapping, type ServiceJobWorkflow,
   type ChecklistUsage, type ChecklistActor,
   type ChecklistCompletionGate, type ChecklistPurpose, type ChecklistItemType,
 } from "../../../lib/api";
@@ -129,9 +132,9 @@ export default function AdminCatalogWorkspacePage() {
     const first = serviceJobTypeLinks.find(link => link.master_service_id === selectedId);
     if (selectedId && first && initializedService.current !== selectedId) {
       initializedService.current = selectedId;
-      setSelectedJobTypeId(first.job_type_id);
+      setSelectedJobTypeId(preferredJobType(services.find(service => service.service_id === selectedId)?.service_name ?? "", serviceJobTypeLinks));
     }
-  }, [selectedId, serviceJobTypeLinks]);
+  }, [selectedId, serviceJobTypeLinks, services]);
 
   const readinessApi = useApi(
     useCallback(() => selectedId ? catalogWorkspaceApi.getReadiness(selectedId, selectedJobTypeId) : Promise.resolve(null as unknown as BlueprintReadiness),
@@ -208,8 +211,8 @@ export default function AdminCatalogWorkspacePage() {
       )}
 
       <div style={{ marginBottom: "var(--layout-page-gap)" }}>
-        <SectionHeader eyebrow="Catalog setup · Step 6" context="Home Services" title="Blueprint Setup"
-          description="Configure platform-owned service behavior, customer questions, options, checklists, and tenant setup rules. Price amounts remain tenant-owned."
+        <SectionHeader eyebrow="Catalog setup · Step 6" context="Home Services" title="Job-Type Blueprints"
+          description="Configure platform-owned service behavior, customer questions, checklists, and tenant setup rules. Price amounts remain tenant-owned."
           actions={<Btn variant="secondary" onClick={() => { listApi.refetch(); serviceJobTypesApi.refetch(); readinessApi.refetch(); impactApi.refetch(); draftApi.refetch(); }}>
             <RefreshCw size={12}/> Refresh
           </Btn>} />
@@ -290,11 +293,11 @@ export default function AdminCatalogWorkspacePage() {
                     </div>
                   )}
                 </div>
+                <ServiceFamilyIdentity serviceId={selectedId} name={services.find(service => service.service_id === selectedId)?.service_name ?? ""} canWrite={canWrite}
+                  onSaved={() => { listApi.refetch(); notify("Family name updated. Existing mappings and prices are unchanged."); }} />
                 {serviceJobTypesApi.loading ? <Skeleton height={30}/> : (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    <button className={`cw-jt-tab ${selectedJobTypeId === null ? "active" : ""}`} onClick={() => setSelectedJobTypeId(null)}>
-                      Service-wide defaults (advanced)
-                    </button>
+                    <details><summary>Advanced defaults</summary><button className={`cw-jt-tab ${selectedJobTypeId === null ? "active" : ""}`} onClick={() => setSelectedJobTypeId(null)}>Shared defaults — not a job type</button></details>
                     {serviceJobTypeLinks.map(link => (
                       <button key={link.job_type_id} className={`cw-jt-tab ${selectedJobTypeId === link.job_type_id ? "active" : ""}`} onClick={() => setSelectedJobTypeId(link.job_type_id)}
                         title={link.job_type.runtime_supported ? undefined : "Not yet wired into field_ops runtime transitions"}>
@@ -309,7 +312,7 @@ export default function AdminCatalogWorkspacePage() {
                   </div>
                 )}
                 {showAddJobType && (
-                  <AddJobTypeToServicePicker masterServiceId={selectedId}
+                  <AddServiceJobType masterServiceId={selectedId}
                     linkedJobTypeIds={serviceJobTypeLinks.map(link => link.job_type_id)}
                     onAdded={() => { setShowAddJobType(false); serviceJobTypesApi.refetch(); notify("Job type added to this service."); }}
                     onError={(msg) => notify(msg, "error")}/>
@@ -341,10 +344,7 @@ export default function AdminCatalogWorkspacePage() {
                 <ProblemsQuestionsTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
                   notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
               )}
-              {tab === "options" && (
-                <OptionsTab masterServiceId={selectedId} jobTypeId={selectedJobTypeId} canWrite={canWrite}
-                  notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
-              )}
+
               {tab === "checklist" && (
                 <ChecklistTab masterServiceJobTypeId={serviceJobTypeLinks.find(l => l.job_type_id === selectedJobTypeId)?.id ?? null}
                   canWrite={canWrite} notify={notify} onChanged={() => { readinessApi.refetch(); draftApi.refetch(); }}/>
@@ -820,115 +820,6 @@ const DIMENSION_DATA_TYPES = ["single_select", "multi_select", "boolean", "numbe
 // service just needs them as a master_service_job_types child record), or
 // define a brand-new platform-wide job type (rare) and auto-attach it here
 // so it doesn't just vanish into the global catalog with no visible effect.
-function AddJobTypeToServicePicker({ masterServiceId, linkedJobTypeIds, onAdded, onError }: {
-  masterServiceId: string; linkedJobTypeIds: string[];
-  onAdded: () => void; onError: (msg: string) => void;
-}) {
-  const [mode, setMode] = useState<"attach" | "define">("attach");
-  const [pickedId, setPickedId] = useState("");
-  const [jobTypeQuery, setJobTypeQuery] = useState("");
-  const [debouncedJobTypeQuery, setDebouncedJobTypeQuery] = useState("");
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedJobTypeQuery(jobTypeQuery.trim()), 250);
-    return () => window.clearTimeout(timer);
-  }, [jobTypeQuery]);
-  const jobTypesApi = useApi(useCallback(
-    () => catalogWorkspaceApi.listJobTypes({ search: debouncedJobTypeQuery || undefined, pageSize: 50 }),
-    [debouncedJobTypeQuery]), [debouncedJobTypeQuery]);
-  const unlinkedJobTypes = (jobTypesApi.data?.items ?? []).filter(jt => jt.is_active && !linkedJobTypeIds.includes(jt.id));
-  const attachAction = useAction(catalogWorkspaceApi.addServiceJobType);
-
-  const [label, setLabel] = useState("");
-  const [requiresAssessment, setRequiresAssessment] = useState(true);
-  const [allowsQuote, setAllowsQuote] = useState(true);
-  const [requiresChecklist, setRequiresChecklist] = useState(false);
-  const createAction = useAction(catalogWorkspaceApi.createJobType);
-
-  async function attachExisting() {
-    if (!pickedId) return;
-    const result = await attachAction.execute(masterServiceId, pickedId);
-    if (result) { setPickedId(""); onAdded(); }
-    else onError(attachAction.error ?? "Couldn't add job type to this service.");
-  }
-
-  async function defineAndAttach() {
-    const key = slugifyKey(label);
-    if (!label.trim() || !key) return;
-    const created = await createAction.execute({
-      key, label: label.trim(),
-      requires_assessment: requiresAssessment, allows_quote: allowsQuote, requires_checklist: requiresChecklist,
-    });
-    if (!created) { onError(createAction.error ?? "Couldn't create job type."); return; }
-    const attached = await attachAction.execute(masterServiceId, created.id);
-    if (attached) { setLabel(""); onAdded(); }
-    else onError(attachAction.error ?? "Job type created but couldn't be added to this service.");
-  }
-
-  return (
-    <div style={{ marginTop: 10, padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        <button onClick={() => setMode("attach")} style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer",
-          background: mode === "attach" ? "var(--brand)" : "var(--surface)", color: mode === "attach" ? "white" : "var(--text-secondary)" }}>
-          Attach existing
-        </button>
-        <button onClick={() => setMode("define")} style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--border)", cursor: "pointer",
-          background: mode === "define" ? "var(--brand)" : "var(--surface)", color: mode === "define" ? "white" : "var(--text-secondary)" }}>
-          Define new
-        </button>
-      </div>
-
-      {mode === "attach" ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
-              Search
-              <input value={jobTypeQuery} onChange={event => { setJobTypeQuery(event.target.value); setPickedId(""); }} placeholder="Find platform job type"
-                style={{ display: "block", marginTop: 4, fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", minWidth: 180 }}/>
-            </label>
-            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
-              Job type
-              <select value={pickedId} onChange={e => setPickedId(e.target.value)}
-                style={{ display: "block", marginTop: 4, fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", minWidth: 180 }}>
-                <option value="">Select…</option>
-                {unlinkedJobTypes.map(jt => <option key={jt.id} value={jt.id}>{jt.label}</option>)}
-              </select>
-            </label>
-            <button onClick={attachExisting} disabled={!pickedId || attachAction.loading}
-              style={{ fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white",
-                cursor: !pickedId || attachAction.loading ? "default" : "pointer", opacity: !pickedId || attachAction.loading ? 0.6 : 1 }}>
-              {attachAction.loading ? "Adding…" : "Add to Service"}
-            </button>
-          </div>
-      ) : (
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
-            Job type name
-            <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Deep Cleaning"
-              style={{ display: "block", marginTop: 4, fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", minWidth: 200 }}/>
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5 }}>
-            <input type="checkbox" checked={requiresAssessment} onChange={e => setRequiresAssessment(e.target.checked)}/> Requires assessment
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5 }}>
-            <input type="checkbox" checked={allowsQuote} onChange={e => setAllowsQuote(e.target.checked)}/> Allows quote
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 5 }}>
-            <input type="checkbox" checked={requiresChecklist} onChange={e => setRequiresChecklist(e.target.checked)}/> Requires checklist
-          </label>
-          <button onClick={defineAndAttach} disabled={!label.trim() || createAction.loading || attachAction.loading}
-            style={{ fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", background: "var(--brand)", color: "white",
-              cursor: !label.trim() || createAction.loading || attachAction.loading ? "default" : "pointer",
-              opacity: !label.trim() || createAction.loading || attachAction.loading ? 0.6 : 1 }}>
-            {createAction.loading || attachAction.loading ? "Working…" : "Create & Add"}
-          </button>
-          <p style={{ width: "100%", fontSize: 10, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-            This defines a new platform-wide job type (available to every service) and adds it to this one.
-            New job types aren't automatically wired into field_ops's runtime transition graph — they'll show a * marker until that's done separately.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function AddDimensionForm({ onAdded, onError }: { onAdded: () => void; onError: (msg: string) => void }) {
   const [name, setName] = useState("");
@@ -1216,171 +1107,6 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
   );
 }
 
-// ── Options & Add-ons tab — HOME-SERVICES-CATALOG ownership correction.
-// Maps a reusable Service Option template to the EXACT selected Job Type;
-// customer/technician selectability and usage are configured per mapping
-// here, never on the global template. No price field anywhere on this tab
-// -- tenant pricing lives in Tenant Setup > Options & Add-ons, resolved
-// against the mapping created here. ─────────────────────────────────────────
-function OptionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged }: {
-  masterServiceId: string; jobTypeId: string | null; canWrite: boolean;
-  notify: (m: string, t?: "success" | "error") => void; onChanged: () => void;
-}) {
-  const mappingsApi = useApi(
-    useCallback(() => catalogWorkspaceApi.listServiceOptionMappings(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]),
-    [masterServiceId, jobTypeId],
-  );
-  const linksApi = useApi(useCallback(() => catalogWorkspaceApi.listServiceJobTypes(masterServiceId), [masterServiceId]), [masterServiceId]);
-  const removeAction = useAction(catalogWorkspaceApi.removeServiceOptionMapping);
-  const updateAction = useAction(catalogWorkspaceApi.updateServiceOptionMapping);
-  const addAction = useAction(catalogWorkspaceApi.addServiceOptionMapping);
-  const mappings = mappingsApi.data ?? [];
-  const [showAdd, setShowAdd] = useState(false);
-  const [showCopy, setShowCopy] = useState(false);
-  const [copying, setCopying] = useState(false);
-  const otherJobTypes = (linksApi.data?.items ?? []).filter(l => l.job_type_id !== jobTypeId && l.is_active);
-
-  async function copyFrom(sourceJobTypeId: string) {
-    if (!canWrite || !jobTypeId) return;
-    setCopying(true);
-    try {
-      const source = await catalogWorkspaceApi.listServiceOptionMappings(masterServiceId, sourceJobTypeId);
-      const existingIds = new Set(mappings.map(m => m.service_option_id));
-      let copied = 0;
-      for (const m of source) {
-        if (existingIds.has(m.service_option_id)) continue;
-        // Explicit, independent new mapping row -- editing this Job Type's
-        // copy never mutates the source Job Type's published mapping.
-        const result = await addAction.execute(masterServiceId, {
-          service_option_id: m.service_option_id, job_type_id: jobTypeId,
-          usage: m.usage, customer_selectable: m.customer_selectable,
-          technician_selectable: m.technician_selectable,
-        });
-        if (result) copied++;
-      }
-      setShowCopy(false); mappingsApi.refetch(); onChanged();
-      notify(copied > 0 ? `Copied ${copied} option(s) into this Job Type.` : "Nothing new to copy — all options already mapped here.");
-    } finally {
-      setCopying(false);
-    }
-  }
-
-  async function handleRemove(m: CatalogOptionMapping) {
-    if (!canWrite) return;
-    const result = await removeAction.execute(masterServiceId, m.id);
-    if (result) { notify(`${m.option.name} detached from this Job Type.`); mappingsApi.refetch(); onChanged(); }
-    else notify("Couldn't detach this option.", "error");
-  }
-
-  async function toggleFlag(m: CatalogOptionMapping, flag: "customer_selectable" | "technician_selectable") {
-    if (!canWrite) return;
-    const result = await updateAction.execute(masterServiceId, m.id, { [flag]: !m[flag] });
-    if (result) mappingsApi.refetch(); else notify("Couldn't update this option.", "error");
-  }
-
-  if (mappingsApi.error) return <SectionError title="Couldn't load options" error={mappingsApi.error} requestId={mappingsApi.requestId} onRetry={mappingsApi.refetch}/>;
-  if (mappingsApi.loading) return <Skeleton height={140}/>;
-
-  if (!jobTypeId) {
-    return (
-      <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-        Select a specific Job Type above to attach and configure Service Options —
-        an option must be mapped to an exact Job Type, not the service as a whole
-        (the same option can be Optional under Installation and unavailable under Repair).
-      </p>
-    );
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
-        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
-          Add-ons and options attached to this exact Job Type. Price is set by the tenant
-          (Tenant Setup &gt; Options &amp; Add-ons), never here.
-        </p>
-        {canWrite && (
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            {otherJobTypes.length > 0 && (
-              <button onClick={() => setShowCopy(v => !v)} style={{ fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer" }}>
-                Copy from Job Type
-              </button>
-            )}
-            <button onClick={() => setShowAdd(v => !v)} style={{ fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-              <Plus size={13}/> Add Option
-            </button>
-          </div>
-        )}
-      </div>
-      {showCopy && (
-        <div style={{ marginBottom: 14, padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-            Copies each option as a new, independent mapping for this Job Type — editing it here will never change the source Job Type's published options.
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {otherJobTypes.map(l => (
-              <button key={l.job_type_id} onClick={() => copyFrom(l.job_type_id)} disabled={copying}
-                style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", cursor: copying ? "default" : "pointer" }}>
-                {l.job_type.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {showAdd && (
-        <AddOptionPicker masterServiceId={masterServiceId} jobTypeId={jobTypeId}
-          existingOptionIds={mappings.map(m => m.service_option_id)}
-          onAdded={() => { setShowAdd(false); mappingsApi.refetch(); onChanged(); notify("Option attached to this Job Type."); }}
-          onError={(msg) => notify(msg, "error")}/>
-      )}
-      {mappings.length === 0 ? (
-        <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No options mapped to this Job Type yet.</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {mappings.map(m => (
-            <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{m.option.name}</span>
-                <code style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{m.option.code}</code>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                  background: m.usage === "REQUIRED" ? "var(--brand)" : "var(--surface)", color: m.usage === "REQUIRED" ? "white" : "var(--text-secondary)",
-                  border: "1px solid var(--border)" }}>{m.usage}</span>
-                <Chip>{m.available_after_inspection ? "Inspection" : "Customer booking"}</Chip>
-                {m.quantity_supported && (
-                  <Chip>Qty {m.minimum_quantity ?? 1}–{m.maximum_quantity ?? "∞"}{m.measurement_unit ? ` ${m.measurement_unit}` : ""}</Chip>
-                )}
-                {canWrite ? (
-                  <>
-                    <label style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-                      <input type="checkbox" checked={m.customer_selectable} onChange={() => toggleFlag(m, "customer_selectable")}/> Customer
-                    </label>
-                    <label style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-                      <input type="checkbox" checked={m.technician_selectable} onChange={() => toggleFlag(m, "technician_selectable")}/> Technician (post-inspection)
-                    </label>
-                  </>
-                ) : (
-                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                    {m.customer_selectable ? "Customer-selectable" : "Not customer-selectable"}
-                    {m.technician_selectable ? " · Technician post-inspection" : ""}
-                  </span>
-                )}
-              </div>
-              {canWrite && (
-                <button onClick={() => handleRemove(m)} style={{ fontSize: 11, fontWeight: 600, color: "var(--danger-text)", background: "none", border: "none", cursor: "pointer" }}>
-                  Detach
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Checklist tab -- maps a PUBLISHED checklist template version (owned by
-// the standalone Checklist Library, /admin/checklists) to this exact
-// Job-Type Blueprint. Does not re-implement template authoring here --
-// only mapping (phase/actor/usage/gate/conditions). ───────────────────────
 function ChecklistTab({ masterServiceJobTypeId, canWrite, notify, onChanged }: {
   masterServiceJobTypeId: string | null; canWrite: boolean;
   notify: (m: string, t?: "success" | "error") => void; onChanged: () => void;
@@ -1613,7 +1339,6 @@ function AddChecklistMappingForm({ masterServiceJobTypeId, onAdded, onError }: {
 // execution from real DRAFT configuration. Read-only; persists nothing. ───
 function PreviewTab({ masterServiceId, jobTypeId }: { masterServiceId: string; jobTypeId: string | null }) {
   const dimApi = useApi(useCallback(() => catalogWorkspaceApi.getDimensionGrid(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]), [masterServiceId, jobTypeId]);
-  const optionsApi = useApi(useCallback(() => jobTypeId ? catalogWorkspaceApi.listServiceOptionMappings(masterServiceId, jobTypeId) : Promise.resolve([]), [masterServiceId, jobTypeId]), [masterServiceId, jobTypeId]);
   const questionsApi = useApi(useCallback(() => catalogWorkspaceApi.listQuestions(masterServiceId, jobTypeId), [masterServiceId, jobTypeId]), [masterServiceId, jobTypeId]);
 
   if (!jobTypeId) {
@@ -1628,12 +1353,11 @@ function PreviewTab({ masterServiceId, jobTypeId }: { masterServiceId: string; j
   const enabledDims = (dimApi.data?.dimensions ?? []).filter(d => d.config.enabled);
   const tenantDims = enabledDims.filter(d => d.config.show_during_tenant_setup);
   const customerDims = enabledDims.filter(d => d.config.ask_customer);
-  const options = optionsApi.data ?? [];
   const questions = questionsApi.data?.questions ?? [];
-  if (dimApi.error || optionsApi.error || questionsApi.error) return <SectionError
-    title="Could not load the complete review" error={dimApi.error || optionsApi.error || questionsApi.error || "Unknown error"}
-    onRetry={() => { dimApi.refetch(); optionsApi.refetch(); questionsApi.refetch(); }}/>;
-  if (dimApi.loading || optionsApi.loading || questionsApi.loading) return <Skeleton height={220}/>;
+  if (dimApi.error || questionsApi.error) return <SectionError
+    title="Could not load the complete review" error={dimApi.error || questionsApi.error || "Unknown error"}
+    onRetry={() => { dimApi.refetch(); questionsApi.refetch(); }}/>;
+  if (dimApi.loading || questionsApi.loading) return <Skeleton height={220}/>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1644,20 +1368,16 @@ function PreviewTab({ masterServiceId, jobTypeId }: { masterServiceId: string; j
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-primary)" }}>
           {tenantDims.length === 0 && <li>No provider-facing dimension step for this job type.</li>}
           {tenantDims.map(d => <li key={d.dimension.id}>{d.dimension.name} — {d.config.required ? "required" : "optional"} for tenant setup</li>)}
-          {options.length === 0 && <li>No options step (no options mapped to this job type).</li>}
-          {options.length > 0 && <li>{options.length} option(s) available for the tenant to enable and price.</li>}
         </ul>
       </PreviewSection>
       <PreviewSection title="Customer Booking Preview">
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-primary)" }}>
           {customerDims.map(d => <li key={d.dimension.id}>Customer selects {d.dimension.name}{d.config.required ? " (required)" : " (optional)"}</li>)}
           {questions.filter(q => q.customer_visible && q.is_active).map(q => <li key={q.id}>{q.label}{q.required ? " (required)" : ""}{q.rules.length > 0 ? " · conditional" : ""}</li>)}
-          {options.filter(o => o.customer_selectable).map(o => <li key={o.id}>Customer may add: {o.option.name}</li>)}
         </ul>
       </PreviewSection>
       <PreviewSection title="Technician Execution Preview">
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-primary)" }}>
-          {options.filter(o => o.technician_selectable).map(o => <li key={o.id}>Technician may add post-inspection: {o.option.name}</li>)}
           <li>Checklist instances resolve from the Checklist tab's mappings for this exact job type.</li>
         </ul>
       </PreviewSection>
@@ -1674,63 +1394,8 @@ function PreviewSection({ title, children }: { title: string; children: React.Re
   );
 }
 
-// ── Add Option picker — attaches an existing reusable option template to
-// this exact Job Type. Does not create new global option templates here. ──
-function AddOptionPicker({ masterServiceId, jobTypeId, existingOptionIds, onAdded, onError }: {
-  masterServiceId: string; jobTypeId: string; existingOptionIds: string[];
-  onAdded: () => void; onError: (msg: string) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const searchApi = useApi(
-    useCallback(() => catalogWorkspaceApi.searchServiceOptionTemplates(search.trim()), [search]),
-    [search],
-  );
-  const addAction = useAction(catalogWorkspaceApi.addServiceOptionMapping);
-  const results = (searchApi.data?.items ?? []).filter(
-    it => !existingOptionIds.includes(String(it.id))) as { id: string; name: string; code: string }[];
-
-  async function attach(serviceOptionId: string) {
-    const result = await addAction.execute(masterServiceId, {
-      service_option_id: serviceOptionId, job_type_id: jobTypeId,
-      usage: "OPTIONAL", customer_selectable: true,
-    });
-    if (result) onAdded();
-    else onError(addAction.error || "Couldn't attach this option.");
-  }
-
-  return (
-    <div style={{ marginBottom: 14, padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <Search size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0 }}/>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search the option library…"
-          aria-label="Search options"
-          style={{ flex: 1, fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)" }}/>
-      </div>
-      {searchApi.error ? (
-        <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>{searchApi.error}</p>
-      ) : searchApi.loading ? (
-        <Skeleton height={60}/>
-      ) : results.length === 0 ? (
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
-          No matching options{existingOptionIds.length > 0 ? " (already-mapped options are hidden)" : ""}.
-        </p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 180, overflowY: "auto" }}>
-          {results.map(it => (
-            <button key={it.id} onClick={() => attach(it.id)} disabled={addAction.loading}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 9px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--surface)", cursor: addAction.loading ? "default" : "pointer", textAlign: "left" }}>
-              <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{it.name}</span>
-              <Plus size={13} style={{ color: "var(--brand)", flexShrink: 0 }}/>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const QUESTION_INPUT_TYPES = ["single_select", "multi_select", "boolean", "number", "text", "photo", "date", "time", "address"] as const;
-const QUESTION_ANSWER_SOURCES = ["static", "free"] as const; // dimension/problem sources need a picked dimension/problem -- out of scope for this minimal form, still creatable via the API directly.
+const QUESTION_ANSWER_SOURCES = ["static", "free"] as const;
 
 function slugifyKey(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);

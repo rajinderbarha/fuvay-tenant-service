@@ -236,32 +236,29 @@ def _read_utf8(path: str) -> str:
 
 class TestFrontendOwnership:
 
-    # MODULE-L5-56: /admin/service-options is retired as a standalone page
-    # (Job-Type Blueprint consolidation) -- it no longer has a create form
-    # (BLANK/createAction) to assert against; option creation/attachment now
-    # happens only via the Job-Type Blueprint's Options & Add-ons tab
-    # (AddOptionPicker/addServiceOptionMapping, still job-type-exact and
-    # still price-free -- see test_catalog_workspace_maps_by_job_type below,
-    # which continues to pass unmodified).
+    # MODULE-L5-56 first retired /admin/service-options as a standalone page,
+    # consolidating option creation/attachment into the Job-Type Blueprint's
+    # Options & Add-ons tab. That tab has since been retired too: add-ons are
+    # no longer part of provider setup or its completion gates (same product
+    # decision reflected in tenant_service.py's publish validation). Neither
+    # surface exists any more.
 
     def test_retired_standalone_page_is_removed(self):
         # A redirect-only tombstone is still dead production code. The
         # canonical editor is Catalog Workspace -> Job Type -> Options.
         assert not os.path.exists(ADMIN_FORM_PATH)
 
-    def test_catalog_workspace_maps_by_job_type(self):
+    def test_catalog_workspace_has_no_options_tab(self):
         src = _read_utf8(WORKSPACE_PATH)
-        assert "OptionsTab" in src
-        window = src[src.index("function OptionsTab"):src.index("function OptionsTab") + 2000]
-        assert "jobTypeId" in window
-        picker = src[src.index("function AddOptionPicker"):src.index("function AddOptionPicker") + 1200]
-        assert "job_type_id: jobTypeId" in picker
+        assert "OptionsTab" not in src
+        assert "AddOptionPicker" not in src
 
-    def test_tenant_wizard_owns_price_input(self):
+    def test_tenant_wizard_has_no_option_price_input(self):
+        # Add-ons are no longer part of provider setup: there is no option
+        # to price here any more (same retirement as the Options tab above).
         src = _read_utf8(TENANT_WIZARD_PATH)
-        assert "Price for ${option.name}" in src
-        assert "Minimum price for ${option.name}" in src
-        assert "setOptionPrice" in src
+        assert "Price for ${option.name}" not in src
+        assert "setOptionPrice" not in src
 
     def test_admin_api_client_option_mapping_requires_job_type(self):
         src = _read_utf8(ADMIN_API_PATH)

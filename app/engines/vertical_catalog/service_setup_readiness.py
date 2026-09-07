@@ -9,7 +9,12 @@ def service_setup_readiness(validations: list[tuple[str, dict]]) -> dict:
         errors = [error for error in validation["errors"]
                   if error.get("code") not in LATER_STEP_ERRORS]
         configured += not errors
-        blockers.extend({**error, "tenant_service_id": service_id} for error in errors)
+        name = validation.get("service_name")
+        job_type = validation.get("job_type")
+        label = f"{name} ({job_type})" if name and job_type else name
+        blockers.extend({**error, "tenant_service_id": service_id,
+                         "message": f"{label}: {error.get('message', error.get('code'))}" if label else error.get("message", error.get("code"))}
+                        for error in errors)
     total = len(validations)
     if not total:
         blockers.append({"code": "NO_ENABLED_SERVICE", "message": "Choose and configure at least one service."})

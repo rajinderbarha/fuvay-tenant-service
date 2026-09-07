@@ -56,6 +56,15 @@ def _make_tsb(**kwargs):
 
 
 def _svc(db, actor_tenant_id=None, actor_role="tenant_owner"):
+    # Existing precedence cases use legacy service-wide coverage. The new
+    # per-type lookup returns NULL; explicit scoped coverage has real-SQL
+    # tests in test_tenant_type_brand_coverage.py.
+    legacy_execute = db.execute
+    async def execute(statement, *args, **kwargs):
+        if str(statement).startswith("SELECT tenant_service_types.brand_coverage"):
+            return _scalar(None)
+        return await legacy_execute(statement, *args, **kwargs)
+    db.execute = AsyncMock(side_effect=execute)
     return TenantCatalogService(db=db, actor_tenant_id=actor_tenant_id, actor_role=actor_role)
 
 
