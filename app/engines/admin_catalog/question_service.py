@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.admin_catalog.models import (
@@ -111,6 +111,24 @@ class CatalogQuestionService:
         result = qn.to_dict()
         result.pop("icon_url", None)
         return result
+
+    async def delete_question(self, question_id: uuid.UUID) -> dict:
+        """A real, permanent delete -- distinct from the existing is_active
+        toggle, which already means "temporarily paused, still listed" (the
+        Active/Inactive pill in the workspace). Reusing that same flag for
+        delete would leave the question sitting in the list forever,
+        indistinguishable from a paused one. Cascades to its options and
+        show-when rules (no DB-level FK/cascade exists on this schema), and
+        asks any affected tenant setup to re-review, same as every other
+        admin catalog change."""
+        qn = await self._load(question_id)
+        from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+        await bump_tenant_setup_revision(self.db, qn.master_service_id, qn.job_type_id)
+        await self.db.execute(delete(CatalogQuestionOption).where(CatalogQuestionOption.question_id == question_id))
+        await self.db.execute(delete(CatalogQuestionRule).where(CatalogQuestionRule.question_id == question_id))
+        await self.db.delete(qn)
+        await self.db.commit()
+        return {"deleted": True, "id": str(question_id)}
 
     # ── Options ───────────────────────────────────────────────────────────────
     async def add_option(self, question_id: uuid.UUID, data: dict) -> dict:

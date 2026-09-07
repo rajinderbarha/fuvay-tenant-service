@@ -9874,12 +9874,19 @@ export const catalogWorkspaceApi = {
       `/v1/admin/catalog/dimensions${includeInactive ? "?include_inactive=true" : ""}`),
   createDimension: (data: Record<string, unknown>) =>
     apiFetch<CatalogDimensionDef>("/v1/admin/catalog/dimensions", { method: "POST", body: JSON.stringify(data) }),
+  deleteDimension: (dimensionId: string) =>
+    apiFetch(`/v1/admin/catalog/dimensions/${dimensionId}`, { method: "DELETE" }),
   listDimensionValues: (dimensionId: string) =>
     apiFetch<{ dimension: CatalogDimensionDef; legacy: boolean; values: CatalogDimensionValueItem[] }>(
       `/v1/admin/catalog/dimensions/${dimensionId}/values`),
   addDimensionValue: (dimensionId: string, data: Record<string, unknown>) =>
     apiFetch<CatalogDimensionValueItem>(`/v1/admin/catalog/dimensions/${dimensionId}/values`,
       { method: "POST", body: JSON.stringify(data) }),
+  updateDimensionValue: (dimensionId: string, valueId: string, data: Record<string, unknown>) =>
+    apiFetch<CatalogDimensionValueItem>(`/v1/admin/catalog/dimensions/${dimensionId}/values/${valueId}`,
+      { method: "PUT", body: JSON.stringify(data) }),
+  deleteDimensionValue: (dimensionId: string, valueId: string) =>
+    apiFetch(`/v1/admin/catalog/dimensions/${dimensionId}/values/${valueId}`, { method: "DELETE" }),
   getDimensionGrid: (masterServiceId: string, jobTypeId: string | null) =>
     apiFetch<{ dimensions: DimensionGridRow[] }>(
       `/v1/admin/catalog/dimensions/blueprint/config?master_service_id=${masterServiceId}${jobTypeId ? `&job_type_id=${jobTypeId}` : ""}`),
@@ -9911,6 +9918,8 @@ export const catalogWorkspaceApi = {
     apiFetch<CatalogQuestionItem>("/v1/admin/catalog/questions", { method: "POST", body: JSON.stringify(data) }),
   updateQuestion: (id: string, data: Record<string, unknown>) =>
     apiFetch<CatalogQuestionItem>(`/v1/admin/catalog/questions/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteQuestion: (id: string) =>
+    apiFetch(`/v1/admin/catalog/questions/${id}`, { method: "DELETE" }),
   addQuestionOption: (questionId: string, data: Record<string, unknown>) =>
     apiFetch<CatalogQuestionOption>(`/v1/admin/catalog/questions/${questionId}/options`,
       { method: "POST", body: JSON.stringify(data) }),
@@ -9971,6 +9980,8 @@ export const catalogWorkspaceApi = {
   addServiceJobType: (masterServiceId: string, jobTypeId: string) =>
     apiFetch<MasterServiceJobTypeLink>(`/v1/admin/master-services/${masterServiceId}/job-types`,
       { method: "POST", body: JSON.stringify({ job_type_id: jobTypeId }) }),
+  removeServiceJobType: (masterServiceId: string, linkId: string) =>
+    apiFetch(`/v1/admin/master-services/${masterServiceId}/job-types/${linkId}`, { method: "DELETE" }),
   getJobTypesForService: (masterServiceId: string) =>
     apiFetch<{ items: MasterServiceJobTypeLink[] }>(`/v1/admin/master-services/${masterServiceId}/job-types`),
   getJobTypeWorkflow: (masterServiceId: string, jobTypeId: string) =>

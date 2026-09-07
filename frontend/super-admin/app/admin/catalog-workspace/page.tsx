@@ -15,7 +15,8 @@ import {
   homeServicesCatalogConsoleApi, catalogWorkspaceApi, checklistCatalogApi, catalogApi,
   type HsConsoleService, type CatalogJobType, type DimensionGridRow, type CatalogDimensionDef,
   type BlueprintReadiness, type BlueprintImpactReport, type BlueprintDraftStatus, type CatalogQuestionItem,
-  type CatalogIssueTypeMapping, type ServiceJobWorkflow,
+  type CatalogIssueTypeMapping, type ServiceJobWorkflow, type MasterServiceJobTypeLink,
+  type CatalogDimensionValueItem,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -23,7 +24,7 @@ import { WorkflowStepBuilder } from "./WorkflowStepBuilder";
 import { Btn, Pagination, SectionHeader } from "../../../components/shared/ui";
 import {
   ChevronRight, RefreshCw, XCircle, CheckCircle2, Layers, Lock, Plus,
-  CircleDot, ListChecks, SlidersHorizontal, HelpCircle, Search, ClipboardList,
+  CircleDot, ListChecks, SlidersHorizontal, HelpCircle, Search, ClipboardList, Trash2,
 } from "lucide-react";
 
 // ── Shared formatters (same convention as the rest of this app) ─────────────
@@ -152,6 +153,20 @@ export default function AdminCatalogWorkspacePage() {
     [selectedId], { enabled: !!selectedId },
   );
   const publishAction = useAction(catalogWorkspaceApi.publishDraft);
+  const removeJobTypeAction = useAction(catalogWorkspaceApi.removeServiceJobType);
+
+  async function handleRemoveJobType(link: MasterServiceJobTypeLink) {
+    if (!selectedId || !canWrite) return;
+    if (!window.confirm(`Remove ${link.job_type.label} from this service? Any tenant currently offering it returns to draft for re-review.`)) return;
+    const result = await removeJobTypeAction.execute(selectedId, link.id);
+    if (result) {
+      notify(`${link.job_type.label} removed from this service.`);
+      if (selectedJobTypeId === link.job_type_id) setSelectedJobTypeId(null);
+      serviceJobTypesApi.refetch();
+    } else {
+      notify(removeJobTypeAction.error ?? "Couldn't remove this job type.", "error");
+    }
+  }
 
   async function handlePublish() {
     if (!selectedId || !canWrite) return;
@@ -299,10 +314,22 @@ export default function AdminCatalogWorkspacePage() {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     <details><summary>Advanced defaults</summary><button className={`cw-jt-tab ${selectedJobTypeId === null ? "active" : ""}`} onClick={() => setSelectedJobTypeId(null)}>Shared defaults — not a job type</button></details>
                     {serviceJobTypeLinks.map(link => (
-                      <button key={link.job_type_id} className={`cw-jt-tab ${selectedJobTypeId === link.job_type_id ? "active" : ""}`} onClick={() => setSelectedJobTypeId(link.job_type_id)}
-                        title={link.job_type.runtime_supported ? undefined : "Not yet wired into field_ops runtime transitions"}>
-                        {link.job_type.label}{!link.job_type.runtime_supported && " *"}
-                      </button>
+                      <span key={link.job_type_id} style={{ display: "inline-flex", alignItems: "center" }}>
+                        <button className={`cw-jt-tab ${selectedJobTypeId === link.job_type_id ? "active" : ""}`} onClick={() => setSelectedJobTypeId(link.job_type_id)}
+                          style={canWrite ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 } : undefined}
+                          title={link.job_type.runtime_supported ? undefined : "Not yet wired into field_ops runtime transitions"}>
+                          {link.job_type.label}{!link.job_type.runtime_supported && " *"}
+                        </button>
+                        {canWrite && (
+                          <button onClick={() => handleRemoveJobType(link)} disabled={removeJobTypeAction.loading}
+                            aria-label={`Remove ${link.job_type.label} from this service`}
+                            title={`Remove ${link.job_type.label} from this service`}
+                            className={selectedJobTypeId === link.job_type_id ? "cw-jt-tab active" : "cw-jt-tab"}
+                            style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: "1px solid color-mix(in srgb, currentColor 25%, transparent)", padding: "7px 8px", display: "flex" }}>
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
+                      </span>
                     ))}
                     {canWrite && (
                       <button onClick={() => setShowAddJobType(v => !v)} className="cw-jt-tab" style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -729,6 +756,7 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
     [masterServiceId, jobTypeId],
   );
   const setFlag = useAction(catalogWorkspaceApi.setDimensionConfig);
+  const deleteDimensionAction = useAction(catalogWorkspaceApi.deleteDimension);
   const rows = gridApi.data?.dimensions ?? [];
   const [showAddDimension, setShowAddDimension] = useState(false);
   const [expandedValuesFor, setExpandedValuesFor] = useState<string | null>(null);
@@ -742,6 +770,14 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
     } else {
       notify("Couldn't update dimension.", "error");
     }
+  }
+
+  async function handleDeleteDimension(row: DimensionGridRow) {
+    if (!canWrite) return;
+    if (!window.confirm(`Delete the "${row.dimension.name}" dimension? It stops being offered on every service that uses it.`)) return;
+    const result = await deleteDimensionAction.execute(row.dimension.id);
+    if (result) { gridApi.refetch(); onChanged(); notify(`"${row.dimension.name}" deleted.`); }
+    else notify(deleteDimensionAction.error ?? "Couldn't delete this dimension.", "error");
   }
 
   if (gridApi.error) return <SectionError title="Couldn't load dimensions" error={gridApi.error} requestId={gridApi.requestId} onRetry={gridApi.refetch}/>;
@@ -786,11 +822,18 @@ function DimensionsTab({ masterServiceId, jobTypeId, canWrite, notify, onChanged
                   <td style={{ padding: "9px 10px" }}><FlagPill on={row.config.required} onClick={() => toggle(row, "required")} disabled={!canWrite}/></td>
                   <td style={{ padding: "9px 10px" }}><FlagPill on={row.config.ask_customer} onClick={() => toggle(row, "ask_customer")} disabled={!canWrite}/></td>
                   <td style={{ padding: "9px 10px" }}><FlagPill on={row.config.affects_price} onClick={() => toggle(row, "affects_price")} disabled={!canWrite}/></td>
-                  <td style={{ padding: "9px 10px" }}>
+                  <td style={{ padding: "9px 10px", whiteSpace: "nowrap" }}>
                     <button onClick={() => setExpandedValuesFor(expandedValuesFor === row.dimension.id ? null : row.dimension.id)}
                       style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>
                       {expandedValuesFor === row.dimension.id ? "Hide" : "Manage values"}
                     </button>
+                    {canWrite && !row.dimension.legacy_source && (
+                      <button onClick={() => handleDeleteDimension(row)} disabled={deleteDimensionAction.loading}
+                        aria-label={`Delete ${row.dimension.name} dimension`} title={`Delete ${row.dimension.name} dimension`}
+                        style={{ marginLeft: 8, display: "inline-flex", padding: 3, borderRadius: "50%", border: "none", background: "none", color: "var(--danger-text)", cursor: deleteDimensionAction.loading ? "default" : "pointer", verticalAlign: "middle" }}>
+                        <Trash2 size={13}/>
+                      </button>
+                    )}
                   </td>
                 </tr>
                 {expandedValuesFor === row.dimension.id && (
@@ -865,9 +908,18 @@ function DimensionValuesPanel({ dimension, masterServiceId, canWrite, onChanged,
     () => dimension.legacy_source ? Promise.resolve({ dimension, legacy: true, values: [] }) : catalogWorkspaceApi.listDimensionValues(dimension.id),
     [dimension.id, dimension.legacy_source]), [dimension.id, dimension.legacy_source]);
   const addAction = useAction(catalogWorkspaceApi.addDimensionValue);
+  const deleteValueAction = useAction(catalogWorkspaceApi.deleteDimensionValue);
   const [label, setLabel] = useState("");
   const isLegacy = !!dimension.legacy_source;
   const values = valuesApi.data?.values ?? [];
+
+  async function handleDeleteValue(v: CatalogDimensionValueItem) {
+    if (!canWrite) return;
+    if (!window.confirm(`Delete "${v.label}" from ${dimension.name}? Any tenant currently using this value keeps their existing selection, but it will no longer be offered.`)) return;
+    const result = await deleteValueAction.execute(dimension.id, v.id);
+    if (result) { valuesApi.refetch(); onChanged(); notify(`"${v.label}" deleted.`); }
+    else notify(deleteValueAction.error ?? "Couldn't delete this value.", "error");
+  }
   const exactValues = useApi(useCallback(async () => {
     if (dimension.legacy_source === "brands") {
       const [library, mapped] = await Promise.all([
@@ -940,8 +992,14 @@ function DimensionValuesPanel({ dimension, masterServiceId, canWrite, onChanged,
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
             {values.map(v => (
-              <span key={v.id} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 999, background: "var(--surface-sunken)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+              <span key={v.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 4px 3px 9px", borderRadius: 999, background: "var(--surface-sunken)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
                 {v.label}
+                {canWrite && (
+                  <button onClick={() => handleDeleteValue(v)} disabled={deleteValueAction.loading} aria-label={`Delete ${v.label}`} title={`Delete ${v.label}`}
+                    style={{ display: "flex", padding: 3, borderRadius: "50%", border: "none", background: "transparent", color: "var(--danger-text)", cursor: deleteValueAction.loading ? "default" : "pointer" }}>
+                    <Trash2 size={11}/>
+                  </button>
+                )}
               </span>
             ))}
             {values.length === 0 && <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>No values yet.</span>}
@@ -1513,9 +1571,22 @@ function QuestionsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChang
     [masterServiceId, jobTypeId],
   );
   const toggleAction = useAction(catalogWorkspaceApi.updateQuestion);
+  const deleteAction = useAction(catalogWorkspaceApi.deleteQuestion);
   const questions = questionsApi.data?.questions ?? [];
   const [showAdd, setShowAdd] = useState(false);
   const [expandedRulesFor, setExpandedRulesFor] = useState<string | null>(null);
+
+  async function handleDelete(q: CatalogQuestionItem) {
+    if (!canWrite) return;
+    if (!window.confirm(`Delete "${q.label}"? DeepSeek and the customer flow will stop asking it, and any tenant setup relying on it returns to draft for re-review.`)) return;
+    const result = await deleteAction.execute(q.id);
+    if (result) {
+      notify(`"${q.label}" deleted.`);
+      questionsApi.refetch(); onChanged();
+    } else {
+      notify(deleteAction.error ?? "Couldn't delete this question.", "error");
+    }
+  }
 
   // Fetched once per sub-tab visit -- the reference lists the rule builder
   // needs to resolve condition_type -> a concrete picker (job type / problem
@@ -1588,6 +1659,13 @@ function QuestionsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChang
                     <button onClick={() => toggleActive(q)} style={{ fontSize: 10, fontWeight: 700, padding: "2px 10px", borderRadius: 999, border: "none", cursor: "pointer",
                       background: q.is_active ? "var(--success-bg)" : "var(--surface)", color: q.is_active ? "var(--success-text)" : "var(--text-tertiary)" }}>
                       {q.is_active ? "Active" : "Inactive"}
+                    </button>
+                  )}
+                  {canWrite && (
+                    <button onClick={() => handleDelete(q)} disabled={deleteAction.loading} aria-label={`Delete "${q.label}"`} title={`Delete "${q.label}"`}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, border: "none", cursor: deleteAction.loading ? "default" : "pointer",
+                        background: "var(--surface)", color: "var(--danger-text)", display: "flex", alignItems: "center" }}>
+                      <Trash2 size={12}/>
                     </button>
                   )}
                 </div>

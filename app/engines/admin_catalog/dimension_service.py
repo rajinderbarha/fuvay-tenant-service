@@ -75,6 +75,20 @@ class CatalogDimensionService:
         await self.db.refresh(d)
         return d.to_dict()
 
+    async def delete_dimension(self, dimension_id: uuid.UUID) -> dict:
+        """Soft-delete a custom dimension definition. Type and Brand are
+        platform-structural (legacy_source set) and are never deletable
+        through here -- they're managed in Types & Brands."""
+        d = await self._load_dimension(dimension_id)
+        if d.legacy_source:
+            raise ServiceOSException("LEGACY_DIMENSION_NOT_DELETABLE",
+                f"'{d.name}' is a platform-structural dimension and cannot be deleted.", status_code=422)
+        if not d.is_active:
+            return {"deleted": True, "id": str(dimension_id)}
+        d.is_active = False
+        await self.db.commit()
+        return {"deleted": True, "id": str(dimension_id)}
+
     # ── Dimension values ──────────────────────────────────────────────────────
     async def list_values(self, dimension_id: uuid.UUID) -> dict:
         """Reads generic values, OR proxies to the legacy service_types/brands
@@ -113,6 +127,25 @@ class CatalogDimensionService:
         await self.db.commit()
         await self.db.refresh(v)
         return v.to_dict()
+
+    async def update_value(self, dimension_id: uuid.UUID, value_id: uuid.UUID, data: dict) -> dict:
+        v = await self._load_value(dimension_id, value_id)
+        for field in ("label", "display_order", "is_active"):
+            if field in data and data[field] is not None:
+                setattr(v, field, data[field])
+        if "metadata" in data:
+            v.meta = data["metadata"]
+        await self.db.commit()
+        await self.db.refresh(v)
+        return v.to_dict()
+
+    async def delete_value(self, dimension_id: uuid.UUID, value_id: uuid.UUID) -> dict:
+        v = await self._load_value(dimension_id, value_id)
+        if not v.is_active:
+            return {"deleted": True, "id": str(value_id)}
+        v.is_active = False
+        await self.db.commit()
+        return {"deleted": True, "id": str(value_id)}
 
     # ── Service-job dimension blueprint config ────────────────────────────────
     async def get_service_job_dimensions(self, master_service_id: uuid.UUID,
@@ -332,3 +365,11 @@ class CatalogDimensionService:
         if not d:
             raise NotFoundException("CatalogDimension", str(dimension_id))
         return d
+
+    async def _load_value(self, dimension_id: uuid.UUID, value_id: uuid.UUID) -> CatalogDimensionValue:
+        v = (await self.db.execute(select(CatalogDimensionValue).where(
+            CatalogDimensionValue.id == value_id,
+            CatalogDimensionValue.dimension_id == dimension_id))).scalar_one_or_none()
+        if not v:
+            raise NotFoundException("CatalogDimensionValue", str(value_id))
+        return v

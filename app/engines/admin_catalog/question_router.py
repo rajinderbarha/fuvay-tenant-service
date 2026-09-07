@@ -50,6 +50,13 @@ async def update_question(question_id: uuid.UUID, r: Request, payload: dict = Bo
     return ok(await s.update_question(question_id, payload), _rid(r), ENGINE_ID)
 
 
+@router.delete("/{question_id}", response_model=ApiResponse[dict], summary="Delete a question")
+async def delete_question(question_id: uuid.UUID, r: Request,
+                          u: UserContext = Depends(require_super_admin),
+                          s: CatalogQuestionService = Depends(_svc)):
+    return ok(await s.delete_question(question_id), _rid(r), ENGINE_ID)
+
+
 @router.post("/{question_id}/options", response_model=ApiResponse[dict], status_code=201,
              summary="Add a static option to a question")
 async def add_option(question_id: uuid.UUID, r: Request, payload: dict = Body(...),

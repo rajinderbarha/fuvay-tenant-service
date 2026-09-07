@@ -49,6 +49,13 @@ async def update_dimension(dimension_id: uuid.UUID, r: Request, payload: dict = 
     return ok(await s.update_dimension(dimension_id, payload), _rid(r), ENGINE_ID)
 
 
+@router.delete("/{dimension_id}", response_model=ApiResponse[dict], summary="Delete a custom dimension definition")
+async def delete_dimension(dimension_id: uuid.UUID, r: Request,
+                            u: UserContext = Depends(require_super_admin),
+                            s: CatalogDimensionService = Depends(_svc)):
+    return ok(await s.delete_dimension(dimension_id), _rid(r), ENGINE_ID)
+
+
 # ── Dimension values ──────────────────────────────────────────────────────────
 @router.get("/{dimension_id}/values", response_model=ApiResponse[dict],
             summary="List a dimension's values (proxies legacy Type/Brand tables)")
@@ -64,6 +71,22 @@ async def add_value(dimension_id: uuid.UUID, r: Request, payload: dict = Body(..
                      u: UserContext = Depends(require_super_admin),
                      s: CatalogDimensionService = Depends(_svc)):
     return ok(await s.add_value(dimension_id, payload), _rid(r), ENGINE_ID)
+
+
+@router.put("/{dimension_id}/values/{value_id}", response_model=ApiResponse[dict],
+            summary="Update a generic dimension value")
+async def update_value(dimension_id: uuid.UUID, value_id: uuid.UUID, r: Request, payload: dict = Body(...),
+                        u: UserContext = Depends(require_super_admin),
+                        s: CatalogDimensionService = Depends(_svc)):
+    return ok(await s.update_value(dimension_id, value_id, payload), _rid(r), ENGINE_ID)
+
+
+@router.delete("/{dimension_id}/values/{value_id}", response_model=ApiResponse[dict],
+               summary="Delete a generic dimension value")
+async def delete_value(dimension_id: uuid.UUID, value_id: uuid.UUID, r: Request,
+                        u: UserContext = Depends(require_super_admin),
+                        s: CatalogDimensionService = Depends(_svc)):
+    return ok(await s.delete_value(dimension_id, value_id), _rid(r), ENGINE_ID)
 
 
 # ── Service-job dimension blueprint config (the Dimensions grid) ──────────────
