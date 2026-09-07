@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
 
 from app.engines.vertical_catalog.service import VerticalCatalogService
 from app.engines.vertical_catalog.document_requirements import (
@@ -113,7 +114,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # ── Services & Pricing ────────────────────────────────────────────────
     published_count = (await db.execute(
         text("SELECT count(*) FROM tenant_services WHERE tenant_id=:tid "
-             "AND setup_status='published' AND is_active=true AND deleted_at IS NULL"),
+             "AND setup_status='published' AND is_enabled=true AND is_active=true AND deleted_at IS NULL"),
         {"tid": str(tenant_id)},
     )).scalar() or 0
     # A tenant_service is priced through any of the same fields
@@ -124,17 +125,7 @@ async def get_setup_overview(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
     # Home Services offering (a very common Repair/inspection setup) was
     # permanently counted as "unpriced" and blocked Review & Submit.
     priced_count = (await db.execute(
-        text("SELECT count(*) FROM tenant_services ts WHERE ts.tenant_id=:tid "
-             "AND ts.setup_status='published' AND ts.is_active=true AND ts.deleted_at IS NULL "
-             "AND (ts.tenant_min_price IS NOT NULL "
-             "     OR ts.tenant_visit_fee IS NOT NULL "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_types tst WHERE tst.tenant_service_id=ts.id "
-             "                AND tst.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_brands tsb WHERE tsb.tenant_service_id=ts.id "
-             "                AND tsb.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM master_services ms WHERE ms.id = ts.master_service_id "
-             "                AND ms.tenant_override_allowed = false "
-             "                AND COALESCE(ms.base_price, ms.min_price) IS NOT NULL))"),
+        text(PUBLISHED_PRICED_SERVICES_SQL),
         {"tid": str(tenant_id)},
     )).scalar() or 0
     # Every published service must be priced. Comparing only `> 0` let one

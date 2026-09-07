@@ -11,6 +11,7 @@ allowed) got stuck on a permanently "incomplete" Services & Pricing section.
 """
 import os
 import pathlib
+from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
 
 BASE = str(pathlib.Path(__file__).parent.parent.resolve())
 OVERVIEW = os.path.join(BASE, "app/engines/vertical_catalog/home_services_setup_service.py")
@@ -28,27 +29,30 @@ class TestPricedCountRecognizesVisitFee:
         start = c.index("priced_count = (await db.execute(")
         end = c.index("services_ready")
         block = c[start:end]
-        assert "ts.tenant_visit_fee IS NOT NULL" in block
+        assert "text(PUBLISHED_PRICED_SERVICES_SQL)" in block
+        assert "ts.tenant_visit_fee > 0" in PUBLISHED_PRICED_SERVICES_SQL
 
     def test_activation_gate_priced_count_includes_visit_fee(self):
         c = _read(ACTIVATION)
         start = c.index("priced_count = (await db.execute(")
         end = c.index("offerings_ready")
         block = c[start:end]
-        assert "ts.tenant_visit_fee IS NOT NULL" in block
+        assert "text(PUBLISHED_PRICED_SERVICES_SQL)" in block
+        assert "ts.tenant_visit_fee > 0" in PUBLISHED_PRICED_SERVICES_SQL
 
     def test_both_queries_stay_in_sync(self):
         """Same price-recognition SQL fragment in both places -- prevents the
         two gates from silently drifting apart again."""
         overview_block = _read(OVERVIEW)
         activation_block = _read(ACTIVATION)
-        # Both files must agree on the same set of OR clauses.
+        assert "text(PUBLISHED_PRICED_SERVICES_SQL)" in overview_block
+        assert "text(PUBLISHED_PRICED_SERVICES_SQL)" in activation_block
+        # Both gates now use one query, including the provider-wide fee.
         for clause in (
-            "ts.tenant_min_price IS NOT NULL",
-            "ts.tenant_visit_fee IS NOT NULL",
+            "ts.tenant_min_price > 0",
+            "ts.tenant_visit_fee > 0",
             "tenant_service_types tst",
             "tenant_service_brands tsb",
-            "ms.tenant_override_allowed = false",
+            "consultation_fee",
         ):
-            assert clause in overview_block
-            assert clause in activation_block
+            assert clause in PUBLISHED_PRICED_SERVICES_SQL

@@ -77,6 +77,7 @@ function ServicesPricingPageContent() {
   const selectedId = idParts?.[0] ?? null;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [pricingPolicyRevision, setPricingPolicyRevision] = useState(0);
   const query = searchParams.get("q") ?? "";
   const requestedStatus = searchParams.get("status");
   const statusFilter: CatalogStatus = CATALOG_STATUS_FILTERS.some(option => option.value === requestedStatus)
@@ -86,11 +87,12 @@ function ServicesPricingPageContent() {
 
   const workspace = useApi(() => servicesWorkspaceApi.get(), []);
   const setupCatalog = useApi(async () => {
-    const [available, enabled] = await Promise.all([
+    const [available, enabled, policy] = await Promise.all([
       homeServicesSetupApi.listAvailable(),
       homeServicesSetupApi.listEnabled(),
+      homeServicesSetupApi.getPricingPolicy(),
     ]);
-    return { available: available.services, enabled: enabled.services };
+    return { available: available.services, enabled: enabled.services, policy };
   }, []);
 
   const fallbackGroups = useMemo<SWCatalogGroup[]>(() => {
@@ -105,10 +107,10 @@ function ServicesPricingPageContent() {
       const groupName = source?.service_group_name ?? enabled.service_group_name ?? "Other services";
       if (!groups.has(groupId)) groups.set(groupId, { service_group_id: groupId, name: groupName, services: [] });
       const inspection = isInspectionPricing(source?.pricing_model);
-      const pricingReady = inspection
-        ? !!enabled.tenant_visit_fee
-        : String(enabled.job_type).toLowerCase() === "consultation"
-          ? true
+      const pricingReady = String(enabled.job_type).toLowerCase() === "consultation"
+        ? Number(setupCatalog.data.policy.consultation_fee) > 0
+        : inspection
+          ? !!enabled.tenant_visit_fee
           : !!enabled.tenant_min_price && !!enabled.tenant_max_price;
       const readinessReady = source?.admin_ready !== false && pricingReady && Number(enabled.warranty_days ?? 0) >= 5;
       groups.get(groupId)!.services.push({
@@ -116,6 +118,7 @@ function ServicesPricingPageContent() {
         master_service_id: enabled.master_service_id,
         name: enabled.tenant_display_name || enabled.service_name || source?.service_name || "Service offering",
         job_type_label: enabled.job_type_label || source?.job_type_label || enabled.job_type,
+        job_type: enabled.job_type,
         setup_status: enabled.setup_status === "published" ? "published" : "draft",
         missing_pricing: !pricingReady,
         readiness_ready: readinessReady,
@@ -225,6 +228,10 @@ function ServicesPricingPageContent() {
           </div>
         )}
 
+        <section id="provider-consultation-fee" style={{ marginBottom: 16 }}>
+          <ConsultationFeeCard onSaved={() => { workspace.refetch(); setupCatalog.refetch(); setPricingPolicyRevision(value => value + 1); }} />
+        </section>
+
         <div className="pricing-workspace-grid">
           <aside className="pricing-offerings-rail" aria-label="Your offerings">
             <div className="pricing-rail-head">
@@ -287,6 +294,7 @@ function ServicesPricingPageContent() {
             <OfferingWorkspace
               key={effectiveId}
               tenantServiceId={effectiveId}
+              pricingPolicyRevision={pricingPolicyRevision}
               groupName={catalogGroups.find(group => group.services.some(service => service.tenant_service_id === effectiveId))?.name}
               onWorkspaceChanged={workspace.refetch}
             />
@@ -473,7 +481,9 @@ function AddServicesModal({ onClose, onAdded }: {
 }
 
 function CatalogRow({ s, selected, onClick }: { s: SWCatalogService; selected: boolean; onClick: () => void }) {
-  const priceLabel = isInspectionPricing(s.pricing_behavior)
+  const priceLabel = String(s.job_type ?? "").toLowerCase() === "consultation"
+    ? s.missing_pricing ? "Set provider-wide fee above" : "Provider-wide fee configured"
+    : isInspectionPricing(s.pricing_behavior)
     ? s.tenant_visit_fee != null ? `₹${s.tenant_visit_fee.toLocaleString("en-IN")} inspection` : "No charge set"
     : s.tenant_min_price != null
       ? s.tenant_max_price != null && s.tenant_max_price !== s.tenant_min_price
@@ -498,14 +508,15 @@ const TABS = ["overview", "types-brands", "options", "pricing", "visit-fee", "wa
 type Tab = typeof TABS[number];
 /** Two-column detail+effective-pricing area, driven by one shared refetch so an
  * edit anywhere (pricing/types/brands/publish) reloads both real projections. */
-function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged }: {
+function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged, pricingPolicyRevision }: {
   tenantServiceId: string;
   groupName?: string;
   onWorkspaceChanged: () => void;
+  pricingPolicyRevision: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const detail = useApi(() => servicesWorkspaceApi.detail(tenantServiceId), [tenantServiceId]);
+  const detail = useApi(() => servicesWorkspaceApi.detail(tenantServiceId), [tenantServiceId, pricingPolicyRevision]);
   const pricingEditorRef = useRef<PricingEditorHandle>(null);
   const dimensionEditorRef = useRef<InlineDimensionPricingEditorHandle>(null);
   const [pricingDirty, setPricingDirty] = useState(false);
@@ -530,9 +541,9 @@ function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged }: {
   const ts = data.tenant_service as { setup_status: string; requires_type: boolean; requires_brand: boolean; master_service_id?: string; job_type_id?: string; job_type?: string };
   const inspectionPricing = isInspectionPricing(data.blueprint.pricing_behavior);
   const consultationPricing = String(ts.job_type ?? "").toLowerCase() === "consultation";
-  const pricingMode: "inspection" | "consultation" | "dimension" = inspectionPricing
-    ? "inspection"
-    : consultationPricing ? "consultation" : "dimension";
+  const pricingMode: "inspection" | "consultation" | "dimension" = consultationPricing
+    ? "consultation"
+    : inspectionPricing ? "inspection" : "dimension";
   const fixedPricing = pricingMode === "dimension" && data.blueprint.pricing_behavior === "fixed";
   const availableTabs: Tab[] = pricingMode === "inspection"
     ? ["overview", "types-brands", "options", "visit-fee", "warranty", "requirements"]
@@ -582,7 +593,7 @@ function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged }: {
       )}
 
       {pricingMode === "consultation" ? (
-        <div className="pricing-panel"><ConsultationFeeCard /></div>
+        <p className="pricing-section-copy">Uses the shared fee in <a href="#provider-consultation-fee">provider settings above</a>. No separate service price is needed.</p>
       ) : (
         <UnifiedPricingEditor ref={pricingEditorRef} tenantServiceId={tenantServiceId} data={data} pricingMode={pricingMode} onDirtyChange={setPricingDirty}>
           {fixedPricing && <OperationalDimensionPricing editorRef={dimensionEditorRef} tenantServiceId={tenantServiceId} data={data} onDirtyChange={setDimensionDirty} />}
@@ -1243,10 +1254,6 @@ function DefaultPricingTab({ tenantServiceId, data, onChanged }: {
     { onSuccess: onChanged },
   );
 
-  if (!ts.override_allowed) {
-    return <Card><Alert tone="info">Price override is not permitted for this service by the Admin blueprint.</Alert></Card>;
-  }
-
   return (
     <Card title="Default pricing">
       {error && <Alert tone="danger">{error}</Alert>}
@@ -1385,7 +1392,7 @@ function PublicationCard({ tenantServiceId, data, hasDraftChanges, beforeSave, o
   );
 }
 
-function ConsultationFeeCard() {
+function ConsultationFeeCard({ onSaved }: { onSaved: () => void }) {
   const policy = useApi(() => homeServicesSetupApi.getPricingPolicy(), []);
   const [fee, setFee] = useState("");
   useEffect(() => {
@@ -1395,7 +1402,7 @@ function ConsultationFeeCard() {
   const invalid = !Number.isFinite(parsedFee) || parsedFee <= 0;
   const { execute: save, loading, error } = useAction(
     () => homeServicesSetupApi.updatePricingPolicy({ consultation_fee: parsedFee }),
-    { onSuccess: policy.refetch },
+    { onSuccess: () => { policy.refetch(); onSaved(); } },
   );
 
   return (

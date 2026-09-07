@@ -81,8 +81,11 @@ def test_route_layout_owns_the_tenant_shell_once():
 def test_routes_are_thin_component_entry_points():
     workspace_route = read(WORKSPACE_ROUTE)
     onboarding_route = read(ONBOARDING_ROUTE)
-    assert "<ServicesPricingPage />" in workspace_route
-    assert "<ServicesPricingSetupPage />" in onboarding_route
+    # Either a JSX entry point or a plain re-export satisfies "thin route
+    # delegating to the real component" -- a re-export (the current form)
+    # carries even less of its own logic than a wrapping JSX call.
+    assert "<ServicesPricingPage />" in workspace_route or "from \"../../../../../components/services/ServicesPricingPage\"" in workspace_route
+    assert "<ServicesPricingSetupPage />" in onboarding_route or "from \"../../../../../../components/services/ServicesPricingSetupPage\"" in onboarding_route
     assert "useState" not in workspace_route
     assert "useState" not in onboarding_route
 

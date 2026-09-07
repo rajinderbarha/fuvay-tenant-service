@@ -674,6 +674,7 @@ class TenantCatalogService:
         cat = cat_res.scalar_one_or_none()
         if not cat or not cat.is_active:
             raise ServiceOSException("SERVICE_CATEGORY_INACTIVE", "Service category is inactive.", status_code=422)
+        provider_owns_prices = cat.vertical_type == "home_services"
 
         # FINAL-L5-04B: tenant must hold an ACTIVE entitlement for the
         # service_group this service belongs to before it can configure it.
@@ -736,7 +737,7 @@ class TenantCatalogService:
             # so the old `any([...])`/`if tenant_min and ...` skipped validation
             # when a tenant set price 0, storing a floor-bypassing value.
             if any(v is not None for v in (tenant_base, tenant_min, tenant_max, tenant_visit)):
-                if not svc.tenant_override_allowed:
+                if not provider_owns_prices and not svc.tenant_override_allowed:
                     raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
                         "Price override is not allowed for this service.", status_code=422)
                 self._validate_price_overrides(svc, tenant_base, tenant_min, tenant_max, tenant_visit)
@@ -769,7 +770,7 @@ class TenantCatalogService:
                 tenant_max_price=tenant_max,
                 tenant_visit_fee=tenant_visit,
                 warranty_days=warranty_days,
-                override_allowed=svc.tenant_override_allowed,
+                override_allowed=provider_owns_prices or svc.tenant_override_allowed,
                 requires_brand=blueprint["brand_mode"] == "required",
                 requires_type=blueprint["type_mode"] == "required",
                 is_active=True,
@@ -782,6 +783,7 @@ class TenantCatalogService:
         # setup contract; otherwise a tenant could retain obsolete type/brand
         # requirements indefinitely simply by disabling and enabling again.
         if existing_ts:
+            existing_ts.override_allowed = provider_owns_prices or svc.tenant_override_allowed
             job_type_id = job_type.id
             blueprint = await self._tenant_setup_blueprint(svc, job_type_id)
             if isinstance(svc, MasterService) and blueprint["source"] != "service_job_workflow":
@@ -816,6 +818,9 @@ class TenantCatalogService:
         """
         for lbl, val in (("tenant_min_price", tenant_min), ("tenant_max_price", tenant_max),
                          ("tenant_base_price", tenant_base), ("tenant_visit_fee", tenant_visit)):
+            if val is not None and not val.is_finite():
+                raise ServiceOSException("TENANT_PRICE_INVALID",
+                    f"{lbl} must be a finite amount.", status_code=422)
             if val is not None and val < 0:
                 raise ServiceOSException("TENANT_PRICE_NEGATIVE",
                     f"{lbl} cannot be negative.", status_code=422)
@@ -841,7 +846,11 @@ class TenantCatalogService:
             data["tenant_min_price"] = data["tenant_base_price"]
             data["tenant_max_price"] = data["tenant_base_price"]
 
-        if not ts.override_allowed:
+        # Home Services prices belong to the provider. Older enrollments copied
+        # a false admin override flag even when no admin price existed.
+        category = await self.db.get(ServiceCategory, ts.category_id)
+        provider_owns_prices = category is not None and category.vertical_type == "home_services"
+        if not provider_owns_prices and not ts.override_allowed:
             for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
                 if data.get(field) is not None:
                     raise ServiceOSException("TENANT_SERVICE_OVERRIDE_NOT_ALLOWED",
@@ -855,7 +864,7 @@ class TenantCatalogService:
         eff = {}
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
             if field in data:
-                eff[field] = Decimal(str(data[field])) if data[field] is not None else None
+                eff[field] = _decimal_or_none(data[field])
             else:
                 eff[field] = getattr(ts, field)
         self._validate_price_overrides(svc, eff["tenant_base_price"], eff["tenant_min_price"],
@@ -866,16 +875,19 @@ class TenantCatalogService:
                 setattr(ts, field, data[field])
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
             if field in data:
-                setattr(ts, field, Decimal(str(data[field])) if data[field] is not None else None)
+                setattr(ts, field, eff[field])
         if "tenant_emergency_surcharge" in data:
-            value = data["tenant_emergency_surcharge"]
-            if value is not None and Decimal(str(value)) < 0:
+            value = _decimal_or_none(data["tenant_emergency_surcharge"])
+            if value is not None and value < 0:
                 raise ServiceOSException(
                     "TENANT_PRICE_NEGATIVE", "Emergency surcharge cannot be negative.", status_code=422,
                 )
-            ts.tenant_emergency_surcharge = Decimal(str(value)) if value is not None else None
+            ts.tenant_emergency_surcharge = value
         if "warranty_days" in data:
             ts.warranty_days = self._validate_warranty_days(data["warranty_days"])
+
+        if provider_owns_prices:
+            ts.override_allowed = True
 
         await self.db.flush()
         return self._ts_dict(ts)
@@ -1088,6 +1100,12 @@ class TenantCatalogService:
         return str(blueprint.get("pricing_behavior") or "").lower() in INSPECTION_PRICING_BEHAVIORS
 
     async def _reject_dimension_price_for_inspection(self, ts: TenantService) -> None:
+        if str(ts.job_type).lower() == "consultation":
+            raise ServiceOSException(
+                "DIMENSION_PRICING_NOT_APPLICABLE",
+                "Consultations use your provider-wide fee. Type and Brand affect matching only.",
+                status_code=422,
+            )
         if await self._is_inspection_pricing(ts):
             raise ServiceOSException(
                 "DIMENSION_PRICING_NOT_APPLICABLE",
@@ -2097,6 +2115,9 @@ def _decimal_or_none(val) -> Decimal | None:
     if val is None:
         return None
     try:
-        return Decimal(str(val))
+        amount = Decimal(str(val))
     except Exception:
-        return None
+        raise ServiceOSException("TENANT_PRICE_INVALID", "Enter a valid numeric amount.", status_code=422)
+    if not amount.is_finite():
+        raise ServiceOSException("TENANT_PRICE_INVALID", "Enter a finite numeric amount.", status_code=422)
+    return amount

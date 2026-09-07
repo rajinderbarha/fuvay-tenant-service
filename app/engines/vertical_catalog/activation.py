@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
 
 from app.engines.vertical_catalog.seat_enforcement import FREE_STARTER_SEATS
 from app.engines.vertical_catalog.service import VerticalCatalogService
@@ -50,7 +51,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
 
     published_count = (await db.execute(
         text("SELECT count(*) FROM tenant_services WHERE tenant_id=:tid "
-             "AND setup_status='published' AND is_active=true AND deleted_at IS NULL"),
+             "AND setup_status='published' AND is_enabled=true AND is_active=true AND deleted_at IS NULL"),
         {"tid": str(tenant_id)},
     )).scalar() or 0
     # Kept in sync with home_services_setup_service.get_setup_overview's
@@ -60,17 +61,7 @@ async def evaluate_activation_gates(db: AsyncSession, tenant_id: uuid.UUID, vert
     # activation gate would silently disagree about whether a tenant's
     # offerings are actually priced.
     priced_count = (await db.execute(
-        text("SELECT count(*) FROM tenant_services ts WHERE ts.tenant_id=:tid "
-             "AND ts.setup_status='published' AND ts.is_active=true AND ts.deleted_at IS NULL "
-             "AND (ts.tenant_min_price IS NOT NULL "
-             "     OR ts.tenant_visit_fee IS NOT NULL "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_types tst WHERE tst.tenant_service_id=ts.id "
-             "                AND tst.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_brands tsb WHERE tsb.tenant_service_id=ts.id "
-             "                AND tsb.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM master_services ms WHERE ms.id = ts.master_service_id "
-             "                AND ms.tenant_override_allowed = false "
-             "                AND COALESCE(ms.base_price, ms.min_price) IS NOT NULL))"),
+        text(PUBLISHED_PRICED_SERVICES_SQL),
         {"tid": str(tenant_id)},
     )).scalar() or 0
     offerings_ready = published_count > 0 and priced_count > 0

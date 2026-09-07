@@ -137,7 +137,10 @@ async def test_canonical_resolver_rejects_cross_tenant_or_vertical_parents():
 async def test_offer_checkbox_attempts_scoped_repair_before_denial(repaired):
     tenant_id, group_id = uuid.uuid4(), uuid.uuid4()
     master = NS(id=uuid.uuid4(), category_id=uuid.uuid4(), service_group_id=group_id, is_active=True)
-    db = MagicMock(execute=AsyncMock(side_effect=[scalar(master), scalar(NS(is_active=True))]))
+    # vertical_type is read by tenant_service.py's provider_owns_prices check,
+    # added after this test in the same session -- a real Home Services
+    # category row always carries it.
+    db = MagicMock(execute=AsyncMock(side_effect=[scalar(master), scalar(NS(is_active=True, vertical_type="home_services"))]))
     svc = TenantCatalogService(db, actor_tenant_id=tenant_id, actor_role='tenant_owner', actor_id=uuid.uuid4())
     # Stop after the entitlement gate, before creating real service records.
     svc._resolve_active_job_type = AsyncMock(side_effect=ServiceOSException('TEST_PAST_ENTITLEMENT', 'passed gate', status_code=422))

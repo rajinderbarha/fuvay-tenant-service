@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
 
 from app.dependencies.auth import get_current_user, UserContext
 from app.dependencies.db import get_db
@@ -1956,7 +1957,7 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
 
     published_count = (await db.execute(
         text("SELECT count(*) FROM tenant_services WHERE tenant_id=:tid "
-             "AND setup_status='published' AND is_active=true AND deleted_at IS NULL"),
+             "AND setup_status='published' AND is_enabled=true AND is_active=true AND deleted_at IS NULL"),
         {"tid": str(tid)},
     )).scalar() or 0
     if published_count > 0:
@@ -1968,24 +1969,10 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
         visibility_blockers.append(reason)
         bookability_blockers.append(reason)
 
-    # MODULE-L5-02 fix: a published service is "priced" if the tenant set a
-    # min price (on the service, a type, or a brand) OR the service is a
-    # fixed-price / no-override service that is already priced at the admin
-    # level (master_services.tenant_override_allowed=false with a base_price).
-    # Previously the latter case was ignored, so a provider whose published
-    # services are all fixed-price could NEVER clear PROVIDER_PRICE_RANGE_MISSING
-    # and thus never become bookable, even though their services ARE priced.
+    # Share the provider-owned pricing check with onboarding and activation:
+    # default/dimension amounts, inspection fee, or the shared consultation fee.
     priced_count = (await db.execute(
-        text("SELECT count(*) FROM tenant_services ts WHERE ts.tenant_id=:tid "
-             "AND ts.setup_status='published' AND ts.is_active=true AND ts.deleted_at IS NULL "
-             "AND (ts.tenant_min_price IS NOT NULL "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_types tst WHERE tst.tenant_service_id=ts.id "
-             "                AND tst.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM tenant_service_brands tsb WHERE tsb.tenant_service_id=ts.id "
-             "                AND tsb.tenant_min_price IS NOT NULL) "
-             "     OR EXISTS (SELECT 1 FROM master_services ms WHERE ms.id = ts.master_service_id "
-             "                AND ms.tenant_override_allowed = false "
-             "                AND COALESCE(ms.base_price, ms.min_price) IS NOT NULL))"),
+        text(PUBLISHED_PRICED_SERVICES_SQL),
         {"tid": str(tid)},
     )).scalar() or 0
     if priced_count > 0:

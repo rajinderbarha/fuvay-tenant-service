@@ -140,6 +140,7 @@ async def get_workspace(
             "master_service_id": s["master_service_id"],
             "name": s["tenant_display_name"] or (m.service_name if m else "Service"),
             "job_type_label": job_type_label,
+            "job_type": s.get("job_type"),
             "setup_status": s["setup_status"],
             "missing_pricing": has_missing_price,
             "readiness_ready": validation["valid"],

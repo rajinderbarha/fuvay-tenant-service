@@ -476,6 +476,7 @@ export interface SWCatalogService {
   master_service_id: string;
   name: string;
   job_type_label: string | null;
+  job_type?: string | null;
   setup_status: "draft" | "published";
   missing_pricing: boolean;
   readiness_ready: boolean;
