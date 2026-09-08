@@ -220,7 +220,7 @@ export const TENANT_PAGE_REGISTRY: Record<string, PageMeta> = {
   "/home-services/direct-payments": {
     title: "Direct Payments",
     section: "finance",
-    breadcrumbs: [{ label: "Finance" }, { label: "Direct Payments" }],
+    breadcrumbs: [{ label: "Direct Payments" }],
   },
   "/business/coverage-hours": {
     title: "Coverage & Hours",

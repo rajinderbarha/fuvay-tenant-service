@@ -69,7 +69,7 @@ def _csv_safe(value):
 @router.get("", summary="Unified Bookings & Jobs operational feed (admin)", response_model=ApiResponse)
 async def get_operations(
     r: Request,
-    view: Literal["all", "requests", "active", "approval", "exceptions", "completed"] = Query("all"),
+    view: Literal["confirmed", "all", "requests", "active", "approval", "exceptions", "completed"] = Query("confirmed"),
     search: str | None = Query(None, min_length=1, max_length=200),
     stage: Literal["REQUEST", "MATCHING", "UNASSIGNED", "ASSIGNED", "SCHEDULED", "ON_THE_WAY", "INSPECTION", "AWAITING_ESTIMATE", "AWAITING_APPROVAL", "READY_TO_START", "IN_PROGRESS", "WORK_DONE", "COMPLETED", "AT_RISK", "CLOSED", "UNKNOWN"] | None = Query(None),
     assignment: Literal["assigned", "unassigned"] | None = Query(None),
@@ -127,7 +127,7 @@ async def get_operations_summary(
 @router.get("/export", summary="Export the unified operational feed as CSV, same filters as the list (admin)")
 async def export_operations(
     r: Request,
-    view: Literal["all", "requests", "active", "approval", "exceptions", "completed"] = Query("all"),
+    view: Literal["confirmed", "all", "requests", "active", "approval", "exceptions", "completed"] = Query("confirmed"),
     search: str | None = Query(None, min_length=1, max_length=200),
     stage: Literal["REQUEST", "MATCHING", "UNASSIGNED", "ASSIGNED", "SCHEDULED", "ON_THE_WAY", "INSPECTION", "AWAITING_ESTIMATE", "AWAITING_APPROVAL", "READY_TO_START", "IN_PROGRESS", "WORK_DONE", "COMPLETED", "AT_RISK", "CLOSED", "UNKNOWN"] | None = Query(None),
     assignment: Literal["assigned", "unassigned"] | None = Query(None),

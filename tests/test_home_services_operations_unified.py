@@ -218,6 +218,21 @@ class TestUnifiedFeedLive:
             assert row["work_type"] == "REQUEST"
             assert row["draft_id"] is not None
 
+    async def test_default_feed_contains_confirmed_records_only(self, admin):
+        """An unfinished Instagram/customer-app flow is a draft request, not
+        a booking. It is available only through the explicit Requests view."""
+        response = await admin.get("/v1/admin/home-services/operations", params={"page_size": 100})
+        assert response.status_code == 200
+        assert all(row["work_type"] == "JOB" for row in response.json()["data"]["records"])
+
+    async def test_job_exceptions_do_not_include_failed_booking_attempts(self, admin):
+        response = await admin.get(
+            "/v1/admin/home-services/operations",
+            params={"view": "exceptions", "page_size": 100},
+        )
+        assert response.status_code == 200
+        assert all(row["work_type"] == "JOB" for row in response.json()["data"]["records"])
+
     async def test_view_completed_excludes_closed_estimate_declined(self, admin):
         r = await admin.get("/v1/admin/home-services/operations", params={"view": "completed", "page_size": 50})
         for row in r.json()["data"]["records"]:

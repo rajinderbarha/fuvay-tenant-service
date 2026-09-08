@@ -64,6 +64,7 @@ export function resolveTenantNavId(pathname: string): string {
   if (section === "home-services") {
     const sub = segs[1] ?? "";
     if (sub === "coverage") return "business-hours";
+    if (sub === "direct-payments") return "hs-finance";
     return sub ? `hs-${sub}` : "hs-bookings-jobs";
   }
   if (section === "business" && segs[1] === "coverage-hours") return "business-hours";

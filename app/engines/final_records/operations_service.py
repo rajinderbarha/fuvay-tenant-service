@@ -234,7 +234,7 @@ def _amount_summary(booking: ServiceBooking | None, quote: ServiceJobQuote | Non
 
 async def list_operations(
     db: AsyncSession, *,
-    view: str = "all",
+    view: str = "confirmed",
     search: str | None = None,
     tenant_id: uuid.UUID | None = None,
     technician_id: uuid.UUID | None = None,
@@ -363,6 +363,12 @@ async def list_operations(
         _narrow({stage})
         job_filters.append(job_stage == stage)
         draft_filters.append(draft_stage == stage)
+    elif view == "confirmed":
+        # A booking only exists after FinalCreationService has atomically
+        # created its ServiceBooking + ServiceJob.  Pre-confirmation chat/app
+        # drafts are useful in the explicit Requests view, but must not leak
+        # into the default Bookings & Jobs feed and look like real work.
+        draft_filters.append(sa_false())
     elif view != "all":
         view_stages = {
             "requests": {"REQUEST", "MATCHING"},
@@ -375,6 +381,11 @@ async def list_operations(
             _narrow(view_stages)
             job_filters.append(job_stage.in_(view_stages))
             draft_filters.append(draft_stage.in_(view_stages))
+            if view == "exceptions":
+                # Failed/expired pre-confirmation attempts are not job
+                # exceptions. They remain historical draft data and must not
+                # make this operational tab look like confirmed work failed.
+                draft_filters.append(sa_false())
 
     job_candidates = (
         select(literal("JOB").label("work_type"), ServiceJob.id.label("record_id"),
@@ -679,25 +690,22 @@ async def compute_metrics(db: AsyncSession, *, tenant_id: uuid.UUID | None = Non
         )
     ) or 0) if overdue_statuses else 0
 
-    delayed_match_cutoff = _now() - timedelta(minutes=DEFAULT_SLA_MINUTES * 0.25)
     draft_counts = (await db.execute(
-        select(
-            func.count(HomeServiceBookingDraft.id).label("total"),
-            func.count(HomeServiceBookingDraft.id).filter(and_(
-                HomeServiceBookingDraft.status == "provider_matched",
-                HomeServiceBookingDraft.created_at < delayed_match_cutoff,
-            )).label("delayed"),
-        ).where(*draft_filters)
+        select(func.count(HomeServiceBookingDraft.id).label("total"))
+        .where(*draft_filters)
     )).one()
     drafts_count = int(draft_counts.total or 0)
 
     return {
-        "active": active + drafts_count,
+        # Draft attempts are reported separately below. Counting them as
+        # active work made an unfinished Instagram conversation look like a
+        # confirmed booking in the headline KPI.
+        "active": active,
         "new_requests": drafts_count,
         "unassigned": unassigned,
         "in_progress": in_progress,
         "awaiting_approval": awaiting_approval,
-        "at_risk": flagged + overdue + int(draft_counts.delayed or 0),
+        "at_risk": flagged + overdue,
     }
 
 

@@ -1,5 +1,4 @@
 "use client";
-import { TableSurface } from "@serviceos/design-system";
 /**
  * Home Services — Direct Payments (job-linked payment confirmation and
  * reconciliation).
@@ -20,11 +19,11 @@ import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle, ArrowUpDown, BellRing, CheckCircle2, Clock,
+  AlertTriangle, BellRing, CheckCircle2, Clock,
   Download, ExternalLink, FileText, Image as ImageIcon, Info, Lock, Pencil,
   RefreshCw, Search, ShieldAlert, Wrench,
 } from "lucide-react";
-import { Badge, Btn, Card, Select, Skeleton, Pagination } from "../../../../components/shared/ui";
+import { Badge, Btn, Card, Skeleton, Pagination, Modal } from "../../../../components/shared/ui";
 import {
   API_BASE, ServiceOSError, getToken, homeServicesDirectPaymentsApi,
   type HsDpDetail, type HsDpQueue, type HsDpRecord,
@@ -130,7 +129,8 @@ function DirectPaymentsPageInner() {
     Object.entries(patch).forEach(([k, v]) => {
       if (v === null || v === "") next.delete(k); else next.set(k, v);
     });
-    router.push(`/home-services/direct-payments?${next.toString()}`);
+    const query = next.toString();
+    router.push(`/home-services/direct-payments${query ? `?${query}` : ""}`);
   }, [params, router]);
 
   const dateFrom = useMemo(() => {
@@ -185,14 +185,6 @@ function DirectPaymentsPageInner() {
     loadDetail(paymentId);
   }, [paymentId, loadDetail]);
 
-  // Auto-select the first record so the workspace is never a blank right pane.
-  useEffect(() => {
-    if (!paymentId && queue && queue.records.length > 0) {
-      const preferred = queue.records.find(r => r.kind === "record") ?? queue.records[0];
-      setParam({ payment_id: preferred.id });
-    }
-  }, [queue, paymentId, setParam]);
-
   async function run(name: string, fn: () => Promise<unknown>, okText: string) {
     setAction(name);
     setNotice(null);
@@ -201,8 +193,10 @@ function DirectPaymentsPageInner() {
       setNotice({ kind: "ok", text: okText });
       if (paymentId && !paymentId.startsWith("job:")) loadDetail(paymentId);
       load();
+      return true;
     } catch (e) {
       setNotice({ kind: "err", text: e instanceof ServiceOSError ? e.message : "That action failed." });
+      return false;
     } finally {
       setAction(null);
     }
@@ -211,7 +205,7 @@ function DirectPaymentsPageInner() {
   async function submitCorrection() {
     if (!detail) return;
     const pd = (detail.provider_declaration ?? {}) as { version?: number };
-    await run("edit", () => homeServicesDirectPaymentsApi.correctDeclaration(detail.record.id, {
+    const saved = await run("edit", () => homeServicesDirectPaymentsApi.correctDeclaration(detail.record.id, {
       // Optimistic-concurrency guard: if the customer confirmed (or anyone
       // else corrected) since this panel was loaded, the server rejects the
       // write rather than silently overwriting the newer state.
@@ -227,7 +221,7 @@ function DirectPaymentsPageInner() {
       // explains why the record changed, the other why the money differs.
       difference_reason: editForm.difference_reason.trim() || undefined,
     }), "Declaration corrected. The customer sees the updated amount.");
-    setEditOpen(false);
+    if (saved) setEditOpen(false);
   }
 
   function doExport() {
@@ -251,56 +245,66 @@ function DirectPaymentsPageInner() {
   const s = queue?.summary;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1800, margin: "0 auto" }}>
+    <div className="dp-page">
       <style>{`
-        .dp-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin: 16px 0; }
-        @media (max-width: 1500px) { .dp-kpis { grid-template-columns: repeat(3, 1fr); } }
-        @media (max-width: 900px)  { .dp-kpis { grid-template-columns: repeat(2, 1fr); } }
-        .dp-workspace { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-        @media (max-width: 1400px) { .dp-workspace { grid-template-columns: 1fr; } }
+        .provider-content:has(.dp-page) { max-width: none !important; }
+        .dp-page { --dp-gutter: 32px; min-width: 0; }
+        .dp-header { margin: 0 calc(-1 * var(--dp-gutter)); padding: 4px var(--dp-gutter) 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+        .dp-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 22px 0; }
+        .dp-workspace { min-width: 0; }
+        .dp-queue { border: 1px solid var(--border); background: var(--surface); border-radius: 18px; overflow: hidden; }
+        .dp-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+        .dp-search { position: relative; flex: 1 1 260px; min-width: 180px; }
+        .dp-search input, .dp-select { width: 100%; height: 42px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); font: inherit; font-size: 13px; }
+        .dp-search input { background: var(--surface-sunken); padding: 0 12px 0 38px; }
+        .dp-select { background: var(--surface); padding: 0 10px; cursor: pointer; }
+        .dp-filter { flex: 0 1 auto; max-width: 100%; }
+        .dp-tabs { display: flex; gap: 6px; padding: 10px 16px 0; overflow-x: auto; }
+        .dp-tab { display: flex; align-items: center; gap: 7px; white-space: nowrap; padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-tertiary); font: inherit; font-size: 13px; cursor: pointer; }
+        .dp-tab[aria-pressed=true] { border-bottom-color: var(--accent); color: var(--text-primary); font-weight: 600; }
+        .dp-tab-count { border-radius: 12px; padding: 0 5px; background: var(--surface-sunken); font: 600 11px var(--font-family-mono, monospace); }
+        .dp-tab[aria-pressed=true] .dp-tab-count { background: var(--accent); color: var(--text-on-brand); }
+        .dp-row { display: block; width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+        .dp-row:hover, .dp-row[aria-expanded=true] { background: var(--accent-muted); }
+        .dp-row:focus-visible, .dp-tab:focus-visible, .dp-select:focus-visible, .dp-search input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .dp-row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+        .dp-job { display: block; font: 700 13px var(--font-family-mono, monospace); }
+        .dp-time { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+        .dp-row-fields { display: grid; grid-template-columns: 1.2fr 1.35fr .9fr .9fr 1.05fr 1.05fr .9fr; gap: 16px; }
+        .dp-field { min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
+        .dp-label { font: 400 9px var(--font-family-mono, monospace); text-transform: uppercase; letter-spacing: .6px; color: var(--text-tertiary); }
+        .dp-confirmation { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+        .dp-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        @media (max-width: 1280px) { .dp-page { --dp-gutter: 20px; } .dp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 1024px) { .dp-page { --dp-gutter: 16px; } .dp-row-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        @media (max-width: 768px) { .dp-page { --dp-gutter: 12px; } .dp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dp-row-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dp-search { flex-basis: 100%; } .dp-filter { flex: 1 1 calc(50% - 10px); } }
         .dp-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
         @media (max-width: 1100px) { .dp-trio { grid-template-columns: 1fr; } }
         .dp-duo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
         @media (max-width: 900px) { .dp-duo { grid-template-columns: 1fr; } }
-        .dp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-        .dp-table th { text-align: left; font-size: 11px; text-transform: uppercase;
-          letter-spacing: 0.4px; color: var(--text-tertiary); font-weight: 700;
-          padding: 8px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        .dp-table td { padding: 10px 8px; border-bottom: 1px solid var(--border);
-          color: var(--text-secondary); vertical-align: middle; }
         .dp-scroll { overflow-x: auto; }
       `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+      <div className="dp-header">
         <div>
-          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "var(--accent)", margin: "0 0 6px" }}>
-            FINANCE
-          </p>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 6px" }}>
-            Direct Payments
+          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-.8px", color: "var(--text-primary)", margin: "0 0 6px" }}>
+            Direct payments
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
             Reconcile customer-to-provider payment confirmations for Home Services jobs.
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <Btn variant="secondary" icon={<Download size={14}/>} onClick={doExport}
-               loading={action === "export"}>Export</Btn>
-          <QueueSelect value={range} onChange={v => setParam({ range: v, page: "1" })}
-                  options={DATE_RANGES.map(d => ({ value: d.key, label: d.label }))} width={150}/>
-          <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>
-        </div>
       </div>
 
       {/* ── Mandatory banner ───────────────────────────────────────────── */}
       <div role="note" style={{
-        display: "flex", gap: 10, alignItems: "flex-start", marginTop: 16,
-        padding: "12px 14px", borderRadius: 12, background: "var(--info-bg)",
-        border: "1px solid var(--info-border)", color: "var(--info-text)", fontSize: 13,
+        display: "flex", gap: 10, alignItems: "center", marginTop: 26,
+        padding: "14px 18px", borderRadius: 14, background: "var(--accent-muted)",
+        color: "var(--accent)", fontSize: 13,
       }}>
         <Info size={16} style={{ flexShrink: 0, marginTop: 1 }}/>
-        <span style={{ fontWeight: 600 }}>
+        <span>
           {queue?.banner?.text
             ?? "Fuvay does not collect this money. Customers pay your business directly."}
         </span>
@@ -323,7 +327,7 @@ function DirectPaymentsPageInner() {
         </div>
       )}
 
-      {notice && (
+      {notice && !paymentId && (
         <div role="status" style={{
           display: "flex", gap: 8, padding: "10px 14px", borderRadius: 12, marginTop: 14,
           background: notice.kind === "ok" ? "var(--success-bg)" : "var(--danger-bg)",
@@ -341,7 +345,7 @@ function DirectPaymentsPageInner() {
       ) : s ? (
         <div className="dp-kpis">
           <Kpi label="Awaiting provider" count={s.awaiting_provider.count}
-               sub={money(s.awaiting_provider.amount)} variant="info" icon={<Clock size={16}/>}/>
+               sub={money(s.awaiting_provider.amount)} variant="warning" icon={<Clock size={13}/>}/>
           <Kpi label="Awaiting customer" count={s.awaiting_customer.count}
                sub={money(s.awaiting_customer.amount)} variant="warning" icon={<BellRing size={16}/>}/>
           <Kpi label="Confirmed" count={s.confirmed.count}
@@ -358,94 +362,63 @@ function DirectPaymentsPageInner() {
         </div>
       ) : null}
 
-      {/* ── Two-pane workspace ─────────────────────────────────────────── */}
+      {/* Full-width queue. Details remain URL-addressable but open on demand. */}
       <div className="dp-workspace">
-        {/* LEFT — queue */}
-        <Card padding={0} style={{ overflow: "hidden" }}>
+        <section className="dp-queue" aria-label="Direct payment queue" aria-busy={loading}>
           {/* toolbar */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
-                        padding: 14, borderBottom: "1px solid var(--border)" }}>
-            <div style={{ position: "relative", flex: "1 1 200px", minWidth: 180 }}>
-              <Search size={14} style={{ position: "absolute", left: 10, top: 10, color: "var(--text-tertiary)" }}/>
+          <div className="dp-filters">
+            <div className="dp-search">
+              <Search size={15} style={{ position: "absolute", left: 14, top: 14, color: "var(--text-tertiary)" }}/>
               <input
                 value={searchDraft}
+                aria-label="Search job, customer or service"
                 placeholder="Search job, customer or service"
                 onChange={e => setSearchDraft(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") setParam({ q: searchDraft, page: "1" }); }}
-                style={{
-                  width: "100%", padding: "8px 10px 8px 30px", fontSize: 12.5,
-                  background: "var(--surface-sunken)", color: "var(--text-primary)",
-                  border: "1px solid var(--border)", borderRadius: 9, outline: "none",
-                }}/>
+              />
             </div>
-            <QueueSelect value={tab} onChange={v => setParam({ status: v, page: "1" })} width={150}
+            <QueueSelect label="Payment status" value={tab === "needs_action" ? "all" : tab} onChange={v => setParam({ status: v, page: "1" })} width={122}
                     options={[{ value: "all", label: "All statuses" },
                               ...(queue?.filters.statuses ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <QueueSelect value={method} onChange={v => setParam({ method: v, page: "1" })} width={130}
+            <QueueSelect label="Payment method" value={method} onChange={v => setParam({ method: v, page: "1" })} width={116}
                     options={[{ value: "", label: "All methods" },
                               ...(queue?.filters.methods ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <QueueSelect value={serviceId} onChange={v => setParam({ service_id: v, page: "1" })} width={150}
+            <QueueSelect label="Service" value={serviceId} onChange={v => setParam({ service_id: v, page: "1" })} width={116}
                     options={[{ value: "", label: "All services" },
                               ...(queue?.filters.services ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
-            <QueueSelect value={technicianId} onChange={v => setParam({ technician_id: v, page: "1" })} width={150}
+            <QueueSelect label="Technician" value={technicianId} onChange={v => setParam({ technician_id: v, page: "1" })} width={153}
                     options={[{ value: "", label: "All technicians" },
                               ...(queue?.filters.technicians ?? []).map(x => ({ value: x.value, label: x.label }))]}/>
           </div>
 
           {/* status tabs */}
-          <div className="dp-scroll" style={{ display: "flex", gap: 4, padding: "10px 14px 0" }}>
+          <div className="dp-tabs" role="group" aria-label="Payment queues">
             {TABS.map(t => {
               const active = tab === t.key;
               const n = queue?.tab_counts?.[t.countKey];
               return (
-                <button key={t.key} onClick={() => setParam({ status: t.key, page: "1" })}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                    background: active ? "var(--accent-muted)" : "transparent",
-                    color: active ? "var(--accent)" : "var(--text-secondary)",
-                    border: "none", borderRadius: 8, padding: "7px 12px",
-                    fontSize: 12.5, fontWeight: 700, cursor: "pointer",
-                  }}>
+                <button key={t.key} className="dp-tab" aria-pressed={active} onClick={() => setParam({ status: t.key, page: "1" })}>
                   {t.label}
                   {n !== undefined && (
-                    <span style={{
-                      background: active ? "var(--accent)" : "var(--surface-sunken)",
-                      color: active ? "var(--text-on-brand)" : "var(--text-tertiary)",
-                      borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800,
-                    }}>{n}</span>
+                    <span className="dp-tab-count">{n}</span>
                   )}
                 </button>
               );
             })}
           </div>
 
-          {/* table */}
-          <div className="dp-scroll" style={{ padding: "8px 14px 0" }}>
+          <div>
             {loading && !queue ? (
               <div style={{ padding: 12 }}><Skeleton height={280}/></div>
             ) : !queue || queue.records.length === 0 ? (
               <EmptyQueue tab={tab} hasError={!!error}/>
             ) : (
-              <TableSurface className="dp-table">
-                <thead>
-                  <tr>
-                    <th>Job</th><th>Customer</th><th>Service</th>
-                    <th>Declared</th><th>Method</th>
-                    <th>Provider</th><th>Customer conf.</th><th>Status</th>
-                    <th style={{ cursor: "pointer" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        Updated <ArrowUpDown size={11}/>
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div aria-label="Payments">
                   {queue.records.map(r => (
                     <QueueRow key={r.id} r={r} selected={paymentId === r.id}
                               onClick={() => setParam({ payment_id: r.id })}/>
                   ))}
-                </tbody>
-              </TableSurface>
+              </div>
             )}
           </div>
 
@@ -454,10 +427,11 @@ function DirectPaymentsPageInner() {
             pageCount={queue.pagination.pages} onPage={target => setParam({ page: String(target) })}
             pageSizes={[10, 25, 50]} onPageSize={size => { setLimit(size); setParam({ page: "1" }); }}
             itemLabel="payments" alwaysShow />}
-        </Card>
+        </section>
 
-        {/* RIGHT — selected payment detail */}
+        <Modal open={!!paymentId && !editOpen} onClose={() => setParam({ payment_id: null })} title="Payment details" size="xl">
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {notice && <p role={notice.kind === "err" ? "alert" : "status"} style={{ color: notice.kind === "err" ? "var(--danger-text)" : "var(--success-text)", fontSize: 13 }}>{notice.text}</p>}
           {detailLoading ? (
             <Card><Skeleton height={420}/></Card>
           ) : detailError ? (
@@ -466,6 +440,8 @@ function DirectPaymentsPageInner() {
                 <Info size={16} style={{ color: "var(--text-tertiary)", marginTop: 2 }}/>
                 <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>{detailError}</p>
               </div>
+              {paymentId?.startsWith("job:") ? <a href={`/home-services/bookings-jobs?job_id=${encodeURIComponent(paymentId.slice(4))}`} style={{ display: "inline-block", marginTop: 14, color: "var(--accent)" }}>Open job to record payment</a>
+                : paymentId && <Btn variant="secondary" onClick={() => loadDetail(paymentId)}>Retry</Btn>}
             </Card>
           ) : detail ? (
             <DetailPane
@@ -494,11 +470,19 @@ function DirectPaymentsPageInner() {
           ) : (
             <Card>
               <p style={{ fontSize: 13, color: "var(--text-tertiary)", textAlign: "center", padding: "40px 0" }}>
-                Select a payment on the left to review its confirmation.
+                Select a payment to review its confirmation.
               </p>
             </Card>
           )}
         </div>
+        </Modal>
+      </div>
+
+      <div className="dp-tools">
+        <QueueSelect label="Date range" value={range} onChange={v => setParam({ range: v, page: "1" })}
+          options={DATE_RANGES.map(d => ({ value: d.key, label: d.label }))} width={150}/>
+        <Btn variant="secondary" icon={<Download size={14}/>} onClick={doExport} loading={action === "export"}>Export</Btn>
+        <Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={load} disabled={loading}>Refresh</Btn>
       </div>
 
       {/* ── Footer disclaimer ──────────────────────────────────────────── */}
@@ -537,6 +521,7 @@ function DirectPaymentsPageInner() {
           style={{ position: "fixed", inset: 0, zIndex: 900, display: "grid", placeItems: "center",
             background: "rgba(0,0,0,.5)", padding: 20 }}>
           <Card style={{ width: "min(520px,100%)", maxHeight: "88vh", overflowY: "auto" }}>
+            {notice?.kind === "err" && <p role="alert" style={{ color: "var(--danger-text)", fontSize: 13 }}>{notice.text}</p>}
             <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
               Correct declaration
             </h2>
@@ -1001,19 +986,19 @@ function Kpi({ label, count, money: moneyValue, sub, variant, icon }: {
   };
   const c = colors[variant];
   return (
-    <Card padding={16}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+    <div style={{ padding: "13px 14px", minHeight: 108, border: "1px solid var(--border)", borderRadius: 15, background: "var(--surface)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, minHeight: 26, marginBottom: 5 }}>
+        <p style={{ fontFamily: "var(--font-family-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: ".65px", lineHeight: 1.4, color: "var(--text-tertiary)", margin: "6px 0 0" }}>{label}</p>
         {icon && (
-          <span style={{ width: 26, height: 26, borderRadius: "50%", background: c.bg, color: c.fg,
+          <span style={{ width: 24, height: 24, borderRadius: 7, background: c.bg, color: c.fg,
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</span>
         )}
-        <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: 0, fontWeight: 700 }}>{label}</p>
       </div>
-      <p style={{ fontSize: moneyValue ? 20 : 26, fontWeight: 800, color: c.fg, margin: 0 }}>
+      <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", fontFamily: "var(--font-family-mono, monospace)", color: variant === "danger" || variant === "warning" && label === "Awaiting provider" ? c.fg : "var(--text-primary)", margin: 0 }}>
         {moneyValue ?? count ?? 0}
       </p>
       {sub && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{sub}</p>}
-    </Card>
+    </div>
   );
 }
 
@@ -1028,39 +1013,23 @@ function QueueRow({ r, selected, onClick }: {
   const p = conf(r.provider_confirmation.state);
   const c = conf(r.customer_confirmation.state);
   return (
-    <tr onClick={onClick} style={{
-      cursor: "pointer",
-      background: selected ? "var(--accent-muted)" : undefined,
-      boxShadow: selected ? "inset 3px 0 0 0 var(--accent)" : undefined,
-    }}>
-      <td>
-        <span style={{ fontWeight: 800, color: "var(--accent)" }}>{r.job_ref}</span>
-        {r.time_window && (
-          <span style={{
-            marginLeft: 6, padding: "1px 6px", borderRadius: 6, fontSize: 10,
-            background: "var(--surface-sunken)", color: "var(--text-tertiary)", fontWeight: 700,
-          }}>{r.time_window}</span>
-        )}
-      </td>
-      <td>{r.customer_alias ?? "—"}</td>
-      <td>{r.service ?? "—"}</td>
-      <td style={{ fontWeight: 700, color: "var(--text-primary)", whiteSpace: "nowrap" }}>
-        {money(r.declared_amount ?? r.expected_amount, r.currency)}
-      </td>
-      <td style={{ whiteSpace: "nowrap" }}>{r.method_label ?? "—"}</td>
-      <td>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: p.color, fontWeight: 600 }}>
-          {p.icon}{p.label}
+    <button type="button" className="dp-row" onClick={onClick} aria-expanded={selected} aria-haspopup="dialog" aria-label={`View payment for ${r.job_ref}`}>
+      <span className="dp-row-heading">
+        <span><span className="dp-job">{r.job_ref}</span>
+          {r.time_window && <span className="dp-time"><Clock size={10}/>{r.time_window}</span>}
         </span>
-      </td>
-      <td>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: c.color, fontWeight: 600 }}>
-          {c.icon}{c.label}
-        </span>
-      </td>
-      <td><Badge variant={STATUS_VARIANT[r.status] ?? "muted"} size="sm">{r.status_label}</Badge></td>
-      <td style={{ whiteSpace: "nowrap" }}>{relTime(r.updated_at)}</td>
-    </tr>
+        <Badge variant={STATUS_VARIANT[r.status] ?? "muted"} size="sm">{r.status_label}</Badge>
+      </span>
+      <span className="dp-row-fields">
+        <span className="dp-field"><span className="dp-label">Customer</span>{r.customer_alias ?? "—"}</span>
+        <span className="dp-field"><span className="dp-label">Service</span>{r.service ?? "—"}</span>
+        <span className="dp-field"><span className="dp-label">Declared</span>{money(r.declared_amount, r.currency)}</span>
+        <span className="dp-field"><span className="dp-label">Method</span>{r.method_label ?? "—"}</span>
+        <span className="dp-field"><span className="dp-label">Provider</span><span className="dp-confirmation" style={{ color: p.color }}>{p.icon}{p.label}</span></span>
+        <span className="dp-field"><span className="dp-label">Customer conf.</span><span className="dp-confirmation" style={{ color: c.color }}>{c.icon}{c.label}</span></span>
+        <span className="dp-field"><span className="dp-label">Updated</span>{relTime(r.updated_at)}</span>
+      </span>
+    </button>
   );
 }
 
@@ -1083,12 +1052,14 @@ function EmptyQueue({ tab, hasError }: { tab: string; hasError: boolean }) {
   );
 }
 
-function QueueSelect({ value, onChange, options, width = 140 }: {
+function QueueSelect({ value, onChange, options, width = 140, label }: {
   value: string; onChange: (v: string) => void;
-  options: { value: string; label: string }[]; width?: number;
+  options: { value: string; label: string }[]; width?: number; label: string;
 }) {
   return (
-    <div style={{ width }}><Select value={value} onChange={onChange} options={options}/></div>
+    <div className="dp-filter" style={{ width }}><select className="dp-select" aria-label={label} value={value} onChange={e => onChange(e.target.value)}>
+      {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select></div>
   );
 }
 

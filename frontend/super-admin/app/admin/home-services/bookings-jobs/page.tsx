@@ -21,12 +21,12 @@ import {
 // bookings/field_ops.jobs pipeline is intentionally never merged in.
 
 const TABS = [
-  { key: "all", label: "All Work" },
-  { key: "requests", label: "Requests" },
+  { key: "confirmed", label: "Confirmed Bookings" },
   { key: "active", label: "Active Jobs" },
   { key: "approval", label: "Awaiting Approval" },
   { key: "exceptions", label: "Exceptions" },
   { key: "completed", label: "Completed" },
+  { key: "requests", label: "Unconfirmed Requests" },
 ] as const;
 type TabKey = typeof TABS[number]["key"];
 const TAB_KEYS = new Set<TabKey>(TABS.map(tab => tab.key));
@@ -128,7 +128,7 @@ export default function HomeServicesOperationsPage() {
   const params = useSearchParams();
 
   const rawView = params.get("view") as TabKey | null;
-  const view: TabKey = rawView && TAB_KEYS.has(rawView) ? rawView : "all";
+  const view: TabKey = rawView && TAB_KEYS.has(rawView) ? rawView : "confirmed";
   const search = params.get("search") || "";
   const rawStage = params.get("stage") || "";
   const stage = !rawStage || STAGE_KEYS.includes(rawStage) ? rawStage : "";
@@ -234,9 +234,9 @@ export default function HomeServicesOperationsPage() {
   }
 
   const METRIC_TILES: { key: string; label: string; value: number | undefined; icon: React.ReactNode; onClick: () => void; tooltip: string }[] = [
-    { key: "active", label: "Active", value: metrics?.active, icon: <Briefcase size={16}/>, tooltip: "Every request/job not yet completed or closed",
+    { key: "active", label: "Active Jobs", value: metrics?.active, icon: <Briefcase size={16}/>, tooltip: "Confirmed jobs not yet completed or closed",
       onClick: () => updateParams({ view: "active", stage: null }) },
-    { key: "new_requests", label: "New Requests", value: metrics?.new_requests, icon: <FileText size={16}/>, tooltip: "Booking drafts not yet confirmed into a job",
+    { key: "new_requests", label: "Unconfirmed Requests", value: metrics?.new_requests, icon: <FileText size={16}/>, tooltip: "Saved booking attempts that have not been confirmed and are not bookings yet",
       onClick: () => updateParams({ view: "requests", stage: null }) },
     { key: "unassigned", label: "Unassigned", value: metrics?.unassigned, icon: <UserX size={16}/>, tooltip: "Jobs with no technician assigned yet",
       onClick: () => updateParams({ view: null, stage: "UNASSIGNED" }) },
@@ -257,7 +257,7 @@ export default function HomeServicesOperationsPage() {
               eyebrow="Operations"
               context="Home Services"
               title="Bookings & Jobs"
-              description="One canonical workspace from customer request through job completion."
+              description="Confirmed bookings and jobs. Unconfirmed customer attempts stay in their own Requests view."
               actions={<>
               <Btn variant="ghost" size="sm" onClick={() => { listApi.refetch(); setForceMetrics(n => n + 1); }}><RefreshCw size={14} style={{ marginRight: 5 }}/>Refresh</Btn>
               <Btn variant="secondary" size="sm" onClick={exportCsv} loading={exporting}><Download size={14} style={{ marginRight: 5 }}/>Export CSV</Btn>
@@ -300,7 +300,7 @@ export default function HomeServicesOperationsPage() {
           <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: "1px solid var(--border)", overflowX: "auto" }} role="tablist">
             {TABS.map(t => (
               <button key={t.key} role="tab" aria-selected={view === t.key}
-                onClick={() => setParam("view", t.key === "all" ? null : t.key)}
+                onClick={() => setParam("view", t.key === "confirmed" ? null : t.key)}
                 style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, border: "none", background: "none",
                   borderBottom: `2px solid ${view === t.key ? "var(--brand)" : "transparent"}`,
                   color: view === t.key ? "var(--text-primary)" : "var(--text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>

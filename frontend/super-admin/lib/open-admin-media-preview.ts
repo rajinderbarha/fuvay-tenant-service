@@ -1,12 +1,21 @@
-/** Open an authenticated Media Engine asset without triggering popup blockers. */
+import { mediaAdminApi } from "./api";
+
+/**
+ * Load an admin document through the Media workspace's short-lived preview
+ * contract.  Do not call /v1/media/:id/view directly here: that route accepts
+ * optional authentication for public images and deliberately turns an expired
+ * bearer token into an anonymous request.  For a private provider document the
+ * resulting access denial is therefore surfaced as a misleading HTTP 404.
+ *
+ * apiFetch (used by createSignedPreviewUrl) also performs the normal admin
+ * access-token refresh before the single-use URL is created.
+ */
 export async function loadAdminDocument(mediaAssetId: string, signal?: AbortSignal): Promise<Blob> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  const token = localStorage.getItem("serviceos_admin_token") ?? "";
-  const response = await fetch(`${apiBase}/v1/media/${encodeURIComponent(mediaAssetId)}/view`, {
-    headers: { Authorization: `Bearer ${token}` }, signal,
-  });
-  if (!response.ok) throw new Error(`Document service returned HTTP ${response.status}.`);
-  const blob = await response.blob();
+  if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+  const signed = await mediaAdminApi.createSignedPreviewUrl(mediaAssetId);
+  if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+  const blob = await mediaAdminApi.fetchSignedFile(signed.url);
+  if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
   if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(blob.type.split(";")[0])) {
     throw new Error("This file type cannot be previewed safely. Use the Media workspace to inspect it.");
   }
@@ -23,14 +32,8 @@ export async function openAdminMediaPreview(mediaAssetId: string): Promise<void>
   preview.opener = null;
 
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-    const token = localStorage.getItem("serviceos_admin_token") ?? "";
-    const response = await fetch(`${apiBase}/v1/media/${encodeURIComponent(mediaAssetId)}/view`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) throw new Error(`Document service returned HTTP ${response.status}.`);
-
-    const objectUrl = URL.createObjectURL(await response.blob());
+    const blob = await loadAdminDocument(mediaAssetId);
+    const objectUrl = URL.createObjectURL(blob);
     preview.location.replace(objectUrl);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
   } catch (error) {
