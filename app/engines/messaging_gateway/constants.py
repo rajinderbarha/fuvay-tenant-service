@@ -53,17 +53,21 @@ KNOWN_COMMANDS = {
     CMD_LINK, CMD_VERIFY,
 }
 
-#: A bare greeting is how most people open a chat, and it is not a command.
-#: Treated exactly like `/fuvay`: it starts the conversation over and is
-#: answered with the welcome, rather than being read as an answer to whatever
-#: the previous conversation happened to be asking. Matched against the WHOLE
-#: trimmed message, so "hi" restarts but "hi, my AC is not cooling" does not.
-GREETING_WORDS = {
-    "hi", "hii", "hiii", "hey", "heyy", "hello", "helo", "hlo",
-    "hi there", "hello there", "hey there",
-    "start", "restart", "menu", "hi fuvay", "hello fuvay",
-    "namaste", "good morning", "good afternoon", "good evening",
-}
+#: How long a chat may go quiet before the next message opens a NEW
+#: conversation rather than continuing the old one.
+#:
+#: The thread remembers `zipcode`/`city` indefinitely, so without this a
+#: customer whose pincode was uncovered yesterday was answered "we do not
+#: cover that yet" to every later message forever. Confirmed live on
+#: Instagram.
+#:
+#: A greeting word is deliberately NOT the trigger. Matching on "hi" both
+#: missed the customer who opens with an emoji or "AC not cooling", and
+#: restarted mid-booking for anyone who typed "hi" as a filler line. The
+#: honest signal is the gap itself: after this long the previous conversation
+#: is over, so whatever arrives next is an opener. Inside the window nothing
+#: restarts except an explicit /fuvay or /reset.
+SESSION_IDLE_TIMEOUT_HOURS = 1
 
 HELP_TEXT = (
     "I can book a home service for you, or show you where an existing "
@@ -172,6 +176,16 @@ PICKER_PREFIXES = (
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
 )
+
+#: Taps that answer something the BUSINESS asked, on a message it sent at a
+#: time of its choosing. A parts approval raised at 2pm and tapped at 5pm is
+#: the normal case, not a stale one, so the idle-session rule must not swallow
+#: these in a welcome message -- the customer would have approved nothing and
+#: the technician would still be waiting. Ordinary booking taps are not here:
+#: after an hour those genuinely are a new conversation.
+DURABLE_ACTION_PICKS = {
+    PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT,
+}
 
 #: WhatsApp only allows a business-initiated message outside this window via a
 #: pre-approved template; inside it, an ordinary message is fine. Instagram
