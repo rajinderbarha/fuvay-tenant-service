@@ -22,7 +22,7 @@ import { PageHeader, PageShell } from "@serviceos/design-system";
 import { MediaUploader } from "../../../../../../components/media/MediaUploader";
 import { useTenant } from "../../../../../../hooks/useTenant";
 import {
-  tenantDocumentsApi, ServiceOSError,
+  tenantDocumentsApi, tenantApplicationStatusApi, ServiceOSError,
   type VerificationDocumentsManifest, type VerificationRequirement, type MediaAsset,
 } from "../../../../../../lib/api";
 
@@ -44,6 +44,8 @@ export default function VerificationDocumentsPage() {
   const [error, setError] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [addingExtra, setAddingExtra] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -55,12 +57,21 @@ export default function VerificationDocumentsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    tenantApplicationStatusApi.get().then(status => {
+      if (!cancelled && status.status === "changes_requested") setCorrectionNote(status.changes_requested_note || "Update the items requested by the review team.");
+    }).catch(() => { /* Upload requirements remain available if the status read fails. */ });
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleUploaded(docType: string, asset: MediaAsset, extraLabel?: string) {
     try {
       await tenantDocumentsApi.submitDocument({ doc_type: docType, media_asset_id: asset.id, label: extraLabel });
       setActiveKey(null);
       setAddingExtra(false);
+      setUploadNotice("Document saved for admin review. If this is a requested correction, open Review & Submit after finishing your updates to resubmit the application.");
+      window.dispatchEvent(new Event("home-services-setup-updated"));
       load();
     } catch (e) {
       setError(e instanceof ServiceOSError ? e.message : "Could not save this document. Please try again.");
@@ -139,6 +150,13 @@ export default function VerificationDocumentsPage() {
       )}
 
       <StepProgressBar step={2} total={8} />
+      {correctionNote !== null && <section aria-label="Requested document corrections" style={{ padding: 16, margin: "16px 0", borderRadius: 12, background: "var(--warning-bg)", border: "1px solid var(--warning-border)" }}>
+        <strong>Admin requested changes</strong>
+        <p>{correctionNote}</p>
+        <p>Upload or replace the requested document below. The 100% meter covers standard required documents only; it does not mean the admin request has been addressed.</p>
+        <Link href="/tenant/home-services/setup/review">Review &amp; resubmit after uploading</Link>
+      </section>}
+      {uploadNotice && <p role="status">{uploadNotice}</p>}
 
       <div className="docs-grid">
         <div>
@@ -253,8 +271,8 @@ export default function VerificationDocumentsPage() {
           <Btn variant="secondary" onClick={load}>Save draft</Btn>
           <Btn variant="primary"
             disabled={!readiness || !readiness.all_required_uploaded}
-            onClick={() => router.push("/tenant/home-services/setup/services-pricing")}>
-            Save &amp; continue <ChevronRight size={15}/>
+            onClick={() => router.push(correctionNote !== null ? "/tenant/home-services/setup/review" : "/tenant/home-services/setup/services-pricing")}>
+            {correctionNote !== null ? "Review & resubmit" : "Save & continue"} <ChevronRight size={15}/>
           </Btn>
         </div>
       </div>

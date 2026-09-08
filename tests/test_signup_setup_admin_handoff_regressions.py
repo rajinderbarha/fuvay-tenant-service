@@ -109,17 +109,20 @@ def test_terminal_rejection_ui_does_not_offer_resubmission():
 
 
 @pytest.mark.asyncio
-async def test_submit_for_review_syncs_admin_queue_and_enrollment():
+@pytest.mark.parametrize("status", ["draft", "changes_requested"])
+async def test_submit_for_review_syncs_admin_queue_and_enrollment(status):
     tenant_id = uuid.uuid4()
     enrollment_id = uuid.uuid4()
     vertical_id = uuid.uuid4()
     svc = VerticalCatalogService()
     svc.get_or_create_enrollment = AsyncMock(return_value={
-        "id": str(enrollment_id), "vertical_id": str(vertical_id), "status": "draft",
+        "id": str(enrollment_id), "vertical_id": str(vertical_id), "status": status,
     })
     svc.transition_enrollment = AsyncMock(return_value={"id": str(enrollment_id), "status": "submitted"})
     db = MagicMock()
-    db.execute = AsyncMock()
+    query_result = MagicMock()
+    query_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=query_result)
 
     with (
         patch(

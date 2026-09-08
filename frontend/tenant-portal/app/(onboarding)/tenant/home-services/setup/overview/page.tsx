@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, RefreshCw, Hourglass, XCircle, AlertTriangle } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
+import { CorrectionActions } from "../../../../../../components/onboarding/CorrectionActions";
 import { VerticalLifecycleBar } from "../../../../../../components/onboarding/VerticalLifecycleBar";
 import {
   SetupProgressCard, WorkspaceStatusCard, OnboardingNextSteps,
@@ -40,7 +41,7 @@ const STATUS_LABEL: Record<string, string> = {
 // (e.g. an activated tenant must land on the real Tenant Dashboard, never
 // stay stuck on onboarding -- see spec: "ACTIVE: Redirect... do not continue
 // showing onboarding as the primary landing page").
-const ONBOARDING_DESTINATIONS = new Set(["HOME_SERVICES_SETUP_OVERVIEW"]);
+const ONBOARDING_DESTINATIONS = new Set(["HOME_SERVICES_SETUP_OVERVIEW", "HOME_SERVICES_CHANGES_REQUESTED"]);
 const EXTERNAL_DESTINATION_ROUTES: Record<string, string> = {
   TENANT_DASHBOARD: "/dashboard",
   RESTRICTED_WORKSPACE: "/dashboard",
@@ -48,7 +49,6 @@ const EXTERNAL_DESTINATION_ROUTES: Record<string, string> = {
   VERIFY_CONTACT: "/register",
   SELECT_VERTICAL: "/register",
   STAFF_PORTAL: "/dashboard",
-  HOME_SERVICES_CHANGES_REQUESTED: "/onboarding/application-status",
   HOME_SERVICES_UNDER_REVIEW: "/onboarding/application-status",
   HOME_SERVICES_ACTIVATION: "/onboarding/activation-center",
 };
@@ -177,6 +177,7 @@ export default function HomeServicesSetupOverviewPage() {
       </Card>
 
       <VerticalLifecycleBar stages={overview.lifecycle.stages}/>
+      <CorrectionActions status={status}/>
 
       <style>{`
         .hs-setup-overview-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }

@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, XCircle, CheckCircle2, RefreshCw, MessageSquare } from "lucide-react";
 import { OnboardingShell } from "../../../components/onboarding/OnboardingShell";
+import { CorrectionActions } from "../../../components/onboarding/CorrectionActions";
 import { Card, Btn, Skeleton } from "../../../components/shared/ui";
 import { tenantApplicationStatusApi, ServiceOSError, type ApplicationStatus } from "../../../lib/api";
 
@@ -101,6 +102,7 @@ export default function MessagesPage() {
         </Card>
       )}
 
+      <CorrectionActions status={data.status}/>
       {data.rejection_reason && (
         <Card style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: "var(--danger-bg)", border: "1px solid var(--danger-border)" }}>

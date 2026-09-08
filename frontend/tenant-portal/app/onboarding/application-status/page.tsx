@@ -5,6 +5,7 @@ import {
   Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Rocket, UserCog, Mail, ListChecks,
 } from "lucide-react";
 import { OnboardingShell } from "../../../components/onboarding/OnboardingShell";
+import { CorrectionActions } from "../../../components/onboarding/CorrectionActions";
 import { Card, Badge, Btn, Skeleton } from "../../../components/shared/ui";
 import {
   tenantApplicationStatusApi, ServiceOSError,
@@ -193,6 +194,7 @@ export default function ApplicationStatusPage() {
         <Badge variant={badge.variant} size="lg" dot>{badge.label}</Badge>
       </div>
 
+      <CorrectionActions status={data.status}/>
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "start" }} className="app-status-grid">
         <style>{`
           @media (max-width: 1024px) { .app-status-grid { grid-template-columns: 1fr !important; } }
