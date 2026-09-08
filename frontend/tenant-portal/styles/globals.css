@@ -898,6 +898,10 @@ a { color: inherit; text-decoration: none; }
   border-top: 1px solid var(--pricing-line-soft);
 }
 
+.pricing-matching-section { margin-top: 16px; }
+.pricing-matching-toggle { width: 100%; text-align: left; cursor: pointer; }
+.pricing-matching-body { padding-top: 14px; }
+
 .pricing-type-toggle-row {
   display: flex;
   min-height: 46px;

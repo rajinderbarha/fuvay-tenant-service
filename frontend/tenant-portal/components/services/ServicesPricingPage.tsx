@@ -42,6 +42,8 @@ import {
   InlineDimensionPricingEditor, type InlineDimensionPricingEditorHandle,
 } from "./InlineDimensionPricingEditor";
 import { RepairEstimateGuidanceEditor } from "./RepairEstimateGuidanceEditor";
+import { BrandCoverageSelector } from "./BrandCoverageSelector";
+import { ServiceMatchingDisclosure } from "./ServiceMatchingDisclosure";
 
 type CatalogStatus = "all" | "published" | "draft" | "needs_attention";
 const CATALOG_STATUS_FILTERS: Array<{ value: CatalogStatus; label: string }> = [
@@ -600,6 +602,10 @@ function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged, pri
 
 
 
+      {pricingMode !== "dimension" && <ServiceMatchingDisclosure key={tenantServiceId}>
+        <TypesBrandsTab tenantServiceId={tenantServiceId} data={data} pricingMode={pricingMode} onChanged={refreshAll} eligibilityOnly/>
+      </ServiceMatchingDisclosure>}
+
       <details className="pricing-collapsible" open={tab === "requirements"}>
         <summary onClick={() => setTab(tab === "requirements" ? "overview" : "requirements")}>
           <span>
@@ -905,7 +911,7 @@ function TypesBrandsTab({ tenantServiceId, data, pricingMode, onChanged, eligibi
     (typeIds: string[]) => homeServicesSetupApi.setTypes(tenantServiceId, typeIds), { onSuccess: refreshLocal },
   );
   const { execute: saveBrands, loading: savingBrands, error: brandsError } = useAction(
-    (brandIds: string[]) => homeServicesSetupApi.setBrands(tenantServiceId, brandIds), { onSuccess: refreshLocal },
+    (brandIds: string[]) => homeServicesSetupApi.setBrands(tenantServiceId, brandIds, !dimensionPricing), { onSuccess: refreshLocal },
   );
   const { execute: saveTypePrice, loading: savingTypePrice, error: typePriceError } = useAction(
     (args: { serviceTypeId: string; min: number; max: number }) =>
@@ -973,11 +979,7 @@ function TypesBrandsTab({ tenantServiceId, data, pricingMode, onChanged, eligibi
           ) : (
             <div className="pricing-dimension-choice-block is-brands">
               <p>Which brands do you actually service?</p>
-              <div className="pricing-choice-chips">
-                {(availableBrands.data?.brands ?? []).map(b => (
-                  <button key={b.brand_id} type="button" aria-pressed={b.is_enabled} disabled={savingBrands} onClick={() => toggleBrand(b)}>{b.name}</button>
-                ))}
-              </div>
+              <BrandCoverageSelector brands={availableBrands.data?.brands ?? []} disabled={savingBrands} onChange={saveBrands}/>
             </div>
           )}
           {dimensionPricing && !eligibilityOnly && (availableBrands.data?.brands ?? []).some(brand => brand.is_enabled) && (

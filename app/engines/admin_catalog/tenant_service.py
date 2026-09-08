@@ -1087,7 +1087,8 @@ class TenantCatalogService:
             for msb, b, tsb in rows
         ]}
 
-    async def set_tenant_service_brands(self, tenant_service_id: uuid.UUID, brand_ids: list[str]) -> dict:
+    async def set_tenant_service_brands(self, tenant_service_id: uuid.UUID, brand_ids: list[str],
+                                       apply_to_all_types: bool = False) -> dict:
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
 
@@ -1131,6 +1132,15 @@ class TenantCatalogService:
 
         # This endpoint receives the explicit supported set, never exclusions.
         ts.brand_coverage_mode = "selected"
+        if apply_to_all_types:
+            # A service-wide choice must also replace older type-specific
+            # coverage, otherwise the customer matcher would ignore it.
+            # Price overrides and type enablement remain independent.
+            type_rows = (await self.db.execute(select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+            ))).scalars().all()
+            for type_row in type_rows:
+                type_row.brand_coverage = None
         await self.db.flush()
         return await self.get_tenant_service_brands(tenant_service_id)
 

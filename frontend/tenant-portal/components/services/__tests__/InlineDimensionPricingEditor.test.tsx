@@ -66,8 +66,10 @@ describe("InlineDimensionPricingEditor", () => {
         { id: "split", name: "Split AC", price: null, enabled: true, brandCoverage: { mode: "selected", brand_ids: ["daikin"] } },
         { id: "window", name: "Window AC", price: null, enabled: true, brandCoverage: { mode: "all", brand_ids: [] } },
       ]}
-      exceptions={[{ key: "window:lg", typeId: "window", brandId: "lg", price: 1500, persisted: true }]}
+      exceptions={[]}
     />);
+    expect(screen.queryByRole("button", { name: "Specific brands" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Supported types & brands/ }));
     expect(screen.getAllByRole("button", { name: "Specific brands" })[0]).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByRole("button", { name: "All brands" })[1]).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Daikin" })).toHaveAttribute("aria-pressed", "true");
@@ -76,6 +78,33 @@ describe("InlineDimensionPricingEditor", () => {
     await act(async () => { await ref.current?.save(); });
     expect(handlers.onSaveTypes).not.toHaveBeenCalled();
     expect(handlers.onClearBrand).not.toHaveBeenCalled();
+  });
+
+  it("hides type and brand controls when pricing is switched off and clears only price overrides on save", async () => {
+    const { ref, handlers, props, rerender } = setup();
+    rerender(<InlineDimensionPricingEditor ref={ref} {...props} {...handlers}
+      types={[{ ...props.types[0], brandCoverage: { mode: "selected", brand_ids: ["daikin"] } }]}
+      brands={[{ id: "daikin", name: "Daikin", enabled: true }]}
+      exceptions={[{ key: "split:daikin", typeId: "split", brandId: "daikin", price: 1500, persisted: true }]}/>);
+    fireEvent.click(screen.getByRole("switch", { name: "Price differs by type" }));
+    expect(screen.queryByRole("button", { name: "Split AC" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Specific brands" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Split AC price")).not.toBeInTheDocument();
+    expect(handlers.onClearTypePrices).not.toHaveBeenCalled();
+    await act(async () => { await ref.current!.save(); });
+    expect(handlers.onSaveTypes).toHaveBeenCalledWith(["split"], { split: { mode: "selected", brand_ids: ["daikin"] } });
+    expect(handlers.onSaveBrands).toHaveBeenCalledWith(["daikin"]);
+    expect(handlers.onClearTypePrices).toHaveBeenCalledOnce();
+    expect(handlers.onClearBrand).toHaveBeenCalledWith("split", "daikin");
+  });
+
+  it("shows the pricing switch as on for a saved brand override without a type price", () => {
+    const { ref, handlers, props, rerender } = setup();
+    rerender(<InlineDimensionPricingEditor ref={ref} {...props} {...handlers}
+      types={[{ ...props.types[0], price: null }]}
+      exceptions={[{ key: "split:daikin", typeId: "split", brandId: "daikin", price: 1500, persisted: true }]}/>);
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("Split AC price")).toBeInTheDocument();
   });
 
   it("keeps type selection local until the user saves", async () => {

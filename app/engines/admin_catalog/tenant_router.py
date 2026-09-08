@@ -182,7 +182,9 @@ async def set_tenant_service_brands(tenant_service_id: uuid.UUID, r: Request,
                                      s: TenantCatalogService = Depends(_svc)):
     body = await r.json()
     brand_ids = body.get("brand_ids", [])
-    return ok(await s.set_tenant_service_brands(tenant_service_id, brand_ids), _rid(r), ENGINE_ID)
+    return ok(await s.set_tenant_service_brands(
+        tenant_service_id, brand_ids, apply_to_all_types=body.get("apply_to_all_types") is True,
+    ), _rid(r), ENGINE_ID)
 
 
 # ── Home Services Service Setup Wizard: type/brand pricing, preview, publish ──

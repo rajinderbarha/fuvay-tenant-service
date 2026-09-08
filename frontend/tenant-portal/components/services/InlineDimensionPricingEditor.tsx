@@ -3,6 +3,7 @@
 import React, {
   forwardRef, useEffect, useImperativeHandle, useMemo, useState,
 } from "react";
+import { ServiceMatchingDisclosure } from "./ServiceMatchingDisclosure";
 
 export interface InlinePriceType {
   id: string;
@@ -91,7 +92,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
           : hasSavedSubset ? enabledBrands : [];
         typeExceptions.forEach(row => { initialBrandValues[`${type.id}:${row.brandId}`] = String(row.price ?? ""); });
       }
-      setVaryByType(pricedTypeIds.length > 0);
+      setVaryByType(pricedTypeIds.length > 0 || exceptions.some(row => row.price != null));
       setActiveTypeIds(enabledTypeIds.length ? enabledTypeIds : types.slice(0, 1).map(type => type.id));
       setTypeValues(Object.fromEntries(types.map(type => [type.id, String(type.price ?? "")])));
       setBrandModes(initialModes);
@@ -219,8 +220,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                 onClick={() => change(() => setVaryByType(value => !value))}><span /></button>
             </div>
 
-            {(
-              <>
+            <ServiceMatchingDisclosure key={String(varyByType)} expandedByPricing={varyByType}>
                 <div className="pricing-dimension-choice-block">
                   <p>Which types do you actually service? Unselected types stay hidden from customers.</p>
                   <div className="pricing-choice-chips">
@@ -235,7 +235,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                   {activeTypes.map(type => {
                     const mode = brandModes[type.id] ?? "all";
                     const selected = selectedBrands[type.id] ?? [];
-                    const inheritedPrice = positiveNumber(typeValues[type.id]) ?? basePrice;
+                    const inheritedPrice = varyByType ? positiveNumber(typeValues[type.id]) ?? basePrice : basePrice;
                     return (
                       <section className="pricing-type-card" key={type.id}>
                         <div className="pricing-type-card-head">
@@ -291,8 +291,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                     );
                   })}
                 </div>
-              </>
-            )}
+            </ServiceMatchingDisclosure>
           </>
         )}
         {dirty && <p className="pricing-unsaved-note" role="status">Unsaved changes — use the action bar below when you are ready.</p>}

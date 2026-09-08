@@ -12,6 +12,8 @@ import {
   InlineDimensionPricingEditor, type InlineDimensionPricingEditorHandle,
 } from "./InlineDimensionPricingEditor";
 import { RepairEstimateGuidanceEditor } from "./RepairEstimateGuidanceEditor";
+import { ServiceMatchingDisclosure } from "./ServiceMatchingDisclosure";
+import { BrandCoverageSelector } from "./BrandCoverageSelector";
 import { Card, Btn, Badge, Skeleton, Input } from "../shared/ui";
 import {
   homeServicesSetupApi, homeServicesSetupOverviewApi, ServiceOSError,
@@ -421,7 +423,12 @@ function ServicesPricingPageContent() {
     if (!enrolled || !brands) return;
     const current = brands.filter(b => b.is_enabled).map(b => b.brand_id);
     const next = brand.is_enabled ? current.filter(id => id !== brand.brand_id) : [...current, brand.brand_id];
-    await homeServicesSetupApi.setBrands(enrolled.tenant_service_id, next);
+    await saveSupportedBrands(next);
+  }
+
+  async function saveSupportedBrands(next: string[]) {
+    if (!enrolled) return;
+    await homeServicesSetupApi.setBrands(enrolled.tenant_service_id, next, isMatchingOnly);
     const avail = await homeServicesSetupApi.getAvailableBrands(enrolled.tenant_service_id);
     setBrands(avail.brands);
     if (isMatchingOnly) {
@@ -742,8 +749,13 @@ function ServicesPricingPageContent() {
                       </div>
                       {isInspectionMode && <RepairEstimateGuidanceEditor enabled={showEstimateRange} minimum={defaultMin} maximum={defaultMax} disabled={savingPrice} onEnabledChange={setShowEstimateRange} onMinimumChange={setDefaultMin} onMaximumChange={setDefaultMax}/>} 
                       {!isMatchingOnly && <SetupDimensionsInlineEditor editorRef={dimensionEditorRef} selectedService={selectedService} enrolled={{ ...enrolled, requires_type: requiresType, requires_brand: requiresBrand }} isInspectionMode={false} types={types ?? []} brands={brands ?? []} typePricing={typePricing ?? []} brandPricing={brandPricing ?? []} brandPricingByType={brandPricingByType} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange} handleClearTypePrices={handleClearTypePrices} handleClearBrandPrice={handleClearBrandPrice} setTypes={setTypes} setBrands={setBrands}/>}
-                      {isMatchingOnly && <fieldset disabled={savingMatching} style={{ border: 0, padding: 0, margin: 0 }}><SetupDimensionsEditor selectedService={selectedService} enrolled={{ ...enrolled, requires_type: requiresType, requires_brand: requiresBrand }} isInspectionMode={true} types={types ?? []} brands={brands ?? []} typePricing={[]} brandPricing={[]} brandPricingByType={{}} brandOverrideOpen={brandOverrideOpen} setBrandOverrideOpen={setBrandOverrideOpen} toggleType={type => saveMatchingSelection(() => toggleType(type))} toggleBrand={brand => saveMatchingSelection(() => toggleBrand(brand))} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange}/></fieldset>}
                     </section>
+
+                    {isMatchingOnly && <ServiceMatchingDisclosure key={enrolled.tenant_service_id}>
+                      <fieldset disabled={savingMatching} style={{ border: 0, padding: 0, margin: 0 }}>
+                        <SetupDimensionsEditor selectedService={selectedService} enrolled={{ ...enrolled, requires_type: requiresType, requires_brand: requiresBrand }} isInspectionMode={true} types={types ?? []} brands={brands ?? []} typePricing={[]} brandPricing={[]} brandPricingByType={{}} brandOverrideOpen={brandOverrideOpen} setBrandOverrideOpen={setBrandOverrideOpen} toggleType={type => saveMatchingSelection(() => toggleType(type))} toggleBrand={brand => saveMatchingSelection(() => toggleBrand(brand))} saveBrands={ids => saveMatchingSelection(() => saveSupportedBrands(ids))} handleTypePriceChange={handleTypePriceChange} handleBrandPriceChange={handleBrandPriceChange}/>
+                      </fieldset>
+                    </ServiceMatchingDisclosure>}
 
                     {selectedService.job_type_id && <details className="pricing-collapsible"><summary><span><span className="pricing-collapsible-title">Set by the platform</span><span className="pricing-collapsible-copy">Booking questions, customer problems and technician checklist · Read-only.</span></span></summary><div className="pricing-collapsible-body"><ServiceRequirementsPanel masterServiceId={selectedService.service_id} jobTypeId={selectedService.job_type_id}/></div></details>}
 
@@ -784,7 +796,7 @@ function SetupPricingMoneyField({ label, value, onChange, placeholder, hint }: {
   );
 }
 
-function SetupDimensionsEditor({ selectedService, enrolled, isInspectionMode, types, brands, typePricing, brandPricing, brandPricingByType, brandOverrideOpen, setBrandOverrideOpen, toggleType, toggleBrand, handleTypePriceChange, handleBrandPriceChange }: {
+function SetupDimensionsEditor({ selectedService, enrolled, isInspectionMode, types, brands, typePricing, brandPricing, brandPricingByType, brandOverrideOpen, setBrandOverrideOpen, toggleType, toggleBrand, saveBrands, handleTypePriceChange, handleBrandPriceChange }: {
   selectedService: AdminMasterServiceRow;
   enrolled: TenantEnabledService;
   isInspectionMode: boolean;
@@ -797,6 +809,7 @@ function SetupDimensionsEditor({ selectedService, enrolled, isInspectionMode, ty
   setBrandOverrideOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   toggleType: (type: HsSetupAvailableType) => Promise<void>;
   toggleBrand: (brand: HsSetupBrand) => Promise<void>;
+  saveBrands: (brandIds: string[]) => Promise<void>;
   handleTypePriceChange: (serviceTypeId: string, min: string, max: string) => Promise<void>;
   handleBrandPriceChange: (brandId: string, min: string, max: string, serviceTypeId?: string) => Promise<void>;
 }) {
@@ -821,10 +834,7 @@ function SetupDimensionsEditor({ selectedService, enrolled, isInspectionMode, ty
       {enrolled.requires_brand && (
         <div className="pricing-dimension-choice-block is-brands">
           <p>{selectedService.is_brand_required ? "Brand (required)" : "Brand (optional)"}{isInspectionMode ? " for matching" : ""} — which brands do you actually service?</p>
-          <div className="pricing-choice-chips">
-            {brands.map(brand => <button key={brand.brand_id} type="button" aria-pressed={brand.is_enabled} onClick={() => toggleBrand(brand)}>{brand.name}</button>)}
-          </div>
-          {!brands.length && <p style={{ margin: 0, color: "var(--warning-text)", fontSize: 12.5 }}>No Brands are mapped yet. Ask an administrator to complete this blueprint.</p>}
+          <BrandCoverageSelector brands={brands} onChange={saveBrands}/>
         </div>
       )}
       {!isInspectionMode && ((typePricing.length > 0) || (brandPricing.length > 0)) && (

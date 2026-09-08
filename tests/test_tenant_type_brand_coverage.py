@@ -81,6 +81,34 @@ async def test_price_override_cannot_enable_an_unsupported_pair(catalog):
 
 
 @pytest.mark.asyncio
+async def test_global_repair_brand_choice_replaces_stale_type_coverage(catalog):
+    service, session, ts, types, brands = catalog
+    await save_mixed(service, ts, types, brands)
+    assert not await service.is_brand_supported(ts, brands[1].id, types[0].id)
+    await service.set_tenant_service_brands(ts.id, [str(brand.id) for brand in brands], apply_to_all_types=True)
+    session.commit()
+    session.expire_all()
+    for service_type in types:
+        for brand in brands:
+            assert await service.is_brand_supported(ts, brand.id, service_type.id)
+    await service.set_tenant_service_brands(ts.id, [str(brands[0].id)], apply_to_all_types=True)
+    session.commit()
+    session.expire_all()
+    for service_type in types:
+        assert await service.is_brand_supported(ts, brands[0].id, service_type.id)
+        assert not await service.is_brand_supported(ts, brands[1].id, service_type.id)
+
+
+@pytest.mark.asyncio
+async def test_normal_brand_save_preserves_type_specific_coverage(catalog):
+    service, session, ts, types, brands = catalog
+    await save_mixed(service, ts, types, brands)
+    await service.set_tenant_service_brands(ts.id, [str(brand.id) for brand in brands])
+    assert not await service.is_brand_supported(ts, brands[1].id, types[0].id)
+    assert await service.is_brand_supported(ts, brands[1].id, types[1].id)
+
+
+@pytest.mark.asyncio
 async def test_disabled_type_and_retired_brand_do_not_match(catalog):
     service, session, ts, types, brands = catalog
     await save_mixed(service, ts, types, brands)

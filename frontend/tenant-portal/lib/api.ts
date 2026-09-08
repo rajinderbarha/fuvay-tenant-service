@@ -590,9 +590,9 @@ export const homeServicesSetupApi = {
       { method: "PUT", body: JSON.stringify({ type_ids: typeIds, brand_coverage_by_type: brandCoverageByType }) }),
   getBrands: (tenantServiceId: string) =>
     apiFetch<{ brands: HsSetupBrand[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands`),
-  setBrands: (tenantServiceId: string, brandIds: string[]) =>
+  setBrands: (tenantServiceId: string, brandIds: string[], applyToAllTypes = false) =>
     apiFetch<{ brands: HsSetupBrand[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/brands`,
-      { method: "PUT", body: JSON.stringify({ brand_ids: brandIds }) }),
+      { method: "PUT", body: JSON.stringify({ brand_ids: brandIds, ...(applyToAllTypes ? { apply_to_all_types: true } : {}) }) }),
   getTypePricing: (tenantServiceId: string) =>
     apiFetch<{ types: HsTypePricing[] }>(`/v1/tenant/catalog/enabled-services/${tenantServiceId}/type-pricing`),
   setTypePricing: (tenantServiceId: string, serviceTypeId: string, min: number, max: number) =>
