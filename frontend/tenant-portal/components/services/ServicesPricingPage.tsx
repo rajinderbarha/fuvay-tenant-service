@@ -934,23 +934,30 @@ function TypesBrandsTab({ tenantServiceId, data, pricingMode, onChanged, eligibi
           {availableTypes.loading || typePricing.loading ? <Skeleton height={80} /> : availableTypes.error || typePricing.error ? (
             <Alert tone="danger">{availableTypes.error ?? typePricing.error}</Alert>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(availableTypes.data?.types ?? []).map(t => (
-                <div key={t.service_type_id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input type="checkbox" checked={t.is_enabled} disabled={savingTypes} onChange={() => toggleType(t)} />
-                  <div style={{ flex: 1, fontSize: 13 }}>{t.name}</div>
-                  {t.is_enabled && dimensionPricing && !eligibilityOnly && (
+            <div className="pricing-dimension-choice-block">
+              <p>Which types do you actually service? Unselected types stay hidden from customers.</p>
+              <div className="pricing-choice-chips">
+                {(availableTypes.data?.types ?? []).map(t => (
+                  <button key={t.service_type_id} type="button" aria-pressed={t.is_enabled} disabled={savingTypes} onClick={() => toggleType(t)}>{t.name}</button>
+                ))}
+              </div>
+              {(availableTypes.data?.types ?? []).filter(t => t.is_enabled).map(t => (
+                dimensionPricing && !eligibilityOnly ? (
+                  <div key={t.service_type_id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, fontSize: 13 }}>{t.name}</div>
                     <TypePriceRow serviceTypeId={t.service_type_id}
                       current={typePricing.data?.types?.find(x => x.service_type_id === t.service_type_id)}
                       onSave={(min, max) => saveTypePrice({ serviceTypeId: t.service_type_id, min, max })}
                       saving={savingTypePrice} />
-                  )}
-                  {t.is_enabled && !dimensionPricing && (
+                  </div>
+                ) : !dimensionPricing ? (
+                  <div key={t.service_type_id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, fontSize: 13 }}>{t.name}</div>
                     <span style={{ fontSize: 10.5, color: "var(--text-tertiary)" }}>
                       Routing only · {pricingMode === "inspection" ? "uses visit fee and approved estimate" : "uses the provider-wide consultation fee"}
                     </span>
-                  )}
-                </div>
+                  </div>
+                ) : null
               ))}
             </div>
           )}
@@ -964,13 +971,13 @@ function TypesBrandsTab({ tenantServiceId, data, pricingMode, onChanged, eligibi
           {availableBrands.loading ? <Skeleton height={80} /> : availableBrands.error ? (
             <Alert tone="danger">{availableBrands.error}</Alert>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(availableBrands.data?.brands ?? []).map(b => (
-                <div key={b.brand_id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input type="checkbox" checked={b.is_enabled} disabled={savingBrands} onChange={() => toggleBrand(b)} />
-                  <div style={{ flex: 1, fontSize: 13 }}>{b.name}</div>
-                </div>
-              ))}
+            <div className="pricing-dimension-choice-block is-brands">
+              <p>Which brands do you actually service?</p>
+              <div className="pricing-choice-chips">
+                {(availableBrands.data?.brands ?? []).map(b => (
+                  <button key={b.brand_id} type="button" aria-pressed={b.is_enabled} disabled={savingBrands} onClick={() => toggleBrand(b)}>{b.name}</button>
+                ))}
+              </div>
             </div>
           )}
           {dimensionPricing && !eligibilityOnly && (availableBrands.data?.brands ?? []).some(brand => brand.is_enabled) && (

@@ -209,12 +209,6 @@ async def create_team_member(
 
     requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
     selected_skills = await validate_skill_ids(db, uuid.UUID(cat_id), requested_skill_ids)
-    if member_type == "technician" and not selected_skills:
-        raise ServiceOSException(
-            "TECHNICIAN_SKILL_REQUIRED",
-            "Select at least one admin-approved skill for this technician.",
-            status_code=422,
-        )
 
     # Technicians resolve business hours dynamically. Team creation precedes
     # coverage setup, so no schedule is required or copied during this step.
@@ -321,6 +315,7 @@ async def create_team_member(
 @router.get("/team-members/service-coverage")
 async def get_team_member_service_coverage(
     request: Request,
+    include_availability: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ):
@@ -331,9 +326,15 @@ async def get_team_member_service_coverage(
     """
     from app.engines.home_service_assignment.team_readiness_service import (
         compute_service_coverage,
+        compute_team_summary,
     )
 
-    coverage = await compute_service_coverage(db, _tid(user))
+    team_summary = await compute_team_summary(
+        db, _tid(user), include_availability=include_availability,
+    )
+    coverage = await compute_service_coverage(
+        db, _tid(user), team_summary=team_summary,
+    )
     rid = (getattr(request.state, "request_id", None)
            or request.headers.get("X-Request-ID", "—"))
     return ok({"coverage": coverage}, request_id=rid)
@@ -342,6 +343,7 @@ async def get_team_member_service_coverage(
 @router.get("/team-members/readiness")
 async def get_team_member_readiness(
     request: Request,
+    include_availability: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ):
@@ -356,7 +358,9 @@ async def get_team_member_readiness(
         compute_team_summary,
     )
 
-    summary = await compute_team_summary(db, _tid(user))
+    summary = await compute_team_summary(
+        db, _tid(user), include_availability=include_availability,
+    )
     rid = (getattr(request.state, "request_id", None)
            or request.headers.get("X-Request-ID", "â€”"))
     return ok(summary, request_id=rid)
@@ -400,8 +404,11 @@ async def activate_team_member_account(
     account.password_changed_at = utcnow()
     token.status = "used"
     token.used_at = utcnow()
+    # Activating login credentials must not reactivate the operational roster
+    # row. Only the owner-controlled activate endpoint may do that because it
+    # rechecks the paid-seat and usage-credit gates first.
     await db.execute(text(
-        "UPDATE provider_team_members SET status='active', password_generated=false, updated_at=now() "
+        "UPDATE provider_team_members SET password_generated=false, updated_at=now() "
         "WHERE user_id=:uid AND deleted_at IS NULL"
     ), {"uid": str(account.id)})
     await db.commit()
@@ -441,6 +448,13 @@ async def update_team_member(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
+    existing_member = (await db.execute(text(
+        "SELECT member_type, designation, status, can_receive_assignment "
+        "FROM provider_team_members "
+        "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
+    ), {"id": str(member_id), "tid": str(tid)})).fetchone()
+    if existing_member is None:
+        raise HTTPException(404, "Team member not found")
     # Real bug fixed here: `max_concurrent_jobs` is a real column on
     # provider_team_members and the Team page has always offered it as an
     # editable field, but it was missing from this allow-list -- so saving a
@@ -477,6 +491,26 @@ async def update_team_member(
             raise ServiceOSException(
                 "INVALID_MEMBER_TYPE", "Choose technician, staff, or manager.", status_code=422
             )
+
+    # Editing a free staff/manager row into an active technician must consume
+    # a seat exactly like creating or reactivating a technician. Without this
+    # check the plan limit could be bypassed through the edit form.
+    from app.engines.home_service_assignment.eligibility import is_technician_role
+    effective_member_type = payload.get("member_type", existing_member.member_type)
+    effective_designation = payload.get("designation", existing_member.designation)
+    was_technician = is_technician_role(existing_member.designation, existing_member.member_type)
+    was_seat_consumer = (
+        was_technician and existing_member.status == "active"
+        and bool(existing_member.can_receive_assignment)
+    )
+    becomes_active_technician = (
+        is_technician_role(effective_designation, effective_member_type)
+        and payload.get("status", existing_member.status) == "active"
+        and bool(payload.get("can_receive_assignment", existing_member.can_receive_assignment))
+    )
+    if becomes_active_technician and not was_seat_consumer:
+        from app.engines.vertical_catalog.seat_enforcement import assert_seat_available
+        await assert_seat_available(db, tid)
     if "supported_offering_ids" in payload:
         requested = [str(value) for value in (payload["supported_offering_ids"] or [])]
         valid = await _validate_offering_ids(db, tid, requested)
@@ -498,10 +532,12 @@ async def update_team_member(
         cat_id = await resolve_team_category_id(db, tid)
         requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
         selected_skills = await validate_skill_ids(db, cat_id, requested_skill_ids)
-        if current_type == "technician" and not selected_skills:
+
+    if becomes_active_technician and not was_technician:
+        if not payload.get("supported_offering_ids"):
             raise ServiceOSException(
-                "TECHNICIAN_SKILL_REQUIRED",
-                "Select at least one admin-approved skill for this technician.",
+                "TECHNICIAN_SERVICE_REQUIRED",
+                "Select at least one enabled service this technician can perform.",
                 status_code=422,
             )
 
@@ -509,12 +545,7 @@ async def update_team_member(
         effective_type = payload.get("member_type")
         current = None
         if not effective_type or "designation" not in payload:
-            current = (await db.execute(text(
-                "SELECT member_type, designation FROM provider_team_members "
-                "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
-            ), {"id": str(member_id), "tid": str(tid)})).fetchone()
-            if current is None:
-                raise HTTPException(404, "Team member not found")
+            current = existing_member
         effective_type = effective_type or current.member_type
         effective_designation = payload.get("designation") if "designation" in payload else current.designation
         payload["designation"] = _validate_designation(effective_type, effective_designation)

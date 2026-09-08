@@ -51,13 +51,16 @@ async def list_brands(
     has_providers: bool | None = Query(None),
     sort_by: str = Query("display_order"),
     sort_dir: str = Query("asc"),
+    master_service_id: uuid.UUID | None = Query(None,
+        description="Exclude Brands already attached to a different service"),
     u: UserContext = Depends(require_super_admin),
     s: BrandService = Depends(_svc),
 ):
     return ok(await s.list_brands(status=status, category_id=category_id, search=search,
                                    page=page, page_size=page_size, retired=retired,
                                    mapped=mapped, has_providers=has_providers,
-                                   sort_by=sort_by, sort_dir=sort_dir), _rid(r))
+                                   sort_by=sort_by, sort_dir=sort_dir,
+                                   master_service_id=master_service_id), _rid(r))
 
 
 @router.post("", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,

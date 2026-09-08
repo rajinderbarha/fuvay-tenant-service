@@ -2943,9 +2943,6 @@ export interface ProviderTeamMemberPayload {
   service_area_ids?: string[] | null;
   can_receive_assignment?: boolean;
   profile_photo_url?: string | null;
-  /** Creates staff-level availability from the provider's open business days
-   * in the same transaction as technician creation. */
-  inherit_business_hours?: boolean;
   create_login?: boolean;
 }
 
@@ -2986,10 +2983,10 @@ export const providerTeamMembersApi = {
       method: "POST",
       body: JSON.stringify({ activation_token: activationToken, new_password: newPassword }),
     }),
-  readiness: () =>
-    apiFetch<TeamReadinessSummary>("/v1/provider/team-members/readiness"),
-  coverage: () =>
-    apiFetch<{ coverage: ServiceCoverageRow[] }>("/v1/provider/team-members/service-coverage"),
+  readiness: (includeAvailability = true) =>
+    apiFetch<TeamReadinessSummary>(`/v1/provider/team-members/readiness?include_availability=${includeAvailability}`),
+  coverage: (includeAvailability = true) =>
+    apiFetch<{ coverage: ServiceCoverageRow[] }>(`/v1/provider/team-members/service-coverage?include_availability=${includeAvailability}`),
 };
 
 // ── Sprint 11 — Provider Availability ────────────────────────────────────────

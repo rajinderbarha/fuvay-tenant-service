@@ -60,9 +60,11 @@ async def delete_dimension(dimension_id: uuid.UUID, r: Request,
 @router.get("/{dimension_id}/values", response_model=ApiResponse[dict],
             summary="List a dimension's values (proxies legacy Type/Brand tables)")
 async def list_values(dimension_id: uuid.UUID, r: Request,
+                       master_service_id: uuid.UUID | None = Query(None,
+                           description="Scope legacy Type/Brand choices to this service, excluding values mapped to a different service/group/category"),
                        u: UserContext = Depends(get_current_user),
                        s: CatalogDimensionService = Depends(_svc)):
-    return ok(await s.list_values(dimension_id), _rid(r), ENGINE_ID)
+    return ok(await s.list_values(dimension_id, master_service_id), _rid(r), ENGINE_ID)
 
 
 @router.post("/{dimension_id}/values", response_model=ApiResponse[dict], status_code=201,

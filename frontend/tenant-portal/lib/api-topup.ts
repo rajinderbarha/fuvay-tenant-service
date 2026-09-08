@@ -43,6 +43,8 @@ export interface TopupStatus {
   used_seats: number;
   available_seats: number;
   seats_over_limit: boolean;
+  /** True when an enabled, verified Admin Razorpay configuration is usable. */
+  checkout_configured: boolean;
   plans: TopupPlan[];
   currency: string;
 }

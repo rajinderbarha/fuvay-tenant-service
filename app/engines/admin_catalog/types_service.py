@@ -275,9 +275,16 @@ class TypesService:
         if "status" in data and data["status"] != t.status:
             raise ServiceOSException("LIFECYCLE_ENDPOINT_REQUIRED",
                 "Use the activate, deactivate, retire, or restore action for status changes.", status_code=409)
+        # t.code can be None for types created through the other creation
+        # path (AdminCatalogService.create_service_type never sets `code`);
+        # ServiceType.code.ilike(None) raises ArgumentError instead of
+        # matching nothing, crashing every update_type call on such a row.
+        dup_conditions = [ServiceType.name.ilike(t.name)]
+        if t.code:
+            dup_conditions.append(ServiceType.code.ilike(t.code))
         duplicate = await self.db.scalar(select(func.count(ServiceType.id)).where(
             ServiceType.id != type_id, ServiceType.deleted_at.is_(None),
-            or_(ServiceType.name.ilike(t.name), ServiceType.code.ilike(t.code))
+            or_(*dup_conditions)
         ))
         if duplicate:
             raise ServiceOSException("DUPLICATE", "A live service type already uses this name or code.", status_code=409)

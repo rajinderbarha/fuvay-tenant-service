@@ -923,7 +923,7 @@ function DimensionValuesPanel({ dimension, masterServiceId, canWrite, onChanged,
   const exactValues = useApi(useCallback(async () => {
     if (dimension.legacy_source === "brands") {
       const [library, mapped] = await Promise.all([
-        catalogApi.listBrands({ status: "active", page: 1, page_size: 200 }),
+        catalogApi.listBrands({ status: "active", page: 1, page_size: 200, masterServiceId }),
         catalogApi.listBrandMappings(masterServiceId),
       ]);
       return {
@@ -933,7 +933,7 @@ function DimensionValuesPanel({ dimension, masterServiceId, canWrite, onChanged,
     }
     if (dimension.legacy_source === "service_types") {
       const [library, mapped] = await Promise.all([
-        catalogApi.listServiceTypes(), catalogApi.listServiceTypeMappings(masterServiceId),
+        catalogApi.listServiceTypes(undefined, masterServiceId), catalogApi.listServiceTypeMappings(masterServiceId),
       ]);
       return {
         options: library.types.filter(row => row.is_active).map(row => ({ id: row.type_id, label: row.name })),

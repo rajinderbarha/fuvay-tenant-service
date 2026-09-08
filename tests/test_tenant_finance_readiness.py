@@ -35,23 +35,19 @@ class TestRouterStructure:
         assert "from app.engines.package_commerce" not in c
         assert "_resolve_commission_rate" not in c
 
-    def test_uses_live_tenant_billing_for_credits(self):
-        """The deposit fields went with the deposit (migration 317/318).
-
-        `tenant_billing.credit_balance` is the one live number this surface
-        reads now; capacity and the booking floor are what replaced collateral.
-        """
+    def test_plan_balances_are_not_duplicated_in_finance_readiness(self):
+        """Seats and credits belong exclusively to the plan checkout step."""
         c = _read(ROUTER)
-        assert "tenant_billing" in c
-        assert "credit_balance" in c
+        manifest = c[c.index("async def _build_manifest"):c.index('@router.get("")')]
+        assert "tenant_billing" not in manifest
+        assert "credit_balance" not in manifest
         assert "security_deposit" not in c
 
-    def test_projection_uses_current_topup_quote_contract(self):
+    def test_projection_does_not_expose_activation_funding(self):
         c = _read(ROUTER)
-        assert 'funding_quote["credit_tax"]' not in c
-        assert 'funding_quote["credit_gross"]' not in c
-        assert '.get("gst_amount", 0.0)' in c
-        assert 'funding_quote.get("can_pay")' in c
+        assert "resolve_activation_funding_quote" not in c
+        assert '"activation_requirements"' not in c
+        assert "funding_quote" not in c
 
     def test_no_payout_or_settlement_fields_exposed(self):
         c = _read(ROUTER)

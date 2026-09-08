@@ -15,8 +15,9 @@
  *      same slot.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  AlertTriangle, Check, Plus, Star, Trash2, Users, Wallet, X,
+  AlertTriangle, Check, CreditCard, Plus, Star, Trash2, Users, Wallet, X,
 } from "lucide-react";
 
 import { AdminLayout } from "../../../components/layout/AdminLayout";
@@ -137,11 +138,10 @@ export default function TopupPlansConsole() {
       <SectionHeader
         title="Provider Technician Plans"
         subtitle="Create the plans providers select during onboarding. Set the price, technician seats and validity, then enable Offered to providers to publish. Staff and managers do not consume paid seats."
-        actions={
-          <Btn onClick={startCreate} disabled={busy}>
-            <Plus size={15} /> New plan
-          </Btn>
-        }
+        actions={<div style={{ display: "flex", gap: 8 }}>
+          <Link href="/admin/notifications?tab=payments"><Btn variant="secondary"><CreditCard size={15}/> Configure Razorpay</Btn></Link>
+          <Btn onClick={startCreate} disabled={busy}><Plus size={15} /> New plan</Btn>
+        </div>}
       />
 
       {err && (

@@ -25,7 +25,22 @@ vi.mock("../ServiceRequirementsPanel", () => ({ ServiceRequirementsPanel: () => 
 vi.mock("../InlineDimensionPricingEditor", () => ({
   InlineDimensionPricingEditor: React.forwardRef(() => <div>Dimension prices</div>),
 }));
-import ServicesPricingSetupPage from "../ServicesPricingSetupPage";
+import ServicesPricingSetupPage, { offeringPriceSummary } from "../ServicesPricingSetupPage";
+
+it("formats fixed, range, and inspection pricing according to the Admin workflow", () => {
+  expect(offeringPriceSummary(
+    { job_type: "service", pricing_model: "fixed" },
+    { tenant_min_price: 500, tenant_max_price: 500, tenant_visit_fee: null }, null,
+  )).toBe("₹500");
+  expect(offeringPriceSummary(
+    { job_type: "service", pricing_model: "range" },
+    { tenant_min_price: 900, tenant_max_price: 1500, tenant_visit_fee: null }, null,
+  )).toBe("₹900–₹1,500");
+  expect(offeringPriceSummary(
+    { job_type: "repair", pricing_model: "inspection_required" },
+    { tenant_min_price: null, tenant_max_price: null, tenant_visit_fee: 249 }, null,
+  )).toBe("₹249 inspection");
+});
 
 const consultation = {
   service_id: "master", service_name: "AC advice", service_group_id: "group",
@@ -55,7 +70,7 @@ beforeEach(() => {
 
 it("continues after the service step is complete even when overall progress is 40%", async () => {
   render(<ServicesPricingSetupPage />);
-  await screen.findByRole("checkbox", { name: "Split AC" });
+  await screen.findByRole("button", { name: "Split AC" });
   fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
   await waitFor(() => expect(api.push).toHaveBeenCalledWith("/tenant/home-services/setup/plan"));
   expect(api.saveDraft).toHaveBeenCalledWith("tenant-service");
@@ -65,7 +80,7 @@ it("continues after the service step is complete even when overall progress is 4
 it("does not continue if another enabled service still needs setup", async () => {
   api.getOverview.mockResolvedValue({ sections: [{ key: "SERVICES_PRICING", status: "not_started", blocking_reasons: [{ message: "Configure the repair inspection fee." }] }] });
   render(<ServicesPricingSetupPage />);
-  await screen.findByRole("checkbox", { name: "Split AC" });
+  await screen.findByRole("button", { name: "Split AC" });
   fireEvent.click(screen.getByRole("button", { name: "Save & continue" }));
   expect(await screen.findByText("Configure the repair inspection fee.")).toBeInTheDocument();
   expect(api.push).not.toHaveBeenCalled();
@@ -76,8 +91,8 @@ it("shows one provider-level fee, with matching controls but no per-consultation
   const settings = await screen.findByRole("region", { name: "Provider-wide consultation fee" });
   expect(within(settings).getByLabelText("Consultation fee")).toHaveValue(299);
   expect(screen.getAllByLabelText("Consultation fee")).toHaveLength(1);
-  await screen.findByRole("checkbox", { name: "Split AC" });
-  expect(screen.getByRole("checkbox", { name: "Test brand" })).toBeChecked();
+  await screen.findByRole("button", { name: "Split AC" });
+  expect(screen.getByRole("button", { name: "Test brand" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.queryByText("Minimum price")).not.toBeInTheDocument();
   expect(screen.queryByText("Service price")).not.toBeInTheDocument();
   expect(screen.queryByText("Dimension prices")).not.toBeInTheDocument();
@@ -87,7 +102,7 @@ it("shows one provider-level fee, with matching controls but no per-consultation
 
 it("saves consultation offering settings without a per-service price or visit fee", async () => {
   render(<ServicesPricingSetupPage />);
-  await screen.findByRole("checkbox", { name: "Split AC" });
+  await screen.findByRole("button", { name: "Split AC" });
   fireEvent.click(screen.getByRole("button", { name: "Save as draft" }));
   await waitFor(() => expect(api.saveDraft).toHaveBeenCalledWith("tenant-service"));
   expect(api.updateEnabledService).toHaveBeenCalledWith("tenant-service", {
@@ -116,16 +131,16 @@ it("keeps invalid shared amounts out of the API", async () => {
 it("reports matching-save failures without losing the existing selection", async () => {
   api.setTypes.mockRejectedValue(new Error("offline"));
   render(<ServicesPricingSetupPage />);
-  fireEvent.click(await screen.findByRole("checkbox", { name: "Split AC" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Split AC" }));
   expect(await screen.findByText("Could not save the matching selection. Please retry.")).toBeInTheDocument();
-  expect(screen.getByRole("checkbox", { name: "Split AC" })).toBeChecked();
+  expect(screen.getByRole("button", { name: "Split AC" })).toHaveAttribute("aria-pressed", "true");
 });
 
 it("inspection offerings keep visit pricing and matching but no dimension prices", async () => {
   api.listAvailable.mockResolvedValue({ services: [{ ...consultation, job_type: "repair", pricing_model: "inspection_required" }] });
   api.listEnabled.mockResolvedValue({ services: [{ ...enrolled, job_type: "repair", tenant_visit_fee: 249 }] });
   render(<ServicesPricingSetupPage />);
-  await screen.findByRole("checkbox", { name: "Split AC" });
+  await screen.findByRole("button", { name: "Split AC" });
   expect(screen.getByText("Inspection charge")).toBeInTheDocument();
   expect(screen.queryByText("Dimension prices")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Save as draft" }));

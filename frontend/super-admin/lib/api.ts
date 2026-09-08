@@ -1398,9 +1398,12 @@ export const catalogApi = {
     apiFetch<MasterService>(`/v1/admin/master-services/${serviceId}`, { method:"PUT", body:JSON.stringify(data) }),
 
   // Service types
-  listServiceTypes: (categoryId?: string) => {
-    const qs = categoryId ? `?category_id=${categoryId}` : "";
-    return apiFetch<{ types: ServiceTypeRow[] }>(`/v1/admin/service-types${qs}`);
+  listServiceTypes: (categoryId?: string, masterServiceId?: string) => {
+    const qs = new URLSearchParams();
+    if (categoryId) qs.set("category_id", categoryId);
+    if (masterServiceId) qs.set("master_service_id", masterServiceId);
+    const s = qs.toString();
+    return apiFetch<{ types: ServiceTypeRow[] }>(`/v1/admin/service-types${s ? `?${s}` : ""}`);
   },
   createServiceType: (data: { category_id:string; name:string; description?:string }) =>
     apiFetch<ServiceTypeRow>("/v1/admin/service-types", { method:"POST", body:JSON.stringify(data) }),
@@ -1412,7 +1415,7 @@ export const catalogApi = {
     apiFetch<{ deleted: boolean; type_id: string; hard_delete: boolean }>(`/v1/admin/service-types/${typeId}/hard-delete`, { method:"DELETE" }),
 
   // Brands (Sprint 34D â€” Enterprise Brand Management)
-  listBrands: (params?: { categoryId?: string; status?: string; search?: string; page?: number; page_size?: number; retired?:boolean; mapped?:boolean; has_providers?:boolean; sort_by?:string; sort_dir?:string }) => {
+  listBrands: (params?: { categoryId?: string; status?: string; search?: string; page?: number; page_size?: number; retired?:boolean; mapped?:boolean; has_providers?:boolean; sort_by?:string; sort_dir?:string; masterServiceId?: string }) => {
     const qs = new URLSearchParams();
     if (params?.categoryId) qs.set("category_id", params.categoryId);
     if (params?.status)     qs.set("status", params.status);
@@ -1424,6 +1427,7 @@ export const catalogApi = {
     if (params?.has_providers != null) qs.set("has_providers", String(params.has_providers));
     if (params?.sort_by) qs.set("sort_by", params.sort_by);
     if (params?.sort_dir) qs.set("sort_dir", params.sort_dir);
+    if (params?.masterServiceId) qs.set("master_service_id", params.masterServiceId);
     return apiFetch<{ brands: Brand34D[]; total: number; page: number; page_size: number }>(
       `/v1/admin/brands?${qs.toString()}`);
   },
@@ -9876,9 +9880,9 @@ export const catalogWorkspaceApi = {
     apiFetch<CatalogDimensionDef>("/v1/admin/catalog/dimensions", { method: "POST", body: JSON.stringify(data) }),
   deleteDimension: (dimensionId: string) =>
     apiFetch(`/v1/admin/catalog/dimensions/${dimensionId}`, { method: "DELETE" }),
-  listDimensionValues: (dimensionId: string) =>
+  listDimensionValues: (dimensionId: string, masterServiceId?: string) =>
     apiFetch<{ dimension: CatalogDimensionDef; legacy: boolean; values: CatalogDimensionValueItem[] }>(
-      `/v1/admin/catalog/dimensions/${dimensionId}/values`),
+      `/v1/admin/catalog/dimensions/${dimensionId}/values${masterServiceId ? `?master_service_id=${masterServiceId}` : ""}`),
   addDimensionValue: (dimensionId: string, data: Record<string, unknown>) =>
     apiFetch<CatalogDimensionValueItem>(`/v1/admin/catalog/dimensions/${dimensionId}/values`,
       { method: "POST", body: JSON.stringify(data) }),

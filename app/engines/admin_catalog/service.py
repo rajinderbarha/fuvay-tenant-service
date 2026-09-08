@@ -1873,12 +1873,21 @@ class AdminCatalogService:
     # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_service_types(self, category_id: uuid.UUID | None = None,
-                                   is_active: bool | None = None) -> dict:
+                                   is_active: bool | None = None,
+                                   master_service_id: uuid.UUID | None = None) -> dict:
         stmt = select(ServiceType).where(ServiceType.deleted_at.is_(None))
         if category_id:
             stmt = stmt.where(ServiceType.category_id == category_id)
         if is_active is not None:
             stmt = stmt.where(ServiceType.is_active == is_active)
+        if master_service_id:
+            # A service's Type picker shouldn't offer choices that only make
+            # sense for a different service (e.g. "Split AC" while
+            # configuring a Microwave) -- see cross_scoped_ids.
+            from app.engines.admin_catalog.cross_scope import cross_scoped_ids
+            excluded = await cross_scoped_ids(self.db, MasterServiceType, MasterServiceType.service_type_id, master_service_id)
+            if excluded:
+                stmt = stmt.where(ServiceType.id.notin_(excluded))
         stmt = stmt.order_by(ServiceType.name)
         result = await self.db.execute(stmt)
         types = result.scalars().all()

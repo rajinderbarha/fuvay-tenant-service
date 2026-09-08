@@ -461,7 +461,7 @@ function CoverageAvailabilityWorkspace() {
               <Btn variant="secondary" size="sm" onClick={handleCopyMondayToWeekdays}>Copy Monday to weekdays</Btn>
             </div>
             <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Timezone: {bookingWindow.timezone}</p>
-            <p>Two-hour jobs · {technicianCapacity ?? 0} funded technicians · at most {technicianCapacity ?? 0} simultaneous bookings. Staff do not add booking capacity. Actual availability may be lower until technician documents are approved.</p>
+            <p>Two-hour jobs · {technicianCapacity ?? 0} active, funded technicians · at most {technicianCapacity ?? 0} simultaneous bookings. Staff and managers do not add booking capacity.</p>
             {DAYS.map(d => {
               const rule = rulesByDay.get(d.idx);
               const enabled = !!rule;
@@ -472,7 +472,7 @@ function CoverageAvailabilityWorkspace() {
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
                   <label style={{ position: "relative", display: "inline-block", width: 40, height: 22 }}>
                     <input type="checkbox" aria-label={`${d.name} open`} checked={enabled} onChange={e => handleToggleDay(d.idx, e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }}/>
-                    <span onClick={() => handleToggleDay(d.idx, !enabled)} style={{
+                    <span style={{
                       position: "absolute", inset: 0, borderRadius: 999, cursor: "pointer",
                       background: enabled ? "var(--brand)" : "var(--border)",
                     }}>
@@ -510,7 +510,7 @@ function CoverageAvailabilityWorkspace() {
             {slotPreview?.closed ? <p>Closed / holiday — no slots available.</p> : <>
               <p>{slotPreview?.daily_remaining ?? 0} booking places remaining this day. Counts refresh every 30 seconds.</p>
               {slotPreview?.slots.map(slot => <p key={slot.time_window}><strong>{slot.time_window}</strong> — {slot.available_slots} slots available ({slot.already_booked} booked / {slot.capacity} capacity)</p>)}
-              {slotPreview?.slots.length === 0 && <p>No bookable slots. Add funded, verified technicians and configure business hours.</p>}
+              {slotPreview?.slots.length === 0 && <p>No bookable slots. Add active, funded technicians and configure business hours.</p>}
             </>}
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "20px 0 14px", color: "var(--text-primary)" }}>Booking controls</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>

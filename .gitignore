@@ -86,3 +86,8 @@ db/backup_*.sql
 
 # Browser profile / scratch output from local reference captures (190MB+).
 .artifacts/
+
+# Ad-hoc pg_dump safety backups made before destructive catalog scripts --
+# large, local-only, never meant to be committed (may hold real tenant data).
+scratchpad/
+scratchpad_backup_*.sql

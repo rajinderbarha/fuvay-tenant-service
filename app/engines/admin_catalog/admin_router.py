@@ -1070,9 +1070,11 @@ async def restore_master_service(service_id: uuid.UUID, r: Request,
 async def list_service_types(r: Request,
                               category_id: uuid.UUID | None = Query(None),
                               is_active: bool | None = Query(None),
+                              master_service_id: uuid.UUID | None = Query(None,
+                                  description="Exclude Types already attached to a different service"),
                               u: UserContext = Depends(require_super_admin),
                               s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_service_types(category_id, is_active), _rid(r), ENGINE_ID)
+    return ok(await s.list_service_types(category_id, is_active, master_service_id), _rid(r), ENGINE_ID)
 
 
 @router.post("/service-types", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,

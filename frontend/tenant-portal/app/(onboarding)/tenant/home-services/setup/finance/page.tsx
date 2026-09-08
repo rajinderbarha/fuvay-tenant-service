@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Wallet, Banknote, Smartphone, CreditCard, Landmark, Info, ChevronRight,
+  Wallet, Banknote, Smartphone, Info, ChevronRight,
   CheckCircle2, AlertTriangle, ShieldCheck, ClipboardList, TrendingUp,
 } from "lucide-react";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
@@ -51,6 +51,17 @@ export default function FinanceReadinessPage() {
 
   async function save(andContinue: boolean) {
     if (!form) return;
+    if (andContinue && !form.accepts_cash && !form.accepts_upi) {
+      setError("Select Cash or UPI before continuing.");
+      return;
+    }
+    const invoiceName = String(
+      form.invoice_business_name ?? manifest?.invoice_defaults?.business_name ?? "",
+    ).trim();
+    if (andContinue && (!invoiceName || !String(form.invoice_prefix ?? "").trim())) {
+      setError("Enter the invoice business name and invoice prefix before continuing.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -215,7 +226,6 @@ export default function FinanceReadinessPage() {
             <CheckLine ok={manifest.checks.direct_methods_selected} label="Direct methods selected"/>
             <CheckLine ok={manifest.checks.confirmation_configured} label="Confirmation configured"/>
             <CheckLine ok={manifest.checks.invoice_details_complete} label="Invoice details complete"/>
-            <CheckLine ok={!manifest.checks.activation_requirements_pending} pendingLabel="Activation requirements pending" label="Activation requirements clear"/>
           </Card>
 
           <Card>

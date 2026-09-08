@@ -181,6 +181,7 @@ async def tenant_status(
     showing a spinner over a number the provider just clicked.
     """
     from app.engines.vertical_catalog import seat_enforcement as se
+    from app.integrations import razorpay_client
 
     tenant_id = _tid(user)
     credit = await se.get_credit_state(db, tenant_id)
@@ -207,6 +208,10 @@ async def tenant_status(
         "seats_over_limit": seats["over_limit"],
         "plans": plans,
         "currency": "INR",
+        # Expose only a boolean. The publishable key belongs on a server-created
+        # order and secrets must never leave the backend. This lets the plan
+        # page explain why checkout is unavailable before a provider clicks.
+        "checkout_configured": await razorpay_client.is_configured(db),
     }, _rid(r), engine_id=ENGINE_ID)
 
 

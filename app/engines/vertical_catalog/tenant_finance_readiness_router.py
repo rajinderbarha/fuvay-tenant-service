@@ -8,9 +8,8 @@ never routes the customer's payment through Fuvay). This router only
 lets the tenant declare HOW it accepts that direct payment and its invoice
 preferences (`TenantFinanceReadiness`), and surfaces the already-resolved,
 read-only Home Services finance policy from the published vertical
-Monetization policy, usage-credit balance (tenant_billing),
-and technician seats (tenant_billing.entitled_seats — bought with a top-up
-plan only after admin approval, never here).
+monetization policy. Technician seats and usage credit are purchased only in
+the Technician Seat Plan step and are deliberately absent from this endpoint.
 """
 from __future__ import annotations
 
@@ -27,12 +26,10 @@ from app.dependencies.db import get_db
 from app.dependencies.vertical_guard import require_vertical_not_active
 from app.core.permissions import require_tenant_owner_mutation
 from app.schemas.base import ok
-from app.exceptions import NotFoundException, ServiceOSException
-from app.engines.tenant_engine.models import TenantFinanceReadiness, TenantBilling
+from app.exceptions import NotFoundException
+from app.engines.tenant_engine.models import TenantFinanceReadiness
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.invoice_payment.commission_service import resolve_provider_commission_rate
-from app.engines.vertical_catalog.finance_policy_service import FinancePolicyResolutionError
-from app.engines.vertical_catalog.activation_payment_service import resolve_activation_funding_quote
 
 from app.dependencies.setup_sequence import enforce_setup_sequence
 
@@ -83,33 +80,7 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
         {"tid": str(tid)},
     )).fetchone()
 
-    billing_row = (await db.execute(
-        text("SELECT credit_balance, entitled_seats "
-             "FROM tenant_billing WHERE tenant_id=:tid"),
-        {"tid": str(tid)},
-    )).fetchone()
-
     commission_rate = str(await resolve_provider_commission_rate(db, tenant_row.category_id))
-
-    entitled_seats = int(billing_row.entitled_seats) if billing_row and billing_row.entitled_seats else 0
-    credit_balance = float(billing_row.credit_balance) if billing_row else 0.0
-
-    # What is owed must be resolved from the live catalogue, not from what
-    # the tenant happens to have paid so far: `entitled_seats` is only ever
-    # written AFTER a capture, so reading it alone would report "not required"
-    # for everyone who simply has not bought yet -- indistinguishable from a
-    # tenant who genuinely owes nothing. `resolve_activation_funding_quote` is
-    # the same source that sizes the Razorpay order.
-    required_credit_amount = 0.0
-    funding_quote = None
-    policy_resolved = False
-    try:
-        funding_quote = await resolve_activation_funding_quote(db, tid)
-        required_credit_amount = funding_quote["total_due"]
-        policy_resolved = True
-    except (FinancePolicyResolutionError, ServiceOSException):
-        # No published policy yet -- nothing to pay, nothing to gate on.
-        pass
 
     readiness_row = await _row(db, tid)
     methods_selected = readiness_row is not None and any([
@@ -119,16 +90,10 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
                     else (profile_row.trade_name if profile_row else None) or tenant_row.business_name)
     invoice_details_complete = bool(invoice_name) and bool(readiness_row and readiness_row.invoice_prefix)
 
-    # Missing policy is a blocking configuration error, never "nothing is
-    # required".  The previous fail-open value let the UI show a green gate
-    # precisely when no payable amount could be resolved.
-    activation_requirements_pending = not policy_resolved or bool(funding_quote and funding_quote["can_pay"])
-
     checks = {
         "direct_methods_selected": methods_selected,
         "confirmation_configured": readiness_row is not None,
         "invoice_details_complete": invoice_details_complete,
-        "activation_requirements_pending": activation_requirements_pending,
     }
     setup_complete = methods_selected and checks["confirmation_configured"] and invoice_details_complete
     complete_count = sum(1 for k in ("direct_methods_selected", "confirmation_configured", "invoice_details_complete") if checks[k])
@@ -152,33 +117,6 @@ async def _build_manifest(db: AsyncSession, tid: uuid.UUID) -> dict:
             "pricing_ownership": "Tenant business",
             "provider_commission_pct": commission_rate,
             "policy_version": "HS_VERTICAL_MONETIZATION_LIVE",
-        },
-        "activation_requirements": {
-            # Seats replaced the security deposit in migration 317: headcount
-            # is bought rather than collateralised.
-            "technician_seats": {
-                "entitled": entitled_seats,
-                "qualifying_technician_count": funding_quote["qualifying_technician_count"] if funding_quote else 0,
-                "seats_needed": funding_quote["seats_needed"] if funding_quote else 0,
-                "suggested_plan": funding_quote["suggested_plan"] if funding_quote else None,
-                "status": "funded" if funding_quote and funding_quote["seats_funded"] else (
-                    "not_required" if not policy_resolved else "required_after_approval"
-                ),
-                "can_pay": bool(funding_quote and funding_quote.get("total_due", 0) > 0),
-            },
-            "usage_credit_wallet": {
-                "balance": credit_balance,
-                "required_amount": required_credit_amount,
-                "base_credit_amount": funding_quote["starter_credit_base"] if funding_quote else 0.0,
-                "tax_amount": (
-                    (funding_quote.get("suggested_plan") or {}).get("gst_amount", 0.0)
-                    if funding_quote else 0.0
-                ),
-                "status": "active" if funding_quote and funding_quote["credits_funded"] else "not_active",
-                "can_pay": bool(funding_quote and funding_quote.get("can_pay")),
-            },
-            "funding_quote": funding_quote,
-            "policy_resolved": policy_resolved,
         },
         "notice": "Customers pay your business directly. Fuvay records the payment but does not hold or settle job funds.",
     }
@@ -222,19 +160,6 @@ async def save_finance_readiness(
     if not row:
         row = TenantFinanceReadiness(tenant_id=tid)
         db.add(row)
-
-    # Saving Finance Readiness is what makes finance genuinely "configured"
-    # for onboarding purposes -- the readiness aggregator
-    # (home_services_setup_service.get_setup_overview) gates the
-    # FINANCE_READINESS section purely on a tenant_billing row existing.
-    # Nothing else in the onboarding flow ever created that row for a new
-    # tenant, so without this the section stayed permanently incomplete no
-    # matter how completely the tenant filled out this step.
-    billing_row = (await db.execute(
-        select(TenantBilling).where(TenantBilling.tenant_id == tid)
-    )).scalar_one_or_none()
-    if not billing_row:
-        db.add(TenantBilling(tenant_id=tid, vertical_key=HOME_SERVICES_VERTICAL_KEY))
 
     row.accepts_cash = body.accepts_cash
     row.accepts_upi = body.accepts_upi

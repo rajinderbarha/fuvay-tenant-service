@@ -105,8 +105,8 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
   const [servicesLoadFailed, setServicesLoadFailed] = useState(false);
   const [selectedOfferingIds, setSelectedOfferingIds] = useState<string[]>(existing?.supported_offering_ids ?? []);
 
-  // New technicians inherit the provider's active business schedule by
-  // default. Readiness and booking capacity both use these staff-level rules.
+  // Technicians resolve the provider's current business hours dynamically,
+  // so future schedule edits apply immediately without stale copied rows.
 
   // ── Optional login (separate endpoint, runs after member exists) ──
   const [wantsLogin, setWantsLogin] = useState(false);
@@ -199,9 +199,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
     if (isTechnician && availableServices.length > 0 && selectedOfferingIds.length === 0) {
       return "Select at least one service this technician can perform.";
     }
-    if (isTechnician && skillsLoadFailed) return "The approved skill catalog could not be loaded. Close this dialog and try again.";
-    if (isTechnician && availableSkills.length === 0) return "No active technician skills are configured for this category. Ask an administrator to configure the skill catalog.";
-    if (isTechnician && selectedSkillIds.length === 0) return "Select at least one approved skill for this technician.";
     return null;
   }
 
@@ -226,7 +223,6 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
       skill_ids: isTechnician ? selectedSkillIds : [],
       supported_offering_ids: isTechnician ? selectedOfferingIds : [],
       profile_photo_url: photoAsset?.preview_url ?? (photoCleared || !isEdit ? null : undefined),
-      ...(!isEdit ? { inherit_business_hours: isTechnician } : {}),
       reports_to_display_name: reportsToName.trim() || null,
       reports_to_designation: reportsToDesignation.trim() || null,
     };
@@ -360,14 +356,14 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
           {activeSection === 2 && <>
           <SectionTitle>Approved skills</SectionTitle>
           {isTechnician && (
-            <Field label="Approved skills" required hint="Skills are controlled by the platform administrator for this business category.">
+            <Field label="Approved skills" hint="Optional tags controlled by the platform administrator for this business category.">
               {servicesLoading ? (
                 <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Loading approved skills...</p>
               ) : skillsLoadFailed ? (
-                <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>The approved skill catalog could not be loaded.</p>
+                <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Approved skills could not be loaded. You can still save the technician and assign services.</p>
               ) : availableSkills.length === 0 ? (
-                <div style={{ padding: 12, borderRadius: 8, border: "1px solid var(--warning-border)", background: "var(--warning-bg)", color: "var(--warning-text)", fontSize: 12 }}>
-                  No active skills are configured for this category. An administrator must add skills before technicians can be created.
+                <div style={{ padding: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 12 }}>
+                  No optional skill tags are configured for this category. Service assignments below are enough to add this technician.
                 </div>
               ) : (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>

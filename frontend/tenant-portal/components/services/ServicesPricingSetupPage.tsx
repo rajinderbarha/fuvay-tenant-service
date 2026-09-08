@@ -800,25 +800,32 @@ function SetupDimensionsEditor({ selectedService, enrolled, isInspectionMode, ty
   handleTypePriceChange: (serviceTypeId: string, min: string, max: string) => Promise<void>;
   handleBrandPriceChange: (brandId: string, min: string, max: string, serviceTypeId?: string) => Promise<void>;
 }) {
+  // Matching-only offerings (inspection/quote pricing) have no per-type or
+  // per-brand price to set, so this stayed a plain checkbox list while
+  // fixed/range pricing got the chip-button treatment in
+  // InlineDimensionPricingEditor -- the same Type/Brand choice rendered two
+  // visibly different ways depending on pricing behaviour. Reusing that
+  // component's chip markup/classes here keeps the choice UI identical
+  // everywhere; only the pricing controls differ by mode.
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {enrolled.requires_type && (
-        <section>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>Type {selectedService.is_type_required ? "(required)" : "(optional)"}{isInspectionMode ? " for matching" : ""}</p>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {types.map(type => <label key={type.service_type_id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}><input type="checkbox" checked={type.is_enabled} onChange={() => toggleType(type)}/>{type.name}</label>)}
-            {!types.length && <p style={{ margin: 0, color: "var(--warning-text)", fontSize: 12.5 }}>No Types are mapped yet. Ask an administrator to complete this blueprint.</p>}
+        <div className="pricing-dimension-choice-block">
+          <p>{selectedService.is_type_required ? "Type (required)" : "Type (optional)"}{isInspectionMode ? " for matching" : ""} — which types do you actually service? Unselected types stay hidden from customers.</p>
+          <div className="pricing-choice-chips">
+            {types.map(type => <button key={type.service_type_id} type="button" aria-pressed={type.is_enabled} onClick={() => toggleType(type)}>{type.name}</button>)}
           </div>
-        </section>
+          {!types.length && <p style={{ margin: 0, color: "var(--warning-text)", fontSize: 12.5 }}>No Types are mapped yet. Ask an administrator to complete this blueprint.</p>}
+        </div>
       )}
       {enrolled.requires_brand && (
-        <section>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 8px" }}>Brand {selectedService.is_brand_required ? "(required)" : "(optional)"}{isInspectionMode ? " for matching" : ""}</p>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {brands.map(brand => <label key={brand.brand_id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}><input type="checkbox" checked={brand.is_enabled} onChange={() => toggleBrand(brand)}/>{brand.name}</label>)}
-            {!brands.length && <p style={{ margin: 0, color: "var(--warning-text)", fontSize: 12.5 }}>No Brands are mapped yet. Ask an administrator to complete this blueprint.</p>}
+        <div className="pricing-dimension-choice-block is-brands">
+          <p>{selectedService.is_brand_required ? "Brand (required)" : "Brand (optional)"}{isInspectionMode ? " for matching" : ""} — which brands do you actually service?</p>
+          <div className="pricing-choice-chips">
+            {brands.map(brand => <button key={brand.brand_id} type="button" aria-pressed={brand.is_enabled} onClick={() => toggleBrand(brand)}>{brand.name}</button>)}
           </div>
-        </section>
+          {!brands.length && <p style={{ margin: 0, color: "var(--warning-text)", fontSize: 12.5 }}>No Brands are mapped yet. Ask an administrator to complete this blueprint.</p>}
+        </div>
       )}
       {!isInspectionMode && ((typePricing.length > 0) || (brandPricing.length > 0)) && (
         <section>

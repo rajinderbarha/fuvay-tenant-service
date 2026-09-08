@@ -1,6 +1,6 @@
 "use client";
 /**
- * Tenant Onboarding — Staff & Technicians (step 6 of 8).
+ * Tenant Onboarding — Staff & Technicians (step 5 of 8).
  * Roster + readiness/coverage are entirely backend-derived
  * (providerTeamMembersApi.readiness/coverage) — this page never computes
  * readiness itself. Add/Edit opens a dedicated multistep wizard (not a
@@ -57,8 +57,11 @@ export default function StaffTechniciansPage() {
       .catch(() => setSeats(null));
     Promise.all([
       providerTeamMembersApi.list(),
-      providerTeamMembersApi.readiness(),
-      providerTeamMembersApi.coverage(),
+      // Coverage is the next step, so this step evaluates identity, role,
+      // skills and service assignments without requiring hours the provider
+      // has not been allowed to configure yet.
+      providerTeamMembersApi.readiness(false),
+      providerTeamMembersApi.coverage(false),
     ])
       .then(([m, r, c]) => { setMembers(m.members); setReadiness(r); setCoverage(c.coverage); })
       .catch(e => setError(e instanceof ServiceOSError ? e.message : "We couldn't load your team."))

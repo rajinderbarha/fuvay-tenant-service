@@ -18,6 +18,7 @@ from app.engines.admin_catalog.models import (
     ServiceType, Brand, MasterServiceType, MasterServiceBrand,
     MasterService, MasterIssueType, TenantService,
 )
+from app.engines.admin_catalog.cross_scope import cross_scoped_ids
 from app.exceptions import ServiceOSException, NotFoundException
 
 DATA_TYPES = {"single_select", "multi_select", "boolean", "number", "text"}
@@ -90,19 +91,30 @@ class CatalogDimensionService:
         return {"deleted": True, "id": str(dimension_id)}
 
     # ── Dimension values ──────────────────────────────────────────────────────
-    async def list_values(self, dimension_id: uuid.UUID) -> dict:
+    async def list_values(self, dimension_id: uuid.UUID, master_service_id: uuid.UUID | None = None) -> dict:
         """Reads generic values, OR proxies to the legacy service_types/brands
         tables for the two seeded legacy dimensions -- so the UI has ONE way
-        to fetch a dimension's values regardless of storage."""
+        to fetch a dimension's values regardless of storage. When
+        master_service_id is given, values already attached to a DIFFERENT
+        service are excluded (see cross_scoped_ids), so a service's Type/
+        Brand picker doesn't offer choices that only make sense for an
+        unrelated service (e.g. AC types while editing a microwave).
+        Never-used values still show for everyone."""
         d = await self._load_dimension(dimension_id)
         if d.legacy_source == "service_types":
-            rows = (await self.db.execute(
-                select(ServiceType.id, ServiceType.name).where(ServiceType.is_active == True))).all()  # noqa: E712
+            excluded = await cross_scoped_ids(self.db, MasterServiceType, MasterServiceType.service_type_id, master_service_id)
+            stmt = select(ServiceType.id, ServiceType.name).where(ServiceType.is_active == True)  # noqa: E712
+            if excluded:
+                stmt = stmt.where(ServiceType.id.notin_(excluded))
+            rows = (await self.db.execute(stmt)).all()
             return {"dimension": d.to_dict(), "legacy": True,
                     "values": [{"id": str(i), "code": None, "label": n} for i, n in rows]}
         if d.legacy_source == "brands":
-            rows = (await self.db.execute(
-                select(Brand.id, Brand.name).where(Brand.is_active == True))).all()  # noqa: E712
+            excluded = await cross_scoped_ids(self.db, MasterServiceBrand, MasterServiceBrand.brand_id, master_service_id)
+            stmt = select(Brand.id, Brand.name).where(Brand.is_active == True)  # noqa: E712
+            if excluded:
+                stmt = stmt.where(Brand.id.notin_(excluded))
+            rows = (await self.db.execute(stmt)).all()
             return {"dimension": d.to_dict(), "legacy": True,
                     "values": [{"id": str(i), "code": None, "label": n} for i, n in rows]}
         rows = (await self.db.execute(

@@ -111,6 +111,7 @@ class BrandService:
         has_providers: bool | None = None,
         sort_by: str = "display_order",
         sort_dir: str = "asc",
+        master_service_id: uuid.UUID | None = None,
     ) -> dict:
         provider_counts = (
             select(TenantSupportedBrand.brand_id.label("brand_id"), func.count(TenantSupportedBrand.id).label("provider_count"))
@@ -165,6 +166,14 @@ class BrandService:
             stmt = stmt.where(service_counts.c.service_count > 0 if mapped else func.coalesce(service_counts.c.service_count, 0) == 0)
         if has_providers is not None:
             stmt = stmt.where(provider_counts.c.provider_count > 0 if has_providers else func.coalesce(provider_counts.c.provider_count, 0) == 0)
+        if master_service_id:
+            # A service's Brand picker shouldn't offer choices that only make
+            # sense for a different service (e.g. AC brands while
+            # configuring a Microwave) -- see cross_scoped_ids.
+            from app.engines.admin_catalog.cross_scope import cross_scoped_ids
+            excluded = await cross_scoped_ids(self.db, MasterServiceBrand, MasterServiceBrand.brand_id, master_service_id)
+            if excluded:
+                stmt = stmt.where(Brand.id.notin_(excluded))
 
         total = int(await self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
         sort_columns = {
