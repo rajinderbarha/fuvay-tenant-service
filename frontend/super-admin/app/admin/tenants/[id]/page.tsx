@@ -1430,7 +1430,19 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                     <Btn size="sm" icon={<CreditCard size={13}/>} onClick={() => setCreditOpen(true)}>
                       Add Usage Credits
                     </Btn>
-                    {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
+                    {/* A tenant awaiting its first approval (under_review /
+                        onboarding_pending) was never active, so "Suspend"
+                        made no sense as the primary action here -- and
+                        Approve/Review was hidden three clicks deep
+                        (More menu -> Approve/Review Tenant -> switch tabs).
+                        Surface it directly; restrict Suspend to tenants that
+                        are actually operating. */}
+                    {(t?.status === "under_review" || t?.verification_status === "pending") && (
+                      <Btn variant="primary" size="sm" onClick={() => setTab("onboarding")}>
+                        Approve / Review
+                      </Btn>
+                    )}
+                    {perm.role === "super_admin" && t?.status === "active" && (
                       <Btn variant="danger" size="sm" loading={suspendAction.loading} onClick={() => setSuspendOpen(true)}>
                         Suspend
                       </Btn>
@@ -1449,7 +1461,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
                         boxShadow:"0 12px 40px rgba(0,0,0,0.18)", minWidth:210, overflow:"hidden" }}>
                         {isMobile && <>
                           <button onClick={() => { setMoreOpen(false); setCreditOpen(true); }} style={menuItemStyle}>Add Usage Credits</button>
-                          {perm.role === "super_admin" && t?.status && !["suspended","terminated","archived"].includes(t.status) && (
+                          {perm.role === "super_admin" && t?.status === "active" && (
                             <button onClick={() => { setMoreOpen(false); setSuspendOpen(true); }} style={menuItemStyle}>Suspend</button>
                           )}
                           {perm.role === "super_admin" && t?.status === "suspended" && (
