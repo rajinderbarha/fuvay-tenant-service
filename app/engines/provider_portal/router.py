@@ -12,7 +12,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
@@ -392,6 +392,19 @@ async def activate_team_member_account(
     if account is None:
         raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
 
+    active_member = (await db.execute(text(
+        "SELECT id FROM provider_team_members WHERE user_id=:uid AND tenant_id=:tid "
+        "AND status='active' AND deleted_at IS NULL FOR UPDATE"
+    ), {"uid": str(account.id), "tid": str(account.tenant_id)})).scalar()
+    # The roster lock serializes activation with disable/password regeneration.
+    # Re-read after waiting: a formerly valid token may have been revoked.
+    await db.refresh(token)
+    await db.refresh(account)
+    if token.status != "active" or token.expires_at <= utcnow():
+        raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
+    if not active_member or account.account_status != "active" or (account.meta or {}).get("provider_access_disabled"):
+        raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
+
     password_errors = validate_password_strength(new_password, account.full_name, account.email)
     if password_errors:
         raise ServiceOSException("WEAK_PASSWORD", password_errors[0], status_code=422)
@@ -427,7 +440,8 @@ async def get_team_member(
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     result = await db.execute(
-        text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"),
+        text("SELECT ptm.*, (SELECT u.is_active FROM users u WHERE u.id=ptm.user_id) AS login_active "
+             "FROM provider_team_members ptm WHERE ptm.id=:id AND ptm.tenant_id=:tid AND ptm.deleted_at IS NULL"),
         {"id": str(member_id), "tid": str(tid)}
     )
     row = result.fetchone()
@@ -451,10 +465,13 @@ async def update_team_member(
     existing_member = (await db.execute(text(
         "SELECT member_type, designation, status, can_receive_assignment "
         "FROM provider_team_members "
-        "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
+        "WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL FOR UPDATE"
     ), {"id": str(member_id), "tid": str(tid)})).fetchone()
     if existing_member is None:
         raise HTTPException(404, "Team member not found")
+    if "status" in payload and payload["status"] != existing_member.status:
+        raise ServiceOSException("TEAM_ACCESS_ACTION_REQUIRED", "Use Enable or Disable access to change team member status.", status_code=422)
+    payload.pop("status", None)
     # Real bug fixed here: `max_concurrent_jobs` is a real column on
     # provider_team_members and the Team page has always offered it as an
     # editable field, but it was missing from this allow-list -- so saving a
@@ -574,6 +591,14 @@ async def update_team_member(
     params["tid"] = str(tid)
     if sets:
         await db.execute(text(f"UPDATE provider_team_members SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
+    if "member_type" in payload:
+        from app.engines.provider_portal.team_login_service import linked_account
+        from app.engines.auth.service import AuthService
+        account = await linked_account(db, member_id, tid, user.user_id)
+        new_role = "technician" if payload["member_type"] == "technician" else "staff"
+        if account and account.role != new_role:
+            account.role = new_role
+            await AuthService(db)._revoke_all_user_sessions(account.id)
     if selected_skills is not None:
         await replace_member_skills(
             db, tenant_id=tid, member_id=member_id, selected=selected_skills,
@@ -606,6 +631,8 @@ async def delete_team_member(
     user: UserContext = Depends(require_tenant_owner_mutation),
 ):
     tid = _tid(user)
+    from app.engines.provider_portal.team_login_service import set_login_enabled
+    await set_login_enabled(db, member_id, tid, user.user_id, False)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     result = await db.execute(
         text("UPDATE provider_team_members SET deleted_at=now() WHERE id=:id AND tenant_id=:tid"),
@@ -638,7 +665,7 @@ async def activate_team_member(
     # one-click undo for a credit suspension.
     member = (await db.execute(text(
         "SELECT designation, member_type, status FROM provider_team_members "
-        "WHERE id = :id AND tenant_id = :tid AND deleted_at IS NULL"
+        "WHERE id = :id AND tenant_id = :tid AND deleted_at IS NULL FOR UPDATE"
     ), {"id": str(member_id), "tid": str(tid)})).fetchone()
     if member is None:
         raise HTTPException(404, "Team member not found")
@@ -664,6 +691,8 @@ async def activate_team_member(
 
     # `credit_suspended_at` is cleared: this is now a deliberate activation, and
     # a later restore must not treat the member as one the system had suspended.
+    from app.engines.provider_portal.team_login_service import set_login_enabled
+    await set_login_enabled(db, member_id, tid, user.user_id, True)
     result = await db.execute(text(
         "UPDATE provider_team_members SET status='active', credit_suspended_at=NULL, "
         "updated_at=now() WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
@@ -694,13 +723,15 @@ async def deactivate_team_member(
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     member_row = await db.execute(
-        text("SELECT user_id FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
+        text("SELECT user_id FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL FOR UPDATE"),
         {"id": str(member_id), "tid": str(tid)}
     )
     member = member_row.fetchone()
     if member is None:
         raise HTTPException(404, "Team member not found")
-    await db.execute(text("UPDATE provider_team_members SET status='inactive', updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(member_id), "tid": str(tid)})
+    from app.engines.provider_portal.team_login_service import set_login_enabled
+    await set_login_enabled(db, member_id, tid, user.user_id, False)
+    await db.execute(text("UPDATE provider_team_members SET status='inactive', credit_suspended_at=NULL, updated_at=now() WHERE id=:id AND tenant_id=:tid"), {"id": str(member_id), "tid": str(tid)})
     if member.user_id:
         # Slice 2F-2, Workstream 6: a deactivated team member's linked login
         # (provider_team_members.user_id) must have its sessions revoked --
@@ -752,6 +783,23 @@ async def deactivate_team_member(
 _MEMBER_TYPE_TO_ROLE = {"technician": "technician"}
 
 
+@router.post("/team-members/{member_id}/generate-password", dependencies=[Depends(enforce_setup_sequence)])
+async def generate_member_password(
+    member_id: uuid.UUID, request: Request, response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(require_tenant_owner_mutation),
+):
+    from app.engines.provider_portal.team_login_service import generate_team_password
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    rid = getattr(request.state, "request_id", "-")
+    credentials = await generate_team_password(
+        db, member_id, _tid(user), user, rid,
+        request.client.host if request.client else None,
+    )
+    return ok(credentials, request_id=rid)
+
+
 @router.post("/team-members/{member_id}/create-login", dependencies=[Depends(enforce_setup_sequence)])
 async def create_member_login(
     member_id: uuid.UUID, request: Request,
@@ -780,14 +828,16 @@ async def create_member_login(
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
 
     row = await db.execute(
-        text("SELECT id, full_name, email, phone, member_type, user_id "
-             "FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"),
+        text("SELECT id, full_name, email, phone, member_type, user_id, status "
+             "FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL FOR UPDATE"),
         {"id": str(member_id), "tid": str(tid)},
     )
     member = row.fetchone()
     if member is None:
         raise HTTPException(404, "Team member not found")
 
+    if member.status != "active":
+        raise ServiceOSException("TEAM_MEMBER_DISABLED", "Enable the team member before creating login access.", status_code=409)
     full_name = (member.full_name or "").strip()
     if not full_name:
         raise ServiceOSException("TEAM_MEMBER_NAME_REQUIRED",
@@ -803,6 +853,19 @@ async def create_member_login(
         )
 
     linked_user = await db.get(User, member.user_id) if member.user_id else None
+    if linked_user:
+        from app.engines.provider_portal.team_login_service import assert_managed_account
+        assert_managed_account(linked_user, tid, user.user_id)
+        if linked_user.account_status != "active" or (linked_user.meta or {}).get("provider_access_disabled"):
+            raise ServiceOSException("TEAM_LOGIN_DISABLED", "Restore account access before sending an invitation.", status_code=409)
+        if not linked_user.is_active:
+            pending_invitation = (await db.execute(select(PasswordResetToken.id).where(
+                PasswordResetToken.user_id == linked_user.id,
+                PasswordResetToken.purpose == "team_member_activation",
+                PasswordResetToken.status == "active",
+            ).limit(1))).scalar()
+            if not pending_invitation:
+                raise ServiceOSException("TEAM_LOGIN_DISABLED", "An administrator must restore this login first.", status_code=409)
     if linked_user and linked_user.is_active:
         return ok({
             "member_id": str(member_id), "user_id": str(linked_user.id),

@@ -387,6 +387,10 @@ function TechnicianSkillsTab({ categoryId }: { categoryId: string }) {
     else await categoryRuntimeApi.restoreSkill(categoryId, skill.id);
     skills.refetch();
   });
+  const starters = useAction(async () => {
+    await categoryRuntimeApi.addStarterSkills(categoryId);
+    skills.refetch();
+  });
 
   const openCreate = () => {
     setForm({ name: "", code: "", description: "", service_group_id: "", requires_verification: false, display_order: 100 });
@@ -420,9 +424,10 @@ function TechnicianSkillsTab({ categoryId }: { categoryId: string }) {
             <option value="">All statuses</option><option value="active">Active</option><option value="retired">Retired</option>
           </select>
         </div>
+        <Btn variant="secondary" disabled={starters.loading} onClick={() => starters.execute()}>Add Home Services starter skills</Btn>
         <Btn variant="primary" onClick={openCreate}><Plus size={14} /> Add skill</Btn>
       </div>
-      {(save.error || lifecycle.error || skills.error) && <Notice tone="danger">{save.error || lifecycle.error || skills.error}</Notice>}
+      {(save.error || lifecycle.error || skills.error || starters.error) && <Notice tone="danger">{save.error || lifecycle.error || skills.error || starters.error}</Notice>}
       {skills.loading ? <Skeleton height={260} /> : rows.length === 0 ? (
         <div style={{ padding: 36, textAlign: "center", color: "var(--text-secondary)", fontSize: 13 }}>No skills match these filters.</div>
       ) : <div style={{ overflowX: "auto" }}><TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>

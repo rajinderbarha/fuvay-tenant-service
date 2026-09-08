@@ -34,6 +34,10 @@ export function useStaffContext(): StaffContext {
       authTimeline("staffContext.me_request_start");
       const user = await authApi.me();
       authTimeline("staffContext.me_request_ok", user.role);
+      if (user.force_password_change) {
+        window.location.href = "/change-password-required";
+        return;
+      }
       const isTechnician = user.role === "technician" || user.role === "staff";
       setState({ loading: false, user, isTechnician, error: null });
     } catch (e) {

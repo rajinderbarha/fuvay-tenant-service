@@ -68,6 +68,37 @@ export function clearSession() {
 import type { TeamReadinessSummary, ServiceCoverageRow, BusinessProfileOptions } from "./api-tenant-workspaces";
 
 const inFlightReads = new Map<string, Promise<unknown>>();
+let sessionRefresh: Promise<string | null> | null = null;
+
+async function refreshAccessToken(failedToken: string | null): Promise<string | null> {
+  // Another request may already have refreshed this access token.
+  if (getToken() !== failedToken) return getToken();
+  if (sessionRefresh) return sessionRefresh;
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  sessionRefresh = (async () => {
+    const response = await fetch(`${API_BASE}/v1/auth/token/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (response.status === 401 || response.status === 403) return null;
+    if (!response.ok) throw new ServiceOSError("SESSION_REFRESH_UNAVAILABLE", "Could not refresh your session. Please retry.");
+    const json = await response.json();
+    const tokens = json.data ?? json;
+    if (typeof tokens.access_token !== "string" || !tokens.access_token) {
+      throw new ServiceOSError("SESSION_REFRESH_UNAVAILABLE", "Could not refresh your session. Please retry.");
+    }
+    // Never restore a session that was signed out or replaced while waiting.
+    if (getRefreshToken() !== refreshToken || getToken() !== failedToken) return getToken();
+    localStorage.setItem("serviceos_tenant_token", tokens.access_token);
+    if (typeof tokens.refresh_token === "string" && tokens.refresh_token) {
+      localStorage.setItem("serviceos_tenant_refresh", tokens.refresh_token);
+    }
+    return tokens.access_token as string;
+  })().finally(() => { sessionRefresh = null; });
+  return sessionRefresh;
+}
 
 async function apiFetchOnce<T>(path: string, options: RequestInit = {}, skipAuth = false): Promise<T> {
   const token = getToken();
@@ -77,31 +108,21 @@ async function apiFetchOnce<T>(path: string, options: RequestInit = {}, skipAuth
     ...(options.headers as Record<string, string>),
   };
   if (token && !skipAuth) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (res.status === 401 && !skipAuth) {
-    const rt = getRefreshToken();
-    if (rt) {
-      try {
-        const refreshRes = await fetch(`${API_BASE}/v1/auth/token/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: rt }),
-        });
-        if (refreshRes.ok) {
-          const refreshJson = await refreshRes.json();
-          const newToken: string = refreshJson.data?.access_token ?? refreshJson.access_token;
-          if (newToken) {
-            localStorage.setItem("serviceos_tenant_token", newToken);
-            const retryHeaders = { ...headers, "Authorization": `Bearer ${newToken}` };
-            const retry = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
-            if (retry.ok) { const json = await retry.json(); return json.data as T; }
-          }
-        }
-      } catch { /* fall through */ }
+    const newToken = await refreshAccessToken(token);
+    if (!newToken) {
+      clearSession();
+      throw new ServiceOSError("UNAUTHORIZED", "Session expired. Please sign in again.");
     }
-    clearSession();
-    throw new ServiceOSError("UNAUTHORIZED", "Session expired. Please sign in again.");
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options, headers: { ...headers, "Authorization": `Bearer ${newToken}` },
+    });
+    if (res.status === 401) {
+      clearSession();
+      throw new ServiceOSError("UNAUTHORIZED", "Session expired. Please sign in again.");
+    }
   }
 
   if (!res.ok) {
@@ -2946,6 +2967,15 @@ export interface ProviderTeamMemberPayload {
   create_login?: boolean;
 }
 
+export interface TeamMemberLoginCredentials {
+  member_id: string;
+  user_id: string;
+  username: string;
+  temporary_password: string;
+  force_password_change: boolean;
+  access_active: boolean;
+}
+
 export interface TeamMemberLoginInvite {
   member_id: string;
   user_id?: string;
@@ -2977,6 +3007,10 @@ export const providerTeamMembersApi = {
   createLogin: (id: string) =>
     apiFetch<TeamMemberLoginInvite>(
       `/v1/provider/team-members/${id}/create-login`, { method: "POST" }
+    ),
+  generatePassword: (id: string) =>
+    apiFetch<TeamMemberLoginCredentials>(
+      `/v1/provider/team-members/${id}/generate-password`, { method: "POST", cache: "no-store" }
     ),
   activateLogin: (activationToken: string, newPassword: string) =>
     apiFetch<{ activated: boolean }>("/v1/provider/team-members/activate", {
@@ -4526,7 +4560,7 @@ export const staffSelfApi = {
   getMySkills: async (): Promise<StaffSkillEntry | null> => {
     const uid = getUserId();
     const res = await apiFetch<{ members: StaffSkillEntry[]; count: number }>("/v1/provider/team-members");
-    return res.members.find(m => (m as unknown as { user_id?: string }).user_id === uid) ?? res.members[0] ?? null;
+    return res.members.find(m => (m as unknown as { user_id?: string }).user_id === uid) ?? null;
   },
 
   // Service areas (tenant-wide view — technician sees the tenant's

@@ -48,6 +48,7 @@ export default function StaffTechniciansPage() {
   const [coverageFilter, setCoverageFilter] = useState("All");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<ProviderTeamMember | null>(null);
+  const [wizardSection, setWizardSection] = useState(0);
   const [seats, setSeats] = useState<{ entitled: number; available: number; credit: number } | null>(null);
 
   const load = useCallback(() => {
@@ -85,28 +86,10 @@ export default function StaffTechniciansPage() {
     try { await providerTeamMembersApi.activate(id); load(); }
     catch (e) { setError(e instanceof ServiceOSError ? e.message : "Could not restore access."); }
   }
-  async function handleSendInvite(member: ProviderTeamMember) {
-    if (!member.email) {
-      setEditingMember(member);
-      setWizardOpen(true);
-      return;
-    }
-    try {
-      const result = await providerTeamMembersApi.createLogin(member.member_id);
-      if (result.activation_token && !result.activation_sent) {
-        await navigator.clipboard?.writeText(result.activation_token);
-      }
-      setNotice(result.access_active
-        ? "App access is already active."
-        : result.activation_sent
-          ? `App invitation sent to ${member.email}.`
-          : result.activation_token
-            ? "Development activation code copied to the clipboard."
-            : "Invitation created, but email delivery could not be confirmed.");
-      load();
-    } catch (e) {
-      setError(e instanceof ServiceOSError ? e.message : "Could not send the app invitation.");
-    }
+  function handleManageLogin(member: ProviderTeamMember) {
+    setEditingMember(member);
+    setWizardSection(member.email ? 4 : 0);
+    setWizardOpen(true);
   }
 
   const filtered = members.filter(m => {
@@ -247,11 +230,9 @@ export default function StaffTechniciansPage() {
                     <ActionMenu
                       size="xs"
                       items={[
-                        !m.login_active && {
-                          label: m.email
-                            ? (m.password_generated ? "Resend app invitation" : "Send app invitation")
-                            : "Add email to send invitation",
-                          onClick: () => handleSendInvite(m),
+                        {
+                          label: "Manage login",
+                          onClick: () => handleManageLogin(m),
                         },
                         m.status === "active"
                           ? { label: "Disable access", onClick: () => handleDeactivate(m.member_id), variant: "danger", divider: !m.login_active }
@@ -327,8 +308,9 @@ export default function StaffTechniciansPage() {
         <AddTeamMemberWizard
           technicianSeatAvailable={!!seats && seats.available > 0}
           existing={editingMember}
-          onClose={() => setWizardOpen(false)}
-          onSaved={() => { setWizardOpen(false); load(); }}
+          initialSection={wizardSection}
+          onClose={() => { setWizardOpen(false); setWizardSection(0); load(); }}
+          onSaved={() => { setWizardOpen(false); setWizardSection(0); load(); }}
         />
       )}
       </PageShell>

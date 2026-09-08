@@ -6,7 +6,8 @@
 // to draw one number would be a bad trade, and the popup should open with the
 // plans already in hand rather than spinning over a number just clicked.
 // ═══════════════════════════════════════════════════════════════════════════
-import { apiFetch } from "./api";
+import { activationPaymentApi, apiFetch } from "./api";
+import type { RazorpayResult } from "../hooks/useRazorpayCheckout";
 
 export type CreditState = "healthy" | "low" | "blocked" | "arrears";
 
@@ -77,6 +78,24 @@ export const topupApi = {
       { method: "POST", body: JSON.stringify({ plan_id: planId }) },
     ),
 };
+
+/** Recover the same order if Checkout succeeds but its callback fails. */
+export async function completeTopupPayment(order: TopupOrder, checkout: () => Promise<RazorpayResult>): Promise<void> {
+  if (order.already_confirmed) return;
+  try {
+    const payment = await checkout();
+    await activationPaymentApi.confirmFunding(payment);
+  } catch (error) {
+    try {
+      const result = await activationPaymentApi.reconcileFunding<{ status?: string; captured?: boolean }>(order.order_id);
+      if (result.status === "captured" || result.captured === true) return;
+    } catch {
+      // Preserve the original failure. A later retry reconciles this order
+      // before offering another payment; only the server can grant credit.
+    }
+    throw error;
+  }
+}
 
 /** ₹ with Indian digit grouping, no trailing .00 on round amounts. */
 export function inr(n: number): string {

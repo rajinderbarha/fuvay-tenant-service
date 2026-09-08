@@ -18,19 +18,23 @@ export default function ChangePasswordRequiredPage() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
   const [success, setSuccess]     = useState(false);
+  const [loginPath, setLoginPath] = useState("/login");
 
   // Redirect if not authenticated
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const role = localStorage.getItem("serviceos_user_role");
+    const path = role === "staff" || role === "technician" ? "/staff/login" : "/login";
+    setLoginPath(path);
     const token = localStorage.getItem("serviceos_tenant_token");
-    if (!token) window.location.href = "/login";
+    if (!token) window.location.href = path;
   }, []);
 
   function logout() {
     ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_tenant_id","serviceos_tenant_name",
      "serviceos_tenant_vertical","serviceos_tenant_health","serviceos_user_id",
      "serviceos_force_pw_change"].forEach(k => localStorage.removeItem(k));
-    window.location.href = "/login";
+    window.location.href = loginPath;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -47,7 +51,7 @@ export default function ChangePasswordRequiredPage() {
       // Clear session — must log in again with new password
       ["serviceos_tenant_token","serviceos_tenant_refresh","serviceos_force_pw_change"].forEach(k =>
         localStorage.removeItem(k));
-      setTimeout(() => { window.location.href = "/login"; }, 2000);
+      setTimeout(() => { window.location.href = loginPath; }, 2000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Password change failed. Check your current password.");
     } finally {
@@ -70,7 +74,7 @@ export default function ChangePasswordRequiredPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ display:"flex", justifyContent:"center", marginBottom:12 }}><FuvayLogo height={44}/></div>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Tenant Owner Portal</p>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Business &amp; Team Portal</p>
         </div>
 
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius:"var(--radius-xl, 1rem)",

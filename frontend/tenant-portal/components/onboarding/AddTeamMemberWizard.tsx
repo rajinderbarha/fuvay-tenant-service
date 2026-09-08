@@ -25,9 +25,10 @@
  * "ready" itself.
  */
 import React, { useEffect, useRef, useState } from "react";
-import { X, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Copy, Search, ShieldCheck } from "lucide-react";
+import { X, CheckCircle2, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck } from "lucide-react";
 import { Btn, Input } from "../shared/ui";
 import { ProfilePhotoUploader } from "../shared/ProfilePhotoUploader";
+import { TeamLoginCredentials } from "./TeamLoginCredentials";
 import {
   providerTeamMembersApi, providerTeamSkillsApi, homeServicesSetupApi, getTenantId,
   ServiceOSError, type ProviderTeamMember, type MediaAsset, type TenantEnabledService,
@@ -63,17 +64,20 @@ function humanizeJobType(value: string) {
   return value.split("_").filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join(" ");
 }
 
-export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeatAvailable = true }: {
+export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeatAvailable = true, initialSection = 0 }: {
   existing: ProviderTeamMember | null;
   onClose: () => void;
   onSaved: () => void;
   technicianSeatAvailable?: boolean;
+  initialSection?: number;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [completed, setCompleted] = useState(false);
-  const [activeSection, setActiveSection] = useState(0);
+  const [activeSection, setActiveSection] = useState(initialSection);
+  const [memberStatus, setMemberStatus] = useState(existing?.status ?? "active");
+  const [skillsReload, setSkillsReload] = useState(0);
   const tenantId = getTenantId() ?? "";
   const isEdit = !!existing?.member_id;
 
@@ -111,7 +115,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
   // ── Optional login (separate endpoint, runs after member exists) ──
   const [wantsLogin, setWantsLogin] = useState(false);
   const [activation, setActivation] = useState<
-    Awaited<ReturnType<typeof providerTeamMembersApi.createLogin>> | null
+    Awaited<ReturnType<typeof providerTeamMembersApi.generatePassword>> | null
   >(null);
 
   const isTechnician = memberType === "technician";
@@ -156,24 +160,21 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
     let cancelled = false;
     setServicesLoading(true);
     setServicesLoadFailed(false);
-    Promise.all([homeServicesSetupApi.listEnabled(), providerTeamSkillsApi.list()])
+    setSkillsLoadFailed(false);
+    Promise.allSettled([homeServicesSetupApi.listEnabled(), providerTeamSkillsApi.list()])
       .then(([services, skills]) => {
         if (!cancelled) {
-          setAvailableServices(services.services.filter(s => s.is_enabled));
-          setAvailableSkills(skills.skills);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setServicesLoadFailed(true);
-          setSkillsLoadFailed(true);
+          if (services.status === "fulfilled") setAvailableServices(services.value.services.filter(s => s.is_enabled));
+          else setServicesLoadFailed(true);
+          if (skills.status === "fulfilled") setAvailableSkills(skills.value.skills);
+          else setSkillsLoadFailed(true);
         }
       })
       .finally(() => {
         if (!cancelled) setServicesLoading(false);
       });
     return () => { cancelled = true; };
-  }, [isTechnician]);
+  }, [isTechnician, skillsReload]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -220,7 +221,8 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
       email: email.trim() || null,
       designation: null,
       can_receive_assignment: canReceive,
-      skill_ids: isTechnician ? selectedSkillIds : [],
+      // A failed optional-catalog load must not erase an existing selection.
+      ...(skillsLoadFailed && isTechnician ? {} : { skill_ids: isTechnician ? selectedSkillIds : [] }),
       supported_offering_ids: isTechnician ? selectedOfferingIds : [],
       profile_photo_url: photoAsset?.preview_url ?? (photoCleared || !isEdit ? null : undefined),
       reports_to_display_name: reportsToName.trim() || null,
@@ -243,9 +245,9 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
 
       if (wantsLogin) {
         try {
-          setActivation(await providerTeamMembersApi.createLogin(memberId));
-        } catch {
-          problems.push("login access could not be created");
+          setActivation(await providerTeamMembersApi.generatePassword(memberId));
+        } catch (e) {
+          problems.push(e instanceof ServiceOSError ? e.message : "login access could not be created");
         }
       }
 
@@ -267,6 +269,33 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
     }
   }
 
+  async function toggleAccess() {
+    if (!existing) return;
+    const disabling = memberStatus === "active";
+    if (disabling && !confirm("Disable this member? They will be signed out and cannot sign in or receive new assignments.")) return;
+    setSaving(true); setError("");
+    try {
+      await (disabling ? providerTeamMembersApi.deactivate(existing.member_id) : providerTeamMembersApi.activate(existing.member_id));
+      setMemberStatus(disabling ? "inactive" : "active");
+      setActivation(null); setWantsLogin(false);
+      setWarning(disabling ? "Member disabled. Login and new assignments are blocked." : "Member enabled. Existing login access is restored unless restricted by an administrator.");
+    } catch (e) {
+      setError(e instanceof ServiceOSError ? e.message : "Could not change member access.");
+    } finally { setSaving(false); }
+  }
+
+  async function generateExistingPassword() {
+    if (!existing) return;
+    if (existing.user_id && !confirm("Generate a replacement password? The previous password will stop working and this member will be signed out.")) return;
+    setSaving(true); setError(""); setWarning("");
+    try {
+      setActivation(await providerTeamMembersApi.generatePassword(existing.member_id));
+      setCompleted(true);
+    } catch (e) {
+      setError(e instanceof ServiceOSError ? e.message : "Could not generate login credentials. Try again.");
+    } finally { setSaving(false); }
+  }
+
   return (
     <div
       className="team-member-editor-backdrop"
@@ -282,7 +311,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
             <h2 id="team-member-dialog-title">{fullName || (isEdit ? "Team member" : "New team member")}</h2>
           </span>
         </div>
-        <button ref={closeButtonRef} onClick={onClose} aria-label="Close team member dialog"><X size={17}/></button>
+        <button ref={closeButtonRef} disabled={saving} onClick={onClose} aria-label="Close team member dialog"><X size={17}/></button>
       </div>
 
       <div className="team-member-editor-body">
@@ -355,6 +384,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
           </>}
           {activeSection === 2 && <>
           <SectionTitle>Approved skills</SectionTitle>
+          <Btn variant="secondary" disabled={servicesLoading} onClick={() => setSkillsReload(value => value + 1)}>Refresh skills</Btn>
           {isTechnician && (
             <Field label="Approved skills" hint="Optional tags controlled by the platform administrator for this business category.">
               {servicesLoading ? (
@@ -490,41 +520,24 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
           {/* ── Optional login ── */}
           {activeSection === 4 && <>
           <SectionTitle>Login access<Optional/></SectionTitle>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: hasDeliverableEmail ? "var(--text-primary)" : "var(--text-tertiary)", cursor: hasDeliverableEmail ? "pointer" : "not-allowed" }}>
-            <input type="checkbox" checked={wantsLogin} disabled={!hasDeliverableEmail}
+          {isEdit && !completed && <div style={{ marginBottom: 18 }}>
+            <p>Team member is {memberStatus === "active" ? "enabled" : "disabled"}. Disabling blocks login and new assignments. Enabling a technician checks your seat plan.</p>
+            <Btn variant="secondary" disabled={saving} onClick={toggleAccess}>{memberStatus === "active" ? "Disable member" : "Enable member"}</Btn>
+          </div>}
+          {isEdit ? <Btn variant="primary" disabled={saving || completed || memberStatus !== "active" || !existing?.email || email.trim().toLowerCase() !== existing.email.toLowerCase()}
+            onClick={generateExistingPassword}>{existing?.user_id ? "Regenerate temporary password" : "Generate login password"}</Btn> : <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: hasDeliverableEmail ? "var(--text-primary)" : "var(--text-tertiary)", cursor: hasDeliverableEmail ? "pointer" : "not-allowed" }}>
+            <input type="checkbox" checked={wantsLogin} disabled={!hasDeliverableEmail || memberStatus !== "active" || completed || saving}
               onChange={e => setWantsLogin(e.target.checked)}/>
-            Create login access so this member can use the app
-          </label>
+            {existing?.user_id ? "Generate a new temporary password when saving" : "Generate login password so this member can use the app"}
+          </label>}
+          {isEdit && email !== (existing?.email ?? "") && <p>Save the profile email first, then reopen Manage login to generate credentials.</p>}
+          <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>Use the member's email as their login ID. No email or OTP setup is needed. After saving, copy and share their temporary password privately. They must choose a new password at first login.</p>
           {!hasDeliverableEmail && (
             <p style={{ margin: "6px 0 0 24px", fontSize: 11, color: "var(--text-tertiary)" }}>
-              You can add this technician now. Add an email later, then use “Send app invitation” from the actions menu.
+              You can add this technician now. Add an email later, then use “Manage login” from the actions menu.
             </p>
           )}
-          {activation && (
-            <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", marginTop: 12 }}>
-              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 8px" }}>
-                {activation.already_had_login
-                  ? "Login access already exists for this team member."
-                  : activation.activation_sent
-                    ? "Invitation sent. The team member will choose their own password using the one-time activation code."
-                    : activation.activation_token
-                      ? "Invitation created. Email delivery is not configured here; share this development activation code securely."
-                      : "Invitation created, but delivery could not be confirmed. Retry from the member profile."}
-              </p>
-              {activation.activation_token && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <code style={{ fontSize: 11, background: "var(--surface)", padding: "6px 8px", borderRadius: 6, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {activation.activation_token}
-                  </code>
-                  <button
-                    aria-label="Copy activation code"
-                    onClick={() => navigator.clipboard?.writeText(activation.activation_token!)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}
-                  ><Copy size={14}/></button>
-                </div>
-              )}
-            </div>
-          )}
+          {activation && <TeamLoginCredentials credentials={activation}/>}
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 20, padding: "10px 12px", borderRadius: 8, background: "var(--success-bg)", border: "1px solid var(--success-border)" }}>
             <CheckCircle2 size={16} style={{ color: "var(--success)" }}/>
@@ -535,7 +548,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
       </div>
 
       <div className="team-member-editor-footer">
-        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+        <Btn variant="secondary" disabled={saving} onClick={onClose}>Cancel</Btn>
         <div>
           {completed ? (
             <Btn variant="primary" onClick={onSaved}>Done</Btn>

@@ -6,8 +6,7 @@ import { AlertTriangle, Check, CircleMinus, Clock3, IndianRupee, RefreshCw } fro
 import { PageShell } from "@serviceos/design-system";
 import { OnboardingShell } from "../../../../../../components/onboarding/OnboardingShell";
 import { Btn } from "../../../../../../components/shared/ui";
-import { topupApi, inr, type TopupStatus, type TopupPlan } from "../../../../../../lib/api-topup";
-import { activationPaymentApi } from "../../../../../../lib/api";
+import { topupApi, completeTopupPayment, inr, type TopupStatus, type TopupPlan } from "../../../../../../lib/api-topup";
 import { useRazorpayCheckout } from "../../../../../../hooks/useRazorpayCheckout";
 import styles from "./plan.module.css";
 
@@ -36,18 +35,16 @@ export default function TechnicianPlanPage() {
     setNotice("");
     try {
       const order = await topupApi.createOrder(plan.id);
-      if (!order.already_confirmed) {
-        const payment = await checkout.open({
+      await completeTopupPayment(order, () => checkout.open({
           keyId: order.key,
           orderId: order.order_id,
           amountPaise: order.amount_paise,
           currency: order.currency,
           name: "Fuvay",
           description: `${plan.name} — ${plan.seats} technician seats`,
-        });
-        await activationPaymentApi.confirmFunding(payment);
-      }
+      }));
       await refresh();
+      window.dispatchEvent(new Event("home-services-credit-updated"));
       setNotice("Payment confirmed. Your technician seats and usage credit are ready.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment could not be confirmed. Refresh before trying again; seats unlock only after server confirmation.");

@@ -52,6 +52,10 @@ export default function LoginPage() {
         return;
       }
       if (!response.access_token || !response.user) throw new Error("No login session was returned. Please try again.");
+      if (response.user.role === "staff" || response.user.role === "technician") {
+        window.location.href = "/staff/login";
+        return;
+      }
       if (["admin_dashboard", "technician_app", "access_rejected"].includes(response.next_destination ?? "")) {
         throw new Error("Please sign in using the portal or app assigned to your account.");
       }

@@ -88,12 +88,13 @@ def test_admin_category_page_exposes_enterprise_skill_management():
     assert 'onPage={setPage} itemLabel="skills" alwaysShow' in ADMIN_CATEGORY
 
 
-def test_email_can_be_added_later_before_login_invitation():
+def test_email_can_be_added_later_before_generating_login_credentials():
     assert "TEAM_MEMBER_EMAIL_REQUIRED" in PROVIDER
     assert "@tenant.local" not in PROVIDER
     assert "invite_resent" in PROVIDER
     assert "Add an email later" in TEAM_MODAL
-    assert "Send app invitation" in TEAM_SETUP
+    assert "Manage login" in TEAM_SETUP
+    assert "providerTeamMembersApi.generatePassword" in TEAM_MODAL
 
 
 def test_pending_invitation_is_not_mislabeled_as_disabled_access():

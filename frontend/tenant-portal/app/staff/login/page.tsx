@@ -22,6 +22,7 @@ export default function StaffLoginPage() {
       const res = await authApi.login(email, password);
       authTimeline("login.response_received");
       const u = res.user;
+      if (!res.access_token || !u) throw new Error("No login session was returned. Please try again.");
       if (u?.role !== "technician" && u?.role !== "staff") {
         setError("This login is for staff/technician accounts only. Please use the owner portal.");
         setLoading(false);
@@ -29,11 +30,18 @@ export default function StaffLoginPage() {
       }
       localStorage.setItem("serviceos_tenant_token", res.access_token);
       if (res.refresh_token) localStorage.setItem("serviceos_tenant_refresh", res.refresh_token);
+      else localStorage.removeItem("serviceos_tenant_refresh");
       localStorage.setItem("serviceos_user_id", u?.id ?? u?.user_id ?? "");
       localStorage.setItem("serviceos_tenant_id", u?.tenant_id ?? "");
       localStorage.setItem("serviceos_tenant_name", res.tenant?.name ?? "");
       localStorage.setItem("serviceos_user_role", u?.role ?? "");
       authTimeline("login.session_persisted");
+      if (res.requires_password_change || u.force_password_change) {
+        localStorage.setItem("serviceos_force_pw_change", "1");
+        router.push("/change-password-required");
+        return;
+      }
+      localStorage.removeItem("serviceos_force_pw_change");
       // FINAL-L5-01D fix: window.location.href triggered a full page reload,
       // which is slower than necessary and was not reliably trackable by
       // browser-automation navigation waits in this dev environment. Next.js

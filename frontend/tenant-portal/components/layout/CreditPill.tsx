@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Users, Wallet, X, Zap } from "lucide-react";
 
-import { topupApi, inr, type CreditState, type TopupPlan, type TopupStatus } from "../../lib/api-topup";
+import { topupApi, completeTopupPayment, inr, type CreditState, type TopupPlan, type TopupStatus } from "../../lib/api-topup";
 // Reuses the app's single Razorpay loader rather than declaring a second
 // `window.Razorpay` global — two declarations of the same global disagree on
 // its option type and break the build.
@@ -47,7 +47,12 @@ export function CreditPill() {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    const onCreditUpdated = () => { void refresh(); };
+    window.addEventListener("home-services-credit-updated", onCreditUpdated);
+    return () => window.removeEventListener("home-services-credit-updated", onCreditUpdated);
+  }, [refresh]);
 
   // Close on outside click / Escape — same behaviour as the notification bell
   // beside it, so the two popups feel like one control set.
@@ -69,19 +74,17 @@ export function CreditPill() {
     setBusy(true); setErr(null); setDone(null);
     try {
       const order = await topupApi.createOrder(plan.id);
-      await razorpay.open({
+      await completeTopupPayment(order, () => razorpay.open({
         keyId: order.key,
         orderId: order.order_id,
         amountPaise: order.amount_paise,
         currency: order.currency,
         name: "Fuvay",
         description: `${plan.name} — ${inr(plan.credited_amount)} credit + ${plan.seats} seat(s)`,
-      });
-      // Seats and credit are granted by the captured-payment webhook, never by
-      // this handler: a closed browser must not cost a provider what they paid.
-      // This only re-reads what is already true server-side.
-      setDone("Payment received — credit and seats will appear momentarily.");
-      setTimeout(() => { void refresh(); }, 2500);
+      }));
+      setDone("Payment confirmed. Your credit and technician seats are ready.");
+      await refresh();
+      window.dispatchEvent(new Event("home-services-setup-updated"));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // Dismissing the popup is a choice, not a failure worth shouting about.

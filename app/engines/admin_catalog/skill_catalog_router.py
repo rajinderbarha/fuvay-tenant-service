@@ -149,6 +149,29 @@ def _skill_dict(row) -> dict:
     return d
 
 
+@admin_router.post("/{category_id}/skills/add-starters")
+async def add_category_starter_skills(
+    category_id: uuid.UUID, request: Request,
+    db: AsyncSession = Depends(get_db), user: UserContext = Depends(require_super_admin),
+):
+    vertical = (await db.execute(text(
+        "SELECT vertical_type FROM service_categories WHERE id=:cid FOR UPDATE"
+    ), {"cid": str(category_id)})).scalar()
+    if vertical != "home_services":
+        raise ServiceOSException("STARTER_SKILLS_NOT_AVAILABLE", "Starter skills are available for Home Services categories. Add custom skills for this category.", status_code=422)
+    from app.engines.admin_catalog.starter_skills import add_starter_skills
+    from app.core.audit import record_platform_audit
+    added = await add_starter_skills(db, category_id, user.user_id)
+    await record_platform_audit(
+        db, operation="category_skills.starters_added", engine_id="admin_catalog",
+        entity_type="service_category", entity_id=str(category_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role,
+        request_id=_rid(request), after={"added": added},
+    )
+    await db.commit()
+    return ok({"added": added}, _rid(request), "admin_catalog")
+
+
 @admin_router.get("/{category_id}/skills")
 async def list_category_skills(
     category_id: uuid.UUID, request: Request,

@@ -3666,6 +3666,8 @@ export const categoryRuntimeApi = {
   },
   createSkill: (categoryId: string, payload: Partial<CategorySkill>) =>
     apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills`, { method: "POST", body: JSON.stringify(payload) }),
+  addStarterSkills: (categoryId: string) =>
+    apiFetch<{ added: number }>(`/v1/admin/categories/${categoryId}/skills/add-starters`, { method: "POST" }),
   updateSkill: (categoryId: string, skillId: string, payload: Partial<CategorySkill>) =>
     apiFetch<CategorySkill>(`/v1/admin/categories/${categoryId}/skills/${skillId}`, { method: "PUT", body: JSON.stringify(payload) }),
   retireSkill: (categoryId: string, skillId: string) =>
