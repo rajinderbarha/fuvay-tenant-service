@@ -35,7 +35,7 @@ from app.engines.messaging_gateway import flow, meta_client, pickers
 from app.engines.messaging_gateway.constants import (
     CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
     CMD_VERIFY, COMMAND_PREFIX,
-    CUSTOMER_SERVICE_WINDOW_HOURS,
+    CUSTOMER_SERVICE_WINDOW_HOURS, GREETING_WORDS,
     HANDOFF_TEXT, HELP_TEXT, KNOWN_COMMANDS, LIVE_BOOKING_STATUSES,
     MAX_SESSIONS_PER_SENDER_PER_HOUR,
     STATUS_DUPLICATE, STATUS_FAILED, STATUS_IGNORED, STATUS_PROCESSED,
@@ -84,6 +84,19 @@ def parse_command(text: str) -> str | None:
         return None
     token = stripped[1:].split(maxsplit=1)[0].lower() if len(stripped) > 1 else ""
     return token if token in KNOWN_COMMANDS else None
+
+
+def is_greeting(text: str) -> bool:
+    """True when the whole message is nothing but a greeting.
+
+    Matched on the ENTIRE trimmed message, minus trailing punctuation and
+    emoji-free — "hi" and "Hello!" restart the conversation, "hi my AC is not
+    cooling" does not, because that one carries a real answer we would throw
+    away. Deliberately not a substring or prefix test for the same reason.
+    """
+    cleaned = (text or "").strip().lower().rstrip("!.?,… ")
+    cleaned = " ".join(cleaned.split())
+    return bool(cleaned) and cleaned in GREETING_WORDS
 
 
 def command_remainder(text: str) -> str:
@@ -350,6 +363,17 @@ class MessagingGatewayService:
         # is never parsed as one.
         tapped = pickers.is_picker_reply(msg.reply_id)
         command = None if tapped else parse_command(msg.text)
+        # "hi" is how a conversation actually opens, so it is routed as the
+        # explicit start-over. Without this it fell through to the booking
+        # flow, which — having remembered a zipcode from a previous chat —
+        # answered a greeting with a coverage verdict instead of a welcome.
+        # Two things it is deliberately not: a tap (an option label could
+        # legitimately read like a greeting) and a way back from /stop, which
+        # names /fuvay as the way back and would otherwise be an opt-out in
+        # name only.
+        if (command is None and not tapped and not thread.opted_out
+                and is_greeting(msg.text)):
+            command = CMD_START
         reply: str | None = None
         picker: dict | None = None
 
@@ -372,21 +396,17 @@ class MessagingGatewayService:
         elif command == CMD_VERIFY:
             reply = await self._finish_identity_link(thread, command_remainder(msg.text))
         elif command in (CMD_START, CMD_RESET):
-            # /fuvay is the explicit start-over: drop every booking-scoped
-            # value, including the previously remembered service area. The
-            # booking flow is zipcode-first, so retaining these two fields
-            # silently skipped its first question for returning Instagram
-            # customers.
-            thread.ai_session_id = None
-            thread.zipcode = None
-            thread.city = None
-            thread.pending_customer_id = None
-            thread.pending_phone_ciphertext = None
-            thread.last_options = None
+            # /fuvay — and a bare "hi" — is the explicit start-over: drop every
+            # booking-scoped value, including the previously remembered service
+            # area. The booking flow is zipcode-first, so retaining those two
+            # fields silently skipped its first question for returning
+            # Instagram customers.
+            flow.reset_booking_state(thread)
+            # An explicit start-over reopens the channel. A bare greeting does
+            # NOT reach here while opted out, so /stop still needs /fuvay.
             thread.opted_out = False
             thread.human_handoff = False
-            name = f" {thread.display_name.split()[0]}" if thread.display_name else ""
-            reply = GREETING.format(name=name)
+            reply = self._welcome(thread)
             # Open the script at its first question rather than making them
             # send a second message to get going. A typed first question (the
             # zipcode prompt) must be included too; the older code discarded
@@ -469,6 +489,11 @@ class MessagingGatewayService:
         await self.db.commit()
         return {"status": record.status, "reply_sent": sent,
                 "thread_id": str(thread.id), "command": command}
+
+    def _welcome(self, thread: MessagingThread) -> str:
+        """The greeting, addressed by first name when the channel gives us one."""
+        name = f" {thread.display_name.split()[0]}" if thread.display_name else ""
+        return GREETING.format(name=name)
 
     async def booking_status(
         self, thread: MessagingThread, booking_number: str = "",

@@ -63,7 +63,15 @@ ASK_PINCODE = (
     "We use it to check service availability."
 )
 ASK_CITY = "Which city are you in?"
-NOT_IN_CITY = "We do not cover {area} yet."
+#: An uncovered area is a dead end unless the reply says how to leave it. The
+#: flow already re-reads a bare 6-digit reply as a new pincode
+#: (`_apply_text`), so the only thing that was missing is saying so — without
+#: it every later message was answered with this same sentence.
+NOT_IN_CITY = (
+    "We do not cover {area} yet.\n\n"
+    "Send a different 6-digit pincode to check another area, "
+    "or send \"hi\" to start again."
+)
 SERVICE_NOT_IN_CITY = "That service is not available in {city} yet."
 ASK_ADDRESS = (
     "Please type the complete service address — flat/house number, building, "
@@ -470,6 +478,25 @@ async def _slot_turn(db, thread, draft, channel: str, page: int,
     return Turn(None, picker) if picker else Turn(NO_SLOTS)
 
 
+def reset_booking_state(thread) -> None:
+    """Drop every booking-scoped value so the next message starts clean.
+
+    THE definition of what "a new booking" forgets, so the callers that need
+    it — the Start over tap here, and `/fuvay` (or a bare greeting) in the
+    gateway service — cannot drift apart. Each used to inline its own list.
+
+    `opted_out` and `human_handoff` are deliberately NOT touched: a /stop is a
+    durable choice and an agent-owned thread must not be handed back to the
+    bot. Only an explicit start-over clears those.
+    """
+    thread.ai_session_id = None
+    thread.zipcode = None
+    thread.city = None
+    thread.pending_customer_id = None
+    thread.pending_phone_ciphertext = None
+    thread.last_options = None
+
+
 async def _restart(db, thread, executor, channel: str, identity=None) -> Turn:
     """Abandon whatever is in progress and begin a new booking.
 
@@ -478,12 +505,7 @@ async def _restart(db, thread, executor, channel: str, identity=None) -> Turn:
     booking has been made. Booking-scoped area state is cleared too: every new
     booking explicitly asks for its zipcode before any service question.
     """
-    thread.ai_session_id = None
-    thread.zipcode = None
-    thread.city = None
-    thread.pending_customer_id = None
-    thread.pending_phone_ciphertext = None
-    thread.last_options = None
+    reset_booking_state(thread)
     step = await _next_step(db, thread, executor, None, channel, 0, identity)
     step.text = f"{RESTARTED}\n\n{step.text}" if step.text else RESTARTED
     return step

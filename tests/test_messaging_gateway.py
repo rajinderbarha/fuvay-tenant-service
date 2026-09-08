@@ -2296,3 +2296,234 @@ async def test_pending_quote_is_actionable_on_both_channels():
         )
         assert identity.decision == (quote["id"], "approve")
         assert "approved" in done.text.lower()
+
+
+# ── Opening a conversation ────────────────────────────────────────────────────
+# Confirmed live on Instagram: "hi" was answered with the zipcode question
+# and no welcome, and a "hi" sent hours later was answered with the previous
+# conversation's coverage verdict, because the thread remembers its zipcode.
+# Routing a greeting as the explicit start-over fixes both: it clears the
+# remembered area and answers with the welcome.
+
+
+def test_a_bare_greeting_is_a_greeting_but_a_greeting_plus_a_problem_is_not():
+    """Matched on the WHOLE message. "hi" opens a conversation; "hi my AC is
+    not cooling" carries a real answer that a restart would throw away."""
+    from app.engines.messaging_gateway.service import is_greeting
+
+    for opener in ("hi", "Hi", "HELLO!", "  hey  ", "Hi there", "hii",
+                   "start", "restart", "menu", "namaste", "Good Morning", "hi."):
+        assert is_greeting(opener), opener
+
+    for real in ("hi my AC is not cooling", "hello there my ac broke", "141001",
+                 "Chandigarh", "history", "highway", "", "   "):
+        assert not is_greeting(real), real
+
+
+def test_every_path_that_starts_a_booking_forgets_the_same_things():
+    """One definition of what a new booking forgets. Three callers need it —
+    /fuvay, the Start over tap and the idle reset — and while each inlined its
+    own list the remembered zipcode survived one path and not another.
+
+    opted_out and human_handoff are NOT in it: an hour of silence must not undo
+    a /stop, nor hand an agent-owned thread back to the bot."""
+    from app.engines.messaging_gateway import flow
+
+    class Thread:
+        ai_session_id = "s-1"
+        zipcode = "160055"
+        city = "Chandigarh"
+        pending_customer_id = "c-1"
+        pending_phone_ciphertext = "cipher"
+        last_options = ["cat|home_services"]
+        opted_out = True
+        human_handoff = True
+
+    thread = Thread()
+    flow.reset_booking_state(thread)
+
+    assert (thread.ai_session_id, thread.zipcode, thread.city) == (None, None, None)
+    assert thread.pending_customer_id is None
+    assert thread.pending_phone_ciphertext is None
+    assert thread.last_options is None
+    assert thread.opted_out and thread.human_handoff
+
+
+def test_an_uncovered_area_says_how_to_reach_a_covered_one():
+    """The flow already re-reads a bare 6-digit reply as a new pincode, so an
+    uncovered area was never technically a dead end — but the message did not
+    say so, which made it one in practice."""
+    from app.engines.messaging_gateway import flow
+
+    said = flow.NOT_IN_CITY.format(area="160055")
+    assert "160055" in said
+    assert "6-digit pincode" in said and "start again" in said
+
+
+class _FakeResult:
+    """Every read handle_inbound makes here is stubbed away, so it returns
+    nothing rather than pretending to be a row."""
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return None
+
+    def all(self):
+        return []
+
+    def scalar(self):
+        return 0
+
+
+class _FakeDB:
+    """Enough AsyncSession for handle_inbound to run without a database."""
+
+    def __init__(self):
+        self.committed = 0
+
+    def add(self, _obj):
+        pass
+
+    async def flush(self):
+        pass
+
+    async def commit(self):
+        self.committed += 1
+
+    async def rollback(self):
+        pass
+
+    async def execute(self, _stmt):
+        return _FakeResult()
+
+
+class _Thread:
+    """A MessagingThread's fields without its mapper."""
+
+    def __init__(self, **kw):
+        self.id = uuid.uuid4()
+        self.channel = CHANNEL_INSTAGRAM
+        self.channel_user_id = "ig-1"
+        self.display_name = None
+        self.customer_id = None
+        self.pending_customer_id = None
+        self.pending_phone_ciphertext = None
+        self.zipcode = None
+        self.city = None
+        self.last_options = None
+        self.ai_session_id = None
+        self.opted_out = False
+        self.human_handoff = False
+        self.last_inbound_at = None
+        self.last_outbound_at = None
+        self.session_count = 0
+        self.__dict__.update(kw)
+
+
+def _inbound(text):
+    from app.engines.messaging_gateway.meta_client import InboundMessage
+
+    return InboundMessage(
+        channel=CHANNEL_INSTAGRAM,
+        provider_message_id=f"mid-{uuid.uuid4()}",
+        from_id="ig-1",
+        business_id="page-1",
+        message_type="text",
+        text=text,
+    )
+
+
+def _gateway(thread, monkeypatch, advance_reply):
+    """A service wired to one thread, with the network and the flow stubbed.
+
+    Only the parts handle_inbound is being tested for are real: the greeting
+    decision, the staleness decision, and what the flow is handed.
+    """
+    from app.engines.messaging_gateway import meta_client, service as service_mod
+
+    sent = []
+
+    async def _send_text(to, text, channel, config):
+        sent.append(text)
+        return {"sent": True}
+
+    async def _allow(**_kwargs):
+        return True, {}
+
+    monkeypatch.setattr(meta_client, "send_text", _send_text)
+    monkeypatch.setattr(service_mod.rate_limiter, "check", _allow)
+
+    gw = service_mod.MessagingGatewayService(_FakeDB())
+
+    async def _thread(_msg):
+        return thread
+
+    async def _customer(_thread):
+        return None
+
+    async def _not_limited(_thread):
+        return False
+
+    async def _advance(passed, _msg, ignore_input=False):
+        return advance_reply(passed, ignore_input), None
+
+    gw.get_or_create_thread = _thread
+    gw.resolve_customer = _customer
+    gw._rate_limited = _not_limited
+    gw._advance = _advance
+    return gw, sent
+
+
+@pytest.mark.asyncio
+async def test_hi_is_answered_with_the_welcome_not_with_the_next_question(monkeypatch):
+    """A greeting is treated exactly like /fuvay. Before this, "hi" fell
+    through to the booking flow, so a customer's first ever message was
+    answered with a bare "send me your pincode" and no introduction."""
+    from app.engines.messaging_gateway.service import GREETING
+
+    thread = _Thread()
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    result = await gw.handle_inbound(_inbound("hi"))
+
+    assert result["command"] == "fuvay"          # routed as an explicit start
+    assert len(sent) == 1
+    # The welcome comes FIRST, and the opening question is carried with it, so
+    # the customer does not have to send a second message to get going.
+    assert sent[0].startswith(GREETING.format(name=""))
+    assert sent[0].endswith("Which pincode?")
+
+
+@pytest.mark.asyncio
+async def test_a_greeting_carrying_a_real_answer_is_not_a_restart(monkeypatch):
+    """"hi my AC is not cooling" is intent, not an opener. Restarting on it
+    would discard the only thing the customer actually told us."""
+    thread = _Thread()
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    result = await gw.handle_inbound(_inbound("hi my AC is not cooling"))
+
+    assert result["command"] is None
+    assert sent == ["Which pincode?"]
+
+
+@pytest.mark.asyncio
+async def test_a_greeting_does_not_reverse_a_stop(monkeypatch):
+    """STOP_TEXT names /fuvay as the way back. Re-opening an opt-out on a bare
+    "hi" would make the opt-out one in name only."""
+    thread = _Thread(zipcode="160055", opted_out=True)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    result = await gw.handle_inbound(_inbound("hello"))
+
+    assert result["command"] is None
+    assert sent == []
+    assert thread.opted_out is True
+
+

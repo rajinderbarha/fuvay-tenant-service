@@ -53,6 +53,18 @@ KNOWN_COMMANDS = {
     CMD_LINK, CMD_VERIFY,
 }
 
+#: A bare greeting is how most people open a chat, and it is not a command.
+#: Treated exactly like `/fuvay`: it starts the conversation over and is
+#: answered with the welcome, rather than being read as an answer to whatever
+#: the previous conversation happened to be asking. Matched against the WHOLE
+#: trimmed message, so "hi" restarts but "hi, my AC is not cooling" does not.
+GREETING_WORDS = {
+    "hi", "hii", "hiii", "hey", "heyy", "hello", "helo", "hlo",
+    "hi there", "hello there", "hey there",
+    "start", "restart", "menu", "hi fuvay", "hello fuvay",
+    "namaste", "good morning", "good afternoon", "good evening",
+}
+
 HELP_TEXT = (
     "I can book a home service for you, or show you where an existing "
     "booking has got to.\n\n"
