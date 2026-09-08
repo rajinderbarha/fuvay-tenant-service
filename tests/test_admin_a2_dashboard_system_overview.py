@@ -123,6 +123,19 @@ def test_operations_summary():
         assert label in PAGE
 
 
+def test_unconfirmed_area_demand_graph_is_real_and_actionable():
+    assert "Unconfirmed demand by area" in PAGE
+    assert "BarChart" in PAGE
+    assert "dashboardApi.getRequestDemandByArea" in PAGE
+    assert 'new URLSearchParams({ view: "requests" })' in PAGE
+    assert 'params.set("city", area.city)' in PAGE
+    assert 'params.set("zipcode", area.zipcode)' in PAGE
+    assert '"/request-demand-by-area"' in DASHBOARD_ROUTER
+    assert "home_service_booking_drafts" in DASHBOARD_SERVICE
+    assert "ai_conversation_sessions" in DASHBOARD_SERVICE
+    assert "session.context_data ->> 'channel'" in DASHBOARD_SERVICE
+
+
 # ── 8. Trust & Quality summary ────────────────────────────────────────────────
 def test_trust_quality_summary():
     assert "Trust & Quality" in PAGE

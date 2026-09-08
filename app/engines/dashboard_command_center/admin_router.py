@@ -71,6 +71,22 @@ async def live_operations(r: Request, limit: int = Query(30, le=200),
     return ok(await svc.get_live_operations(limit), _rid(r), "dashboard_command_center")
 
 
+@router.get("/request-demand-by-area", summary="Unconfirmed Home Services demand grouped by area")
+async def request_demand_by_area(
+    r: Request,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(8, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    u: UserContext = Depends(require_permission(P.DASHBOARD_OPERATIONS_READ)),
+):
+    svc = DashboardCommandCenterService(
+        db, uuid.UUID(u.user_id) if u.user_id else None, u.role, _rid(r))
+    return ok(
+        await svc.get_request_demand_by_area(days=days, limit=limit),
+        _rid(r), "dashboard_command_center",
+    )
+
+
 @router.get("/trends", summary="Trend charts")
 async def trends(r: Request, date_from: Optional[str] = Query(None), date_to: Optional[str] = Query(None),
     u: UserContext = Depends(require_super_admin),

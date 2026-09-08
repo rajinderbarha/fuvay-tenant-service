@@ -19,13 +19,16 @@ import {
   Search, ShieldAlert, ShieldCheck, Sparkles, UsersRound, Wrench,
 } from "lucide-react";
 import {
-  Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Badge, Btn, Card, Skeleton, SummaryCard } from "../../../components/shared/ui";
 import { PageHeader } from "@serviceos/design-system";
-import { dashboardApi, type DashboardActionItem, type DashboardTrendPoint } from "../../../lib/api";
+import {
+  dashboardApi, type DashboardActionItem, type DashboardRequestDemandArea,
+  type DashboardTrendPoint,
+} from "../../../lib/api";
 import { useAction, useApi } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { SUPER_ADMIN_ONLY } from "../../../lib/permission-catalog";
@@ -122,6 +125,57 @@ function Chart({ data, kind = "area", color = "var(--text-link)", currency = fal
   return <ResponsiveContainer width="100%" height={245}>{kind === "line" ? <LineChart data={data}>{common}<Line type="monotone" dataKey="value" stroke={color} strokeWidth={2.4} dot={false}/></LineChart> : <AreaChart data={data}><defs><linearGradient id={`fill-${currency ? "money" : "count"}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.3}/><stop offset="100%" stopColor={color} stopOpacity={0.02}/></linearGradient></defs>{common}<Area type="monotone" dataKey="value" stroke={color} strokeWidth={2.2} fill={`url(#fill-${currency ? "money" : "count"})`}/></AreaChart>}</ResponsiveContainer>;
 }
 
+function requestAreaHref(area: Pick<DashboardRequestDemandArea, "city" | "zipcode">) {
+  const params = new URLSearchParams({ view: "requests" });
+  if (area.city) params.set("city", area.city);
+  if (area.zipcode) params.set("zipcode", area.zipcode);
+  return `/admin/home-services/bookings-jobs?${params.toString()}`;
+}
+
+function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; range: Range; setRange: (value: Range) => void }) {
+  if (demand.error) return <Card><SectionError title="Area demand unavailable" error={demand.error} requestId={demand.requestId} onRetry={demand.refetch}/></Card>;
+  if (demand.loading) return <Card><Skeleton height={320}/></Card>;
+  const areas = demand.data?.areas ?? [];
+  return <Card>
+    <SectionTitle
+      title="Unconfirmed demand by area"
+      description={`Active booking attempts from the last ${demand.data?.period_days ?? 30} days, split by source. These are demand signals, not confirmed bookings.`}
+      action={<div className={styles.inlineActions}><RangeControl value={range} onChange={setRange}/><Link href="/admin/home-services/bookings-jobs?view=requests" className={styles.textLink}>View all requests <ArrowRight size={13}/></Link></div>}
+    />
+    {!areas.length ? <div className={styles.chartEmpty}><FileBarChart size={23}/><strong>No unconfirmed demand in this period.</strong><span>New customer, Instagram and WhatsApp requests will appear here.</span></div> : <>
+      <div className={styles.demandMeta}><strong>{Number(demand.data?.total_requests ?? 0).toLocaleString("en-IN")}</strong><span>unconfirmed requests across {Number(demand.data?.total_areas ?? areas.length)} area{Number(demand.data?.total_areas ?? areas.length) === 1 ? "" : "s"}</span></div>
+      <div className={styles.demandLayout}>
+        <div className={styles.demandChart} role="img" aria-label="Stacked bar chart of unconfirmed requests by area and booking channel">
+          <ResponsiveContainer width="100%" height={Math.max(250, areas.length * 42)}>
+            <BarChart data={areas} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false}/>
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }}/>
+              <YAxis type="category" dataKey="area_label" width={132} interval={0} tick={{ fontSize: 10 }}/>
+              <Tooltip formatter={(value: number, name: string) => [Number(value).toLocaleString("en-IN"), name]}/>
+              <Legend wrapperStyle={{ fontSize: 10 }}/>
+              <Bar dataKey="instagram_requests" name="Instagram" stackId="requests" fill="#e1306c"/>
+              <Bar dataKey="whatsapp_requests" name="WhatsApp" stackId="requests" fill="#20a867"/>
+              <Bar dataKey="customer_app_requests" name="Customer app" stackId="requests" fill="var(--text-link)" radius={[0, 4, 4, 0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className={styles.demandRanking} aria-label="Top request areas">
+          {areas.slice(0, 5).map((area: DashboardRequestDemandArea, index: number) => area.area_captured ? <Link key={`${area.city}-${area.zipcode}`} href={requestAreaHref(area)}>
+            <span className={styles.demandRank}>{index + 1}</span>
+            <span><strong>{area.area_label}</strong><small>{area.share_pct}% of current demand</small></span>
+            <b>{area.total_requests}</b>
+            <ArrowRight size={13}/>
+          </Link> : <div key="area-not-captured" className={styles.demandUnknown}>
+            <span className={styles.demandRank}>{index + 1}</span>
+            <span><strong>{area.area_label}</strong><small>Location needs completion</small></span>
+            <b>{area.total_requests}</b>
+          </div>)}
+        </div>
+      </div>
+    </>}
+  </Card>;
+}
+
 function ActionQueue({ items, loading, onResolve, onSnooze, busy }: { items: DashboardActionItem[]; loading: boolean; onResolve: (id: string) => void; onSnooze: (id: string) => void; busy: boolean }) {
   if (loading) return <div className={styles.loadingRows}><Skeleton height={52}/><Skeleton height={52}/><Skeleton height={52}/></div>;
   if (!items.length) return <div className={styles.positiveEmpty}><CheckCircle2 size={28}/><strong>No pending actions. Everything is on track.</strong><span>Escalations and approval work will appear here automatically.</span></div>;
@@ -148,6 +202,11 @@ export default function PlatformCommandCenterPage() {
   const health = useApi(useCallback(() => dashboardApi.getPlatformHealth(), []), []);
   const home = useApi(useCallback(() => dashboardApi.getHomeServicesSummary(), []), [], { enabled: tab === "overview" });
   const trends = useApi(useCallback(() => dashboardApi.getTrends(period), [period]), [period], { enabled: tab === "overview" || tab === "finance" });
+  const requestDemand = useApi(
+    useCallback(() => dashboardApi.getRequestDemandByArea(Number(range.slice(0, -1)), 8), [range]),
+    [range],
+    { enabled: opsAllowed && tab === "overview" },
+  );
   const actions = useApi(useCallback(() => dashboardApi.getActionQueue(50), []), [], { enabled: actionsAllowed && (tab === "overview" || tab === "operations") });
   const activity = useApi(useCallback(() => dashboardApi.getActivityFeed(12), []), [], { enabled: activityAllowed && tab === "overview" });
   const operations = useApi(useCallback(() => dashboardApi.getOperationsSnapshot("home_services"), []), [], { enabled: opsAllowed && tab === "operations" });
@@ -169,7 +228,7 @@ export default function PlatformCommandCenterPage() {
   async function refresh() {
     const result = await refreshAction.execute(); if (!result) return;
     summary.refetch(); health.refetch();
-    ({ overview: [home, trends, actions, activity], operations: [operations, liveOperations, actions], providers: [lifecycle, atRisk], finance: [finance, trends], platform: [engines, compliance, trust, categories] }[tab]).forEach(item => item.refetch());
+    ({ overview: [home, trends, requestDemand, actions, activity], operations: [operations, liveOperations, actions], providers: [lifecycle, atRisk], finance: [finance, trends], platform: [engines, compliance, trust, categories] }[tab]).forEach(item => item.refetch());
     setNotice(`Dashboard refreshed at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
   }
   async function exportSnapshot() { const result = await exportAction.execute(); if (result) setNotice(`Snapshot ${result.snapshot_id.slice(0, 8)} saved to the audited export history.`); }
@@ -214,7 +273,7 @@ export default function PlatformCommandCenterPage() {
 
     <section id="dashboard-active-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${tab}`}>
     {restrictedTab ? <Card><div className={styles.restricted}><ShieldCheck size={32}/><h2>This workspace is restricted</h2><p>Your role does not include this dashboard domain.</p></div></Card> : <>
-      {tab === "overview" && <OverviewTab range={range} setRange={setRange} home={home} trends={trends} actions={actions} activity={activity} resolve={resolve} snooze={snooze} busy={resolveAction.loading || snoozeAction.loading}/>}
+      {tab === "overview" && <OverviewTab range={range} setRange={setRange} home={home} trends={trends} requestDemand={requestDemand} actions={actions} activity={activity} resolve={resolve} snooze={snooze} busy={resolveAction.loading || snoozeAction.loading}/>}
       {tab === "operations" && <OperationsTab data={operations} live={liveOperations} actions={actions} search={operationSearch} setSearch={setOperationSearch} visible={visibleOperations} resolve={resolve} snooze={snooze} busy={resolveAction.loading || snoozeAction.loading}/>}
       {tab === "providers" && <ProvidersTab lifecycle={lifecycle} risk={atRisk}/>}
       {tab === "finance" && <FinanceTab range={range} setRange={setRange} finance={finance} trends={trends}/>}
@@ -226,9 +285,10 @@ export default function PlatformCommandCenterPage() {
 
 type ApiState = ReturnType<typeof useApi<any>>;
 
-function OverviewTab({ range, setRange, home, trends, actions, activity, resolve, snooze, busy }: { range: Range; setRange: (r: Range) => void; home: ApiState; trends: ApiState; actions: ApiState; activity: ApiState; resolve: (id: string) => void; snooze: (id: string) => void; busy: boolean }) {
+function OverviewTab({ range, setRange, home, trends, requestDemand, actions, activity, resolve, snooze, busy }: { range: Range; setRange: (r: Range) => void; home: ApiState; trends: ApiState; requestDemand: ApiState; actions: ApiState; activity: ApiState; resolve: (id: string) => void; snooze: (id: string) => void; busy: boolean }) {
   return <div className={styles.workspace}><div className={styles.primaryColumn}>
     <Card><SectionTitle title="Priority action queue" description="Only work that needs an administrator decision is shown." action={<Link href="/admin/operations" className={styles.textLink}>Open Operations Board <ArrowRight size={13}/></Link>}/>{actions.error ? <SectionError title="Action queue unavailable" error={actions.error} requestId={actions.requestId} onRetry={actions.refetch}/> : <ActionQueue items={(actions.data?.items ?? []).slice(0, 6)} loading={actions.loading} onResolve={resolve} onSnooze={snooze} busy={busy}/>}</Card>
+    <RequestDemandByArea demand={requestDemand} range={range} setRange={setRange}/>
     <Card><SectionTitle title="Native activity trend" description="Jobs created by the customer app and fulfilled through the staff app." action={<RangeControl value={range} onChange={setRange}/>}/>{trends.error ? <SectionError title="Trend unavailable" error={trends.error} requestId={trends.requestId} onRetry={trends.refetch}/> : trends.loading ? <Skeleton height={245}/> : <Chart data={trends.data?.jobs_trend ?? []}/>}</Card>
   </div><div className={styles.secondaryColumn}>
     <Card><SectionTitle title="Home Services Summary" description="Live production gates from tenant setup, bookability, finance, and trust controls."/>{home.error ? <SectionError title="Readiness unavailable" error={home.error} requestId={home.requestId} onRetry={home.refetch}/> : home.loading ? <Skeleton height={270}/> : <div className={styles.readinessList}>{[

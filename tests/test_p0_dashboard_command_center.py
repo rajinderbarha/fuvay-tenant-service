@@ -83,6 +83,16 @@ def test_operations_snapshot_endpoint_exists():
     assert "async def get_operations_snapshot" in SERVICE
 
 
+def test_unconfirmed_request_demand_is_grouped_by_real_area_and_channel():
+    assert '@router.get("/request-demand-by-area"' in ROUTER
+    assert "async def get_request_demand_by_area" in SERVICE
+    assert "home_service_booking_drafts" in SERVICE
+    assert "ai_conversation_sessions" in SERVICE
+    assert "session.context_data ->> 'channel'" in SERVICE
+    for field in ("instagram_requests", "whatsapp_requests", "customer_app_requests", "share_pct"):
+        assert field in SERVICE
+
+
 def test_trends_endpoint_returns_time_series_or_empty_state():
     assert '@router.get("/trends"' in ROUTER
     assert "async def get_trends" in SERVICE

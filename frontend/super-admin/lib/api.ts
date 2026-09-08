@@ -9304,6 +9304,27 @@ export interface DashboardLiveOperationItem {
   status: string; sla_breach: boolean; assigned_to?: string | null; updated_at?: string | null;
 }
 
+export interface DashboardRequestDemandArea {
+  city: string | null;
+  zipcode: string | null;
+  area_label: string;
+  area_captured: boolean;
+  total_requests: number;
+  instagram_requests: number;
+  whatsapp_requests: number;
+  customer_app_requests: number;
+  share_pct: number;
+  latest_request_at: string | null;
+}
+
+export interface DashboardRequestDemand {
+  period_days: number;
+  total_requests: number;
+  total_areas: number;
+  areas: DashboardRequestDemandArea[];
+  generated_at: string;
+}
+
 export interface DashboardTrendPoint { date: string; value: number; }
 export interface DashboardTrends {
   jobs_trend: DashboardTrendPoint[]; revenue_trend: DashboardTrendPoint[];
@@ -9373,6 +9394,9 @@ export const dashboardApi = {
     apiFetch<DashboardOperationsSnapshot>(`/v1/admin/dashboard/operations-snapshot${vertical ? `?vertical=${vertical}` : ""}`),
   getLiveOperations: (limit = 30) =>
     apiFetch<{ items: DashboardLiveOperationItem[] }>(`/v1/admin/dashboard/live-operations?limit=${limit}`),
+  getRequestDemandByArea: (days = 30, limit = 8) =>
+    apiFetch<DashboardRequestDemand>(
+      `/v1/admin/dashboard/request-demand-by-area?days=${days}&limit=${limit}`),
   getTrends: (params?: { date_from?: string; date_to?: string; vertical?: string }) => {
     const qs = new URLSearchParams();
     if (params?.date_from) qs.set("date_from", params.date_from);
