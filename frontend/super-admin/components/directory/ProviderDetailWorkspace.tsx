@@ -22,8 +22,8 @@ import {
 import { AdminLayout } from "../layout/AdminLayout";
 import { Card, Badge, Btn, Skeleton, Modal, DataTable, Pagination, SummaryCard, KpiGrid } from "../shared/ui";
 import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../lib/api";
-import { openAdminMediaPreview } from "../../lib/open-admin-media-preview";
 import { resolveMediaUrl } from "../shared/ProfilePhotoUploader";
+import { ProviderDocuments } from "./ProviderDocuments";
 import { useApi, useAction } from "../../hooks/useApi";
 
 function dt(v?: string | null) {
@@ -53,18 +53,17 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
 }) {
   const router = useRouter();
   const search = useSearchParams();
-  const tab = (search.get("tab") as TabKey) || "overview";
+  const tab: TabKey = TABS.some(t => t.key === search.get("tab")) ? search.get("tab") as TabKey : "overview";
   const [auditOpen, setAuditOpen] = useState(false);
   const [action, setAction] = useState<"changes_requested" | "suspended" | "approved_pending_activation" | null>(null);
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [documentError, setDocumentError] = useState<string | null>(null);
 
-  const detail = useApi(useCallback(() => hsProviderDirectoryApi.getDetail(providerId), [providerId]));
+  const detail = useApi(useCallback(() => hsProviderDirectoryApi.getDetail(providerId), [providerId]), [providerId]);
   const enrollment = useApi(useCallback(
     () => verticalCatalogApi.listEnrollments("home_services", { tenant_id: providerId }),
     [providerId],
-  ));
+  ), [providerId]);
   const transition = useAction(useCallback(
     (enrollmentId: string, status: string, note: string) =>
       verticalCatalogApi.transitionEnrollment(enrollmentId, status, note),
@@ -113,8 +112,8 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
 
   const addr = d.address as Record<string, unknown> | undefined;
   const isActive = d.registration_status === "active";
-  const isVerified = d.verification_status === "approved";
-  const isBookable = Boolean(d.is_discoverable);
+  const isVerified = ["approved", "verified"].includes(String(d.verification_status));
+  const isBookable = Boolean(d.is_bookable);
   const enrollmentRow = enrollment.data?.items?.[0];
   const enrollmentStatus = enrollmentRow?.status;
 
@@ -157,6 +156,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
               <span>Owner: {String(d.owner_name ?? "—")}</span>
               <span>{String(addr?.city ?? "—")}, {String(addr?.state ?? "—")}</span>
               <span>Member since {dt(d.created_at as string)}</span>
+              <strong>Setup completion: {d.profile_completion_percentage == null ? "Unavailable" : `${d.profile_completion_percentage}%`}</strong>
             </div>
             {(d.additional_vertical_assignments as number) > 0 && (
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
@@ -167,7 +167,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Btn variant="ghost" icon={<FileText size={14} />} onClick={() => setAuditOpen(true)}>Lifecycle Record</Btn>
-          <Btn variant="ghost" icon={<Send size={14}/>} disabled={!enrollmentRow}
+          <Btn variant="ghost" icon={<Send size={14}/>} disabled={!enrollmentRow || !["submitted", "under_review"].includes(enrollmentStatus ?? "")}
             onClick={() => { setAction("changes_requested"); setReason(""); }}>
             Request Changes
           </Btn>
@@ -177,7 +177,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
               Resume Home Services
             </Btn>
           ) : (
-            <Btn variant="danger" icon={<PauseCircle size={14}/>} disabled={!enrollmentRow}
+            <Btn variant="danger" icon={<PauseCircle size={14}/>} disabled={!enrollmentRow || enrollmentStatus !== "active"}
               onClick={() => { setAction("suspended"); setReason(""); }}>
               Suspend Home Services
             </Btn>
@@ -191,7 +191,6 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
           {notice}
         </div>
       )}
-      {documentError && <div role="alert" style={{ marginTop:12, padding:"10px 14px", borderRadius:10, background:"var(--danger-bg)", border:"1px solid var(--danger-border)", color:"var(--danger-text)", fontSize:13 }}>{documentError}</div>}
 
       <Card padding={12} style={{ marginTop: 12, background: "var(--surface-sunken)", display: "flex", gap: 8, alignItems: "flex-start" }}>
         <AlertTriangle size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 1 }} />
@@ -202,7 +201,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", margin: "16px 0", overflowX: "auto" }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} aria-pressed={tab === t.key} onClick={() => setTab(t.key)}
             style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
               borderBottom: tab === t.key ? "2px solid var(--brand)" : "2px solid transparent",
               color: tab === t.key ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -217,7 +216,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
       {tab === "quality" && <QualityTab providerId={providerId} />}
       {tab === "team" && <TeamTab providerId={providerId} />}
       {tab === "operations" && <OperationsTab providerId={providerId} />}
-      {tab === "documents" && <ActivityTab providerId={providerId} onError={setDocumentError} />}
+      {tab === "documents" && <ActivityTab providerId={providerId} />}
       {tab === "services" && <ServicesTab providerId={providerId} />}
 
       <Modal open={auditOpen} onClose={() => setAuditOpen(false)} title="Home Services lifecycle" size="lg">
@@ -280,12 +279,12 @@ function ReadinessRow({ ok, label }: { ok: boolean; label: string }) {
 // per-tab endpoints used elsewhere on this page. ──────────────────────────
 function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId: string }) {
   const readiness = d.readiness as Record<string, boolean> | undefined;
-  const finance = useApi(useCallback(() => hsProviderDirectoryApi.getFinance(providerId), [providerId]));
-  const quality = useApi(useCallback(() => hsProviderDirectoryApi.getQuality(providerId), [providerId]));
-  const team = useApi(useCallback(() => hsProviderDirectoryApi.getTeam(providerId), [providerId]));
-  const ops = useApi(useCallback(() => hsProviderDirectoryApi.getOperations(providerId), [providerId]));
-  const services = useApi(useCallback(() => hsProviderDirectoryApi.getServices(providerId), [providerId]));
-  const reviews = useApi(useCallback(() => hsReviewApi.getProviderReviewSummary("home-services", providerId), [providerId]));
+  const finance = useApi(useCallback(() => hsProviderDirectoryApi.getFinance(providerId), [providerId]), [providerId]);
+  const quality = useApi(useCallback(() => hsProviderDirectoryApi.getQuality(providerId), [providerId]), [providerId]);
+  const team = useApi(useCallback(() => hsProviderDirectoryApi.getTeam(providerId), [providerId]), [providerId]);
+  const ops = useApi(useCallback(() => hsProviderDirectoryApi.getOperations(providerId), [providerId]), [providerId]);
+  const services = useApi(useCallback(() => hsProviderDirectoryApi.getServices(providerId), [providerId]), [providerId]);
+  const reviews = useApi(useCallback(() => hsReviewApi.getProviderReviewSummary("home-services", providerId), [providerId]), [providerId]);
 
   const f = finance.data as Record<string, unknown> | undefined;
   const q = quality.data as Record<string, unknown> | undefined;
@@ -302,14 +301,8 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
   // Attention list: only real, currently-true signals — nothing invented.
   const attention: { label: string; severity: "high" | "medium" }[] = [];
   if (readiness?.admin_hold_active) attention.push({ label: "Admin hold is currently active on this tenant", severity: "high" });
-  if (t && Number(t.total_staff ?? 0) > 0 && Number(t.verified_staff ?? 0) < Number(t.total_staff ?? 0)) {
-    attention.push({ label: `${Number(t.total_staff) - Number(t.verified_staff)} staff verification(s) pending`, severity: "medium" });
-  }
-  if (t && Number(t.capability_incomplete_staff ?? 0) > 0) {
-    attention.push({ label: `${t.capability_incomplete_staff} staff member(s) with incomplete job-type capabilities`, severity: "medium" });
-  }
   if (s && Number(s.missing_price_config_count ?? 0) > 0) {
-    attention.push({ label: `${s.missing_price_config_count} service(s) missing price configuration`, severity: "medium" });
+    attention.push({ label: `${s.missing_price_config_count} offered service(s) need setup`, severity: "medium" });
   }
   if (q && Number(q.open_complaints_count ?? 0) > 0) {
     attention.push({ label: `${q.open_complaints_count} complaint(s) awaiting resolution`, severity: "high" });
@@ -319,9 +312,10 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
   return (
     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16, gridColumn: "1 / -1" }}>
+        {[finance, quality, team, ops, services, reviews].some(result => result.error) && <p role="alert" style={{ color: "var(--danger-text)" }}>Some overview data could not be loaded. Open the corresponding tab for the error; empty counters are not confirmed results.</p>}
         {/* Top stat strip */}
         <KpiGrid minCardWidth={140}>
-          <SummaryCard label="Health" value={`${Number(d.health_score ?? 0)}%`} sub={String(d.health_band ?? "")} />
+          <SummaryCard label="Setup completion" value={d.profile_completion_percentage == null ? "Unavailable" : `${d.profile_completion_percentage}%`} sub="Same saved checks as tenant setup; not admin approval" />
           <SummaryCard label="Active Services" value={services.loading ? "…" : String(s?.active_services ?? 0)} icon={<Wrench size={15} />} />
           <SummaryCard label="Staff / Available" value={team.loading ? "…" : `${t?.total_staff ?? 0} / ${t?.available_staff ?? 0}`} icon={<Users size={15} />} />
           <SummaryCard label="Active Jobs" value={ops.loading ? "…" : String(o?.active_jobs ?? 0)} icon={<Briefcase size={15} />} />
@@ -341,15 +335,18 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
           {readiness ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
               <ReadinessRow ok={readiness.business_verification_complete} label="Business verification complete" />
+              <ReadinessRow ok={readiness.setup_complete} label="Provider setup complete" />
+              <ReadinessRow ok={readiness.enrollment_active} label="Home Services activated" />
               <ReadinessRow ok={readiness.credit_account_healthy} label="Credit account healthy" />
               <ReadinessRow ok={!readiness.admin_hold_active} label="No blocking admin hold" />
             </div>
           ) : <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Not available.</p>}
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
-            Service readiness, staff readiness and bookability aren&apos;t wired into this checklist yet —
-            they need canonical read services this page doesn&apos;t reach into. Shown only when backed by a
-            real check, never guessed.
+            Setup completion confirms submitted information is configured. Admin approval, activation and live booking eligibility are separate checks.
           </p>
+          <div style={{ fontSize: 12, display: "grid", gap: 8 }}>{((d.setup_sections ?? []) as Record<string, unknown>[]).filter(section => section.key !== "REVIEW_SUBMIT").map(section =>
+            <ReadinessRow key={String(section.key)} ok={section.status === "complete"} label={`${section.label}${section.required ? "" : " (optional)"}`}/>)}</div>
+          {((d.bookability_blockers ?? []) as Record<string, unknown>[]).map((blocker, index) => <p key={index} style={{ fontSize: 12, color: "var(--warning-text)" }}>{String(blocker.message)}</p>)}
         </Card>
 
         <Card padding={16}>
@@ -409,7 +406,7 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
               <div><span style={{ color: "var(--text-tertiary)" }}>Total staff </span><strong>{String(t?.total_staff ?? 0)}</strong></div>
               <div><span style={{ color: "var(--text-tertiary)" }}>Available </span><strong>{String(t?.available_staff ?? 0)}</strong></div>
-              <div><span style={{ color: "var(--text-tertiary)" }}>Verified </span><strong>{String(t?.verified_staff ?? 0)}</strong></div>
+              <div><span style={{ color: "var(--text-tertiary)" }}>Technicians </span><strong>{String(t?.technician_count ?? 0)}</strong></div>
               <div><span style={{ color: "var(--text-tertiary)" }}>Suspended </span><strong>{String(t?.suspended_staff ?? 0)}</strong></div>
             </div>
           )}
@@ -453,12 +450,12 @@ function OverviewTab({ d, providerId }: { d: Record<string, unknown>; providerId
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
               <div><span style={{ color: "var(--text-tertiary)" }}>Total </span><strong>{String(s?.total_services ?? 0)}</strong></div>
               <div><span style={{ color: "var(--text-tertiary)" }}>Published </span><strong>{String(s?.published_services ?? 0)}</strong></div>
-              <div><span style={{ color: "var(--text-tertiary)" }}>Priced </span><strong>{String(s?.price_configured_count ?? 0)}</strong></div>
-              <div><span style={{ color: "var(--text-tertiary)" }}>Missing price </span><strong>{String(s?.missing_price_config_count ?? 0)}</strong></div>
+              <div><span style={{ color: "var(--text-tertiary)" }}>Configured </span><strong>{String(s?.price_configured_count ?? 0)}</strong></div>
+              <div><span style={{ color: "var(--text-tertiary)" }}>Needs setup </span><strong>{String(s?.missing_price_config_count ?? 0)}</strong></div>
             </div>
           )}
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
-            Pricing ownership: Tenant-owned. Serviceable-area coverage isn&apos;t wired into this tab yet.
+            Pricing ownership: Tenant-owned. {String(s?.total_coverage_areas ?? 0)} active coverage areas; see Services &amp; Coverage for hours and holidays.
           </p>
         </Card>
       </div>
@@ -474,6 +471,8 @@ function VerificationTab({ d }: { d: Record<string, unknown> }) {
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 12px" }}>Business identity</h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 13 }}>
           <Field label="Business Name" value={String(d.business_name ?? "—")} />
+          <Field label="Business Type" value={String(d.business_type ?? "—").replace(/_/g, " ")} />
+          <Field label="Setup completion" value={d.profile_completion_percentage == null ? "Unavailable" : `${d.profile_completion_percentage}%`} />
           <Field label="Owner" value={String(d.owner_name ?? "—")} />
           <Field label="Email" value={String(d.email ?? d.owner_email ?? "—")} />
           <Field label="Phone" value={String(d.phone ?? "—")} />
@@ -493,13 +492,14 @@ function VerificationTab({ d }: { d: Record<string, unknown> }) {
           providers still in review — not duplicated here to avoid two places that can approve the same
           provider.
         </p>
+        <a href="?tab=documents">View uploaded documents</a>{" · "}<a href="/admin/home-services/providers?tab=onboarding">Open Onboarding Queue for review decisions</a>
       </Card>
     </div>
   );
 }
 
 function FinanceTab({ providerId }: { providerId: string }) {
-  const finance = useApi(useCallback(() => hsProviderDirectoryApi.getFinance(providerId), [providerId]));
+  const finance = useApi(useCallback(() => hsProviderDirectoryApi.getFinance(providerId), [providerId]), [providerId]);
   if (finance.loading) return <Skeleton height={300} />;
   if (finance.error) {
     return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Finance data unavailable: {finance.error}</p></Card>;
@@ -510,12 +510,14 @@ function FinanceTab({ providerId }: { providerId: string }) {
   const charges = (f.provider_charges ?? []) as Record<string, unknown>[];
   const topups = (f.topup_history ?? []) as Record<string, unknown>[];
   const paymentSetup = f.payment_setup as Record<string, unknown> | null | undefined;
+  const seats = f.technician_seats as Record<string, unknown> | undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card padding={12} style={{ background: "var(--surface-sunken)" }}>
         <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>{String(f.customer_payment_note)}</p>
       </Card>
+      <KpiGrid minCardWidth={150}><SummaryCard label="Technician seats purchased" value={String(seats?.entitled ?? 0)}/><SummaryCard label="Seats used" value={String(seats?.used ?? 0)}/><SummaryCard label="Seats available" value={String(seats?.available ?? 0)}/></KpiGrid>
 
       {paymentSetup && (
         <Card padding={16}>
@@ -540,6 +542,14 @@ function FinanceTab({ providerId }: { providerId: string }) {
           </div>
         </Card>
       )}
+      <Card padding={16}>
+        <h3>Technician plan orders</h3><p style={{fontSize:12}}>Latest 20 plan orders. Only captured payments grant seats and credits.</p>
+        <DataTable rows={(f.plan_purchase_history ?? []) as Record<string, unknown>[]} emptyText="No technician plan orders recorded." columns={[
+          {key:"created_at",label:"Created",render:v=>dt(v as string)}, {key:"seats_granted",label:"Plan seats"},
+          {key:"credited_amount",label:"Usage credit",render:v=>money(v as string)}, {key:"amount",label:"Order amount",render:v=>money(v as string)},
+          {key:"status",label:"Payment status",render:v=><Badge variant={v === "captured" ? "success" : "warning"}>{String(v)}</Badge>},
+        ]}/>
+      </Card>
 
       <KpiGrid minCardWidth={180}>
         <SummaryCard label="Usage Credit Balance" value={money(credits?.balance as string)} sub={credits?.low_balance ? "Low balance" : undefined} />
@@ -579,7 +589,7 @@ function FinanceTab({ providerId }: { providerId: string }) {
 function QualityTab({ providerId }: { providerId: string }) {
   const [page, setPage] = useState(1);
   const quality = useApi(useCallback(() => hsProviderDirectoryApi.getQuality(providerId, { page, page_size:20 }), [providerId, page]), [providerId, page]);
-  const reviews = useApi(useCallback(() => hsReviewApi.getProviderReviewSummary("home-services", providerId), [providerId]));
+  const reviews = useApi(useCallback(() => hsReviewApi.getProviderReviewSummary("home-services", providerId), [providerId]), [providerId]);
   if (quality.loading) return <Skeleton height={300} />;
   if (quality.error) {
     return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Quality data unavailable: {quality.error}</p></Card>;
@@ -653,22 +663,21 @@ function TeamTab({ providerId }: { providerId: string }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <KpiGrid minCardWidth={140}>
         <SummaryCard label="Total Staff" value={String(t.total_staff ?? 0)} />
-        <SummaryCard label="Verified" value={String(t.verified_staff ?? 0)} />
+        <SummaryCard label="Technicians" value={String(t.technician_count ?? 0)} />
         <SummaryCard label="Available" value={String(t.available_staff ?? 0)} />
-        <SummaryCard label="Capability Incomplete" value={String(t.capability_incomplete_staff ?? 0)} />
         <SummaryCard label="Suspended" value={String(t.suspended_staff ?? 0)} />
       </KpiGrid>
       <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-        Only staff explicitly assigned to this provider&apos;s Home Services operation appear here — a
-        multi-vertical tenant&apos;s staff do not automatically show up in this list.
+        Provider-owned roster, including team members without login access. Only technicians consume paid seats; staff verification is the provider&apos;s responsibility. Availability is current presence, not future slot capacity.
       </p>
       <DataTable
         rows={staff}
         emptyText="No staff explicitly assigned to Home Services for this provider yet."
         columns={[
           { key: "name", label: "Staff Member", render: v => v ? String(v) : "—" },
-          { key: "designation", label: "Designation", render: v => v ? String(v) : "—" },
-          { key: "verification_status", label: "Verification", render: v => <Badge variant={v === "verified" ? "success" : "default"}>{String(v)}</Badge> },
+          { key: "designation", label: "Role", render: v => v ? String(v) : "—" },
+          { key: "login_status", label: "Login access" },
+          { key: "can_receive_assignment", label: "Receives jobs", render: v => v ? "Yes" : "No" },
           { key: "availability_status", label: "Availability", render: v => <Badge variant={v === "available" ? "success" : "default"}>{String(v)}</Badge> },
           { key: "assignment_status", label: "Assignment", render: v => <Badge variant={v === "suspended" ? "danger" : "default"}>{String(v)}</Badge> },
         ]}
@@ -712,7 +721,7 @@ function OperationsTab({ providerId }: { providerId: string }) {
   );
 }
 
-function ActivityTab({ providerId, onError }: { providerId: string; onError: (message:string|null)=>void }) {
+function ActivityTab({ providerId }: { providerId: string }) {
   const [page, setPage] = useState(1);
   const activity = useApi(useCallback(() => hsProviderDirectoryApi.getActivity(providerId, { page, page_size:30 }), [providerId, page]), [providerId, page]);
   if (activity.loading) return <Skeleton height={300} />;
@@ -726,32 +735,7 @@ function ActivityTab({ providerId, onError }: { providerId: string; onError: (me
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card padding={14}>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Documents</h3>
-        <DataTable
-          rows={documents}
-          emptyText="No documents uploaded for this provider yet."
-          columns={[
-            { key: "doc_type", label: "Type", render: v => String(v).replace(/_/g, " ") },
-            { key: "label", label: "Label", render: v => v ? String(v) : "—" },
-            { key: "document_number", label: "Number", render: v => v ? String(v) : "—" },
-            { key: "status", label: "Status", render: v => <Badge variant={v === "verified" ? "success" : v === "rejected" ? "danger" : "default"}>{String(v)}</Badge> },
-            { key: "expiry_date", label: "Expires", render: v => v ? dt(v as string) : "—" },
-            { key: "media_asset_id", label: "Attachment", render: (v, row) => v ? (
-              <button
-                onClick={async e => {
-                  e.stopPropagation();
-                  onError(null);
-                  try {
-                    await openAdminMediaPreview(String(v));
-                  } catch (error) {
-                    onError(error instanceof Error ? error.message : "Could not open this attachment. Check document access and try again.");
-                  }
-                }}
-                style={{ background: "none", border: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, textDecoration: "underline" }}>
-                View
-              </button>
-            ) : <span style={{ color: "var(--text-tertiary)" }}>No file</span> },
-          ]}
-        />
+        <ProviderDocuments documents={documents}/>
       </Card>
       <div>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>Audit timeline</h3>
@@ -772,7 +756,7 @@ function ActivityTab({ providerId, onError }: { providerId: string; onError: (me
 }
 
 function ServicesTab({ providerId }: { providerId: string }) {
-  const services = useApi(useCallback(() => hsProviderDirectoryApi.getServices(providerId), [providerId]));
+  const services = useApi(useCallback(() => hsProviderDirectoryApi.getServices(providerId), [providerId]), [providerId]);
   if (services.loading) return <Skeleton height={300} />;
   if (services.error) return <Card padding={16}><p style={{ color: "var(--danger-text)" }}>Services data unavailable: {services.error}</p></Card>;
   const s = services.data as Record<string, unknown> | undefined;
@@ -785,8 +769,8 @@ function ServicesTab({ providerId }: { providerId: string }) {
         <SummaryCard label="Total Services" value={String(s.total_services ?? 0)} />
         <SummaryCard label="Published" value={String(s.published_services ?? 0)} />
         <SummaryCard label="Active" value={String(s.active_services ?? 0)} />
-        <SummaryCard label="Price Configured" value={String(s.price_configured_count ?? 0)} />
-        <SummaryCard label="Missing Price Config" value={String(s.missing_price_config_count ?? 0)} />
+        <SummaryCard label="Offered services configured" value={String(s.price_configured_count ?? 0)} />
+        <SummaryCard label="Offered services needing setup" value={String(s.missing_price_config_count ?? 0)} />
       </KpiGrid>
       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, fontWeight: 600 }}>
         Pricing ownership: Tenant-owned
@@ -797,13 +781,27 @@ function ServicesTab({ providerId }: { providerId: string }) {
         columns={[
           { key: "master_service_name", label: "Master Service", render: v => v ? String(v) : "—" },
           { key: "job_type", label: "Job Type" },
+          { key: "is_enabled", label: "Offering", render: (v, row) => v && row.is_active ? "Offered" : "Not offered" },
           { key: "setup_status", label: "Setup", render: v => <Badge variant={v === "published" ? "success" : "default"}>{String(v)}</Badge> },
           { key: "published", label: "Published", render: v => v ? <Badge variant="success">Yes</Badge> : <Badge>No</Badge> },
           { key: "requires_brand", label: "Brand Required", render: v => v ? "Yes" : "No" },
           { key: "requires_type", label: "Type Required", render: v => v ? "Yes" : "No" },
-          { key: "price_configured", label: "Pricing", render: v => v ? <Badge variant="success">Configured</Badge> : <Badge variant="warning">Missing</Badge> },
+          { key: "price_configured", label: "Configuration", render: (v, row) => !row.is_enabled || !row.is_active ? <Badge>Not offered</Badge> : v ? <Badge variant="success">Configured</Badge> : <Badge variant="warning">Needs setup</Badge> },
         ]}
       />
+      <Card padding={14}>
+        <h3>Business hours &amp; holidays</h3>
+        <DataTable rows={(s.business_hours ?? []) as Record<string, unknown>[]} emptyText="No open business days configured." columns={[
+          {key:"day_of_week",label:"Day",render:v=>["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][Number(v)]},
+          {key:"start_time",label:"Opens"},{key:"end_time",label:"Closes"},
+          {key:"break_start_time",label:"Break",render:(v,r)=>v ? `${v}–${r.break_end_time}` : "None"},
+          {key:"max_jobs_per_day",label:"Daily job limit",render:v=>v == null ? "Automatic (funded technicians)" : String(v)},
+          {key:"timezone",label:"Timezone"},
+        ]}/>
+        <DataTable rows={(s.schedule_exceptions ?? []) as Record<string, unknown>[]} emptyText="No upcoming holidays or exceptions." columns={[
+          {key:"date",label:"Date"},{key:"reason",label:"Reason"},{key:"full_day_closed",label:"Schedule",render:v=>v ? "Closed all day" : "Custom hours"},
+        ]}/>
+      </Card>
       <Card padding={14}>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Coverage ({String(s.total_coverage_areas ?? 0)})</h3>
         <DataTable

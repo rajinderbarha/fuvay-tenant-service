@@ -1,4 +1,18 @@
 /** Open an authenticated Media Engine asset without triggering popup blockers. */
+export async function loadAdminDocument(mediaAssetId: string, signal?: AbortSignal): Promise<Blob> {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const token = localStorage.getItem("serviceos_admin_token") ?? "";
+  const response = await fetch(`${apiBase}/v1/media/${encodeURIComponent(mediaAssetId)}/view`, {
+    headers: { Authorization: `Bearer ${token}` }, signal,
+  });
+  if (!response.ok) throw new Error(`Document service returned HTTP ${response.status}.`);
+  const blob = await response.blob();
+  if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(blob.type.split(";")[0])) {
+    throw new Error("This file type cannot be previewed safely. Use the Media workspace to inspect it.");
+  }
+  return blob;
+}
+
 export async function openAdminMediaPreview(mediaAssetId: string): Promise<void> {
   // This must happen synchronously inside the click event. Opening a tab only
   // after the authenticated fetch resolves is blocked by modern browsers.

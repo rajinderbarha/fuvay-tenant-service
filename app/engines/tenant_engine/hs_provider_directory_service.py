@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func, or_, exists
+from sqlalchemy import select, func, or_, exists, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.tenant_engine.models import Tenant, TenantBilling
@@ -183,6 +183,15 @@ class HomeServicesProviderDirectoryService:
             owner = await self.db.get(User, tenant.owner_user_id)
 
         row = self._provider_row(tenant, billing)
+        from app.engines.vertical_catalog.home_services_setup_service import get_setup_overview
+        from app.engines.provider_portal.router import _evaluate_provider_bookability
+        from app.engines.tenant_engine.models import TenantBusinessProfile
+        setup = await get_setup_overview(self.db, provider_id)
+        bookability = await _evaluate_provider_bookability(self.db, provider_id)
+        profile = (await self.db.execute(select(TenantBusinessProfile).where(TenantBusinessProfile.tenant_id == provider_id))).scalar_one_or_none()
+        from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
+        seats = await get_seat_usage(self.db, provider_id)
+        enrollment_status = setup["vertical"]["status"]
         return {
             **row,
             "owner_user_id": str(tenant.owner_user_id) if tenant.owner_user_id else None,
@@ -197,7 +206,14 @@ class HomeServicesProviderDirectoryService:
                 "line1": tenant.address_line1, "line2": tenant.address_line2,
                 "city": tenant.city, "state": tenant.state, "zipcode": tenant.zipcode,
             },
-            "gst_number": tenant.gst_number,
+            "business_type": tenant.business_type,
+            "gst_number": (profile.gstin if profile else None) or tenant.gst_number,
+            "profile_completion_percentage": setup["progress"]["percentage"],
+            "setup_progress": setup["progress"],
+            "setup_sections": setup["sections"],
+            "enrollment_status": enrollment_status,
+            "is_bookable": enrollment_status == "active" and bookability["is_bookable"],
+            "bookability_blockers": bookability["bookability_blockers"],
             "is_discoverable": tenant.is_discoverable,
             "suspended_at": tenant.suspended_at.isoformat() if tenant.suspended_at else None,
             "suspension_reason": tenant.suspension_reason,
@@ -205,19 +221,18 @@ class HomeServicesProviderDirectoryService:
             # (adjustments, top-ups) remain in Home Services Finance,
             # never duplicated here.
             "finance_readiness": {
-                "entitled_seats": int(billing.entitled_seats or 0) if billing else 0,
+                "entitled_seats": seats["entitled_seats"],
                 "available_credits": str(billing.credit_balance) if billing else "0",
                 "low_balance": (Decimal(str(billing.credit_balance)) if billing else Decimal("0")) < LOW_BALANCE_THRESHOLD,
             },
-            # Readiness checks grounded in what's actually queryable today.
-            # Staff eligibility, exact job-type configuration, and coverage
-            # readiness need engines this service doesn't yet reach into --
-            # left absent (not fabricated as "ready") rather than guessed.
+            # Setup and operational readiness share the tenant's read services.
             "readiness": {
-                "business_verification_complete": tenant.verification_status == "approved",
-                "seats_purchased": bool(billing and (billing.entitled_seats or 0) > 0),
+                "business_verification_complete": tenant.verification_status in ("approved", "verified"),
+                "seats_purchased": seats["entitled_seats"] > 0,
                 "credit_account_healthy": bool(billing) and Decimal(str(billing.credit_balance if billing else 0)) >= LOW_BALANCE_THRESHOLD,
                 "admin_hold_active": tenant.status == "suspended",
+                "setup_complete": setup["progress"]["percentage"] == 100,
+                "enrollment_active": enrollment_status == "active",
             },
         }
 
@@ -249,8 +264,12 @@ class HomeServicesProviderDirectoryService:
             select(TenantFinanceReadiness).where(TenantFinanceReadiness.tenant_id == provider_id)
         )).scalar_one_or_none()
 
+        from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
+        seat_usage = await get_seat_usage(self.db, provider_id)
+
         charges = await fin.list_provider_charges(tenant_id=str(provider_id), page=1, page_size=20)
         topups = await fin.list_topups(tenant_id=str(provider_id), page=1, page_size=20)
+        plan_orders = (await self.db.execute(text("SELECT id,amount,currency,seats_granted,credited_amount,status,created_at FROM activation_payment_orders WHERE tenant_id=:tid AND topup_plan_id IS NOT NULL ORDER BY created_at DESC LIMIT 20"), {"tid":str(provider_id)})).mappings().all()
 
         return {
             "usage_credits": {
@@ -258,10 +277,13 @@ class HomeServicesProviderDirectoryService:
                 "low_balance": (Decimal(str(billing.credit_balance)) if billing else Decimal("0")) < LOW_BALANCE_THRESHOLD,
             },
             "technician_seats": {
-                "entitled": int(billing.entitled_seats or 0) if billing else 0,
+                "entitled": seat_usage["entitled_seats"],
+                "used": seat_usage["used_seats"],
+                "available": max(0, seat_usage["entitled_seats"] - seat_usage["used_seats"]),
             },
             "provider_charges": charges["items"],
             "topup_history": topups["items"],
+            "plan_purchase_history": [dict(order) for order in plan_orders],
             # Customer pays the provider directly -- Fuvay never collects
             # the job payment. This tab shows provider-side charges only;
             # customer payment records live in Direct Customer Payments
@@ -367,64 +389,8 @@ class HomeServicesProviderDirectoryService:
         if not tenant or tenant.vertical != HOME_SERVICES_VERTICAL:
             raise NotFoundException("HomeServicesProvider", str(provider_id))
 
-        from app.engines.auth.models import User
-
-        clauses = [
-            User.tenant_id == provider_id,
-            User.role.notin_(("customer", "super_admin", "tenant_owner")),
-            User.deleted_at.is_(None),
-        ]
-        active_job_exists = exists(select(ServiceJob.id).where(
-            ServiceJob.assigned_staff_id == User.id,
-            ServiceJob.status.notin_(("completed", "cancelled")),
-        ))
-        stats = (await self.db.execute(select(
-            func.count(User.id).label("total"),
-            func.count(User.id).filter(User.is_verified.is_(True)).label("verified"),
-            func.count(User.id).filter(User.is_active.is_(False)).label("suspended"),
-            func.count(User.id).filter(User.is_active.is_(True), ~active_job_exists).label("available"),
-        ).where(*clauses))).one()
-        staff = (await self.db.execute(
-            select(User).where(*clauses)
-            .order_by(User.full_name.asc(), User.id.asc())
-            .offset((page - 1) * page_size).limit(page_size)
-        )).scalars().all()
-
-        active_jobs_by_staff: dict[uuid.UUID, int] = {}
-        if staff:
-            staff_ids = [u.id for u in staff]
-            job_rows = (await self.db.execute(
-                select(ServiceJob.assigned_staff_id, func.count())
-                .where(ServiceJob.assigned_staff_id.in_(staff_ids),
-                       ServiceJob.status.notin_(("completed", "cancelled")))
-                .group_by(ServiceJob.assigned_staff_id)
-            )).all()
-            active_jobs_by_staff = {sid: count for sid, count in job_rows}
-
-        def is_available(u) -> bool:
-            return u.is_active and active_jobs_by_staff.get(u.id, 0) == 0
-
-        return {
-            "total_staff": int(stats.total or 0),
-            "verified_staff": int(stats.verified or 0),
-            "available_staff": int(stats.available or 0),
-            # Per-job-type capability isn't tracked at the User level today --
-            # reported as 0 (not applicable), never guessed.
-            "capability_incomplete_staff": 0,
-            "suspended_staff": int(stats.suspended or 0),
-            "staff": [{
-                "staff_id": str(u.id),
-                "name": u.full_name,
-                "designation": u.role,
-                "verification_status": "verified" if u.is_verified else "not_started",
-                "assignment_status": "active" if u.is_active else "suspended",
-                "availability_status": "available" if is_available(u) else "on_job" if active_jobs_by_staff.get(u.id, 0) else "unavailable",
-                "job_type_capabilities": [],
-                "is_active": u.is_active,
-            } for u in staff],
-            "page": page,
-            "page_size": page_size,
-        }
+        from app.engines.tenant_engine.provider_team_projection import provider_team_projection
+        return await provider_team_projection(self.db, provider_id, page, page_size)
 
     # ── Provider 360 Operations tab ──────────────────────────────────────────
     # ServiceJob is the canonical Home-Services-only execution record
@@ -521,6 +487,10 @@ class HomeServicesProviderDirectoryService:
                 "label": d.label,
                 "document_number": d.document_number,
                 "status": d.status,
+                "version": d.version,
+                "uploaded_at": d.created_at.isoformat() if d.created_at else None,
+                "rejection_reason": d.rejection_reason,
+                "staff_member_id": str(d.staff_member_id) if d.staff_member_id else None,
                 "issue_date": d.issue_date.isoformat() if d.issue_date else None,
                 "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
                 "file_url": d.file_url,
@@ -561,16 +531,28 @@ class HomeServicesProviderDirectoryService:
             .order_by(TenantServiceArea.city, TenantServiceArea.zipcode)
         )).scalars().all()
 
+        from app.engines.admin_catalog.tenant_service import TenantCatalogService
+        from app.engines.vertical_catalog.service_setup_readiness import service_setup_readiness
+        catalog = TenantCatalogService(self.db, actor_tenant_id=provider_id)
+        configured = {}
+        for ts, _ in rows:
+            if ts.is_enabled and ts.is_active:
+                validation = await catalog.validate_for_publish(ts.id)
+                configured[ts.id] = service_setup_readiness([(str(ts.id), validation)])["complete"]
         def price_configured(ts: TenantService) -> bool:
-            return any([ts.tenant_base_price is not None, ts.tenant_min_price is not None,
-                        ts.tenant_max_price is not None, ts.tenant_visit_fee is not None])
+            return configured.get(ts.id, False)
+
+        hours = (await self.db.execute(text("SELECT day_of_week,start_time,end_time,break_start_time,break_end_time,max_jobs_per_day,timezone FROM provider_availability_rules WHERE tenant_id=:tid AND scope_type='provider' AND scope_id IS NULL AND is_active=true ORDER BY day_of_week,start_time"), {"tid": str(provider_id)})).mappings().all()
+        exceptions = (await self.db.execute(text("SELECT date,reason,full_day_closed FROM tenant_availability_exceptions WHERE tenant_id=:tid AND status='active' AND date>=CURRENT_DATE ORDER BY date"), {"tid": str(provider_id)})).mappings().all()
 
         return {
             "total_services": len(rows),
             "published_services": sum(1 for ts, _ in rows if ts.published_at is not None),
             "active_services": sum(1 for ts, _ in rows if ts.is_enabled and ts.is_active),
             "price_configured_count": sum(1 for ts, _ in rows if price_configured(ts)),
-            "missing_price_config_count": sum(1 for ts, _ in rows if not price_configured(ts)),
+            "missing_price_config_count": sum(1 for ts, _ in rows if ts.is_enabled and ts.is_active and not price_configured(ts)),
+            "business_hours": [dict(r) for r in hours],
+            "schedule_exceptions": [dict(r) for r in exceptions],
             "pricing_ownership": "tenant_owned",
             "services": [{
                 "tenant_service_id": str(ts.id),
