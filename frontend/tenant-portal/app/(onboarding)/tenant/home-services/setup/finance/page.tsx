@@ -30,6 +30,12 @@ const METHODS: { key: keyof FinanceReadinessDirectPayment; label: string; icon: 
   { key: "accepts_upi", label: "UPI", icon: <Smartphone size={20}/> },
 ];
 
+function editableFinance(manifest: FinanceReadinessManifest): FinanceReadinessDirectPayment {
+  return { ...manifest.direct_payment, accepts_card_at_service_location: false, accepts_bank_transfer: false,
+    invoice_business_name: manifest.direct_payment.invoice_business_name ?? manifest.invoice_defaults.business_name ?? "",
+    invoice_prefix: manifest.direct_payment.invoice_prefix ?? "" };
+}
+
 export default function FinanceReadinessPage() {
   const router = useRouter();
   const [manifest, setManifest] = useState<FinanceReadinessManifest | null>(null);
@@ -37,12 +43,13 @@ export default function FinanceReadinessPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
     financeReadinessApi.get()
-      .then(m => { setManifest(m); setForm({ ...m.direct_payment, accepts_card_at_service_location: false, accepts_bank_transfer: false }); })
+      .then(m => { setManifest(m); setForm(editableFinance(m)); })
       .catch(e => setError(e instanceof ServiceOSError ? e.message : "We couldn't load your finance readiness."))
       .finally(() => setLoading(false));
   }, []);
@@ -51,6 +58,7 @@ export default function FinanceReadinessPage() {
 
   async function save(andContinue: boolean) {
     if (!form) return;
+    setNotice("");
     if (andContinue && !form.accepts_cash && !form.accepts_upi) {
       setError("Select Cash or UPI before continuing.");
       return;
@@ -65,10 +73,16 @@ export default function FinanceReadinessPage() {
     setSaving(true);
     setError("");
     try {
-      const m = await financeReadinessApi.save({ ...form, accepts_card_at_service_location: false, accepts_bank_transfer: false });
+      const m = await financeReadinessApi.save({ ...form, invoice_business_name: invoiceName,
+        invoice_prefix: String(form.invoice_prefix ?? "").trim(), accepts_card_at_service_location: false, accepts_bank_transfer: false });
       setManifest(m);
-      setForm(m.direct_payment);
-      if (andContinue) router.push("/tenant/home-services/setup/review");
+      setForm(editableFinance(m));
+      window.dispatchEvent(new Event("home-services-setup-updated"));
+      setNotice(m.setup_complete ? "Finance details saved. This step is 100% complete." : "Finance draft saved. Complete the remaining checks before continuing.");
+      if (andContinue) {
+        if (m.setup_complete) router.push("/tenant/home-services/setup/review");
+        else setError("Finance setup is not complete yet. Check the remaining items and save again.");
+      }
     } catch (e) {
       setError(e instanceof ServiceOSError ? e.message : "Could not save finance readiness. Please try again.");
     } finally {
@@ -81,23 +95,29 @@ export default function FinanceReadinessPage() {
       <OnboardingShell activeNav="finance">
         <PageShell>
           <PageHeader title="Finance readiness" description="Confirm how customer payments are recorded and review your Home Services finance policy." />
-          <Skeleton height={320}/><Skeleton height={200}/>
+          {!loading && error ? <Card><p role="alert">{error}</p><Btn variant="secondary" onClick={load}>Retry</Btn></Card>
+            : <><Skeleton height={320}/><Skeleton height={200}/></>}
         </PageShell>
       </OnboardingShell>
     );
   }
 
-  const actionsRemaining =
-    (manifest.checks.direct_methods_selected ? 0 : 1) +
-    (manifest.checks.invoice_details_complete ? 0 : 1);
-  const money = (value: number) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(editableFinance(manifest));
+  const checks = hasUnsavedChanges ? {
+    direct_methods_selected: !!(form.accepts_cash || form.accepts_upi),
+    confirmation_configured: typeof form.payment_confirmation_required === "boolean",
+    invoice_details_complete: !!String(form.invoice_business_name ?? "").trim() && !!String(form.invoice_prefix ?? "").trim(),
+  } : manifest.checks;
+  const completed = [checks.direct_methods_selected, checks.confirmation_configured, checks.invoice_details_complete].filter(Boolean).length;
+  const actionsRemaining = 3 - completed;
+  const percentage = hasUnsavedChanges ? Math.round(completed / 3 * 100) : manifest.readiness_percentage;
 
   return (
     <OnboardingShell activeNav="finance">
       <PageShell>
       <style>{`
         .fin-grid { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 28px; align-items: start; }
-        .fin-methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .fin-methods { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
         .fin-policy-row { display: flex; justify-content: space-between; font-size: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); }
         .fin-policy-row:last-child { border-bottom: none; }
         .fin-funding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -127,7 +147,7 @@ export default function FinanceReadinessPage() {
         description="Confirm how customer payments are recorded and review your Home Services finance policy."
         actions={<Badge variant={actionsRemaining === 0 ? "success" : "warning"}>
           {actionsRemaining === 0 ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
-          {actionsRemaining === 0 ? "Ready for review" : `${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining`}
+          {actionsRemaining === 0 ? (hasUnsavedChanges ? "Ready to save" : "Ready for review") : `${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining`}
         </Badge>}
       />
 
@@ -138,6 +158,9 @@ export default function FinanceReadinessPage() {
       )}
 
       <StepProgressBar step={7} total={8} />
+      <p role="status" style={{ fontSize: 13, color: "var(--text-secondary)", margin: "16px 0 0" }}>
+        {saving ? "Saving finance details…" : hasUnsavedChanges ? "Unsaved changes — save to update setup progress and unlock Review & Submit." : notice || "Progress reflects your saved finance details."}
+      </p>
 
       <div className="fin-grid" style={{ marginTop: 20 }}>
         <div>
@@ -153,7 +176,7 @@ export default function FinanceReadinessPage() {
               {METHODS.map(m => {
                 const checked = !!form[m.key];
                 return (
-                  <button key={m.key as string} type="button" disabled={m.disabled}
+                  <button key={m.key as string} type="button" aria-pressed={checked} disabled={saving || m.disabled}
                     onClick={() => !m.disabled && setForm({ ...form, [m.key]: !checked })}
                     style={{
                       display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
@@ -177,7 +200,7 @@ export default function FinanceReadinessPage() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Payment confirmation required</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Staff records method, amount and reference after payment.</p>
               </div>
-              <SwitchToggle label="Payment confirmation required" checked={form.payment_confirmation_required}
+              <SwitchToggle label="Payment confirmation required" disabled={saving} checked={form.payment_confirmation_required}
                 onChange={v => setForm({ ...form, payment_confirmation_required: v })}/>
             </div>
           </Card>
@@ -186,7 +209,7 @@ export default function FinanceReadinessPage() {
             <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 14px" }}>Business invoice details</p>
             <div className="fin-invoice-grid">
               <Field label="Invoice business name">
-                <input aria-label="Invoice business name" value={form.invoice_business_name ?? manifest.invoice_defaults.business_name ?? ""}
+                <input aria-label="Invoice business name" disabled={saving} value={form.invoice_business_name ?? manifest.invoice_defaults.business_name ?? ""}
                   onChange={e => setForm({ ...form, invoice_business_name: e.target.value })}
                   style={inputStyle}/>
               </Field>
@@ -199,7 +222,7 @@ export default function FinanceReadinessPage() {
                 )}
               </Field>
               <Field label="Invoice prefix">
-                <input aria-label="Invoice prefix" value={form.invoice_prefix ?? ""} maxLength={20}
+                <input aria-label="Invoice prefix" disabled={saving} value={form.invoice_prefix ?? ""} maxLength={20}
                   onChange={e => setForm({ ...form, invoice_prefix: e.target.value.toUpperCase() })}
                   placeholder="e.g. ACME" style={inputStyle}/>
               </Field>
@@ -209,7 +232,7 @@ export default function FinanceReadinessPage() {
                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: "0 0 4px" }}>Issue customer receipt</p>
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Provider receipt for a direct payment — not a Fuvay payment receipt.</p>
               </div>
-              <SwitchToggle label="Issue customer receipt" checked={form.issue_customer_receipt}
+              <SwitchToggle label="Issue customer receipt" disabled={saving} checked={form.issue_customer_receipt}
                 onChange={v => setForm({ ...form, issue_customer_receipt: v })}/>
             </div>
           </Card>
@@ -219,13 +242,13 @@ export default function FinanceReadinessPage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Card>
-            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 16px" }}>Finance readiness</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 16px" }}>{hasUnsavedChanges ? "Finance readiness (unsaved draft)" : "Finance readiness"}</p>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-              <ProgressRing pct={manifest.readiness_percentage} tone={actionsRemaining === 0 ? "success" : "brand"} />
+              <ProgressRing pct={percentage} tone={actionsRemaining === 0 ? "success" : "brand"} />
             </div>
-            <CheckLine ok={manifest.checks.direct_methods_selected} label="Direct methods selected"/>
-            <CheckLine ok={manifest.checks.confirmation_configured} label="Confirmation configured"/>
-            <CheckLine ok={manifest.checks.invoice_details_complete} label="Invoice details complete"/>
+            <CheckLine ok={checks.direct_methods_selected} label="Direct methods selected"/>
+            <CheckLine ok={checks.confirmation_configured} label="Confirmation configured"/>
+            <CheckLine ok={checks.invoice_details_complete} label="Invoice details complete"/>
           </Card>
 
           <Card>
@@ -275,9 +298,9 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box", fontFamily: "inherit",
 };
 
-function SwitchToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function SwitchToggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" role="switch" aria-label={label} aria-checked={checked} onClick={() => onChange(!checked)}
+    <button type="button" role="switch" disabled={disabled} aria-label={label} aria-checked={checked} onClick={() => onChange(!checked)}
       style={{
         width: 40, height: 22, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
         background: checked ? "var(--brand)" : "var(--border)", position: "relative", transition: "background 0.15s",
