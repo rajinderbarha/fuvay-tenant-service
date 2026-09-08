@@ -6,6 +6,7 @@ import {
   StatCard, Badge, Btn, Modal, DataTable,
 } from "../../../components/shared/ui";
 import { ActionMenu } from "../../../components/shared/layout";
+import { resolveMediaUrl } from "../../../components/shared/ProfilePhotoUploader";
 import EnterpriseFilterBar from "../../../components/enterprise/EnterpriseFilterBar";
 import { Card, PageHeader, Pagination, StatusBadge } from "@serviceos/design-system";
 import {
@@ -233,7 +234,7 @@ function TenantCell({ row }: { row: TenantListItem }) {
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", background: "var(--brand)20", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, color: "var(--brand)", flexShrink: 0 }}>
         {row.logo_url
-          ? <img src={row.logo_url} alt="" style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ? <img src={resolveMediaUrl(row.logo_url) ?? undefined} alt="" style={{ width: 36, height: 36, borderRadius:"var(--radius-md)", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           : initials
         }
       </div>

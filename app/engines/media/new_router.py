@@ -33,6 +33,7 @@ from app.core.permissions import require_staff_or_above_mutation, require_mutati
 from app.dependencies.auth import (
     UserContext,
     get_current_user,
+    get_current_user_optional,
     require_customer,
     require_technician,
 )
@@ -45,6 +46,19 @@ logger = structlog.get_logger("media.new_router")
 
 def _req_id(r: Request) -> str:
     return getattr(r.state, "request_id", "")
+
+# A plain <img src="..."> from the browser never sends the app's bearer
+# token, so /{media_id}/view must also accept anonymous requests -- every
+# "public" asset (provider logos, avatars, brand/category icons) that isn't
+# on a real CDN (i.e. has no public_url) otherwise 401s the moment it's
+# rendered as an <img>, even though it was explicitly uploaded with
+# is_public=True. This stand-in only ever clears MediaAccessControl's
+# is_public branch (see assert_can_view) -- every other branch still
+# requires a real authenticated actor, so private assets stay protected.
+_GUEST_ACTOR = UserContext(
+    user_id="00000000-0000-0000-0000-000000000000",
+    email="", role="guest", tenant_id=None, full_name="Guest", is_verified=False,
+)
 
 # ── Media assets router ───────────────────────────────────────────────────────
 router = APIRouter(prefix="/v1/media", tags=["Media"])
@@ -143,22 +157,25 @@ async def get_media(
 
 @router.get(
     "/{media_id}/view",
-    summary="View/serve a media file (access-checked)",
+    summary="View/serve a media file (access-checked; public assets are servable by anonymous <img> requests)",
     response_class=FileResponse,
 )
 async def view_media(
     media_id: uuid.UUID,
     r: Request,
-    actor: UserContext = Depends(get_current_user),
-    svc: MediaAssetService = Depends(_svc),
+    db: AsyncSession = Depends(get_db),
+    actor: UserContext | None = Depends(get_current_user_optional),
 ):
     """
     Serves local files directly; redirects to CDN URL for remote storage.
     Performs access check before serving — private files never bypass auth.
 
     Remote storage keys are resolved inside MediaAssetService only after the
-    canonical read-authority check succeeds.
+    canonical read-authority check succeeds. An anonymous caller (no/invalid
+    bearer token) is only ever let through for is_public assets -- see
+    _GUEST_ACTOR above.
     """
+    svc = MediaAssetService(db=db, actor=actor or _GUEST_ACTOR)
     try:
         path, mime_type = await svc.get_local_file_for_serve(media_id)
         return FileResponse(str(path), media_type=mime_type)

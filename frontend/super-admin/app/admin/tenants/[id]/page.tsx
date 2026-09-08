@@ -24,6 +24,7 @@ import {
   type ProviderVisibilityStatus, type BookabilityAuditLog,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+import { resolveMediaUrl } from "../../../../components/shared/ProfilePhotoUploader";
 import { useViewport } from "../../../../hooks/useViewport";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { SUPER_ADMIN_ONLY } from "../../../../lib/permission-catalog";
@@ -1345,7 +1346,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Avatar */}
               {t?.logo_url && !logoFailed ? (
-                <img src={t.logo_url} alt={`${t.tenant_name} logo`}
+                <img src={resolveMediaUrl(t.logo_url) ?? undefined} alt={`${t.tenant_name} logo`}
                   style={{ width:80, height:80, borderRadius:18, objectFit:"cover",
                     border:"2px solid var(--border)", flexShrink:0, background:"var(--surface)",
                     boxShadow:"0 2px 12px rgba(0,0,0,0.12)" }}

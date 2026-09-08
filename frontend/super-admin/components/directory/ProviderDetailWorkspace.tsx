@@ -23,6 +23,7 @@ import { AdminLayout } from "../layout/AdminLayout";
 import { Card, Badge, Btn, Skeleton, Modal, DataTable, Pagination, SummaryCard, KpiGrid } from "../shared/ui";
 import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../lib/api";
 import { openAdminMediaPreview } from "../../lib/open-admin-media-preview";
+import { resolveMediaUrl } from "../shared/ProfilePhotoUploader";
 import { useApi, useAction } from "../../hooks/useApi";
 
 function dt(v?: string | null) {
@@ -135,7 +136,7 @@ export function ProviderDetailWorkspace({ providerId, basePath, breadcrumbVertic
           <div style={{ width: 56, height: 56, borderRadius: 12, background: "var(--brand)", display: "flex",
             alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
             {d.logo_url
-              ? <img src={String(d.logo_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ? <img src={resolveMediaUrl(String(d.logo_url)) ?? undefined} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               : <span style={{ fontWeight: 800, fontSize: 20, color: "white" }}>{String(d.business_name ?? "?").charAt(0)}</span>}
           </div>
           <div>
