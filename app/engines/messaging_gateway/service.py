@@ -35,10 +35,11 @@ from app.engines.messaging_gateway import flow, meta_client, pickers
 from app.engines.messaging_gateway.constants import (
     CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
     CMD_VERIFY, COMMAND_PREFIX,
-    CUSTOMER_SERVICE_WINDOW_HOURS, GREETING_WORDS,
+    CUSTOMER_SERVICE_WINDOW_HOURS, DURABLE_ACTION_PICKS,
     HANDOFF_TEXT, HELP_TEXT, KNOWN_COMMANDS, LIVE_BOOKING_STATUSES,
-    MAX_SESSIONS_PER_SENDER_PER_HOUR,
+    MAX_SESSIONS_PER_SENDER_PER_HOUR, SESSION_IDLE_TIMEOUT_HOURS,
     STATUS_DUPLICATE, STATUS_FAILED, STATUS_IGNORED, STATUS_PROCESSED,
+    PICKER_SEP,
     STOP_TEXT, WHATSAPP_BOOKING_FLOW_CTA, WHATSAPP_BOOKING_FLOW_SCREEN,
     WHATSAPP_FLOW_TOKEN_TTL_HOURS,
 )
@@ -48,7 +49,7 @@ from app.engines.messaging_gateway.models import MessagingInboundMessage, Messag
 logger = structlog.get_logger(__name__)
 
 GREETING = (
-    "Hi{name}! I'm Fuvay. I'll book your home service in a few taps — "
+    "Hi{name}! I'm your Fuvay Service Assistance. I'll book your home service in a few taps — "
     "just pick from the options below."
 )
 
@@ -84,19 +85,6 @@ def parse_command(text: str) -> str | None:
         return None
     token = stripped[1:].split(maxsplit=1)[0].lower() if len(stripped) > 1 else ""
     return token if token in KNOWN_COMMANDS else None
-
-
-def is_greeting(text: str) -> bool:
-    """True when the whole message is nothing but a greeting.
-
-    Matched on the ENTIRE trimmed message, minus trailing punctuation and
-    emoji-free — "hi" and "Hello!" restart the conversation, "hi my AC is not
-    cooling" does not, because that one carries a real answer we would throw
-    away. Deliberately not a substring or prefix test for the same reason.
-    """
-    cleaned = (text or "").strip().lower().rstrip("!.?,… ")
-    cleaned = " ".join(cleaned.split())
-    return bool(cleaned) and cleaned in GREETING_WORDS
 
 
 def command_remainder(text: str) -> str:
@@ -346,7 +334,22 @@ class MessagingGatewayService:
 
         thread = await self.get_or_create_thread(msg)
         record.thread_id = thread.id
-        thread.last_inbound_at = datetime.now(timezone.utc)
+
+        # ── Is this message opening a NEW conversation? ─────────────────────
+        # Read the PREVIOUS inbound timestamp before stamping this one, or the
+        # gap is always zero and nothing ever opens.
+        now = datetime.now(timezone.utc)
+        previous_inbound = thread.last_inbound_at
+        thread.last_inbound_at = now
+        if previous_inbound is not None and previous_inbound.tzinfo is None:
+            # The column is timezone-aware, but a value read back naive would
+            # raise on the subtraction below -- and this webhook must answer
+            # 200 or Meta redelivers the message forever.
+            previous_inbound = previous_inbound.replace(tzinfo=timezone.utc)
+        idle_or_new = (
+            previous_inbound is None
+            or now - previous_inbound >= timedelta(hours=SESSION_IDLE_TIMEOUT_HOURS)
+        )
         await self.resolve_customer(thread)
 
         flow_error = None
@@ -363,17 +366,26 @@ class MessagingGatewayService:
         # is never parsed as one.
         tapped = pickers.is_picker_reply(msg.reply_id)
         command = None if tapped else parse_command(msg.text)
-        # "hi" is how a conversation actually opens, so it is routed as the
-        # explicit start-over. Without this it fell through to the booking
-        # flow, which — having remembered a zipcode from a previous chat —
-        # answered a greeting with a coverage verdict instead of a welcome.
-        # Two things it is deliberately not: a tap (an option label could
-        # legitimately read like a greeting) and a way back from /stop, which
-        # names /fuvay as the way back and would otherwise be an opt-out in
-        # name only.
-        if (command is None and not tapped and not thread.opted_out
-                and is_greeting(msg.text)):
-            command = CMD_START
+        # The FIRST message of a new or long-idle conversation is an opener,
+        # whatever it says -- "hi", an emoji, a photo, or the problem itself.
+        # It is answered with the welcome and the first question rather than
+        # being read as an answer to whatever the last conversation was
+        # asking. Inside the window nothing restarts but /fuvay and /reset, so
+        # a mid-booking "hi" stays ordinary text.
+        #
+        # Three things are never an opener: an explicit command (it carries
+        # its own answer, and is handled below), a durable action tap (the
+        # business asked for it and is waiting on the answer), and a thread
+        # that is opted out or agent-owned (neither may be reopened by
+        # silence alone).
+        tap_kind = (msg.reply_id or "").partition(PICKER_SEP)[0] if tapped else ""
+        opening = (
+            idle_or_new
+            and command is None
+            and tap_kind not in DURABLE_ACTION_PICKS
+            and not thread.opted_out
+            and not thread.human_handoff
+        )
         reply: str | None = None
         picker: dict | None = None
 
@@ -395,17 +407,20 @@ class MessagingGatewayService:
             reply = await self._start_identity_link(thread, command_remainder(msg.text))
         elif command == CMD_VERIFY:
             reply = await self._finish_identity_link(thread, command_remainder(msg.text))
-        elif command in (CMD_START, CMD_RESET):
-            # /fuvay — and a bare "hi" — is the explicit start-over: drop every
-            # booking-scoped value, including the previously remembered service
-            # area. The booking flow is zipcode-first, so retaining those two
+        elif command in (CMD_START, CMD_RESET) or opening:
+            # Two ways to arrive here: the explicit start-over, and the first
+            # message of a new or long-idle conversation. Both drop every
+            # booking-scoped value, including the previously remembered
+            # service area -- the flow is zipcode-first, so keeping those two
             # fields silently skipped its first question for returning
             # Instagram customers.
             flow.reset_booking_state(thread)
-            # An explicit start-over reopens the channel. A bare greeting does
-            # NOT reach here while opted out, so /stop still needs /fuvay.
-            thread.opted_out = False
-            thread.human_handoff = False
+            if command in (CMD_START, CMD_RESET):
+                # Only an EXPLICIT start-over reopens the channel. Going quiet
+                # must not undo a /stop or take a thread back from an agent,
+                # which is why `opening` excludes both.
+                thread.opted_out = False
+                thread.human_handoff = False
             reply = self._welcome(thread)
             # Open the script at its first question rather than making them
             # send a second message to get going. A typed first question (the

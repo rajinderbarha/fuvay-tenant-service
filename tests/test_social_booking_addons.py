@@ -1,6 +1,7 @@
 """Social add-on regressions; all database and transport calls are isolated."""
 import copy
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
@@ -258,6 +259,9 @@ async def test_failed_summary_delivery_withholds_confirmation_buttons(monkeypatc
     thread.opted_out = False
     thread.human_handoff = False
     thread.last_options = ['old-option']
+    # Mid-conversation: recent enough that this message continues the
+    # thread rather than opening a new one.
+    thread.last_inbound_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     gateway = MessagingGatewayService(db, channel_config={})
     gateway.get_or_create_thread = AsyncMock(return_value=thread)
     gateway.resolve_customer = AsyncMock(return_value=None)

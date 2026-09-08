@@ -70,7 +70,7 @@ ASK_CITY = "Which city are you in?"
 NOT_IN_CITY = (
     "We do not cover {area} yet.\n\n"
     "Send a different 6-digit pincode to check another area, "
-    "or send \"hi\" to start again."
+    "or send /fuvay to start again."
 )
 SERVICE_NOT_IN_CITY = "That service is not available in {city} yet."
 ASK_ADDRESS = (

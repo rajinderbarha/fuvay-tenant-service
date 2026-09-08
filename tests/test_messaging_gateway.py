@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -2299,25 +2300,13 @@ async def test_pending_quote_is_actionable_on_both_channels():
 
 
 # ── Opening a conversation ────────────────────────────────────────────────────
-# Confirmed live on Instagram: "hi" was answered with the zipcode question
-# and no welcome, and a "hi" sent hours later was answered with the previous
-# conversation's coverage verdict, because the thread remembers its zipcode.
-# Routing a greeting as the explicit start-over fixes both: it clears the
-# remembered area and answers with the welcome.
-
-
-def test_a_bare_greeting_is_a_greeting_but_a_greeting_plus_a_problem_is_not():
-    """Matched on the WHOLE message. "hi" opens a conversation; "hi my AC is
-    not cooling" carries a real answer that a restart would throw away."""
-    from app.engines.messaging_gateway.service import is_greeting
-
-    for opener in ("hi", "Hi", "HELLO!", "  hey  ", "Hi there", "hii",
-                   "start", "restart", "menu", "namaste", "Good Morning", "hi."):
-        assert is_greeting(opener), opener
-
-    for real in ("hi my AC is not cooling", "hello there my ac broke", "141001",
-                 "Chandigarh", "history", "highway", "", "   "):
-        assert not is_greeting(real), real
+# Confirmed live on Instagram: a first message got no welcome, and a message
+# sent hours later was answered with the previous conversation's coverage
+# verdict, because the thread remembers its zipcode indefinitely.
+#
+# The trigger is the GAP, not a greeting word: a new or long-idle thread
+# treats whatever arrives next as an opener. Inside the window only /fuvay
+# and /reset restart, so a mid-booking "hi" is ordinary text.
 
 
 def test_every_path_that_starts_a_booking_forgets_the_same_things():
@@ -2477,53 +2466,206 @@ def _gateway(thread, monkeypatch, advance_reply):
 
 
 @pytest.mark.asyncio
-async def test_hi_is_answered_with_the_welcome_not_with_the_next_question(monkeypatch):
-    """A greeting is treated exactly like /fuvay. Before this, "hi" fell
-    through to the booking flow, so a customer's first ever message was
-    answered with a bare "send me your pincode" and no introduction."""
+@pytest.mark.parametrize("opener", ["hi", "Hello", "🙏", "my AC is not cooling",
+                                    "??", "kitna charge hoga"])
+async def test_any_first_message_opens_the_conversation(monkeypatch, opener):
+    """A new thread's first message is an OPENER, whatever it says. Matching a
+    greeting word list missed the customer who starts with an emoji or states
+    the problem outright, and both deserve the same welcome."""
     from app.engines.messaging_gateway.service import GREETING
 
     thread = _Thread()
     gw, sent = _gateway(thread, monkeypatch,
                         lambda _t, ignore_input: "Which pincode?")
 
-    result = await gw.handle_inbound(_inbound("hi"))
+    await gw.handle_inbound(_inbound(opener))
 
-    assert result["command"] == "fuvay"          # routed as an explicit start
     assert len(sent) == 1
-    # The welcome comes FIRST, and the opening question is carried with it, so
-    # the customer does not have to send a second message to get going.
+    # The welcome leads and carries the first question, so the customer does
+    # not have to send a second message to get going.
     assert sent[0].startswith(GREETING.format(name=""))
     assert sent[0].endswith("Which pincode?")
 
 
 @pytest.mark.asyncio
-async def test_a_greeting_carrying_a_real_answer_is_not_a_restart(monkeypatch):
-    """"hi my AC is not cooling" is intent, not an opener. Restarting on it
-    would discard the only thing the customer actually told us."""
+async def test_the_opening_message_is_not_read_as_an_answer(monkeypatch):
+    """The opener is a knock on the door, not an answer. Feeding "hi" to the
+    flow is what produced "that does not look like a pincode" as the very
+    first thing a new customer was ever told."""
     thread = _Thread()
-    gw, sent = _gateway(thread, monkeypatch,
-                        lambda _t, ignore_input: "Which pincode?")
+    seen = {}
 
-    result = await gw.handle_inbound(_inbound("hi my AC is not cooling"))
+    def _reply(_passed, ignore_input):
+        seen["ignored"] = ignore_input
+        return "Which pincode?"
 
-    assert result["command"] is None
-    assert sent == ["Which pincode?"]
+    gw, sent = _gateway(thread, monkeypatch, _reply)
+    await gw.handle_inbound(_inbound("hi"))
+
+    assert seen["ignored"] is True
 
 
 @pytest.mark.asyncio
-async def test_a_greeting_does_not_reverse_a_stop(monkeypatch):
-    """STOP_TEXT names /fuvay as the way back. Re-opening an opt-out on a bare
-    "hi" would make the opt-out one in name only."""
-    thread = _Thread(zipcode="160055", opted_out=True)
+async def test_a_message_after_an_hour_opens_a_new_conversation(monkeypatch):
+    """THE reported bug. The thread remembers its zipcode indefinitely, so a
+    customer whose pincode was uncovered yesterday was answered with that same
+    verdict this morning. After the idle window the area is cleared before the
+    message is read, so the reply is about this conversation, not the last."""
+    from app.engines.messaging_gateway.constants import SESSION_IDLE_TIMEOUT_HOURS
+    from app.engines.messaging_gateway.service import GREETING
+
+    stale = datetime.now(timezone.utc) - timedelta(
+        hours=SESSION_IDLE_TIMEOUT_HOURS, minutes=1)
+    thread = _Thread(zipcode="160055", city="Chandigarh",
+                     ai_session_id=uuid.uuid4(), last_options=["cat|x"],
+                     last_inbound_at=stale)
+
+    seen = {}
+
+    def _reply(passed, _ignore):
+        seen["zipcode"] = passed.zipcode
+        return "Which pincode?"
+
+    gw, sent = _gateway(thread, monkeypatch, _reply)
+    await gw.handle_inbound(_inbound("hi"))
+
+    # Cleared BEFORE the flow runs, so coverage cannot be re-checked against a
+    # pincode from a finished conversation.
+    assert seen["zipcode"] is None
+    assert (thread.zipcode, thread.city) == (None, None)
+    assert thread.last_options is None
+    assert sent[0].startswith(GREETING.format(name=""))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["hi", "hello", "start", "menu"])
+async def test_a_greeting_mid_conversation_is_ordinary_text(monkeypatch, text):
+    """Inside the window nothing restarts. Someone six questions into a
+    booking who types "hi" as a filler line must not lose the booking -- that
+    is what a greeting-word trigger got wrong."""
+    recent = datetime.now(timezone.utc) - timedelta(minutes=10)
+    session = uuid.uuid4()
+    thread = _Thread(zipcode="141001", city="Ludhiana",
+                     ai_session_id=session, last_inbound_at=recent)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which slot?")
+
+    result = await gw.handle_inbound(_inbound(text))
+
+    assert result["command"] is None          # not routed as a start-over
+    assert (thread.zipcode, thread.city) == ("141001", "Ludhiana")
+    assert thread.ai_session_id == session
+    assert sent == ["Which slot?"]            # no welcome, nothing lost
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["/fuvay", "/reset"])
+async def test_only_an_explicit_command_restarts_inside_the_window(monkeypatch, command):
+    """The one way to start over mid-conversation."""
+    from app.engines.messaging_gateway.service import GREETING
+
+    recent = datetime.now(timezone.utc) - timedelta(minutes=10)
+    thread = _Thread(zipcode="141001", city="Ludhiana", last_inbound_at=recent)
 
     gw, sent = _gateway(thread, monkeypatch,
                         lambda _t, ignore_input: "Which pincode?")
 
-    result = await gw.handle_inbound(_inbound("hello"))
+    await gw.handle_inbound(_inbound(command))
 
-    assert result["command"] is None
+    assert (thread.zipcode, thread.city) == (None, None)
+    assert sent[0].startswith(GREETING.format(name=""))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tap", ["pt|req-1|approve", "qt|q-1|approve",
+                                  "tr|BK-1", "cx|BK-1", "pay|p-1|confirm",
+                                  "ho|j-1|acknowledge"])
+async def test_a_durable_action_tap_is_never_swallowed_by_a_welcome(monkeypatch, tap):
+    """A parts approval raised at 2pm and tapped at 5pm is the normal case.
+    Answering it with a welcome would approve nothing and leave the technician
+    waiting, so these taps are not openers however long the gap."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=9)
+    thread = _Thread(zipcode="141001", city="Ludhiana", last_inbound_at=stale)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Approved.")
+
+    msg = _inbound("Approve")
+    msg.reply_id = tap
+    await gw.handle_inbound(msg)
+
+    # The tap reached the flow, and the booking context it refers to survives.
+    assert sent == ["Approved."]
+    assert thread.zipcode == "141001"
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_booking_tap_after_the_window_is_an_opener(monkeypatch):
+    """A category tap from yesterday's list is not a pending question -- it is
+    a new conversation, and must not resume a draft the customer has forgotten
+    about."""
+    from app.engines.messaging_gateway.service import GREETING
+
+    stale = datetime.now(timezone.utc) - timedelta(hours=9)
+    thread = _Thread(zipcode="160055", last_inbound_at=stale)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    msg = _inbound("Home Services")
+    msg.reply_id = "cat|home_services"
+    await gw.handle_inbound(msg)
+
+    assert thread.zipcode is None
+    assert sent[0].startswith(GREETING.format(name=""))
+
+
+@pytest.mark.asyncio
+async def test_going_quiet_does_not_undo_a_stop(monkeypatch):
+    """/stop is durable. STOP_TEXT names /fuvay as the way back, so silence
+    alone must not reopen the channel."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=9)
+    thread = _Thread(zipcode="160055", opted_out=True, last_inbound_at=stale)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    await gw.handle_inbound(_inbound("hello"))
+
     assert sent == []
     assert thread.opted_out is True
 
 
+@pytest.mark.asyncio
+async def test_going_quiet_does_not_talk_over_a_human_agent(monkeypatch):
+    """An agent owns the thread. Timing it out would wipe the context they are
+    working from and put the bot back in the chat."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=9)
+    thread = _Thread(zipcode="160055", city="Chandigarh",
+                     human_handoff=True, last_inbound_at=stale)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    await gw.handle_inbound(_inbound("any update?"))
+
+    assert sent == []
+    assert (thread.zipcode, thread.city) == ("160055", "Chandigarh")
+    assert thread.human_handoff is True
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_command_is_answered_not_welcomed(monkeypatch):
+    """A command carries its own answer. /help after a week is still help."""
+    from app.engines.messaging_gateway.constants import HELP_TEXT
+
+    stale = datetime.now(timezone.utc) - timedelta(days=7)
+    thread = _Thread(last_inbound_at=stale)
+
+    gw, sent = _gateway(thread, monkeypatch,
+                        lambda _t, ignore_input: "Which pincode?")
+
+    await gw.handle_inbound(_inbound("/help"))
+
+    assert sent == [HELP_TEXT]
