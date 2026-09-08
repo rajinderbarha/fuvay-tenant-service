@@ -91,8 +91,8 @@ def test_break_must_be_inside_working_hours():
 def test_exceptions_crud_endpoints_exist():
     assert '@router.get("/availability/exceptions")' in ROUTER_PY
     assert '@router.post("/availability/exceptions"' in ROUTER_PY
-    assert '@router.put("/availability/exceptions/{exception_id}")' in ROUTER_PY
-    assert '@router.delete("/availability/exceptions/{exception_id}")' in ROUTER_PY
+    assert '@router.put("/availability/exceptions/{exception_id}"' in ROUTER_PY
+    assert '@router.delete("/availability/exceptions/{exception_id}"' in ROUTER_PY
 
 
 def test_exception_validation():
@@ -111,29 +111,30 @@ def test_exception_delete_is_soft():
 # ── 4. Booking window ──────────────────────────────────────────────────────────
 def test_booking_window_endpoints_exist():
     assert '@router.get("/booking-window")' in ROUTER_PY
-    assert '@router.put("/booking-window")' in ROUTER_PY
+    assert '@router.put("/booking-window"' in ROUTER_PY
 
 
 def test_booking_window_validation():
-    fn = ROUTER_PY.split("def _validate_booking_window")[1].split("@router.put")[0]
-    assert "INVALID_MINIMUM_NOTICE" in fn
-    assert "INVALID_ADVANCE_BOOKING_DAYS" in fn
-    assert "INVALID_SLOT_DURATION" in fn
-    assert "INVALID_BUFFER_MINUTES" in fn
+    import pytest
+    from app.exceptions import ServiceOSException
+    from app.engines.provider_portal.business_schedule import validate_window, WINDOW_DEFAULTS
+    for field in ("minimum_notice_minutes", "maximum_advance_booking_days", "buffer_minutes_between_jobs"):
+        with pytest.raises(ServiceOSException):
+            validate_window({**WINDOW_DEFAULTS, field: -1})
 
 
-def test_booking_window_defaults_match_ticket():
-    fn = ROUTER_PY.split("async def update_booking_window")[1][:1200]
-    assert '"minimum_notice_minutes": 120' in fn
-    assert '"maximum_advance_booking_days": 7' in fn
-    assert '"slot_duration_minutes": 60' in fn
-    assert '"buffer_minutes_between_jobs": 30' in fn
+def test_booking_window_defaults_use_two_hour_jobs():
+    from app.engines.provider_portal.business_schedule import WINDOW_DEFAULTS
+    assert WINDOW_DEFAULTS["minimum_notice_minutes"] == 120
+    assert WINDOW_DEFAULTS["maximum_advance_booking_days"] == 7
+    assert WINDOW_DEFAULTS["slot_duration_minutes"] == 120
+    assert WINDOW_DEFAULTS["buffer_minutes_between_jobs"] == 30
 
 
 # ── 5. Per-area service/type/brand coverage ───────────────────────────────────
 def test_area_coverage_endpoints_exist():
     assert '@router.get("/service-areas/{area_id}/coverage")' in ROUTER_PY
-    assert '@router.put("/service-areas/{area_id}/coverage")' in ROUTER_PY
+    assert '@router.put("/service-areas/{area_id}/coverage"' in ROUTER_PY
 
 
 def test_area_coverage_validates_service_enabled():

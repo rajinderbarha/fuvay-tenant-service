@@ -990,7 +990,7 @@ async def list_availability(
         # staff view is an effective weekly schedule, not the provider's rule
         # editor, so expose only the newest row for each day.
         select_clause = "SELECT DISTINCT ON (day_of_week) *"
-        order_by = "day_of_week, updated_at DESC, start_time"
+        order_by = "day_of_week, is_active DESC, updated_at DESC, start_time"
     result = await db.execute(
         text(f"{select_clause} FROM provider_availability_rules WHERE {where} ORDER BY {order_by}"),
         params,
@@ -998,7 +998,9 @@ async def list_availability(
     rows = [dict(r._mapping) for r in result.fetchall()]
     if str(user.role) in ("Role.STAFF", "Role.TECHNICIAN", "staff", "technician"):
         from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
+        buffer = (await db.execute(text("SELECT buffer_minutes_between_jobs FROM tenant_booking_window_settings WHERE tenant_id=:tid"), params)).scalar()
         for rule in rows:
+            rule["buffer_minutes_between_jobs"] = 30 if buffer is None else buffer
             rule["provider_daily_limit"] = rule.get("max_jobs_per_day")
             rule["max_jobs_per_day"] = len(_slots_from_rule(rule)) if rule.get("is_active") else 0
             rule["slot_duration_minutes"] = 120
@@ -1066,6 +1068,8 @@ async def _validate_daily_job_capacity(db, tid, rule):
     from app.engines.home_service_booking.provider_slot_service import _slots_from_rule
     from app.engines.vertical_catalog.seat_enforcement import get_seat_usage
     usage = await get_seat_usage(db, tid)
+    buffer = (await db.execute(text("SELECT buffer_minutes_between_jobs FROM tenant_booking_window_settings WHERE tenant_id=:tid"), {"tid": str(tid)})).scalar()
+    rule = {**rule, "buffer_minutes_between_jobs": 30 if buffer is None else buffer}
     maximum = len(_slots_from_rule(rule)) * min(usage["entitled_seats"], usage["used_seats"])
     requested = rule["max_jobs_per_day"]
     if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1 or requested > maximum:
@@ -1143,6 +1147,23 @@ async def list_availability_exceptions(
         {"tid": str(tid)})
     rows = [dict(r._mapping) for r in result.fetchall()]
     return ok({"exceptions": rows, "count": len(rows)}, request_id=rid)
+
+
+@router.put("/availability/schedule", dependencies=[Depends(enforce_setup_sequence)])
+async def save_business_schedule(
+    payload: dict, request: Request, db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(require_tenant_owner_mutation),
+):
+    from app.engines.provider_portal.business_schedule import save_week
+    tid = _tid(user)
+    rid = getattr(request.state, "request_id", "-")
+    result = await save_week(db, tid, payload)
+    await record_platform_audit(db, operation="provider_schedule.saved", engine_id="provider_portal",
+        tenant_id=tid, entity_type="business_schedule", entity_id=str(tid),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={"open_days": [r["day_of_week"] for r in result["rules"] if r["is_active"]]})
+    await db.commit()
+    return ok(result, request_id=rid)
 
 
 @router.get("/availability/{rule_id}")
@@ -1348,21 +1369,10 @@ async def get_booking_window(
     else:
         data = {
             "tenant_id": str(tid), "minimum_notice_minutes": 120, "maximum_advance_booking_days": 7,
-            "slot_duration_minutes": 60, "buffer_minutes_between_jobs": 30,
+            "slot_duration_minutes": 120, "buffer_minutes_between_jobs": 30,
             "allow_same_day_booking": True, "emergency_booking_allowed": False, "timezone": "Asia/Kolkata",
         }
     return ok(data, request_id=rid)
-
-
-def _validate_booking_window(payload: dict) -> None:
-    if payload.get("minimum_notice_minutes") is not None and payload["minimum_notice_minutes"] < 0:
-        raise ServiceOSException("INVALID_MINIMUM_NOTICE", "minimum_notice_minutes must be >= 0.", status_code=422)
-    if payload.get("maximum_advance_booking_days") is not None and payload["maximum_advance_booking_days"] < 1:
-        raise ServiceOSException("INVALID_ADVANCE_BOOKING_DAYS", "maximum_advance_booking_days must be >= 1.", status_code=422)
-    if payload.get("slot_duration_minutes") is not None and payload["slot_duration_minutes"] <= 0:
-        raise ServiceOSException("INVALID_SLOT_DURATION", "slot_duration_minutes must be > 0.", status_code=422)
-    if payload.get("buffer_minutes_between_jobs") is not None and payload["buffer_minutes_between_jobs"] < 0:
-        raise ServiceOSException("INVALID_BUFFER_MINUTES", "buffer_minutes_between_jobs must be >= 0.", status_code=422)
 
 
 @router.put("/booking-window", dependencies=[Depends(enforce_setup_sequence)])
@@ -1373,37 +1383,11 @@ async def update_booking_window(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    _validate_booking_window(payload)
-    defaults = {
-        "minimum_notice_minutes": 120, "maximum_advance_booking_days": 7, "slot_duration_minutes": 60,
-        "buffer_minutes_between_jobs": 30, "allow_same_day_booking": True,
-        "emergency_booking_allowed": False, "timezone": "Asia/Kolkata",
-    }
-    merged = {**defaults, **payload}
-    existing = (await db.execute(
-        text("SELECT id FROM tenant_booking_window_settings WHERE tenant_id=:tid"), {"tid": str(tid)})).fetchone()
-    if existing:
-        await db.execute(text("""
-            UPDATE tenant_booking_window_settings SET
-                minimum_notice_minutes=:mn, maximum_advance_booking_days=:mad, slot_duration_minutes=:sd,
-                buffer_minutes_between_jobs=:bm, allow_same_day_booking=:sdb,
-                emergency_booking_allowed=:eba, timezone=:tz, updated_at=now()
-            WHERE tenant_id=:tid
-        """), {"tid": str(tid), "mn": merged["minimum_notice_minutes"], "mad": merged["maximum_advance_booking_days"],
-                "sd": merged["slot_duration_minutes"], "bm": merged["buffer_minutes_between_jobs"],
-                "sdb": merged["allow_same_day_booking"], "eba": merged["emergency_booking_allowed"], "tz": merged["timezone"]})
-    else:
-        await db.execute(text("""
-            INSERT INTO tenant_booking_window_settings
-                (tenant_id, minimum_notice_minutes, maximum_advance_booking_days, slot_duration_minutes,
-                 buffer_minutes_between_jobs, allow_same_day_booking, emergency_booking_allowed, timezone)
-            VALUES (:tid, :mn, :mad, :sd, :bm, :sdb, :eba, :tz)
-        """), {"tid": str(tid), "mn": merged["minimum_notice_minutes"], "mad": merged["maximum_advance_booking_days"],
-                "sd": merged["slot_duration_minutes"], "bm": merged["buffer_minutes_between_jobs"],
-                "sdb": merged["allow_same_day_booking"], "eba": merged["emergency_booking_allowed"], "tz": merged["timezone"]})
+    from app.engines.provider_portal.business_schedule import persist_window
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"business-schedule:{tid}"})
+    updated = await persist_window(db, tid, payload)
     await db.commit()
-    row = await db.execute(text("SELECT * FROM tenant_booking_window_settings WHERE tenant_id=:tid"), {"tid": str(tid)})
-    return ok(dict(row.fetchone()._mapping), request_id=rid)
+    return ok(updated, request_id=rid)
 
 
 # ── Per-Area Service / Type / Brand Coverage (HS5B) ──────────────────────────

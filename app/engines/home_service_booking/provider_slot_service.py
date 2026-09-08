@@ -166,10 +166,10 @@ def _window_label(start: dt.time, end: dt.time) -> str:
 
 async def _provider_rules_for_day(db: AsyncSession, tenant_id: uuid.UUID, dow: int) -> list[dict]:
     rows = (await db.execute(text(
-        "SELECT * FROM provider_availability_rules "
-        "WHERE tenant_id=:tid AND scope_type='provider' AND scope_id IS NULL "
-        "AND day_of_week=:dow AND is_active=true "
-        "ORDER BY start_time"
+        "SELECT r.*, COALESCE(w.buffer_minutes_between_jobs,30) AS buffer_minutes_between_jobs "
+        "FROM provider_availability_rules r LEFT JOIN tenant_booking_window_settings w ON w.tenant_id=r.tenant_id "
+        "WHERE r.tenant_id=:tid AND r.scope_type='provider' AND r.scope_id IS NULL "
+        "AND r.day_of_week=:dow AND r.is_active=true ORDER BY r.start_time"
     ), {"tid": str(tenant_id), "dow": dow})).fetchall()
     return [dict(r._mapping) for r in rows]
 
@@ -177,7 +177,7 @@ async def _provider_rules_for_day(db: AsyncSession, tenant_id: uuid.UUID, dow: i
 async def _is_closed(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> bool:
     row = (await db.execute(text(
         "SELECT full_day_closed FROM tenant_availability_exceptions "
-        "WHERE tenant_id=:tid AND date=:d AND status='active'"
+        "WHERE tenant_id=:tid AND date=:d AND status='active' AND full_day_closed=true LIMIT 1"
     ), {"tid": str(tenant_id), "d": day})).fetchone()
     return bool(row and row._mapping.get("full_day_closed"))
 
@@ -218,7 +218,7 @@ def _slots_from_rule(rule: dict) -> list[tuple[dt.time, dt.time]]:
             cursor = dt.datetime.combine(cursor.date(), break_end)
             continue
         slots.append((cursor.time(), nxt.time()))
-        cursor = nxt
+        cursor = nxt + dt.timedelta(minutes=max(0, int(rule.get("buffer_minutes_between_jobs") or 0)))
     return slots
 
 

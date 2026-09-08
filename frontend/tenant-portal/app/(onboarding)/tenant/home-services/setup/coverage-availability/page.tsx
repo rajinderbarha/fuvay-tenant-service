@@ -14,7 +14,8 @@ import {
   type BookingWindowSettings, type AvailabilityException,
 } from "../../../../../../lib/api";
 import { topupApi } from "../../../../../../lib/api-topup";
-import { twoHourWindows, allocateDailySlots } from "../../../../../../lib/booking-capacity";
+import { WeeklyScheduleEditor } from "../../../../../../components/availability/WeeklyScheduleEditor";
+import { scheduleDraft, schedulePayload, dayError, businessDate, type DayDraft } from "../../../../../../lib/coverage-schedule";
 
 const SETUP_STEPS = [
   "business-profile", "documents", "services-pricing",
@@ -43,19 +44,26 @@ function CoverageAvailabilityWorkspace() {
   const [areas, setAreas] = useState<ProviderServiceArea[] | null>(null);
   const [rules, setRules] = useState<ProviderAvailabilityRule[] | null>(null);
   const [bookingWindow, setBookingWindow] = useState<BookingWindowSettings | null>(null);
+  const [days, setDays] = useState<DayDraft[]>([]);
+  const [windowDraft, setWindowDraft] = useState<BookingWindowSettings | null>(null);
+  const [notice, setNotice] = useState("");
+  const [exceptionSaving, setExceptionSaving] = useState(false);
   const [exceptions, setExceptions] = useState<AvailabilityException[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [technicianCapacity, setTechnicianCapacity] = useState<number | null>(null);
-  const [previewDay, setPreviewDay] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [previewDay, setPreviewDay] = useState(() => businessDate());
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [slotPreview, setSlotPreview] = useState<Awaited<ReturnType<typeof providerAvailabilityApi.slotPreview>> | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewRevision, setPreviewRevision] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setPreviewLoading(true);
+    setSlotPreview(null);
     const refresh = () => providerAvailabilityApi.slotPreview(previewDay).then(data => {
-      if (!cancelled) { setSlotPreview(data); setPreviewError(""); }
-    }).catch(() => { if (!cancelled) { setSlotPreview(null); setPreviewError("Could not load live slots."); } });
+      if (!cancelled) { setSlotPreview(data); setPreviewError(""); setPreviewLoading(false); }
+    }).catch(() => { if (!cancelled) { setSlotPreview(null); setPreviewLoading(false); setPreviewError("Could not load live slots. Try Refresh slots."); } });
     void refresh();
     const timer = setInterval(() => { void refresh(); }, 30000);
     return () => { cancelled = true; clearInterval(timer); };
@@ -66,7 +74,6 @@ function CoverageAvailabilityWorkspace() {
   const [pincodeNeedsManualLocation, setPincodeNeedsManualLocation] = useState(false);
   const [manualPincodeCity, setManualPincodeCity] = useState("");
   const [manualPincodeState, setManualPincodeState] = useState("");
-  const [savingWindow, setSavingWindow] = useState(false);
   const [newExceptionDate, setNewExceptionDate] = useState("");
   const [newExceptionReason, setNewExceptionReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -74,7 +81,7 @@ function CoverageAvailabilityWorkspace() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([
+    return Promise.all([
       providerServiceAreasApi.list(),
       providerAvailabilityApi.list(),
       bookingWindowApi.get(),
@@ -85,7 +92,9 @@ function CoverageAvailabilityWorkspace() {
         setTechnicianCapacity(Math.min(seats.entitled_seats, seats.used_seats));
         setAreas(a.areas);
         setRules(r.rules);
+        setDays(scheduleDraft(r.rules));
         setBookingWindow(bw);
+        setWindowDraft(bw);
         setExceptions(ex.exceptions);
       })
       .catch((err: unknown) => setError(err instanceof ServiceOSError ? err.message : "We couldn't load your coverage and availability settings."))
@@ -102,6 +111,15 @@ function CoverageAvailabilityWorkspace() {
     return map;
   }, [rules]);
   const openDaysCount = rulesByDay.size;
+  const bufferMinutes = Math.max(0, Number(windowDraft?.buffer_minutes_between_jobs) || 0);
+  const hasUnsavedChanges = JSON.stringify(days) !== JSON.stringify(scheduleDraft(rules ?? [])) || JSON.stringify(windowDraft) !== JSON.stringify(bookingWindow);
+  const dayErrors = days.map(day => dayError(day, technicianCapacity ?? 0, bufferMinutes));
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedChanges]);
 
   async function handleAddPincode() {
     const pin = newPincode.trim();
@@ -168,87 +186,60 @@ function CoverageAvailabilityWorkspace() {
     }
   }
 
-  async function handleToggleDay(dayIdx: number, enabled: boolean) {
-    setError(null);
-    const existing = rulesByDay.get(dayIdx);
-    try {
-      if (enabled) {
-        if (existing) {
-          const updated = await providerAvailabilityApi.update(existing.id, { is_active: true });
-          setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
-        } else {
-          const created = await providerAvailabilityApi.create({
-            scope_type: "provider", day_of_week: dayIdx, start_time: "09:00", end_time: "18:00", slot_duration_minutes: 120,
-          });
-          setRules(list => [...(list ?? []), created]);
-        }
-      } else if (existing) {
-        const updated = await providerAvailabilityApi.update(existing.id, { is_active: false });
-        setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
+  function editDay(dayIdx: number, values: Partial<DayDraft>) {
+    setDays(previous => previous.map(day => day.day_of_week === dayIdx ? { ...day, ...values } : day));
+    setNotice("");
+  }
+
+  function handleCopyMondayToWeekdays() {
+    const monday = days.find(day => day.day_of_week === 1);
+    if (!monday?.is_active) { setError("Open Monday and configure its hours first."); return; }
+    const invalid = dayError(monday, technicianCapacity ?? 0, bufferMinutes);
+    if (invalid) { setError(`Monday: ${invalid}`); return; }
+    setDays(previous => previous.map(day => [2, 3, 4, 5].includes(day.day_of_week)
+      ? { ...monday, day_of_week: day.day_of_week } : day));
+    setError(null); setNotice("Monday's hours, break and daily limit copied to Tuesday–Friday. Save to apply.");
+  }
+
+  function handleBookingWindowChange(field: string, value: string | boolean) {
+    setWindowDraft(previous => ({ ...previous, [field]: value }));
+    setNotice("");
+  }
+
+  async function saveSchedule(): Promise<boolean> {
+    if (!windowDraft) return false;
+    setError(null); setNotice("");
+    const invalidIndex = dayErrors.findIndex(Boolean);
+    if (invalidIndex >= 0) {
+      setError(`${DAYS[invalidIndex].name}: ${dayErrors[invalidIndex]}`);
+      document.getElementById(`schedule-day-${invalidIndex}`)?.scrollIntoView({ block: "center" });
+      return false;
+    }
+    const controls = { ...windowDraft, slot_duration_minutes: 120 };
+    for (const [key, minimum, maximum] of [
+      ["minimum_notice_minutes", 0, 43200], ["maximum_advance_booking_days", 1, 62],
+      ["buffer_minutes_between_jobs", 0, 1440],
+    ] as const) {
+      const value = Number(windowDraft[key]);
+      if (windowDraft[key] === "" || !Number.isInteger(value) || value < minimum || value > maximum) {
+        setError(`${key.replaceAll("_", " ")} must be a whole number between ${minimum} and ${maximum}.`);
+        return false;
       }
-    } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not update this day's schedule.");
+      controls[key] = value;
     }
-  }
-
-  async function handleTimeChange(dayIdx: number, field: "start_time" | "end_time", value: string) {
-    const existing = rulesByDay.get(dayIdx);
-    if (!existing) return;
+    setSaving(true);
     try {
-      const updated = await providerAvailabilityApi.update(existing.id, { [field]: value, slot_duration_minutes: 120 });
-      setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
+      const result = await providerAvailabilityApi.saveSchedule({ rules: schedulePayload(days), booking_window: controls });
+      setRules(result.rules); setDays(scheduleDraft(result.rules));
+      setBookingWindow(result.booking_window); setWindowDraft(result.booking_window);
+      setNotice("Business hours and booking controls saved. Technician schedules and customer slots now use these settings.");
+      setPreviewRevision(value => value + 1);
+      window.dispatchEvent(new Event("home-services-setup-updated"));
+      return true;
     } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not update the schedule time.");
-    }
-  }
-
-  async function handleCopyMondayToWeekdays() {
-    const monday = rulesByDay.get(1);
-    if (!monday) { setError("Configure Monday's hours first."); return; }
-    setError(null);
-    try {
-      for (const dayIdx of [2, 3, 4, 5]) {
-        const existing = rulesByDay.get(dayIdx);
-        if (existing) {
-          await providerAvailabilityApi.update(existing.id, { start_time: monday.start_time, end_time: monday.end_time, slot_duration_minutes: 120, max_jobs_per_day: monday.max_jobs_per_day ?? null, is_active: true });
-        } else {
-          await providerAvailabilityApi.create({ scope_type: "provider", day_of_week: dayIdx, start_time: monday.start_time, end_time: monday.end_time, slot_duration_minutes: 120, max_jobs_per_day: monday.max_jobs_per_day ?? null });
-        }
-      }
-      const r = await providerAvailabilityApi.list();
-      setRules(r.rules);
-    } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not copy Monday's hours.");
-    }
-  }
-
-  async function handleDailyLimit(rule: ProviderAvailabilityRule, value: string) {
-    const maximum = twoHourWindows(rule.start_time, rule.end_time, rule.break_start_time, rule.break_end_time).length * (technicianCapacity ?? 0);
-    const limit = value.trim() ? Number(value) : null;
-    if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > maximum)) {
-      setError(`Daily jobs must be between 1 and ${maximum}, or leave blank for automatic capacity.`);
-      return;
-    }
-    try {
-      const updated = await providerAvailabilityApi.update(rule.id, { max_jobs_per_day: limit, slot_duration_minutes: 120 });
-      setRules(list => (list ?? []).map(r => r.id === updated.id ? updated : r));
-      setError(null);
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not save daily job limit."); }
-  }
-
-  async function handleBookingWindowChange(field: keyof BookingWindowSettings, value: string | boolean | number) {
-    if (!bookingWindow) return;
-    const next = { ...bookingWindow, [field]: value };
-    setBookingWindow(next);
-    setSavingWindow(true);
-    try {
-      const updated = await bookingWindowApi.update({ [field]: value });
-      setBookingWindow(updated);
-    } catch (err) {
-      setError(err instanceof ServiceOSError ? err.message : "Could not save booking controls.");
-    } finally {
-      setSavingWindow(false);
-    }
+      setError(err instanceof Error ? err.message : "Could not save your schedule. Your edits are still here; please retry.");
+      return false;
+    } finally { setSaving(false); }
   }
 
   async function handleAddException() {
@@ -256,7 +247,10 @@ function CoverageAvailabilityWorkspace() {
       setError("Enter a date and a reason for the exception.");
       return;
     }
+    if (newExceptionDate < businessDate(String(windowDraft?.timezone || "Asia/Kolkata"))) { setError("Choose today or a future closure date."); return; }
+    if ((exceptions ?? []).some(ex => ex.date === newExceptionDate)) { setError("A closure is already configured for this date."); return; }
     setError(null);
+    setExceptionSaving(true);
     try {
       const created = await availabilityExceptionsApi.create({
         date: newExceptionDate, reason: newExceptionReason.trim(), full_day_closed: true,
@@ -265,7 +259,7 @@ function CoverageAvailabilityWorkspace() {
       setNewExceptionDate(""); setNewExceptionReason("");
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not add this exception.");
-    }
+    } finally { setExceptionSaving(false); }
   }
 
   async function handleRemoveException(id: string) {
@@ -279,43 +273,16 @@ function CoverageAvailabilityWorkspace() {
   }
 
   function handleBack() {
+    if (hasUnsavedChanges && !confirm("Leave without saving the schedule changes?")) return;
     router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/staff");
   }
 
-  async function handleSaveDraft() {
-    setSaving(true);
-    try {
-      await load();
-    } finally {
-      setSaving(false);
-    }
-  }
+  async function handleSaveDraft() { await saveSchedule(); }
 
   async function handleSaveAndContinue() {
-    if (activeCoverageCount === 0) {
-      setError("Add at least one coverage area before continuing.");
-      return;
-    }
-    if (openDaysCount === 0) {
-      setError("Configure at least one open day before continuing.");
-      return;
-    }
-    setSaving(true);
-    try {
-      // This step owns only coverage, hours and booking controls. Publishing
-      // here made unrelated service-pricing omissions trap the tenant on the
-      // Coverage page. Review & Submit is the single publication boundary and
-      // shows service-specific blockers with the appropriate edit action.
-      for (const rule of rulesByDay.values()) {
-        if (rule.slot_duration_minutes !== 120) await providerAvailabilityApi.update(rule.id, { slot_duration_minutes: 120 });
-      }
-      await bookingWindowApi.update({ slot_duration_minutes: 120 });
-      router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/finance");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save two-hour booking slots.");
-    } finally {
-      setSaving(false);
-    }
+    if (activeCoverageCount === 0) { setError("Add at least one coverage pincode before continuing."); return; }
+    if (!days.some(day => day.is_active)) { setError("Configure at least one open day before continuing."); return; }
+    if (await saveSchedule()) router.push(workspace ? "/dashboard" : "/tenant/home-services/setup/finance");
   }
 
   const readinessChecks = [
@@ -354,7 +321,7 @@ function CoverageAvailabilityWorkspace() {
     );
   }
 
-  if (!areas || !rules || !bookingWindow) return null;
+  if (!areas || !rules || !bookingWindow || !windowDraft) return null;
 
   return (
     <CoverageShell mode={mode}>
@@ -365,11 +332,12 @@ function CoverageAvailabilityWorkspace() {
           <Badge variant={isReady ? "success" : "warning"} size="lg">
             {isReady ? (workspace ? "Coverage setup ready" : "Ready for review") : "Setup incomplete"}
           </Badge>
-          {workspace && <Btn variant="secondary" size="sm" icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>}
+          {workspace && <Btn variant="secondary" size="sm" disabled={saving || hasUnsavedChanges} icon={<RefreshCw size={14}/>} onClick={load}>Refresh</Btn>}
         </div>}
       />
 
       {!workspace && <StepProgressBar step={STEP_NUMBER} total={TOTAL_STEPS} />}
+      {notice && <div role="status" className="cov-notice">{notice}</div>}
 
       {workspace && (
         <KpiGrid minCardWidth={190}>
@@ -392,10 +360,27 @@ function CoverageAvailabilityWorkspace() {
       )}
 
       <style>{`
-        .cov-grid { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 20px; align-items: start; margin-top: 20px; }
+        .cov-grid { display: grid; grid-template-columns: minmax(0,1fr) 280px; gap: 20px; align-items: start; margin-top: 20px; padding-bottom: 20px; }
         @media (max-width: 1000px) { .cov-grid { grid-template-columns: 1fr; } }
-        .cov-day-row { display: grid; grid-template-columns: 120px auto 1fr 1fr; align-items: center; gap: 12px; padding: 8px 0; }
-        @media (max-width: 640px) { .cov-day-row { grid-template-columns: 1fr; } }
+        .cov-day-row { border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:10px; background:var(--surface); }
+        .cov-day-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .cov-day-head label { display:flex; align-items:center; gap:9px; min-height:32px; font-size:13px; cursor:pointer; }
+        .cov-day-head input { width:18px; height:18px; accent-color:var(--brand); }
+        .cov-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; }
+        .cov-field { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--text-secondary); }
+        .cov-field input, .cov-date { width:100%; min-width:0; height:40px; padding:0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-sunken); color:var(--text-primary); font:inherit; box-sizing:border-box; }
+        .cov-field input:focus-visible, .cov-date:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+        .cov-day-error { color:var(--danger-text); font-size:12px; margin:10px 0 0; }
+        .cov-chips { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
+        .cov-chips span { padding:6px 9px; background:var(--accent-muted); color:var(--text-primary); border-radius:8px; font-size:11px; }
+        .cov-hint { font-size:12px; color:var(--text-secondary); line-height:1.6; }
+        .cov-notice { padding:12px 14px; margin-top:16px; border-radius:10px; background:var(--accent-muted); font-size:13px; }
+        .cov-preview-tools { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:14px 0; }
+        .cov-slots { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+        .cov-slot { padding:12px; border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; gap:6px; font-size:12px; }
+        .cov-save-bar { position:sticky; bottom:0; z-index:5; display:flex; gap:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; padding:14px 18px; margin-top:20px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-sm); }
+        .cov-save-bar>div { display:flex; gap:8px; flex-wrap:wrap; }
+        @media (max-width: 640px) { .cov-fields { grid-template-columns:1fr 1fr; } .cov-fields>.cov-field:last-child { grid-column:1/-1; } .cov-grid { gap:14px; } .cov-save-bar>div { width:100%; } .cov-save-bar>div>button { flex:1; } }
       `}</style>
 
       <div className="cov-grid">
@@ -458,81 +443,44 @@ function CoverageAvailabilityWorkspace() {
           <Card style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Weekly business hours</h2>
-              <Btn variant="secondary" size="sm" onClick={handleCopyMondayToWeekdays}>Copy Monday to weekdays</Btn>
+              <Btn variant="secondary" size="sm" disabled={saving} onClick={handleCopyMondayToWeekdays}>Copy Monday to weekdays</Btn>
             </div>
-            <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Timezone: {bookingWindow.timezone}</p>
-            <p>Two-hour jobs · {technicianCapacity ?? 0} active, funded technicians · at most {technicianCapacity ?? 0} simultaneous bookings. Staff and managers do not add booking capacity.</p>
-            {DAYS.map(d => {
-              const rule = rulesByDay.get(d.idx);
-              const enabled = !!rule;
-              const windows = rule ? twoHourWindows(rule.start_time, rule.end_time, rule.break_start_time, rule.break_end_time) : [];
-              const dailyMaximum = windows.length * (technicianCapacity ?? 0);
-              return (
-                <div key={d.idx} className="cov-day-row">
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
-                  <label style={{ position: "relative", display: "inline-block", width: 40, height: 22 }}>
-                    <input type="checkbox" aria-label={`${d.name} open`} checked={enabled} onChange={e => handleToggleDay(d.idx, e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }}/>
-                    <span style={{
-                      position: "absolute", inset: 0, borderRadius: 999, cursor: "pointer",
-                      background: enabled ? "var(--brand)" : "var(--border)",
-                    }}>
-                      <span style={{ position: "absolute", top: 2, left: enabled ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }}/>
-                    </span>
-                  </label>
-                  {enabled ? (
-                    <>
-                      <input type="time" aria-label={`${d.name} opening time`} value={rule!.start_time} onChange={e => handleTimeChange(d.idx, "start_time", e.target.value)}
-                        style={{ height: 34, padding: "0 8px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)" }}/>
-                      <input type="time" aria-label={`${d.name} closing time`} value={rule!.end_time} onChange={e => handleTimeChange(d.idx, "end_time", e.target.value)}
-                        style={{ height: 34, padding: "0 8px", fontSize: 13, background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)" }}/>
-                    </>
-                  ) : <span style={{ fontSize: 13, color: "var(--text-tertiary)", gridColumn: "span 2" }}>Closed</span>}
-                  {enabled && <div style={{ gridColumn: "1 / -1", fontSize: 13, paddingBottom: 12 }}>
-                    <p>{allocateDailySlots(windows, technicianCapacity ?? 0, rule!.max_jobs_per_day).map(slot => `${slot.window}: ${slot.capacity} booking places`).join(" · ") || "No complete two-hour window"}</p>
-                    <p>{windows.length} windows × {technicianCapacity ?? 0} technicians = up to {dailyMaximum} jobs.</p>
-                    <label>Maximum jobs this day (whole business)
-                      <input key={`${rule!.id}:${rule!.max_jobs_per_day ?? "auto"}`} type="number" min={1} max={dailyMaximum || undefined}
-                        aria-label={`${d.name} daily job limit`} defaultValue={rule!.max_jobs_per_day ?? ""} placeholder={`Automatic (${dailyMaximum})`}
-                        onChange={e => { if (Number(e.target.value) > dailyMaximum) e.target.value = String(dailyMaximum); }}
-                        onBlur={e => void handleDailyLimit(rule!, e.target.value)} style={{ marginLeft: 12, width: 160 }} />
-                    </label>
-                  </div>}
-                </div>
-              );
-            })}
+            <WeeklyScheduleEditor days={days} capacity={technicianCapacity ?? 0} buffer={bufferMinutes} timezone={String(windowDraft.timezone)} saving={saving} onChange={editDay}/>
           </Card>
 
           <Card style={{ marginBottom: 20 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: "var(--text-primary)" }}>Live booking places</h2>
-            <label>Preview date <input type="date" value={previewDay} onChange={e => { if (e.target.value) setPreviewDay(e.target.value); }} /></label>
-            <Btn variant="secondary" onClick={() => setPreviewRevision(n => n + 1)}>Refresh slots</Btn>
+            <p className="cov-hint">Saved schedule capacity, including existing bookings. Customer choices also depend on minimum notice and the advance-booking window. Only technicians with verified required documents contribute to live booking capacity.</p>
+            {hasUnsavedChanges && <p className="cov-day-error">Save your edits to update the live preview below.</p>}
+            <div className="cov-preview-tools"><label className="cov-field">Preview date<input className="cov-date" type="date" value={previewDay} onChange={e => { if (e.target.value) setPreviewDay(e.target.value); }}/></label>
+              <Btn variant="secondary" disabled={previewLoading} onClick={() => setPreviewRevision(n => n + 1)}>Refresh slots</Btn></div>
             {previewError && <p role="alert">{previewError}</p>}
-            {slotPreview?.closed ? <p>Closed / holiday — no slots available.</p> : <>
-              <p>{slotPreview?.daily_remaining ?? 0} booking places remaining this day. Counts refresh every 30 seconds.</p>
-              {slotPreview?.slots.map(slot => <p key={slot.time_window}><strong>{slot.time_window}</strong> — {slot.available_slots} slots available ({slot.already_booked} booked / {slot.capacity} capacity)</p>)}
-              {slotPreview?.slots.length === 0 && <p>No bookable slots. Add active, funded technicians and configure business hours.</p>}
-            </>}
+            {previewLoading ? <p role="status">Loading saved booking capacity…</p> : slotPreview && (slotPreview.closed ? <p>Closed day or holiday — no slots available.</p> : <>
+              <p className="cov-hint">{slotPreview.daily_remaining} booking places remaining this day. Counts refresh every 30 seconds.</p>
+              <div className="cov-slots">{slotPreview.slots.map(slot => <div className="cov-slot" key={slot.time_window}><strong>{slot.time_window}</strong><span>{slot.available_slots} places available</span><small>{slot.already_booked} booked / {slot.capacity} capacity</small></div>)}</div>
+              {slotPreview.slots.length === 0 && <p>No complete slots. Check hours, breaks, travel buffer and funded technicians.</p>}
+            </>)}
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "20px 0 14px", color: "var(--text-primary)" }}>Booking controls</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
-              <Input label="Minimum notice (minutes)" type="number" value={String(bookingWindow.minimum_notice_minutes)}
-                onChange={v => handleBookingWindowChange("minimum_notice_minutes", Number(v))}/>
-              <Input label="Advance booking (days)" type="number" value={String(bookingWindow.maximum_advance_booking_days)}
-                onChange={v => handleBookingWindowChange("maximum_advance_booking_days", Number(v))}/>
-              <Input label="Travel buffer (minutes)" type="number" value={String(bookingWindow.buffer_minutes_between_jobs)}
-                onChange={v => handleBookingWindowChange("buffer_minutes_between_jobs", Number(v))}/>
+              <Input label="Minimum notice (minutes)" type="number" disabled={saving} value={String(windowDraft.minimum_notice_minutes)}
+                onChange={v => handleBookingWindowChange("minimum_notice_minutes", v)}/>
+              <Input label="Advance booking (days)" type="number" disabled={saving} value={String(windowDraft.maximum_advance_booking_days)}
+                onChange={v => handleBookingWindowChange("maximum_advance_booking_days", v)}/>
+              <Input label="Travel buffer (minutes)" type="number" disabled={saving} value={String(windowDraft.buffer_minutes_between_jobs)}
+                onChange={v => handleBookingWindowChange("buffer_minutes_between_jobs", v)}/>
             </div>
             <div style={{ display: "flex", gap: 20, marginTop: 16, flexWrap: "wrap" }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-primary)" }}>
-                <input type="checkbox" checked={bookingWindow.allow_same_day_booking}
+                <input type="checkbox" disabled={saving} checked={windowDraft.allow_same_day_booking}
                   onChange={e => handleBookingWindowChange("allow_same_day_booking", e.target.checked)}/>
                 Same-day booking enabled
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-primary)" }}>
-                <input type="checkbox" checked={bookingWindow.emergency_booking_allowed}
+                <input type="checkbox" disabled={saving} checked={windowDraft.emergency_booking_allowed}
                   onChange={e => handleBookingWindowChange("emergency_booking_allowed", e.target.checked)}/>
                 Emergency booking enabled
               </label>
-              {savingWindow && <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Saving…</span>}
+              <p className="cov-hint">Notice hides slots that start too soon. Advance booking limits how far ahead customers can book. Emergency booking waives notice only during open hours; holidays and capacity still apply.</p>
             </div>
           </Card>
 
@@ -540,12 +488,12 @@ function CoverageAvailabilityWorkspace() {
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Schedule exceptions</h2>
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Add holidays or one-time closures.</p>
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-              <input type="date" aria-label="Exception date" value={newExceptionDate} onChange={e => setNewExceptionDate(e.target.value)}
+              <input type="date" disabled={exceptionSaving} aria-label="Exception date" min={businessDate(String(windowDraft.timezone || "Asia/Kolkata"))} value={newExceptionDate} onChange={e => setNewExceptionDate(e.target.value)}
                 style={{ height: 38, padding: "0 10px", fontSize: 13, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)" }}/>
               <div style={{ flex: 1, minWidth: 160 }}>
-                <Input placeholder="Reason (e.g. Independence Day)" value={newExceptionReason} onChange={setNewExceptionReason}/>
+                <Input disabled={exceptionSaving} placeholder="Reason (e.g. Independence Day)" value={newExceptionReason} onChange={setNewExceptionReason}/>
               </div>
-              <Btn variant="secondary" icon={<Plus size={14}/>} onClick={handleAddException}>Add exception</Btn>
+              <Btn variant="secondary" loading={exceptionSaving} icon={<Plus size={14}/>} onClick={handleAddException}>Add exception</Btn>
             </div>
             {(exceptions ?? []).length === 0 ? (
               <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No upcoming exceptions.</p>
@@ -613,15 +561,15 @@ function CoverageAvailabilityWorkspace() {
         </div>
       </div>
 
-      {!workspace && <div style={{
-        position: "sticky", bottom: 0, marginTop: 24, padding: "16px 20px",
-        background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
-        display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap",
-      }}>
-        <Btn variant="secondary" onClick={handleBack}>Back</Btn>
-        <Btn variant="secondary" loading={saving} onClick={handleSaveDraft}>Save draft</Btn>
-        <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>
-      </div>}
+      <div className="cov-save-bar">
+        <span role="status" className="cov-hint">{saving ? "Saving schedule…" : hasUnsavedChanges ? "Unsaved hours or booking controls" : "No unsaved schedule changes"}</span>
+        <div>
+          <Btn variant="secondary" disabled={saving} onClick={handleBack}>Back</Btn>
+          <Btn variant="secondary" disabled={saving || !hasUnsavedChanges} onClick={() => { setDays(scheduleDraft(rules)); setWindowDraft(bookingWindow); setError(null); setNotice(""); }}>Discard edits</Btn>
+          <Btn variant={workspace ? "primary" : "secondary"} loading={saving} onClick={handleSaveDraft}>{workspace ? "Save changes" : "Save draft"}</Btn>
+          {!workspace && <Btn variant="primary" loading={saving} onClick={handleSaveAndContinue}>Save &amp; continue</Btn>}
+        </div>
+      </div>
     </CoverageShell>
   );
 }

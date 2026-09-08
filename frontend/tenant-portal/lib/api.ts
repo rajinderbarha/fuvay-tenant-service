@@ -65,7 +65,7 @@ export function clearSession() {
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 // Type-only import: erased at compile time, so it does not create a runtime
 // require cycle with api-tenant-workspaces.ts (which imports apiFetch here).
-import type { TeamReadinessSummary, ServiceCoverageRow, BusinessProfileOptions } from "./api-tenant-workspaces";
+import type { TeamReadinessSummary, ServiceCoverageRow, BusinessProfileOptions, BookingWindowSettings } from "./api-tenant-workspaces";
 
 const inFlightReads = new Map<string, Promise<unknown>>();
 let sessionRefresh: Promise<string | null> | null = null;
@@ -3042,6 +3042,7 @@ export interface ProviderAvailabilityRule {
   break_end_time?: string | null;
   is_active: boolean;
   created_at: string | null;
+  updated_at?: string | null;
 }
 
 export interface ProviderAvailabilityPayload {
@@ -3054,9 +3055,13 @@ export interface ProviderAvailabilityPayload {
   max_bookings_per_slot?: number | null;
   max_jobs_per_day?: number | null;
   is_active?: boolean;
+  break_start_time?: string | null;
+  break_end_time?: string | null;
 }
 
 export const providerAvailabilityApi = {
+  saveSchedule: (payload: { rules: ProviderAvailabilityPayload[]; booking_window: Record<string, unknown> }) =>
+    apiFetch<{ rules: ProviderAvailabilityRule[]; booking_window: BookingWindowSettings }>("/v1/provider/availability/schedule", { method: "PUT", body: JSON.stringify(payload) }),
   slotPreview: (day: string) => apiFetch<{ date: string; closed: boolean; daily_remaining: number; slots: Array<{ time_window: string; capacity: number; already_booked: number; available_slots: number }> }>(`/v1/provider/availability/slot-preview?day=${encodeURIComponent(day)}`),
   list: () =>
     apiFetch<{ rules: ProviderAvailabilityRule[]; count: number }>("/v1/provider/availability"),

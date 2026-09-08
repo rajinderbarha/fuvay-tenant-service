@@ -1,5 +1,5 @@
 /** Preview only; the server rechecks funded, ready technicians at booking time. */
-export function twoHourWindows(start: string, end: string, breakStart?: string | null, breakEnd?: string | null): string[] {
+export function twoHourWindows(start: string, end: string, breakStart?: string | null, breakEnd?: string | null, bufferMinutes = 0): string[] {
   const minutes = (v: string) => { const [h, m] = v.split(":").map(Number); return h * 60 + m; };
   const label = (v: number) => `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
   const windows: string[] = [];
@@ -10,7 +10,7 @@ export function twoHourWindows(start: string, end: string, breakStart?: string |
       continue;
     }
     windows.push(`${label(cursor)}–${label(cursor + 120)}`);
-    cursor += 120;
+    cursor += 120 + Math.max(0, bufferMinutes || 0);
   }
   return windows;
 }

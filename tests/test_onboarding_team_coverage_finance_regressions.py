@@ -28,7 +28,8 @@ def test_role_conversion_and_owner_reactivation_cannot_bypass_seats():
 
 def test_business_hour_toggle_has_one_mutation_path_and_dynamic_inheritance_copy():
     assert '<span onClick={() => handleToggleDay' not in COVERAGE_PAGE
-    assert "Staff and managers do not add booking capacity" in COVERAGE_PAGE
+    editor = (ROOT / "frontend/tenant-portal/components/availability/WeeklyScheduleEditor.tsx").read_text(encoding="utf-8")
+    assert "Staff and managers do not add booking capacity" in editor
     assert "future schedule edits apply immediately" in (ROOT / "frontend/tenant-portal/components/onboarding/AddTeamMemberWizard.tsx").read_text(encoding="utf-8")
 
 
