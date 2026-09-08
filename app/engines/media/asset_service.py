@@ -81,7 +81,7 @@ class MediaAssetService:
     def __init__(self, db: AsyncSession, actor: UserContext) -> None:
         self.db = db
         self.actor = actor
-        self._storage = MediaStorageService()
+        self._storage = MediaStorageService(db=db)
         self._validation = MediaValidationService()
         self._access = MediaAccessService()
 
@@ -263,7 +263,11 @@ class MediaAssetService:
             from app.cloudinary_client import build_delivery_url
 
             resource_type = "image" if asset.mime_type.startswith("image/") else "raw"
-            return build_delivery_url(asset.storage_key, resource_type), asset.mime_type
+            # storage_bucket holds the exact cloud_name this asset was
+            # uploaded under -- using that instead of re-resolving current
+            # config keeps delivery correct even if the admin later rotates
+            # to a different Cloudinary account.
+            return build_delivery_url(asset.storage_key, resource_type, cloud_name=asset.storage_bucket), asset.mime_type
 
         if asset.public_url and asset.public_url.startswith(("https://", "http://")):
             return asset.public_url, asset.mime_type

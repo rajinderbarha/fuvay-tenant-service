@@ -18,6 +18,8 @@ import structlog
 from dataclasses import dataclass
 from typing import Literal
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import get_settings
 
 logger = structlog.get_logger("media.storage")
@@ -44,26 +46,63 @@ class MediaStorageService:
     and no explicit FILE_STORAGE_DRIVER is set).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        """`db` lets store_file() prefer the admin-configured, encrypted
+        Cloudinary channel (super admin -> Notification & Provider Settings,
+        same pattern as Razorpay/WhatsApp) over the static CLOUDINARY_* env
+        vars -- see _resolve_cloudinary_credentials. Pass the request's
+        session so a live admin-console rotation takes effect immediately,
+        with no restart. Callers with no request session (e.g. a background
+        job reading a local path) can omit it and fall back to env-only."""
+        self._db = db
         self._settings = get_settings()
-        self._driver: StorageDriver = self._resolve_driver()
-        self._document_driver: StorageDriver = self._resolve_document_driver()
+        self._driver, self._driver_pinned = self._resolve_driver()
+        self._document_driver, self._document_driver_pinned = self._resolve_document_driver()
 
-    def _resolve_driver(self) -> StorageDriver:
+    def _resolve_driver(self) -> tuple[StorageDriver, bool]:
+        """Returns (driver, pinned). pinned=True means an operator explicitly
+        chose this via FILE_STORAGE_DRIVER -- store_file() must never
+        silently override an explicit choice (e.g. a deliberate "local"),
+        only the auto-selected default."""
         explicit = getattr(self._settings, "FILE_STORAGE_DRIVER", "").strip().lower()
         if explicit in ("local", "s3_compatible", "cloudflare_r2", "cloudinary"):
-            return explicit  # type: ignore[return-value]
-        # Auto-select: prefer Cloudinary if configured
+            return explicit, True  # type: ignore[return-value]
+        # Auto-select: prefer Cloudinary if configured via env. The
+        # admin-configured channel is checked again, per-upload, in
+        # store_file() -- this sync path only covers the env-var case so
+        # __init__ doesn't need to be async.
         from app.cloudinary_client import is_configured as cloudinary_ok
         if cloudinary_ok():
-            return "cloudinary"
-        return "local"
+            return "cloudinary", False
+        return "local", False
 
-    def _resolve_document_driver(self) -> StorageDriver:
+    def _resolve_document_driver(self) -> tuple[StorageDriver, bool]:
         explicit = getattr(self._settings, "FILE_STORAGE_DOCUMENT_DRIVER", "").strip().lower()
         if explicit in ("local", "s3_compatible", "cloudflare_r2", "cloudinary"):
-            return explicit  # type: ignore[return-value]
-        return self._driver
+            return explicit, True  # type: ignore[return-value]
+        return self._driver, self._driver_pinned
+
+    async def _resolve_cloudinary_credentials(self) -> tuple[str, str, str] | None:
+        """Return (cloud_name, api_key, api_secret), preferring the admin-
+        configured channel (only when saved, tested and enabled) over the
+        CLOUDINARY_* env vars. Returns None if neither source is complete."""
+        s = self._settings
+        cloud_name, api_key, api_secret = s.CLOUDINARY_CLOUD_NAME, s.CLOUDINARY_API_KEY, s.CLOUDINARY_API_SECRET
+        if self._db is not None:
+            try:
+                from app.engines.platform_notifications.channel_config_service import channel_config_service
+                active = await channel_config_service.get_active(self._db, "cloudinary")
+            except Exception:
+                logger.warning("media.storage.cloudinary_admin_config_lookup_failed", exc_info=True)
+                active = None
+            if active:
+                config, credentials = active
+                cloud_name = config.get("cloud_name") or cloud_name
+                api_key = config.get("api_key") or api_key
+                api_secret = credentials.get("api_secret") or api_secret
+        if cloud_name and api_key and api_secret:
+            return cloud_name, api_key, api_secret
+        return None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -80,9 +119,25 @@ class MediaStorageService:
         stored_name = f"{secrets.token_hex(12)}{ext}"
         checksum = hashlib.sha256(file_bytes).hexdigest()
 
-        driver = self._driver if mime_type.startswith(("image/", "video/")) else self._document_driver
+        is_image_or_video = mime_type.startswith(("image/", "video/"))
+        driver = self._driver if is_image_or_video else self._document_driver
+        pinned = self._driver_pinned if is_image_or_video else self._document_driver_pinned
+        cloudinary_creds = await self._resolve_cloudinary_credentials()
+        # The admin-configured Cloudinary channel overrides an auto-selected
+        # "local" default the moment it's saved, tested and enabled -- no
+        # restart, no env vars needed. An operator's EXPLICIT FILE_STORAGE_
+        # DRIVER / FILE_STORAGE_DOCUMENT_DRIVER=local (or any other driver)
+        # is a deliberate pin and is never silently overridden.
+        if driver == "local" and not pinned and cloudinary_creds:
+            driver = "cloudinary"
         if driver == "cloudinary":
-            return await self._store_cloudinary(file_bytes, stored_name, media_context, owner_id, checksum)
+            if not cloudinary_creds:
+                from app.exceptions import ServiceOSException
+                raise ServiceOSException(
+                    "MEDIA_STORAGE_NOT_CONFIGURED",
+                    "Cloudinary storage is selected but not configured. Set it up in Notification & Provider Settings, or the CLOUDINARY_* env vars.",
+                )
+            return await self._store_cloudinary(file_bytes, stored_name, media_context, owner_id, checksum, cloudinary_creds)
         if driver in ("s3_compatible", "cloudflare_r2"):
             return await self._store_s3(
                 file_bytes, stored_name, media_context, owner_id, checksum, mime_type, driver
@@ -187,18 +242,20 @@ class MediaStorageService:
 
     async def _store_cloudinary(
         self, file_bytes: bytes, stored_name: str, media_context: str,
-        owner_id: str, checksum: str
+        owner_id: str, checksum: str, credentials: tuple[str, str, str]
     ) -> StoredFile:
-        """Upload directly to Cloudinary via server-side upload (not client-side)."""
+        """Upload directly to Cloudinary via server-side upload (not client-side).
+        `credentials` is (cloud_name, api_key, api_secret) resolved by the
+        caller -- see _resolve_cloudinary_credentials."""
         import httpx
         from app.cloudinary_client import build_upload_params
 
+        cloud_name, api_key, api_secret = credentials
         public_id = f"serviceos/{media_context}/{stored_name}"
-        params = build_upload_params(public_id=public_id)
+        params = build_upload_params(public_id=public_id, cloud_name=cloud_name, api_key=api_key, api_secret=api_secret)
         params.pop("upload_url", None)
 
-        settings = self._settings
-        upload_url = f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/auto/upload"
+        upload_url = f"https://api.cloudinary.com/v1_1/{cloud_name}/auto/upload"
 
         form_data: dict = {k: str(v) for k, v in params.items()}
         files = {"file": (stored_name, file_bytes)}
@@ -234,7 +291,7 @@ class MediaStorageService:
         return StoredFile(
             storage_driver="cloudinary",
             storage_key=storage_key,
-            storage_bucket=settings.CLOUDINARY_CLOUD_NAME,
+            storage_bucket=cloud_name,
             public_url=public_url,
             file_name_stored=stored_name,
             checksum=checksum,
@@ -243,15 +300,18 @@ class MediaStorageService:
     async def _delete_cloudinary(self, storage_key: str) -> bool:
         import httpx
         import hashlib
-        settings = self._settings
+        credentials = await self._resolve_cloudinary_credentials()
+        if not credentials:
+            return False
+        cloud_name, api_key, api_secret = credentials
         timestamp = int(time.time())
-        sign_str = f"public_id={storage_key}&timestamp={timestamp}{settings.CLOUDINARY_API_SECRET}"
+        sign_str = f"public_id={storage_key}&timestamp={timestamp}{api_secret}"
         signature = hashlib.sha1(sign_str.encode()).hexdigest()
-        url = f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/destroy"
+        url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/destroy"
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(url, data={
                 "public_id": storage_key, "timestamp": timestamp,
-                "api_key": settings.CLOUDINARY_API_KEY, "signature": signature,
+                "api_key": api_key, "signature": signature,
             })
         return resp.status_code == 200
 

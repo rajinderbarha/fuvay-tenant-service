@@ -15,9 +15,19 @@ def is_configured() -> bool:
     return bool(s.CLOUDINARY_CLOUD_NAME and s.CLOUDINARY_API_KEY and s.CLOUDINARY_API_SECRET)
 
 
-def build_upload_params(public_id: str, folder: str | None = None) -> dict:
-    """Build signed params for a client-side direct upload to Cloudinary."""
+def build_upload_params(public_id: str, folder: str | None = None,
+                         cloud_name: str | None = None, api_key: str | None = None,
+                         api_secret: str | None = None) -> dict:
+    """Build signed params for a client-side direct upload to Cloudinary.
+
+    Pass cloud_name/api_key/api_secret to sign against the admin-configured
+    channel (see MediaStorageService._resolve_cloudinary_credentials)
+    instead of the static CLOUDINARY_* env vars; omit them to keep the
+    previous env-only behaviour."""
     settings = get_settings()
+    cloud_name = cloud_name or settings.CLOUDINARY_CLOUD_NAME
+    api_key = api_key or settings.CLOUDINARY_API_KEY
+    api_secret = api_secret or settings.CLOUDINARY_API_SECRET
     timestamp = int(time.time())
 
     sign_params = {"public_id": public_id, "timestamp": timestamp}
@@ -25,11 +35,11 @@ def build_upload_params(public_id: str, folder: str | None = None) -> dict:
         sign_params["folder"] = folder
 
     param_string = "&".join(f"{k}={v}" for k, v in sorted(sign_params.items()))
-    signature = hashlib.sha1((param_string + settings.CLOUDINARY_API_SECRET).encode("utf-8")).hexdigest()
+    signature = hashlib.sha1((param_string + api_secret).encode("utf-8")).hexdigest()
 
     return {
-        "upload_url": f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/auto/upload",
-        "api_key": settings.CLOUDINARY_API_KEY,
+        "upload_url": f"https://api.cloudinary.com/v1_1/{cloud_name}/auto/upload",
+        "api_key": api_key,
         "timestamp": timestamp,
         "signature": signature,
         "public_id": public_id,
@@ -37,7 +47,7 @@ def build_upload_params(public_id: str, folder: str | None = None) -> dict:
     }
 
 
-def build_delivery_url(public_id: str, resource_type: str = "image") -> str:
+def build_delivery_url(public_id: str, resource_type: str = "image", cloud_name: str | None = None) -> str:
     """Delivery URL for an already-uploaded asset.
 
     For `image` and `video`, Cloudinary treats the format as SEPARATE from the
@@ -51,10 +61,12 @@ def build_delivery_url(public_id: str, resource_type: str = "image") -> str:
     not be repeated.
     """
     settings = get_settings()
-    return f"https://res.cloudinary.com/{settings.CLOUDINARY_CLOUD_NAME}/{resource_type}/upload/{public_id}"
+    cloud_name = cloud_name or settings.CLOUDINARY_CLOUD_NAME
+    return f"https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{public_id}"
 
 
-async def destroy(public_id: str, resource_type: str = "image") -> dict:
+async def destroy(public_id: str, resource_type: str = "image", cloud_name: str | None = None,
+                   api_key: str | None = None, api_secret: str | None = None) -> dict:
     """Permanently delete an asset from Cloudinary.
 
     Signed the same documented SHA-1 way as the upload params above, so this
@@ -69,21 +81,23 @@ async def destroy(public_id: str, resource_type: str = "image") -> dict:
     import httpx
 
     settings = get_settings()
-    if not is_configured():
+    cloud_name = cloud_name or settings.CLOUDINARY_CLOUD_NAME
+    api_key = api_key or settings.CLOUDINARY_API_KEY
+    api_secret = api_secret or settings.CLOUDINARY_API_SECRET
+    if not (cloud_name and api_key and api_secret):
         return {"result": "skipped", "reason": "cloudinary_not_configured"}
 
     timestamp = int(time.time())
-    to_sign = f"public_id={public_id}&timestamp={timestamp}{settings.CLOUDINARY_API_SECRET}"
+    to_sign = f"public_id={public_id}&timestamp={timestamp}{api_secret}"
     signature = hashlib.sha1(to_sign.encode()).hexdigest()  # noqa: S324 -- Cloudinary's scheme
 
-    url = (f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}"
-           f"/{resource_type}/destroy")
+    url = f"https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/destroy"
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(url, data={
                 "public_id": public_id,
                 "timestamp": timestamp,
-                "api_key": settings.CLOUDINARY_API_KEY,
+                "api_key": api_key,
                 "signature": signature,
             })
         payload = response.json()

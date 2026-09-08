@@ -69,13 +69,22 @@ PROVIDER_DEFINITIONS: dict[str, dict] = {
             {"key": "webhook_secret", "label": "Webhook secret (optional)", "type": "password", "required": False, "secret": True, "placeholder": "Enter to enable webhook signature verification"},
         ],
     },
+    "cloudinary": {
+        "provider": "Cloudinary", "description": "Media storage/CDN for uploaded photos, logos and icons (provider logos, service icons, business documents).", "managed": True,
+        "fields": [
+            {"key": "cloud_name", "label": "Cloud name", "type": "text", "required": True, "secret": False, "placeholder": "your-cloud-name"},
+            {"key": "api_key", "label": "API key", "type": "text", "required": True, "secret": False, "placeholder": "123456789012345"},
+            {"key": "api_secret", "label": "API secret", "type": "password", "required": True, "secret": True, "placeholder": "Enter to set or rotate"},
+        ],
+    },
 }
 
-# Channels here are payment/integration providers, not notification delivery
-# channels -- kept out of ALL_CHANNELS (which notification dispatch iterates
-# to actually send messages) but they share the same encrypted-config
-# lifecycle (save/test/enable/audit), so they live in PROVIDER_DEFINITIONS.
-NON_NOTIFICATION_CHANNELS = {"razorpay"}
+# Channels here are payment/storage/integration providers, not notification
+# delivery channels -- kept out of ALL_CHANNELS (which notification dispatch
+# iterates to actually send messages) but they share the same encrypted-
+# config lifecycle (save/test/enable/audit), so they live in
+# PROVIDER_DEFINITIONS.
+NON_NOTIFICATION_CHANNELS = {"razorpay", "cloudinary"}
 
 PLATFORM_CONFIG_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
@@ -207,6 +216,9 @@ class NotificationChannelConfigService:
                 raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Razorpay Key ID must start with rzp_live_ or rzp_test_.", status_code=422)
             if len(str(credentials.get("key_secret", ""))) < 8:
                 raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Enter a valid Razorpay key secret.", status_code=422)
+        if channel == "cloudinary":
+            if len(str(credentials.get("api_secret", ""))) < 8:
+                raise ServiceOSException("CHANNEL_CONFIG_INVALID", "Enter a valid Cloudinary API secret.", status_code=422)
 
     async def save(self, db: AsyncSession, channel: str, values: dict, actor_id: uuid.UUID | None) -> dict:
         if channel not in PROVIDER_DEFINITIONS:
@@ -331,6 +343,19 @@ class NotificationChannelConfigService:
                     return False, f"Razorpay is unreachable (HTTP {response.status_code})."
                 mode = "live" if config["key_id"].startswith("rzp_live_") else "test"
                 return True, f"Razorpay authentication succeeded ({mode} mode)."
+            if channel == "cloudinary":
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(
+                        f"https://api.cloudinary.com/v1_1/{config['cloud_name']}/usage",
+                        auth=(config["api_key"], credentials["api_secret"]),
+                    )
+                if response.status_code == 401:
+                    return False, "Cloudinary rejected the cloud name / API key / API secret."
+                if response.status_code == 404:
+                    return False, "No Cloudinary account found for that cloud name."
+                if response.status_code >= 500:
+                    return False, f"Cloudinary is unreachable (HTTP {response.status_code})."
+                return True, "Cloudinary authentication succeeded."
         except Exception as exc:
             return False, f"Connection failed: {str(exc)[:350]}"
         return False, "Unsupported provider test."

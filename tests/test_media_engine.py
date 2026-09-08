@@ -259,6 +259,14 @@ async def test_storage_routes_images_to_cloudinary_and_documents_to_override(mon
 
     monkeypatch.setenv("FILE_STORAGE_DRIVER", "cloudinary")
     monkeypatch.setenv("FILE_STORAGE_DOCUMENT_DRIVER", "local")
+    # store_file() now resolves real credentials before attempting a
+    # Cloudinary upload (admin-configured channel, falling back to these env
+    # vars) and raises a clear MEDIA_STORAGE_NOT_CONFIGURED error instead of
+    # calling out with a blank cloud name -- so a routing-only test needs
+    # something for it to resolve.
+    monkeypatch.setenv("CLOUDINARY_CLOUD_NAME", "demo-cloud")
+    monkeypatch.setenv("CLOUDINARY_API_KEY", "demo-key")
+    monkeypatch.setenv("CLOUDINARY_API_SECRET", "demo-secret")
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     svc = MediaStorageService()
@@ -343,6 +351,7 @@ async def test_remote_cloudinary_delivery_is_access_checked(monkeypatch):
     asset = SimpleNamespace(
         storage_driver="cloudinary",
         storage_key="booking_photo/customer/photo.jpg",
+        storage_bucket="demo-cloud",
         mime_type="image/jpeg",
         public_url=None,
     )
@@ -352,7 +361,7 @@ async def test_remote_cloudinary_delivery_is_access_checked(monkeypatch):
 
     monkeypatch.setattr(
         "app.cloudinary_client.build_delivery_url",
-        lambda key, resource_type: f"https://cdn.test/{resource_type}/{key}",
+        lambda key, resource_type, cloud_name=None: f"https://cdn.test/{resource_type}/{key}",
     )
 
     url, mime_type = await svc.get_remote_url_for_serve(media_id)
