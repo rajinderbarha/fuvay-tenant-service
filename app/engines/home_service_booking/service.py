@@ -1739,7 +1739,8 @@ class HomeServiceChatbotBookingService:
         bookable_row = (await self.db.execute(
             text(
                 "SELECT is_bookable FROM provider_visibility_statuses "
-                "WHERE tenant_id = :tid ORDER BY created_at DESC LIMIT 1"
+                "WHERE tenant_id = :tid AND category_id IS NULL "
+                "ORDER BY created_at DESC, id DESC LIMIT 1"
             ),
             {"tid": str(draft.selected_tenant_id)},
         )).first()

@@ -11,7 +11,9 @@ from sqlalchemy import column, select, table
 
 _PROVIDER_VISIBILITY_STATUSES = table(
     "provider_visibility_statuses",
+    column("id"),
     column("tenant_id"),
+    column("category_id"),
     column("is_bookable"),
     column("created_at"),
 )
@@ -26,8 +28,14 @@ def latest_provider_bookable(tenant_id_column):
     """
     latest_value = (
         select(_PROVIDER_VISIBILITY_STATUSES.c.is_bookable)
-        .where(_PROVIDER_VISIBILITY_STATUSES.c.tenant_id == tenant_id_column)
-        .order_by(_PROVIDER_VISIBILITY_STATUSES.c.created_at.desc())
+        .where(
+            _PROVIDER_VISIBILITY_STATUSES.c.tenant_id == tenant_id_column,
+            _PROVIDER_VISIBILITY_STATUSES.c.category_id.is_(None),
+        )
+        .order_by(
+            _PROVIDER_VISIBILITY_STATUSES.c.created_at.desc(),
+            _PROVIDER_VISIBILITY_STATUSES.c.id.desc(),
+        )
         .limit(1)
         .correlate_except(_PROVIDER_VISIBILITY_STATUSES)
         .scalar_subquery()

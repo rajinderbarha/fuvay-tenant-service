@@ -518,7 +518,7 @@ async def _passes_full_eligibility_gate(
     # 1. Canonical bookability (HS4B) — single source of truth.
     bookable_row = (await db.execute(text(
         "SELECT is_bookable, bookability_blockers FROM provider_visibility_statuses WHERE tenant_id=:tid "
-        "ORDER BY created_at DESC LIMIT 1"
+        "AND category_id IS NULL ORDER BY created_at DESC, id DESC LIMIT 1"
     ), {"tid": str(tenant_id)})).fetchone()
     if not bookable_row or not bookable_row.is_bookable:
         # HS9B — surface the more specific INSUFFICIENT_USAGE_CREDITS
@@ -1008,7 +1008,13 @@ async def get_area_market_comparison(
         FROM provider_enabled_offerings peo
         JOIN tenants t ON t.id = peo.tenant_id
         JOIN tenant_service_areas tsa ON tsa.tenant_id = t.id
-        JOIN provider_visibility_statuses pvs ON pvs.tenant_id = t.id
+        JOIN LATERAL (
+            SELECT is_bookable
+            FROM provider_visibility_statuses
+            WHERE tenant_id = t.id AND category_id IS NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        ) pvs ON true
         LEFT JOIN service_pricing_rules ps ON ps.master_service_id = peo.offering_id AND ps.is_active = true
         WHERE peo.offering_id = :oid AND peo.is_enabled = true AND peo.status = 'active'
           AND t.status = 'active' AND t.vertical = 'home_services'

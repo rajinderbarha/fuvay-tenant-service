@@ -47,7 +47,15 @@ _ENGINE_DISPLAY = [
 # This replaces the retired health_scores projection. Every source is
 # tenant-scoped before the final join, avoiding row multiplication at scale.
 _PROVIDER_ATTENTION_CTE = """
-    WITH complaint_signal AS (
+    WITH latest_provider_status AS (
+        SELECT DISTINCT ON (tenant_id)
+               tenant_id, is_visible, is_bookable,
+               visibility_blockers, bookability_blockers,
+               created_at, id
+        FROM provider_visibility_statuses
+        WHERE category_id IS NULL
+        ORDER BY tenant_id, created_at DESC, id DESC
+    ), complaint_signal AS (
         SELECT tenant_id,
                COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled')) AS open_count,
                COUNT(*) FILTER (
@@ -70,6 +78,7 @@ _PROVIDER_ATTENTION_CTE = """
         SELECT t.id, COALESCE(t.business_name, t.tenant_name, t.tenant_code, 'Unnamed provider') AS business_name,
                t.vertical, t.updated_at,
                COALESCE(pvs.is_bookable, false) AS is_bookable,
+               COALESCE(pvs.bookability_blockers, '[]'::jsonb) AS bookability_blockers,
                COALESCE(tb.credit_balance, 0) AS credit_balance,
                COALESCE(cs.open_count, 0) AS open_complaints,
                COALESCE(cs.overdue_count, 0) AS overdue_complaints,
@@ -81,7 +90,7 @@ _PROVIDER_ATTENTION_CTE = """
                  ELSE 'normal'
                END AS risk_level
         FROM tenants t
-        LEFT JOIN provider_visibility_statuses pvs ON pvs.tenant_id = t.id
+        LEFT JOIN latest_provider_status pvs ON pvs.tenant_id = t.id
         LEFT JOIN tenant_billing tb ON tb.tenant_id = t.id
         LEFT JOIN complaint_signal cs ON cs.tenant_id = t.id
         LEFT JOIN deduction_signal ds ON ds.tenant_id = t.id
@@ -129,8 +138,8 @@ class DashboardCommandCenterService:
     async def get_executive_summary(self, **filters) -> dict[str, Any]:
         rows = await _safe_rows(self.db, _PROVIDER_ATTENTION_CTE + """
             SELECT
-              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active') AS active_tenants,
-              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active' AND created_at > NOW()-INTERVAL '30 days') AS new_tenants,
+              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active' AND terminated_at IS NULL AND archived_at IS NULL) AS active_tenants,
+              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active' AND terminated_at IS NULL AND archived_at IS NULL AND created_at > NOW()-INTERVAL '30 days') AS new_tenants,
               (SELECT COUNT(*) FROM provider_signals WHERE is_bookable=true) AS bookable,
               (SELECT COUNT(*) FROM service_jobs WHERE status NOT IN ('completed','cancelled')) AS live_jobs,
               (SELECT COUNT(*) FROM service_bookings WHERE created_at>=CURRENT_DATE AND created_at<CURRENT_DATE+INTERVAL '1 day') AS today_bookings,
@@ -228,11 +237,22 @@ class DashboardCommandCenterService:
             "SELECT COUNT(*) FROM tenants WHERE verification_status IN ('approved','verified') AND updated_at > NOW() - INTERVAL '7 days'")
         suspended = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE status = 'suspended'")
         bookable = await _safe_count(self.db, """
-            SELECT COUNT(*) FROM tenants t JOIN provider_visibility_statuses p ON p.tenant_id=t.id
-            WHERE t.vertical='home_services' AND t.status='active' AND p.is_bookable=true
+            SELECT COUNT(*) FROM tenants t
+            JOIN (
+                SELECT DISTINCT ON (tenant_id) tenant_id, is_bookable
+                FROM provider_visibility_statuses
+                WHERE category_id IS NULL
+                ORDER BY tenant_id, created_at DESC, id DESC
+            ) p ON p.tenant_id=t.id
+            WHERE t.vertical='home_services' AND t.status='active'
+              AND t.terminated_at IS NULL AND t.archived_at IS NULL
+              AND p.is_bookable=true
         """)
-        active_hs = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active'")
+        active_hs = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM tenants
+            WHERE vertical='home_services' AND status='active'
+              AND terminated_at IS NULL AND archived_at IS NULL
+        """)
         non_bookable = max(active_hs - bookable, 0)
 
         return {
@@ -487,9 +507,15 @@ class DashboardCommandCenterService:
         """, {"limit": limit})
         items = []
         for r in rows:
+            blockers = r.get("bookability_blockers") or []
+            blocker_reason = next((
+                str(blocker.get("message"))
+                for blocker in blockers
+                if isinstance(blocker, dict) and blocker.get("message")
+            ), None)
             reason = ("Missing completed-job deduction" if r.get("missing_deductions") else
                       "Complaint response SLA breached" if r.get("overdue_complaints") else
-                      "Provider is not bookable" if not r.get("is_bookable") else
+                      (blocker_reason or "Provider is not bookable") if not r.get("is_bookable") else
                       "Open customer complaint" if r.get("open_complaints") else
                       "Usage credit balance below 500")
             items.append({
@@ -522,12 +548,22 @@ class DashboardCommandCenterService:
     # established earlier this session — see HOME_SERVICES_MENU_ORGANIZATION_REPORT.md.
 
     async def get_home_services_summary(self) -> dict[str, Any]:
-        hs_providers = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM tenants WHERE vertical = 'home_services'")
+        hs_providers = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM tenants
+            WHERE vertical = 'home_services' AND status = 'active'
+              AND terminated_at IS NULL AND archived_at IS NULL
+        """)
         bookable = await _safe_count(self.db, """
             SELECT COUNT(*) FROM tenants t
-            JOIN provider_visibility_statuses pvs ON pvs.tenant_id = t.id
-            WHERE t.vertical = 'home_services' AND pvs.is_bookable = true
+            JOIN (
+                SELECT DISTINCT ON (tenant_id) tenant_id, is_bookable
+                FROM provider_visibility_statuses
+                WHERE category_id IS NULL
+                ORDER BY tenant_id, created_at DESC, id DESC
+            ) pvs ON pvs.tenant_id = t.id
+            WHERE t.vertical = 'home_services' AND t.status = 'active'
+              AND t.terminated_at IS NULL AND t.archived_at IS NULL
+              AND pvs.is_bookable = true
         """)
         not_bookable = max(hs_providers - bookable, 0)
 
@@ -652,6 +688,38 @@ class DashboardCommandCenterService:
             "action": r["operation"], "entity_type": r.get("entity_type"), "entity_id": str(r["entity_id"]) if r.get("entity_id") else None,
         } for r in rows]
         return {"items": items}
+
+    async def refresh_provider_bookability(self) -> dict[str, Any]:
+        """Rebuild the derived provider snapshots used by the dashboard.
+
+        Provider detail evaluates readiness live, while dashboard, discovery,
+        and matching deliberately consume a persisted snapshot. Refreshing the
+        command center must therefore rebuild that snapshot rather than merely
+        update a timestamp or refetch stale rows.
+        """
+        from app.engines.provider_portal.router import (
+            _evaluate_provider_bookability,
+            _persist_provider_bookability,
+        )
+
+        rows = (await self.db.execute(text("""
+            SELECT id FROM tenants
+            WHERE vertical='home_services' AND status='active'
+              AND terminated_at IS NULL AND archived_at IS NULL
+            ORDER BY id
+        """))).fetchall()
+        refreshed = 0
+        errors: list[dict[str, str]] = []
+        for row in rows:
+            try:
+                async with self.db.begin_nested():
+                    result = await _evaluate_provider_bookability(self.db, row.id)
+                    await _persist_provider_bookability(self.db, row.id, result)
+                refreshed += 1
+            except Exception as exc:
+                errors.append({"tenant_id": str(row.id), "error": str(exc)})
+        await self.db.flush()
+        return {"refreshed": refreshed, "errors": errors}
 
     # ── Part O: Category Performance ─────────────────────────────────────────
 

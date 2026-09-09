@@ -9461,7 +9461,8 @@ export const dashboardApi = {
     if (params?.date_to) qs.set("date_to", params.date_to);
     return apiFetch<{ items: DashboardCategoryPerformanceItem[] }>(`/v1/admin/dashboard/category-performance?${qs}`);
   },
-  refresh: () => apiFetch<{ refreshed: boolean }>("/v1/admin/dashboard/refresh", { method: "POST" }),
+  refresh: () => apiFetch<{ refreshed: number; errors: { tenant_id: string; error: string }[] }>(
+    "/v1/admin/dashboard/refresh", { method: "POST" }),
   exportSnapshot: () =>
     apiFetch<{ snapshot_id: string; created_at: string }>("/v1/admin/dashboard/export-snapshot", { method: "POST" }),
 };

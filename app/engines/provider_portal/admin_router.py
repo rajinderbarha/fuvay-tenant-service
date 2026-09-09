@@ -844,6 +844,21 @@ async def approve_provider_onboarding(
                 {"tid": str(tenant_id)},
             )
             result["status"] = "pending_activation"
+
+    # Approval/activation changes the primary inputs to bookability.  The
+    # provider detail page evaluates those inputs live, while discovery and
+    # the command-center dashboard read the persisted derived snapshot.  Not
+    # refreshing it here left every newly approved provider carrying the
+    # pre-approval ``false`` value until somebody manually pressed Refresh.
+    await db.flush()
+    from app.engines.provider_portal.router import (
+        _evaluate_provider_bookability,
+        _persist_provider_bookability,
+    )
+    bookability = await _evaluate_provider_bookability(db, tenant_id)
+    bookability = await _persist_provider_bookability(db, tenant_id, bookability)
+    result["is_bookable"] = bookability["is_bookable"]
+    result["bookability_blockers"] = bookability["bookability_blockers"]
     try:
         from app.engines.tenant_engine.notifications import notify_tenant_verification
         is_active = bool(vertical_result and vertical_result.get("status") == "active")
@@ -960,17 +975,20 @@ async def list_bookability(
     user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
-    q = "SELECT pvs.*, t.tenant_name as tenant_name FROM provider_visibility_statuses pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE 1=1"
+    scope_clause = "category_id = :cat_id" if category_id else "category_id IS NULL"
+    q = ("SELECT pvs.*, t.tenant_name as tenant_name FROM ("
+         "SELECT DISTINCT ON (tenant_id) * FROM provider_visibility_statuses "
+         f"WHERE {scope_clause} ORDER BY tenant_id, created_at DESC, id DESC"
+         ") pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE 1=1")
     params: Dict[str, Any] = {}
+    if category_id:
+        params["cat_id"] = category_id
     if is_bookable is not None:
         q += " AND pvs.is_bookable = :bookable"
         params["bookable"] = is_bookable
     if is_visible is not None:
         q += " AND pvs.is_visible = :visible"
         params["visible"] = is_visible
-    if category_id:
-        q += " AND pvs.category_id = :cat_id"
-        params["cat_id"] = category_id
     q += " ORDER BY pvs.last_evaluated_at DESC NULLS LAST LIMIT :lim"
     params["lim"] = limit
     result = await db.execute(text(q), params)
@@ -985,7 +1003,7 @@ async def get_provider_bookability(
     user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
-    row = await db.execute(text("SELECT pvs.*, t.tenant_name as tenant_name FROM provider_visibility_statuses pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE pvs.tenant_id=:tid ORDER BY pvs.created_at DESC LIMIT 1"), {"tid": str(tenant_id)})
+    row = await db.execute(text("SELECT pvs.*, t.tenant_name as tenant_name FROM provider_visibility_statuses pvs LEFT JOIN tenants t ON t.id = pvs.tenant_id WHERE pvs.tenant_id=:tid AND pvs.category_id IS NULL ORDER BY pvs.created_at DESC, pvs.id DESC LIMIT 1"), {"tid": str(tenant_id)})
     r = row.fetchone()
     if not r:
         return ok({"tenant_id": str(tenant_id), "is_visible": False, "is_bookable": False, "visibility_blockers": [], "bookability_blockers": []}, request_id=rid)
@@ -1014,7 +1032,7 @@ async def get_bookability_audit_logs(
 
 async def _get_or_create_visibility_row(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, Any]:
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     r = row.fetchone()
@@ -1054,10 +1072,12 @@ async def refresh_bookability(
     # FINAL-L5-05P: was get_current_user -- gated to super_admin.
     user: UserContext = Depends(require_super_admin),
 ):
-    import json as _json
     # Imported inside the handler: `router` imports admin-side helpers, so a
     # module-level import here would close an import cycle at startup.
-    from app.engines.provider_portal.router import _evaluate_provider_bookability
+    from app.engines.provider_portal.router import (
+        _evaluate_provider_bookability,
+        _persist_provider_bookability,
+    )
 
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
     before = await _get_or_create_visibility_row(db, tenant_id)
@@ -1072,26 +1092,10 @@ async def refresh_bookability(
     # Now runs the SAME evaluator the provider-side POST /v1/provider/status/
     # refresh runs, and persists the result, so both paths agree.
     result = await _evaluate_provider_bookability(db, tenant_id)
-    await db.execute(text("""
-        UPDATE provider_visibility_statuses
-           SET is_visible = :iv,
-               is_bookable = :ib,
-               visibility_blockers  = CAST(:vb AS jsonb),
-               bookability_blockers = CAST(:bb AS jsonb),
-               last_evaluated_at = now(),
-               last_changed_at = CASE
-                   WHEN is_visible IS DISTINCT FROM :iv
-                     OR is_bookable IS DISTINCT FROM :ib THEN now()
-                   ELSE last_changed_at END,
-               updated_at = now()
-         WHERE tenant_id = :tid
-    """), {"tid": str(tenant_id),
-           "iv": result["is_visible"], "ib": result["is_bookable"],
-           "vb": _json.dumps(result["visibility_blockers"]),
-           "bb": _json.dumps(result["bookability_blockers"])})
+    result = await _persist_provider_bookability(db, tenant_id, result)
 
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
@@ -1131,10 +1135,15 @@ async def override_visibility(
         UPDATE provider_visibility_statuses
         SET override_is_visible = :ov, override_visible_reason = :reason,
             is_visible = :ov, last_changed_at = now()
-        WHERE tenant_id = :tid
+        WHERE id = (
+            SELECT id FROM provider_visibility_statuses
+            WHERE tenant_id=:tid AND category_id IS NULL
+            ORDER BY created_at DESC, id DESC LIMIT 1
+        )
     """), {"tid": str(tenant_id), "ov": override, "reason": reason})
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL "
+             "ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
@@ -1155,10 +1164,21 @@ async def remove_visibility_override(
     await db.execute(text("""
         UPDATE provider_visibility_statuses
         SET override_is_visible = NULL, override_visible_reason = NULL, last_changed_at = now()
-        WHERE tenant_id = :tid
+        WHERE id = (
+            SELECT id FROM provider_visibility_statuses
+            WHERE tenant_id=:tid AND category_id IS NULL
+            ORDER BY created_at DESC, id DESC LIMIT 1
+        )
     """), {"tid": str(tenant_id)})
+    from app.engines.provider_portal.router import (
+        _evaluate_provider_bookability,
+        _persist_provider_bookability,
+    )
+    evaluated = await _evaluate_provider_bookability(db, tenant_id)
+    await _persist_provider_bookability(db, tenant_id, evaluated)
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL "
+             "ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
@@ -1194,10 +1214,15 @@ async def override_bookability(
         UPDATE provider_visibility_statuses
         SET override_is_bookable = :ov, override_bookable_reason = :reason,
             is_bookable = :ov, last_changed_at = now()
-        WHERE tenant_id = :tid
+        WHERE id = (
+            SELECT id FROM provider_visibility_statuses
+            WHERE tenant_id=:tid AND category_id IS NULL
+            ORDER BY created_at DESC, id DESC LIMIT 1
+        )
     """), {"tid": str(tenant_id), "ov": override, "reason": reason})
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL "
+             "ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
@@ -1218,10 +1243,21 @@ async def remove_bookability_override(
     await db.execute(text("""
         UPDATE provider_visibility_statuses
         SET override_is_bookable = NULL, override_bookable_reason = NULL, last_changed_at = now()
-        WHERE tenant_id = :tid
+        WHERE id = (
+            SELECT id FROM provider_visibility_statuses
+            WHERE tenant_id=:tid AND category_id IS NULL
+            ORDER BY created_at DESC, id DESC LIMIT 1
+        )
     """), {"tid": str(tenant_id)})
+    from app.engines.provider_portal.router import (
+        _evaluate_provider_bookability,
+        _persist_provider_bookability,
+    )
+    evaluated = await _evaluate_provider_bookability(db, tenant_id)
+    await _persist_provider_bookability(db, tenant_id, evaluated)
     row = await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL "
+             "ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tenant_id)},
     )
     after = dict(row.fetchone()._mapping)
@@ -1246,6 +1282,16 @@ async def bookability_summary(
     user: UserContext = Depends(require_super_admin),
 ):
     rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
-    row = await db.execute(text("SELECT COUNT(*) as total, SUM(CASE WHEN is_bookable THEN 1 ELSE 0 END) as bookable, SUM(CASE WHEN is_visible THEN 1 ELSE 0 END) as visible FROM provider_visibility_statuses"))
+    row = await db.execute(text("""
+        SELECT COUNT(*) as total,
+               SUM(CASE WHEN is_bookable THEN 1 ELSE 0 END) as bookable,
+               SUM(CASE WHEN is_visible THEN 1 ELSE 0 END) as visible
+        FROM (
+            SELECT DISTINCT ON (tenant_id) tenant_id, is_bookable, is_visible
+            FROM provider_visibility_statuses
+            WHERE category_id IS NULL
+            ORDER BY tenant_id, created_at DESC, id DESC
+        ) latest
+    """))
     r = row.fetchone()
     return ok({"total": r[0] or 0, "bookable": r[1] or 0, "visible": r[2] or 0}, request_id=rid)

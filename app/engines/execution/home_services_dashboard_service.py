@@ -403,7 +403,9 @@ async def _tenant_bookability(db: AsyncSession, tid: uuid.UUID) -> dict:
     per-offering rows below layer real technician-coverage on top of this
     single tenant-level gate rather than inventing a competing one."""
     row = (await db.execute(text(
-        "SELECT is_bookable, bookability_blockers FROM provider_visibility_statuses WHERE tenant_id=:tid"
+        "SELECT is_bookable, bookability_blockers FROM provider_visibility_statuses "
+        "WHERE tenant_id=:tid AND category_id IS NULL "
+        "ORDER BY created_at DESC, id DESC LIMIT 1"
     ), {"tid": str(tid)})).fetchone()
     if not row:
         return {"is_bookable": False, "blockers": []}

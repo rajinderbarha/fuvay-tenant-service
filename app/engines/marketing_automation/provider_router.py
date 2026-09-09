@@ -55,8 +55,8 @@ async def provider_visibility_status(
         LEFT JOIN LATERAL (
           SELECT is_bookable, is_visible
           FROM provider_visibility_statuses
-          WHERE tenant_id = t.id
-          ORDER BY created_at DESC
+          WHERE tenant_id = t.id AND category_id IS NULL
+          ORDER BY created_at DESC, id DESC
           LIMIT 1
         ) pvs ON true
         WHERE t.id = :tenant_id

@@ -1908,7 +1908,11 @@ async def get_provider_status(
 ):
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
-    row = await db.execute(text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"), {"tid": str(tid)})
+    row = await db.execute(text(
+        "SELECT * FROM provider_visibility_statuses "
+        "WHERE tenant_id=:tid AND category_id IS NULL "
+        "ORDER BY created_at DESC, id DESC LIMIT 1"
+    ), {"tid": str(tid)})
     r = row.fetchone()
     if r:
         data = dict(r._mapping)
@@ -2169,6 +2173,81 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
     }
 
 
+async def _persist_provider_bookability(
+    db: AsyncSession, tid: uuid.UUID, result: dict,
+) -> dict:
+    """Persist one provider-level derived bookability snapshot.
+
+    ``provider_visibility_statuses`` predates a uniqueness constraint and can
+    contain historical rows.  Update only the latest provider-level row (or
+    create one) so old snapshots remain historical and readers can select the
+    canonical latest value deterministically.
+    """
+    existing = (await db.execute(
+        text(
+            "SELECT id, override_is_visible, override_is_bookable, "
+            "override_visible_reason, override_bookable_reason "
+            "FROM provider_visibility_statuses "
+            "WHERE tenant_id=:tid AND category_id IS NULL "
+            "ORDER BY created_at DESC, id DESC LIMIT 1"
+        ),
+        {"tid": str(tid)},
+    )).fetchone()
+    effective = dict(result)
+    visibility_blockers = list(result["visibility_blockers"])
+    bookability_blockers = list(result["bookability_blockers"])
+    if existing and existing.override_is_visible is False:
+        effective["is_visible"] = False
+        hold = {
+            "code": "ADMIN_VISIBILITY_HOLD",
+            "message": existing.override_visible_reason or "An administrator paused provider visibility.",
+            "severity": "critical",
+            "route": "/support",
+        }
+        visibility_blockers.append(hold)
+        bookability_blockers.append(hold)
+    if existing and existing.override_is_bookable is False:
+        effective["is_bookable"] = False
+        bookability_blockers.append({
+            "code": "ADMIN_BOOKABILITY_HOLD",
+            "message": existing.override_bookable_reason or "An administrator paused new bookings.",
+            "severity": "critical",
+            "route": "/support",
+        })
+    if not effective["is_visible"]:
+        effective["is_bookable"] = False
+    effective["visibility_blockers"] = visibility_blockers
+    effective["bookability_blockers"] = bookability_blockers
+    effective["status"] = (
+        "bookable" if effective["is_bookable"] else
+        "visible_not_bookable" if effective["is_visible"] else
+        "not_visible"
+    )
+    params = {
+        "tid": str(tid),
+        "iv": effective["is_visible"],
+        "ib": effective["is_bookable"],
+        "vb": json.dumps(effective["visibility_blockers"]),
+        "bb": json.dumps(effective["bookability_blockers"]),
+    }
+    if existing:
+        await db.execute(text(
+            "UPDATE provider_visibility_statuses SET is_visible=:iv, is_bookable=:ib, "
+            "visibility_blockers=CAST(:vb AS jsonb), bookability_blockers=CAST(:bb AS jsonb), "
+            "last_evaluated_at=now(), last_changed_at=CASE "
+            "WHEN is_visible IS DISTINCT FROM :iv OR is_bookable IS DISTINCT FROM :ib "
+            "THEN now() ELSE last_changed_at END, updated_at=now() WHERE id=:id"
+        ), {**params, "id": existing.id})
+    else:
+        await db.execute(text(
+            "INSERT INTO provider_visibility_statuses "
+            "(tenant_id, category_id, is_visible, is_bookable, visibility_blockers, "
+            "bookability_blockers, last_evaluated_at, last_changed_at) "
+            "VALUES (:tid, NULL, :iv, :ib, CAST(:vb AS jsonb), CAST(:bb AS jsonb), now(), now())"
+        ), params)
+    return effective
+
+
 @router.post("/status/refresh")
 async def refresh_provider_status(
     request: Request,
@@ -2183,29 +2262,12 @@ async def refresh_provider_status(
 
     result = await _evaluate_provider_bookability(db, tid)
 
-    existing = (await db.execute(
-        text("SELECT id FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
-        {"tid": str(tid)},
-    )).fetchone()
-    if existing:
-        await db.execute(text(
-            "UPDATE provider_visibility_statuses SET is_visible=:iv, is_bookable=:ib, "
-            "visibility_blockers=CAST(:vb AS jsonb), bookability_blockers=CAST(:bb AS jsonb), "
-            "last_evaluated_at=now(), last_changed_at=now(), updated_at=now() WHERE id=:id"
-        ), {"iv": result["is_visible"], "ib": result["is_bookable"],
-            "vb": json.dumps(result["visibility_blockers"]), "bb": json.dumps(result["bookability_blockers"]),
-            "id": existing.id})
-    else:
-        await db.execute(text(
-            "INSERT INTO provider_visibility_statuses "
-            "(tenant_id, is_visible, is_bookable, visibility_blockers, bookability_blockers, last_evaluated_at, last_changed_at) "
-            "VALUES (:tid, :iv, :ib, CAST(:vb AS jsonb), CAST(:bb AS jsonb), now(), now())"
-        ), {"tid": str(tid), "iv": result["is_visible"], "ib": result["is_bookable"],
-            "vb": json.dumps(result["visibility_blockers"]), "bb": json.dumps(result["bookability_blockers"])})
+    result = await _persist_provider_bookability(db, tid, result)
     await db.commit()
 
     row = (await db.execute(
-        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid ORDER BY created_at DESC LIMIT 1"),
+        text("SELECT * FROM provider_visibility_statuses WHERE tenant_id=:tid AND category_id IS NULL "
+             "ORDER BY created_at DESC, id DESC LIMIT 1"),
         {"tid": str(tid)},
     )).fetchone()
     data = dict(row._mapping)

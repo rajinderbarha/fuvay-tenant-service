@@ -177,9 +177,15 @@ async def category_performance(r: Request, date_from: Optional[str] = Query(None
 @router.post("/refresh", summary="Trigger a dashboard refresh (audited)")
 async def refresh(r: Request, db: AsyncSession = Depends(get_db),
                    u: UserContext = Depends(require_permission(P.DASHBOARD_READ))):
+    svc = DashboardCommandCenterService(
+        db, uuid.UUID(u.user_id) if u.user_id else None, u.role, _rid(r)
+    )
+    result = await svc.refresh_provider_bookability()
     await record_platform_audit(db, operation="dashboard.refreshed", engine_id="dashboard_command_center",
-                                 actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role)
-    return ok({"refreshed": True}, _rid(r), "dashboard_command_center")
+                                 actor_id=uuid.UUID(u.user_id) if u.user_id else None, actor_role=u.role,
+                                 after=result)
+    await db.commit()
+    return ok(result, _rid(r), "dashboard_command_center")
 
 
 @router.post("/export-snapshot", summary="Export a dashboard snapshot (audited)")

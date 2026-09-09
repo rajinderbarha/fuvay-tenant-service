@@ -11,7 +11,7 @@ import { TableSurface } from "@serviceos/design-system";
  * in real time." while retaining the same permission boundaries.
  */
 import Link from "next/link";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowRight, Banknote, BellRing, Building2,
   BrainCircuit, CalendarClock, CheckCircle2, ClipboardCheck, Download,
@@ -264,13 +264,35 @@ export default function PlatformCommandCenterPage() {
   const snoozeAction = useAction(useCallback((id: string) => dashboardApi.snoozeAction(id, 24), []));
   const exportAction = useAction(useCallback(() => dashboardApi.exportSnapshot(), []));
   const refreshAction = useAction(useCallback(() => dashboardApi.refresh(), []));
+  const providerSyncStarted = useRef(false);
+
+  useEffect(() => {
+    if (tab !== "providers" || providerSyncStarted.current) return;
+    const timer = window.setTimeout(() => {
+      if (providerSyncStarted.current) return;
+      providerSyncStarted.current = true;
+      void refreshAction.execute().then(result => {
+        if (!result) return;
+        summary.refetch();
+        lifecycle.refetch();
+        atRisk.refetch();
+        const failures = result.errors.length ? ` · ${result.errors.length} failed` : "";
+        setNotice(`${result.refreshed} provider status${result.refreshed === 1 ? "" : "es"} synchronized${failures}`);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // Each dashboard mount synchronizes derived provider status once when the
+    // Providers workspace is first opened; subsequent tab switches only read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   function selectTab(next: Tab) { setTab(next); setNotice(""); const url = new URL(window.location.href); url.searchParams.set("tab", next); window.history.replaceState({}, "", url); }
   async function refresh() {
     const result = await refreshAction.execute(); if (!result) return;
     summary.refetch(); health.refetch();
     ({ overview: [home, trends, requestDemand, actions, activity], operations: [operations, liveOperations, actions], providers: [lifecycle, atRisk], finance: [finance, trends], platform: [engines, compliance, trust, categories] }[tab]).forEach(item => item.refetch());
-    setNotice(`Dashboard refreshed at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+    const failures = result.errors.length ? ` · ${result.errors.length} provider sync failed` : "";
+    setNotice(`Dashboard refreshed at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${failures}`);
   }
   async function exportSnapshot() { const result = await exportAction.execute(); if (result) setNotice(`Snapshot ${result.snapshot_id.slice(0, 8)} saved to the audited export history.`); }
   async function resolve(id: string) { if (await resolveAction.execute(id)) actions.refetch(); }
