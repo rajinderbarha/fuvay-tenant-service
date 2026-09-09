@@ -67,8 +67,18 @@ jobs:
               super-admin tenant-portal public-site \
               postgres-backup
 
-            sleep 15
-
-            curl -fsS http://127.0.0.1:8000/health
+            # The API container may accept a connection before the application
+            # has finished starting. Retry transient resets/refusals so a healthy
+            # rollout is not reported as a failed deployment.
+            curl \
+              --fail \
+              --show-error \
+              --silent \
+              --retry 12 \
+              --retry-delay 5 \
+              --retry-all-errors \
+              --connect-timeout 5 \
+              --max-time 10 \
+              http://127.0.0.1:8000/health
 
             docker image prune -f
