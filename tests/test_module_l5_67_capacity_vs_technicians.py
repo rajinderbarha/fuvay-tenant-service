@@ -81,13 +81,8 @@ class TestCountingTheTeam:
         assert "staff_members" not in sql
 
     @pytest.mark.asyncio
-    async def test_service_and_weekday_do_not_narrow_capacity(self):
-        """The seats a provider buys must be the capacity they get.
-
-        These two filters were the reason billing and capacity disagreed.
-        The arguments are still accepted so existing callers keep working,
-        but they must not reach the query.
-        """
+    async def test_service_narrows_capacity_to_assigned_technicians(self):
+        """Paid seats cap capacity; exact service assignment supplies it."""
         db = self._db(2)
         service_id = uuid.uuid4()
         day = dt.date(2026, 8, 24)  # Monday
@@ -97,10 +92,10 @@ class TestCountingTheTeam:
         assert count == 2
         sql = str(db.execute.await_args.args[0])
         params = db.execute.await_args.args[1]
-        assert "tenant_services" not in sql
-        assert "supported_offering_ids" not in sql
+        assert "tenant_services" in sql
+        assert "supported_offering_ids" in sql
         assert "provider_availability_rules" not in sql
-        assert "msid" not in params
+        assert params["master_service_id"] == str(service_id)
         assert "dow" not in params
 
     @pytest.mark.asyncio

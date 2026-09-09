@@ -123,6 +123,42 @@ class DSService:
         except Exception as e:
             logger.warning("ds.event_failed", error=str(e))
 
+    async def record_provider_matching_observation(
+        self,
+        *,
+        selected_tenant_id: uuid.UUID,
+        entity_id: str | None,
+        inputs: dict,
+        output: dict,
+    ) -> uuid.UUID:
+        """Persist one replayable provider-allocation training observation.
+
+        Matching remains rule-controlled until an administrator activates a
+        separately validated model. Recording through the Data Science engine
+        now gives later training/calibration a real feature and outcome trail
+        instead of inventing historical labels after the fact.
+        """
+        phase = await self._get_ds_phase(selected_tenant_id)
+        model_version = await self._get_active_model_version(ModelType.PROVIDER_MATCHING)
+        record = PredictionRecord(
+            tenant_id=selected_tenant_id,
+            entity_id=entity_id,
+            entity_type="home_service_booking_draft",
+            prediction_type=PredType.PROVIDER_MATCHING,
+            model_type=ModelType.PROVIDER_MATCHING,
+            model_version=model_version,
+            ds_phase=phase,
+            # Explicit shadow mode: this record observes the authoritative
+            # enterprise-v2 result; it does not choose or rerank a provider.
+            observation_mode=True,
+            inputs=inputs,
+            output=output,
+            confidence=None,
+        )
+        self.db.add(record)
+        await self.db.flush()
+        return record.id
+
     def _churn_band(self, score: float) -> str:
         for band, (lo, hi) in CHURN_BANDS.items():
             if lo <= score <= hi:

@@ -97,6 +97,7 @@ def calculate_provider_completion_credits(
     provider_charge_enabled: bool = True,
     credit_units_override: Decimal | str | float | int | None = None,
     charge_model_override: str | None = None,
+    health_adjustment_percentage_points: Decimal | str | float | int = Decimal("0"),
 ) -> dict[str, Any]:
     """Canonical provider-side completion charge in usage-credit units.
 
@@ -123,7 +124,19 @@ def calculate_provider_completion_credits(
         "service_amount": str(amount),
     }
     if model == "PERCENTAGE_COMMISSION":
-        pct = Decimal(str(policy.provider_percentage or 0))
+        base_pct = Decimal(str(policy.provider_percentage or 0))
+        requested_adjustment = max(
+            Decimal("0"), Decimal(str(health_adjustment_percentage_points or 0))
+        )
+        configured_cap = Decimal(str(getattr(
+            policy, "provider_health_max_effective_percentage", Decimal("100")
+        ) or Decimal("100")))
+        # The health cap bounds only the incremental quality adjustment. It
+        # must never lower an otherwise valid pre-existing base policy when
+        # the feature is disabled or the provider's band adds zero points.
+        cap = configured_cap if requested_adjustment > 0 else Decimal("100")
+        pct = min(Decimal("100"), cap, base_pct + requested_adjustment)
+        applied_adjustment = max(Decimal("0"), pct - base_pct)
         units = amount * pct / Decimal("100")
         raw_units = units
         minimum = (Decimal(str(policy.provider_min_charge_minor)) / Decimal("100")) if policy.provider_min_charge_minor is not None else None
@@ -133,7 +146,11 @@ def calculate_provider_completion_credits(
             units, clamped = minimum, "min"
         if maximum is not None and units > maximum:
             units, clamped = maximum, "max"
-        breakdown.update({"percentage": str(pct), "raw_credit_units": str(raw_units),
+        breakdown.update({"percentage": str(pct), "base_percentage": str(base_pct),
+                          "health_adjustment_percentage_points": str(applied_adjustment),
+                          "health_adjustment_requested_percentage_points": str(requested_adjustment),
+                          "health_max_effective_percentage": str(configured_cap),
+                          "raw_credit_units": str(raw_units),
                           "minimum_credit_units": str(minimum) if minimum is not None else None,
                           "maximum_credit_units": str(maximum) if maximum is not None else None,
                           "clamped": clamped})

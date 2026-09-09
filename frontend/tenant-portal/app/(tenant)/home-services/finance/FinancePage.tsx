@@ -1024,10 +1024,17 @@ export default function HomeServicesFinancePage() {
                   <div>
                     <Row label="Provider model" value={rates.provider_model ?? "—"} />
                     <Row label="Default rate" value={rates.default_rate_pct ? `${rates.default_rate_pct}%` : "—"} />
+                    <Row label="Health adjustment" value={rates.health_adjustment_enabled ? `+${rates.health_adjustment_pct_points}% points` : "Disabled"} />
+                    <Row label="Effective rate" value={rates.effective_rate_pct ? `${rates.effective_rate_pct}%` : "—"} />
                   </div>
                   <div>
                     <Row label="Charged on" value={rates.basis || "—"} />
                     <Row label="Charged as" value={rates.charged_as || "—"} />
+                    <Row label="Health basis" value={rates.health_adjustment_enabled
+                      ? rates.health_snapshot?.source === "canonical"
+                        ? `${(rates.health_snapshot.band_key ?? "assessed").replace(/_/g, " ")} · score ${rates.health_snapshot.score}`
+                        : "No fresh assessed score — base rate"
+                      : "Not applicable"} />
                   </div>
                 </div>
                 {!rates.is_live && rates.not_live_reason && (

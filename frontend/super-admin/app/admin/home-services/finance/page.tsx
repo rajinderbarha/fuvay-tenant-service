@@ -371,6 +371,13 @@ const CUSTOMER_FEE_MODELS = [
   { value: "FIXED", label: "Fixed amount added to service price" },
   { value: "PERCENTAGE_WITH_MIN_MAX", label: "Percentage with minimum / maximum" },
 ] as const;
+const HEALTH_ADJUSTMENT_BANDS = [
+  ["platinum", "Platinum"], ["gold", "Gold"], ["silver", "Silver"],
+  ["watchlist", "Watchlist"], ["at_risk", "At Risk"], ["blocked", "Blocked"],
+] as const;
+const DEFAULT_HEALTH_ADJUSTMENTS: Record<string, number> = {
+  platinum: 0, gold: 0, silver: 2, watchlist: 5, at_risk: 8, blocked: 10,
+};
 
 function fmt(v: unknown): string {
   return v === null || v === undefined ? "—" : String(v);
@@ -423,7 +430,13 @@ function MonetizationTab() {
   const customerFeeLive = !!current && current.customer_fee_model !== "NONE";
 
   function startDraft() {
-    setForm(draft ?? current ?? { provider_model: "COMPLETION_CREDITS", customer_fee_model: "NONE", currency: "INR" });
+    setForm(draft ?? current ?? {
+      provider_model: "COMPLETION_CREDITS", customer_fee_model: "NONE", currency: "INR",
+      provider_health_adjustment_enabled: false,
+      provider_health_adjustments_json: DEFAULT_HEALTH_ADJUSTMENTS,
+      provider_health_score_max_age_days: 30,
+      provider_health_max_effective_percentage: "25",
+    });
     setErrors([]); setPreviewResult(null);
     setShowDraftDrawer(true);
   }
@@ -552,6 +565,8 @@ function MonetizationTab() {
               } />
               <KV label="Recovery source" value="Provider usage credits" />
               <KV label="Job Type rules" value={String(currentRulesApi.data?.items?.length ?? 0)} />
+              <KV label="Health adjustment" value={current?.provider_health_adjustment_enabled ? "Enabled" : "Disabled"} />
+              <KV label="Maximum effective rate" value={current?.provider_health_adjustment_enabled ? `${current.provider_health_max_effective_percentage}%` : "—"} />
             </div>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               {current?.provider_model === "PERCENTAGE_COMMISSION"
@@ -647,6 +662,11 @@ function MonetizationTab() {
                 <PreviewRow label="Total credits deducted at completion" value={units(previewResult.total_credit_deduction as string)} strong />
                 <PreviewRow label="Provider calculation" value={fmt(previewResult.provider_charge_note)} />
                 <PreviewRow label="Fuvay holds provider earnings" value="₹0" />
+                {Object.entries((previewResult.provider_health_adjustment_examples ?? {}) as Record<string, Record<string, unknown>>).map(([band, example]) => (
+                  <PreviewRow key={band}
+                    label={`${band.replace(/_/g, " ")} health`}
+                    value={`${example.effective_percentage}% · ${units(example.provider_charge_credit_units)}`} />
+                ))}
                 <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>Preview only — does not change tenant pricing.</p>
               </div>
             )}
@@ -734,6 +754,59 @@ function MonetizationTab() {
                   <Input placeholder="No maximum" value={form.provider_max_charge_minor != null ? String(form.provider_max_charge_minor / 100) : ""}
                     onChange={v => setForm({ ...form, provider_max_charge_minor: v === "" ? null : Math.round(Number(v) * 100) })} />
                 </div>
+              </div>
+              <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, fontWeight: 700 }}>
+                  <input type="checkbox"
+                    checked={Boolean(form.provider_health_adjustment_enabled)}
+                    onChange={e => setForm({
+                      ...form,
+                      provider_health_adjustment_enabled: e.target.checked,
+                      provider_health_adjustments_json: form.provider_health_adjustments_json ?? DEFAULT_HEALTH_ADJUSTMENTS,
+                      provider_health_score_max_age_days: form.provider_health_score_max_age_days ?? 30,
+                      provider_health_max_effective_percentage: form.provider_health_max_effective_percentage ?? "25",
+                    })} />
+                  <span>
+                    Increase deduction when provider health falls
+                    <span style={{ display: "block", fontWeight: 400, color: "var(--text-tertiary)", marginTop: 2 }}>
+                      Uses only a fresh canonical Trust &amp; Quality score. New, missing or stale scores stay at the base rate.
+                    </span>
+                  </span>
+                </label>
+                {form.provider_health_adjustment_enabled && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
+                      {HEALTH_ADJUSTMENT_BANDS.map(([key, label]) => (
+                        <div key={key}>
+                          <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label} increase (points)</label>
+                          <Input value={String((form.provider_health_adjustments_json ?? DEFAULT_HEALTH_ADJUSTMENTS)[key] ?? 0)}
+                            onChange={v => setForm({
+                              ...form,
+                              provider_health_adjustments_json: {
+                                ...(form.provider_health_adjustments_json ?? DEFAULT_HEALTH_ADJUSTMENTS),
+                                [key]: v === "" ? 0 : Number(v),
+                              },
+                            })} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Maximum effective rate (%)</label>
+                        <Input value={String(form.provider_health_max_effective_percentage ?? "25")}
+                          onChange={v => setForm({ ...form, provider_health_max_effective_percentage: v })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Score valid for (days)</label>
+                        <Input value={String(form.provider_health_score_max_age_days ?? 30)}
+                          onChange={v => setForm({ ...form, provider_health_score_max_age_days: v === "" ? 30 : Number(v) })} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "10px 0 0" }}>
+                      These are additive percentage points, not a second charge. The final rate is capped, frozen on the ledger entry, and never recalculated retroactively.
+                    </p>
+                  </>
+                )}
               </div>
             </>
           ) : null}

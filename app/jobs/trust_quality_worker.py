@@ -291,19 +291,31 @@ async def background_loop(interval: int = TICK_INTERVAL_SECONDS,
             log.error("trust_quality_worker.loop_error", error=str(exc))
 
 
+async def _run_cli(cmd: str):
+    """CLI entry point owns the database lifespan just like the API does."""
+    from app.database import close_db, init_db
+    await init_db()
+    try:
+        if cmd == "tick":
+            return await run_worker_tick()
+        if cmd == "cleanup":
+            return await run_cleanup()
+        if cmd == "run":
+            await background_loop()
+            return None
+        raise ValueError(cmd)
+    finally:
+        await close_db()
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "tick"
-    if cmd == "tick":
-        result = asyncio.run(run_worker_tick())
-    elif cmd == "cleanup":
-        result = asyncio.run(run_cleanup())
-    elif cmd == "run":
-        asyncio.run(background_loop())
-        return
-    else:
+    if cmd not in {"tick", "cleanup", "run"}:
         print(f"Unknown command: {cmd}. Use: tick | cleanup | run")
         sys.exit(1)
-    log.info("trust_quality_worker.cli_done", cmd=cmd, result=result)
+    result = asyncio.run(_run_cli(cmd))
+    if cmd != "run":
+        log.info("trust_quality_worker.cli_done", cmd=cmd, result=result)
 
 
 if __name__ == "__main__":

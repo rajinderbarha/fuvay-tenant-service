@@ -278,12 +278,19 @@ def _slot_allocation(rules: list[dict], technicians: int) -> dict:
     return {window: base + (index < extra) for index, window in enumerate(windows)}
 
 
-async def daily_slot_preview(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> dict:
+async def daily_slot_preview(
+    db: AsyncSession, tenant_id: uuid.UUID, day: dt.date,
+    *, master_service_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
+) -> dict:
     closed = await _is_closed(db, tenant_id, day)
     if closed:
         return {"date": day.isoformat(), "closed": True, "slots": [], "daily_remaining": 0}
     rules = await _provider_rules_for_day(db, tenant_id, day.isoweekday() % 7)
-    technicians = await assignable_technician_count(db, tenant_id, day=day)
+    technicians = await assignable_technician_count(
+        db, tenant_id, master_service_id=master_service_id,
+        job_type_id=job_type_id, day=day,
+    )
     booked = await _booked_counts(db, tenant_id, day)
     remaining = _daily_remaining(rules, technicians, booked)
     return {"date": day.isoformat(), "closed": not bool(rules), "daily_remaining": remaining,
@@ -299,6 +306,7 @@ async def assignable_technician_count(
     tenant_id: uuid.UUID,
     *,
     master_service_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
     day: dt.date | None = None,
 ) -> int:
     """Count funded, verified technicians who contribute one place to a slot.
@@ -308,9 +316,11 @@ async def assignable_technician_count(
     background documents are current and verified. Activation can therefore
     finish before payment, while customer booking still fails closed.
 
-    `master_service_id` and `day` remain accepted for existing callers but do
-    not narrow this provider-level count. Service coverage is enforced by the
-    matching/assignment gates; provider availability defines the offered day.
+    When an exact service/job type is supplied, only technicians assigned to
+    the matching TenantService contribute capacity. This prevents a microwave
+    technician from creating an AC slot merely because both belong to the same
+    provider. Provider-level business hours remain the schedule authority, so
+    ``day`` is accepted for call-site symmetry but needs no second roster rule.
 
     Returns -1 (not 0) when the roster cannot be read, so callers can tell
     "unknown" apart from "genuinely nobody" and fail closed.
@@ -327,6 +337,15 @@ async def assignable_technician_count(
                 " SELECT ptm.id FROM provider_team_members ptm "
                 " WHERE ptm.tenant_id = CAST(:tid AS uuid) AND "
                 + active_technician_sql("ptm") +
+                " AND (CAST(:master_service_id AS uuid) IS NULL OR EXISTS ("
+                "   SELECT 1 FROM tenant_services ts "
+                "   WHERE ts.tenant_id=ptm.tenant_id "
+                "     AND ts.master_service_id=CAST(:master_service_id AS uuid) "
+                "     AND (CAST(:job_type_id AS uuid) IS NULL OR ts.job_type_id=CAST(:job_type_id AS uuid)) "
+                "     AND ts.is_active=true AND ts.is_enabled=true "
+                "     AND ts.deleted_at IS NULL AND ts.setup_status='published' "
+                "     AND COALESCE(ptm.supported_offering_ids, '[]'::jsonb) ? CAST(ts.id AS text)"
+                " ))"
                 " AND (:required_count = 0 OR ("
                 "   SELECT count(DISTINCT td.doc_type) FROM tenant_documents td "
                 "   WHERE td.tenant_id = ptm.tenant_id "
@@ -345,6 +364,8 @@ async def assignable_technician_count(
             ),
             {
                 "tid": str(tenant_id),
+                "master_service_id": str(master_service_id) if master_service_id else None,
+                "job_type_id": str(job_type_id) if job_type_id else None,
                 "required_documents": required_documents,
                 "required_count": len(required_documents),
             },
@@ -372,6 +393,7 @@ async def find_earliest_available_slot(
     search_days: int | None = None,
     emergency: bool = False,
     master_service_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
 ) -> dict | None:
     """First slot this provider genuinely has capacity for, respecting their
     own configured notice period.
@@ -411,7 +433,8 @@ async def find_earliest_available_slot(
             continue
 
         technicians = await assignable_technician_count(
-            db, tenant_id, master_service_id=master_service_id, day=target,
+            db, tenant_id, master_service_id=master_service_id,
+            job_type_id=job_type_id, day=target,
         )
         if technicians <= 0:
             continue
@@ -457,6 +480,7 @@ async def list_available_slots(
     max_days: int = DEFAULT_OFFERED_DAYS,
     emergency: bool = False,
     master_service_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Every genuinely bookable slot for this provider, earliest first, each
     outside their configured notice period -- the list form of
@@ -505,7 +529,8 @@ async def list_available_slots(
             continue
 
         technicians = await assignable_technician_count(
-            db, tenant_id, master_service_id=master_service_id, day=target,
+            db, tenant_id, master_service_id=master_service_id,
+            job_type_id=job_type_id, day=target,
         )
         if technicians <= 0:
             continue
@@ -560,6 +585,7 @@ async def list_available_slots(
 async def slot_has_capacity(
     db: AsyncSession, *, tenant_id: uuid.UUID, day: dt.date, time_window: str,
     master_service_id: uuid.UUID | None = None,
+    job_type_id: uuid.UUID | None = None,
     exclude_job_id: uuid.UUID | None = None,
 ) -> bool:
     """Re-check a specific slot at confirmation time.
@@ -573,7 +599,8 @@ async def slot_has_capacity(
     slot was first offered).
     """
     technicians = await assignable_technician_count(
-        db, tenant_id, master_service_id=master_service_id, day=day,
+        db, tenant_id, master_service_id=master_service_id,
+        job_type_id=job_type_id, day=day,
     )
 
     if await _is_closed(db, tenant_id, day):

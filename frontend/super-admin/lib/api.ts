@@ -9674,7 +9674,8 @@ export interface MatchingDiagnosticsCandidate {
   // renders it directly.
   provider_level: MatchingDiagnosticsBadge;
   rating: number | null; customer_visible_reason: string;
-  internal_score: number; internal_score_breakdown: Record<string, number>;
+  internal_score: number;
+  internal_score_breakdown: Record<string, number | string | null>;
 }
 
 export interface MatchingDiagnosticsResult {
@@ -9692,6 +9693,9 @@ export interface MatchingDiagnosticsResult {
   area_coverage_source: string;
   availability_source: string;
   pricing_source: string;
+  health_source: string;
+  fair_share_source: string;
+  data_science_mode: "shadow" | "active";
   trace_id?: string;
   policy_version?: number;
 }

@@ -63,6 +63,7 @@ class ModelType:
     STAFF_XGBOOST   = "staff_xgboost"
     LTV_REGRESSION  = "ltv_regression"
     ANOMALY_ZSCORE  = "anomaly_zscore"
+    PROVIDER_MATCHING = "provider_matching"
 
 # ── Prediction types ───────────────────────────────────────────────────────
 class PredType:
@@ -72,6 +73,7 @@ class PredType:
     STAFF      = "staff_performance"
     LTV        = "customer_ltv"
     ANOMALY    = "anomaly"
+    PROVIDER_MATCHING = "provider_matching"
 
 # ── Anomaly types ──────────────────────────────────────────────────────────
 class AnomalyType:

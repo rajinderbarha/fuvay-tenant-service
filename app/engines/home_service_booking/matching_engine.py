@@ -63,15 +63,16 @@ def assert_home_services_vertical(vertical: str | None) -> None:
     if vertical != HOME_SERVICES_VERTICAL:
         raise VerticalFlowNotSupported(vertical)
 
-# ── Scoring weights (per ticket's suggested model) ──────────────────────────
-WEIGHT_HEALTH_SCORE       = Decimal("0.20")
-WEIGHT_JOB_COMPLETION     = Decimal("0.20")
-WEIGHT_RATING             = Decimal("0.15")
-WEIGHT_AVAILABILITY       = Decimal("0.15")
-WEIGHT_SERVICE_MATCH      = Decimal("0.10")
-WEIGHT_DISTANCE           = Decimal("0.10")
-WEIGHT_CANCELLATION       = Decimal("0.05")
-WEIGHT_CAPACITY           = Decimal("0.05")
+# ── Enterprise v2 scoring weights ───────────────────────────────────────────
+WEIGHT_HEALTH_SCORE         = Decimal("0.30")
+WEIGHT_SERVICE_RELIABILITY  = Decimal("0.20")
+WEIGHT_SLOT_FIT             = Decimal("0.20")
+WEIGHT_DISTANCE             = Decimal("0.10")
+WEIGHT_CAPACITY             = Decimal("0.10")
+WEIGHT_FAIR_SHARE           = Decimal("0.10")
+
+MIN_AUTO_ASSIGN_HEALTH = Decimal("50.0")
+QUALITY_BAND_WIDTH = Decimal("10.0")
 
 
 def _d(v) -> Decimal:
@@ -88,7 +89,7 @@ class CandidateSignals:
     tenant_id: str
     provider_name: str
     health_score: float = 0.0            # canonical trust_quality.HealthScore, or documented fallback
-    health_score_source: str = "missing_default"  # "canonical" | "legacy_column" | "missing_default"
+    health_score_source: str = "unassessed_default"  # "canonical" | "unassessed_default"
     health_score_calculated_at: str | None = None
     job_completion_score: float = 0.0    # completed / (completed + cancelled), 0-100
     rating_score: float = 0.0            # rating_average / 5 * 100
@@ -97,6 +98,14 @@ class CandidateSignals:
     distance_score: float = 0.0          # zipcode-exact=100, city-only=60
     cancellation_score: float = 0.0      # 100 - recent_cancellation_rate*100
     capacity_score: float = 0.0          # inverse of current open-job load vs technician count
+    # Enterprise v2 signals. Optional fields preserve compatibility with old
+    # pure callers while DB-backed matching always supplies real values.
+    service_reliability_score: float | None = None
+    slot_fit_score: float | None = None
+    fair_share_score: float | None = None
+    reliability_sample_size: int = 0
+    recent_allocations: int = 0
+    earliest_slot: dict | None = None
     # Objects {name, icon, color} — the real customer-visible trust badges when
     # the provider has them, else computed fallbacks (see _public_badges).
     public_badges: list[dict] = field(default_factory=list)
@@ -104,31 +113,74 @@ class CandidateSignals:
 
 
 def compute_provider_score(signals: CandidateSignals) -> Decimal:
-    """provider_score = weighted sum of the 8 sub-scores (ticket's formula)."""
+    """Enterprise v2 provider score.
+
+    Health is long-lived quality. Service reliability is exact-offering
+    performance. Slot fit and capacity are transient supply. Fair share stops
+    equally-qualified providers being starved.
+    """
+    reliability = signals.service_reliability_score
+    if reliability is None:
+        reliability = (
+            signals.job_completion_score * 0.50
+            + signals.cancellation_score * 0.30
+            + signals.rating_score * 0.20
+        )
+    slot_fit = signals.slot_fit_score
+    if slot_fit is None:
+        slot_fit = signals.availability_score
+    fair_share = signals.fair_share_score
+    if fair_share is None:
+        fair_share = 50.0
     score = (
         _d(signals.health_score) * WEIGHT_HEALTH_SCORE
-        + _d(signals.job_completion_score) * WEIGHT_JOB_COMPLETION
-        + _d(signals.rating_score) * WEIGHT_RATING
-        + _d(signals.availability_score) * WEIGHT_AVAILABILITY
-        + _d(signals.service_match_score) * WEIGHT_SERVICE_MATCH
+        + _d(reliability) * WEIGHT_SERVICE_RELIABILITY
+        + _d(slot_fit) * WEIGHT_SLOT_FIT
         + _d(signals.distance_score) * WEIGHT_DISTANCE
-        + _d(signals.cancellation_score) * WEIGHT_CANCELLATION
         + _d(signals.capacity_score) * WEIGHT_CAPACITY
+        + _d(fair_share) * WEIGHT_FAIR_SHARE
     )
     return _round2(score)
 
 
 def rank_candidates(candidates: list[CandidateSignals]) -> list[tuple[CandidateSignals, Decimal]]:
-    """Scores every candidate and returns them sorted best-first. Ties broken by
-    tenant_id for determinism (fair distribution is handled upstream by whichever
-    candidate query order is used — this function is a pure sort)."""
+    """Scores candidates best-first with fair share as the business tie-break."""
     scored = [(c, compute_provider_score(c)) for c in candidates]
-    scored.sort(key=lambda pair: (-pair[1], pair[0].tenant_id))
+    scored.sort(key=lambda pair: (
+        -pair[1],
+        -_d(pair[0].fair_share_score if pair[0].fair_share_score is not None else 50),
+        pair[0].tenant_id,
+    ))
     return scored
 
 
+def _quality_score(candidate: CandidateSignals) -> Decimal:
+    """Stable quality axis used to define the fair-allocation peer group."""
+    reliability = candidate.service_reliability_score
+    if reliability is None:
+        reliability = (
+            candidate.job_completion_score * 0.50
+            + candidate.cancellation_score * 0.30
+            + candidate.rating_score * 0.20
+        )
+    return _round2(
+        _d(candidate.health_score) * Decimal("0.60")
+        + _d(reliability) * Decimal("0.40")
+    )
+
+
 def select_best_candidate(candidates: list[CandidateSignals]) -> tuple[CandidateSignals, Decimal] | None:
-    ranked = rank_candidates(candidates)
+    if not candidates:
+        return None
+
+    # Fairness operates only inside a ten-point quality band. It can rotate
+    # comparable providers, but never promote a materially worse provider.
+    best_quality = max(_quality_score(candidate) for candidate in candidates)
+    qualified = [
+        candidate for candidate in candidates
+        if _quality_score(candidate) >= best_quality - QUALITY_BAND_WIDTH
+    ]
+    ranked = rank_candidates(qualified)
     return ranked[0] if ranked else None
 
 
@@ -145,6 +197,11 @@ def build_score_breakdown(signals: CandidateSignals) -> dict:
         "distance_score": signals.distance_score,
         "cancellation_score": signals.cancellation_score,
         "capacity_score": signals.capacity_score,
+        "service_reliability_score": signals.service_reliability_score,
+        "slot_fit_score": signals.slot_fit_score,
+        "fair_share_score": signals.fair_share_score,
+        "reliability_sample_size": signals.reliability_sample_size,
+        "recent_allocations": signals.recent_allocations,
     }
 
 
@@ -198,10 +255,13 @@ ELIGIBILITY_GATE_CODES = (
     "no_pricing_rule",
     "EXACT_JOB_TYPE_NOT_SUPPORTED",
     "OFFERING_NOT_PUBLISHED",
+    "HEALTH_BELOW_AUTO_ASSIGN_FLOOR",
+    "HEALTH_BAND_NOT_BOOKABLE",
+    "NO_LIVE_SLOT_CAPACITY",
 )
 
-MATCHING_POLICY_KEY = "home_services_provider_matching_v1"
-MATCHING_POLICY_VERSION = 1
+MATCHING_POLICY_KEY = "home_services_provider_matching_v2"
+MATCHING_POLICY_VERSION = 2
 
 
 def get_policy_manifest() -> dict:
@@ -211,22 +271,18 @@ def get_policy_manifest() -> dict:
     constants select_best_provider/_passes_full_eligibility_gate actually
     use), not a separately-maintained description that could drift."""
     factors = [
-        {"factor_key": "health_score", "label": "Health / Trust Score", "weight": float(WEIGHT_HEALTH_SCORE),
-         "source_engine": "trust_quality.HealthScore (canonical); falls back per missing_signal_policy"},
-        {"factor_key": "job_completion", "label": "Job Completion", "weight": float(WEIGHT_JOB_COMPLETION),
-         "source_engine": "jobs table (completed / (completed+cancelled))"},
-        {"factor_key": "rating", "label": "Customer Rating", "weight": float(WEIGHT_RATING),
-         "source_engine": "tenants.rating_average"},
-        {"factor_key": "availability", "label": "Availability", "weight": float(WEIGHT_AVAILABILITY),
-         "source_engine": "provider_availability_rules"},
-        {"factor_key": "service_match", "label": "Service Match", "weight": float(WEIGHT_SERVICE_MATCH),
-         "source_engine": "tenant_service_area_services (type/brand specificity)"},
+        {"factor_key": "health_score", "label": "Canonical Quality / Health", "weight": float(WEIGHT_HEALTH_SCORE),
+         "source_engine": "active trust_quality.HealthScore; unassessed providers receive a neutral prior"},
+        {"factor_key": "service_reliability", "label": "Service Reliability", "weight": float(WEIGHT_SERVICE_RELIABILITY),
+         "source_engine": "service_jobs for the exact Master Service / Job Type with Bayesian cold-start"},
+        {"factor_key": "slot_fit", "label": "Live Slot Fit", "weight": float(WEIGHT_SLOT_FIT),
+         "source_engine": "confirmed booking capacity, holidays, notice period and provider hours"},
         {"factor_key": "area_match", "label": "Area Match", "weight": float(WEIGHT_DISTANCE),
          "source_engine": "tenant_service_areas (exact zipcode vs city-only)"},
-        {"factor_key": "cancellation", "label": "Cancellation", "weight": float(WEIGHT_CANCELLATION),
-         "source_engine": "jobs table (30-day cancellation rate)"},
-        {"factor_key": "capacity", "label": "Capacity", "weight": float(WEIGHT_CAPACITY),
-         "source_engine": "jobs + provider_team_members (open-job load vs active technicians)"},
+        {"factor_key": "capacity", "label": "Live Capacity", "weight": float(WEIGHT_CAPACITY),
+         "source_engine": "service-qualified funded technicians and confirmed service_jobs"},
+        {"factor_key": "fair_share", "label": "Fair Share", "weight": float(WEIGHT_FAIR_SHARE),
+         "source_engine": "7-day production matching allocation ledger"},
     ]
     return {
         "policy_key": MATCHING_POLICY_KEY,
@@ -236,22 +292,170 @@ def get_policy_manifest() -> dict:
         "factors": factors,
         "eligibility_gates": list(ELIGIBILITY_GATE_CODES),
         "tie_break_policy": [
-            "Highest weighted score wins.",
-            "Exact tie: lower tenant_id (UUID) sorts first -- deterministic, "
-            "code-controlled fallback (rank_candidates sorts by (-score, tenant_id)); "
-            "no random selection.",
+            "Only providers inside ten points of the best quality/reliability score enter fair-share allocation.",
+            "Highest enterprise v2 weighted score wins inside that qualified band.",
+            "Recent allocation deficit breaks business ties; tenant_id is only a final deterministic fallback.",
         ],
         "missing_signal_policy": {
             "health_score": (
-                f"Reads trust_quality.HealthScore (target_type='tenant'). A score older than "
-                f"{HEALTH_SCORE_STALE_AFTER_DAYS} days is treated as stale and never trusted as-is. "
-                f"Falls back to the legacy tenants.health_score column if present, else a neutral "
-                f"default of {MISSING_HEALTH_SCORE_DEFAULT} (never treated as a perfect 100)."
+                f"Reads a fresh score from an active Trust & Quality formula. Missing, stale or "
+                f"unbanded scores use the neutral prior {MISSING_HEALTH_SCORE_DEFAULT}; the legacy "
+                "tenants.health_score default is never used for allocation."
             ),
-            "job_completion": "No job history yet -> neutral 50.0 (never a perfect or zero default).",
-            "cancellation": "No recent activity -> 100.0 (no evidence of cancellations, not penalized).",
+            "service_reliability": "No exact-service history -> Bayesian neutral prior 70 with sample size 0.",
+            "fair_share": "No recent allocation difference -> neutral 50; subsequent decisions rotate by deficit.",
+        },
+        "data_science": {
+            "mode": "shadow",
+            "minimum_exact_service_samples": 50,
+            "policy": (
+                "Operational rules remain authoritative. Reliability sample size and every v2 feature are "
+                "logged for offline validation; a trained model must pass bias, calibration and rollback "
+                "checks before it may influence allocation."
+            ),
         },
     }
+
+
+def _parse_requested_at(value: str | None):
+    """Parse a customer/request timestamp into the naive local wall-clock form
+    consumed by provider_slot_service.
+
+    Home Services providers and customers currently share the configured
+    market timezone. An explicit numeric offset is preserved as its wall-clock
+    value instead of being silently converted to the API server timezone.
+    """
+    if not value:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _recent_allocation_counts(
+    db: AsyncSession, tenant_ids: set[uuid.UUID], *, offering_id: uuid.UUID,
+    city: str, zipcode: str | None, days: int = 7,
+) -> dict[uuid.UUID, int]:
+    """Count real production selections for fair-share allocation.
+
+    The append-only matching audit is already the canonical decision ledger,
+    so no second mutable counter can drift or need repair.
+    """
+    if not tenant_ids:
+        return {}
+    from sqlalchemy import text
+    rows = (await db.execute(text(
+        "SELECT new_value->>'selected_provider_id' AS provider_id, count(*) AS n "
+        "FROM master_data_audit_log "
+        "WHERE entity_type='matching_decision' AND action='production_match' "
+        "AND created_at >= now() - (:days * interval '1 day') "
+        "AND new_value->>'master_service_id' = :offering_id "
+        "AND ((:zipcode IS NOT NULL AND new_value->>'zipcode' = :zipcode) "
+        "  OR (:zipcode IS NULL AND lower(COALESCE(new_value->>'city','')) = :city)) "
+        "AND new_value->>'selected_provider_id' = ANY(CAST(:tenant_ids AS text[])) "
+        "GROUP BY new_value->>'selected_provider_id'"
+    ), {
+        "days": days,
+        "offering_id": str(offering_id),
+        "city": city.strip().lower(),
+        "zipcode": zipcode,
+        "tenant_ids": [str(tenant_id) for tenant_id in tenant_ids],
+    })).fetchall()
+    return {
+        uuid.UUID(str(row.provider_id)): int(row.n or 0)
+        for row in rows if row.provider_id
+    }
+
+
+def _fair_share_scores(
+    tenant_ids: set[uuid.UUID], allocation_counts: dict[uuid.UUID, int],
+) -> dict[uuid.UUID, float]:
+    """Translate recent allocation deficit into a 0-100 score.
+
+    Equal history is neutral. Once a provider receives work, providers with a
+    lower count receive the boost, naturally rotating comparable candidates.
+    """
+    if not tenant_ids:
+        return {}
+    counts = {tenant_id: allocation_counts.get(tenant_id, 0) for tenant_id in tenant_ids}
+    low, high = min(counts.values()), max(counts.values())
+    if low == high:
+        return {tenant_id: 50.0 for tenant_id in tenant_ids}
+    span = high - low
+    return {
+        tenant_id: round((high - count) * 100.0 / span, 2)
+        for tenant_id, count in counts.items()
+    }
+
+
+async def _service_reliability_score(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    offering_id: uuid.UUID,
+    job_type_id: uuid.UUID | None,
+) -> dict[str, float | int]:
+    """Bayesian exact-service reliability from canonical Home Service records.
+
+    Ten historical-equivalent jobs at a 70% completion / 90% non-cancellation
+    prior prevent both cold-start perfection and cold-start punishment. Rating
+    uses five prior reviews at 4/5. Real evidence gradually dominates.
+    """
+    from sqlalchemy import text
+    params = {
+        "tid": str(tenant_id), "oid": str(offering_id),
+        "jtid": str(job_type_id) if job_type_id else None,
+    }
+    row = (await db.execute(text(
+        "SELECT count(*) FILTER (WHERE status IN ('completed','invoice_issued','force_closed')) AS completed, "
+        "count(*) FILTER (WHERE status IN ('cancelled','voided')) AS cancelled "
+        "FROM service_jobs WHERE tenant_id=CAST(:tid AS uuid) "
+        "AND offering_id=CAST(:oid AS uuid) "
+        "AND (CAST(:jtid AS uuid) IS NULL OR job_type_id=CAST(:jtid AS uuid)) "
+        "AND created_at >= now() - interval '90 days'"
+    ), params)).one()
+    completed = int(row.completed or 0)
+    cancelled = int(row.cancelled or 0)
+    terminal = completed + cancelled
+
+    prior_jobs = 10.0
+    completion = (completed + 0.70 * prior_jobs) * 100.0 / (terminal + prior_jobs)
+    non_cancel = (completed + 0.90 * prior_jobs) * 100.0 / (terminal + prior_jobs)
+
+    review = (await db.execute(text(
+        "SELECT avg(overall_rating) AS average, count(*) AS n FROM customer_reviews "
+        "WHERE tenant_id=CAST(:tid AS uuid) AND offering_id=CAST(:oid AS uuid) "
+        "AND status='approved' AND hidden_at IS NULL"
+    ), params)).one()
+    review_count = int(review.n or 0)
+    rating_total = float(review.average or 0.0) * review_count
+    rating_score = (rating_total + 4.0 * 5.0) * 20.0 / (review_count + 5.0)
+
+    score = completion * 0.60 + non_cancel * 0.25 + rating_score * 0.15
+    return {
+        "score": round(score, 2),
+        "completion_score": round(completion, 2),
+        "cancellation_score": round(non_cancel, 2),
+        "rating_score": round(rating_score, 2),
+        "sample_size": terminal,
+    }
+
+
+def _slot_fit_score(slot: dict) -> float:
+    days_ahead = max(0, int(slot.get("days_ahead") or 0))
+    freshness = max(20.0, 100.0 - days_ahead * 15.0)
+    capacity = max(1, int(slot.get("capacity") or 1))
+    available = max(0, int(slot.get("available_slots") or 0))
+    room = min(100.0, available * 100.0 / capacity)
+    return round(freshness * 0.80 + room * 0.20, 2)
+
+
+def _live_capacity_score(slot: dict) -> float:
+    capacity = max(1, int(slot.get("capacity") or 1))
+    available = max(0, int(slot.get("available_slots") or 0))
+    return round(min(100.0, available * 100.0 / capacity), 2)
 
 
 async def select_best_provider(
@@ -266,6 +470,7 @@ async def select_best_provider(
     requested_at: str | None = None,
     limit_candidates: int = 25,
     job_type_id: uuid.UUID | None = None,
+    serialize_allocation: bool = False,
 ) -> dict | None:
     """Full eligibility gate + scoring + single-best selection.
 
@@ -283,7 +488,9 @@ async def select_best_provider(
     norm_city = (city or "").strip().lower()
     strip_zip = zipcode.strip() if zipcode else None
 
-    # Base candidate pool: active, home_services, not suspended, matching category.
+    # Base candidate pool: one deterministic row per tenant. Joining raw areas
+    # previously duplicated providers with multiple matching coverage rows and
+    # applied an unordered LIMIT 25, making both counts and selection unstable.
     base_rows = (await db.execute(
         select(
             Tenant.id.label("tenant_id"),
@@ -291,7 +498,7 @@ async def select_best_provider(
             Tenant.tenant_name.label("tenant_name"),
             Tenant.health_score.label("health_score"),
             Tenant.rating_average.label("rating"),
-            TenantServiceArea.zipcode.label("area_zipcode"),
+            func.bool_or(TenantServiceArea.zipcode == strip_zip).label("exact_zip"),
         )
         .join(TenantServiceArea, TenantServiceArea.tenant_id == Tenant.id)
         .where(
@@ -320,6 +527,11 @@ async def select_best_provider(
                 TenantServiceArea.zipcode == strip_zip,
             ) if strip_zip else func.lower(TenantServiceArea.city) == norm_city,
         )
+        .group_by(
+            Tenant.id, Tenant.business_name, Tenant.tenant_name,
+            Tenant.health_score, Tenant.rating_average,
+        )
+        .order_by(Tenant.id.asc())
         .limit(limit_candidates)
     )).all()
 
@@ -327,7 +539,7 @@ async def select_best_provider(
     if not candidate_ids:
         return {"signals": None, "score": None, "candidate_count": 0, "excluded_count": 0, "excluded_providers": []}
 
-    exact_zip_ids = {row.tenant_id for row in base_rows if strip_zip and row.area_zipcode == strip_zip}
+    exact_zip_ids = {row.tenant_id for row in base_rows if strip_zip and row.exact_zip}
 
     # FINAL-L5-04C — tenant category entitlement, resolved ONCE for every
     # candidate in a single bulk query (not one query per candidate — see
@@ -348,6 +560,33 @@ async def select_best_provider(
     signals_list: list[CandidateSignals] = []
     excluded = 0
     excluded_providers: list[dict] = []
+
+    # Existing production decisions form the fair-share ledger. Diagnostics do
+    # not influence it. A failed audit lookup degrades to equal neutral shares;
+    # it must never stop a customer booking.
+    if serialize_allocation:
+        from sqlalchemy import text
+        market_key = (
+            f"home-service-match:{offering_id}:"
+            f"{strip_zip or norm_city}:{job_type_id or 'any'}"
+        )
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:market_key, 0))"),
+            {"market_key": market_key},
+        )
+    try:
+        async with db.begin_nested():
+            allocation_counts = await _recent_allocation_counts(
+                db, candidate_ids, offering_id=offering_id, city=norm_city,
+                zipcode=strip_zip,
+            )
+    except Exception as exc:  # noqa: BLE001 -- fairness telemetry is fail-open
+        import structlog
+        structlog.get_logger("home_service_booking.matching").warning(
+            "matching.fair_share_history_unavailable", error=str(exc),
+        )
+        allocation_counts = {}
+    fair_share_scores = _fair_share_scores(candidate_ids, allocation_counts)
 
     for row in base_rows:
         tid = row.tenant_id
@@ -372,22 +611,69 @@ async def select_best_provider(
             continue
 
         is_exact_zip = tid in exact_zip_ids
-        health_score, health_source, health_calc_at = await _canonical_health_score(
+        health_score, health_source, health_calc_at, health_bookable = await _canonical_health_score(
             db, tid, float(row.health_score) if row.health_score is not None else None,
         )
+        if health_source == "canonical" and not health_bookable:
+            excluded += 1
+            excluded_providers.append({
+                "provider_name": row.business_name or row.tenant_name or "Service Provider",
+                "reason_code": "HEALTH_BAND_NOT_BOOKABLE",
+            })
+            continue
+        if health_source == "canonical" and _d(health_score) < MIN_AUTO_ASSIGN_HEALTH:
+            excluded += 1
+            excluded_providers.append({
+                "provider_name": row.business_name or row.tenant_name or "Service Provider",
+                "reason_code": "HEALTH_BELOW_AUTO_ASSIGN_FLOOR",
+            })
+            continue
+
+        # Capacity is a hard feasibility gate, not something quality can
+        # compensate for. The provider is scored only after a real slot exists.
+        from app.engines.home_service_booking.provider_slot_service import (
+            find_earliest_available_slot,
+        )
+        from_datetime = _parse_requested_at(requested_at)
+        earliest_slot = await find_earliest_available_slot(
+            db,
+            tenant_id=tid,
+            from_datetime=from_datetime,
+            master_service_id=offering_id,
+            job_type_id=job_type_id,
+        )
+        if earliest_slot is None:
+            excluded += 1
+            excluded_providers.append({
+                "provider_name": row.business_name or row.tenant_name or "Service Provider",
+                "reason_code": "NO_LIVE_SLOT_CAPACITY",
+            })
+            continue
+
+        reliability = await _service_reliability_score(
+            db, tid, offering_id=offering_id, job_type_id=job_type_id,
+        )
+        slot_fit = _slot_fit_score(earliest_slot)
+        capacity = _live_capacity_score(earliest_slot)
         signals_list.append(CandidateSignals(
             tenant_id=str(tid),
             provider_name=row.business_name or row.tenant_name or "Service Provider",
             health_score=health_score,
             health_score_source=health_source,
             health_score_calculated_at=health_calc_at,
-            job_completion_score=await _job_completion_score(db, tid),
-            rating_score=(float(row.rating) / 5.0 * 100.0) if row.rating else 0.0,
-            availability_score=await _availability_score(db, tid),
+            job_completion_score=reliability["completion_score"],
+            rating_score=reliability["rating_score"],
+            availability_score=slot_fit,
             service_match_score=100.0 if (offering_type_id or brand_id) else 80.0,
             distance_score=100.0 if is_exact_zip else 60.0,
-            cancellation_score=await _cancellation_score(db, tid),
-            capacity_score=await _capacity_score(db, tid),
+            cancellation_score=reliability["cancellation_score"],
+            capacity_score=capacity,
+            service_reliability_score=reliability["score"],
+            slot_fit_score=slot_fit,
+            fair_share_score=fair_share_scores.get(tid, 50.0),
+            reliability_sample_size=reliability["sample_size"],
+            recent_allocations=allocation_counts.get(tid, 0),
+            earliest_slot=earliest_slot,
             public_badges=await _public_badges(db, tid, row.health_score, row.rating),
             rating=float(row.rating) if row.rating else None,
         ))
@@ -397,11 +683,16 @@ async def select_best_provider(
                 "excluded_providers": excluded_providers}
 
     best = select_best_candidate(signals_list)
+    ranked = rank_candidates(signals_list)
+    # Keep the actual selected provider first in diagnostics. Candidates that
+    # missed the quality peer band remain visible afterwards for transparency.
+    ordered = [best] + [pair for pair in ranked if pair[0].tenant_id != best[0].tenant_id]
     return {
         "signals": best[0], "score": best[1],
+        "earliest_slot": best[0].earliest_slot,
         "candidate_count": len(base_rows), "excluded_count": excluded,
         "excluded_providers": excluded_providers,
-        "all_scored": rank_candidates(signals_list),
+        "all_scored": ordered,
     }
 
 
@@ -686,97 +977,41 @@ async def _passes_full_eligibility_gate(
 
 
 # MODULE-L5-58: missing-signal policy for Trust & Quality's canonical
-# HealthScore. A score older than this is treated as stale and falls back
-# to the legacy tenants.health_score column (itself defaulted to 100.0 --
-# see MISSING_HEALTH_SCORE_DEFAULT below) rather than silently trusting a
-# number the Trust & Quality engine hasn't recalculated recently. This is a
-# documented, code-controlled policy value, not a per-request override.
+# HealthScore. A missing, unbanded or stale result is treated as unassessed.
+# The legacy tenants.health_score column historically defaulted to 100 and is
+# therefore never valid allocation evidence.
 HEALTH_SCORE_STALE_AFTER_DAYS = 30
-MISSING_HEALTH_SCORE_DEFAULT = 50.0  # neutral, never treated as "perfect"
+MISSING_HEALTH_SCORE_DEFAULT = 65.0  # neutral monitored-provider prior
 
 
-async def _canonical_health_score(db: AsyncSession, tenant_id: uuid.UUID, legacy_fallback: float | None) -> tuple[float, str, str | None]:
+async def _canonical_health_score(
+    db: AsyncSession, tenant_id: uuid.UUID, legacy_fallback: float | None,
+) -> tuple[float, str, str | None, bool]:
     """Reads the canonical Trust & Quality HealthScore for this provider
     (target_type='tenant', matching the convention TrustQualityService's own
     badge lookups already use — see _public_badges). This is the SAME table
     the /admin/trust-quality console reads and writes; matching never
     computes or stores a second trust number.
 
-    Returns (score, source, calculated_at_iso) where source is:
-      "canonical"       -- a fresh (< HEALTH_SCORE_STALE_AFTER_DAYS) row exists
-      "legacy_column"    -- canonical row missing/stale; fell back to the
-                            legacy tenants.health_score column (documented,
-                            not silently treated as perfect)
-      "missing_default"  -- neither exists; a neutral, non-perfect default
-                            is used and reported honestly.
+    Returns (score, source, calculated_at_iso, bookable_allowed) where source is:
+      "canonical"          -- a fresh, banded active-formula row exists
+      "unassessed_default" -- missing/stale/unbanded; neutral prior used
+
+    ``legacy_fallback`` remains in the signature for API compatibility but is
+    intentionally ignored. That column's historical default is indistinguish-
+    able from an earned perfect score.
     """
-    from datetime import datetime, timezone, timedelta
-    from app.engines.trust_quality.models import HealthScore
+    from app.engines.trust_quality.provider_health import get_provider_health_snapshot
 
-    row = (await db.execute(
-        select(HealthScore.score, HealthScore.calculated_at)
-        .where(HealthScore.target_type == "tenant", HealthScore.target_id == tenant_id)
-        .order_by(HealthScore.calculated_at.desc())
-        .limit(1)
-    )).first()
-
-    if row is not None:
-        calculated_at = row.calculated_at
-        is_stale = calculated_at is None or (
-            datetime.now(timezone.utc) - calculated_at.replace(tzinfo=timezone.utc)
-            if calculated_at.tzinfo is None else datetime.now(timezone.utc) - calculated_at
-        ) > timedelta(days=HEALTH_SCORE_STALE_AFTER_DAYS)
-        if not is_stale:
-            return float(row.score), "canonical", calculated_at.isoformat()
-
-    if legacy_fallback is not None:
-        return float(legacy_fallback), "legacy_column", None
-    return MISSING_HEALTH_SCORE_DEFAULT, "missing_default", None
-
-
-async def _job_completion_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
-    from sqlalchemy import text
-    row = (await db.execute(text(
-        "SELECT count(*) FILTER (WHERE status='completed') AS completed, "
-        "       count(*) FILTER (WHERE status='cancelled') AS cancelled "
-        "FROM jobs WHERE tenant_id=:tid"
-    ), {"tid": str(tenant_id)})).fetchone()
-    if not row or (row.completed or 0) + (row.cancelled or 0) == 0:
-        return 50.0  # neutral score for providers with no job history yet
-    total = row.completed + row.cancelled
-    return round((row.completed / total) * 100.0, 2)
-
-
-async def _cancellation_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
-    from sqlalchemy import text
-    row = (await db.execute(text(
-        "SELECT count(*) FILTER (WHERE status='cancelled') AS cancelled, count(*) AS total "
-        "FROM jobs WHERE tenant_id=:tid AND created_at > now() - interval '30 days'"
-    ), {"tid": str(tenant_id)})).fetchone()
-    if not row or not row.total:
-        return 100.0  # no recent activity — no evidence of cancellations
-    rate = row.cancelled / row.total
-    return round(max(0.0, (1 - rate)) * 100.0, 2)
-
-
-async def _availability_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
-    from sqlalchemy import text
-    count = (await db.execute(text(
-        "SELECT count(*) FROM provider_availability_rules WHERE tenant_id=:tid AND is_active=true"
-    ), {"tid": str(tenant_id)})).scalar()
-    return min(100.0, float(count or 0) * 20.0)
-
-
-async def _capacity_score(db: AsyncSession, tenant_id: uuid.UUID) -> float:
-    from sqlalchemy import text
-    row = (await db.execute(text(
-        "SELECT (SELECT count(*) FROM jobs WHERE tenant_id=:tid AND status IN ('pending_assignment','assigned','in_progress')) AS open_jobs, "
-        "(SELECT count(*) FROM provider_team_members WHERE tenant_id=:tid AND status='active' AND deleted_at IS NULL) AS active_techs"
-    ), {"tid": str(tenant_id)})).fetchone()
-    if not row or not row.active_techs:
-        return 0.0
-    load_ratio = (row.open_jobs or 0) / row.active_techs
-    return round(max(0.0, 100.0 - load_ratio * 25.0), 2)
+    snapshot = await get_provider_health_snapshot(
+        db, tenant_id, max_age_days=HEALTH_SCORE_STALE_AFTER_DAYS,
+    )
+    return (
+        float(snapshot["score"]),
+        snapshot["source"],
+        snapshot["calculated_at"] if snapshot["source"] == "canonical" else None,
+        bool(snapshot["bookable_allowed"]),
+    )
 
 
 async def _public_badges(db: AsyncSession, tenant_id: uuid.UUID, health_score, rating) -> list[dict]:

@@ -175,6 +175,10 @@ export interface MonetizationPolicy {
   provider_chargeable_event: string | null;
   provider_min_charge_minor: number | null;
   provider_max_charge_minor: number | null;
+  provider_health_adjustment_enabled?: boolean;
+  provider_health_adjustments_json?: Record<string, number>;
+  provider_health_score_max_age_days?: number;
+  provider_health_max_effective_percentage?: string;
 
   customer_fee_model: string;
   customer_fee_percentage: string | null;

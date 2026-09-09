@@ -137,8 +137,11 @@ async def admin_matching_diagnostics(
         # security_deposits/tenant_package_assignments reads).
         "bookability_source": "canonical_provider_status",
         "area_coverage_source": "normalized_service_area_coverage",
-        "availability_source": "tenant_availability_rules",
+        "availability_source": "live_service_qualified_slots_and_confirmed_jobs",
         "pricing_source": "tenant_type_brand_pricing",
+        "health_source": "active_trust_quality_formula_or_neutral_prior",
+        "fair_share_source": "seven_day_production_matching_ledger",
+        "data_science_mode": "shadow",
     }
 
     if match.get("signals"):
@@ -174,6 +177,12 @@ async def admin_matching_diagnostics(
             "eligible_count": result["eligible_provider_count"],
             "excluded_count": result["excluded_provider_count"],
             "selected_provider_id": match["signals"].tenant_id if match.get("signals") else None,
+            "selected_score": float(match["score"]) if match.get("score") is not None else None,
+            "selected_score_breakdown": (
+                build_admin_provider(match["signals"], match["score"])["internal_score_breakdown"]
+                if match.get("signals") else None
+            ),
+            "earliest_slot": match.get("earliest_slot"),
             "outcome": "selected" if match.get("signals") else "no_eligible_provider",
         },
         request_id=_rid(r),

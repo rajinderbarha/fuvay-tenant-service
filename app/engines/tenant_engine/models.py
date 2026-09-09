@@ -68,7 +68,10 @@ class Tenant(ServiceOSBase):
     city_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)  # small|mid|large|metro
     zone_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # Scoring + flags
-    health_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=100.0)
+    # A new/unassessed provider is neutral, never implicitly perfect. Matching
+    # reads the canonical Trust & Quality score; this column remains a legacy
+    # display/cache field for older integrations.
+    health_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=65.0)
     health_band: Mapped[str] = mapped_column(String(20), nullable=False, default="gold")
     rating_average: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False, default=0.0)
     is_discoverable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -208,6 +211,10 @@ class UsageCreditLedger(ServiceOSBase):
     source_id:           Mapped[str | None]       = mapped_column(String(100), nullable=True)
     reason_code:         Mapped[str | None]       = mapped_column(String(50), nullable=True)
     actor_role:          Mapped[str | None]       = mapped_column(String(30), nullable=True)
+    #: Immutable inputs/results used for this debit (policy version, service
+    #: amount and provider health snapshot). Historical charges must remain
+    #: explainable after either policy or health changes.
+    calculation_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -229,6 +236,7 @@ class UsageCreditLedger(ServiceOSBase):
             "source_id":          self.source_id,
             "idempotency_key":    self.idempotency_key,
             "request_id":         self.request_id,
+            "calculation_snapshot": self.calculation_snapshot_json,
             "created_at":         self.created_at.isoformat() if self.created_at else None,
         }
 

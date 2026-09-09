@@ -63,6 +63,22 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     provider_min_charge_minor:     Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
     provider_max_charge_minor:     Mapped[int | None]     = mapped_column(BigInteger, nullable=True)
 
+    # Optional quality adjustment for percentage commission. Values are
+    # additive percentage points keyed by the canonical Trust & Quality band
+    # (for example base 10% + watchlist 5pp = 15%). Published policies remain
+    # immutable; the feature is enabled only by publishing a new version.
+    provider_health_adjustment_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    provider_health_adjustments_json: Mapped[dict] = mapped_column(
+        JSONB, default=lambda: {
+            "platinum": 0, "gold": 0, "silver": 2,
+            "watchlist": 5, "at_risk": 8, "blocked": 10,
+        }, nullable=False,
+    )
+    provider_health_score_max_age_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    provider_health_max_effective_percentage: Mapped[Decimal] = mapped_column(
+        Numeric(6, 3), default=Decimal("25"), nullable=False,
+    )
+
     # ── SLA breach: what a late job costs, and where the money goes ──────────
     # Every one of these is admin policy rather than a constant, so a penalty
     # can be retuned, reviewed and rolled back exactly like a commission rate.
@@ -127,6 +143,10 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "provider_chargeable_event": self.provider_chargeable_event,
             "provider_min_charge_minor": self.provider_min_charge_minor,
             "provider_max_charge_minor": self.provider_max_charge_minor,
+            "provider_health_adjustment_enabled": self.provider_health_adjustment_enabled,
+            "provider_health_adjustments_json": self.provider_health_adjustments_json,
+            "provider_health_score_max_age_days": self.provider_health_score_max_age_days,
+            "provider_health_max_effective_percentage": str(self.provider_health_max_effective_percentage),
             "customer_fee_model": self.customer_fee_model,
             "customer_fee_percentage": str(self.customer_fee_percentage) if self.customer_fee_percentage is not None else None,
             "customer_fee_fixed_amount_minor": self.customer_fee_fixed_amount_minor,

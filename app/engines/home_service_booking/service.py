@@ -1003,10 +1003,21 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        # If a channel has already captured a preferred slot, feed it into the
+        # same matching/holiday gate used by every other channel. Most journeys
+        # match before slot selection, in which case the allocator starts from
+        # the provider's current local time and returns the earliest real slot.
+        pricing_draft = await self._require_draft(draft_id, customer_id) if draft_id else None
+        requested_at = None
+        if pricing_draft and pricing_draft.preferred_date and pricing_draft.preferred_time_window:
+            requested_start = str(pricing_draft.preferred_time_window).split("-", 1)[0].strip()
+            requested_at = f"{pricing_draft.preferred_date.isoformat()}T{requested_start}"
+
         match = await select_best_provider(
             self.db, category_id=category_id, offering_id=master_service_id,
             city=city, zipcode=zipcode, offering_type_id=offering_type_id, brand_id=brand_id,
-            job_type_id=job_type_id,
+            job_type_id=job_type_id, requested_at=requested_at,
+            serialize_allocation=True,
         )
 
         if not match or not match.get("signals"):
@@ -1032,14 +1043,62 @@ class HomeServiceChatbotBookingService:
             new_value={
                 "policy_version": MATCHING_POLICY_VERSION,
                 "master_service_id": str(master_service_id), "city": city,
+                "zipcode": zipcode,
                 "job_type_id": str(job_type_id) if job_type_id else None,
                 "candidate_count": match.get("candidate_count", 0),
                 "excluded_count": match.get("excluded_count", 0),
                 "selected_provider_id": signals.tenant_id,
+                "selected_score": float(score),
+                "selected_score_breakdown": build_admin_provider(signals, score)["internal_score_breakdown"],
+                "earliest_slot": match.get("earliest_slot"),
                 "draft_id": str(draft_id) if draft_id else None,
                 "outcome": "selected",
             },
         ))
+
+        # Feed the existing Data Science engine a replayable shadow-mode
+        # observation. The rules above remain authoritative until a matching
+        # model has enough exact-service evidence and is explicitly promoted.
+        # A savepoint makes telemetry fail-open: analytics can never prevent a
+        # customer from booking a provider that passed the operational gates.
+        try:
+            from app.engines.data_science.service import DSService
+            candidate_features = [
+                {
+                    "tenant_id": candidate.tenant_id,
+                    "score": float(candidate_score),
+                    "features": build_admin_provider(candidate, candidate_score)["internal_score_breakdown"],
+                    "earliest_slot": candidate.earliest_slot,
+                }
+                for candidate, candidate_score in match.get("all_scored", [])
+            ]
+            async with self.db.begin_nested():
+                await DSService(self.db).record_provider_matching_observation(
+                    selected_tenant_id=selected_tenant_id,
+                    entity_id=str(draft_id) if draft_id else None,
+                    inputs={
+                        "policy_version": MATCHING_POLICY_VERSION,
+                        "category_id": str(category_id),
+                        "master_service_id": str(master_service_id),
+                        "job_type_id": str(job_type_id) if job_type_id else None,
+                        "offering_type_id": str(offering_type_id) if offering_type_id else None,
+                        "brand_id": str(brand_id) if brand_id else None,
+                        "city": city,
+                        "zipcode": zipcode,
+                        "requested_at": requested_at,
+                        "candidate_count": match.get("candidate_count", 0),
+                        "eligible_count": len(candidate_features),
+                        "excluded_providers": match.get("excluded_providers", []),
+                        "candidates": candidate_features,
+                    },
+                    output={
+                        "selected_provider_id": signals.tenant_id,
+                        "selected_score": float(score),
+                        "earliest_slot": match.get("earliest_slot"),
+                    },
+                )
+        except Exception as exc:  # noqa: BLE001 -- telemetry is fail-open
+            logger.warning("home_service.matching_observation_failed", error=str(exc))
 
         # Inspection-first offerings (pricing_model == visit_fee_plus_quote)
         # must NEVER have a fixed "standard_price" computed for them
@@ -1052,7 +1111,6 @@ class HomeServiceChatbotBookingService:
         # persists the visit-fee contract itself, after the provider is known;
         # it never depends on a provider-neutral estimate running first.
         offering = await self._get_offering(master_service_id)
-        pricing_draft = await self._require_draft(draft_id, customer_id) if draft_id else None
         pricing_model = await self._effective_pricing_model(offering, job_type_id,
             getattr(pricing_draft, 'service_job_workflow_id', None))
         inspection_mode = pricing_model == PRICING_MODEL_VISIT_FEE
@@ -1123,6 +1181,7 @@ class HomeServiceChatbotBookingService:
             # resolved earlier in draft.price_snapshot is what Review shows).
             "standard_price": float(standard_price) if standard_price is not None else None,
             "area_market_comparison": area_comparison,
+            "earliest_slot": match.get("earliest_slot"),
         }
         if reveal_internal_score:
             result["selected_provider_admin"] = selected_provider_admin
@@ -1398,6 +1457,7 @@ class HomeServiceChatbotBookingService:
                 promised_slot = await find_earliest_available_slot(
                     self.db, tenant_id=draft.selected_tenant_id,
                     master_service_id=draft.offering_id,
+                    job_type_id=draft.job_type_id,
                 )
             except Exception as exc:  # noqa: BLE001 -- never block the summary
                 logger.warning("home_service.promised_slot_failed", error=str(exc))
@@ -1506,6 +1566,7 @@ class HomeServiceChatbotBookingService:
         slots = await list_available_slots(
             self.db, tenant_id=draft.selected_tenant_id, emergency=emergency,
             master_service_id=draft.offering_id,
+            job_type_id=draft.job_type_id,
         )
         return {"slots": slots}
 
@@ -1538,6 +1599,7 @@ class HomeServiceChatbotBookingService:
         if not await slot_has_capacity(
             self.db, tenant_id=draft.selected_tenant_id, day=day,
             time_window=time_window, master_service_id=draft.offering_id,
+            job_type_id=draft.job_type_id,
         ):
             raise ValueError("SLOT_NO_LONGER_AVAILABLE")
 
@@ -1564,6 +1626,7 @@ class HomeServiceChatbotBookingService:
             self.db, tenant_id=draft.selected_tenant_id,
             from_datetime=now, search_days=days_needed, max_days=days_needed,
             emergency=emergency, master_service_id=draft.offering_id,
+            job_type_id=draft.job_type_id,
         )
         promised_slot = next(
             (s for s in candidates if s["date"] == day.isoformat() and s["time_window"] == time_window),

@@ -150,7 +150,7 @@ export default function MatchingDiagnosticsPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
                 {Object.entries(result.selected_provider.internal_score_breakdown).map(([k, v]) => (
                   <div key={k} style={{ padding: 8, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)", textAlign: "center" }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{v}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{String(v ?? "—")}</p>
                     <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: 0, textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</p>
                   </div>
                 ))}
@@ -201,4 +201,3 @@ function MiniStat({ label, value, danger }: { label: string; value: number; dang
     </div>
   );
 }
-

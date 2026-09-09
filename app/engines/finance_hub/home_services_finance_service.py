@@ -262,6 +262,10 @@ class HomeServicesFinanceService:
                 "completed_at": job.updated_at.isoformat() if job and job.updated_at else None,
                 "posted_at": ledger.created_at.isoformat() if ledger.created_at else None,
                 "reason_code": None if ledger.deduction_source else REASON_POLICY_UNRESOLVED,
+                "health_adjustment_percentage_points": (
+                    (ledger.calculation_snapshot_json or {}).get("provider_health", {})
+                    .get("adjustment_percentage_points")
+                ),
             })
 
         return {"items": items, "total": total, "page": page, "page_size": page_size}
@@ -299,6 +303,7 @@ class HomeServicesFinanceService:
             "policy_active": rule.is_active if rule else None,
             "request_id": ledger.request_id,
             "reason": ledger.reason,
+            "calculation_snapshot": ledger.calculation_snapshot_json,
             "posted_at": ledger.created_at.isoformat() if ledger.created_at else None,
             "completion_evidence": {
                 "status": job.status if job else None,

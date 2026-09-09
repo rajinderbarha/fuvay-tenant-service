@@ -59,13 +59,14 @@ def test_low_health_score_provider_loses():
     assert best[0].tenant_id == "strong"
 
 
-def test_score_formula_matches_ticket_weights():
+def test_score_formula_matches_enterprise_v2_weights():
     s = _signals("x", health_score=95, job_completion_score=96, rating_score=92,
                  availability_score=90, service_match_score=100, distance_score=85,
-                 cancellation_score=100, capacity_score=88)
+                 cancellation_score=100, capacity_score=88,
+                 service_reliability_score=94, slot_fit_score=90, fair_share_score=60)
     expected = (
-        95 * 0.20 + 96 * 0.20 + 92 * 0.15 + 90 * 0.15 + 100 * 0.10
-        + 85 * 0.10 + 100 * 0.05 + 88 * 0.05
+        95 * 0.30 + 94 * 0.20 + 90 * 0.20
+        + 85 * 0.10 + 88 * 0.10 + 60 * 0.10
     )
     assert float(compute_provider_score(s)) == pytest.approx(expected, abs=0.01)
 

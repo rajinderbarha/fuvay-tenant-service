@@ -37,7 +37,7 @@ _HS_KEY = "home_services"
 #: outcome worth a ledger row.
 _EVENT_NOT_REACHED = "event_not_reached"
 
-async def resolve_commission_credits(
+async def _resolve_commission_charge(
     db: AsyncSession,
     *,
     job_price: Decimal | None,
@@ -47,7 +47,8 @@ async def resolve_commission_credits(
     brand_id: uuid.UUID | None,
     job_type_id: uuid.UUID | None = None,
     chargeable_event: str = "job_completed",
-) -> tuple[Decimal, str | None]:
+    tenant_id: uuid.UUID | None = None,
+) -> tuple[Decimal, str | None, dict]:
     """Returns (credits, deduction_source_label). Each Home Services
     PERCENTAGE_COMMISSION rate comes only from the Home Services vertical's
     published Monetization policy. Service categories do not carry a second
@@ -83,7 +84,10 @@ async def resolve_commission_credits(
             or policy.provider_model == "FIXED_COMPLETION_CHARGE"
         )
         if not runtime_model_supported:
-            return Decimal("0"), f"monetization_policy:{policy.id}:unsupported_model"
+            return Decimal("0"), f"monetization_policy:{policy.id}:unsupported_model", {
+                "policy_id": str(policy.id), "policy_version": getattr(policy, "version_number", None),
+                "reason": "unsupported_provider_model",
+            }
         override = None
         if job_type_id is not None:
             override = (await db.execute(
@@ -106,7 +110,40 @@ async def resolve_commission_credits(
         if configured_event != chargeable_event:
             source = (f"monetization_job_type_rule:{override.id}" if override is not None
                       else f"monetization_policy:{policy.id}")
-            return Decimal("0"), f"{source}:{_EVENT_NOT_REACHED}"
+            return Decimal("0"), f"{source}:{_EVENT_NOT_REACHED}", {
+                "policy_id": str(policy.id), "policy_version": getattr(policy, "version_number", None),
+                "configured_event": configured_event, "attempted_event": chargeable_event,
+                "reason": _EVENT_NOT_REACHED,
+            }
+        health_snapshot = {
+            "source": "not_applicable",
+            "reason": "health_adjustment_disabled",
+            "score": None,
+            "band_key": None,
+            "adjustment_percentage_points": "0",
+        }
+        health_adjustment = Decimal("0")
+        health_enabled = bool(getattr(policy, "provider_health_adjustment_enabled", False))
+        if health_enabled and policy.provider_model == "PERCENTAGE_COMMISSION" and tenant_id is not None:
+            from app.engines.trust_quality.provider_health import get_provider_health_snapshot
+            health_snapshot = await get_provider_health_snapshot(
+                db,
+                tenant_id,
+                max_age_days=int(getattr(policy, "provider_health_score_max_age_days", 30) or 30),
+            )
+            adjustments = getattr(policy, "provider_health_adjustments_json", None) or {}
+            if health_snapshot["source"] == "canonical":
+                try:
+                    health_adjustment = max(
+                        Decimal("0"),
+                        Decimal(str(adjustments.get(health_snapshot["band_key"], 0))),
+                    )
+                except Exception:
+                    # Published policy validation prevents this, but fail safe
+                    # to the base rate if old/corrupt data is encountered.
+                    health_adjustment = Decimal("0")
+                    health_snapshot["reason"] = "invalid_band_adjustment"
+            health_snapshot["adjustment_percentage_points"] = str(health_adjustment)
         from app.engines.vertical_monetization.calculation_service import calculate_provider_completion_credits
         calculated = calculate_provider_completion_credits(
             policy=policy,
@@ -121,16 +158,61 @@ async def resolve_commission_credits(
                 else None
             ),
             charge_model_override=override.provider_charge_model if override is not None else None,
+            health_adjustment_percentage_points=health_adjustment,
         )
         source = (
             f"monetization_job_type_rule:{override.id}"
             if override is not None else f"monetization_policy:{policy.id}"
         )
-        return Decimal(calculated["provider_charge_credit_units"]), source
+        return Decimal(calculated["provider_charge_credit_units"]), source, {
+            "policy_id": str(policy.id),
+            "policy_version": getattr(policy, "version_number", None),
+            "provider_model": calculated["provider_model"],
+            "chargeable_event": chargeable_event,
+            "job_type_rule_id": str(override.id) if override is not None else None,
+            "calculation": calculated["provider_charge_breakdown"],
+            "provider_health": health_snapshot,
+            "final_credit_units": calculated["provider_charge_credit_units"],
+        }
 
     # No hidden fallback: Home Services Monetization is the sole authority.
     # With no published policy, no provider charge is created.
-    return Decimal("0"), None
+    return Decimal("0"), None, {"reason": "no_published_policy"}
+
+
+async def resolve_commission_credits(
+    db: AsyncSession,
+    *,
+    job_price: Decimal | None,
+    category_id: uuid.UUID | None,
+    master_service_id: uuid.UUID,
+    offering_type_id: uuid.UUID | None,
+    brand_id: uuid.UUID | None,
+    job_type_id: uuid.UUID | None = None,
+    chargeable_event: str = "job_completed",
+) -> tuple[Decimal, str | None]:
+    """Compatibility facade returning the historical two-item tuple.
+
+    Runtime completion uses the richer resolver below so its immutable ledger
+    snapshot also records the provider-health decision. That shared resolver
+    remains the authority for the ``configured_event`` resolved from
+    ``policy.provider_chargeable_event`` and applies
+    the backwards-compatible ``or "job_completed"`` default; this facade does
+    not reimplement either rule.
+    """
+    credits, source, _snapshot = await _resolve_commission_charge(
+        db,
+        job_price=job_price,
+        category_id=category_id,
+        master_service_id=master_service_id,
+        offering_type_id=offering_type_id,
+        brand_id=brand_id,
+        job_type_id=job_type_id,
+        chargeable_event=chargeable_event,
+    )
+    if source is None and credits == Decimal("0"):
+        return Decimal("0"), None
+    return credits, source
 
 
 async def deduct_for_completed_job(
@@ -162,11 +244,12 @@ async def deduct_for_completed_job(
     if existing:
         return {**existing.to_dict(), "deduction_status": "already_deducted"}
 
-    credits, deduction_source = await resolve_commission_credits(
+    credits, deduction_source, calculation_snapshot = await _resolve_commission_charge(
         db, job_price=job_price, category_id=category_id,
         master_service_id=master_service_id, offering_type_id=offering_type_id, brand_id=brand_id,
         job_type_id=job_type_id,
         chargeable_event=chargeable_event,
+        tenant_id=tenant_id,
     )
 
     # This lifecycle moment is not the one the policy charges at. Writing a
@@ -208,6 +291,7 @@ async def deduct_for_completed_job(
         service_id=master_service_id, service_type_id=offering_type_id, brand_id=brand_id,
         reason=f"Completed Job Deduction for job {job_id}",
         request_id=request_id,
+        calculation_snapshot_json=calculation_snapshot,
     )
     db.add(ledger)
     await db.flush()

@@ -28,30 +28,36 @@ class TestCanonicalHealthScoreLineage:
         from app.engines.home_service_booking.matching_engine import _canonical_health_score
 
         db = AsyncMock()
-        row = MagicMock(score=87.5, calculated_at=datetime.now(timezone.utc))
+        row = MagicMock(score=87.5, band_key="gold", bookable_allowed=True,
+                        calculated_at=datetime.now(timezone.utc))
         result_mock = MagicMock()
         result_mock.first.return_value = row
         db.execute = AsyncMock(return_value=result_mock)
 
-        score, source, calc_at = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=60.0)
+        score, source, calc_at, bookable = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=60.0)
         assert score == 87.5
         assert source == "canonical"
         assert calc_at is not None
+        assert bookable is True
 
     @pytest.mark.asyncio
-    async def test_stale_canonical_score_falls_back_to_legacy_column(self):
-        from app.engines.home_service_booking.matching_engine import _canonical_health_score, HEALTH_SCORE_STALE_AFTER_DAYS
+    async def test_stale_canonical_score_uses_neutral_unassessed_prior(self):
+        from app.engines.home_service_booking.matching_engine import (
+            _canonical_health_score, HEALTH_SCORE_STALE_AFTER_DAYS,
+            MISSING_HEALTH_SCORE_DEFAULT,
+        )
 
         db = AsyncMock()
         stale_at = datetime.now(timezone.utc) - timedelta(days=HEALTH_SCORE_STALE_AFTER_DAYS + 1)
-        row = MagicMock(score=99.0, calculated_at=stale_at)
+        row = MagicMock(score=99.0, band_key="platinum", calculated_at=stale_at)
         result_mock = MagicMock()
         result_mock.first.return_value = row
         db.execute = AsyncMock(return_value=result_mock)
 
-        score, source, _ = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=60.0)
-        assert source == "legacy_column"
-        assert score == 60.0  # NOT the stale canonical 99.0
+        score, source, _, bookable = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=60.0)
+        assert source == "unassessed_default"
+        assert score == MISSING_HEALTH_SCORE_DEFAULT  # neither stale 99 nor legacy 60
+        assert bookable is True
 
     @pytest.mark.asyncio
     async def test_missing_everything_uses_neutral_default_never_perfect(self):
@@ -63,10 +69,27 @@ class TestCanonicalHealthScoreLineage:
         result_mock.first.return_value = None
         db.execute = AsyncMock(return_value=result_mock)
 
-        score, source, _ = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=None)
-        assert source == "missing_default"
+        score, source, _, bookable = await _canonical_health_score(db, uuid.uuid4(), legacy_fallback=None)
+        assert source == "unassessed_default"
         assert score == MISSING_HEALTH_SCORE_DEFAULT
         assert score != 100.0  # missing data must never be treated as perfect
+        assert bookable is True
+
+    @pytest.mark.asyncio
+    async def test_admin_non_bookable_health_band_is_preserved(self):
+        from app.engines.home_service_booking.matching_engine import _canonical_health_score
+        db = AsyncMock()
+        result = MagicMock()
+        result.first.return_value = MagicMock(
+            score=72.0, band_key="manual_hold", bookable_allowed=False,
+            calculated_at=datetime.now(timezone.utc),
+        )
+        db.execute = AsyncMock(return_value=result)
+
+        score, source, _, bookable = await _canonical_health_score(
+            db, uuid.uuid4(), legacy_fallback=100,
+        )
+        assert (score, source, bookable) == (72.0, "canonical", False)
 
     def test_select_best_provider_no_longer_reads_tenant_health_score_directly(self):
         from app.engines.home_service_booking import matching_engine
@@ -118,7 +141,8 @@ class TestPolicyManifest:
         assert manifest["code_controlled"] is True
         assert manifest["policy_key"]
         assert manifest["version"] >= 1
-        assert len(manifest["factors"]) == 8
+        assert len(manifest["factors"]) == 6
+        assert manifest["version"] == 2
         assert "eligibility_gates" in manifest
         assert "EXACT_JOB_TYPE_NOT_SUPPORTED" in manifest["eligibility_gates"]
         assert "missing_signal_policy" in manifest
@@ -128,19 +152,17 @@ class TestPolicyManifest:
         manifest = me.get_policy_manifest()
         weight_by_key = {f["factor_key"]: f["weight"] for f in manifest["factors"]}
         assert weight_by_key["health_score"] == float(me.WEIGHT_HEALTH_SCORE)
-        assert weight_by_key["job_completion"] == float(me.WEIGHT_JOB_COMPLETION)
-        assert weight_by_key["rating"] == float(me.WEIGHT_RATING)
-        assert weight_by_key["availability"] == float(me.WEIGHT_AVAILABILITY)
-        assert weight_by_key["service_match"] == float(me.WEIGHT_SERVICE_MATCH)
+        assert weight_by_key["service_reliability"] == float(me.WEIGHT_SERVICE_RELIABILITY)
+        assert weight_by_key["slot_fit"] == float(me.WEIGHT_SLOT_FIT)
         assert weight_by_key["area_match"] == float(me.WEIGHT_DISTANCE)
-        assert weight_by_key["cancellation"] == float(me.WEIGHT_CANCELLATION)
         assert weight_by_key["capacity"] == float(me.WEIGHT_CAPACITY)
+        assert weight_by_key["fair_share"] == float(me.WEIGHT_FAIR_SHARE)
 
     def test_weights_sum_to_one(self):
         from app.engines.home_service_booking import matching_engine as me
-        total = (me.WEIGHT_HEALTH_SCORE + me.WEIGHT_JOB_COMPLETION + me.WEIGHT_RATING
-                  + me.WEIGHT_AVAILABILITY + me.WEIGHT_SERVICE_MATCH + me.WEIGHT_DISTANCE
-                  + me.WEIGHT_CANCELLATION + me.WEIGHT_CAPACITY)
+        total = (me.WEIGHT_HEALTH_SCORE + me.WEIGHT_SERVICE_RELIABILITY
+                 + me.WEIGHT_SLOT_FIT + me.WEIGHT_DISTANCE
+                 + me.WEIGHT_CAPACITY + me.WEIGHT_FAIR_SHARE)
         assert total == 1
 
     def test_no_admin_write_route_exists_for_policy(self):
@@ -164,6 +186,19 @@ class TestTieBreakDeterminism:
         ranked = rank_candidates([a, b])
         assert ranked[0][0].tenant_id == "a-tenant"  # lexicographically first tenant_id wins the tie
 
+    def test_fair_share_rotates_only_comparable_quality(self):
+        from app.engines.home_service_booking.matching_engine import select_best_candidate, CandidateSignals
+        common = dict(provider_name="P", slot_fit_score=80, distance_score=100, capacity_score=80)
+        served = CandidateSignals(tenant_id="served", health_score=82,
+                                  service_reliability_score=82, fair_share_score=0, **common)
+        waiting = CandidateSignals(tenant_id="waiting", health_score=80,
+                                   service_reliability_score=80, fair_share_score=100, **common)
+        assert select_best_candidate([served, waiting])[0].tenant_id == "waiting"
+
+        unsafe = CandidateSignals(tenant_id="unsafe", health_score=50,
+                                  service_reliability_score=50, fair_share_score=100, **common)
+        assert select_best_candidate([served, unsafe])[0].tenant_id == "served"
+
     def test_ranking_is_deterministic_across_repeated_calls(self):
         from app.engines.home_service_booking.matching_engine import rank_candidates, CandidateSignals
         candidates = [
@@ -173,6 +208,61 @@ class TestTieBreakDeterminism:
         r1 = rank_candidates(candidates)
         r2 = rank_candidates(candidates)
         assert [c.tenant_id for c, _ in r1] == [c.tenant_id for c, _ in r2]
+
+    def test_recent_allocation_deficit_becomes_fair_share_score(self):
+        from app.engines.home_service_booking.matching_engine import _fair_share_scores
+        waiting, served = uuid.uuid4(), uuid.uuid4()
+        scores = _fair_share_scores({waiting, served}, {waiting: 1, served: 5})
+        assert scores[waiting] == 100.0
+        assert scores[served] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_allocation_history_is_scoped_to_exact_market(self):
+        from app.engines.home_service_booking.matching_engine import _recent_allocation_counts
+        provider_id = uuid.uuid4()
+        result = MagicMock()
+        result.fetchall.return_value = [MagicMock(provider_id=str(provider_id), n=3)]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+
+        counts = await _recent_allocation_counts(
+            db, {provider_id}, offering_id=uuid.uuid4(), city="Bassi Pathana",
+            zipcode="140412",
+        )
+
+        assert counts == {provider_id: 3}
+        sql = str(db.execute.await_args.args[0])
+        params = db.execute.await_args.args[1]
+        assert "master_service_id" in sql and "zipcode" in sql
+        assert params["zipcode"] == "140412"
+
+
+class TestDataScienceObservation:
+    @pytest.mark.asyncio
+    async def test_matching_observation_is_immutable_shadow_data(self):
+        from app.engines.data_science.models import PredictionRecord
+        from app.engines.data_science.service import DSService
+
+        db = MagicMock()
+        db.add = MagicMock()
+        db.flush = AsyncMock()
+        service = DSService(db)
+        service._get_ds_phase = AsyncMock(return_value=1)
+        service._get_active_model_version = AsyncMock(return_value="rule_based_v1")
+        tenant_id = uuid.uuid4()
+
+        await service.record_provider_matching_observation(
+            selected_tenant_id=tenant_id,
+            entity_id="draft-1",
+            inputs={"candidates": [{"health_score": 80}]},
+            output={"selected_provider_id": str(tenant_id)},
+        )
+
+        record = db.add.call_args.args[0]
+        assert isinstance(record, PredictionRecord)
+        assert record.observation_mode is True
+        assert record.prediction_type == "provider_matching"
+        assert record.inputs["candidates"][0]["health_score"] == 80
 
 
 class TestDiagnosticNoMutation:

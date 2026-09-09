@@ -24,7 +24,7 @@ TenantBusinessVertical table exists, only `_base_query()` needs to change.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select, func, or_, exists, text
@@ -51,6 +51,44 @@ class HomeServicesProviderDirectoryService:
         self.actor_id = actor_id
         self.actor_role = actor_role
 
+    async def _canonical_health_map(self, tenant_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+        """Fresh, banded Trust & Quality score used by allocation and admin.
+
+        Directory cards previously displayed ``tenants.health_score`` (whose
+        historical default was 100) while matching used a different source.
+        Returning the same neutral/unassessed state here removes that split.
+        """
+        if not tenant_ids:
+            return {}
+        from app.engines.home_service_booking.matching_engine import (
+            HEALTH_SCORE_STALE_AFTER_DAYS, MISSING_HEALTH_SCORE_DEFAULT,
+        )
+        rows = (await self.db.execute(text("""
+            SELECT DISTINCT ON (hs.target_id)
+                   hs.target_id, hs.score, hs.band_key, hs.calculated_at
+              FROM health_scores hs
+              JOIN health_formulas hf ON hf.id = hs.formula_id
+             WHERE hs.target_type = 'tenant' AND hf.status = 'active'
+               AND hs.target_id = ANY(CAST(:ids AS uuid[]))
+               AND hs.band_key IS NOT NULL
+               AND hs.calculated_at >= now() - (:days * interval '1 day')
+             ORDER BY hs.target_id, hs.calculated_at DESC
+        """), {"ids": [str(value) for value in tenant_ids], "days": HEALTH_SCORE_STALE_AFTER_DAYS})).mappings().all()
+        mapped = {
+            row["target_id"]: {
+                "score": float(row["score"]), "band": row["band_key"],
+                "source": "canonical",
+            }
+            for row in rows
+        }
+        for tenant_id in tenant_ids:
+            mapped.setdefault(tenant_id, {
+                "score": MISSING_HEALTH_SCORE_DEFAULT,
+                "band": None,
+                "source": "unassessed_default",
+            })
+        return mapped
+
     # ── The one shared predicate: summary, list and export all start here ──
     def _base_query(self, *, q: str | None = None, status: str | None = None,
                      status_in: list[str] | None = None,
@@ -69,7 +107,18 @@ class HomeServicesProviderDirectoryService:
         if state:
             stmt = stmt.where(Tenant.state.ilike(f"%{state.strip()}%"))
         if health_band:
-            stmt = stmt.where(Tenant.health_band == health_band)
+            from app.engines.trust_quality.models import HealthFormula, HealthScore
+            stmt = stmt.where(exists(
+                select(1).select_from(HealthScore)
+                .join(HealthFormula, HealthFormula.id == HealthScore.formula_id)
+                .where(
+                    HealthScore.target_type == "tenant",
+                    HealthScore.target_id == Tenant.id,
+                    HealthScore.band_key == health_band,
+                    HealthScore.calculated_at >= datetime.now(timezone.utc) - timedelta(days=7),
+                    HealthFormula.status == "active",
+                )
+            ))
         if q:
             like = f"%{q}%"
             stmt = stmt.where(or_(
@@ -122,7 +171,24 @@ class HomeServicesProviderDirectoryService:
         )
         total = (await self.db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
 
-        sort_col = {"created_at": Tenant.created_at, "health_score": Tenant.health_score,
+        if sort_by == "health_score":
+            from app.engines.trust_quality.models import HealthFormula, HealthScore
+            canonical_health = (
+                select(HealthScore.score)
+                .join(HealthFormula, HealthFormula.id == HealthScore.formula_id)
+                .where(
+                    HealthScore.target_type == "tenant",
+                    HealthScore.target_id == Tenant.id,
+                    HealthScore.band_key.is_not(None),
+                    HealthScore.calculated_at >= datetime.now(timezone.utc) - timedelta(days=7),
+                    HealthFormula.status == "active",
+                )
+                .order_by(HealthScore.calculated_at.desc()).limit(1)
+                .correlate(Tenant).scalar_subquery()
+            )
+            sort_col = func.coalesce(canonical_health, 65.0)
+        else:
+            sort_col = {"created_at": Tenant.created_at,
                     "business_name": Tenant.business_name, "rating_average": Tenant.rating_average,
                     "city": Tenant.city, "verification_status": Tenant.verification_status}.get(sort_by, Tenant.created_at)
         direction = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
@@ -140,11 +206,14 @@ class HomeServicesProviderDirectoryService:
             )).scalars().all()
             billing_by_tenant = {b.tenant_id: b for b in billing_rows}
 
-        items = [self._provider_row(t, billing_by_tenant.get(t.id)) for t in tenants]
+        health_by_tenant = await self._canonical_health_map(tenant_ids)
+
+        items = [self._provider_row(t, billing_by_tenant.get(t.id), health_by_tenant.get(t.id)) for t in tenants]
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
-    def _provider_row(self, t: Tenant, billing: TenantBilling | None) -> dict:
+    def _provider_row(self, t: Tenant, billing: TenantBilling | None, health: dict | None = None) -> dict:
         credit_balance = Decimal(str(billing.credit_balance)) if billing else Decimal("0")
+        health = health or {"score": 65.0, "band": None, "source": "unassessed_default"}
         return {
             "provider_id": str(t.id),
             "tenant_code": t.tenant_code,
@@ -152,8 +221,9 @@ class HomeServicesProviderDirectoryService:
             "logo_url": t.logo_url,
             "registration_status": t.status,
             "verification_status": t.verification_status,
-            "health_score": float(t.health_score),
-            "health_band": t.health_band,
+            "health_score": float(health["score"]),
+            "health_band": health["band"],
+            "health_score_source": health["source"],
             "rating_average": float(t.rating_average),
             "credit_balance": str(credit_balance),
             "credit_status": "low" if credit_balance < LOW_BALANCE_THRESHOLD else "healthy",
@@ -182,7 +252,8 @@ class HomeServicesProviderDirectoryService:
             from app.engines.auth.models import User
             owner = await self.db.get(User, tenant.owner_user_id)
 
-        row = self._provider_row(tenant, billing)
+        health = (await self._canonical_health_map([provider_id]))[provider_id]
+        row = self._provider_row(tenant, billing, health)
         from app.engines.vertical_catalog.home_services_setup_service import get_setup_overview
         from app.engines.provider_portal.router import _evaluate_provider_bookability
         from app.engines.tenant_engine.models import TenantBusinessProfile
@@ -343,10 +414,12 @@ class HomeServicesProviderDirectoryService:
         completed_jobs = int(job_counts.completed or 0)
         cancelled_jobs = int(job_counts.cancelled or 0)
 
+        health = (await self._canonical_health_map([provider_id]))[provider_id]
         return {
             "rating_average": float(tenant.rating_average),
-            "health_score": float(tenant.health_score),
-            "health_band": tenant.health_band,
+            "health_score": float(health["score"]),
+            "health_band": health["band"],
+            "health_score_source": health["source"],
             "open_complaints_count": open_count,
             "total_complaints": total,
             "total_jobs": total_jobs,

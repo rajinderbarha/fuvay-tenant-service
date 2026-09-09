@@ -86,8 +86,8 @@ function query(params?: Record<string, string | number | boolean | undefined>): 
 
 /** GET /v1/tenant/home-services/finance/commission-rates -- the provider
  * commission actually charged on this tenant's completed jobs, resolved the
- * same way execution/usage_credit_deduction.py resolves it (the job's own
- * category rate, falling back to the vertical policy default). */
+ * same way execution/usage_credit_deduction.py resolves it from the published
+ * vertical policy and the tenant's fresh canonical health snapshot. */
 export interface HsCommissionCategoryRate {
   category_id: string;
   category_name: string;
@@ -100,6 +100,13 @@ export interface HsCommissionRates {
   is_live: boolean;
   provider_model: string | null;
   default_rate_pct: string | null;
+  effective_rate_pct: string | null;
+  health_adjustment_enabled: boolean;
+  health_adjustment_pct_points: string;
+  health_snapshot: {
+    score: number; band_key: string | null; source: string; reason: string | null;
+    calculated_at: string | null;
+  } | null;
   basis: string;
   charged_as: string;
   categories: HsCommissionCategoryRate[];

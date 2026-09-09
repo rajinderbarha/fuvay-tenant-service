@@ -485,6 +485,29 @@ class TenantHomeServicesFinanceService:
             _d(policy.provider_percentage)
             if policy is not None and policy.provider_percentage is not None else None
         )
+        effective_pct = default_pct
+        health_adjustment_pct = Decimal("0")
+        health_snapshot = None
+        if (
+            is_live and policy is not None
+            and policy.provider_health_adjustment_enabled
+        ):
+            from app.engines.trust_quality.provider_health import get_provider_health_snapshot
+            health_snapshot = await get_provider_health_snapshot(
+                self.db, self.tenant_id,
+                max_age_days=policy.provider_health_score_max_age_days,
+            )
+            if health_snapshot["source"] == "canonical":
+                health_adjustment_pct = _d(
+                    (policy.provider_health_adjustments_json or {}).get(
+                        health_snapshot["band_key"], 0
+                    )
+                )
+            effective_pct = min(
+                Decimal("100"),
+                _d(policy.provider_health_max_effective_percentage),
+                (default_pct or Decimal("0")) + health_adjustment_pct,
+            )
 
         # Categories this tenant actually serves (enabled services only).
         cat_ids = (await self.db.execute(
@@ -507,7 +530,7 @@ class TenantHomeServicesFinanceService:
                     "category_id": str(c.id),
                     "category_name": c.name,
                     "category_rate_pct": None,
-                    "effective_rate_pct": str(default_pct) if default_pct is not None else None,
+                    "effective_rate_pct": str(effective_pct) if effective_pct is not None else None,
                     "using_default": True,
                     "source": "home_services_vertical_policy",
                 })
@@ -516,6 +539,12 @@ class TenantHomeServicesFinanceService:
             "is_live": is_live,
             "provider_model": model,
             "default_rate_pct": str(default_pct) if default_pct is not None else None,
+            "health_adjustment_enabled": bool(
+                policy and policy.provider_health_adjustment_enabled
+            ),
+            "health_adjustment_pct_points": str(health_adjustment_pct),
+            "effective_rate_pct": str(effective_pct) if effective_pct is not None else None,
+            "health_snapshot": health_snapshot,
             "basis": "Percentage of the amount you collect from the customer for each completed job",
             "charged_as": "Usage credits deducted from your balance at job completion",
             "categories": categories,

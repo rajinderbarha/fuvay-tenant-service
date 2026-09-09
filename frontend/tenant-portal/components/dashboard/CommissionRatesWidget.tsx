@@ -4,9 +4,8 @@
  * jobs, per category.
  *
  * This widget instead reads /commission-rates, which resolves the rate the
- * same way execution/usage_credit_deduction.py::resolve_commission_credits
- * does at job completion -- category rate first, vertical policy default as
- * fallback -- so the number shown is the number charged.
+ * same way execution/usage_credit_deduction.py does at job completion,
+ * including any published health-band adjustment.
  */
 import React, { useCallback } from "react";
 import { Percent, AlertTriangle } from "lucide-react";
@@ -53,6 +52,19 @@ export function CommissionRatesWidget() {
         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
           {d.basis}. {d.charged_as}.
         </p>
+
+        {d.is_live && d.health_adjustment_enabled && (
+          <div style={{ padding: "8px 10px", borderRadius: 8, marginBottom: 12,
+            background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12 }}>
+            Base {pct(d.default_rate_pct)} + health adjustment {pct(d.health_adjustment_pct_points)} ={" "}
+            <strong>{pct(d.effective_rate_pct)}</strong>
+            <span style={{ display: "block", color: "var(--text-tertiary)", marginTop: 2 }}>
+              {d.health_snapshot?.source === "canonical"
+                ? `${(d.health_snapshot.band_key ?? "assessed").replace(/_/g, " ")} band · score ${d.health_snapshot.score}`
+                : "No fresh assessed score — base rate applies"}
+            </span>
+          </div>
+        )}
 
         {!d.is_live && d.not_live_reason && (
           <div style={{ display: "flex", gap: 8, padding: "8px 10px", borderRadius: 8, marginBottom: 12,

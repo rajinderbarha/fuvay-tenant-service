@@ -41,10 +41,14 @@ async def test_daily_limit_rejects_more_than_purchased_team_can_deliver():
     from app.exceptions import ServiceOSException
     assert _validate_designation('technician', None) is None
     rule = {'start_time': '09:00', 'end_time': '18:00', 'max_jobs_per_day': 12}
+    settings = MagicMock()
+    settings.scalar.return_value = 0
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=settings)
     with patch('app.engines.vertical_catalog.seat_enforcement.get_seat_usage', AsyncMock(return_value={'entitled_seats': 3, 'used_seats': 3})):
-        await _validate_daily_job_capacity(MagicMock(), uuid.uuid4(), rule)
+        await _validate_daily_job_capacity(db, uuid.uuid4(), rule)
         with pytest.raises(ServiceOSException):
-            await _validate_daily_job_capacity(MagicMock(), uuid.uuid4(), {**rule, 'max_jobs_per_day': 13})
+            await _validate_daily_job_capacity(db, uuid.uuid4(), {**rule, 'max_jobs_per_day': 13})
 
 
 @pytest.mark.asyncio

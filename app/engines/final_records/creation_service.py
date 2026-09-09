@@ -347,6 +347,7 @@ class HomeServiceFinalCreationService:
                         self.db, tenant_id=draft.selected_tenant_id,
                         day=d, time_window=offered_window,
                         master_service_id=draft.offering_id,
+                        job_type_id=draft.job_type_id,
                     ):
                         promised_date, promised_window = d, offered_window
                 except (ValueError, TypeError):
@@ -356,6 +357,7 @@ class HomeServiceFinalCreationService:
                     fresh = await find_earliest_available_slot(
                         self.db, tenant_id=draft.selected_tenant_id,
                         master_service_id=draft.offering_id,
+                        job_type_id=draft.job_type_id,
                     )
                     if fresh:
                         promised_date = _dt.date.fromisoformat(str(fresh["date"]))

@@ -29,6 +29,8 @@ _DRAFT_FIELDS = {
     "provider_model", "provider_percentage", "provider_fixed_amount_minor",
     "provider_credit_units", "provider_subscription_plan_id", "provider_chargeable_event",
     "provider_min_charge_minor", "provider_max_charge_minor",
+    "provider_health_adjustment_enabled", "provider_health_adjustments_json",
+    "provider_health_score_max_age_days", "provider_health_max_effective_percentage",
     "customer_fee_model", "customer_fee_percentage", "customer_fee_fixed_amount_minor",
     "customer_fee_min_minor", "customer_fee_max_minor", "customer_fee_basis",
     "collection_stage", "customer_fee_refund_policy", "currency", "effective_from", "change_summary",
@@ -141,6 +143,9 @@ class VerticalMonetizationPolicyService:
             except Exception:
                 errors.append(f"{name} must be numeric")
                 return None
+            if not value.is_finite():
+                errors.append(f"{name} must be a finite number")
+                return None
             if minimum is not None and value < minimum:
                 errors.append(f"{name} must be at least {minimum}")
             if maximum is not None and value > maximum:
@@ -185,6 +190,43 @@ class VerticalMonetizationPolicyService:
         provider_max = decimal_field("provider_max_charge_minor", minimum=Decimal("0"))
         if provider_min is not None and provider_max is not None and provider_min > provider_max:
             errors.append("provider_min_charge_minor cannot exceed provider_max_charge_minor")
+
+        health_enabled = bool(payload.get("provider_health_adjustment_enabled", False))
+        health_bands = payload.get("provider_health_adjustments_json")
+        if health_enabled and pm != "PERCENTAGE_COMMISSION":
+            errors.append(
+                "Provider health adjustment can only be enabled for PERCENTAGE_COMMISSION"
+            )
+        if health_bands is not None:
+            if not isinstance(health_bands, dict):
+                errors.append("provider_health_adjustments_json must be an object keyed by health band")
+            else:
+                for band, raw_adjustment in health_bands.items():
+                    if not isinstance(band, str) or not band.strip():
+                        errors.append("provider health adjustment band keys must be non-empty strings")
+                        continue
+                    try:
+                        adjustment = Decimal(str(raw_adjustment))
+                    except Exception:
+                        errors.append(f"Health adjustment for {band} must be numeric")
+                        continue
+                    if not adjustment.is_finite():
+                        errors.append(f"Health adjustment for {band} must be a finite number")
+                        continue
+                    if adjustment < 0 or adjustment > 50:
+                        errors.append(f"Health adjustment for {band} must be between 0 and 50 percentage points")
+        max_age = payload.get("provider_health_score_max_age_days")
+        if max_age not in (None, ""):
+            try:
+                if int(max_age) < 1 or int(max_age) > 90:
+                    errors.append("provider_health_score_max_age_days must be between 1 and 90")
+            except (TypeError, ValueError):
+                errors.append("provider_health_score_max_age_days must be a whole number")
+        health_cap = decimal_field(
+            "provider_health_max_effective_percentage", minimum=Decimal("0"), maximum=Decimal("100")
+        )
+        if health_enabled and provider_pct is not None and health_cap is not None and health_cap < provider_pct:
+            errors.append("provider_health_max_effective_percentage cannot be below provider_percentage")
 
         cf = payload.get("customer_fee_model", "NONE")
         if cf not in CUSTOMER_FEE_MODELS:
@@ -385,6 +427,20 @@ class VerticalMonetizationPolicyService:
             service_amount=example_service_amount,
         )
         result.update(provider_result)
+        health_examples = {}
+        if draft_dict.get("provider_health_adjustment_enabled"):
+            for band, adjustment in (draft_dict.get("provider_health_adjustments_json") or {}).items():
+                calculated = calculate_provider_completion_credits(
+                    policy=fake_policy,
+                    service_amount=example_service_amount,
+                    health_adjustment_percentage_points=adjustment,
+                )
+                health_examples[band] = {
+                    "adjustment_percentage_points": str(adjustment),
+                    "effective_percentage": calculated["provider_charge_breakdown"].get("percentage"),
+                    "provider_charge_credit_units": calculated["provider_charge_credit_units"],
+                }
+        result["provider_health_adjustment_examples"] = health_examples
         customer_recovery_units = Decimal(to_major(result["fee_amount_minor"]))
         provider_units = Decimal(provider_result["provider_charge_credit_units"])
         result["customer_charge_recovery_credit_units"] = str(customer_recovery_units)

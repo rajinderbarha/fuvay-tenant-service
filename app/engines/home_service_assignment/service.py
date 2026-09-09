@@ -1339,6 +1339,7 @@ class HomeServiceJobAssignmentService:
                 day=scheduled_date,
                 time_window=scheduled_time_window,
                 master_service_id=job.offering_id,
+                job_type_id=job.job_type_id,
                 exclude_job_id=job.id,
             ):
                 raise ValueError(ERR_SLOT_UNAVAILABLE)
