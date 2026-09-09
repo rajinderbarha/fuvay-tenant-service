@@ -142,7 +142,7 @@ class TestPolicyManifest:
         assert manifest["policy_key"]
         assert manifest["version"] >= 1
         assert len(manifest["factors"]) == 6
-        assert manifest["version"] == 3
+        assert manifest["version"] == 4
         assert "eligibility_gates" in manifest
         assert "EXACT_JOB_TYPE_NOT_SUPPORTED" in manifest["eligibility_gates"]
         assert "missing_signal_policy" in manifest
@@ -209,11 +209,24 @@ class TestTieBreakDeterminism:
             counts[selected] += 1
         assert counts["healthy"] > counts["lower"] > 0
 
-    def test_health_weight_declines_continuously_to_the_safe_floor(self):
+    def test_health_weight_declines_continuously_to_the_minimum_share(self):
         from app.engines.home_service_booking.matching_engine import health_allocation_weight
         assert float(health_allocation_weight(100)) == 1
-        assert float(health_allocation_weight(70)) == pytest.approx(0.5)
-        assert float(health_allocation_weight(50)) == pytest.approx(1 / 6)
+        assert float(health_allocation_weight(70)) == pytest.approx(0.73)
+        assert float(health_allocation_weight(0)) == pytest.approx(0.10)
+
+    def test_low_health_provider_is_selected_when_it_is_the_only_eligible_option(self):
+        from app.engines.home_service_booking.matching_engine import select_best_candidate, CandidateSignals
+        only_provider = CandidateSignals(
+            tenant_id="only", provider_name="Only Provider", health_score=12,
+            service_reliability_score=20, recent_allocations=50,
+        )
+        assert select_best_candidate([only_provider])[0].tenant_id == "only"
+
+    def test_health_floor_is_not_an_eligibility_gate(self):
+        from app.engines.home_service_booking.matching_engine import get_policy_manifest
+        manifest = get_policy_manifest()
+        assert "HEALTH_BELOW_AUTO_ASSIGN_FLOOR" not in manifest["eligibility_gates"]
 
     def test_ranking_is_deterministic_across_repeated_calls(self):
         from app.engines.home_service_booking.matching_engine import rank_candidates, CandidateSignals

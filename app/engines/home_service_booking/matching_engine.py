@@ -71,8 +71,7 @@ WEIGHT_DISTANCE             = Decimal("0.10")
 WEIGHT_CAPACITY             = Decimal("0.10")
 WEIGHT_FAIR_SHARE           = Decimal("0.10")
 
-MIN_AUTO_ASSIGN_HEALTH = Decimal("50.0")
-ALLOCATION_HEALTH_FLOOR = Decimal("40.0")
+MIN_HEALTH_ALLOCATION_WEIGHT = Decimal("0.10")
 ALLOCATION_HOLD_MINUTES = 15
 
 
@@ -173,15 +172,18 @@ def _quality_score(candidate: CandidateSignals) -> Decimal:
 
 
 def health_allocation_weight(health_score: float) -> Decimal:
-    """Continuous allocation share for a safely bookable provider.
+    """Continuous allocation share for an eligible marketplace provider.
 
-    At the automatic-assignment floor (50) a provider receives one sixth of
-    full capacity; at 70 it receives half; at 100 it receives full capacity.
-    This makes declining health reduce job volume without abruptly starving a
-    provider that still passes the platform's safety/bookability gates.
+    Health affects relative share only; it is never an assignment cutoff.
+    A score of 100 receives full weight, 70 receives 0.55, and even a score of
+    zero retains a 0.10 floor. This lets the marketplace reduce exposure when
+    alternatives exist while still routing automatically when that provider
+    is the only otherwise-eligible option.
     """
-    health = min(Decimal("100"), max(MIN_AUTO_ASSIGN_HEALTH, _d(health_score)))
-    return max(Decimal("0.01"), (health - ALLOCATION_HEALTH_FLOOR) / Decimal("60"))
+    health = min(Decimal("100"), max(Decimal("0"), _d(health_score)))
+    return MIN_HEALTH_ALLOCATION_WEIGHT + (
+        health / Decimal("100")
+    ) * (Decimal("1") - MIN_HEALTH_ALLOCATION_WEIGHT)
 
 
 def _allocation_finish_position(candidate: CandidateSignals) -> Decimal:
@@ -279,13 +281,12 @@ ELIGIBILITY_GATE_CODES = (
     "no_pricing_rule",
     "EXACT_JOB_TYPE_NOT_SUPPORTED",
     "OFFERING_NOT_PUBLISHED",
-    "HEALTH_BELOW_AUTO_ASSIGN_FLOOR",
     "HEALTH_BAND_NOT_BOOKABLE",
     "NO_LIVE_SLOT_CAPACITY",
 )
 
-MATCHING_POLICY_KEY = "home_services_provider_matching_v3"
-MATCHING_POLICY_VERSION = 3
+MATCHING_POLICY_KEY = "home_services_provider_matching_v4"
+MATCHING_POLICY_VERSION = 4
 
 
 def get_policy_manifest() -> dict:
@@ -316,7 +317,7 @@ def get_policy_manifest() -> dict:
         "factors": factors,
         "eligibility_gates": list(ELIGIBILITY_GATE_CODES),
         "tie_break_policy": [
-            "Every provider must first pass service, coverage, bookability, credit, health-floor and live-slot gates.",
+            "Every provider must first pass service, coverage, bookability, credit and live-slot gates.",
             "The lowest projected allocations-per-health-weight receives the next job.",
             "Enterprise score and tenant_id break only identical weighted-round-robin positions.",
         ],
@@ -327,7 +328,7 @@ def get_policy_manifest() -> dict:
                 "tenants.health_score default is never used for allocation."
             ),
             "service_reliability": "No exact-service history -> Bayesian neutral prior 70 with sample size 0.",
-            "fair_share": "Equal-health providers alternate; lower health produces a smaller share, not an abrupt zero above the safety floor.",
+            "fair_share": "Equal-health providers alternate; lower health produces a smaller share but never blocks an otherwise-eligible provider.",
         },
         "allocation_policy": {
             "mode": "health_weighted_round_robin",
@@ -663,14 +664,6 @@ async def select_best_provider(
                 "reason_code": "HEALTH_BAND_NOT_BOOKABLE",
             })
             continue
-        if health_source == "canonical" and _d(health_score) < MIN_AUTO_ASSIGN_HEALTH:
-            excluded += 1
-            excluded_providers.append({
-                "provider_name": row.business_name or row.tenant_name or "Service Provider",
-                "reason_code": "HEALTH_BELOW_AUTO_ASSIGN_FLOOR",
-            })
-            continue
-
         # Capacity is a hard feasibility gate, not something quality can
         # compensate for. The provider is scored only after a real slot exists.
         from app.engines.home_service_booking.provider_slot_service import (
