@@ -716,6 +716,16 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
                 draft_id=str(draft["id"]), zipcode=digits,
             )
             return None, await _draft(db, thread)
+        if db is not None and changed and not await _serviceable_categories(db, digits):
+            from app.engines.home_service_booking.demand_signal_service import (
+                record_unserved_area_demand,
+            )
+            await record_unserved_area_demand(
+                db, zipcode=digits, city=thread.city, channel=thread.channel,
+                dedupe_token=str(
+                    getattr(thread, "id", None) or getattr(thread, "channel_user_id", "")
+                ),
+            )
         return None, draft
 
     if not thread.city:

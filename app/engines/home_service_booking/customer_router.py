@@ -191,6 +191,8 @@ async def start_booking_draft(
     user: UserContext = Depends(require_customer),
 ):
     body           = await r.json() if r.headers.get("content-length", "0") != "0" else {}
+    if not body.get("zipcode"):
+        raise HTTPException(status_code=422, detail="Check a ZIP code before starting a booking.")
     customer_id    = uuid.UUID(user.user_id)
     ai_session_id  = uuid.UUID(body["ai_session_id"]) if body.get("ai_session_id") else None
     result = await svc.start_booking_draft(
@@ -198,6 +200,9 @@ async def start_booking_draft(
         ai_session_id=ai_session_id,
         category_slug=body["category_slug"],
         offering_slug=body["offering_slug"],
+        zipcode=body.get("zipcode"),
+        city=body.get("city"),
+        channel="customer_app",
     )
     return ok(result, _rid(r), "home_service_booking")
 

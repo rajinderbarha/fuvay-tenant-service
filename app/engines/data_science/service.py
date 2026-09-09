@@ -881,12 +881,167 @@ class DSService:
     async def get_platform_area_demand_intelligence(
         self, days: int = 30, limit: int = 8,
     ) -> dict:
-        """Platform demand intelligence for unconfirmed Home Services requests.
+        """Rank unmet postcode demand from compact, PII-free aggregates."""
+        params = {"days": days, "limit": limit}
+        summary = (await self.db.execute(text("""
+            SELECT
+                COALESCE(SUM(check_count) FILTER (
+                    WHERE day_bucket >= CURRENT_DATE - (:days - 1)), 0) AS current_checks,
+                COALESCE(SUM(check_count) FILTER (
+                    WHERE day_bucket < CURRENT_DATE - (:days - 1)), 0) AS previous_checks,
+                COUNT(DISTINCT zipcode) FILTER (
+                    WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS area_count,
+                COALESCE(SUM(check_count) FILTER (
+                    WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel = 'instagram'), 0) AS instagram,
+                COALESCE(SUM(check_count) FILTER (
+                    WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel = 'whatsapp'), 0) AS whatsapp,
+                COALESCE(SUM(check_count) FILTER (
+                    WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel = 'customer_app'), 0) AS customer_app
+            FROM home_service_area_demand_signals
+            WHERE outcome IN ('no_coverage', 'service_not_covered')
+              AND day_bucket >= CURRENT_DATE - (:days * 2 - 1)
+        """), params)).mappings().one()
 
-        This is a read-only cold-start projection over real booking cohorts.
-        It deliberately exposes its phase, sample size, and method so an
-        administrator never mistakes a small-sample estimate for a trained
-        model prediction.
+        area_rows = (await self.db.execute(text("""
+            WITH demand AS (
+                SELECT zipcode, MAX(city) AS city,
+                       SUM(check_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS current_volume,
+                       SUM(check_count) FILTER (WHERE day_bucket < CURRENT_DATE - (:days - 1)) AS previous_volume,
+                       SUM(check_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='instagram') AS instagram,
+                       SUM(check_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='whatsapp') AS whatsapp,
+                       SUM(check_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='customer_app') AS customer_app,
+                       MAX(last_checked_at) AS latest_request_at
+                FROM home_service_area_demand_signals
+                WHERE outcome IN ('no_coverage', 'service_not_covered')
+                  AND day_bucket >= CURRENT_DATE - (:days * 2 - 1)
+                GROUP BY zipcode
+            )
+            SELECT d.*,
+                   COALESCE(c.provider_count, 0) AS provider_count,
+                   COALESCE(s.service_name, 'Service not selected') AS top_service,
+                   COALESCE(s.request_count, 0) AS top_service_requests
+            FROM demand d
+            LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT tsa.tenant_id) AS provider_count
+                FROM tenant_service_areas tsa
+                JOIN tenants t ON t.id=tsa.tenant_id
+                WHERE tsa.is_active=TRUE AND tsa.status='ACTIVE'
+                  AND t.vertical='home_services' AND t.status='active'
+                  AND tsa.zipcode=d.zipcode
+            ) c ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(NULLIF(service_name, ''), NULLIF(category_name, ''), 'Service not selected') AS service_name,
+                       SUM(check_count) AS request_count
+                FROM home_service_area_demand_signals s2
+                WHERE s2.zipcode=d.zipcode
+                  AND s2.day_bucket >= CURRENT_DATE - (:days - 1)
+                GROUP BY COALESCE(NULLIF(service_name, ''), NULLIF(category_name, ''), 'Service not selected')
+                ORDER BY request_count DESC LIMIT 1
+            ) s ON TRUE
+            WHERE COALESCE(d.current_volume, 0) > 0
+            ORDER BY d.current_volume DESC, d.zipcode
+            LIMIT :limit
+        """), params)).mappings().all()
+
+        daily_rows = (await self.db.execute(text("""
+            WITH days AS (
+                SELECT generate_series(CURRENT_DATE - (:days - 1), CURRENT_DATE, INTERVAL '1 day')::date AS day
+            ), demand AS (
+                SELECT day_bucket,
+                       SUM(check_count) AS requests,
+                       SUM(check_count) FILTER (WHERE channel='instagram') AS instagram,
+                       SUM(check_count) FILTER (WHERE channel='whatsapp') AS whatsapp,
+                       SUM(check_count) FILTER (WHERE channel='customer_app') AS customer_app
+                FROM home_service_area_demand_signals
+                WHERE day_bucket >= CURRENT_DATE - (:days - 1)
+                  AND outcome IN ('no_coverage', 'service_not_covered')
+                GROUP BY day_bucket
+            )
+            SELECT days.day::text AS date, COALESCE(d.requests, 0) AS requests,
+                   COALESCE(d.instagram, 0) AS instagram, COALESCE(d.whatsapp, 0) AS whatsapp,
+                   COALESCE(d.customer_app, 0) AS customer_app
+            FROM days LEFT JOIN demand d ON d.day_bucket=days.day ORDER BY days.day
+        """), params)).mappings().all()
+
+        service_rows = (await self.db.execute(text("""
+            SELECT COALESCE(NULLIF(service_name, ''), NULLIF(category_name, ''), 'Service not selected') AS service_name,
+                   SUM(check_count) AS request_count
+            FROM home_service_area_demand_signals
+            WHERE day_bucket >= CURRENT_DATE - (:days - 1)
+              AND outcome IN ('no_coverage', 'service_not_covered')
+            GROUP BY COALESCE(NULLIF(service_name, ''), NULLIF(category_name, ''), 'Service not selected')
+            ORDER BY request_count DESC, service_name LIMIT 5
+        """), params)).mappings().all()
+
+        current = int(summary["current_checks"] or 0)
+        previous = int(summary["previous_checks"] or 0)
+        sample_size = current + previous
+        if sample_size >= JOB_THRESHOLD_TENANT_MODEL:
+            phase, phase_label = DSPhase.TENANT_MODEL, "mature platform model"
+        elif sample_size >= JOB_THRESHOLD_PLATFORM_MODEL:
+            phase, phase_label = DSPhase.PLATFORM_MODEL, "platform model"
+        elif sample_size >= JOB_THRESHOLD_OBSERVATION:
+            phase, phase_label = DSPhase.OBSERVATION, "observation"
+        else:
+            phase, phase_label = DSPhase.RULE_BASED, "cold start"
+        growth = None if not previous else round((current - previous) / previous * 100, 1)
+        projected = round(current if not previous else current * 0.7 + previous * 0.3)
+        maximum = max((int(row["current_volume"] or 0) for row in area_rows), default=0)
+        areas = []
+        for row in area_rows:
+            count = int(row["current_volume"] or 0)
+            prior = int(row["previous_volume"] or 0)
+            providers = int(row["provider_count"] or 0)
+            area_growth = None if not prior else round((count - prior) / prior * 100, 1)
+            score = round(min(100, 60 * count / maximum + (25 if providers == 0 else 0) +
+                              (15 if area_growth is not None and area_growth >= 20 else 0))) if maximum else 0
+            drivers = ["No bookable provider covers this postcode"] if providers == 0 else ["Requested service is not covered"]
+            if area_growth is not None and area_growth >= 20:
+                drivers.append("Unmet searches are growing")
+            areas.append({
+                "city": row["city"], "zipcode": row["zipcode"],
+                "area_label": " · ".join(p for p in (row["city"], row["zipcode"]) if p),
+                "area_captured": True, "total_requests": count, "current_volume": count,
+                "previous_volume": prior, "growth_pct": area_growth, "confirmed_requests": 0,
+                "unmatched_requests": count, "unmatched_pct": 100, "emergency_requests": 0,
+                "provider_count": providers, "requests_per_provider": None,
+                "instagram_requests": int(row["instagram"] or 0),
+                "whatsapp_requests": int(row["whatsapp"] or 0),
+                "customer_app_requests": int(row["customer_app"] or 0),
+                "share_pct": round(count / current * 100, 1) if current else 0,
+                "top_service": row["top_service"],
+                "top_service_requests": int(row["top_service_requests"] or 0),
+                "opportunity_score": score,
+                "priority": "high" if score >= 65 else ("medium" if score >= 35 else "watch"),
+                "drivers": drivers,
+                "latest_request_at": row["latest_request_at"].isoformat() if row["latest_request_at"] else None,
+            })
+        return {
+            "engine": {"engine_id": "data_science", "phase": phase, "phase_label": phase_label,
+                       "observation_mode": phase < DSPhase.PLATFORM_MODEL, "sample_size": sample_size,
+                       "method": "PII-free daily unmet-search aggregation"},
+            "period_days": days, "total_requests": current,
+            "total_areas": int(summary["area_count"] or 0),
+            "current_attempts": current, "previous_attempts": previous,
+            "growth_pct": growth, "projected_next_period_requests": projected,
+            "conversion_rate_pct": 0, "unmatched_requests": current,
+            "emergency_requests": 0, "location_capture_pct": 100 if current else 0,
+            "channel_mix": {"instagram": int(summary["instagram"] or 0),
+                            "whatsapp": int(summary["whatsapp"] or 0),
+                            "customer_app": int(summary["customer_app"] or 0)},
+            "areas": areas, "daily_trend": [dict(row) for row in daily_rows],
+            "top_services": [dict(row) for row in service_rows],
+            "generated_at": utcnow().isoformat(),
+        }
+
+    async def _get_legacy_draft_area_demand_intelligence(
+        self, days: int = 30, limit: int = 8,
+    ) -> dict:
+        """Retained reference for the pre-352 draft-based projection.
+
+        No route calls this method: incomplete booking drafts are no longer a
+        valid demand-intelligence source. It remains temporarily so rollout
+        comparisons can be audited and can be removed after validation.
         """
         active_statuses = (
             "'draft', 'collecting_details', 'serviceability_checked', "

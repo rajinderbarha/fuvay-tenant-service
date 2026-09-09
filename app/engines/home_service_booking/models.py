@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -206,3 +206,37 @@ class HomeServiceBookingDraftEvent(ServiceOSBase):
             "request_id": self.request_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class HomeServiceAreaDemandSignal(ServiceOSBase):
+    """PII-free daily aggregate of service searches with no coverage.
+
+    A failed postcode check is market intelligence, not a booking.  Keeping a
+    single counter per postcode/category/service/channel/day avoids creating a
+    large booking draft (and its event history) for every abandoned search.
+    Empty category/service keys intentionally mean "not selected yet".
+    """
+
+    __tablename__ = "home_service_area_demand_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "day_bucket", "zipcode", "category_key", "service_key", "channel", "outcome",
+            name="uq_hs_area_demand_daily_dimension",
+        ),
+        Index("ix_hs_area_demand_zip_day", "zipcode", "day_bucket"),
+        Index("ix_hs_area_demand_last_checked", "last_checked_at"),
+    )
+
+    day_bucket: Mapped[date] = mapped_column(Date, nullable=False)
+    zipcode: Mapped[str] = mapped_column(String(20), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category_key: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    category_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    service_key: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    service_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(40), nullable=False, default="no_coverage")
+    check_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

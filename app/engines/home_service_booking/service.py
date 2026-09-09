@@ -87,6 +87,9 @@ class HomeServiceChatbotBookingService:
         ai_session_id: uuid.UUID | None,
         category_slug: str,
         offering_slug: str,
+        zipcode: str | None = None,
+        city: str | None = None,
+        channel: str = "customer_app",
     ) -> dict:
         """Create a new booking draft for a Home Service offering."""
         abuse_actor = str(customer_id or ai_session_id or "anonymous")
@@ -188,6 +191,43 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        # ZIP-first callers must prove exact serviceability before a booking
+        # draft (and its event rows) exists. A failed search is recorded as a
+        # compact demand aggregate instead of becoming incomplete operations
+        # data. The optional arguments preserve compatibility for trusted
+        # legacy callers while every customer/social entry point supplies ZIP.
+        if zipcode:
+            serviceability = await self._svc_svc.check(
+                category_id=cat.id,
+                offering_id=offering.id,
+                # A ZIP-first journey must not silently pass because another
+                # postcode in the same city has coverage.
+                city=zipcode,
+                zipcode=zipcode,
+            )
+            if not serviceability["serviceable"]:
+                from app.engines.home_service_booking.demand_signal_service import (
+                    record_unserved_area_demand,
+                )
+                await record_unserved_area_demand(
+                    self.db,
+                    zipcode=zipcode,
+                    city=city,
+                    channel=channel,
+                    category_key=cat.slug,
+                    category_name=cat.name,
+                    service_key=offering.slug,
+                    service_name=offering.service_name,
+                    outcome="service_not_covered",
+                    dedupe_token=str(customer_id or ai_session_id or ""),
+                )
+                await self.db.commit()
+                raise ServiceOSException(
+                    ERR_NO_PROVIDER_AVAILABLE,
+                    f"No service is currently available in ZIP code {zipcode}.",
+                    status_code=422,
+                )
+
         if get_settings().APP_ENV in ("staging", "production"):
             # Serialize the count+insert decision for this identity. Without
             # this transaction lock, parallel requests could all observe zero
@@ -230,6 +270,8 @@ class HomeServiceChatbotBookingService:
             serviceability_status=SVCABILITY_PENDING,
             price_status=PRICE_STATUS_PENDING,
             provider_match_status=PROVIDER_MATCH_PENDING,
+            zipcode=zipcode,
+            city=city,
             expires_at=expires_at,
         )
 
@@ -247,14 +289,18 @@ class HomeServiceChatbotBookingService:
         # answer -- just a redundant free-text round trip.
         if customer_id:
             from app.engines.serviceability.models import CustomerAddress
-            addr = (await self.db.execute(
+            default_address = (await self.db.execute(
                 select(CustomerAddress)
                 .where(CustomerAddress.customer_id == customer_id, CustomerAddress.is_active == True)
                 .order_by(CustomerAddress.is_default.desc(), CustomerAddress.created_at.desc())
                 .limit(1)
             )).scalars().first()
-            if addr:
-                await self._resolve_address_snapshot(draft, addr.id)
+            if default_address:
+                await self._resolve_address_snapshot(draft, default_address.id)
+                # An explicitly checked postcode remains authoritative even
+                # when the customer's saved address has become stale.
+                draft.zipcode = zipcode or draft.zipcode
+                draft.city = city or draft.city
 
         await self._emit_event(
             draft_id=draft.id,
@@ -366,6 +412,22 @@ class HomeServiceChatbotBookingService:
             master_service_id=master_service_id,
         )
         issues = catalog.get("issues", [])
+
+        if zipcode and not issues and catalog.get("category_id"):
+            from app.engines.home_service_booking.demand_signal_service import (
+                record_unserved_area_demand,
+            )
+            await record_unserved_area_demand(
+                self.db,
+                zipcode=zipcode,
+                channel="customer_app",
+                category_key=catalog.get("category_slug") or category_slug,
+                category_name=catalog.get("category"),
+                service_key=str(master_service_id or service_group_slug or ""),
+                service_name=(catalog.get("service_group") or {}).get("name"),
+                dedupe_token=str(customer_id),
+            )
+            await self.db.commit()
 
         resumable_draft = None
         if catalog.get("category_id"):
@@ -499,6 +561,7 @@ class HomeServiceChatbotBookingService:
         draft_dict = await self.start_booking_draft(
             customer_id=customer_id, ai_session_id=ai_session_id,
             category_slug=category_slug, offering_slug=primary["master_service_slug"],
+            zipcode=zipcode, channel="customer_app",
         )
         draft_id = uuid.UUID(draft_dict["id"])
         await self.update_draft_fields(

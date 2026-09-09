@@ -45,6 +45,11 @@ DRAFT_ACTIVE_STATUSES = {
     "draft", "collecting_details", "serviceability_checked",
     "price_estimated", "provider_matched", "ready_for_confirmation",
 }
+# Only customer-reviewed, booking-ready intent is an operational request.
+# Earlier lifecycle states are private resume data for the customer/chatbot;
+# exposing them made a postcode check or abandoned conversation look like a
+# real unconfirmed booking to administrators.
+DRAFT_OPERATIONAL_REQUEST_STATUSES = {"ready_for_confirmation"}
 DRAFT_MATCHING_STATUSES = {"provider_matched"}
 # Terminal-but-unsuccessful drafts surfaced as Exceptions rather than
 # silently vanishing — an admin should still see a request that failed
@@ -274,6 +279,13 @@ async def list_operations(
     elif assignment == "assigned": job_filters.append(ServiceJob.assignment_status.in_(["assigned", "accepted"]))
 
     draft_filters = [HomeServiceBookingDraft.status.in_(DRAFT_ACTIVE_STATUSES | DRAFT_EXCEPTION_STATUSES)]
+    if view == "requests":
+        draft_filters.extend([
+            HomeServiceBookingDraft.status.in_(DRAFT_OPERATIONAL_REQUEST_STATUSES),
+            HomeServiceBookingDraft.serviceability_status == "serviceable",
+            HomeServiceBookingDraft.selected_tenant_id.isnot(None),
+            HomeServiceBookingDraft.zipcode.isnot(None),
+        ])
     if customer_id: draft_filters.append(HomeServiceBookingDraft.customer_id == customer_id)
     if city: draft_filters.append(func.lower(HomeServiceBookingDraft.city) == city.strip().lower())
     if state: draft_filters.append(func.lower(HomeServiceBookingDraft.address_snapshot["state"].astext) == state.strip().lower())
@@ -634,7 +646,12 @@ async def compute_metrics(db: AsyncSession, *, tenant_id: uuid.UUID | None = Non
     their own query, and both are restricted to an indexable status set first.
     """
     job_filters = [ServiceJob.tenant_id == tenant_id] if tenant_id else []
-    draft_filters = [HomeServiceBookingDraft.status.in_(DRAFT_ACTIVE_STATUSES)]
+    draft_filters = [
+        HomeServiceBookingDraft.status.in_(DRAFT_OPERATIONAL_REQUEST_STATUSES),
+        HomeServiceBookingDraft.serviceability_status == "serviceable",
+        HomeServiceBookingDraft.selected_tenant_id.isnot(None),
+        HomeServiceBookingDraft.zipcode.isnot(None),
+    ]
     if tenant_id: draft_filters.append(HomeServiceBookingDraft.selected_tenant_id == tenant_id)
 
     active_stages = {key for key, tab in STAGE_TO_TAB.items() if tab == "active"}

@@ -356,6 +356,8 @@ class BackendToolExecutor:
                 ai_session_id=ai_session_id,
                 category_slug=category_slug,
                 offering_slug=offering_slug,
+                zipcode=self.zipcode,
+                channel=self.channel or "customer_app",
             )
             # WhatsApp supplies a platform-verified sender number. Populate
             # contact fields without making the irreversible account/booking

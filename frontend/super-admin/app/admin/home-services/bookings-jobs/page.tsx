@@ -1,6 +1,7 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Skeleton, Input, SectionHeader, Pagination } from "../../../../components/shared/ui";
@@ -236,7 +237,7 @@ export default function HomeServicesOperationsPage() {
   const METRIC_TILES: { key: string; label: string; value: number | undefined; icon: React.ReactNode; onClick: () => void; tooltip: string }[] = [
     { key: "active", label: "Active Jobs", value: metrics?.active, icon: <Briefcase size={16}/>, tooltip: "Confirmed jobs not yet completed or closed",
       onClick: () => updateParams({ view: "active", stage: null }) },
-    { key: "new_requests", label: "Unconfirmed Requests", value: metrics?.new_requests, icon: <FileText size={16}/>, tooltip: "Saved booking attempts that have not been confirmed and are not bookings yet",
+    { key: "new_requests", label: "Unconfirmed Requests", value: metrics?.new_requests, icon: <FileText size={16}/>, tooltip: "Serviceable, provider-matched requests that reached final customer review",
       onClick: () => updateParams({ view: "requests", stage: null }) },
     { key: "unassigned", label: "Unassigned", value: metrics?.unassigned, icon: <UserX size={16}/>, tooltip: "Jobs with no technician assigned yet",
       onClick: () => updateParams({ view: null, stage: "UNASSIGNED" }) },
@@ -257,8 +258,9 @@ export default function HomeServicesOperationsPage() {
               eyebrow="Operations"
               context="Home Services"
               title="Bookings & Jobs"
-              description="Confirmed bookings and jobs. Unconfirmed customer attempts stay in their own Requests view."
+              description="Confirmed work and qualified requests. ZIP checks and abandoned early steps are kept out of the operational queue."
               actions={<>
+              <Link href="/admin/dashboard"><Btn variant="secondary" size="sm"><FileText size={14} style={{ marginRight: 5 }}/>Unserved ZIP demand</Btn></Link>
               <Btn variant="ghost" size="sm" onClick={() => { listApi.refetch(); setForceMetrics(n => n + 1); }}><RefreshCw size={14} style={{ marginRight: 5 }}/>Refresh</Btn>
               <Btn variant="secondary" size="sm" onClick={exportCsv} loading={exporting}><Download size={14} style={{ marginRight: 5 }}/>Export CSV</Btn>
               </>}
