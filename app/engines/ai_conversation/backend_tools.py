@@ -10,6 +10,7 @@ from sqlalchemy import select, and_, desc, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
+from app.engines.messaging_gateway.problem_cards import problem_card_image
 from app.exceptions import ServiceOSException
 
 logger = structlog.get_logger("ai_conversation.tools")
@@ -488,7 +489,7 @@ class BackendToolExecutor:
         try:
             import uuid as _uuid
             from app.engines.home_service_booking.models import HomeServiceBookingDraft
-            from app.engines.admin_catalog.models import ServiceIssueMapping, MasterIssueType
+            from app.engines.admin_catalog.models import MasterIssueType, ServiceIssueMapping
 
             draft = await self.db.get(HomeServiceBookingDraft, _uuid.UUID(draft_id))
             if not draft:
@@ -507,7 +508,13 @@ class BackendToolExecutor:
             )).all()
             return {
                 "problems": [
-                    {"id": str(r.id), "name": r.name, "description": r.description} for r in rows
+                    {
+                        "id": str(r.id),
+                        "name": r.name,
+                        "description": r.description,
+                        "image_url": problem_card_image(r.name),
+                    }
+                    for r in rows
                 ],
                 "instruction": (
                     "As soon as you know which of these matches the customer's issue, call "

@@ -45,6 +45,7 @@ from app.engines.messaging_gateway.constants import (
 )
 from app.engines.messaging_gateway.pickers import _join
 from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
+from app.engines.messaging_gateway.problem_cards import problem_card_symbol
 
 logger = structlog.get_logger(__name__)
 
@@ -1638,15 +1639,39 @@ async def _apply_dimension(db, thread, executor, rest: str, draft: dict):
 
 async def _problem_step(executor, draft: dict, channel: str, page: int) -> Turn:
     result = await executor._tool_get_service_problems(draft_id=str(draft["id"]))
-    options = [
-        {"id": f"{PICK_PROBLEM}{PICKER_SEP}{p['id']}", "title": p["name"],
-         "description": p.get("description")}
-        for p in (result.get("problems") or [])
-    ]
+    problems = result.get("problems") or []
+    cards = channel == CHANNEL_INSTAGRAM and any(
+        str(problem.get("image_url") or "").startswith("https://")
+        for problem in problems
+    )
+    options = []
+    for problem in problems:
+        name = str(problem["name"])
+        row = {
+            "id": f"{PICK_PROBLEM}{PICKER_SEP}{problem['id']}",
+            "title": (
+                f"{problem_card_symbol(name)} {name}" if cards else name
+            ),
+            "description": (
+                problem.get("description")
+                or "Select this if it matches what you are experiencing."
+            ),
+        }
+        if cards:
+            row["image_url"] = problem.get("image_url")
+            # Meta echoes the button title into the conversation after a tap;
+            # keep that reply natural rather than repeating the decorative icon.
+            row["button_title"] = name
+        options.append(row)
     picker = pickers._paginate(options, ASK_PROBLEM, channel, page,
                                kind=PICK_PROBLEM, list_button="Choose",
-                               section_title="Problems")
-    return Turn(None, picker) if picker else Turn(NOTHING_HERE)
+                               section_title="Problems",
+                               presentation="carousel" if cards else "quick_replies",
+                               capacity_override=(MAX_IG_GENERIC_ELEMENTS
+                                                  if cards else None))
+    # A generic carousel cannot contain the question text, so send it as the
+    # preceding message just like the category and service card pickers.
+    return Turn(ASK_PROBLEM if cards else None, picker) if picker else Turn(NOTHING_HERE)
 
 
 async def _match_step(db, thread, executor, draft: dict, channel: str, page: int) -> Turn:

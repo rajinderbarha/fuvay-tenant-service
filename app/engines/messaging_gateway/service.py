@@ -121,6 +121,37 @@ def command_remainder(text: str) -> str:
     return parts[1].strip() if len(parts) > 1 else ""
 
 
+def _booking_progress(status: str) -> tuple[str, str]:
+    """Return a compact four-stage tracker and the matching card label."""
+    normalized = (
+        (status or "pending").strip().lower().replace("-", "_").replace(" ", "_")
+    )
+    if normalized in {"cancelled", "canceled", "rejected", "failed"}:
+        return "Booking closed — contact support if you need help", "Booking closed"
+
+    stage = 1
+    if normalized in {
+        "accepted", "provider_confirmed", "assigned", "scheduled",
+        "technician_assigned",
+    }:
+        stage = 2
+    if normalized in {
+        "dispatched", "en_route", "on_the_way", "arrived", "reached_site",
+        "inspection_started", "inspection_done", "quote_required",
+        "service_started", "work_done", "in_progress", "started",
+    }:
+        stage = 3
+    if normalized in {"completed", "complete", "closed", "delivered"}:
+        stage = 4
+
+    labels = ("Booked", "Assigned", "In service", "Complete")
+    tracker = "  →  ".join(
+        f"✓ {label}" if position <= stage else f"○ {label}"
+        for position, label in enumerate(labels, start=1)
+    )
+    return tracker, f"Step {stage} of 4"
+
+
 async def notify_customer(db: AsyncSession, customer_id, text: str) -> bool:
     """Message a customer on the chat channel they last used, if we still may.
 
@@ -1119,7 +1150,9 @@ class MessagingGatewayService:
         job = (await self.db.execute(
             select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
         )).scalars().first()
-        status = (job.status if job else booking.status or "pending").replace("_", " ").title()
+        raw_status = (job.status if job else booking.status) or "pending"
+        status = raw_status.replace("_", " ").title()
+        progress_line, progress_label = _booking_progress(raw_status)
 
         from app.engines.admin_catalog.models import MasterService, ServiceCategory
 
@@ -1139,8 +1172,14 @@ class MessagingGatewayService:
             ) if str(value or "").strip().startswith("https://")
         ), None)
 
-        lines = [f"Booking {booking.booking_number}", f"Status: {status}",
-                 f"Service: {service_name}"]
+        lines = [
+            f"📋 Booking {booking.booking_number}",
+            f"Status: {status}",
+            f"Service: {service_name}",
+            "",
+            "PROGRESS",
+            progress_line,
+        ]
         scheduled_date = getattr(job, "scheduled_date", None) if job else None
         scheduled_window = getattr(job, "scheduled_time_window", None) if job else None
         visit_label = None
@@ -1149,7 +1188,7 @@ class MessagingGatewayService:
             visit = f"Visit: {visit_label}"
             if scheduled_window:
                 visit += f" · {scheduled_window}"
-            lines.append(visit)
+            lines.extend(("", "VISIT DETAILS", visit))
         else:
             preferred_date = getattr(booking, "preferred_date", None)
             preferred_window = getattr(booking, "preferred_time_window", None)
@@ -1158,10 +1197,10 @@ class MessagingGatewayService:
                 visit = f"Requested visit: {visit_label}"
                 if preferred_window:
                     visit += f" · {preferred_window}"
-                lines.append(visit)
+                lines.extend(("", "VISIT DETAILS", visit))
 
         # Show assignment state without identifying the marketplace business.
-        lines.append(
+        partner_line = (
             "Service partner: confirmed" if booking.tenant_id
             else "Service partner: matching in progress"
         )
@@ -1216,6 +1255,7 @@ class MessagingGatewayService:
                 logger.warning("messaging_gateway.booking_badges_failed",
                                booking_number=booking.booking_number, error=str(exc))
 
+            lines.extend(("", "YOUR TECHNICIAN"))
             lines.append(f"Technician: {technician_name or 'Assigned'}")
             lines.append(f"Role: {technician_role}")
             if technician_verified:
@@ -1223,27 +1263,29 @@ class MessagingGatewayService:
             if badge_names:
                 lines.append(f"Badges: {' · '.join(badge_names)}")
         else:
-            lines.append("Technician: assignment in progress")
+            lines.extend(("", "YOUR TECHNICIAN", "Technician: assignment in progress"))
 
+        service_details = [partner_line]
         area = " ".join(str(value) for value in (
             getattr(job, "city", None) if job else booking.city,
             getattr(job, "zipcode", None) if job else booking.zipcode,
         ) if value)
         if area:
-            lines.append(f"Service area: {area}")
+            service_details.append(f"Service area: {area}")
 
         price = booking.price_snapshot if isinstance(booking.price_snapshot, dict) else {}
         amount = price.get("display_price")
         if not amount and price.get("customer_total") is not None:
             amount = f"₹{price['customer_total']}"
         if amount:
-            lines.append(f"Booking amount: {amount}")
+            service_details.append(f"Booking amount: {amount}")
+        lines.extend(("", "SERVICE DETAILS", *service_details))
 
         card_image = next((
             str(value).strip() for value in (technician_photo, service_image)
             if str(value or "").strip().startswith("https://")
         ), None)
-        subtitle_parts = [status]
+        subtitle_parts = [booking.booking_number, progress_label, status]
         if visit_label:
             subtitle_parts.append(visit_label)
         if technician_verified:

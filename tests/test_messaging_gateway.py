@@ -434,6 +434,95 @@ async def test_instagram_offering_step_uses_catalog_cards_without_guessing_price
     assert "price" not in turn.picker["rows"][0]
 
 
+@pytest.mark.asyncio
+async def test_instagram_problem_step_uses_service_artwork_as_visual_cards():
+    """Problems stay text-first while reusable colored art makes them cards."""
+    from app.engines.messaging_gateway import flow
+
+    class Executor:
+        async def _tool_get_service_problems(self, draft_id):
+            assert draft_id == "draft-1"
+            return {"problems": [
+                {"id": "cooling", "name": "AC not cooling",
+                 "description": "Air is warm or cooling is weak",
+                 "image_url": "https://cdn.example/ac-card.png"},
+                {"id": "leak", "name": "Water leakage", "description": None,
+                 "image_url": "https://cdn.example/ac-card.png"},
+            ]}
+
+    turn = await flow._problem_step(
+        Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text == flow.ASK_PROBLEM
+    assert turn.picker["presentation"] == "carousel"
+    assert turn.picker["rows"][0] == {
+        "id": "pb|cooling",
+        "title": "❄️ AC not cooling",
+        "description": "Air is warm or cooling is weak",
+        "image_url": "https://cdn.example/ac-card.png",
+        "button_title": "AC not cooling",
+    }
+    assert turn.picker["rows"][1]["title"] == "💧 Water leakage"
+    assert "experiencing" in turn.picker["rows"][1]["description"]
+    assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
+
+
+@pytest.mark.asyncio
+async def test_problem_step_keeps_compact_picker_when_service_has_no_public_artwork():
+    from app.engines.messaging_gateway import flow
+
+    class Executor:
+        async def _tool_get_service_problems(self, draft_id):
+            return {"problems": [{
+                "id": "cooling", "name": "AC not cooling",
+                "description": None, "image_url": None,
+            }]}
+
+    turn = await flow._problem_step(
+        Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text is None
+    assert turn.picker["presentation"] == "quick_replies"
+    assert turn.picker["rows"][0]["title"] == "AC not cooling"
+
+
+@pytest.mark.asyncio
+async def test_problem_tool_adds_the_matching_colored_problem_card_artwork():
+    draft_id = uuid.uuid4()
+    offering_id = uuid.uuid4()
+    draft = SimpleNamespace(offering_id=offering_id)
+    problem = SimpleNamespace(
+        id=uuid.uuid4(), name="AC not cooling", description="Weak cooling",
+    )
+
+    class Result:
+        def all(self):
+            return [problem]
+
+    class DB:
+        async def get(self, model, record_id):
+            return draft
+
+        async def execute(self, statement):
+            return Result()
+
+    result = await BackendToolExecutor(DB(), None)._tool_get_service_problems(
+        str(draft_id),
+    )
+
+    assert result["problems"] == [{
+        "id": str(problem.id),
+        "name": "AC not cooling",
+        "description": "Weak cooling",
+        "image_url": (
+            "https://res.cloudinary.com/dr1b4ezct/image/upload/"
+            "serviceos/social-problem-cards/cooling.png"
+        ),
+    }]
+
+
 class _Category:
     """The fields `_category_step` reads off a ServiceCategory row."""
 
@@ -1307,6 +1396,12 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
     assert "Verification: ✓ Verified technician" in view["text"]
     assert "Badges: Top Rated" in view["text"]
     assert "Service partner: confirmed" in view["text"]
+    assert "PROGRESS" in view["text"]
+    assert "✓ Booked  →  ✓ Assigned  →  ○ In service  →  ○ Complete" in view["text"]
+    assert "VISIT DETAILS" in view["text"]
+    assert "YOUR TECHNICIAN" in view["text"]
+    assert "SERVICE DETAILS" in view["text"]
+    assert view["subtitle"].startswith("BK-42 · Step 2 of 4 · Assigned")
     assert "Private Provider Name" not in view["text"]
 
 
@@ -1383,6 +1478,8 @@ async def test_instagram_uses_stacked_buttons_for_durable_actions(monkeypatch):
         "image_url": "https://cdn.example/technician.jpg",
     })
     card = calls[3]["message"]["attachment"]["payload"]["elements"][0]
+    assert calls[2]["message"]["attachment"]["payload"]["image_aspect_ratio"] == "square"
+    assert calls[3]["message"]["attachment"]["payload"]["image_aspect_ratio"] == "square"
     assert card["image_url"] == "https://cdn.example/technician.jpg"
     assert card["title"] == "AC Repair · Assigned"
     assert "Verified technician" in card["subtitle"]

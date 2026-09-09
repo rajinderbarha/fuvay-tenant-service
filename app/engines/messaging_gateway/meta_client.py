@@ -624,7 +624,9 @@ async def send_options(
         return await _post(url, token, {
             "recipient": {"id": to},
             "message": {"attachment": {"type": "template", "payload": {
-                "template_type": "generic", "elements": [element],
+                "template_type": "generic",
+                "image_aspect_ratio": "square",
+                "elements": [element],
             }}},
         })
 
@@ -653,7 +655,9 @@ async def send_options(
         return await _post(url, token, {
             "recipient": {"id": to},
             "message": {"attachment": {"type": "template", "payload": {
-                "template_type": "generic", "elements": elements,
+                "template_type": "generic",
+                "image_aspect_ratio": "square",
+                "elements": elements,
             }}},
         })
 
