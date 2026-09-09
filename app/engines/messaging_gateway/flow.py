@@ -226,6 +226,18 @@ class Turn:
         self.picker = picker
 
 
+# Meta does not provide an API for a business to hide Instagram's or
+# WhatsApp's message composer.  Make picker turns selection-only on the
+# server instead: text cannot leak into a later field, and the current choices
+# are shown again.  The few pickers that intentionally sit beside a typed
+# answer (currently OTP) opt out with ``allow_text``.
+TAP_AN_OPTION = "Please tap one of the options shown below to continue."
+
+
+def _requires_option_tap(turn: Turn) -> bool:
+    return bool(turn.picker) and not bool(turn.picker.get("allow_text"))
+
+
 async def advance(
     db,
     thread,
@@ -261,6 +273,28 @@ async def advance(
         # resolved against the ids actually sent, so a number means the same
         # thing a tap would have.
         reply_id = await _resolve_numbered_choice(thread, text)
+
+    # A customer can still see and use Meta's composer underneath buttons and
+    # cards.  Reconstruct the current step before applying free text; if that
+    # step is a picker, do not let the text become an address or another later
+    # field.  Numbered WhatsApp replies have already become ``reply_id`` above.
+    # TIMES remains the documented escape hatch when a WhatsApp Flow cannot
+    # open, and OTP explicitly allows typing alongside its change-number
+    # button.
+    typed = (text or "").strip()
+    whatsapp_times = channel == CHANNEL_WHATSAPP and typed.lower() in {
+        "times", "time", "show times", "show time slots",
+    }
+    if typed and not reply_id and not whatsapp_times:
+        current = await _next_step(
+            db, thread, executor, draft, channel, 0, identity,
+        )
+        if _requires_option_tap(current):
+            current.text = (
+                f"{TAP_AN_OPTION}\n\n{current.text}"
+                if current.text else TAP_AN_OPTION
+            )
+            return current
 
     if reply_id:
         kind = reply_id.partition(PICKER_SEP)[0]
@@ -1837,6 +1871,9 @@ def _otp_step(identity, thread) -> Turn:
         "list_button": "Choose",
         "section_title": "Phone verification",
         "presentation": "buttons",
+        # The button is only an alternate action; the normal answer to this
+        # step is the six-digit code typed into the composer.
+        "allow_text": True,
     })
 
 

@@ -7,6 +7,7 @@ import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -814,6 +815,90 @@ async def test_a_typed_number_selects_from_the_list_that_was_actually_sent():
         id = "t"
         last_options = None      # last turn offered nothing to choose from
     assert await resolve(Closed(), "2") is None
+
+
+@pytest.mark.asyncio
+async def test_free_text_cannot_advance_a_selection_only_step(monkeypatch):
+    """Meta keeps the composer visible below cards and buttons.  Text entered
+    there must re-show the current picker, never populate a later draft field.
+    """
+    from app.engines.messaging_gateway import flow
+
+    class Thread:
+        last_options = None
+        customer_id = None
+        zipcode = "140412"
+        ai_session_id = None
+        channel = CHANNEL_INSTAGRAM
+        channel_user_id = "ig-1"
+        display_name = "Customer"
+
+    picker = {
+        "body": flow.ASK_PROBLEM,
+        "rows": [{"id": "pr|cooling", "title": "AC not cooling"}],
+        "list_button": "Choose",
+        "section_title": "Problems",
+        "presentation": "carousel",
+    }
+    current_step = flow.Turn(flow.ASK_PROBLEM, picker)
+    next_step = AsyncMock(return_value=current_step)
+    apply_text = AsyncMock()
+    monkeypatch.setattr(flow, "_next_step", next_step)
+    monkeypatch.setattr(flow, "_apply_text", apply_text)
+
+    turn = await flow.advance(
+        None, Thread(), text="AC not cooling", reply_id=None,
+        channel=CHANNEL_INSTAGRAM,
+    )
+
+    apply_text.assert_not_awaited()
+    assert turn.picker is picker
+    assert turn.text == f"{flow.TAP_AN_OPTION}\n\n{flow.ASK_PROBLEM}"
+
+
+@pytest.mark.asyncio
+async def test_picker_can_explicitly_allow_a_typed_answer(monkeypatch):
+    """The OTP screen has a change-number button but still accepts its code."""
+    from app.engines.messaging_gateway import flow
+
+    class Thread:
+        last_options = None
+        customer_id = None
+        zipcode = "140412"
+        ai_session_id = None
+        channel = CHANNEL_INSTAGRAM
+        channel_user_id = "ig-1"
+        display_name = "Customer"
+
+    current_step = flow.Turn(None, {
+        "body": "Send the code",
+        "rows": [{"id": "phone|change", "title": "Use another number"}],
+        "allow_text": True,
+    })
+    next_step = AsyncMock(side_effect=[current_step, flow.Turn("verified")])
+    apply_text = AsyncMock(return_value=("Code accepted.", None))
+    monkeypatch.setattr(flow, "_next_step", next_step)
+    monkeypatch.setattr(flow, "_apply_text", apply_text)
+
+    turn = await flow.advance(
+        None, Thread(), text="123456", reply_id=None,
+        channel=CHANNEL_INSTAGRAM,
+    )
+
+    apply_text.assert_awaited_once()
+    assert turn.text == "Code accepted.\n\nverified"
+
+
+def test_otp_picker_is_not_selection_only():
+    from app.engines.messaging_gateway import flow
+
+    identity = SimpleNamespace(
+        pending_number=lambda thread: "+919876543210",
+    )
+    turn = flow._otp_step(identity, SimpleNamespace())
+
+    assert turn.picker["allow_text"] is True
+    assert flow._requires_option_tap(turn) is False
 
 
 @pytest.mark.asyncio
