@@ -55,7 +55,7 @@ logger = structlog.get_logger(__name__)
 #: same opener also reaches people who came back to track or cancel.
 GREETING = (
     "Hi{name}! Welcome to Fuvay Home Services. I can book a service for you "
-    "or check an existing booking."
+    "or check an existing booking. To start again at any time, send /fuvay."
 )
 
 #: Sent when the SESSION cap trips -- too many fresh conversations, not too
@@ -85,10 +85,10 @@ UNSUPPORTED_TEXT = (
 # that sending a paid OTP to it is intentional.
 _PHONE_CONFIRMATION_PREFIX = "confirm:"
 
-#: Every OPTIONS message carries a "Start over" row (see `pickers._paginate`).
-#: A prompt that asks for something typed — an address, a phone number, a code
-#: — deliberately does not: a button under a question the customer is about to
-#: answer in words is clutter beside the thing they were asked for.
+#: Non-carousel OPTIONS messages carry a "Start over" row (see
+#: `pickers._paginate`). Instagram image carousels omit it because Meta turns it
+#: into a misleading full-size card; the first welcome explains /fuvay instead.
+#: Typed prompts deliberately carry no button either.
 
 
 def parse_command(text: str) -> str | None:
@@ -1530,4 +1530,4 @@ class MessagingGatewayService:
             except Exception:  # noqa: BLE001 - nothing left to salvage
                 pass
             return ("Sorry — something went wrong on my side. "
-                    "Tap Start over to try again."), None
+                    "Send /fuvay to start again."), None

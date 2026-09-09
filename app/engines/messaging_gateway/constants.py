@@ -73,7 +73,7 @@ HELP_TEXT = (
     "I can book a home service for you, or show you where an existing "
     "booking has got to.\n\n"
     "Everything is a tap — just choose from the options I show you. "
-    "Start over is on every message."
+    "Send /fuvay at any time to start over."
 )
 
 STOP_TEXT = (

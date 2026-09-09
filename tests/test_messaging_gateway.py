@@ -427,8 +427,9 @@ async def test_instagram_offering_step_uses_catalog_cards_without_guessing_price
         "title": "AC Repair",
         "description": "Diagnosis and repair",
         "image_url": "https://cdn.example/ac.jpg",
-        "button_title": "Select service",
+        "button_title": "AC Repair",
     }
+    assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
     assert "price" not in turn.picker["rows"][0]
 
 
@@ -462,14 +463,26 @@ def test_instagram_category_step_shows_the_admins_uploaded_icon():
         "title": "Air Conditioning",
         "image_url": "https://cdn.example/ac-icon.png",
         "description": "Repair, service and installation",
-        "button_title": "Select",
+        "button_title": "Air Conditioning",
     }
     # A category with no artwork still renders, just without a picture.
     assert turn.picker["rows"][1]["image_url"] is None
-    # And the navigation card says what it does rather than inheriting the
-    # generic "choose this service" subtitle.
-    assert turn.picker["rows"][-1]["id"].split("|", 1)[0] == PICK_RESTART
-    assert turn.picker["rows"][-1]["description"] == "Begin again from the first question."
+    # Start-over remains a command, not a misleading full-size service card.
+    assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
+
+
+def test_instagram_carousel_uses_all_cards_for_choices_not_restart_navigation():
+    rows = [{"id": f"of|home|service-{i}", "title": f"Service {i}"}
+            for i in range(12)]
+    page = pickers._paginate(
+        rows, "Which service?", CHANNEL_INSTAGRAM, 0, kind="of",
+        list_button="Choose", section_title="Services", presentation="carousel",
+        capacity_override=10,
+    )
+
+    assert len(page["rows"]) == 10
+    assert page["rows"][-1]["id"] == "more|of|1"
+    assert all(not row["id"].startswith("rs|") for row in page["rows"])
 
 
 def test_category_image_is_preferred_over_icon_and_must_be_public():
@@ -1251,15 +1264,14 @@ async def test_instagram_uses_stacked_buttons_for_durable_actions(monkeypatch):
         {"id": "of|ac|repair", "title": "AC Repair",
          "description": "Diagnosis and repair",
          "image_url": "https://cdn.example/ac.jpg",
-         "button_title": "Select service"},
-        {"id": "rs|1", "title": "Start over", "button_title": "Start over"},
+         "button_title": "AC Repair"},
     ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="carousel")
     elements = calls[2]["message"]["attachment"]["payload"]["elements"]
+    assert len(elements) == 1
     assert elements[0]["image_url"] == "https://cdn.example/ac.jpg"
     assert elements[0]["buttons"][0] == {
-        "type": "postback", "title": "Select service", "payload": "of|ac|repair",
+        "type": "postback", "title": "AC Repair", "payload": "of|ac|repair",
     }
-    assert "image_url" not in elements[1]
 
 
 @pytest.mark.asyncio
@@ -2840,6 +2852,7 @@ async def test_any_first_message_opens_the_conversation(monkeypatch, opener):
     # The welcome leads and carries the first question, so the customer does
     # not have to send a second message to get going.
     assert sent[0].startswith(GREETING.format(name=""))
+    assert "/fuvay" in sent[0]
     assert sent[0].endswith("Which pincode?")
 
 

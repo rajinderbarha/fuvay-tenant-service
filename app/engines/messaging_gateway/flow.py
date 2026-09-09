@@ -100,7 +100,7 @@ NOTHING_HERE = "There is nothing bookable here at the moment."
 #: over when all they need is a neighbouring pincode wastes the conversation.
 NO_COVERAGE = (
     "We do not have a provider covering {zipcode} for this service yet. "
-    "Tap Start over to choose a different area."
+    "Send /fuvay to start again with a different area."
 )
 NO_SLOTS = (
     "There are no open slots for this service right now. "
@@ -1426,7 +1426,10 @@ def _category_step(categories: list, channel: str, page: int,
             # the WhatsApp list is unchanged by a category gaining artwork.
             row["image_url"] = artwork[c.slug]
             row["description"] = getattr(c, "description", None) or None
-            row["button_title"] = "Select"
+            # Instagram echoes a postback button's title as the customer's
+            # message. Use the actual choice instead of the unhelpful word
+            # "Select", so the conversation visibly records what they picked.
+            row["button_title"] = c.name
         options.append(row)
 
     picker = pickers._paginate(options, ASK_CATEGORY, channel, page,
@@ -1448,7 +1451,9 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
         {"id": PICKER_SEP.join((PICK_OFFERING, category_slug, o["slug"])),
          "title": o["name"], "description": o.get("description"),
          "image_url": o.get("image_url") or o.get("icon_url"),
-         "button_title": "Select service"}
+         # Meta shows this button title as the customer's reply after a tap.
+         # Repeating the option label makes the selected service unambiguous.
+         "button_title": o["name"]}
         for o in (result.get("offerings") or []) if o.get("slug")
     ]
     picker = pickers._paginate(options, ASK_OFFERING, channel, page,

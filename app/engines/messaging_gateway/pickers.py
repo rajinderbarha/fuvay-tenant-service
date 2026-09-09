@@ -51,9 +51,9 @@ def _section_emergency(surcharge: str | None) -> str:
     """Emergency slots are grouped under their own heading, priced."""
     return f"Emergency {surcharge}" if surcharge else "Emergency (sooner)"
 
-#: On every list, so a customer is never more than one tap from beginning
-#: again — a wrong service picked four questions ago should not need a
-#: remembered command to undo.
+#: On non-carousel lists, so a customer is never more than one tap from
+#: beginning again. Instagram image carousels deliberately omit this row:
+#: Meta renders it as another full-size card beside the real services.
 _RESTART_ROW = {
     "id": PICK_RESTART + PICKER_SEP + "1", "title": "Start over",
     "button_title": "Start over",
@@ -290,8 +290,18 @@ def _paginate(
     fails the whole send — so a long brand list has to page rather than
     silently lose its tail.
     """
-    # One row of every list belongs to "Start over".
-    capacity = (capacity_override or channel_capacity(channel)) - reserve - 1
+    # Instagram renders every generic-template row as a full-size card. A
+    # navigation-only "Start over" card looks like another service and wastes
+    # scarce carousel space, so those customers use the /fuvay command instead.
+    # WhatsApp and Instagram's non-carousel pickers keep the convenient row.
+    include_restart = not (
+        channel == CHANNEL_INSTAGRAM and presentation == "carousel"
+    )
+    capacity = (
+        (capacity_override or channel_capacity(channel))
+        - reserve
+        - (1 if include_restart else 0)
+    )
     if not rows:
         return None
     page = max(0, page)
@@ -315,9 +325,10 @@ def _paginate(
             more_id = _join(more_id, more_context)
         window = window + [{"id": more_id, "title": _MORE_TITLE,
                             "button_title": "Show more"}]
+    picker_rows = window + ([dict(_RESTART_ROW)] if include_restart else [])
     return {
         "body": body,
-        "rows": window + [dict(_RESTART_ROW)],
+        "rows": picker_rows,
         "list_button": list_button,
         "section_title": section_title,
         "presentation": presentation,
