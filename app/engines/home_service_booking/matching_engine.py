@@ -72,7 +72,8 @@ WEIGHT_CAPACITY             = Decimal("0.10")
 WEIGHT_FAIR_SHARE           = Decimal("0.10")
 
 MIN_AUTO_ASSIGN_HEALTH = Decimal("50.0")
-QUALITY_BAND_WIDTH = Decimal("10.0")
+ALLOCATION_HEALTH_FLOOR = Decimal("40.0")
+ALLOCATION_HOLD_MINUTES = 15
 
 
 def _d(v) -> Decimal:
@@ -105,6 +106,8 @@ class CandidateSignals:
     fair_share_score: float | None = None
     reliability_sample_size: int = 0
     recent_allocations: int = 0
+    allocation_weight: float = 1.0
+    allocation_finish_position: float = 1.0
     earliest_slot: dict | None = None
     # Objects {name, icon, color} — the real customer-visible trust badges when
     # the provider has them, else computed fallbacks (see _public_badges).
@@ -169,19 +172,38 @@ def _quality_score(candidate: CandidateSignals) -> Decimal:
     )
 
 
+def health_allocation_weight(health_score: float) -> Decimal:
+    """Continuous allocation share for a safely bookable provider.
+
+    At the automatic-assignment floor (50) a provider receives one sixth of
+    full capacity; at 70 it receives half; at 100 it receives full capacity.
+    This makes declining health reduce job volume without abruptly starving a
+    provider that still passes the platform's safety/bookability gates.
+    """
+    health = min(Decimal("100"), max(MIN_AUTO_ASSIGN_HEALTH, _d(health_score)))
+    return max(Decimal("0.01"), (health - ALLOCATION_HEALTH_FLOOR) / Decimal("60"))
+
+
+def _allocation_finish_position(candidate: CandidateSignals) -> Decimal:
+    weight = health_allocation_weight(candidate.health_score)
+    return _d(candidate.recent_allocations + 1) / weight
+
+
 def select_best_candidate(candidates: list[CandidateSignals]) -> tuple[CandidateSignals, Decimal] | None:
     if not candidates:
         return None
 
-    # Fairness operates only inside a ten-point quality band. It can rotate
-    # comparable providers, but never promote a materially worse provider.
-    best_quality = max(_quality_score(candidate) for candidate in candidates)
-    qualified = [
-        candidate for candidate in candidates
-        if _quality_score(candidate) >= best_quality - QUALITY_BAND_WIDTH
-    ]
-    ranked = rank_candidates(qualified)
-    return ranked[0] if ranked else None
+    # Weighted round robin is authoritative after all hard eligibility,
+    # bookability, slot and health-floor checks have passed. The provider with
+    # the lowest projected allocations-per-health-weight gets the next turn.
+    # Enterprise score and tenant id are deterministic tie-breakers only.
+    scored = [(candidate, compute_provider_score(candidate)) for candidate in candidates]
+    scored.sort(key=lambda pair: (
+        _allocation_finish_position(pair[0]),
+        -pair[1],
+        pair[0].tenant_id,
+    ))
+    return scored[0]
 
 
 def build_score_breakdown(signals: CandidateSignals) -> dict:
@@ -202,6 +224,8 @@ def build_score_breakdown(signals: CandidateSignals) -> dict:
         "fair_share_score": signals.fair_share_score,
         "reliability_sample_size": signals.reliability_sample_size,
         "recent_allocations": signals.recent_allocations,
+        "allocation_weight": signals.allocation_weight,
+        "allocation_finish_position": signals.allocation_finish_position,
     }
 
 
@@ -260,8 +284,8 @@ ELIGIBILITY_GATE_CODES = (
     "NO_LIVE_SLOT_CAPACITY",
 )
 
-MATCHING_POLICY_KEY = "home_services_provider_matching_v2"
-MATCHING_POLICY_VERSION = 2
+MATCHING_POLICY_KEY = "home_services_provider_matching_v3"
+MATCHING_POLICY_VERSION = 3
 
 
 def get_policy_manifest() -> dict:
@@ -281,8 +305,8 @@ def get_policy_manifest() -> dict:
          "source_engine": "tenant_service_areas (exact zipcode vs city-only)"},
         {"factor_key": "capacity", "label": "Live Capacity", "weight": float(WEIGHT_CAPACITY),
          "source_engine": "service-qualified funded technicians and confirmed service_jobs"},
-        {"factor_key": "fair_share", "label": "Fair Share", "weight": float(WEIGHT_FAIR_SHARE),
-         "source_engine": "7-day production matching allocation ledger"},
+        {"factor_key": "fair_share", "label": "Health-weighted Round Robin", "weight": float(WEIGHT_FAIR_SHARE),
+         "source_engine": "7-day confirmed geographic allocation ledger plus 15-minute soft reservations"},
     ]
     return {
         "policy_key": MATCHING_POLICY_KEY,
@@ -292,9 +316,9 @@ def get_policy_manifest() -> dict:
         "factors": factors,
         "eligibility_gates": list(ELIGIBILITY_GATE_CODES),
         "tie_break_policy": [
-            "Only providers inside ten points of the best quality/reliability score enter fair-share allocation.",
-            "Highest enterprise v2 weighted score wins inside that qualified band.",
-            "Recent allocation deficit breaks business ties; tenant_id is only a final deterministic fallback.",
+            "Every provider must first pass service, coverage, bookability, credit, health-floor and live-slot gates.",
+            "The lowest projected allocations-per-health-weight receives the next job.",
+            "Enterprise score and tenant_id break only identical weighted-round-robin positions.",
         ],
         "missing_signal_policy": {
             "health_score": (
@@ -303,7 +327,14 @@ def get_policy_manifest() -> dict:
                 "tenants.health_score default is never used for allocation."
             ),
             "service_reliability": "No exact-service history -> Bayesian neutral prior 70 with sample size 0.",
-            "fair_share": "No recent allocation difference -> neutral 50; subsequent decisions rotate by deficit.",
+            "fair_share": "Equal-health providers alternate; lower health produces a smaller share, not an abrupt zero above the safety floor.",
+        },
+        "allocation_policy": {
+            "mode": "health_weighted_round_robin",
+            "history_days": 7,
+            "soft_reservation_minutes": ALLOCATION_HOLD_MINUTES,
+            "scope": "zipcode when present, otherwise normalized city; shared across services",
+            "confirmed_source": "service_jobs",
         },
         "data_science": {
             "mode": "shadow",
@@ -338,27 +369,38 @@ async def _recent_allocation_counts(
     db: AsyncSession, tenant_ids: set[uuid.UUID], *, offering_id: uuid.UUID,
     city: str, zipcode: str | None, days: int = 7,
 ) -> dict[uuid.UUID, int]:
-    """Count real production selections for fair-share allocation.
+    """Count geographic allocations across services without draft pollution.
 
-    The append-only matching audit is already the canonical decision ledger,
-    so no second mutable counter can drift or need repair.
+    Confirmed ``service_jobs`` are the durable seven-day ledger. Very recent
+    matching decisions act as short soft reservations so concurrent chats do
+    not all select the same provider; abandoned drafts stop affecting routing
+    after fifteen minutes.
     """
     if not tenant_ids:
         return {}
     from sqlalchemy import text
     rows = (await db.execute(text(
-        "SELECT new_value->>'selected_provider_id' AS provider_id, count(*) AS n "
-        "FROM master_data_audit_log "
-        "WHERE entity_type='matching_decision' AND action='production_match' "
-        "AND created_at >= now() - (:days * interval '1 day') "
-        "AND new_value->>'master_service_id' = :offering_id "
-        "AND ((:zipcode IS NOT NULL AND new_value->>'zipcode' = :zipcode) "
-        "  OR (:zipcode IS NULL AND lower(COALESCE(new_value->>'city','')) = :city)) "
-        "AND new_value->>'selected_provider_id' = ANY(CAST(:tenant_ids AS text[])) "
-        "GROUP BY new_value->>'selected_provider_id'"
+        "SELECT provider_id, count(*) AS n FROM ("
+        "  SELECT tenant_id::text AS provider_id FROM service_jobs "
+        "  WHERE created_at >= now() - (:days * interval '1 day') "
+        "  AND created_at < now() - (:hold_minutes * interval '1 minute') "
+        "  AND tenant_id::text = ANY(CAST(:tenant_ids AS text[])) "
+        "  AND ((:zipcode IS NOT NULL AND zipcode = :zipcode) "
+        "    OR (:zipcode IS NULL AND lower(COALESCE(city,'')) = :city)) "
+        "  UNION ALL "
+        "  SELECT DISTINCT ON (COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text)) "
+        "    new_value->>'selected_provider_id' AS provider_id "
+        "  FROM master_data_audit_log "
+        "  WHERE entity_type='matching_decision' AND action='production_match' "
+        "  AND created_at >= now() - (:hold_minutes * interval '1 minute') "
+        "  AND ((:zipcode IS NOT NULL AND new_value->>'zipcode' = :zipcode) "
+        "    OR (:zipcode IS NULL AND lower(COALESCE(new_value->>'city','')) = :city)) "
+        "  AND new_value->>'selected_provider_id' = ANY(CAST(:tenant_ids AS text[])) "
+        "  ORDER BY COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text), created_at DESC "
+        ") AS allocations GROUP BY provider_id"
     ), {
         "days": days,
-        "offering_id": str(offering_id),
+        "hold_minutes": ALLOCATION_HOLD_MINUTES,
         "city": city.strip().lower(),
         "zipcode": zipcode,
         "tenant_ids": [str(tenant_id) for tenant_id in tenant_ids],
@@ -566,10 +608,10 @@ async def select_best_provider(
     # it must never stop a customer booking.
     if serialize_allocation:
         from sqlalchemy import text
-        market_key = (
-            f"home-service-match:{offering_id}:"
-            f"{strip_zip or norm_city}:{job_type_id or 'any'}"
-        )
+        # One lock per geographic market, not per service. Otherwise two
+        # simultaneous bookings for different services can both see the same
+        # zero-count tie and choose the same provider.
+        market_key = f"home-service-match:{strip_zip or norm_city}"
         await db.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:market_key, 0))"),
             {"market_key": market_key},
@@ -655,6 +697,8 @@ async def select_best_provider(
         )
         slot_fit = _slot_fit_score(earliest_slot)
         capacity = _live_capacity_score(earliest_slot)
+        allocation_weight = health_allocation_weight(health_score)
+        allocation_finish = _d(allocation_counts.get(tid, 0) + 1) / allocation_weight
         signals_list.append(CandidateSignals(
             tenant_id=str(tid),
             provider_name=row.business_name or row.tenant_name or "Service Provider",
@@ -673,6 +717,8 @@ async def select_best_provider(
             fair_share_score=fair_share_scores.get(tid, 50.0),
             reliability_sample_size=reliability["sample_size"],
             recent_allocations=allocation_counts.get(tid, 0),
+            allocation_weight=float(_round2(allocation_weight)),
+            allocation_finish_position=float(_round2(allocation_finish)),
             earliest_slot=earliest_slot,
             public_badges=await _public_badges(db, tid, row.health_score, row.rating),
             rating=float(row.rating) if row.rating else None,

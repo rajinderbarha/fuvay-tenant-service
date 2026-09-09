@@ -142,7 +142,7 @@ class TestPolicyManifest:
         assert manifest["policy_key"]
         assert manifest["version"] >= 1
         assert len(manifest["factors"]) == 6
-        assert manifest["version"] == 2
+        assert manifest["version"] == 3
         assert "eligibility_gates" in manifest
         assert "EXACT_JOB_TYPE_NOT_SUPPORTED" in manifest["eligibility_gates"]
         assert "missing_signal_policy" in manifest
@@ -186,18 +186,34 @@ class TestTieBreakDeterminism:
         ranked = rank_candidates([a, b])
         assert ranked[0][0].tenant_id == "a-tenant"  # lexicographically first tenant_id wins the tie
 
-    def test_fair_share_rotates_only_comparable_quality(self):
+    def test_equal_health_round_robin_rotates_to_waiting_provider(self):
         from app.engines.home_service_booking.matching_engine import select_best_candidate, CandidateSignals
         common = dict(provider_name="P", slot_fit_score=80, distance_score=100, capacity_score=80)
-        served = CandidateSignals(tenant_id="served", health_score=82,
-                                  service_reliability_score=82, fair_share_score=0, **common)
+        served = CandidateSignals(tenant_id="served", health_score=80,
+                                  service_reliability_score=82, recent_allocations=1, **common)
         waiting = CandidateSignals(tenant_id="waiting", health_score=80,
-                                   service_reliability_score=80, fair_share_score=100, **common)
+                                   service_reliability_score=80, recent_allocations=0, **common)
         assert select_best_candidate([served, waiting])[0].tenant_id == "waiting"
 
-        unsafe = CandidateSignals(tenant_id="unsafe", health_score=50,
-                                  service_reliability_score=50, fair_share_score=100, **common)
-        assert select_best_candidate([served, unsafe])[0].tenant_id == "served"
+    def test_lower_health_receives_fewer_but_nonzero_jobs(self):
+        from app.engines.home_service_booking.matching_engine import select_best_candidate, CandidateSignals
+        counts = {"healthy": 0, "lower": 0}
+        for _ in range(12):
+            candidates = [
+                CandidateSignals(tenant_id="healthy", provider_name="Healthy", health_score=90,
+                                 service_reliability_score=80, recent_allocations=counts["healthy"]),
+                CandidateSignals(tenant_id="lower", provider_name="Lower", health_score=60,
+                                 service_reliability_score=80, recent_allocations=counts["lower"]),
+            ]
+            selected = select_best_candidate(candidates)[0].tenant_id
+            counts[selected] += 1
+        assert counts["healthy"] > counts["lower"] > 0
+
+    def test_health_weight_declines_continuously_to_the_safe_floor(self):
+        from app.engines.home_service_booking.matching_engine import health_allocation_weight
+        assert float(health_allocation_weight(100)) == 1
+        assert float(health_allocation_weight(70)) == pytest.approx(0.5)
+        assert float(health_allocation_weight(50)) == pytest.approx(1 / 6)
 
     def test_ranking_is_deterministic_across_repeated_calls(self):
         from app.engines.home_service_booking.matching_engine import rank_candidates, CandidateSignals
@@ -217,7 +233,7 @@ class TestTieBreakDeterminism:
         assert scores[served] == 0.0
 
     @pytest.mark.asyncio
-    async def test_allocation_history_is_scoped_to_exact_market(self):
+    async def test_allocation_history_is_geographic_and_cross_service(self):
         from app.engines.home_service_booking.matching_engine import _recent_allocation_counts
         provider_id = uuid.uuid4()
         result = MagicMock()
@@ -233,7 +249,9 @@ class TestTieBreakDeterminism:
         assert counts == {provider_id: 3}
         sql = str(db.execute.await_args.args[0])
         params = db.execute.await_args.args[1]
-        assert "master_service_id" in sql and "zipcode" in sql
+        assert "service_jobs" in sql and "zipcode" in sql
+        assert "master_service_id" not in sql
+        assert "hold_minutes" in params
         assert params["zipcode"] == "140412"
 
 
