@@ -115,7 +115,7 @@ def test_validation_all_contexts_defined():
         "booking_issue_photo", "job_before_photo", "job_after_photo",
         "complaint_evidence", "chat_attachment", "review_photo",
         "invoice_attachment", "payment_proof", "quote_attachment",
-        "checklist_photo", "brand_logo", "category_icon", "service_icon", "marketing_asset",
+        "checklist_photo", "brand_logo", "category_icon", "service_icon", "issue_type_image", "marketing_asset",
     ]
     for ctx in required:
         assert ctx in CONTEXT_RULES, f"Missing context: {ctx}"

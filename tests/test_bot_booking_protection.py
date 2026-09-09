@@ -396,6 +396,49 @@ async def test_different_draft_cannot_duplicate_active_booking():
 
 
 @pytest.mark.asyncio
+async def test_issue_selection_stops_duplicate_active_service_before_draft_creation():
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+
+    customer_id = uuid.uuid4()
+    offering_id = uuid.uuid4()
+    existing = SimpleNamespace(
+        id=uuid.uuid4(),
+        booking_number="BK-ACTIVE",
+        status="confirmed",
+    )
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_scalars_first(existing))
+    service = HomeServiceChatbotBookingService(db)
+    service.start_booking_draft = AsyncMock()
+
+    issue = {
+        "id": "ac-not-cooling",
+        "label": "AC not cooling",
+        "selection_mode": "compatible",
+        "compatibility_group": "ac-repair",
+        "master_service_id": str(offering_id),
+        "master_service_slug": "ac-repair",
+    }
+    with patch(
+        "app.engines.home_service_booking.offering_catalog_service.list_serviceable_issues",
+        AsyncMock(return_value={"issues": [issue]}),
+    ):
+        with pytest.raises(ServiceOSException) as exc:
+            await service.select_issue(
+                customer_id=customer_id,
+                ai_session_id=None,
+                category_slug="ac",
+                zipcode="140001",
+                issue_id=issue["id"],
+            )
+
+    assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
+    assert exc.value.status_code == 409
+    assert exc.value.context["booking_number"] == "BK-ACTIVE"
+    service.start_booking_draft.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_social_confirmation_uses_sender_quota_not_customer_app_quota():
     from app.engines.final_records.creation_service import HomeServiceFinalCreationService
     from app.engines.home_service_booking.models import HomeServiceBookingDraft

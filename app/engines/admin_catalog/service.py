@@ -2906,18 +2906,11 @@ class AdminCatalogService:
         stmt = stmt.order_by(MasterIssueType.display_order, MasterIssueType.name)
         result = await self.db.execute(stmt)
         rows = result.scalars().all()
-        issue_types = []
-        for row in rows:
-            payload = row.to_dict()
-            payload.pop("icon_url", None)
-            issue_types.append(payload)
-        return {"issue_types": issue_types, "total": len(rows)}
+        return {"issue_types": [row.to_dict() for row in rows], "total": len(rows)}
 
     async def get_issue_type(self, issue_type_id: uuid.UUID) -> dict:
         row = await self._load_issue_type(issue_type_id)
-        payload = row.to_dict()
-        payload.pop("icon_url", None)
-        return payload
+        return row.to_dict()
 
     async def create_issue_type(self, data: dict) -> dict:
         name = (data.get("name") or "").strip()
@@ -2943,6 +2936,7 @@ class AdminCatalogService:
             category_id=cat_id, master_service_id=svc_id,
             code=code, name=name, slug=slug,
             description=data.get("description"),
+            icon_url=data.get("icon_url"),
             severity=severity,
             is_active=bool(data.get("is_active", True)),
             display_order=int(data.get("display_order", 0) or 0),
@@ -2951,23 +2945,19 @@ class AdminCatalogService:
         await self.db.flush()
         await self._audit("master_issue_type", row.id, "create", None, row.to_dict(), f"Created issue type '{name}'")
         logger.info("issue_type.created", id=str(row.id), name=name)
-        payload = row.to_dict()
-        payload.pop("icon_url", None)
-        return payload
+        return row.to_dict()
 
     async def update_issue_type(self, issue_type_id: uuid.UUID, data: dict) -> dict:
         row = await self._load_issue_type(issue_type_id)
         old = row.to_dict()
-        for field in ("name", "description", "severity", "is_active", "display_order"):
-            if field in data and data[field] is not None:
+        for field in ("name", "description", "icon_url", "severity", "is_active", "display_order"):
+            if field in data and (data[field] is not None or field == "icon_url"):
                 setattr(row, field, data[field])
         if "code" in data and data["code"]:
             row.code = str(data["code"]).strip().upper()
         await self.db.flush()
         await self._audit("master_issue_type", row.id, "update", old, row.to_dict(), f"Updated issue type '{row.name}'")
-        payload = row.to_dict()
-        payload.pop("icon_url", None)
-        return payload
+        return row.to_dict()
 
     async def delete_issue_type(self, issue_type_id: uuid.UUID) -> dict:
         row = await self._load_issue_type(issue_type_id)

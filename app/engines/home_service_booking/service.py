@@ -470,6 +470,7 @@ class HomeServiceChatbotBookingService:
             "issues": [
                 {
                     "id": i["id"], "label": i["label"],
+                    "description": i.get("description"), "image_url": i.get("image_url"),
                     "selection_mode": i["selection_mode"], "compatibility_group": i["compatibility_group"],
                 }
                 for i in issues
@@ -566,6 +567,28 @@ class HomeServiceChatbotBookingService:
                 )
 
         primary = matched_list[0]
+        # Stop a second journey as soon as the customer selects a problem for
+        # a service that is already active. Waiting until the final Confirm
+        # button made customers complete the entire flow before learning that
+        # they had duplicated an existing request.
+        if customer_id:
+            from app.engines.final_records.models import ServiceBooking
+            existing_booking = (await self.db.execute(
+                select(ServiceBooking).where(
+                    ServiceBooking.customer_id == customer_id,
+                    ServiceBooking.offering_id == uuid.UUID(primary["master_service_id"]),
+                    ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
+                ).order_by(ServiceBooking.created_at.desc()).limit(1)
+            )).scalars().first()
+            if existing_booking:
+                raise ServiceOSException(
+                    "DUPLICATE_ACTIVE_BOOKING",
+                    f"This service is already booked as {existing_booking.booking_number}.",
+                    status_code=409,
+                    resolution="Track or cancel the existing booking before booking this service again.",
+                    context={"booking_id": str(existing_booking.id),
+                             "booking_number": existing_booking.booking_number},
+                )
         draft_dict = await self.start_booking_draft(
             customer_id=customer_id, ai_session_id=ai_session_id,
             category_slug=category_slug, offering_slug=primary["master_service_slug"],

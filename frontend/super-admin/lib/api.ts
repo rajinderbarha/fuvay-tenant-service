@@ -1760,7 +1760,7 @@ export const masterDataApi = {
   },
   getIssueType: (id: string) =>
     apiFetch<MasterIssueType>(`/v1/admin/issue-types/${id}`),
-  createIssueType: (data: { name: string; code: string; severity?: string; category_id?: string; master_service_id?: string; description?: string; display_order?: number; customer_visible?: boolean; requires_photo?: boolean; requires_description?: boolean; status?: string }) =>
+  createIssueType: (data: { name: string; code: string; severity?: string; category_id?: string; master_service_id?: string; description?: string; icon_url?: string | null; display_order?: number; customer_visible?: boolean; requires_photo?: boolean; requires_description?: boolean; status?: string }) =>
     apiFetch<MasterIssueType>("/v1/admin/issue-types", { method: "POST", body: JSON.stringify(data) }),
   updateIssueType: (id: string, data: Partial<MasterIssueType>) =>
     apiFetch<MasterIssueType>(`/v1/admin/issue-types/${id}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -3242,6 +3242,7 @@ export const profilePhotoApi = {
 // picker doesn't re-hit Postgres.
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
+  | "issue_type_image"
   | "checklist_icon" | "global_service_icon" | "home_campaign_artwork"
   | "banner_artwork";
 
@@ -6856,6 +6857,7 @@ export interface IssueType34E {
   name: string;
   slug: string;
   description?: string;
+  icon_url?: string | null;
   severity: string;
   is_active: boolean;
   display_order: number;
@@ -9349,7 +9351,9 @@ export interface DashboardRequestDemand {
     method: string;
   };
   period_days: number;
+  scope?: "combined" | "unmet";
   total_requests: number;
+  confirmed_requests?: number;
   total_areas: number;
   current_attempts: number;
   previous_attempts: number;

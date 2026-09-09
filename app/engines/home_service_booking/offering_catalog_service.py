@@ -225,8 +225,6 @@ async def list_serviceable_issues(
             "total": 0,
         }
 
-    # Problems are language, not artwork. Service/master-service cards own
-    # imagery; problem and question choices remain text-led in every client.
     rows = (await db.execute(
         select(MasterIssueType, ServiceIssueMapping, MasterService)
         .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
@@ -265,6 +263,8 @@ async def list_serviceable_issues(
         issues.append({
             "id": str(issue.id),
             "label": issue.name,
+            "description": issue.description,
+            "image_url": issue.icon_url,
             "master_service_id": str(mapping.master_service_id),
             "master_service_slug": ms.slug,
             "job_type_id": str(mapping.job_type_id) if mapping.job_type_id else None,

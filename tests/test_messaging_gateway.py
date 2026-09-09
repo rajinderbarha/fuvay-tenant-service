@@ -524,6 +524,25 @@ async def test_problem_tool_adds_the_matching_colored_problem_card_artwork():
     }]
 
 
+@pytest.mark.asyncio
+async def test_problem_tool_prefers_admin_uploaded_artwork():
+    draft = SimpleNamespace(offering_id=uuid.uuid4())
+    problem = SimpleNamespace(
+        id=uuid.uuid4(), name="AC not cooling", description="Weak cooling",
+        icon_url="https://cdn.example/custom-problem.png",
+    )
+
+    class DB:
+        async def get(self, model, record_id):
+            return draft
+
+        async def execute(self, statement):
+            return type("R", (), {"all": lambda _self: [problem]})()
+
+    result = await BackendToolExecutor(DB(), None)._tool_get_service_problems(str(uuid.uuid4()))
+    assert result["problems"][0]["image_url"] == "https://cdn.example/custom-problem.png"
+
+
 class _Category:
     """The fields `_category_step` reads off a ServiceCategory row."""
 
@@ -3576,6 +3595,26 @@ async def test_type_is_asked_before_brand_and_both_before_the_problem():
     # Both answered -> nothing outstanding, so the flow moves on to the problem.
     draft["brand_id"] = "b-1"
     assert await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0) is None
+
+
+@pytest.mark.asyncio
+async def test_instagram_type_and_brand_dimensions_use_uploaded_images():
+    from app.engines.messaging_gateway import flow
+
+    draft = {"id": "d-1", "offering_id": "svc-1"}
+    db = _DimensionDB(
+        types=[("t-1", "Split AC", "https://cdn.example/split.png")],
+        brands=[("b-1", "Voltas", "https://cdn.example/voltas.png")],
+    )
+    type_turn = await flow._dimension_step(db, draft, CHANNEL_INSTAGRAM, 0)
+    assert type_turn.text == flow.ASK_DIMENSION.format(label="type")
+    assert type_turn.picker["presentation"] == "carousel"
+    assert _dimension_rows(type_turn)[0]["image_url"] == "https://cdn.example/split.png"
+
+    draft["offering_type_id"] = "t-1"
+    brand_turn = await flow._dimension_step(db, draft, CHANNEL_INSTAGRAM, 0)
+    assert brand_turn.picker["presentation"] == "carousel"
+    assert _dimension_rows(brand_turn)[0]["image_url"] == "https://cdn.example/voltas.png"
 
 
 @pytest.mark.asyncio

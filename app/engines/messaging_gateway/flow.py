@@ -1657,7 +1657,7 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
 #: platform would let a customer pick one nobody services.
 _DIMENSION_VALUE_SQL = {
     "type": """
-        SELECT st.id, st.name
+        SELECT st.id, st.name, st.icon_url AS image_url
           FROM master_service_types mst
           JOIN service_types st ON st.id = mst.service_type_id
          WHERE mst.master_service_id = :service
@@ -1668,7 +1668,7 @@ _DIMENSION_VALUE_SQL = {
          ORDER BY st.display_order, st.name
     """,
     "brand": """
-        SELECT b.id, b.name
+        SELECT b.id, b.name, b.logo_url AS image_url
           FROM master_service_brands msb
           JOIN brands b ON b.id = msb.brand_id
          WHERE msb.master_service_id = :service
@@ -1741,16 +1741,27 @@ async def _dimension_step(db, draft: dict, channel: str, page: int) -> Turn | No
     if not pending:
         return None
     key, label, values = pending
-    options = [
-        {"id": _join(PICK_DIMENSION, key, str(value_id)), "title": str(name)}
-        for value_id, name in values
-    ]
+    normalized = []
+    for value in values:
+        value_id, name = value[0], value[1]
+        image_url = value[2] if len(value) > 2 else None
+        image_url = str(image_url or "").strip()
+        normalized.append((value_id, name, image_url if image_url.startswith("https://") else None))
+    cards = channel == CHANNEL_INSTAGRAM and any(image_url for _, _, image_url in normalized)
+    options = []
+    for value_id, name, image_url in normalized:
+        row = {"id": _join(PICK_DIMENSION, key, str(value_id)), "title": str(name)}
+        if cards:
+            row.update({"image_url": image_url, "button_title": str(name)})
+        options.append(row)
     picker = pickers._paginate(
         options, ASK_DIMENSION.format(label=str(label).lower()), channel, page,
         kind=_join(PICK_DIMENSION, key), list_button="Choose",
         section_title=str(label),
+        presentation="carousel" if cards else "quick_replies",
+        capacity_override=(MAX_IG_GENERIC_ELEMENTS if cards else None),
     )
-    return Turn(None, picker) if picker else None
+    return Turn(ASK_DIMENSION.format(label=str(label).lower()) if cards else None, picker) if picker else None
 
 
 async def _apply_dimension(db, thread, executor, rest: str, draft: dict):

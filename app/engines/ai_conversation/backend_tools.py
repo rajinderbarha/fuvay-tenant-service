@@ -501,7 +501,8 @@ class BackendToolExecutor:
                 return {"error": "Draft not found", "problems": []}
 
             rows = (await self.db.execute(
-                select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description)
+                select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description,
+                       MasterIssueType.icon_url)
                 .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
                 .where(
                     ServiceIssueMapping.master_service_id == draft.offering_id,
@@ -517,7 +518,13 @@ class BackendToolExecutor:
                         "id": str(r.id),
                         "name": r.name,
                         "description": r.description,
-                        "image_url": problem_card_image(r.name),
+                        # Admin artwork wins; the generated family card keeps
+                        # older problems visual until a custom image is added.
+                        "image_url": (
+                            getattr(r, "icon_url", None)
+                            if str(getattr(r, "icon_url", None) or "").startswith("https://")
+                            else problem_card_image(r.name)
+                        ),
                     }
                     for r in rows
                 ],

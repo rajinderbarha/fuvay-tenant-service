@@ -1098,6 +1098,7 @@ class CustomerHomeService:
                 "category_slug": cat_slug,
                 "category_name": cat_name,
                 "severity": issue.severity,
+                "image_url": issue.icon_url,
                 # "repair" / "consult" / null. Lets Home group by what the
                 # customer is trying to DO; null means the wording says neither,
                 # and the item simply appears in the general grids instead of

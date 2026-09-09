@@ -57,8 +57,8 @@ async def test_question_icon_is_retired_from_writes_and_responses() -> None:
 
 
 @pytest.mark.asyncio
-async def test_problem_icon_is_retired_from_writes_and_responses() -> None:
-    """Problems are text-first booking intents; only Master Services own artwork."""
+async def test_problem_icon_can_be_replaced_and_returned() -> None:
+    """Admin artwork is persisted for customer and Instagram problem cards."""
     issue_id = uuid.uuid4()
     row = MagicMock()
     row.id = issue_id
@@ -70,7 +70,7 @@ async def test_problem_icon_is_retired_from_writes_and_responses() -> None:
     row.is_active = True
     row.display_order = 0
     row.icon_url = "https://cdn.example.com/legacy-problem.png"
-    row.to_dict.return_value = {
+    row.to_dict.side_effect = lambda: {
         "id": str(issue_id),
         "name": row.name,
         "icon_url": row.icon_url,
@@ -83,8 +83,8 @@ async def test_problem_icon_is_retired_from_writes_and_responses() -> None:
         issue_id, {"name": "AC not cooling", "icon_url": "https://cdn.example.com/new.png"}
     )
 
-    assert row.icon_url == "https://cdn.example.com/legacy-problem.png"
-    assert "icon_url" not in result
+    assert row.icon_url == "https://cdn.example.com/new.png"
+    assert result["icon_url"] == "https://cdn.example.com/new.png"
 
 
 @pytest.mark.asyncio

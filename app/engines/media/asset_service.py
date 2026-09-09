@@ -40,6 +40,7 @@ MAX_PAGE_SIZE = 100
 # Postgres on every open.
 ICON_LIBRARY_CONTEXTS = {
     "category_icon", "service_icon", "brand_logo",
+    "issue_type_image",
     "checklist_icon", "global_service_icon", "home_campaign_artwork",
     "banner_artwork",
 }
@@ -771,7 +772,7 @@ class MediaAssetService:
         from app.engines.media.access import CUSTOMER_CONTEXTS
         if media_context in CUSTOMER_CONTEXTS:
             return "customer"
-        if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon",
+        if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon", "issue_type_image",
                              "checklist_icon", "global_service_icon", "home_campaign_artwork",
                              "banner_artwork"):
             return "public"

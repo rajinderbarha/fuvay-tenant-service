@@ -171,43 +171,30 @@ class HomeServiceFinalCreationService:
                 ip_address=ip_address,
             )
 
-        # A new draft must not be used to duplicate an already-active booking
-        # for the same customer, service, place, date, and time window. An
-        # unscheduled legacy draft has no concrete slot to compare and must
-        # not collapse every null date/time into one false duplicate.
-        has_concrete_slot = all((
-            draft.customer_id,
-            draft.offering_id,
-            draft.zipcode,
-            draft.preferred_date,
-            draft.preferred_time_window,
-        ))
-        if has_concrete_slot and get_settings().APP_ENV in ("staging", "production"):
-            duplicate_key = ":".join(str(value or "-") for value in (
-                draft.customer_id, draft.offering_id, draft.zipcode,
-                draft.preferred_date, draft.preferred_time_window,
-            ))
+        # One customer may have only one active booking for a service. Lock on
+        # that stable identity so two different drafts (or two devices) cannot
+        # race through confirmation with different slots.
+        has_booking_identity = bool(draft.customer_id and draft.offering_id)
+        if has_booking_identity and get_settings().APP_ENV in ("staging", "production"):
+            duplicate_key = f"{draft.customer_id}:{draft.offering_id}"
             await self.db.execute(
                 sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"booking-confirm:{duplicate_key}"},
             )
-        if has_concrete_slot:
+        if has_booking_identity:
             duplicate = (await self.db.execute(
                 select(ServiceBooking).where(
                     ServiceBooking.customer_id == draft.customer_id,
                     ServiceBooking.offering_id == draft.offering_id,
-                    ServiceBooking.zipcode == draft.zipcode,
-                    ServiceBooking.preferred_date == draft.preferred_date,
-                    ServiceBooking.preferred_time_window == draft.preferred_time_window,
                     ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
                 ).order_by(ServiceBooking.created_at.desc()).limit(1)
             )).scalars().first()
             if isinstance(duplicate, ServiceBooking):
                 raise ServiceOSException(
                     "DUPLICATE_ACTIVE_BOOKING",
-                    f"This service is already booked as {duplicate.booking_number} for the selected time.",
+                    f"This service is already booked as {duplicate.booking_number}.",
                     status_code=409,
-                    resolution="Track the existing booking or choose a different time.",
+                    resolution="Track or cancel the existing booking before booking this service again.",
                     context={"booking_id": str(duplicate.id), "booking_number": duplicate.booking_number},
                 )
 

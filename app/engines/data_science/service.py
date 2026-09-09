@@ -881,6 +881,191 @@ class DSService:
     async def get_platform_area_demand_intelligence(
         self, days: int = 30, limit: int = 8,
     ) -> dict:
+        """Rank demand using confirmed bookings plus unmet coverage searches."""
+        params = {"days": days, "limit": limit}
+        events = """
+            WITH demand_events AS (
+                SELECT day_bucket, zipcode, city, channel,
+                       COALESCE(NULLIF(service_name, ''), NULLIF(category_name, ''), 'Service not selected') AS service_name,
+                       check_count::bigint AS request_count,
+                       0::bigint AS confirmed_count,
+                       check_count::bigint AS unmatched_count,
+                       0::bigint AS emergency_count,
+                       last_checked_at AS latest_request_at
+                FROM home_service_area_demand_signals
+                WHERE outcome IN ('no_coverage', 'service_not_covered')
+                  AND day_bucket >= CURRENT_DATE - (:days * 2 - 1)
+                UNION ALL
+                SELECT b.created_at::date, TRIM(b.zipcode), NULLIF(TRIM(b.city), ''),
+                       CASE
+                           WHEN session.context_data ->> 'channel' = 'instagram' THEN 'instagram'
+                           WHEN session.context_data ->> 'channel' = 'whatsapp' THEN 'whatsapp'
+                           ELSE 'customer_app'
+                       END,
+                       COALESCE(NULLIF(ms.service_name, ''), 'Service not selected'),
+                       1::bigint, 1::bigint, 0::bigint,
+                       CASE WHEN b.is_emergency THEN 1 ELSE 0 END::bigint,
+                       b.created_at
+                FROM service_bookings b
+                LEFT JOIN master_services ms ON ms.id = b.offering_id
+                LEFT JOIN ai_conversation_sessions session ON session.id = b.ai_session_id
+                WHERE b.status NOT IN ('cancelled', 'failed')
+                  AND NULLIF(TRIM(b.zipcode), '') IS NOT NULL
+                  AND b.created_at::date >= CURRENT_DATE - (:days * 2 - 1)
+            )
+        """
+        summary = (await self.db.execute(text(events + """
+            SELECT
+                COALESCE(SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)), 0) AS current_checks,
+                COALESCE(SUM(request_count) FILTER (WHERE day_bucket < CURRENT_DATE - (:days - 1)), 0) AS previous_checks,
+                COUNT(DISTINCT zipcode) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS area_count,
+                COALESCE(SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='instagram'), 0) AS instagram,
+                COALESCE(SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='whatsapp'), 0) AS whatsapp,
+                COALESCE(SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='customer_app'), 0) AS customer_app,
+                COALESCE(SUM(confirmed_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)), 0) AS confirmed,
+                COALESCE(SUM(unmatched_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)), 0) AS unmatched,
+                COALESCE(SUM(emergency_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)), 0) AS emergency
+            FROM demand_events
+        """), params)).mappings().one()
+
+        area_rows = (await self.db.execute(text(events + """
+            , area_rollup AS (
+                SELECT zipcode, MAX(city) AS city,
+                       SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS current_volume,
+                       SUM(request_count) FILTER (WHERE day_bucket < CURRENT_DATE - (:days - 1)) AS previous_volume,
+                       SUM(confirmed_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS confirmed,
+                       SUM(unmatched_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS unmatched,
+                       SUM(emergency_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1)) AS emergency,
+                       SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='instagram') AS instagram,
+                       SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='whatsapp') AS whatsapp,
+                       SUM(request_count) FILTER (WHERE day_bucket >= CURRENT_DATE - (:days - 1) AND channel='customer_app') AS customer_app,
+                       MAX(latest_request_at) AS latest_request_at
+                FROM demand_events GROUP BY zipcode
+            )
+            SELECT a.*,
+                   COALESCE(coverage.provider_count, 0) AS provider_count,
+                   COALESCE(top_service.service_name, 'Service not selected') AS top_service,
+                   COALESCE(top_service.request_count, 0) AS top_service_requests
+            FROM area_rollup a
+            LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT tsa.tenant_id) AS provider_count
+                FROM tenant_service_areas tsa
+                JOIN tenants t ON t.id=tsa.tenant_id
+                WHERE tsa.is_active=TRUE AND tsa.status='ACTIVE'
+                  AND t.vertical='home_services' AND t.status='active'
+                  AND tsa.zipcode=a.zipcode
+            ) coverage ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT service_name, SUM(request_count) AS request_count
+                FROM demand_events e
+                WHERE e.zipcode=a.zipcode AND e.day_bucket >= CURRENT_DATE - (:days - 1)
+                GROUP BY service_name ORDER BY request_count DESC LIMIT 1
+            ) top_service ON TRUE
+            WHERE COALESCE(a.current_volume, 0) > 0
+            ORDER BY a.current_volume DESC, a.zipcode LIMIT :limit
+        """), params)).mappings().all()
+
+        daily_rows = (await self.db.execute(text(events + """
+            , days_list AS (
+                SELECT generate_series(CURRENT_DATE - (:days - 1), CURRENT_DATE, INTERVAL '1 day')::date AS day
+            ), daily AS (
+                SELECT day_bucket, SUM(request_count) AS requests,
+                       SUM(request_count) FILTER (WHERE channel='instagram') AS instagram,
+                       SUM(request_count) FILTER (WHERE channel='whatsapp') AS whatsapp,
+                       SUM(request_count) FILTER (WHERE channel='customer_app') AS customer_app
+                FROM demand_events WHERE day_bucket >= CURRENT_DATE - (:days - 1)
+                GROUP BY day_bucket
+            )
+            SELECT days_list.day::text AS date, COALESCE(daily.requests, 0) AS requests,
+                   COALESCE(daily.instagram, 0) AS instagram, COALESCE(daily.whatsapp, 0) AS whatsapp,
+                   COALESCE(daily.customer_app, 0) AS customer_app
+            FROM days_list LEFT JOIN daily ON daily.day_bucket=days_list.day ORDER BY days_list.day
+        """), params)).mappings().all()
+
+        service_rows = (await self.db.execute(text(events + """
+            SELECT service_name, SUM(request_count) AS request_count
+            FROM demand_events WHERE day_bucket >= CURRENT_DATE - (:days - 1)
+            GROUP BY service_name ORDER BY request_count DESC, service_name LIMIT 5
+        """), params)).mappings().all()
+
+        current = int(summary["current_checks"] or 0)
+        previous = int(summary["previous_checks"] or 0)
+        sample_size = current + previous
+        if sample_size >= JOB_THRESHOLD_TENANT_MODEL:
+            phase, phase_label = DSPhase.TENANT_MODEL, "mature platform model"
+        elif sample_size >= JOB_THRESHOLD_PLATFORM_MODEL:
+            phase, phase_label = DSPhase.PLATFORM_MODEL, "platform model"
+        elif sample_size >= JOB_THRESHOLD_OBSERVATION:
+            phase, phase_label = DSPhase.OBSERVATION, "observation"
+        else:
+            phase, phase_label = DSPhase.RULE_BASED, "cold start"
+        growth = None if not previous else round((current - previous) / previous * 100, 1)
+        projected = round(current if not previous else current * 0.7 + previous * 0.3)
+        maximum = max((int(row["current_volume"] or 0) for row in area_rows), default=0)
+        areas = []
+        for row in area_rows:
+            count = int(row["current_volume"] or 0)
+            prior = int(row["previous_volume"] or 0)
+            confirmed = int(row["confirmed"] or 0)
+            unmatched = int(row["unmatched"] or 0)
+            providers = int(row["provider_count"] or 0)
+            area_growth = None if not prior else round((count - prior) / prior * 100, 1)
+            score = round(min(100, 60 * count / maximum + (25 * unmatched / count if count else 0) +
+                              (15 if area_growth is not None and area_growth >= 20 else 0))) if maximum else 0
+            if unmatched and providers == 0:
+                drivers = ["No bookable provider covers this postcode"]
+            elif unmatched:
+                drivers = ["Some requested services are not covered"]
+            else:
+                drivers = ["Confirmed customer demand"]
+            if area_growth is not None and area_growth >= 20:
+                drivers.append("Demand is growing")
+            areas.append({
+                "city": row["city"], "zipcode": row["zipcode"],
+                "area_label": " · ".join(p for p in (row["city"], row["zipcode"]) if p),
+                "area_captured": True, "total_requests": count, "current_volume": count,
+                "previous_volume": prior, "growth_pct": area_growth,
+                "confirmed_requests": confirmed, "unmatched_requests": unmatched,
+                "unmatched_pct": round(unmatched / count * 100, 1) if count else 0,
+                "emergency_requests": int(row["emergency"] or 0),
+                "provider_count": providers,
+                "requests_per_provider": round(count / providers, 1) if providers else None,
+                "instagram_requests": int(row["instagram"] or 0),
+                "whatsapp_requests": int(row["whatsapp"] or 0),
+                "customer_app_requests": int(row["customer_app"] or 0),
+                "share_pct": round(count / current * 100, 1) if current else 0,
+                "top_service": row["top_service"],
+                "top_service_requests": int(row["top_service_requests"] or 0),
+                "opportunity_score": score,
+                "priority": "high" if score >= 65 else ("medium" if score >= 35 else "watch"),
+                "drivers": drivers,
+                "latest_request_at": row["latest_request_at"].isoformat() if row["latest_request_at"] else None,
+            })
+        confirmed_total = int(summary["confirmed"] or 0)
+        return {
+            "engine": {"engine_id": "data_science", "phase": phase, "phase_label": phase_label,
+                       "observation_mode": phase < DSPhase.PLATFORM_MODEL, "sample_size": sample_size,
+                       "method": "PII-free confirmed booking and unmet-search aggregation"},
+            "scope": "combined", "period_days": days, "total_requests": current,
+            "total_areas": int(summary["area_count"] or 0),
+            "current_attempts": current, "previous_attempts": previous,
+            "growth_pct": growth, "projected_next_period_requests": projected,
+            "confirmed_requests": confirmed_total,
+            "conversion_rate_pct": round(confirmed_total / current * 100, 1) if current else 0,
+            "unmatched_requests": int(summary["unmatched"] or 0),
+            "emergency_requests": int(summary["emergency"] or 0),
+            "location_capture_pct": 100 if current else 0,
+            "channel_mix": {"instagram": int(summary["instagram"] or 0),
+                            "whatsapp": int(summary["whatsapp"] or 0),
+                            "customer_app": int(summary["customer_app"] or 0)},
+            "areas": areas, "daily_trend": [dict(row) for row in daily_rows],
+            "top_services": [dict(row) for row in service_rows],
+            "generated_at": utcnow().isoformat(),
+        }
+
+    async def _get_unmet_area_demand_intelligence(
+        self, days: int = 30, limit: int = 8,
+    ) -> dict:
         """Rank unmet postcode demand from compact, PII-free aggregates."""
         params = {"days": days, "limit": limit}
         summary = (await self.db.execute(text("""

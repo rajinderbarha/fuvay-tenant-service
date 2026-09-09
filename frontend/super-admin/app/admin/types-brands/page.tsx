@@ -195,9 +195,12 @@ function ServiceTypesTab() {
 
   const columns = [
     { key:"name",          label:"Type",            render:(_v:unknown, row:any) => (
-      <div>
-        <div style={{ fontWeight:600, fontSize:13 }}>{row.name}</div>
-        <div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{row.code ?? row.slug}</div>
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        {row.icon_url ? <img src={row.icon_url} alt="" style={{ width:36, height:36, borderRadius:9, objectFit:"cover", border:"1px solid var(--border)" }}/> : null}
+        <div>
+          <div style={{ fontWeight:600, fontSize:13 }}>{row.name}</div>
+          <div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{row.code ?? row.slug}</div>
+        </div>
       </div>
     )},
     { key:"type_family",   label:"Family",          render:(_v:unknown, row:any) => row.type_family
@@ -892,9 +895,12 @@ function BrandMasterTab() {
 
   const columns = [
     { key:"name",    label:"Brand", render:(_v:unknown, row:any) => (
-      <div>
-        <div style={{ fontWeight:600, fontSize:13 }}>{row.name}</div>
-        <div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{row.code ?? row.slug}</div>
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        {row.logo_url ? <img src={row.logo_url} alt="" style={{ width:36, height:36, borderRadius:"50%", objectFit:"contain", border:"1px solid var(--border)" }}/> : null}
+        <div>
+          <div style={{ fontWeight:600, fontSize:13 }}>{row.name}</div>
+          <div style={{ fontSize:11, color:"var(--text-tertiary)" }}>{row.code ?? row.slug}</div>
+        </div>
       </div>
     )},
     { key:"is_global", label:"Scope", render:(_v:unknown, row:any) => (
@@ -1059,6 +1065,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
     country_of_origin: initial?.country_of_origin ?? "",
     website_url:      initial?.website_url ?? "",
   });
+  const [logoUrl, setLogoUrl] = useState<string | null>(initial?.logo_url ?? null);
   // Same auto-slug-from-name UX as the Service Type form, stops once the
   // user edits Slug by hand.
   const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
@@ -1067,7 +1074,8 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
   const updateAction = useAction(useCallback((d:object) => catalogApi.updateBrand(initial!.brand_id, d), [initial]));
 
   async function handleSave() {
-    const res = initial ? await updateAction.execute(form) : await createAction.execute(form);
+    const payload = { ...form, logo_url: logoUrl };
+    const res = initial ? await updateAction.execute(payload) : await createAction.execute(payload);
     if (res) onSaved();
   }
 
@@ -1104,6 +1112,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
             style={{ borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"8px 10px", resize:"vertical" }}/>
         </div>
+        <IconPicker label="Brand logo" noun="brand logo" context="brand_logo" shape="circle" value={logoUrl} onChange={setLogoUrl}/>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Status</label>
@@ -1154,6 +1163,9 @@ function BrandDetailDrawer({ item, onClose }: { item:Brand34D; onClose():void })
   return (
     <Modal open title={`Brand: ${item.name}`} onClose={onClose}>
       <div style={{ minWidth:360 }}>
+        {item.logo_url && (
+          <img src={item.logo_url} alt={`${item.name} logo`} style={{ width:72, height:72, borderRadius:18, objectFit:"contain", border:"1px solid var(--border)", marginBottom:12 }}/>
+        )}
         {rows.map(([label, val]) => (
           <div key={label} style={{ display:"flex", gap:12, padding:"8px 0",
             borderBottom:"1px solid var(--border)" }}>

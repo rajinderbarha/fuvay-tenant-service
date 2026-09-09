@@ -58,10 +58,8 @@ def _slug(name: str) -> str:
 
 
 def _issue_payload(issue: MasterIssueType) -> dict:
-    """Serialize a booking problem without the retired artwork field."""
-    payload = issue.to_dict()
-    payload.pop("icon_url", None)
-    return payload
+    """Serialize a booking problem, including its customer-facing artwork."""
+    return issue.to_dict()
 
 
 class ServiceOptionService:
@@ -115,6 +113,7 @@ class ServiceOptionService:
             code=code,
             name=body.get("name", code),
             description=body.get("description"),
+            icon_url=body.get("icon_url"),
             category_id=uuid.UUID(body["category_id"]) if body.get("category_id") else None,
             vertical_type=body.get("vertical_type"),
             status=body.get("status", "active"),
@@ -442,7 +441,7 @@ class ServiceOptionService:
         if not it:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue type not found")
         old = _issue_payload(it)
-        for field in ("name", "description", "vertical_type", "metadata_json",
+        for field in ("name", "description", "icon_url", "vertical_type", "metadata_json",
                       "requires_photo", "requires_description", "customer_visible", "display_order"):
             if field in body:
                 setattr(it, field, body[field])

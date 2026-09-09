@@ -139,7 +139,7 @@ function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; ra
   return <Card>
     <SectionTitle
       title="Demand intelligence"
-      description={`PII-free postcode searches where service was unavailable. Use this to prioritize provider acquisition and coverage. ${demand.data?.period_days ?? 30}-day view.`}
+      description={`PII-free confirmed bookings and unmet searches by postcode. Use this to prioritize provider capacity and coverage. ${demand.data?.period_days ?? 30}-day view.`}
       action={<div className={styles.inlineActions}><RangeControl value={range} onChange={setRange}/><Link href="/admin/home-services/bookings-jobs?view=requests" className={styles.textLink}>Open qualified requests <ArrowRight size={13}/></Link></div>}
     />
     <div className={styles.engineStrip}>
@@ -147,9 +147,9 @@ function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; ra
       <Badge variant={engine?.observation_mode ? "warning" : "success"}>{engine?.phase_label ?? "cold start"}</Badge>
       <small>{Number(engine?.sample_size ?? 0).toLocaleString("en-IN")} observations · {engine?.method ?? "cohort projection"}</small>
     </div>
-    {!areas.length ? <div className={styles.chartEmpty}><FileBarChart size={23}/><strong>No unmet postcode demand in this period.</strong><span>Failed customer-app, Instagram and WhatsApp coverage checks will appear here without creating bookings.</span></div> : <>
+    {!areas.length ? <div className={styles.chartEmpty}><FileBarChart size={23}/><strong>No booking demand in this period.</strong><span>Confirmed bookings and failed customer-app, Instagram and WhatsApp coverage checks will appear here.</span></div> : <>
       <div className={styles.demandSignals}>
-        <div><span><Zap size={13}/>Unmet searches</span><strong>{Number(demand.data?.total_requests ?? 0).toLocaleString("en-IN")}</strong><small>{Number(demand.data?.total_areas ?? areas.length)} postcodes</small></div>
+        <div><span><Zap size={13}/>Total demand</span><strong>{Number(demand.data?.total_requests ?? 0).toLocaleString("en-IN")}</strong><small>{Number(demand.data?.total_areas ?? areas.length)} postcodes</small></div>
         <div><span><GrowthIcon size={13}/>Period growth</span><strong className={growth != null && growth < 0 ? styles.signalDown : styles.signalUp}>{growth == null ? "New" : `${growth > 0 ? "+" : ""}${growth}%`}</strong><small>vs previous {demand.data?.period_days ?? 30} days</small></div>
         <div><span><BrainCircuit size={13}/>Projected demand</span><strong>{Number(demand.data?.projected_next_period_requests ?? 0).toLocaleString("en-IN")}</strong><small>next {demand.data?.period_days ?? 30} days</small></div>
         <div><span><Target size={13}/>Unserved</span><strong>{Number(demand.data?.unmatched_requests ?? 0).toLocaleString("en-IN")}</strong><small>not saved as bookings</small></div>
@@ -158,8 +158,8 @@ function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; ra
 
       <div className={styles.intelligenceGrid}>
         <div className={styles.intelligencePanel}>
-          <div className={styles.panelHeading}><div><strong>Unserved demand by ZIP & source</strong><small>Aggregated failed coverage checks</small></div><span>{Number(demand.data?.total_requests ?? 0)} checks</span></div>
-          <div className={styles.demandChart} role="img" aria-label="Stacked bar chart of unmet postcode searches by channel">
+          <div className={styles.panelHeading}><div><strong>Demand by ZIP & source</strong><small>Confirmed bookings plus failed coverage checks</small></div><span>{Number(demand.data?.total_requests ?? 0)} requests</span></div>
+          <div className={styles.demandChart} role="img" aria-label="Stacked bar chart of postcode demand by channel">
             <ResponsiveContainer width="100%" height={Math.max(235, areas.length * 40)}>
               <BarChart data={areas} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: 2 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false}/>
@@ -180,7 +180,10 @@ function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; ra
           <div className={styles.opportunityList} aria-label="Ranked demand opportunities">
             {areas.slice(0, 5).map((area: DashboardRequestDemandArea, index: number) => {
               const contents = <><span className={styles.demandRank}>{index + 1}</span><span className={styles.opportunityCopy}><strong>{area.area_label}</strong><small>{area.top_service || "Service not resolved"} · {area.provider_count} provider{area.provider_count === 1 ? "" : "s"}</small><em>{area.drivers?.[0] || "Monitor demand and conversion"}</em></span><span className={`${styles.priorityScore} ${styles[`score${area.priority[0].toUpperCase()}${area.priority.slice(1)}`]}`}>{area.opportunity_score}<small>{area.priority}</small></span><ArrowRight size={13}/></>;
-              return <div key={`${area.city}-${area.zipcode}`} className={styles.demandUnknown}>{contents}</div>;
+              const params = new URLSearchParams({ view: "requests" });
+              if (area.city) params.set("city", area.city);
+              params.set("zipcode", area.zipcode);
+              return <Link href={`/admin/service-area-requests?${params.toString()}`} key={`${area.city}-${area.zipcode}`} className={styles.demandUnknown}>{contents}</Link>;
             })}
           </div>
         </div>
@@ -188,7 +191,7 @@ function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; ra
 
       <div className={styles.intelligenceBottom}>
         <div className={styles.intelligencePanel}>
-          <div className={styles.panelHeading}><div><strong>Unmet search trend</strong><small>Request inflow from failed coverage checks by channel</small></div><span>{Number(demand.data?.current_attempts ?? 0)} checks</span></div>
+          <div className={styles.panelHeading}><div><strong>Demand trend</strong><small>Request inflow from confirmed bookings and unmet searches by channel</small></div><span>{Number(demand.data?.current_attempts ?? 0)} requests</span></div>
           <ResponsiveContainer width="100%" height={190}>
             <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: -22 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
