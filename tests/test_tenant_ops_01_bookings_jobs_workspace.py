@@ -60,6 +60,19 @@ def test_pending_assignment_with_no_assignment_is_new_stage():
     assert result["next_action"]["action_key"] == "assign_technician"
 
 
+def test_accepted_job_without_a_real_assignee_returns_to_dispatch():
+    result = map_job_status(
+        JS_ACCEPTED, assignment_status="accepted", has_assignee=False,
+    )
+    actions = compute_available_actions(
+        JS_ACCEPTED, assignment_status="accepted", has_assignee=False,
+    )
+
+    assert result["stage"] == "new"
+    assert result["next_action"]["action_key"] == "assign_technician"
+    assert {action["action_key"] for action in actions} == {"assign_technician"}
+
+
 def test_closed_estimate_declined_is_terminal_and_not_completed():
     """Spec requirement: closed_estimate_declined must be terminal and must
     NEVER be presented as 'Completed' (would falsely trigger monetization

@@ -186,10 +186,6 @@ class HomeServiceDispatchProjectionService:
             *base_conditions,
             ServiceJob.assigned_staff_id.is_(None),
             or_(
-                ServiceJob.assignment_status == "unassigned",
-                ServiceJob.status == "pending_assignment",
-            ),
-            or_(
                 ServiceJob.scheduled_date.is_(None),
                 ServiceJob.scheduled_date.between(target_date, range_end),
             ),

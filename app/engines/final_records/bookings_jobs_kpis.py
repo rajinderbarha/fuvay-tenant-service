@@ -30,7 +30,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.execution.constants import (
-    JS_PENDING_ASSIGNMENT, JS_INSPECTION_DONE, JS_QUOTE_REQUIRED, JS_SERVICE_STARTED,
+    JS_INSPECTION_DONE, JS_QUOTE_REQUIRED, JS_SERVICE_STARTED,
 )
 from app.engines.final_records.bookings_jobs_stage_mapping import TERMINAL_STATUSES
 from app.engines.final_records.sla_summary import sla_filter_condition
@@ -51,8 +51,8 @@ async def compute_bookings_jobs_kpis(db: AsyncSession, tenant_id: uuid.UUID) -> 
         select(
             func.count().filter(ServiceJob.status.notin_(TERMINAL_STATUSES)).label("total_active"),
             func.count().filter(
-                ServiceJob.status == JS_PENDING_ASSIGNMENT,
-                ServiceJob.assignment_status != "assigned",
+                ServiceJob.status.notin_(TERMINAL_STATUSES),
+                ServiceJob.assigned_staff_id.is_(None),
             ).label("unassigned"),
             func.count().filter(ServiceJob.status == JS_SERVICE_STARTED).label("in_progress"),
             func.count().filter(

@@ -11,7 +11,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "frontend/tenant-portal/app/(tenant)/home-services/dispatch/page.tsx"
+PAGE = ROOT / "frontend/tenant-portal/app/(tenant)/home-services/dispatch/DispatchPage.tsx"
 API = ROOT / "frontend/tenant-portal/lib/api-tenant-workspaces.ts"
 NAV = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
 LEGACY = ROOT / "frontend/tenant-portal/app/(tenant)/dispatch/page.tsx"
@@ -119,8 +119,27 @@ def test_projection_uses_canonical_status_and_bounded_queries():
     assert "schedule_cap = 5000" in source
     assert "TERMINAL_STATUSES" in source
     assert "ServiceJob.assigned_staff_id.is_(None)" in source
-    assert "ServiceJob.status == \"pending_assignment\"" in source
+    assert "ServiceJob.assignment_status == \"unassigned\"" not in source
     assert "ServiceJob.assigned_staff_id.is_not(None)" in source
+
+
+def test_provider_workspace_links_stay_in_home_services():
+    bookings_page = (
+        ROOT / "frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs/BookingsJobsPage.tsx"
+    ).read_text(encoding="utf-8")
+    dispatch_page = PAGE.read_text(encoding="utf-8")
+
+    assert "router.push(dispatchUrl)" in bookings_page
+    assert "`/home-services/bookings-jobs?job_id=${selectedJobId}`" in dispatch_page
+    assert "router.push(`/service-jobs/${selectedJobId}`)" not in dispatch_page
+
+
+def test_provider_acceptance_does_not_fabricate_a_technician_assignment():
+    from app.engines.final_records.creation_service import HomeServiceFinalCreationService
+
+    source = inspect.getsource(HomeServiceFinalCreationService.finalize)
+    assert 'assignment_status = "unassigned"' in source
+    assert 'assignment_status = "accepted" if auto_accept' not in source
 
 
 def test_dispatch_projects_real_technician_photos_with_ui_fallbacks():

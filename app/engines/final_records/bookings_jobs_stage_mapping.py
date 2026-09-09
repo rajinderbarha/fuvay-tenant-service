@@ -105,19 +105,30 @@ STAGE_STATUSES: dict[str, tuple[str, ...]] = {
 }
 
 
-def map_job_status(job_status: str, assignment_status: str | None) -> dict:
+def map_job_status(
+    job_status: str,
+    assignment_status: str | None,
+    *,
+    has_assignee: bool | None = None,
+) -> dict:
     """Returns {stage, stage_label, is_active, is_terminal, next_action}."""
     stage, action_key, action_label = _STAGE_MAP.get(
         job_status, ("exception", None, None)
     )
     is_terminal = job_status in TERMINAL_STATUSES
 
-    # Unassigned overrides the status-derived stage — an assigned status with
-    # no assigned_staff_id would be a data-integrity anomaly, but the
-    # assignment_status field (owned by home_service_assignment) is the more
-    # authoritative source for "does this job actually have someone on it".
-    if job_status == JS_PENDING_ASSIGNMENT and assignment_status not in ("assigned",):
+    # Real ownership overrides stale lifecycle snapshots. Older auto-accepted
+    # jobs can say "accepted" without ever having a technician or assignment
+    # row. Keep those jobs visible and actionable in dispatch.
+    effectively_unassigned = (
+        has_assignee is False
+        if has_assignee is not None
+        else job_status == JS_PENDING_ASSIGNMENT and assignment_status != "assigned"
+    )
+    if not is_terminal and effectively_unassigned:
         stage = "new"
+        action_key = "assign_technician"
+        action_label = "Assign technician"
 
     next_action = None
     if not is_terminal and action_key:
@@ -132,7 +143,12 @@ def map_job_status(job_status: str, assignment_status: str | None) -> dict:
     }
 
 
-def compute_available_actions(job_status: str, assignment_status: str | None) -> list[dict]:
+def compute_available_actions(
+    job_status: str,
+    assignment_status: str | None,
+    *,
+    has_assignee: bool | None = None,
+) -> list[dict]:
     """Backend-computed list of action keys valid to *offer* for this job's
     current real status. This mirrors the JOB_TRANSITIONS graph in
     app.engines.execution.constants at a coarse, UI-facing level; the actual
@@ -143,10 +159,15 @@ def compute_available_actions(job_status: str, assignment_status: str | None) ->
     actually SUCCEEDS -- this list only decides what to render as clickable."""
     actions: list[dict] = []
 
-    if job_status == JS_PENDING_ASSIGNMENT and assignment_status != "assigned":
+    effectively_unassigned = (
+        has_assignee is False
+        if has_assignee is not None
+        else job_status == JS_PENDING_ASSIGNMENT and assignment_status != "assigned"
+    )
+    if job_status not in TERMINAL_STATUSES and effectively_unassigned:
         actions.append({"action_key": "assign_technician", "label": "Assign technician",
                          "endpoint": "POST /v1/provider/service-jobs/{job_id}/assign"})
-    if job_status in (JS_ASSIGNED, JS_ACCEPTED, JS_SCHEDULED):
+    if not effectively_unassigned and job_status in (JS_ASSIGNED, JS_ACCEPTED, JS_SCHEDULED):
         actions.append({"action_key": "reassign_technician", "label": "Reassign technician",
                          "endpoint": "POST /v1/provider/service-jobs/{job_id}/reassign"})
         actions.append({"action_key": "schedule", "label": "Schedule",
@@ -177,7 +198,7 @@ def compute_available_actions(job_status: str, assignment_status: str | None) ->
                          "endpoint": "POST /v1/staff/service-jobs/{job_id}/complete"})
         actions.append({"action_key": "confirm_payment", "label": "Confirm direct payment (invoiced jobs)",
                          "endpoint": "POST /v1/tenant/home-services/bookings-jobs/{job_id}/confirm-payment"})
-    if job_status not in TERMINAL_STATUSES:
+    if job_status not in TERMINAL_STATUSES and not effectively_unassigned:
         actions.append({"action_key": "cancel_assignment", "label": "Cancel assignment",
                          "endpoint": "POST /v1/provider/service-jobs/{job_id}/cancel-assignment"})
 

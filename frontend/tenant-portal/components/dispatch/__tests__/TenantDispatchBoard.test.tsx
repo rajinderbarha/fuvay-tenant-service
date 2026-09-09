@@ -66,4 +66,11 @@ describe("TenantDispatchBoard", () => {
     fireEvent.click(screen.getByRole("button", { name: /JOB-0001 90m left/i }));
     expect(onSelectJob).toHaveBeenCalledWith("job-1");
   });
+
+  it("keeps an explicit queue section when the day has no unassigned jobs", () => {
+    render(<TenantDispatchBoard board={{ ...projection, unassigned_jobs: [], pagination: { ...projection.pagination, total: 0 }, summary: { ...projection.summary, unassigned_count: 0 } }} date="2026-09-04" selectedJobId={null} onSelectJob={() => {}} />);
+
+    expect(screen.getByRole("heading", { name: "Needs a technician" })).toBeInTheDocument();
+    expect(screen.getByText("No unassigned jobs for this date.")).toBeInTheDocument();
+  });
 });

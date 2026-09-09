@@ -845,7 +845,7 @@ function DispatchWorkspace() {
             showExcluded={showExcluded}
             onShowExcluded={() => setShowExcluded((value) => !value)}
             onOpenJob={() =>
-              selectedJobId && router.push(`/service-jobs/${selectedJobId}`)
+              selectedJobId && router.push(`/home-services/bookings-jobs?job_id=${selectedJobId}`)
             }
             onSchedule={openSchedule}
             onAssign={(technician) =>
@@ -1709,7 +1709,7 @@ function AssignmentPanel({
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button size="sm" variant="secondary" onClick={onOpenJob}>
-                Open job <ExternalLink size={12} />
+                Booking details <ChevronRight size={12} />
               </Button>
               <Button
                 size="sm"

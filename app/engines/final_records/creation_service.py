@@ -403,7 +403,10 @@ class HomeServiceFinalCreationService:
             and await self._tenant_is_active(draft.selected_tenant_id)
         )
         job_status = JS_ACCEPTED if auto_accept else "pending_assignment"
-        assignment_status = "accepted" if auto_accept else "unassigned"
+        # Provider acceptance and technician assignment are separate facts.
+        # The business can accept immediately, but the job remains unassigned
+        # until a real staff member owns it.
+        assignment_status = "unassigned"
 
         # Booking and job are two projections of the same customer request.
         # Auto-accepting only the job left My Bookings at "Request confirmed"

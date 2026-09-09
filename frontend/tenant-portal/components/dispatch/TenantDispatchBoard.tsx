@@ -120,12 +120,13 @@ export function TenantDispatchBoard({
   return <div className="tenant-dispatch-reference">
     <DispatchKpis board={board} />
 
-    {board.unassigned_jobs.length > 0 && <section className="tenant-dispatch-section tenant-dispatch-needs">
+    <section className="tenant-dispatch-section tenant-dispatch-needs">
       <header><h2><i />Needs a technician</h2><span>{board.pagination.total || board.unassigned_jobs.length} waiting</span></header>
       <div className="tenant-dispatch-unassigned-grid">
         {board.unassigned_jobs.map(job => <UnassignedJobCard key={job.job_id} job={job} selected={selectedJobId === job.job_id} onSelect={() => onSelectJob(job.job_id)} />)}
+        {!board.unassigned_jobs.length && <div className="tenant-dispatch-empty">No unassigned jobs for this date.</div>}
       </div>
-    </section>}
+    </section>
 
     <section className="tenant-dispatch-section tenant-dispatch-today">
       <header><h2>Technicians today</h2><p>Tap a technician&apos;s job to see details, or an open slot after selecting a job.</p></header>

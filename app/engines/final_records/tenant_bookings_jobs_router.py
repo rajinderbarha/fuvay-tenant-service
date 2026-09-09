@@ -33,7 +33,7 @@ from app.schemas.base import ApiResponse, ok
 from app.exceptions import ServiceOSException
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 from app.engines.final_records.bookings_jobs_stage_mapping import (
-    map_job_status, compute_available_actions, STAGE_STATUSES,
+    map_job_status, compute_available_actions, STAGE_STATUSES, TERMINAL_STATUSES,
 )
 from app.engines.final_records.sla_summary import attach_sla, sla_filter_condition
 from app.engines.final_records.bookings_jobs_kpis import compute_bookings_jobs_kpis
@@ -128,8 +128,17 @@ async def list_bookings_jobs(
         stage_statuses = STAGE_STATUSES.get(stage)
         if not stage_statuses:
             raise ServiceOSException(error_code="INVALID_STAGE", detail="Unknown booking/job stage.", status_code=422)
-        q = q.where(ServiceJob.status.in_(stage_statuses))
-        count_q = count_q.where(ServiceJob.status.in_(stage_statuses))
+        if stage == "new":
+            stage_condition = (
+                ServiceJob.assigned_staff_id.is_(None)
+                & ServiceJob.status.notin_(TERMINAL_STATUSES)
+            )
+        else:
+            stage_condition = ServiceJob.status.in_(stage_statuses)
+            if stage not in {"cancelled", "failed", "estimate_declined"}:
+                stage_condition &= ServiceJob.assigned_staff_id.is_not(None)
+        q = q.where(stage_condition)
+        count_q = count_q.where(stage_condition)
 
     if status:
         q = q.where(ServiceJob.status == status)
@@ -249,8 +258,9 @@ async def list_bookings_jobs(
 
     items = []
     for job, booking in rows:
-        stage_info = map_job_status(job.status, job.assignment_status)
-        available_actions = compute_available_actions(job.status, job.assignment_status)
+        has_assignee = job.assigned_staff_id is not None
+        stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)
+        available_actions = compute_available_actions(job.status, job.assignment_status, has_assignee=has_assignee)
 
         # ── Field-level authorization: CustomerOperationalAccessPolicy is the
         # single source of truth for whether raw contact/exact-address may be
@@ -364,7 +374,8 @@ async def get_bookings_jobs_detail(
         raise ServiceOSException(error_code="JOB_NOT_FOUND",
                                   detail="Service job not found for this tenant.", status_code=404)
     job, booking = row
-    stage_info = map_job_status(job.status, job.assignment_status)
+    has_assignee = job.assigned_staff_id is not None
+    stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)
 
     service_name = await db.scalar(
         select(MasterService.service_name).where(MasterService.id == job.offering_id)
@@ -437,7 +448,7 @@ async def get_bookings_jobs_detail(
         "service_name": service_name,
         "job_type_label": job_type_label,
         "stage":   stage_info,
-        "available_actions": compute_available_actions(job.status, job.assignment_status),
+        "available_actions": compute_available_actions(job.status, job.assignment_status, has_assignee=has_assignee),
         "invoice": invoice.to_dict() if invoice else None,
         "quote": quote.to_dict() if quote else None,
         "visit_fee": str(visit_fee) if visit_fee is not None else None,
