@@ -1109,9 +1109,7 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
     if action is not None:
         return action
     if booking_number:
-        turn = await _booked_menu_for(
-            identity, thread, booking_number,
-            await identity.booking_status(thread, booking_number))
+        turn = await _tracked_booking_turn(identity, thread, booking_number, channel)
         return await _attach_booking_location(turn, identity, thread,
                                               booking_number, channel)
     bookings = await identity.live_bookings(thread)
@@ -1119,19 +1117,51 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
         return await _booked_menu_for(identity, thread, "", NO_BOOKINGS)
     if len(bookings) == 1:
         number = bookings[0]["number"]
-        turn = await _booked_menu_for(
-            identity, thread, number, await identity.booking_status(thread, number))
+        turn = await _tracked_booking_turn(identity, thread, number, channel)
         return await _attach_booking_location(turn, identity, thread, number, channel)
     rows = [
         {"id": f"{PICK_TRACK}{PICKER_SEP}{b['number']}",
-         "title": b["service"] or b["number"], "description": _booking_line(b)}
+         "title": b["service"] or b["number"], "description": _booking_line(b),
+         "image_url": b.get("image_url"),
+         "button_title": b["service"] or "Track booking"}
         for b in bookings
     ]
+    cards = channel == CHANNEL_INSTAGRAM and all(
+        str(row.get("image_url") or "").startswith("https://") for row in rows
+    )
     picker = pickers._paginate(rows, "Which booking?", channel, 0,
                                kind=PICK_TRACK, list_button="Choose",
-                               section_title="Your bookings")
+                               section_title="Your bookings",
+                               presentation="carousel" if cards else "quick_replies",
+                               capacity_override=MAX_IG_GENERIC_ELEMENTS if cards else None)
     return Turn(None, picker) if picker else await _booked_menu_for(
         identity, thread, "", NO_BOOKINGS)
+
+
+async def _tracked_booking_turn(identity, thread, booking_number: str,
+                                channel: str) -> Turn:
+    """Build detailed status plus an Instagram-native visual status card."""
+    view = None
+    status_view = getattr(identity, "booking_status_view", None)
+    if status_view is not None:
+        view = await status_view(thread, booking_number)
+        status_text = view.get("text") or NO_BOOKINGS
+    else:
+        status_text = await identity.booking_status(thread, booking_number)
+    turn = await _booked_menu_for(identity, thread, booking_number, status_text)
+    if channel == CHANNEL_INSTAGRAM and view and turn.picker:
+        rows = [dict(row) for row in turn.picker.get("rows") or []]
+        for row in rows:
+            if str(row.get("id") or "").startswith(f"{PICK_TRACK}{PICKER_SEP}"):
+                row["title"] = "Refresh status"
+        turn.picker["rows"] = rows
+        turn.picker["presentation"] = "status_card"
+        turn.picker["card"] = {
+            "title": view.get("title"),
+            "subtitle": view.get("subtitle"),
+            "image_url": view.get("image_url"),
+        }
+    return turn
 
 
 async def _attach_booking_location(
@@ -1202,15 +1232,31 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
         # Resolved BEFORE the page is cut, not after: a row prepended to an
         # already-full list is one row over Meta's cap, and Meta fails the
         # whole send rather than dropping it.
-        tracking = identity is not None and await identity.live_booking(thread)
+        live_bookings = await identity.live_bookings(thread) if identity is not None else []
+        tracking = bool(live_bookings)
         step = _category_step(categories, channel, page, reserve=1 if tracking else 0)
         if step.picker and tracking:
             # Someone with a booking in progress is at least as likely to want
             # to check on it as to book something new, so the option leads.
+            booking = live_bookings[0]
+            track_row = {
+                "id": f"{PICK_TRACK}{PICKER_SEP}",
+                "title": TRACK_ROW,
+                "button_title": "Track booking",
+                "description": _booking_line(booking),
+            }
+            if channel == CHANNEL_INSTAGRAM and step.picker.get("presentation") == "carousel":
+                # Never insert a blank full-size card beside illustrated
+                # categories. Prefer the booked service artwork, then reuse a
+                # public category image already present in this carousel.
+                fallback_image = next((
+                    artwork for artwork in (
+                        _category_artwork(category) for category in categories
+                    ) if artwork
+                ), None)
+                track_row["image_url"] = booking.get("image_url") or fallback_image
             step.picker["rows"] = (
-                [{"id": f"{PICK_TRACK}{PICKER_SEP}", "title": TRACK_ROW,
-                  "button_title": "Track"}]
-                + step.picker["rows"]
+                [track_row] + step.picker["rows"]
             )
         return step
 

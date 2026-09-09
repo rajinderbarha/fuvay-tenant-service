@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -622,6 +622,7 @@ class MessagingGatewayService:
                 section_title=picker["section_title"],
                 presentation=picker.get("presentation"),
                 flow=picker.get("flow"),
+                card=picker.get("card"),
             )
             if picked.get("sent"):
                 sent = True
@@ -653,7 +654,13 @@ class MessagingGatewayService:
         self, thread: MessagingThread, booking_number: str = "",
     ) -> str:
         """One booking's real status, for the Track option in the flow."""
-        return await self._latest_booking_status(thread, booking_number)
+        return (await self.booking_status_view(thread, booking_number))["text"]
+
+    async def booking_status_view(
+        self, thread: MessagingThread, booking_number: str = "",
+    ) -> dict:
+        """Customer-safe text and artwork for a social booking status card."""
+        return await self._latest_booking_status_view(thread, booking_number)
 
     async def cancel_options(self, thread: MessagingThread, booking_number: str) -> dict:
         """What the SERVER says about cancelling this booking.
@@ -998,13 +1005,22 @@ class MessagingGatewayService:
             return []
         from app.engines.final_records.models import ServiceBooking
 
-        from app.engines.admin_catalog.models import MasterService
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
 
         # The offering's name, not the booking number, is what a customer
         # recognises when choosing between two open bookings.
         rows = (await self.db.execute(
-            select(ServiceBooking, MasterService.service_name)
+            select(
+                ServiceBooking,
+                MasterService.service_name,
+                MasterService.image_url,
+                MasterService.icon_url,
+                ServiceCategory.image_url,
+                ServiceCategory.icon_url,
+            )
             .join(MasterService, MasterService.id == ServiceBooking.offering_id,
+                  isouter=True)
+            .join(ServiceCategory, ServiceCategory.id == ServiceBooking.category_id,
                   isouter=True)
             .where(ServiceBooking.customer_id == thread.customer_id,
                    ServiceBooking.status.in_(LIVE_BOOKING_STATUSES))
@@ -1020,8 +1036,16 @@ class MessagingGatewayService:
                 # by when the technician is due.
                 "when": (booking.preferred_date.strftime("%a %d %b")
                          if booking.preferred_date else None),
+                "image_url": next((
+                    str(value).strip() for value in (
+                        service_image, service_icon, category_image, category_icon,
+                    ) if str(value or "").strip().startswith("https://")
+                ), None),
             }
-            for booking, service_name in rows
+            for (
+                booking, service_name, service_image, service_icon,
+                category_image, category_icon,
+            ) in rows
         ]
 
     async def live_booking(self, thread: MessagingThread) -> bool:
@@ -1052,25 +1076,33 @@ class MessagingGatewayService:
                        or (booking.address_snapshot or {}).get("zipcode"),
         })
 
-    async def _latest_booking_status(
+    async def _latest_booking_status_view(
         self, thread: MessagingThread, booking_number: str = "",
-    ) -> str:
-        """Return a real booking's status without exposing another user."""
+    ) -> dict:
+        """Return customer-safe status text and visual card metadata.
+
+        Marketplace provider identity stays private. Technician verification
+        and badges are included only when backed by current account and Trust
+        & Quality records; the response never invents a trust claim.
+        """
         if not thread.customer_id:
             link_help = (
                 " Send /link followed by your mobile number to link it."
                 if thread.channel == "instagram" else ""
             )
-            return (
+            message = (
                 "To protect your booking details, this chat is not linked to a "
                 "Fuvay customer account yet. Use the same mobile number as your "
                 f"Fuvay account, or open the Fuvay app to track the booking.{link_help}"
             )
+            return {"text": message, "title": "Track your booking",
+                    "subtitle": "Link your Fuvay account to continue.",
+                    "image_url": None}
+
         from app.engines.final_records.models import ServiceBooking, ServiceJob
 
         query = select(ServiceBooking).where(
-            # Scoped to the customer as well as the number: a booking number
-            # is guessable, and this answers into a chat.
+            # Booking numbers can be guessed, so always scope to this customer.
             ServiceBooking.customer_id == thread.customer_id,
         )
         if booking_number:
@@ -1079,42 +1111,162 @@ class MessagingGatewayService:
             query.order_by(ServiceBooking.created_at.desc()).limit(1)
         )).scalars().first()
         if not booking:
-            return "I couldn't find a booking on this account yet. Tell me what service you need to start one."
+            message = "I couldn't find a booking on this account yet. Tell me what service you need to start one."
+            return {"text": message, "title": "No active booking",
+                    "subtitle": "Book a service to start tracking.",
+                    "image_url": None}
+
         job = (await self.db.execute(
             select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
         )).scalars().first()
         status = (job.status if job else booking.status or "pending").replace("_", " ").title()
-        lines = [f"Booking {booking.booking_number}", f"Status: {status}"]
 
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+
+        offering = await self.db.get(MasterService, booking.offering_id)
+        category = await self.db.get(ServiceCategory, booking.category_id)
+        service_name = (
+            getattr(offering, "service_name", None)
+            or getattr(category, "name", None)
+            or "Home service"
+        )
+        service_image = next((
+            str(value).strip() for value in (
+                getattr(offering, "image_url", None),
+                getattr(offering, "icon_url", None),
+                getattr(category, "image_url", None),
+                getattr(category, "icon_url", None),
+            ) if str(value or "").strip().startswith("https://")
+        ), None)
+
+        lines = [f"Booking {booking.booking_number}", f"Status: {status}",
+                 f"Service: {service_name}"]
         scheduled_date = getattr(job, "scheduled_date", None) if job else None
         scheduled_window = getattr(job, "scheduled_time_window", None) if job else None
+        visit_label = None
         if scheduled_date:
-            visit = f"Visit: {scheduled_date.isoformat()}"
+            visit_label = scheduled_date.strftime("%a, %d %b %Y")
+            visit = f"Visit: {visit_label}"
             if scheduled_window:
-                visit += f", {scheduled_window}"
+                visit += f" · {scheduled_window}"
             lines.append(visit)
+        else:
+            preferred_date = getattr(booking, "preferred_date", None)
+            preferred_window = getattr(booking, "preferred_time_window", None)
+            visit_label = preferred_date.strftime("%a, %d %b %Y") if preferred_date else None
+            if visit_label:
+                visit = f"Requested visit: {visit_label}"
+                if preferred_window:
+                    visit += f" · {preferred_window}"
+                lines.append(visit)
 
-        # A booking goes to a PROVIDER first; that provider then assigns one of
-        # their technicians. `assignment_status` is the provider's answer, so
-        # reporting it as "Technician" told the customer someone was on the way
-        # when nobody had been picked yet. The technician line appears only once
-        # `assigned_staff_id` is actually set.
-        provider = (booking.provider_snapshot or {}).get("name") if booking.provider_snapshot else None
-        assignment = (booking.assignment_status or "").replace("_", " ").title()
-        if provider and assignment:
-            lines.append(f"Provider: {provider} — {assignment}")
-        elif assignment:
-            lines.append(f"Provider: {assignment}")
+        # Show assignment state without identifying the marketplace business.
+        lines.append(
+            "Service partner: confirmed" if booking.tenant_id
+            else "Service partner: matching in progress"
+        )
 
         staff_id = getattr(job, "assigned_staff_id", None) if job else None
+        technician_name = None
+        technician_role = "Service technician"
+        technician_photo = None
+        technician_verified = False
+        badge_names: list[str] = []
         if staff_id:
             from app.engines.auth.models import User
+            from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 
-            technician = await self.db.get(User, staff_id)
-            lines.append(f"Technician: {technician.full_name if technician else 'Assigned'}")
+            member = await self.db.get(ProviderTeamMember, staff_id)
+            user = None
+            badge_target_ids = [staff_id]
+            if member:
+                technician_name = member.full_name
+                technician_role = member.designation or technician_role
+                technician_photo = member.profile_photo_url
+                if member.user_id:
+                    user = await self.db.get(User, member.user_id)
+                    badge_target_ids.append(member.user_id)
+            else:
+                user = await self.db.get(User, staff_id)
+                if user:
+                    technician_name = user.full_name
+                    technician_photo = user.avatar_url
+            technician_verified = bool(user and user.is_verified)
+
+            try:
+                from app.engines.trust_quality.models import BadgeAssignment, BadgeDefinition
+
+                badge_names = list((await self.db.execute(
+                    select(BadgeDefinition.name)
+                    .join(BadgeAssignment, BadgeAssignment.badge_id == BadgeDefinition.id)
+                    .where(
+                        BadgeAssignment.target_id.in_(badge_target_ids),
+                        BadgeAssignment.target_type.in_(("staff", "tenant_staff", "technician")),
+                        BadgeAssignment.status == "active",
+                        or_(BadgeAssignment.expires_at.is_(None),
+                            BadgeAssignment.expires_at > datetime.now(timezone.utc)),
+                        BadgeDefinition.status == "active",
+                        BadgeDefinition.customer_visible.is_(True),
+                        BadgeDefinition.admin_only.is_(False),
+                    )
+                    .order_by(BadgeDefinition.name)
+                    .limit(2)
+                )).scalars().all())
+            except Exception as exc:  # badge lookup must never break tracking
+                logger.warning("messaging_gateway.booking_badges_failed",
+                               booking_number=booking.booking_number, error=str(exc))
+
+            lines.append(f"Technician: {technician_name or 'Assigned'}")
+            lines.append(f"Role: {technician_role}")
+            if technician_verified:
+                lines.append("Verification: ✓ Verified technician")
+            if badge_names:
+                lines.append(f"Badges: {' · '.join(badge_names)}")
         else:
-            lines.append("Technician: not assigned yet")
-        return chr(10).join(lines)
+            lines.append("Technician: assignment in progress")
+
+        area = " ".join(str(value) for value in (
+            getattr(job, "city", None) if job else booking.city,
+            getattr(job, "zipcode", None) if job else booking.zipcode,
+        ) if value)
+        if area:
+            lines.append(f"Service area: {area}")
+
+        price = booking.price_snapshot if isinstance(booking.price_snapshot, dict) else {}
+        amount = price.get("display_price")
+        if not amount and price.get("customer_total") is not None:
+            amount = f"₹{price['customer_total']}"
+        if amount:
+            lines.append(f"Booking amount: {amount}")
+
+        card_image = next((
+            str(value).strip() for value in (technician_photo, service_image)
+            if str(value or "").strip().startswith("https://")
+        ), None)
+        subtitle_parts = [status]
+        if visit_label:
+            subtitle_parts.append(visit_label)
+        if technician_verified:
+            subtitle_parts.append("✓ Verified technician")
+        elif technician_name:
+            subtitle_parts.append("Technician assigned")
+        else:
+            subtitle_parts.append("Assignment in progress")
+        return {
+            "text": chr(10).join(lines),
+            "title": f"{service_name} · {status}",
+            "subtitle": " · ".join(subtitle_parts),
+            "image_url": card_image,
+            "booking_number": booking.booking_number,
+            "technician_verified": technician_verified,
+            "badges": badge_names,
+        }
+
+    async def _latest_booking_status(
+        self, thread: MessagingThread, booking_number: str = "",
+    ) -> str:
+        """Backward-compatible text-only status used by older callers."""
+        return (await self._latest_booking_status_view(thread, booking_number))["text"]
 
     async def start_phone_verification(self, thread: MessagingThread, phone: str) -> str:
         """Send the booking's phone-confirmation code.
@@ -1451,16 +1603,13 @@ class MessagingGatewayService:
             offering = await self.db.get(
                 MasterService, uuid.UUID(str(draft["offering_id"])),
             )
-        provider = draft.get("selected_provider_snapshot") or {}
         price = draft.get("price_snapshot") or {}
-        provider_name = (
-            provider.get("provider_name") or provider.get("name")
-            or provider.get("business_name") or "Provider matched"
-        )
         display_price = price.get("display_price")
         if not display_price and price.get("standard_price") is not None:
             display_price = f"INR {price['standard_price']}"
-        detail_parts = [str(provider_name)]
+        # Matching is internal marketplace state. Do not reveal the provider's
+        # business identity before the customer confirms the booking.
+        detail_parts = ["Service partner matched"]
         if display_price:
             detail_parts.append(f"Price {display_price}")
 

@@ -5,7 +5,8 @@ import hashlib
 import hmac
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -1176,6 +1177,9 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
     async def _categories(db, zipcode):
         class Category:
             slug, name = "home_services", "Home Services"
+            image_url = "https://cdn.example/home-services.jpg"
+            icon_url = None
+            description = "Repairs and maintenance"
         return [Category()]
 
     original, flow._serviceable_categories = flow._serviceable_categories, _categories
@@ -1184,6 +1188,12 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
             step = await flow._next_step(None, Thread(), None, None, channel, 0,
                                          Identity(one))
             assert step.picker["rows"][0]["id"] == "tr|"
+            if channel == CHANNEL_INSTAGRAM:
+                assert step.picker["presentation"] == "carousel"
+                assert step.picker["rows"][0]["image_url"] == (
+                    "https://cdn.example/home-services.jpg"
+                )
+                assert step.picker["rows"][0]["button_title"] == "Track booking"
 
             # Nothing live: the option is not offered, because it would be noise.
             quiet = await flow._next_step(None, Thread(), None, None, channel, 0,
@@ -1207,6 +1217,97 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
     picked = await flow._navigate(None, None, "tr|BK-2", None, Thread(),
                                   CHANNEL_WHATSAPP, Identity(two))
     assert "BK-2" in picked.text
+
+    class InstagramIdentity(Identity):
+        async def booking_status_view(self, thread, booking_number=""):
+            return {
+                "text": f"Booking {booking_number}\nStatus: Assigned",
+                "title": "AC Repair · Assigned",
+                "subtitle": "Assigned · ✓ Verified technician",
+                "image_url": "https://cdn.example/technician.jpg",
+            }
+
+    instagram_status = await flow._track_step(
+        Thread(), InstagramIdentity(one), "BK-1", CHANNEL_INSTAGRAM,
+    )
+    assert instagram_status.picker["presentation"] == "status_card"
+    assert instagram_status.picker["card"]["image_url"] == (
+        "https://cdn.example/technician.jpg"
+    )
+    assert instagram_status.picker["rows"][0]["title"] == "Refresh status"
+
+
+@pytest.mark.asyncio
+async def test_booking_status_card_uses_real_technician_trust_and_hides_provider():
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    booking_id = uuid.uuid4()
+    offering_id = uuid.uuid4()
+    category_id = uuid.uuid4()
+    staff_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    booking = SimpleNamespace(
+        id=booking_id, booking_number="BK-42", offering_id=offering_id,
+        category_id=category_id, customer_id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        status="assigned", preferred_date=date(2026, 9, 10),
+        preferred_time_window="09:00-11:00", city="Bassi Pathana",
+        zipcode="140412", price_snapshot={"display_price": "₹315"},
+        provider_snapshot={"provider_name": "Private Provider Name"},
+    )
+    job = SimpleNamespace(
+        booking_id=booking_id, status="assigned", assigned_staff_id=staff_id,
+        scheduled_date=date(2026, 9, 10), scheduled_time_window="09:00-11:00",
+        city="Bassi Pathana", zipcode="140412",
+    )
+    offering = SimpleNamespace(
+        service_name="AC Repair", image_url="https://cdn.example/ac.jpg",
+        icon_url=None,
+    )
+    category = SimpleNamespace(name="Home Services", image_url=None, icon_url=None)
+    member = SimpleNamespace(
+        full_name="Aman Singh", designation="Senior Technician",
+        profile_photo_url="https://cdn.example/aman.jpg", user_id=user_id,
+    )
+    user = SimpleNamespace(
+        full_name="Aman Singh", avatar_url=None, is_verified=True,
+    )
+
+    class ScalarResult:
+        def __init__(self, *, first=None, all_rows=None):
+            self._first = first
+            self._all = all_rows or []
+        def scalars(self):
+            return self
+        def first(self):
+            return self._first
+        def all(self):
+            return self._all
+
+    class DB:
+        def __init__(self):
+            self.results = [ScalarResult(first=booking), ScalarResult(first=job),
+                            ScalarResult(all_rows=["Top Rated"])]
+        async def execute(self, statement):
+            return self.results.pop(0)
+        async def get(self, model, record_id):
+            values = {
+                ("MasterService", offering_id): offering,
+                ("ServiceCategory", category_id): category,
+                ("ProviderTeamMember", staff_id): member,
+                ("User", user_id): user,
+            }
+            return values.get((model.__name__, record_id))
+
+    thread = SimpleNamespace(customer_id=booking.customer_id, channel="instagram")
+    view = await MessagingGatewayService(DB()).booking_status_view(thread, "BK-42")
+
+    assert view["image_url"] == "https://cdn.example/aman.jpg"
+    assert view["technician_verified"] is True
+    assert view["badges"] == ["Top Rated"]
+    assert "Verification: ✓ Verified technician" in view["text"]
+    assert "Badges: Top Rated" in view["text"]
+    assert "Service partner: confirmed" in view["text"]
+    assert "Private Provider Name" not in view["text"]
 
 
 @pytest.mark.asyncio
@@ -1272,6 +1373,22 @@ async def test_instagram_uses_stacked_buttons_for_durable_actions(monkeypatch):
     assert elements[0]["buttons"][0] == {
         "type": "postback", "title": "AC Repair", "payload": "of|ac|repair",
     }
+
+    await meta_client.send_options("igsid-1", "Your booking is with us.", [
+        {"id": "tr|BK-1", "title": "Refresh status"},
+        {"id": "rs|1", "title": "Book another service"},
+    ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="status_card", card={
+        "title": "AC Repair · Assigned",
+        "subtitle": "Assigned · Thu, 10 Sep 2026 · ✓ Verified technician",
+        "image_url": "https://cdn.example/technician.jpg",
+    })
+    card = calls[3]["message"]["attachment"]["payload"]["elements"][0]
+    assert card["image_url"] == "https://cdn.example/technician.jpg"
+    assert card["title"] == "AC Repair · Assigned"
+    assert "Verified technician" in card["subtitle"]
+    assert [button["payload"] for button in card["buttons"]] == [
+        "tr|BK-1", "rs|1",
+    ]
 
 
 @pytest.mark.asyncio
@@ -1582,7 +1699,8 @@ async def test_slot_picker_is_upgraded_to_flow_with_server_owned_booking_data(mo
     payload = upgraded["flow"]
     assert payload["id"] == "987654321"
     assert payload["data"]["service"] == "AC Repair"
-    assert "Trusted Services" in payload["data"]["booking_details"]
+    assert "Trusted Services" not in payload["data"]["booking_details"]
+    assert "Service partner matched" in payload["data"]["booking_details"]
     assert "₹1,499" in payload["data"]["booking_details"]
     assert payload["data"]["available_slots"] == [{
         "id": "sl|2026-09-03|10:00-11:00",

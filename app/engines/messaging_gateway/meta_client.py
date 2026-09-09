@@ -543,6 +543,7 @@ async def send_options(
     section_title: str | None = None,
     presentation: str | None = None,
     flow: dict[str, Any] | None = None,
+    card: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Send a tappable option set - the in-chat equivalent of a picker screen.
 
@@ -600,6 +601,32 @@ async def send_options(
                            reason=sent_flow.get("reason"), status=sent_flow.get("status"))
         # A bad/unpublished Flow must not strand a customer. Fall through to
         # the same list picker that would have been sent with Flows disabled.
+
+    if channel == CHANNEL_INSTAGRAM and presentation == "status_card" and card:
+        # A single generic-template element gives tracking a visual identity
+        # and keeps the actions attached to the booking they operate on.
+        element: dict[str, Any] = {
+            "title": _clip(str(card.get("title") or "Booking status"),
+                           IG_GENERIC_TITLE_CHARS),
+            "subtitle": _clip(str(card.get("subtitle") or text),
+                              IG_GENERIC_SUBTITLE_CHARS),
+            "buttons": [
+                {"type": "postback",
+                 "title": _clip(str(row.get("title") or "Choose"),
+                                WA_BUTTON_TITLE_CHARS),
+                 "payload": row["id"]}
+                for row in rows[:MAX_WA_BUTTONS]
+            ],
+        }
+        image_url = str(card.get("image_url") or "").strip()
+        if image_url.startswith("https://"):
+            element["image_url"] = image_url
+        return await _post(url, token, {
+            "recipient": {"id": to},
+            "message": {"attachment": {"type": "template", "payload": {
+                "template_type": "generic", "elements": [element],
+            }}},
+        })
 
     if channel == CHANNEL_INSTAGRAM and presentation == "carousel":
         elements = []
