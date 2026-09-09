@@ -14,9 +14,10 @@ import Link from "next/link";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowRight, Banknote, BellRing, Building2,
-  CalendarClock, CheckCircle2, ClipboardCheck, Download, ExternalLink,
-  FileBarChart, HeartPulse, History, ListChecks, RefreshCw,
-  Search, ShieldAlert, ShieldCheck, Sparkles, UsersRound, Wrench,
+  BrainCircuit, CalendarClock, CheckCircle2, ClipboardCheck, Download,
+  ExternalLink, FileBarChart, HeartPulse, History, ListChecks, MapPin,
+  RefreshCw, Search, ShieldAlert, ShieldCheck, Sparkles, Target,
+  TrendingDown, TrendingUp, UsersRound, Wrench, Zap,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
@@ -134,42 +135,82 @@ function requestAreaHref(area: Pick<DashboardRequestDemandArea, "city" | "zipcod
 
 function RequestDemandByArea({ demand, range, setRange }: { demand: ApiState; range: Range; setRange: (value: Range) => void }) {
   if (demand.error) return <Card><SectionError title="Area demand unavailable" error={demand.error} requestId={demand.requestId} onRetry={demand.refetch}/></Card>;
-  if (demand.loading) return <Card><Skeleton height={320}/></Card>;
+  if (demand.loading) return <Card><Skeleton height={520}/></Card>;
   const areas = demand.data?.areas ?? [];
+  const trend = demand.data?.daily_trend ?? [];
+  const services = demand.data?.top_services ?? [];
+  const engine = demand.data?.engine;
+  const growth = demand.data?.growth_pct;
+  const GrowthIcon = growth != null && growth < 0 ? TrendingDown : TrendingUp;
+  const maxServiceRequests = Math.max(1, ...services.map((service: { request_count: number }) => Number(service.request_count || 0)));
   return <Card>
     <SectionTitle
-      title="Unconfirmed demand by area"
-      description={`Active booking attempts from the last ${demand.data?.period_days ?? 30} days, split by source. These are demand signals, not confirmed bookings.`}
+      title="Demand intelligence"
+      description={`Where unconfirmed demand is building, what customers need, and where provider coverage is thin. ${demand.data?.period_days ?? 30}-day view.`}
       action={<div className={styles.inlineActions}><RangeControl value={range} onChange={setRange}/><Link href="/admin/home-services/bookings-jobs?view=requests" className={styles.textLink}>View all requests <ArrowRight size={13}/></Link></div>}
     />
+    <div className={styles.engineStrip}>
+      <span><BrainCircuit size={15}/><strong>Data Science Engine</strong></span>
+      <Badge variant={engine?.observation_mode ? "warning" : "success"}>{engine?.phase_label ?? "cold start"}</Badge>
+      <small>{Number(engine?.sample_size ?? 0).toLocaleString("en-IN")} observations · {engine?.method ?? "cohort projection"}</small>
+    </div>
     {!areas.length ? <div className={styles.chartEmpty}><FileBarChart size={23}/><strong>No unconfirmed demand in this period.</strong><span>New customer, Instagram and WhatsApp requests will appear here.</span></div> : <>
-      <div className={styles.demandMeta}><strong>{Number(demand.data?.total_requests ?? 0).toLocaleString("en-IN")}</strong><span>unconfirmed requests across {Number(demand.data?.total_areas ?? areas.length)} area{Number(demand.data?.total_areas ?? areas.length) === 1 ? "" : "s"}</span></div>
-      <div className={styles.demandLayout}>
-        <div className={styles.demandChart} role="img" aria-label="Stacked bar chart of unconfirmed requests by area and booking channel">
-          <ResponsiveContainer width="100%" height={Math.max(250, areas.length * 42)}>
-            <BarChart data={areas} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false}/>
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }}/>
-              <YAxis type="category" dataKey="area_label" width={132} interval={0} tick={{ fontSize: 10 }}/>
-              <Tooltip formatter={(value: number, name: string) => [Number(value).toLocaleString("en-IN"), name]}/>
-              <Legend wrapperStyle={{ fontSize: 10 }}/>
-              <Bar dataKey="instagram_requests" name="Instagram" stackId="requests" fill="#e1306c"/>
-              <Bar dataKey="whatsapp_requests" name="WhatsApp" stackId="requests" fill="#20a867"/>
-              <Bar dataKey="customer_app_requests" name="Customer app" stackId="requests" fill="var(--text-link)" radius={[0, 4, 4, 0]}/>
-            </BarChart>
+      <div className={styles.demandSignals}>
+        <div><span><Zap size={13}/>Active demand</span><strong>{Number(demand.data?.total_requests ?? 0).toLocaleString("en-IN")}</strong><small>{Number(demand.data?.total_areas ?? areas.length)} request areas</small></div>
+        <div><span><GrowthIcon size={13}/>Period growth</span><strong className={growth != null && growth < 0 ? styles.signalDown : styles.signalUp}>{growth == null ? "New" : `${growth > 0 ? "+" : ""}${growth}%`}</strong><small>vs previous {demand.data?.period_days ?? 30} days</small></div>
+        <div><span><BrainCircuit size={13}/>Projected demand</span><strong>{Number(demand.data?.projected_next_period_requests ?? 0).toLocaleString("en-IN")}</strong><small>next {demand.data?.period_days ?? 30} days</small></div>
+        <div><span><Target size={13}/>Unmatched</span><strong>{Number(demand.data?.unmatched_requests ?? 0).toLocaleString("en-IN")}</strong><small>{Number(demand.data?.conversion_rate_pct ?? 0)}% cohort conversion</small></div>
+        <div><span><MapPin size={13}/>Location quality</span><strong>{Number(demand.data?.location_capture_pct ?? 0)}%</strong><small>{Number(demand.data?.emergency_requests ?? 0)} emergency requests</small></div>
+      </div>
+
+      <div className={styles.intelligenceGrid}>
+        <div className={styles.intelligencePanel}>
+          <div className={styles.panelHeading}><div><strong>Demand by area & source</strong><small>Active requests awaiting confirmation</small></div><span>{Number(demand.data?.total_requests ?? 0)} total</span></div>
+          <div className={styles.demandChart} role="img" aria-label="Stacked bar chart of unconfirmed requests by area and booking channel">
+            <ResponsiveContainer width="100%" height={Math.max(235, areas.length * 40)}>
+              <BarChart data={areas} layout="vertical" margin={{ top: 8, right: 14, bottom: 8, left: 2 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false}/>
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }}/>
+                <YAxis type="category" dataKey="area_label" width={130} interval={0} tick={{ fontSize: 10 }}/>
+                <Tooltip formatter={(value: number, name: string) => [Number(value).toLocaleString("en-IN"), name]}/>
+                <Legend wrapperStyle={{ fontSize: 10 }}/>
+                <Bar dataKey="instagram_requests" name="Instagram" stackId="requests" fill="#e1306c"/>
+                <Bar dataKey="whatsapp_requests" name="WhatsApp" stackId="requests" fill="#20a867"/>
+                <Bar dataKey="customer_app_requests" name="Customer app" stackId="requests" fill="var(--text-link)" radius={[0, 4, 4, 0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className={styles.intelligencePanel}>
+          <div className={styles.panelHeading}><div><strong>Area opportunities</strong><small>Demand, matching and active coverage combined</small></div><Target size={16}/></div>
+          <div className={styles.opportunityList} aria-label="Ranked demand opportunities">
+            {areas.slice(0, 5).map((area: DashboardRequestDemandArea, index: number) => {
+              const contents = <><span className={styles.demandRank}>{index + 1}</span><span className={styles.opportunityCopy}><strong>{area.area_label}</strong><small>{area.top_service || "Service not resolved"} · {area.provider_count} provider{area.provider_count === 1 ? "" : "s"}</small><em>{area.drivers?.[0] || "Monitor demand and conversion"}</em></span><span className={`${styles.priorityScore} ${styles[`score${area.priority[0].toUpperCase()}${area.priority.slice(1)}`]}`}>{area.opportunity_score}<small>{area.priority}</small></span><ArrowRight size={13}/></>;
+              return area.area_captured ? <Link key={`${area.city}-${area.zipcode}`} href={requestAreaHref(area)}>{contents}</Link> : <div key="area-not-captured" className={styles.demandUnknown}>{contents}</div>;
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.intelligenceBottom}>
+        <div className={styles.intelligencePanel}>
+          <div className={styles.panelHeading}><div><strong>Request inflow</strong><small>All new attempts by acquisition channel</small></div><span>{Number(demand.data?.current_attempts ?? 0)} attempts</span></div>
+          <ResponsiveContainer width="100%" height={190}>
+            <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: -22 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
+              <XAxis dataKey="date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 9 }} minTickGap={22}/>
+              <YAxis allowDecimals={false} tick={{ fontSize: 9 }}/>
+              <Tooltip labelFormatter={(value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}/>
+              <Area type="monotone" dataKey="instagram" name="Instagram" stackId="channel" stroke="#e1306c" fill="#e1306c" fillOpacity={0.68}/>
+              <Area type="monotone" dataKey="whatsapp" name="WhatsApp" stackId="channel" stroke="#20a867" fill="#20a867" fillOpacity={0.58}/>
+              <Area type="monotone" dataKey="customer_app" name="Customer app" stackId="channel" stroke="var(--text-link)" fill="var(--text-link)" fillOpacity={0.45}/>
+            </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className={styles.demandRanking} aria-label="Top request areas">
-          {areas.slice(0, 5).map((area: DashboardRequestDemandArea, index: number) => area.area_captured ? <Link key={`${area.city}-${area.zipcode}`} href={requestAreaHref(area)}>
-            <span className={styles.demandRank}>{index + 1}</span>
-            <span><strong>{area.area_label}</strong><small>{area.share_pct}% of current demand</small></span>
-            <b>{area.total_requests}</b>
-            <ArrowRight size={13}/>
-          </Link> : <div key="area-not-captured" className={styles.demandUnknown}>
-            <span className={styles.demandRank}>{index + 1}</span>
-            <span><strong>{area.area_label}</strong><small>Location needs completion</small></span>
-            <b>{area.total_requests}</b>
-          </div>)}
+        <div className={styles.intelligencePanel}>
+          <div className={styles.panelHeading}><div><strong>Customer needs driving demand</strong><small>Service or reported issue mix</small></div><Wrench size={16}/></div>
+          <div className={styles.serviceDemandList}>{services.map((service: { service_name: string; request_count: number }, index: number) => <div key={`${service.service_name}-${index}`}><span><strong>{service.service_name}</strong><b>{service.request_count}</b></span><i><em style={{ width: `${Number(service.request_count || 0) / maxServiceRequests * 100}%` }}/></i></div>)}</div>
         </div>
       </div>
     </>}

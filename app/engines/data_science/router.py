@@ -28,14 +28,14 @@ def _rid(r): return getattr(r.state,"request_id","—")
 async def engine_meta() -> dict:
     return {
         "engine_id": ENGINE_ID, "name": "Data Science Engine", "version": "7.0.0",
-        "endpoint_count": 20, "status": "active",
+        "endpoint_count": 21, "status": "active",
         "phases": {
             "0": "rule_based — < 50 jobs",
             "1": "observation — 50–500 jobs",
             "2": "platform_model — 500–2000 jobs",
             "3": "tenant_model — 2000+ jobs",
         },
-        "capabilities": ["churn_prediction","demand_forecasting","pricing_recommendations",
+        "capabilities": ["churn_prediction","demand_forecasting","geographic_demand_intelligence","pricing_recommendations",
                          "staff_performance","customer_ltv","anomaly_detection",
                          "model_versioning","observation_mode_flag"],
     }
@@ -274,3 +274,19 @@ async def platform_summary(r: Request,
                             u: UserContext = Depends(require_super_admin),
                             s: DSService = Depends(_svc)) -> ApiResponse[dict]:
     return ok(await s.get_platform_summary(), _rid(r), ENGINE_ID)
+
+
+@router.get("/platform/demand-intelligence",
+            summary="[Admin] Geographic Home Services demand intelligence",
+            response_model=ApiResponse[dict])
+async def platform_demand_intelligence(
+    r: Request,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(8, ge=1, le=20),
+    u: UserContext = Depends(require_super_admin),
+    s: DSService = Depends(_svc),
+) -> ApiResponse[dict]:
+    return ok(
+        await s.get_platform_area_demand_intelligence(days=days, limit=limit),
+        _rid(r), ENGINE_ID,
+    )

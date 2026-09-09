@@ -9310,18 +9310,51 @@ export interface DashboardRequestDemandArea {
   area_label: string;
   area_captured: boolean;
   total_requests: number;
+  current_volume: number;
+  previous_volume: number;
+  growth_pct: number | null;
+  confirmed_requests: number;
+  unmatched_requests: number;
+  unmatched_pct: number;
+  emergency_requests: number;
+  provider_count: number;
+  requests_per_provider: number | null;
   instagram_requests: number;
   whatsapp_requests: number;
   customer_app_requests: number;
   share_pct: number;
+  top_service: string | null;
+  top_service_requests: number;
+  opportunity_score: number;
+  priority: "high" | "medium" | "watch";
+  drivers: string[];
   latest_request_at: string | null;
 }
 
 export interface DashboardRequestDemand {
+  engine: {
+    engine_id: "data_science";
+    phase: number;
+    phase_label: string;
+    observation_mode: boolean;
+    sample_size: number;
+    method: string;
+  };
   period_days: number;
   total_requests: number;
   total_areas: number;
+  current_attempts: number;
+  previous_attempts: number;
+  growth_pct: number | null;
+  projected_next_period_requests: number;
+  conversion_rate_pct: number;
+  unmatched_requests: number;
+  emergency_requests: number;
+  location_capture_pct: number;
+  channel_mix: { instagram: number; whatsapp: number; customer_app: number };
   areas: DashboardRequestDemandArea[];
+  daily_trend: Array<{ date: string; requests: number; instagram: number; whatsapp: number; customer_app: number }>;
+  top_services: Array<{ service_name: string; request_count: number }>;
   generated_at: string;
 }
 

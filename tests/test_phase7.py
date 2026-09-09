@@ -241,7 +241,7 @@ def test_ds_meta(client):
     assert r.status_code == 200
     d = r.json()
     assert d["engine_id"] == "data_science"
-    assert d["endpoint_count"] == 20
+    assert d["endpoint_count"] == 21
     assert len(d["phases"]) == 4
 
 def test_churn_score_requires_auth(client):
@@ -267,6 +267,9 @@ def test_models_requires_admin(client):
 
 def test_platform_summary_requires_admin(client):
     assert client.get("/v1/ds/platform/summary").status_code == 401
+
+def test_platform_demand_intelligence_requires_admin(client):
+    assert client.get("/v1/ds/platform/demand-intelligence").status_code == 401
 
 def test_all_phases_still_running(client):
     metas = ["/health", "/v1/commerce/meta", "/v1/pricing/meta",

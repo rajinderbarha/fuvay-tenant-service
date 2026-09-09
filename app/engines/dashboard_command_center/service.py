@@ -285,74 +285,14 @@ class DashboardCommandCenterService:
         return {"items": items}
 
     async def get_request_demand_by_area(self, days: int = 30, limit: int = 8) -> dict[str, Any]:
-        """Rank active, unconfirmed Home Services demand by city/pincode.
-
-        The draft's conversation session supplies the acquisition channel when
-        it was created through Instagram or WhatsApp. This survives /reset and
-        /fuvay, unlike the messaging thread's pointer to its current session.
-        Drafts without a social channel are customer-app attempts.
-        """
-        rows = await _safe_rows(self.db, """
-            WITH active_demand AS (
-                SELECT
-                    NULLIF(TRIM(d.city), '') AS city,
-                    NULLIF(TRIM(d.zipcode), '') AS zipcode,
-                    CASE
-                        WHEN session.context_data ->> 'channel' = 'instagram' THEN 'instagram'
-                        WHEN session.context_data ->> 'channel' = 'whatsapp' THEN 'whatsapp'
-                        ELSE 'customer_app'
-                    END AS source,
-                    d.updated_at
-                FROM home_service_booking_drafts d
-                LEFT JOIN ai_conversation_sessions session
-                    ON session.id = d.ai_session_id
-                WHERE d.status IN (
-                    'draft', 'collecting_details', 'serviceability_checked',
-                    'price_estimated', 'provider_matched', 'ready_for_confirmation'
-                )
-                  AND d.created_at >= NOW() - (:days * INTERVAL '1 day')
-            )
-            SELECT city, zipcode,
-                   COUNT(*) AS total_requests,
-                   COUNT(*) FILTER (WHERE source = 'instagram') AS instagram_requests,
-                   COUNT(*) FILTER (WHERE source = 'whatsapp') AS whatsapp_requests,
-                   COUNT(*) FILTER (WHERE source = 'customer_app') AS customer_app_requests,
-                   MAX(updated_at) AS latest_request_at,
-                   SUM(COUNT(*)) OVER () AS all_requests,
-                   COUNT(*) OVER () AS all_areas
-            FROM active_demand
-            GROUP BY city, zipcode
-            ORDER BY total_requests DESC, city NULLS LAST, zipcode NULLS LAST
-            LIMIT :limit
-        """, {"days": days, "limit": limit})
-
-        total_requests = int(rows[0]["all_requests"] or 0) if rows else 0
-        total_areas = int(rows[0]["all_areas"] or 0) if rows else 0
-        areas = []
-        for row in rows:
-            city = row.get("city")
-            zipcode = row.get("zipcode")
-            label = " · ".join(part for part in (city, zipcode) if part) or "Area not captured"
-            count = int(row.get("total_requests") or 0)
-            areas.append({
-                "city": city,
-                "zipcode": zipcode,
-                "area_label": label,
-                "area_captured": bool(city or zipcode),
-                "total_requests": count,
-                "instagram_requests": int(row.get("instagram_requests") or 0),
-                "whatsapp_requests": int(row.get("whatsapp_requests") or 0),
-                "customer_app_requests": int(row.get("customer_app_requests") or 0),
-                "share_pct": round((count / total_requests) * 100, 1) if total_requests else 0,
-                "latest_request_at": row["latest_request_at"].isoformat() if row.get("latest_request_at") else None,
-            })
-        return {
-            "period_days": days,
-            "total_requests": total_requests,
-            "total_areas": total_areas,
-            "areas": areas,
-            "generated_at": _utcnow().isoformat(),
-        }
+        """Delegate geographic request intelligence to the Data Science Engine."""
+        from app.engines.data_science.service import DSService
+        return await DSService(
+            db=self.db,
+            request_id=self.request_id,
+            actor_id=self.actor_id,
+            actor_role=self.actor_role,
+        ).get_platform_area_demand_intelligence(days=days, limit=limit)
 
     # ── Part H: Trends ───────────────────────────────────────────────────────
 

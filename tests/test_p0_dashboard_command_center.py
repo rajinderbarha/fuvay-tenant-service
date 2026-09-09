@@ -18,6 +18,7 @@ PERMISSIONS = (ROOT / "app/core/permissions.py").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "alembic/versions/105_dashboard_command_center.py").read_text(encoding="utf-8")
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
 ANALYTICS = (ROOT / "app/engines/analytics/platform_service.py").read_text(encoding="utf-8")
+DATA_SCIENCE = (ROOT / "app/engines/data_science/service.py").read_text(encoding="utf-8")
 
 
 def test_executive_summary_endpoint_exists():
@@ -86,11 +87,14 @@ def test_operations_snapshot_endpoint_exists():
 def test_unconfirmed_request_demand_is_grouped_by_real_area_and_channel():
     assert '@router.get("/request-demand-by-area"' in ROUTER
     assert "async def get_request_demand_by_area" in SERVICE
-    assert "home_service_booking_drafts" in SERVICE
-    assert "ai_conversation_sessions" in SERVICE
-    assert "session.context_data ->> 'channel'" in SERVICE
-    for field in ("instagram_requests", "whatsapp_requests", "customer_app_requests", "share_pct"):
-        assert field in SERVICE
+    assert "DSService" in SERVICE
+    assert "get_platform_area_demand_intelligence" in SERVICE
+    assert "home_service_booking_drafts" in DATA_SCIENCE
+    assert "ai_conversation_sessions" in DATA_SCIENCE
+    assert "tenant_service_areas" in DATA_SCIENCE
+    assert "session.context_data ->> 'channel'" in DATA_SCIENCE
+    for field in ("opportunity_score", "projected_next_period_requests", "conversion_rate_pct", "top_services"):
+        assert field in DATA_SCIENCE
 
 
 def test_trends_endpoint_returns_time_series_or_empty_state():

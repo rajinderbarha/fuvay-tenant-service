@@ -29,6 +29,7 @@ PAGE = (FRONTEND / "app/admin/dashboard/page.tsx").read_text(encoding="utf-8-sig
 API_TS = (FRONTEND / "lib/api.ts").read_text(encoding="utf-8-sig")
 DASHBOARD_ROUTER = (ROOT / "app/engines/dashboard_command_center/admin_router.py").read_text(encoding="utf-8-sig")
 DASHBOARD_SERVICE = (ROOT / "app/engines/dashboard_command_center/service.py").read_text(encoding="utf-8-sig")
+DATA_SCIENCE_SERVICE = (ROOT / "app/engines/data_science/service.py").read_text(encoding="utf-8-sig")
 PERMISSIONS = (ROOT / "app/core/permissions.py").read_text(encoding="utf-8-sig")
 
 
@@ -124,16 +125,20 @@ def test_operations_summary():
 
 
 def test_unconfirmed_area_demand_graph_is_real_and_actionable():
-    assert "Unconfirmed demand by area" in PAGE
+    assert "Demand intelligence" in PAGE
+    assert "Data Science Engine" in PAGE
     assert "BarChart" in PAGE
+    assert "Request inflow" in PAGE
+    assert "Area opportunities" in PAGE
     assert "dashboardApi.getRequestDemandByArea" in PAGE
     assert 'new URLSearchParams({ view: "requests" })' in PAGE
     assert 'params.set("city", area.city)' in PAGE
     assert 'params.set("zipcode", area.zipcode)' in PAGE
     assert '"/request-demand-by-area"' in DASHBOARD_ROUTER
-    assert "home_service_booking_drafts" in DASHBOARD_SERVICE
-    assert "ai_conversation_sessions" in DASHBOARD_SERVICE
-    assert "session.context_data ->> 'channel'" in DASHBOARD_SERVICE
+    assert "get_platform_area_demand_intelligence" in DASHBOARD_SERVICE
+    assert "home_service_booking_drafts" in DATA_SCIENCE_SERVICE
+    assert "tenant_service_areas" in DATA_SCIENCE_SERVICE
+    assert "session.context_data ->> 'channel'" in DATA_SCIENCE_SERVICE
 
 
 # ── 8. Trust & Quality summary ────────────────────────────────────────────────

@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.data_science.constants import (
@@ -840,4 +840,259 @@ class DSService:
             "tenants_at_risk": at_risk, "open_anomalies": open_anomalies,
             "total_predictions_computed": total_preds,
             "models_active": 0, "generated_at": utcnow().isoformat(),
+        }
+
+    async def get_platform_area_demand_intelligence(
+        self, days: int = 30, limit: int = 8,
+    ) -> dict:
+        """Platform demand intelligence for unconfirmed Home Services requests.
+
+        This is a read-only cold-start projection over real booking cohorts.
+        It deliberately exposes its phase, sample size, and method so an
+        administrator never mistakes a small-sample estimate for a trained
+        model prediction.
+        """
+        active_statuses = (
+            "'draft', 'collecting_details', 'serviceability_checked', "
+            "'price_estimated', 'provider_matched', 'ready_for_confirmation'"
+        )
+        params = {"days": days, "limit": limit}
+        base_cte = f"""
+            WITH demand AS (
+                SELECT
+                    d.id,
+                    NULLIF(TRIM(d.city), '') AS city,
+                    NULLIF(TRIM(d.zipcode), '') AS zipcode,
+                    d.status,
+                    d.selected_tenant_id,
+                    d.is_emergency,
+                    d.offering_id,
+                    d.issue_summary,
+                    d.created_at,
+                    d.updated_at,
+                    CASE
+                        WHEN session.context_data ->> 'channel' = 'instagram' THEN 'instagram'
+                        WHEN session.context_data ->> 'channel' = 'whatsapp' THEN 'whatsapp'
+                        ELSE 'customer_app'
+                    END AS source,
+                    d.created_at >= NOW() - (:days * INTERVAL '1 day') AS is_current
+                FROM home_service_booking_drafts d
+                LEFT JOIN ai_conversation_sessions session ON session.id = d.ai_session_id
+                WHERE d.created_at >= NOW() - (:days * 2 * INTERVAL '1 day')
+            )
+        """
+
+        summary_row = (await self.db.execute(text(base_cte + f"""
+            SELECT
+                COUNT(*) FILTER (WHERE is_current) AS current_attempts,
+                COUNT(*) FILTER (WHERE NOT is_current) AS previous_attempts,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})) AS active_requests,
+                COUNT(*) FILTER (WHERE is_current AND status = 'confirmed') AS confirmed_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND selected_tenant_id IS NULL) AS unmatched_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND is_emergency) AS emergency_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND (city IS NOT NULL OR zipcode IS NOT NULL)) AS captured_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND source = 'instagram') AS instagram_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND source = 'whatsapp') AS whatsapp_requests,
+                COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                 AND source = 'customer_app') AS customer_app_requests
+            FROM demand
+        """), params)).mappings().one()
+
+        area_rows = (await self.db.execute(text(base_cte + f"""
+            , area_rollup AS (
+                SELECT city, zipcode,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})) AS active_requests,
+                    COUNT(*) FILTER (WHERE is_current) AS current_volume,
+                    COUNT(*) FILTER (WHERE NOT is_current) AS previous_volume,
+                    COUNT(*) FILTER (WHERE is_current AND status = 'confirmed') AS confirmed_requests,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                     AND selected_tenant_id IS NULL) AS unmatched_requests,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                     AND is_emergency) AS emergency_requests,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                     AND source = 'instagram') AS instagram_requests,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                     AND source = 'whatsapp') AS whatsapp_requests,
+                    COUNT(*) FILTER (WHERE is_current AND status IN ({active_statuses})
+                                     AND source = 'customer_app') AS customer_app_requests,
+                    MAX(updated_at) FILTER (WHERE is_current AND status IN ({active_statuses})) AS latest_request_at
+                FROM demand
+                GROUP BY city, zipcode
+            )
+            SELECT ar.*,
+                COUNT(*) OVER () AS all_areas,
+                SUM(ar.active_requests) OVER () AS all_active_requests,
+                COALESCE(coverage.provider_count, 0) AS provider_count,
+                top_service.service_name AS top_service,
+                COALESCE(top_service.request_count, 0) AS top_service_requests
+            FROM area_rollup ar
+            LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT tsa.tenant_id) AS provider_count
+                FROM tenant_service_areas tsa
+                JOIN tenants t ON t.id = tsa.tenant_id
+                WHERE tsa.is_active = TRUE AND tsa.status = 'ACTIVE'
+                  AND t.vertical = 'home_services' AND t.status = 'active'
+                  AND ar.city IS NOT NULL AND LOWER(tsa.city) = LOWER(ar.city)
+                  AND (ar.zipcode IS NULL OR tsa.zipcode IS NULL OR tsa.zipcode = ar.zipcode)
+            ) coverage ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(ms.service_name, mo.name, NULLIF(TRIM(d2.issue_summary), ''), 'Unresolved service') AS service_name,
+                       COUNT(*) AS request_count
+                FROM demand d2
+                LEFT JOIN master_services ms ON ms.id = d2.offering_id
+                LEFT JOIN master_offerings mo ON mo.id = d2.offering_id
+                WHERE d2.is_current AND d2.status IN ({active_statuses})
+                  AND d2.city IS NOT DISTINCT FROM ar.city
+                  AND d2.zipcode IS NOT DISTINCT FROM ar.zipcode
+                GROUP BY COALESCE(ms.service_name, mo.name, NULLIF(TRIM(d2.issue_summary), ''), 'Unresolved service')
+                ORDER BY request_count DESC, service_name
+                LIMIT 1
+            ) top_service ON TRUE
+            WHERE ar.active_requests > 0
+            ORDER BY ar.active_requests DESC, ar.city NULLS LAST, ar.zipcode NULLS LAST
+            LIMIT :limit
+        """), params)).mappings().all()
+
+        daily_rows = (await self.db.execute(text(base_cte + """
+            , days AS (
+                SELECT generate_series(
+                    CURRENT_DATE - (:days - 1) * INTERVAL '1 day',
+                    CURRENT_DATE,
+                    INTERVAL '1 day'
+                )::date AS day
+            )
+            SELECT days.day::text AS date,
+                   COUNT(demand.id) AS requests,
+                   COUNT(demand.id) FILTER (WHERE source = 'instagram') AS instagram,
+                   COUNT(demand.id) FILTER (WHERE source = 'whatsapp') AS whatsapp,
+                   COUNT(demand.id) FILTER (WHERE source = 'customer_app') AS customer_app
+            FROM days
+            LEFT JOIN demand ON demand.is_current AND demand.created_at::date = days.day
+            GROUP BY days.day ORDER BY days.day
+        """), params)).mappings().all()
+
+        service_rows = (await self.db.execute(text(base_cte + f"""
+            SELECT COALESCE(ms.service_name, mo.name, NULLIF(TRIM(d.issue_summary), ''), 'Unresolved service') AS service_name,
+                   COUNT(*) AS request_count
+            FROM demand d
+            LEFT JOIN master_services ms ON ms.id = d.offering_id
+            LEFT JOIN master_offerings mo ON mo.id = d.offering_id
+            WHERE d.is_current AND d.status IN ({active_statuses})
+            GROUP BY COALESCE(ms.service_name, mo.name, NULLIF(TRIM(d.issue_summary), ''), 'Unresolved service')
+            ORDER BY request_count DESC, service_name
+            LIMIT 5
+        """), params)).mappings().all()
+
+        current_attempts = int(summary_row["current_attempts"] or 0)
+        previous_attempts = int(summary_row["previous_attempts"] or 0)
+        active_requests = int(summary_row["active_requests"] or 0)
+        sample_size = current_attempts + previous_attempts
+        if sample_size >= JOB_THRESHOLD_TENANT_MODEL:
+            phase, phase_label = DSPhase.TENANT_MODEL, "mature platform model"
+        elif sample_size >= JOB_THRESHOLD_PLATFORM_MODEL:
+            phase, phase_label = DSPhase.PLATFORM_MODEL, "platform model"
+        elif sample_size >= JOB_THRESHOLD_OBSERVATION:
+            phase, phase_label = DSPhase.OBSERVATION, "observation"
+        else:
+            phase, phase_label = DSPhase.RULE_BASED, "cold start"
+
+        growth_pct = None
+        if previous_attempts:
+            growth_pct = round((current_attempts - previous_attempts) / previous_attempts * 100, 1)
+        projected_next_period = round(
+            current_attempts if not previous_attempts
+            else current_attempts * 0.7 + previous_attempts * 0.3
+        )
+
+        max_area_demand = max((int(row["active_requests"] or 0) for row in area_rows), default=0)
+        areas = []
+        for row in area_rows:
+            count = int(row["active_requests"] or 0)
+            current_volume = int(row["current_volume"] or 0)
+            previous_volume = int(row["previous_volume"] or 0)
+            unmatched = int(row["unmatched_requests"] or 0)
+            providers = int(row["provider_count"] or 0)
+            area_growth = None if not previous_volume else round(
+                (current_volume - previous_volume) / previous_volume * 100, 1)
+            demand_component = 45 * (count / max_area_demand) if max_area_demand else 0
+            unmatched_component = 25 * (unmatched / count) if count else 0
+            growth_component = 20 * min(max(area_growth or 0, 0), 100) / 100
+            coverage_component = 10 if providers == 0 else (5 if count / providers >= 5 else 0)
+            opportunity_score = round(min(100, demand_component + unmatched_component + growth_component + coverage_component))
+            drivers = []
+            if providers == 0: drivers.append("No active provider coverage")
+            if count and unmatched / count >= 0.5: drivers.append("Most requests are unmatched")
+            if area_growth is not None and area_growth >= 20: drivers.append("Demand is growing")
+            if int(row["emergency_requests"] or 0): drivers.append("Emergency demand present")
+            if not drivers: drivers.append("Monitor demand and conversion")
+            city, zipcode = row["city"], row["zipcode"]
+            if not (city or zipcode):
+                opportunity_score = 0
+                priority = "watch"
+                drivers = ["Location missing — fix booking capture"]
+            else:
+                priority = "high" if opportunity_score >= 65 else ("medium" if opportunity_score >= 35 else "watch")
+            areas.append({
+                "city": city,
+                "zipcode": zipcode,
+                "area_label": " · ".join(part for part in (city, zipcode) if part) or "Area not captured",
+                "area_captured": bool(city or zipcode),
+                "total_requests": count,
+                "current_volume": current_volume,
+                "previous_volume": previous_volume,
+                "growth_pct": area_growth,
+                "confirmed_requests": int(row["confirmed_requests"] or 0),
+                "unmatched_requests": unmatched,
+                "unmatched_pct": round(unmatched / count * 100, 1) if count else 0,
+                "emergency_requests": int(row["emergency_requests"] or 0),
+                "provider_count": providers,
+                "requests_per_provider": round(count / providers, 1) if providers else None,
+                "instagram_requests": int(row["instagram_requests"] or 0),
+                "whatsapp_requests": int(row["whatsapp_requests"] or 0),
+                "customer_app_requests": int(row["customer_app_requests"] or 0),
+                "share_pct": round(count / active_requests * 100, 1) if active_requests else 0,
+                "top_service": row["top_service"],
+                "top_service_requests": int(row["top_service_requests"] or 0),
+                "opportunity_score": opportunity_score,
+                "priority": priority,
+                "drivers": drivers,
+                "latest_request_at": row["latest_request_at"].isoformat() if row["latest_request_at"] else None,
+            })
+
+        confirmed = int(summary_row["confirmed_requests"] or 0)
+        captured = int(summary_row["captured_requests"] or 0)
+        return {
+            "engine": {
+                "engine_id": "data_science",
+                "phase": phase,
+                "phase_label": phase_label,
+                "observation_mode": phase < DSPhase.PLATFORM_MODEL,
+                "sample_size": sample_size,
+                "method": "weighted recent-vs-previous cohort projection",
+            },
+            "period_days": days,
+            "total_requests": active_requests,
+            "total_areas": int(area_rows[0]["all_areas"] or 0) if area_rows else 0,
+            "current_attempts": current_attempts,
+            "previous_attempts": previous_attempts,
+            "growth_pct": growth_pct,
+            "projected_next_period_requests": projected_next_period,
+            "conversion_rate_pct": round(confirmed / current_attempts * 100, 1) if current_attempts else 0,
+            "unmatched_requests": int(summary_row["unmatched_requests"] or 0),
+            "emergency_requests": int(summary_row["emergency_requests"] or 0),
+            "location_capture_pct": round(captured / active_requests * 100, 1) if active_requests else 0,
+            "channel_mix": {
+                "instagram": int(summary_row["instagram_requests"] or 0),
+                "whatsapp": int(summary_row["whatsapp_requests"] or 0),
+                "customer_app": int(summary_row["customer_app_requests"] or 0),
+            },
+            "areas": areas,
+            "daily_trend": [dict(row) for row in daily_rows],
+            "top_services": [dict(row) for row in service_rows],
+            "generated_at": utcnow().isoformat(),
         }
