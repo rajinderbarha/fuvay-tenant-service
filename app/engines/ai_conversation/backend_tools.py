@@ -420,7 +420,12 @@ class BackendToolExecutor:
             }
         except Exception as exc:
             logger.warning("backend_tools.start_draft_failed", error=str(exc))
-            return {"error": str(exc), "draft_id": None}
+            return {
+                "error": str(exc),
+                "error_code": getattr(exc, "error_code", None),
+                "resolution": getattr(exc, "resolution", None),
+                "draft_id": None,
+            }
 
     async def _tool_get_home_service_draft_status(
         self,

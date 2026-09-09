@@ -96,6 +96,18 @@ BAD_ADDRESS = (
 LOCATION_SAVED = "Location saved — the technician will see it."
 BAD_PINCODE = "That does not look like a pincode. Please send the 6 digits, for example 141001."
 NOTHING_HERE = "There is nothing bookable here at the moment."
+START_FAILED = (
+    "I could not start that booking just now. Please wait a moment and tap "
+    "the service again."
+)
+TOO_MANY_DRAFTS = (
+    "You already have several unfinished bookings. Finish or cancel one, "
+    "then tap the service again."
+)
+START_RATE_LIMITED = (
+    "There have been too many booking attempts recently. Please wait a little "
+    "and tap the service again."
+)
 #: Distinct from NOTHING_HERE on purpose: "no provider covers YOUR pincode" is
 #: a different problem with a different fix, and telling a customer to start
 #: over when all they need is a neighbouring pincode wastes the conversation.
@@ -543,6 +555,79 @@ def reset_booking_state(thread) -> None:
     thread.last_options = None
 
 
+async def abandon_social_booking_drafts(db, thread) -> int:
+    """Cancel this sender's unfinished social drafts from older sessions.
+
+    ``/fuvay`` rotates the AI session id.  Before this cleanup, every restart
+    therefore hid the old draft from the chat while leaving it active for the
+    booking service's three-draft safety cap.  A customer could lock themselves
+    out simply by starting over a few times.
+
+    Scope by the channel identity stored on the owning AI session, not by
+    customer id: this retires only drafts created by this exact Instagram or
+    WhatsApp sender and cannot cancel drafts begun in the customer app.
+    """
+    channel = str(getattr(thread, "channel", "") or "")
+    channel_user_id = str(getattr(thread, "channel_user_id", "") or "")
+    if channel not in {CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP} or not channel_user_id:
+        return 0
+
+    from app.engines.ai_conversation.models import AIConversationSession
+    from app.engines.home_service_booking.constants import (
+        ACTOR_CUSTOMER,
+        DRAFT_STATUS_CANCELLED,
+        EVENT_DRAFT_CANCELLED,
+        TERMINAL_STATUSES,
+    )
+    from app.engines.home_service_booking.models import HomeServiceBookingDraft
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.models.base import utcnow
+
+    now = utcnow()
+    drafts = list((await db.execute(
+        select(HomeServiceBookingDraft)
+        .join(
+            AIConversationSession,
+            AIConversationSession.id == HomeServiceBookingDraft.ai_session_id,
+        )
+        .where(
+            AIConversationSession.context_data.contains({
+                "channel": channel,
+                "channel_user_id": channel_user_id,
+            }),
+            HomeServiceBookingDraft.status.notin_(TERMINAL_STATUSES),
+            (
+                HomeServiceBookingDraft.expires_at.is_(None)
+                | (HomeServiceBookingDraft.expires_at > now)
+            ),
+        )
+        .with_for_update(of=HomeServiceBookingDraft)
+    )).scalars().all())
+    if not drafts:
+        return 0
+
+    events = HomeServiceChatbotBookingService(db)
+    for draft in drafts:
+        old_status = draft.status
+        draft.status = DRAFT_STATUS_CANCELLED
+        draft.updated_at = now
+        await events._emit_event(
+            draft.id,
+            ACTOR_CUSTOMER,
+            EVENT_DRAFT_CANCELLED,
+            old_value={"status": old_status},
+            new_value={"status": DRAFT_STATUS_CANCELLED},
+            message="Superseded by a new social booking attempt.",
+        )
+    await db.flush()
+    logger.info(
+        "messaging_gateway.flow.abandoned_social_drafts",
+        channel=channel,
+        count=len(drafts),
+    )
+    return len(drafts)
+
+
 async def _restart(db, thread, executor, channel: str, identity=None) -> Turn:
     """Abandon whatever is in progress and begin a new booking.
 
@@ -551,6 +636,7 @@ async def _restart(db, thread, executor, channel: str, identity=None) -> Turn:
     booking has been made. Booking-scoped area state is cleared too: every new
     booking explicitly asks for its zipcode before any service question.
     """
+    await abandon_social_booking_drafts(db, thread)
     reset_booking_state(thread)
     step = await _next_step(db, thread, executor, None, channel, 0, identity)
     step.text = f"{RESTARTED}\n\n{step.text}" if step.text else RESTARTED
@@ -568,12 +654,23 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
 
     if kind == PICK_OFFERING:
         category_slug, _, offering_slug = rest.partition(PICKER_SEP)
+        # A service tap starts one clean attempt. This also repairs accounts
+        # already stuck behind drafts abandoned by pre-fix /fuvay sessions.
+        await abandon_social_booking_drafts(db, thread)
         started = await executor._tool_start_home_service_draft(
             category_slug=category_slug, offering_slug=offering_slug,
         )
         if started.get("error") or not started.get("draft_id"):
-            logger.warning("messaging_gateway.flow.start_failed", error=started.get("error"))
-            return NOTHING_HERE, DONE, None
+            error_code = started.get("error_code")
+            logger.warning(
+                "messaging_gateway.flow.start_failed",
+                error=started.get("error"), error_code=error_code,
+            )
+            if error_code == "ACTIVE_BOOKING_DRAFT_LIMIT":
+                return TOO_MANY_DRAFTS, DONE, None
+            if error_code in {"RATE_LIMITED", "SECURITY_CONTROL_UNAVAILABLE"}:
+                return START_RATE_LIMITED, DONE, None
+            return START_FAILED, DONE, None
         # The area was settled before any of this; carry it onto the draft so
         # serviceability and pricing have it and the customer is not re-asked.
         contact = await _verified_contact(db, thread)

@@ -3004,6 +3004,127 @@ def test_every_path_that_starts_a_booking_forgets_the_same_things():
     assert thread.opted_out and thread.human_handoff
 
 
+@pytest.mark.asyncio
+async def test_social_restart_cancels_only_live_drafts_for_that_sender(monkeypatch):
+    """Rotating the chat session must not leave hidden drafts consuming the cap."""
+    from app.engines.home_service_booking.constants import DRAFT_STATUS_CANCELLED
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.engines.messaging_gateway import flow
+
+    draft = SimpleNamespace(
+        id=uuid.uuid4(), status="collecting_details",
+        updated_at=None,
+    )
+
+    class Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [draft]
+
+    class DB:
+        def __init__(self):
+            self.statement = None
+            self.flushed = 0
+
+        async def execute(self, statement):
+            self.statement = statement
+            return Result()
+
+        async def flush(self):
+            self.flushed += 1
+
+    events = []
+
+    async def emit(_self, draft_id, actor_type, event_type, **values):
+        events.append((draft_id, actor_type, event_type, values))
+
+    monkeypatch.setattr(HomeServiceChatbotBookingService, "_emit_event", emit)
+    db = DB()
+    thread = SimpleNamespace(
+        channel=CHANNEL_INSTAGRAM, channel_user_id="ig-customer-7",
+    )
+
+    count = await flow.abandon_social_booking_drafts(db, thread)
+
+    assert count == 1
+    assert draft.status == DRAFT_STATUS_CANCELLED
+    assert draft.updated_at is not None
+    assert db.flushed == 1
+    assert events and events[0][0] == draft.id
+    # The ownership boundary is the social identity on its AI session. It is
+    # deliberately not a broad customer-id cleanup that could touch app work.
+    sql = str(db.statement)
+    assert "ai_conversation_sessions" in sql
+    assert "context_data" in sql
+    assert "home_service_booking_drafts.ai_session_id" in sql
+
+
+@pytest.mark.asyncio
+async def test_service_tap_repairs_stale_drafts_before_starting(monkeypatch):
+    """The first post-deploy service tap repairs already-stuck accounts too."""
+    from app.engines.messaging_gateway import flow
+
+    order = []
+
+    async def abandon(_db, _thread):
+        order.append("abandon")
+        return 3
+
+    class Executor:
+        async def _tool_start_home_service_draft(self, **_kwargs):
+            order.append("start")
+            return {"draft_id": "d-new"}
+
+        async def _tool_update_home_service_draft(self, **_kwargs):
+            return {"updated": True}
+
+        async def _tool_check_home_service_availability(self, **_kwargs):
+            return {"serviceable": True}
+
+    async def current_draft(_db, _thread):
+        return {"id": "d-new", "status": "draft"}
+
+    monkeypatch.setattr(flow, "abandon_social_booking_drafts", abandon)
+    monkeypatch.setattr(flow, "_draft", current_draft)
+    thread = SimpleNamespace(
+        channel=CHANNEL_INSTAGRAM, channel_user_id="ig-customer-7",
+        customer_id=None, zipcode="140412", city="Bassi Pathana",
+    )
+
+    note, page, draft = await flow._apply_tap(
+        None, thread, Executor(), "of|air-conditioning|ac-repair", None,
+    )
+
+    assert order == ["abandon", "start"]
+    assert note is None and page == 0 and draft["id"] == "d-new"
+
+
+@pytest.mark.asyncio
+async def test_start_draft_error_keeps_domain_code(monkeypatch):
+    """The chat needs the code to distinguish throttling from no catalog."""
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.exceptions import ServiceOSException
+
+    async def fail(_self, **_kwargs):
+        raise ServiceOSException(
+            "ACTIVE_BOOKING_DRAFT_LIMIT",
+            "Several bookings are already in progress.",
+            resolution="Finish or cancel one.",
+        )
+
+    monkeypatch.setattr(HomeServiceChatbotBookingService, "start_booking_draft", fail)
+    result = await BackendToolExecutor(
+        db=None, customer_id=None, session_id=str(uuid.uuid4()),
+        channel=CHANNEL_INSTAGRAM, channel_user_id="ig-customer-7",
+    )._tool_start_home_service_draft("air-conditioning", "ac-repair")
+
+    assert result["draft_id"] is None
+    assert result["error_code"] == "ACTIVE_BOOKING_DRAFT_LIMIT"
+    assert result["resolution"] == "Finish or cancel one."
+
+
 def test_an_uncovered_area_says_how_to_reach_a_covered_one():
     """The flow already re-reads a bare 6-digit reply as a new pincode, so an
     uncovered area was never technically a dead end — but the message did not

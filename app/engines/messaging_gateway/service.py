@@ -583,6 +583,7 @@ class MessagingGatewayService:
             if await self._session_limited(msg):
                 reply = BUSY_TEXT
             else:
+                await flow.abandon_social_booking_drafts(self.db, thread)
                 flow.reset_booking_state(thread)
                 if command in (CMD_START, CMD_RESET):
                     # Only an EXPLICIT start-over reopens the channel. Going
