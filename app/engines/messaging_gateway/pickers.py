@@ -57,6 +57,10 @@ def _section_emergency(surcharge: str | None) -> str:
 _RESTART_ROW = {
     "id": PICK_RESTART + PICKER_SEP + "1", "title": "Start over",
     "button_title": "Start over",
+    # Generic-template cards need their own explanatory copy.  Without it,
+    # Instagram rendered the navigation card differently from the catalog
+    # cards (and the customer could not tell what the card would do).
+    "description": "Begin again from the first question.",
 }
 
 

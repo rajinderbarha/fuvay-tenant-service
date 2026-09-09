@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Explicit signup simulator for development/staging without SMS or email.
     # Never effective in production, even if accidentally configured there.
     SIGNUP_DEV_OTP_ENABLED: bool = False
+    # Explicit phone-code simulator for the Instagram booking identity-link
+    # step. The code is surfaced in-chat only outside production, allowing the
+    # IP-based staging environment to finish bookings before Twilio is ready.
+    MESSAGING_DEV_OTP_ENABLED: bool = False
     SECRET_KEY: str = "dev-secret-key-change-in-production"
 
     # ── API ────────────────────────────────────────────────────────

@@ -1122,7 +1122,7 @@ class MessagingGatewayService:
         # Enumeration-safe: send_phone_otp has the same response shape. We do
         # not tell an Instagram sender whether a supplied phone is registered.
         try:
-            await AuthService(self.db).send_phone_otp(
+            otp_result = await AuthService(self.db).send_phone_otp(
                 phone,
                 "messaging_link",
                 source_id=f"{thread.channel}:{thread.channel_user_id}",
@@ -1132,10 +1132,19 @@ class MessagingGatewayService:
                 return "Too many verification requests. Please wait before trying again."
             raise
         await self.db.flush()
-        return (
+        response = (
             "If that number belongs to an active Fuvay account, a verification "
             "code has been sent. Reply /verify followed by the 6-digit code."
         )
+        # The IP deployment is an explicit non-production test environment.
+        # Until Twilio is configured, surface the generated code in the same
+        # conversation so Instagram QA can finish the identity-link step and
+        # exercise real booking creation. AuthService never returns this hint
+        # in production, even if a deployment flag is accidentally left on.
+        otp_hint = str((otp_result or {}).get("otp_hint") or "").strip()
+        if otp_hint:
+            response += f" Development code: {otp_hint}."
+        return response
 
     async def _finish_identity_link(self, thread: MessagingThread, code: str) -> str:
         """Verify the one-time code and bind this Instagram identity once."""

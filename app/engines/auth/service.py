@@ -718,7 +718,13 @@ class AuthService:
         logger.info("auth.otp_sent", purpose=purpose, phone=phone[:4] + "****", method="db_fallback")
         return {
             "message": "OTP sent.",
-            **({"otp_hint": otp_plain} if self.settings.DEBUG else {}),
+            **({"otp_hint": otp_plain} if (
+                self.settings.DEBUG
+                or (
+                    self.settings.APP_ENV != "production"
+                    and getattr(self.settings, "MESSAGING_DEV_OTP_ENABLED", False)
+                )
+            ) else {}),
         }
 
     # ── Email OTP Login ───────────────────────────────────────────────────────

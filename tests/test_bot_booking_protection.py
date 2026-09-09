@@ -85,6 +85,68 @@ async def test_auth_service_enforces_limits_before_twilio_delivery():
 
 
 @pytest.mark.asyncio
+async def test_phone_otp_fallback_exposes_code_only_in_explicit_nonproduction_mode():
+    from app.engines.auth.service import AuthService
+
+    db = MagicMock()
+    db.add = MagicMock()
+    guard = AsyncMock()
+    with patch("app.engines.auth.service.enforce_otp_send_limits", guard), \
+         patch("app.twilio_client.is_verify_configured", return_value=False):
+        service = AuthService(db)
+        service.settings = SimpleNamespace(
+            DEBUG=False, APP_ENV="staging", MESSAGING_DEV_OTP_ENABLED=True,
+        )
+        staging = await service.send_phone_otp(
+            "+919876543210", "messaging_link", source_id="instagram:sender-1",
+        )
+
+        service.settings = SimpleNamespace(
+            DEBUG=False, APP_ENV="production", MESSAGING_DEV_OTP_ENABLED=True,
+        )
+        production = await service.send_phone_otp(
+            "+919876543211", "messaging_link", source_id="instagram:sender-2",
+        )
+
+    assert staging["otp_hint"].isdigit() and len(staging["otp_hint"]) == 6
+    assert "otp_hint" not in production
+
+
+@pytest.mark.asyncio
+async def test_instagram_identity_link_returns_the_staging_code_to_the_chat():
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    class Result:
+        def scalar(self):
+            return 0
+
+        def scalars(self):
+            return self
+
+        def first(self):
+            return None
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=Result())
+    db.flush = AsyncMock()
+    thread = SimpleNamespace(
+        id=uuid.uuid4(), channel="instagram", channel_user_id="sender-1",
+        pending_customer_id=None, pending_phone_ciphertext=None,
+    )
+
+    with patch(
+        "app.engines.auth.service.AuthService.send_phone_otp",
+        AsyncMock(return_value={"message": "OTP sent.", "otp_hint": "123456"}),
+    ):
+        message = await MessagingGatewayService(db)._start_identity_link(
+            thread, "+919876543210",
+        )
+
+    assert "Development code: 123456." in message
+    assert thread.pending_phone_ciphertext
+
+
+@pytest.mark.asyncio
 async def test_unknown_password_reset_cannot_consume_paid_sms_budget():
     from app.engines.auth.service import AuthService
 
