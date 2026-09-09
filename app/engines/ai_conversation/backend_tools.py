@@ -9,6 +9,8 @@ import structlog
 from sqlalchemy import select, and_, desc, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
+
 logger = structlog.get_logger("ai_conversation.tools")
 
 
@@ -660,7 +662,11 @@ class BackendToolExecutor:
         try:
             from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
             import uuid as _uuid
-            if not self.customer_id and self.channel != "whatsapp":
+            if (
+                not self.customer_id
+                and self.channel != "whatsapp"
+                and not instagram_phone_bypass_enabled(self.channel)
+            ):
                 return {"slots": [], "error": "Link your Fuvay account before choosing a slot."}
             return await HomeServiceChatbotBookingService(self.db).list_available_slots(
                 draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id, emergency=emergency,
@@ -676,7 +682,11 @@ class BackendToolExecutor:
         try:
             from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
             import uuid as _uuid
-            if not self.customer_id and self.channel != "whatsapp":
+            if (
+                not self.customer_id
+                and self.channel != "whatsapp"
+                and not instagram_phone_bypass_enabled(self.channel)
+            ):
                 return {"selected": False, "error": "Link your Fuvay account before choosing a slot."}
             result = await HomeServiceChatbotBookingService(self.db).select_promised_slot(
                 draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id,
@@ -692,7 +702,11 @@ class BackendToolExecutor:
         try:
             from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
             import uuid as _uuid
-            if not self.customer_id and self.channel != "whatsapp":
+            if (
+                not self.customer_id
+                and self.channel != "whatsapp"
+                and not instagram_phone_bypass_enabled(self.channel)
+            ):
                 return {"summary": None, "error": "Link your Fuvay account before confirming a booking."}
             summary = await HomeServiceChatbotBookingService(self.db).build_booking_summary(
                 draft_id=_uuid.UUID(draft_id), customer_id=self.customer_id,
@@ -709,7 +723,12 @@ class BackendToolExecutor:
         """Create final records only after an exact explicit confirmation phrase."""
         if " ".join((confirmation_phrase or "").upper().split()) != "CONFIRM BOOKING":
             return {"confirmed": False, "error": "Ask the customer to reply exactly CONFIRM BOOKING first."}
-        if not self.customer_id and self.channel != "whatsapp":
+        bypass_instagram_phone = instagram_phone_bypass_enabled(self.channel)
+        if (
+            not self.customer_id
+            and self.channel != "whatsapp"
+            and not bypass_instagram_phone
+        ):
             return {"confirmed": False, "error": "Link your Fuvay account before confirming a booking."}
         try:
             import uuid as _uuid
@@ -721,7 +740,7 @@ class BackendToolExecutor:
 
             draft_uuid = _uuid.UUID(draft_id)
             booking_service = HomeServiceChatbotBookingService(self.db)
-            if not self.customer_id:
+            if not self.customer_id and self.channel == "whatsapp":
                 digits = "".join(ch for ch in (self.channel_user_id or "") if ch.isdigit())
                 if not digits:
                     return {"confirmed": False, "error": "Your WhatsApp number could not be verified."}
@@ -785,6 +804,71 @@ class BackendToolExecutor:
                 draft_model.customer_phone = draft_model.customer_phone or phone
                 if self.session_id:
                     ai_session = await self.db.get(AIConversationSession, _uuid.UUID(self.session_id))
+                    if ai_session:
+                        ai_session.customer_id = user.id
+                await self.db.flush()
+            elif not self.customer_id and bypass_instagram_phone:
+                # Development/staging only: Instagram provides a stable,
+                # page-scoped sender id but no phone number. Create the
+                # customer only after the sender explicitly confirms the
+                # otherwise-complete booking, so abandoned conversations do
+                # not create incomplete customer or booking records.
+                import hashlib
+
+                sender_id = str(self.channel_user_id or "").strip()
+                if not sender_id:
+                    return {
+                        "confirmed": False,
+                        "error": "Your Instagram identity could not be verified.",
+                    }
+                draft_model = await self.db.get(HomeServiceBookingDraft, draft_uuid)
+                if not draft_model:
+                    return {"confirmed": False, "error": "Booking draft not found."}
+                address = draft_model.address_snapshot or {}
+                if not (
+                    address.get("address_line_1")
+                    and draft_model.city
+                    and draft_model.zipcode
+                ):
+                    return {
+                        "confirmed": False,
+                        "error": "Collect the complete service address and postal code before confirming.",
+                    }
+                identity_hash = hashlib.sha256(
+                    f"instagram:{sender_id}".encode("utf-8")
+                ).hexdigest()[:20]
+                synthetic_email = f"customer_ig_{identity_hash}@serviceos.internal"
+                user = (await self.db.execute(
+                    select(User).where(User.email == synthetic_email).limit(1)
+                )).scalars().first()
+                if not user:
+                    user = User(
+                        email=synthetic_email,
+                        phone=None,
+                        full_name=(
+                            draft_model.customer_name
+                            or self.display_name
+                            or "Instagram Customer"
+                        ),
+                        role="customer",
+                        tenant_id=None,
+                        is_active=True,
+                        is_verified=True,
+                        onboarding_complete=False,
+                        meta={
+                            "registration_source": "instagram_booking_dev",
+                            "instagram_identity_hash": identity_hash,
+                            "phone_verification_bypassed": True,
+                        },
+                    )
+                    self.db.add(user)
+                    await self.db.flush()
+                self.customer_id = user.id
+                draft_model.customer_id = user.id
+                if self.session_id:
+                    ai_session = await self.db.get(
+                        AIConversationSession, _uuid.UUID(self.session_id)
+                    )
                     if ai_session:
                         ai_session.customer_id = user.id
                 await self.db.flush()

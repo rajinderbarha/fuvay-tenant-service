@@ -777,6 +777,167 @@ async def test_a_booking_confirms_the_phone_number_before_it_can_be_placed():
 
 
 @pytest.mark.asyncio
+async def test_explicit_staging_bypass_skips_instagram_phone_step(monkeypatch):
+    from app.engines.messaging_gateway import flow
+
+    class Instagram:
+        channel = "instagram"
+        customer_id = None
+        pending_phone_ciphertext = None
+        zipcode = "140412"
+        city = "Bassi Pathana"
+
+    class Executor:
+        customer_id = None
+
+        async def _tool_get_home_service_booking_summary(self, draft_id):
+            return {"summary": {"booking_summary": {"offering_name": "AC Repair"}}}
+
+    ready = {
+        "id": "d-1", "status": "provider_matched", "job_type_id": "j-1",
+        "selected_tenant_id": "t-1", "preferred_date": "2026-09-02",
+        "zipcode": "140412",
+        "address_snapshot": {"address_line_1": "House 4", "latitude": 30.7},
+    }
+
+    async def no_picker(*args, **kwargs):
+        return None
+
+    async def covered(db, zipcode):
+        return ["home_services"]
+
+    monkeypatch.setattr(pickers, "build_picker", no_picker)
+    monkeypatch.setattr(flow, "_serviceable_categories", covered)
+    monkeypatch.setattr(flow, "instagram_phone_bypass_enabled", lambda channel: True)
+
+    turn = await flow._next_step(
+        None, Instagram(), Executor(), ready, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert "Please check your booking" in turn.text
+    assert [row["id"] for row in turn.picker["rows"]] == ["cf|yes", "rs|1"]
+
+
+def test_instagram_phone_bypass_requires_explicit_switch_and_instagram(monkeypatch):
+    from types import SimpleNamespace
+    from app.engines.messaging_gateway import dev_identity
+
+    monkeypatch.setattr(
+        dev_identity, "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="production", MESSAGING_DEV_PHONE_BYPASS_ENABLED=True,
+        ),
+    )
+    assert dev_identity.instagram_phone_bypass_enabled("instagram") is True
+
+    monkeypatch.setattr(
+        dev_identity, "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="staging", MESSAGING_DEV_PHONE_BYPASS_ENABLED=True,
+        ),
+    )
+    assert dev_identity.instagram_phone_bypass_enabled("instagram") is True
+    assert dev_identity.instagram_phone_bypass_enabled("whatsapp") is False
+
+    monkeypatch.setattr(
+        dev_identity, "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="production", MESSAGING_DEV_PHONE_BYPASS_ENABLED=False,
+        ),
+    )
+    assert dev_identity.instagram_phone_bypass_enabled("instagram") is False
+
+
+@pytest.mark.asyncio
+async def test_staging_instagram_confirmation_creates_customer_only_at_confirmation(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.engines.ai_conversation import backend_tools
+    from app.engines.auth.models import User
+    from app.engines.home_service_booking import service as booking_service_module
+    from app.engines.final_records import creation_service as creation_service_module
+
+    draft_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    draft = SimpleNamespace(
+        customer_id=None,
+        customer_name="Instagram QA",
+        customer_phone=None,
+        city="Bassi Pathana",
+        zipcode="140412",
+        address_snapshot={"address_line_1": "House 4, Main Road"},
+    )
+    ai_session = SimpleNamespace(customer_id=None)
+
+    class EmptyResult:
+        def scalars(self):
+            return self
+
+        def first(self):
+            return None
+
+    added = []
+
+    class DB:
+        async def get(self, model, row_id):
+            return draft if model.__name__ == "HomeServiceBookingDraft" else ai_session
+
+        async def execute(self, query):
+            return EmptyResult()
+
+        def add(self, row):
+            if isinstance(row, User) and row.id is None:
+                row.id = uuid.uuid4()
+            added.append(row)
+
+        async def flush(self):
+            return None
+
+        async def commit(self):
+            return None
+
+    booking_service = SimpleNamespace(
+        get_booking_draft=AsyncMock(return_value={"status": "provider_matched"}),
+        mark_ready_for_confirmation=AsyncMock(),
+    )
+
+    class Finalizer:
+        def __init__(self, db):
+            pass
+
+        async def finalize(self, **kwargs):
+            return {"booking_number": "BK-TEST", "job_number": "JOB-TEST"}
+
+    monkeypatch.setattr(
+        backend_tools, "instagram_phone_bypass_enabled", lambda channel: True,
+    )
+    monkeypatch.setattr(
+        booking_service_module, "HomeServiceChatbotBookingService",
+        lambda db: booking_service,
+    )
+    monkeypatch.setattr(
+        creation_service_module, "HomeServiceFinalCreationService", Finalizer,
+    )
+
+    executor = BackendToolExecutor(
+        DB(), customer_id=None, session_id=str(session_id),
+        channel="instagram", channel_user_id="ig-scoped-customer-1",
+        display_name="Instagram QA",
+    )
+    result = await executor._tool_confirm_home_service_booking(
+        str(draft_id), "CONFIRM BOOKING",
+    )
+
+    assert result["confirmed"] is True
+    customer = next(row for row in added if isinstance(row, User))
+    assert customer.phone is None
+    assert customer.email.startswith("customer_ig_")
+    assert customer.meta["phone_verification_bypassed"] is True
+    assert draft.customer_id == customer.id
+    assert ai_session.customer_id == customer.id
+
+
+@pytest.mark.asyncio
 async def test_the_number_and_the_code_are_read_at_the_right_moment():
     """The number and its code are typed, so each must be recognised only at
     the step that is waiting for it — and a code must never be mistaken for a

@@ -44,6 +44,7 @@ from app.engines.messaging_gateway.constants import (
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
 from app.engines.messaging_gateway.pickers import _join
+from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
 
 logger = structlog.get_logger(__name__)
 
@@ -1245,7 +1246,11 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     # already verified the sender), but Instagram gives no number at all, and
     # asking a stranger for one as the opening question loses them before they
     # have seen a price or a slot.
-    if not thread.customer_id and thread.channel != "whatsapp":
+    if (
+        not thread.customer_id
+        and thread.channel != "whatsapp"
+        and not instagram_phone_bypass_enabled(thread.channel)
+    ):
         if thread.pending_phone_ciphertext:
             if _phone_confirmation_pending(identity, thread):
                 return _phone_confirmation_step(identity, thread)
