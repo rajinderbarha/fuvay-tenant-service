@@ -10,6 +10,7 @@ import {
   finalRecordsAdminApi, adminExecutionApi, adminBookingsApi, adminReviewApi, adminHomeServiceBookingApi,
 } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
+import { formatPriceSnapshotLabel, formatPriceSnapshotValue } from "../../../../lib/price-snapshot-format";
 import {
   Search, Download, RefreshCw, X, Briefcase, FileText, UserX, Activity,
   Clock, AlertTriangle, ExternalLink, Phone, Star, Pencil, SlidersHorizontal,
@@ -739,8 +740,8 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: 10, columnGap: 12, fontSize: 12 }}>
                     {cleanPriceRows.map(([k, v]) => (
                       <div key={k}>
-                        <div style={{ color: "var(--text-tertiary)", textTransform: "capitalize", fontSize: 10, marginBottom: 2 }}>{k.replace(/_/g, " ")}</div>
-                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{fmtMoneyLoose(v) ?? String(v)}</div>
+                        <div style={{ color: "var(--text-tertiary)", fontSize: 10, marginBottom: 2 }}>{formatPriceSnapshotLabel(k)}</div>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{formatPriceSnapshotValue(k, v)}</div>
                       </div>
                     ))}
                   </div>
