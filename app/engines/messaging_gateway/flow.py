@@ -1821,18 +1821,19 @@ async def _match_step(db, thread, executor, draft: dict, channel: str, page: int
     if draft.get('selected_tenant_id') and 'required_fields' in draft and 'preferred_date' not in draft['required_fields']:
         return await _next_step(db, thread, executor, draft, channel, 0)
 
-    lines = []
-    if price.get("display_price"):
-        lines.append(f"Price: {price['display_price']}")
-    if price.get("note"):
-        lines.append(price["note"])
+    price_block = _price_block(price)
 
     picker = await pickers.build_picker(
         db, draft, customer_id=thread.customer_id, channel=channel, page=page,
     )
     if not picker:
-        return Turn("\n".join(lines + [NO_SLOTS]) if lines else NO_SLOTS)
-    return Turn("\n".join(lines) if lines else None, picker)
+        return Turn("\n\n".join(filter(None, [price_block, NO_SLOTS])))
+    # Keep the amount and the action it belongs to in one visual unit. On
+    # Instagram this is one message with the slot choices directly below; on
+    # WhatsApp it becomes the interactive list body.
+    picker = dict(picker)
+    picker["body"] = "\n\n".join(filter(None, [price_block, picker.get("body")]))
+    return Turn(None, picker)
 
 
 async def _confirm_step(executor, draft: dict, thread) -> Turn:
@@ -1846,14 +1847,13 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
         missing = ', '.join(summary.get('missing') or [])
         return Turn(result.get('error') or f"Please complete your booking details before confirming{': ' + missing if missing else '.'}")
     price = summary.get("price_estimate") or {}
-    lines = ["Please check your booking:"]
+    lines = ["✅ Review your booking"]
     for label, value in (
         ("Service", summary.get("offering_name")),
         ("Problem", summary.get("issue_summary") or draft.get("issue_summary")),
         ("When", _when(summary, draft)),
         ("Address", _address(summary, draft)),
         ("Phone", summary.get("customer_phone") or draft.get("customer_phone")),
-        ("Price", price.get("display_price")),
         # An emergency must never be a surprise line on the final bill, so the
         # surcharge the provider configured is shown before confirmation.
         ("Emergency", _emergency_line(summary, draft)),
@@ -1862,6 +1862,13 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
             lines.append(f"{label}: {value}")
     for addon in price.get('addon_lines', []):
         lines.append(f"Add-on: {addon['name']} × {addon['quantity']} — INR {addon['total']}")
+    if price.get("display_price"):
+        price_label = (
+            "VISIT & INSPECTION FEE"
+            if price.get("requires_inspection_estimate")
+            else "TOTAL PRICE"
+        )
+        lines.extend(["", f"💳 {price_label}", str(price["display_price"])])
     rows = [{"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Confirm booking"}]
     if price.get('social_addons_reviewed'):
         from app.engines.messaging_gateway.addons import _id
@@ -1972,6 +1979,25 @@ def _otp_step(identity, thread) -> Turn:
         # step is the six-digit code typed into the composer.
         "allow_text": True,
     })
+
+
+def _price_block(price: dict) -> str | None:
+    """Compact, customer-only price presentation for the slot step."""
+    amount = str(price.get("display_price") or "").strip()
+    if not amount:
+        return None
+    inspection = bool(
+        price.get("requires_inspection_estimate")
+        or price.get("pricing_mode") == "inspection"
+    )
+    if not inspection:
+        return f"💳 TOTAL PRICE\n{amount}"
+
+    lines = ["🔎 VISIT & INSPECTION FEE", amount]
+    note = str(price.get("note") or "").strip()
+    if note:
+        lines.extend(["", note])
+    return "\n".join(lines)
 
 
 def _masked_number(identity, thread) -> str:

@@ -661,6 +661,9 @@ class BackendToolExecutor:
             return {
                 "display_price":  snap.get("display_price"),
                 "pricing_model":  snap.get("pricing_model"),
+                "pricing_mode":   snap.get("pricing_mode"),
+                "requires_inspection_estimate": snap.get("requires_inspection_estimate", False),
+                "visit_fee_policy": snap.get("visit_fee_policy"),
                 "note":           snap.get("note"),
                 "currency":       snap.get("currency", "INR"),
                 "draft_status":   result.get("draft_status"),

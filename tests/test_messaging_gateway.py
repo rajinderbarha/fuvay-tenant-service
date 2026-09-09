@@ -964,6 +964,63 @@ async def test_a_booking_confirms_the_phone_number_before_it_can_be_placed():
         flow._serviceable_categories = categories
 
 
+def test_price_block_is_clean_and_visually_prioritises_the_amount():
+    from app.engines.messaging_gateway import flow
+
+    fixed = flow._price_block({
+        "display_price": "₹1,499",
+        "pricing_mode": "fixed",
+        # Even a stale snapshot note must never leak price provenance.
+        "note": "Price set by the selected service provider.",
+    })
+    assert fixed == "💳 TOTAL PRICE\n₹1,499"
+    assert "provider" not in fixed.lower()
+
+    inspection = flow._price_block({
+        "display_price": "₹299",
+        "pricing_mode": "inspection",
+        "note": "Approve the repair estimate before work starts.",
+    })
+    assert inspection.startswith("🔎 VISIT & INSPECTION FEE\n₹299")
+    assert "Approve the repair estimate" in inspection
+
+
+@pytest.mark.asyncio
+async def test_price_is_attached_to_the_slot_picker_not_sent_as_loose_text(monkeypatch):
+    from app.engines.messaging_gateway import flow
+
+    draft = {
+        "id": "d-1", "serviceability_status": "serviceable",
+        "selected_tenant_id": "tenant-1", "required_fields": ["preferred_date"],
+    }
+
+    class Executor:
+        async def _tool_get_home_service_price_estimate(self, **_kwargs):
+            return {"display_price": "₹1,499", "pricing_mode": "fixed"}
+
+    async def current_draft(_db, _thread):
+        return draft
+
+    async def slots(*_args, **_kwargs):
+        return {
+            "body": "Pick a time that suits you:",
+            "rows": [{"id": "sl|2026-09-12|10:00-11:00", "title": "10:00"}],
+            "list_button": "Pick a time", "section_title": "Times",
+        }
+
+    monkeypatch.setattr(flow, "_draft", current_draft)
+    monkeypatch.setattr(pickers, "build_picker", slots)
+    turn = await flow._match_step(
+        None, SimpleNamespace(customer_id=None), Executor(), draft,
+        CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text is None
+    assert turn.picker["body"] == (
+        "💳 TOTAL PRICE\n₹1,499\n\nPick a time that suits you:"
+    )
+
+
 @pytest.mark.asyncio
 async def test_explicit_staging_bypass_skips_instagram_phone_step(monkeypatch):
     from app.engines.messaging_gateway import flow
@@ -1002,7 +1059,7 @@ async def test_explicit_staging_bypass_skips_instagram_phone_step(monkeypatch):
         None, Instagram(), Executor(), ready, CHANNEL_INSTAGRAM, 0,
     )
 
-    assert "Please check your booking" in turn.text
+    assert "Review your booking" in turn.text
     assert [row["id"] for row in turn.picker["rows"]] == ["cf|yes", "rs|1"]
 
 

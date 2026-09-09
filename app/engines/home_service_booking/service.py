@@ -2412,7 +2412,7 @@ class HomeServiceChatbotBookingService:
             base = consultation_fee
             min_price = consultation_fee
             max_price = consultation_fee
-            note = "Provider consultation fee. Any later repair is quoted and booked separately."
+            note = "Consultation fee. Any later repair is quoted and booked separately."
             tenant_price = None
         elif pricing_model == PRICING_MODEL_VISIT_FEE:
             tenant_visit_fee = await self._resolve_selected_tenant_visit_fee(draft)
@@ -2445,21 +2445,19 @@ class HomeServiceChatbotBookingService:
             base = max(tenant_price["minimum_price"], floor_price)
             min_price = tenant_price["minimum_price"]
             max_price = tenant_price["maximum_price"]
-            # `source` is an internal pricing-rule identifier such as
-            # `type_override`, `type_brand_override`, or `tenant_default`.
-            # It is useful for auditing but must never be placed in the
-            # customer-facing note consumed by WhatsApp and Instagram.
-            note = "Price set by the selected service provider."
+            # The customer needs the payable amount, not which internal
+            # catalog layer supplied it.
+            note = None
         elif pricing_model == PRICING_MODEL_FIXED:
             base  = max(float(offering.base_price), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base
             max_price = float(offering.max_price) if offering.max_price else None
-            note  = "Fixed price service (admin estimate — no tenant assigned yet)."
+            note = None
         else:
             base  = max(float(offering.base_price), floor_price)
             min_price = float(offering.min_price) if offering.min_price else base
             max_price = float(offering.max_price) if offering.max_price else None
-            note  = "Estimated price (admin estimate — no tenant assigned yet)."
+            note = None
 
         from app.engines.admin_catalog.addon_runtime import resolve_addons
         selected_addons = (draft.price_snapshot or {}).get("selected_addons", [])
