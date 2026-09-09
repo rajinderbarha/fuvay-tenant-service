@@ -170,12 +170,22 @@ PICK_HANDOVER = "ho"      # ho|<job_id>|acknowledge
 PICK_PAYMENT = "pay"      # pay|<payment_id>|confirm / not_paid
 PICK_PHONE = "phone"      # phone|change — discard pending OTP and enter another number
 PICK_ADDON = "ao"         # ao|draft_id|price_token|action|mapping_id|quantity
+PICK_DIMENSION = "dim"    # dim|<dimension_key>|<value_id> — e.g. dim|type|<uuid>
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
     PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_EMERGENCY,
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
+    PICK_DIMENSION,
 )
+
+#: The Job-Type Blueprint dimensions the chat can ask for, mapped to the draft
+#: column each answer lands in. Order comes from `catalog_dimensions`, not from
+#: here — this only says which keys are answerable in a conversation.
+DIMENSION_DRAFT_FIELD = {
+    "type": "offering_type_id",
+    "brand": "brand_id",
+}
 
 #: Taps that answer something the BUSINESS asked, on a message it sent at a
 #: time of its choosing. A parts approval raised at 2pm and tapped at 5pm is

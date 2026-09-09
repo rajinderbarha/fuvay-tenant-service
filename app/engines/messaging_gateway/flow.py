@@ -30,18 +30,20 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import quote_plus
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.engines.messaging_gateway import pickers
 from app.engines.messaging_gateway.constants import (
-    CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, CONFIRM_PHRASE, MAX_IG_GENERIC_ELEMENTS,
-    PICK_AREA, PICK_AREA_CITY, PICK_CANCEL, PICK_CATEGORY,
+    CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, CONFIRM_PHRASE, DIMENSION_DRAFT_FIELD,
+    MAX_IG_GENERIC_ELEMENTS,
+    PICK_AREA, PICK_AREA_CITY, PICK_CANCEL, PICK_CATEGORY, PICK_DIMENSION,
     PICK_CONFIRM, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING, PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
+from app.engines.messaging_gateway.pickers import _join
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +56,9 @@ _TERMINAL = {"confirmed", "cancelled", "expired", "failed"}
 ASK_CATEGORY = "What do you need help with?"
 ASK_OFFERING = "Which service?"
 ASK_PROBLEM = "What is the problem?"
+#: `label` is the dimension's own name, lowercased — "type", "brand" — so one
+#: sentence covers every dimension the blueprint may add later.
+ASK_DIMENSION = "Which {label}?"
 ASK_AREA = "Where do you need the service?"
 ASK_AREA_PINCODE = "Which pincode in {city}?"
 #: Only ever shown when the covered-area list cannot be built. Typing a
@@ -462,6 +467,11 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
             return await _offering_step(db, executor, context, channel, page, thread)
         if of_kind == PICK_PROBLEM and draft:
             return await _problem_step(executor, draft, channel, page)
+        if of_kind == PICK_DIMENSION and draft:
+            # `context` carries the dimension key, but the draft already knows
+            # which one is outstanding — re-resolving it keeps a stale "More"
+            # tap from reopening a dimension that has since been answered.
+            return await _dimension_step(db, draft, channel, page)
         if of_kind == PICK_SLOT and context == SLOT_EMERGENCY_FLAG and draft:
             return await _slot_turn(db, thread, draft, channel, page, emergency=True)
         return None  # a question or slot page — the draft decides what to show
@@ -554,6 +564,9 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
         # a slot, a brand, even Confirm again — must not reopen a booking that
         # has already been made.
         return ALREADY_BOOKED, BOOKED, draft
+
+    if kind == PICK_DIMENSION:
+        return await _apply_dimension(db, thread, executor, rest, draft)
 
     if kind == PICK_PROBLEM:
         return await _apply_problem(db, thread, executor, rest, draft)
@@ -1175,15 +1188,28 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
         return Turn(ASK_CITY)
 
     if not draft:
-        step = _category_step(categories, channel, page)
-        if step.picker and identity is not None and await identity.live_booking(thread):
+        # Resolved BEFORE the page is cut, not after: a row prepended to an
+        # already-full list is one row over Meta's cap, and Meta fails the
+        # whole send rather than dropping it.
+        tracking = identity is not None and await identity.live_booking(thread)
+        step = _category_step(categories, channel, page, reserve=1 if tracking else 0)
+        if step.picker and tracking:
             # Someone with a booking in progress is at least as likely to want
             # to check on it as to book something new, so the option leads.
             step.picker["rows"] = (
-                [{"id": f"{PICK_TRACK}{PICKER_SEP}", "title": TRACK_ROW}]
+                [{"id": f"{PICK_TRACK}{PICKER_SEP}", "title": TRACK_ROW,
+                  "button_title": "Track"}]
                 + step.picker["rows"]
             )
         return step
+
+    # Type and brand come BEFORE the problem: "my Split AC is not cooling" is
+    # how a customer actually describes the job, and pricing needs both anyway.
+    # Asking after the problem meant a Window-AC customer answered a problem
+    # list written for every AC there is.
+    dimension = await _dimension_step(db, draft, channel, page)
+    if dimension:
+        return dimension
 
     if not draft.get("job_type_id"):
         return await _problem_step(executor, draft, channel, page)
@@ -1338,15 +1364,66 @@ async def _serviceable_categories(db, zipcode: str) -> list:
     )).scalars().all())
 
 
-def _category_step(categories: list, channel: str, page: int) -> Turn:
-    options = [
-        {"id": f"{PICK_CATEGORY}{PICKER_SEP}{c.slug}", "title": c.name}
-        for c in categories if c.slug
-    ]
+def _category_artwork(category) -> str | None:
+    """The admin's picture for a category — the image if one is set, else the
+    icon.
+
+    Meta fetches the URL from its own servers, so only a public https address
+    can ever render; a relative `/uploads/...` path or a plain-http host is
+    dropped silently at send time. Treating those as no artwork at all keeps
+    the numbered list — which at least reads — instead of a carousel of blank
+    cards, and says so in the log so a mis-stored upload is findable.
+    """
+    for url in (getattr(category, "image_url", None), getattr(category, "icon_url", None)):
+        value = str(url or "").strip()
+        if value.startswith("https://"):
+            return value
+        if value:
+            logger.info("messaging_gateway.category.artwork_not_public",
+                        category=getattr(category, "slug", None), url=value)
+    return None
+
+
+def _category_step(categories: list, channel: str, page: int,
+                   reserve: int = 0) -> Turn:
+    """The serviceable categories, as taps — carrying the admin's artwork.
+
+    A category the admin has given an icon or an image is worth showing as a
+    picture, and Instagram's only option shape that can carry one is the
+    generic carousel. So a list with artwork in it renders as cards, one
+    without stays the cheaper numbered list, and WhatsApp — which has no
+    per-row imagery at all — keeps its list either way.
+
+    `reserve` is how many rows the caller will prepend after this returns (the
+    "Track my booking" row), because the page has to be cut short enough to
+    hold them: Meta rejects a whole message that runs one row over its cap
+    rather than trimming it.
+    """
+    visible = [c for c in categories if c.slug]
+    artwork = {c.slug: _category_artwork(c) for c in visible}
+    cards = channel == CHANNEL_INSTAGRAM and any(artwork.values())
+
+    options = []
+    for c in visible:
+        row = {"id": f"{PICK_CATEGORY}{PICKER_SEP}{c.slug}", "title": c.name}
+        if cards:
+            # Generic-template fields; every other renderer ignores them, so
+            # the WhatsApp list is unchanged by a category gaining artwork.
+            row["image_url"] = artwork[c.slug]
+            row["description"] = getattr(c, "description", None) or None
+            row["button_title"] = "Select"
+        options.append(row)
+
     picker = pickers._paginate(options, ASK_CATEGORY, channel, page,
                                kind=PICK_CATEGORY, list_button="Choose",
-                               section_title="Services")
-    return Turn(None, picker) if picker else Turn(NOTHING_HERE)
+                               section_title="Services", reserve=reserve,
+                               presentation="carousel" if cards else "quick_replies",
+                               capacity_override=MAX_IG_GENERIC_ELEMENTS if cards else None)
+    if not picker:
+        return Turn(NOTHING_HERE)
+    # A generic template carries no prompt of its own, so on Instagram the
+    # question has to arrive as the message before the cards.
+    return Turn(ASK_CATEGORY if cards else None, picker)
 
 
 async def _offering_step(db, executor, category_slug: str, channel: str, page: int,
@@ -1374,6 +1451,123 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
     categories = await _serviceable_categories(db, thread.zipcode or "")
     step = _category_step(categories, channel, 0)
     return Turn(SERVICE_NOT_IN_CITY.format(city=thread.city or "your area"), step.picker)
+
+
+#: Where a dimension's values live. Both shipped dimensions are
+#: `legacy_source`-backed, so the options are the ACTIVE mappings for this
+#: master service, not the whole global library — offering every brand on the
+#: platform would let a customer pick one nobody services.
+_DIMENSION_VALUE_SQL = {
+    "type": """
+        SELECT st.id, st.name
+          FROM master_service_types mst
+          JOIN service_types st ON st.id = mst.service_type_id
+         WHERE mst.master_service_id = :service
+           AND mst.is_active IS TRUE
+           AND st.is_active IS TRUE
+           AND st.deleted_at IS NULL
+           AND st.customer_visible IS TRUE
+         ORDER BY st.display_order, st.name
+    """,
+    "brand": """
+        SELECT b.id, b.name
+          FROM master_service_brands msb
+          JOIN brands b ON b.id = msb.brand_id
+         WHERE msb.master_service_id = :service
+           AND msb.is_active IS TRUE
+           AND msb.status = 'active'
+           AND b.is_active IS TRUE
+         ORDER BY msb.display_order, b.name
+    """,
+}
+
+
+async def _pending_dimension(db, draft: dict) -> tuple[str, str, list] | None:
+    """The next blueprint dimension this draft still needs, with its options.
+
+    Returns `(key, label, rows)` or None when nothing is outstanding. Dimensions
+    are configured per `(master_service, job_type)`, and `job_type_id` is only
+    filled in once the problem is chosen — but every master service maps to
+    exactly ONE active job type, so the blueprint is resolvable from the
+    service alone and these can be asked BEFORE the problem.
+    """
+    service_id = draft.get("offering_id")
+    if not service_id:
+        return None
+
+    job_type_id = draft.get("job_type_id")
+    if not job_type_id:
+        rows = (await db.execute(text(
+            "SELECT job_type_id FROM master_service_job_types "
+            "WHERE master_service_id = :s AND is_active IS TRUE"
+        ), {"s": service_id})).all()
+        if len(rows) != 1:
+            # Ambiguous (or unconfigured) blueprint. The problem step resolves
+            # the job type, so let it run first rather than guessing.
+            return None
+        job_type_id = rows[0][0]
+
+    configured = (await db.execute(text(
+        "SELECT cd.key, cd.name "
+        "  FROM service_job_dimensions sjd "
+        "  JOIN catalog_dimensions cd ON cd.id = sjd.dimension_id "
+        " WHERE sjd.master_service_id = :s "
+        "   AND sjd.job_type_id IS NOT DISTINCT FROM :j "
+        "   AND sjd.enabled IS TRUE AND sjd.required IS TRUE "
+        "   AND sjd.ask_customer IS TRUE AND cd.is_active IS TRUE "
+        " ORDER BY sjd.display_order, cd.display_order"
+    ), {"s": service_id, "j": job_type_id})).all()
+
+    for key, label in configured:
+        field = DIMENSION_DRAFT_FIELD.get(key)
+        if not field or draft.get(field):
+            continue  # not answerable in chat, or already answered
+        sql = _DIMENSION_VALUE_SQL.get(key)
+        if not sql:
+            continue
+        values = (await db.execute(text(sql), {"service": service_id})).all()
+        if not values:
+            # Required but nothing configured to offer. Skipping keeps the
+            # booking moving instead of dead-ending the customer on a question
+            # with no answers; the gap belongs in the catalog console.
+            logger.warning("messaging_gateway.dimension.no_values",
+                           dimension=key, service_id=str(service_id))
+            continue
+        return key, label, values
+    return None
+
+
+async def _dimension_step(db, draft: dict, channel: str, page: int) -> Turn | None:
+    """Ask for the next outstanding type/brand, as taps."""
+    pending = await _pending_dimension(db, draft)
+    if not pending:
+        return None
+    key, label, values = pending
+    options = [
+        {"id": _join(PICK_DIMENSION, key, str(value_id)), "title": str(name)}
+        for value_id, name in values
+    ]
+    picker = pickers._paginate(
+        options, ASK_DIMENSION.format(label=str(label).lower()), channel, page,
+        kind=_join(PICK_DIMENSION, key), list_button="Choose",
+        section_title=str(label),
+    )
+    return Turn(None, picker) if picker else None
+
+
+async def _apply_dimension(db, thread, executor, rest: str, draft: dict):
+    """Record a type/brand tap on the draft."""
+    key, _, value_id = rest.partition(PICKER_SEP)
+    field = DIMENSION_DRAFT_FIELD.get(key)
+    if not field or not value_id:
+        return None, 0, draft
+    result = await executor._tool_update_home_service_draft(
+        draft_id=str(draft["id"]), **{field: value_id},
+    )
+    if not result.get("updated"):
+        logger.warning("messaging_gateway.flow.dimension_failed",
+                       dimension=key, error=result.get("error"))
+    return None, 0, await _draft(db, thread)
 
 
 async def _problem_step(executor, draft: dict, channel: str, page: int) -> Turn:

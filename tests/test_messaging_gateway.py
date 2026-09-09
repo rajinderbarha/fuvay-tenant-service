@@ -12,7 +12,9 @@ import pytest
 from app.engines.ai_conversation.constants import BACKEND_TOOLS
 from app.engines.ai_conversation.backend_tools import BackendToolExecutor
 from app.engines.messaging_gateway import meta_client, pickers
-from app.engines.messaging_gateway.constants import CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP
+from app.engines.messaging_gateway.constants import (
+    CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, PICK_RESTART,
+)
 from app.engines.messaging_gateway.service import parse_command
 
 
@@ -428,6 +430,103 @@ async def test_instagram_offering_step_uses_catalog_cards_without_guessing_price
         "button_title": "Select service",
     }
     assert "price" not in turn.picker["rows"][0]
+
+
+class _Category:
+    """The fields `_category_step` reads off a ServiceCategory row."""
+
+    def __init__(self, slug, name, image_url=None, icon_url=None, description=None):
+        self.slug, self.name = slug, name
+        self.image_url, self.icon_url = image_url, icon_url
+        self.description = description
+
+
+def test_instagram_category_step_shows_the_admins_uploaded_icon():
+    """An icon set on a category in the admin catalog is what the customer
+    sees against that option — the whole point of uploading one. Instagram
+    can only carry a picture on a generic card, so the list becomes cards."""
+    from app.engines.messaging_gateway import flow
+
+    turn = flow._category_step(
+        [_Category("air-conditioning", "Air Conditioning",
+                   icon_url="https://cdn.example/ac-icon.png",
+                   description="Repair, service and installation"),
+         _Category("plumbing", "Plumbing")],
+        CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text == flow.ASK_CATEGORY   # cards carry no prompt of their own
+    assert turn.picker["presentation"] == "carousel"
+    assert turn.picker["rows"][0] == {
+        "id": "cat|air-conditioning",
+        "title": "Air Conditioning",
+        "image_url": "https://cdn.example/ac-icon.png",
+        "description": "Repair, service and installation",
+        "button_title": "Select",
+    }
+    # A category with no artwork still renders, just without a picture.
+    assert turn.picker["rows"][1]["image_url"] is None
+    # And the navigation card says what it does rather than inheriting the
+    # generic "choose this service" subtitle.
+    assert turn.picker["rows"][-1]["id"].split("|", 1)[0] == PICK_RESTART
+    assert turn.picker["rows"][-1]["description"] == "Begin again from the first question."
+
+
+def test_category_image_is_preferred_over_icon_and_must_be_public():
+    """Meta fetches the artwork itself, so a relative upload path or a plain
+    -http host can never render — those stay the numbered list rather than
+    becoming a carousel of blank cards."""
+    from app.engines.messaging_gateway import flow
+
+    both = flow._category_step(
+        [_Category("air-conditioning", "Air Conditioning",
+                   image_url="https://cdn.example/ac.jpg",
+                   icon_url="https://cdn.example/ac-icon.png")],
+        CHANNEL_INSTAGRAM, 0,
+    )
+    assert both.picker["rows"][0]["image_url"] == "https://cdn.example/ac.jpg"
+
+    unreachable = flow._category_step(
+        [_Category("air-conditioning", "Air Conditioning",
+                   icon_url="/uploads/category_icon/ac.png")],
+        CHANNEL_INSTAGRAM, 0,
+    )
+    assert unreachable.picker["presentation"] == "quick_replies"
+    assert "image_url" not in unreachable.picker["rows"][0]
+
+
+def test_whatsapp_category_list_is_unchanged_by_category_artwork():
+    """WhatsApp list rows cannot carry a picture at all, so an icon upload
+    must not quietly rewrite what WhatsApp customers already see."""
+    from app.engines.messaging_gateway import flow
+
+    turn = flow._category_step(
+        [_Category("air-conditioning", "Air Conditioning",
+                   image_url="https://cdn.example/ac.jpg", description="Cooling")],
+        CHANNEL_WHATSAPP, 0,
+    )
+
+    assert turn.text is None
+    assert turn.picker["presentation"] == "quick_replies"
+    assert turn.picker["rows"][0] == {"id": "cat|air-conditioning",
+                                      "title": "Air Conditioning"}
+
+
+def test_category_page_leaves_room_for_a_prepended_track_row():
+    """`_next_step` puts "Track my booking" in front of the categories for a
+    customer mid-booking. Meta fails a whole message that runs one row over
+    its cap, so the page has to be cut short enough to hold it."""
+    from app.engines.messaging_gateway import flow
+    from app.engines.messaging_gateway.pickers import channel_capacity
+
+    categories = [_Category(f"c{i}", f"Category {i}") for i in range(20)]
+
+    step = flow._category_step(categories, CHANNEL_WHATSAPP, 0, reserve=1)
+    assert len(step.picker["rows"]) + 1 <= channel_capacity(CHANNEL_WHATSAPP)
+
+    # Without the reservation the page fills the cap exactly, as before.
+    unreserved = flow._category_step(categories, CHANNEL_WHATSAPP, 0)
+    assert len(unreserved.picker["rows"]) == channel_capacity(CHANNEL_WHATSAPP)
 
 
 @pytest.mark.asyncio
@@ -945,6 +1044,43 @@ async def test_instagram_uses_stacked_buttons_for_durable_actions(monkeypatch):
         "type": "postback", "title": "Select service", "payload": "of|ac|repair",
     }
     assert "image_url" not in elements[1]
+
+
+@pytest.mark.asyncio
+async def test_a_plain_http_card_image_is_dropped_rather_than_sent(monkeypatch):
+    """Meta fetches card artwork itself and accepts only public https, so a
+    local-disk upload served over http can never render. It must not be sent
+    as if it could."""
+    calls = []
+
+    class Response:
+        status_code = 200
+        text = json.dumps({"id": "sent"})
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def post(self, url, **kwargs):
+            calls.append(kwargs["json"])
+            return Response()
+
+    monkeypatch.setattr(meta_client.httpx, "AsyncClient", Client)
+    ig = {"access_token": "ig-token", "instagram_account_id": "17890001",
+          "api_version": "v26.0"}
+
+    await meta_client.send_options("igsid-1", "Which service?", [
+        {"id": "of|home_services|air-conditioner", "title": "Air Conditioner",
+         "image_url": "http://129.121.137.155:8000/uploads/service_icon/a.png",
+         "button_title": "Select service"},
+    ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="carousel")
+
+    element = calls[0]["message"]["attachment"]["payload"]["elements"][0]
+    assert "image_url" not in element
+    assert element["title"] == "Air Conditioner"
 
 
 @pytest.mark.asyncio
@@ -2669,3 +2805,110 @@ async def test_an_explicit_command_is_answered_not_welcomed(monkeypatch):
     await gw.handle_inbound(_inbound("/help"))
 
     assert sent == [HELP_TEXT]
+
+
+# ── Blueprint dimensions: type and brand, asked before the problem ─────────
+def _dimension_rows(turn) -> list[dict]:
+    """The picker's own options, without the trailing "Start over" row."""
+    return [r for r in turn.picker["rows"] if str(r["id"]).startswith("dim|")]
+
+
+class _DimensionDB:
+    """Answers `_pending_dimension`'s queries by matching on the SQL text.
+
+    Sequencing on call order would break the moment a query is added; matching
+    on the table being read survives that.
+    """
+
+    def __init__(self, *, dimensions=None, types=None, brands=None, job_types=None):
+        self.dimensions = dimensions if dimensions is not None else [
+            ("type", "Type"), ("brand", "Brand"),
+        ]
+        self.types = types if types is not None else [("t-1", "Window AC"), ("t-2", "Split AC")]
+        self.brands = brands if brands is not None else [("b-1", "Voltas")]
+        self.job_types = job_types if job_types is not None else [("job-1",)]
+
+    async def execute(self, clause, params=None):
+        sql = str(clause)
+        if "master_service_job_types" in sql:
+            rows = self.job_types
+        elif "service_job_dimensions" in sql:
+            rows = self.dimensions
+        elif "master_service_types" in sql:
+            rows = self.types
+        elif "master_service_brands" in sql:
+            rows = self.brands
+        else:
+            rows = []
+        return type("R", (), {"all": lambda _self, r=rows: list(r)})()
+
+
+@pytest.mark.asyncio
+async def test_type_is_asked_before_brand_and_both_before_the_problem():
+    """Blueprint order drives the questions: type, then brand, then problem."""
+    from app.engines.messaging_gateway import flow
+
+    draft = {"id": "d-1", "offering_id": "svc-1"}
+
+    turn = await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0)
+    assert _dimension_rows(turn) == [
+        {"id": "dim|type|t-1", "title": "Window AC"},
+        {"id": "dim|type|t-2", "title": "Split AC"},
+    ]
+
+    # Type answered -> brand is next, NOT the problem. Every picker carries a
+    # trailing "Start over" row, so compare only the dimension's own options.
+    draft["offering_type_id"] = "t-2"
+    turn = await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0)
+    assert _dimension_rows(turn) == [{"id": "dim|brand|b-1", "title": "Voltas"}]
+
+    # Both answered -> nothing outstanding, so the flow moves on to the problem.
+    draft["brand_id"] = "b-1"
+    assert await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0) is None
+
+
+@pytest.mark.asyncio
+async def test_a_required_dimension_with_no_values_does_not_dead_end_the_booking():
+    """A dimension nobody configured values for is skipped, not asked empty."""
+    from app.engines.messaging_gateway import flow
+
+    db = _DimensionDB(types=[])  # 'type' required, zero options to offer
+    turn = await flow._dimension_step(db, {"id": "d-1", "offering_id": "svc-1"},
+                                      CHANNEL_INSTAGRAM, 0)
+    # Falls through to brand rather than rendering a question with no answers.
+    assert _dimension_rows(turn) == [{"id": "dim|brand|b-1", "title": "Voltas"}]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_blueprint_leaves_the_problem_step_to_resolve_the_job_type():
+    """Dimensions are keyed per job type, so two of them cannot be resolved
+    from the service alone — the problem step must run first."""
+    from app.engines.messaging_gateway import flow
+
+    db = _DimensionDB(job_types=[("job-1",), ("job-2",)])
+    assert await flow._dimension_step(db, {"id": "d-1", "offering_id": "svc-1"},
+                                      CHANNEL_INSTAGRAM, 0) is None
+
+
+@pytest.mark.asyncio
+async def test_dimension_tap_writes_the_matching_draft_column():
+    """`dim|brand|<id>` lands in brand_id, not in a generic answers blob."""
+    from app.engines.messaging_gateway import flow
+
+    written = {}
+
+    class Executor:
+        async def _tool_update_home_service_draft(self, draft_id, **fields):
+            written.update(fields)
+            return {"updated": True}
+
+    async def _draft(_db, _thread):
+        return {"id": "d-1", "brand_id": "b-9"}
+
+    original, flow._draft = flow._draft, _draft
+    try:
+        await flow._apply_dimension(None, None, Executor(), "brand|b-9", {"id": "d-1"})
+    finally:
+        flow._draft = original
+
+    assert written == {"brand_id": "b-9"}
