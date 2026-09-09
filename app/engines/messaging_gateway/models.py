@@ -19,7 +19,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint, text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +43,8 @@ class MessagingThread(ServiceOSBase):
         Index("ix_msg_thread_customer", "customer_id"),
         Index("ix_msg_thread_session", "ai_session_id"),
         Index("ix_msg_thread_last_inbound", "last_inbound_at"),
+        Index("ix_msg_thread_blocked_until", "blocked_until",
+              postgresql_where=text("blocked_until IS NOT NULL")),
     )
 
     channel: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -79,6 +83,16 @@ class MessagingThread(ServiceOSBase):
     #: Set by /human — suppresses bot replies until an agent closes the handoff.
     human_handoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    #: Operator-set ban, the only silencer a spammer cannot lift themselves:
+    #: `opted_out` is /stop and any /fuvay clears it, and `human_handoff` is
+    #: /human. Until this passes, the gateway reads the message (so the
+    #: webhook is still acknowledged and the flood stays visible in the
+    #: inbound log) and answers nothing at all.
+    blocked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    blocked_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     session_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -96,6 +110,8 @@ class MessagingThread(ServiceOSBase):
             "ai_session_id": str(self.ai_session_id) if self.ai_session_id else None,
             "opted_out": self.opted_out,
             "human_handoff": self.human_handoff,
+            "blocked_until": self.blocked_until.isoformat() if self.blocked_until else None,
+            "blocked_reason": self.blocked_reason,
             "last_inbound_at": self.last_inbound_at.isoformat() if self.last_inbound_at else None,
             "last_outbound_at": self.last_outbound_at.isoformat() if self.last_outbound_at else None,
             "session_count": self.session_count,

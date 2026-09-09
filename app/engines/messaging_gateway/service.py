@@ -48,14 +48,31 @@ from app.engines.messaging_gateway.models import MessagingInboundMessage, Messag
 
 logger = structlog.get_logger(__name__)
 
+#: The welcome. It is PREPENDED to the first flow step (see `handle_inbound`),
+#: so every sentence here delays the question the customer actually has to
+#: answer -- and the step underneath already shows whether to tap or to type,
+#: which is why this does not narrate the UI. Both jobs are named because this
+#: same opener also reaches people who came back to track or cancel.
 GREETING = (
-    "Hi{name}! I'm your Fuvay Service Assistance. I'll book your home service in a few taps — "
-    "just pick from the options below."
+    "Hi{name}! Welcome to Fuvay Home Services. I can book a service for you "
+    "or check an existing booking."
 )
 
+#: Sent when the SESSION cap trips -- too many fresh conversations, not too
+#: many messages. Its wording is deliberately about starting over, because
+#: that is the only thing this limit stops the customer doing.
 BUSY_TEXT = (
     "You've started several conversations in a short time. "
     "Please continue in this chat, or try again shortly."
+)
+
+#: Sent when either message-rate limit trips. Rate-limited traffic is dropped
+#: without a reply, which reads to the sender as the bot having died -- and a
+#: dead bot gets retried harder. `booking:social_notice` caps this at one per
+#: sender per window, so telling them is cheaper than the retries it prevents.
+THROTTLE_TEXT = (
+    "You are sending messages faster than I can answer them. "
+    "Please wait a few minutes, then send /fuvay to carry on."
 )
 
 UNSUPPORTED_TEXT = (
@@ -85,6 +102,16 @@ def parse_command(text: str) -> str | None:
         return None
     token = stripped[1:].split(maxsplit=1)[0].lower() if len(stripped) > 1 else ""
     return token if token in KNOWN_COMMANDS else None
+
+
+def _aware(value: datetime) -> datetime:
+    """Read a timestamp back as UTC-aware.
+
+    The columns are timezone-aware, but a value read back naive would raise on
+    any comparison -- and this webhook must answer 200 or Meta redelivers the
+    message forever.
+    """
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def command_remainder(text: str) -> str:
@@ -240,6 +267,58 @@ class MessagingGatewayService:
 
     # ── Sessions ─────────────────────────────────────────────────────────────
 
+    async def _throttle_notice(self, msg: InboundMessage) -> bool:
+        """Tell a flooding sender why they are being ignored, once per window.
+
+        `booking:social_notice` is what makes this safe to call on every
+        dropped message: the first call in the window consumes the single
+        token and the rest of the flood is silent.
+        """
+        try:
+            first_in_window, _ = await rate_limiter.check(
+                limit_key="booking:social:notice",
+                limit_type="booking:social_notice",
+                identifier=opaque_rate_identifier(f"{msg.channel}:{msg.from_id}"),
+                fail_closed=True,
+            )
+        except ServiceOSException:
+            return False
+        if not first_in_window:
+            return False
+        result = await meta_client.send_text(
+            msg.from_id, THROTTLE_TEXT, channel=msg.channel,
+            config=self.channel_config,
+        )
+        return bool(result.get("sent"))
+
+    async def _session_limited(self, msg: InboundMessage) -> bool:
+        """Has this sender opened too many fresh conversations this hour?
+
+        `/fuvay` is the most expensive message the gateway takes: it drops the
+        draft, re-reads the serviceable catalog and areas, and sends two
+        outbound messages. The per-message limit alone leaves room for dozens
+        of those an hour, which is the abuse MAX_SESSIONS_PER_SENDER_PER_HOUR
+        was written for.
+        """
+        try:
+            allowed, _ = await rate_limiter.check(
+                limit_key="booking:social:session",
+                limit_type="booking:social_session",
+                identifier=opaque_rate_identifier(f"{msg.channel}:{msg.from_id}"),
+                fail_closed=get_settings().APP_ENV in ("staging", "production"),
+            )
+        except ServiceOSException:
+            return True
+        if not allowed:
+            await record_abuse_event(
+                "social_session_churn",
+                entity_id=f"{msg.channel}:{msg.from_id}",
+                entity_type="social_sender",
+                threat_level="medium",
+                context={"channel": msg.channel},
+            )
+        return not allowed
+
     async def _rate_limited(self, thread: MessagingThread) -> bool:
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         count = (await self.db.execute(
@@ -306,9 +385,41 @@ class MessagingGatewayService:
                         provider_message_id=msg.provider_message_id)
             return {"status": STATUS_DUPLICATE, "reply_sent": False}
 
+        # ── Whole-channel ceiling ────────────────────────────────────────────
+        # Every other limit here is per sender, and an Instagram id costs
+        # nothing to make: ten throwaway accounts get ten times the per-sender
+        # budget and no per-sender check can see it. Deliberately fail-OPEN --
+        # this is a backstop against a coordinated flood, and failing closed on
+        # a Redis blip would take the whole page down for real customers, which
+        # is a worse outcome than the flood it is guarding against.
+        try:
+            channel_ok, _ = await rate_limiter.check(
+                limit_key="booking:social:channel",
+                limit_type="booking:social_channel",
+                identifier=opaque_rate_identifier(f"{msg.channel}:{msg.business_id}"),
+                fail_closed=False,
+            )
+        except ServiceOSException:
+            channel_ok = True
+        if not channel_ok:
+            record.status = STATUS_IGNORED
+            record.failure_reason = "channel_rate_limited"
+            await self.db.commit()
+            # No notice on this path: at the ceiling, replying to everyone is
+            # exactly the amplification the limit exists to stop.
+            await record_abuse_event(
+                "social_channel_flood",
+                entity_id=f"{msg.channel}:{msg.business_id}",
+                entity_type="social_channel",
+                threat_level="high",
+                context={"channel": msg.channel},
+            )
+            return {"status": STATUS_IGNORED, "reply_sent": False, "rate_limited": True}
+
         # Meta must always receive a successful webhook acknowledgement, even
         # when one sender is flooding us. Claim the provider id, mark the
         # message ignored, and stop before creating sessions/drafts or replies.
+        control_failed = False
         try:
             allowed, _ = await rate_limiter.check(
                 limit_key="booking:social:message",
@@ -318,6 +429,7 @@ class MessagingGatewayService:
             )
         except ServiceOSException:
             allowed = False
+            control_failed = True
             record.failure_reason = "security_control_unavailable"
         if not allowed:
             record.status = STATUS_IGNORED
@@ -330,10 +442,26 @@ class MessagingGatewayService:
                 threat_level="medium",
                 context={"channel": msg.channel},
             )
-            return {"status": STATUS_IGNORED, "reply_sent": False, "rate_limited": True}
+            # Only for a real flood. When the limiter itself is unavailable the
+            # notice throttle is unavailable with it, so sending here would
+            # message every customer on every message until Redis came back.
+            notified = False if control_failed else await self._throttle_notice(msg)
+            return {"status": STATUS_IGNORED, "reply_sent": notified,
+                    "rate_limited": True}
 
         thread = await self.get_or_create_thread(msg)
         record.thread_id = thread.id
+
+        # ── Operator block ───────────────────────────────────────────────────
+        # Read and recorded, but never answered. The message still lands in the
+        # inbound log so the flood stays visible to whoever set the block.
+        if thread.blocked_until and _aware(thread.blocked_until) > datetime.now(timezone.utc):
+            record.status = STATUS_IGNORED
+            record.failure_reason = "sender_blocked"
+            await self.db.commit()
+            logger.info("messaging_gateway.inbound.blocked",
+                        thread_id=str(thread.id), channel=msg.channel)
+            return {"status": STATUS_IGNORED, "reply_sent": False, "blocked": True}
 
         # ── Is this message opening a NEW conversation? ─────────────────────
         # Read the PREVIOUS inbound timestamp before stamping this one, or the
@@ -414,21 +542,32 @@ class MessagingGatewayService:
             # service area -- the flow is zipcode-first, so keeping those two
             # fields silently skipped its first question for returning
             # Instagram customers.
-            flow.reset_booking_state(thread)
-            if command in (CMD_START, CMD_RESET):
-                # Only an EXPLICIT start-over reopens the channel. Going quiet
-                # must not undo a /stop or take a thread back from an agent,
-                # which is why `opening` excludes both.
-                thread.opted_out = False
-                thread.human_handoff = False
-            reply = self._welcome(thread)
-            # Open the script at its first question rather than making them
-            # send a second message to get going. A typed first question (the
-            # zipcode prompt) must be included too; the older code discarded
-            # this returned text because the first step used to be a picker.
-            opening_text, picker = await self._advance(thread, msg, ignore_input=True)
-            if opening_text:
-                reply = f"{reply}\n\n{opening_text}"
+            #
+            # The session cap is checked BEFORE any of that work: a restart is
+            # two outbound messages plus a catalog read, so a sender spinning
+            # /fuvay is the expensive flood even while well inside the
+            # per-message limit. An idle-open cannot realistically trip this --
+            # it happens at most once per SESSION_IDLE_TIMEOUT_HOURS -- so in
+            # practice this only ever answers a deliberate restart loop.
+            if await self._session_limited(msg):
+                reply = BUSY_TEXT
+            else:
+                flow.reset_booking_state(thread)
+                if command in (CMD_START, CMD_RESET):
+                    # Only an EXPLICIT start-over reopens the channel. Going
+                    # quiet must not undo a /stop or take a thread back from an
+                    # agent, which is why `opening` excludes both.
+                    thread.opted_out = False
+                    thread.human_handoff = False
+                reply = self._welcome(thread)
+                # Open the script at its first question rather than making them
+                # send a second message to get going. A typed first question
+                # (the zipcode prompt) must be included too; the older code
+                # discarded this returned text because the first step used to
+                # be a picker.
+                opening_text, picker = await self._advance(thread, msg, ignore_input=True)
+                if opening_text:
+                    reply = f"{reply}\n\n{opening_text}"
 
         # ── A step of the booking ────────────────────────────────────
         elif thread.opted_out:
@@ -445,7 +584,7 @@ class MessagingGatewayService:
         ):
             reply = UNSUPPORTED_TEXT
         elif await self._rate_limited(thread):
-            reply = BUSY_TEXT
+            reply = THROTTLE_TEXT
         else:
             reply, picker = await self._advance(thread, msg)
 

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
+import structlog
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +18,8 @@ from app.engines.messaging_gateway.models import MessagingDeliveryEvent, Messagi
 from app.exceptions import ServiceOSException
 from app.schemas.base import ok
 
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/v1/admin/messaging-channels", tags=["Admin Messaging Channels"])
 
@@ -38,6 +42,13 @@ class EnabledIn(BaseModel):
 
 class HandoffIn(BaseModel):
     human_handoff: bool
+
+
+class BlockIn(BaseModel):
+    """Silence a sender for a while, or lift the block with hours=0."""
+
+    hours: int = Field(24, ge=0, le=24 * 365)
+    reason: str | None = Field(None, max_length=200)
 
 
 @router.get("", summary="List Meta booking channel configuration")
@@ -123,6 +134,7 @@ async def list_threads(
     request: Request,
     channel: str | None = Query(None),
     handoff_only: bool = Query(False),
+    blocked_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: UserContext = Depends(require_super_admin),
@@ -138,6 +150,10 @@ async def list_threads(
     if handoff_only:
         query = query.where(MessagingThread.human_handoff.is_(True))
         count_query = count_query.where(MessagingThread.human_handoff.is_(True))
+    if blocked_only:
+        live_block = MessagingThread.blocked_until > datetime.now(timezone.utc)
+        query = query.where(live_block)
+        count_query = count_query.where(live_block)
     rows = (await db.execute(
         query.order_by(MessagingThread.last_inbound_at.desc().nullslast()).offset(offset).limit(limit)
     )).scalars().all()
@@ -159,6 +175,38 @@ async def set_thread_handoff(
     row.human_handoff = body.human_handoff
     await db.commit()
     return ok(row.to_dict(), _rid(request), "admin.messaging_threads.handoff")
+
+
+@router.put("/threads/{thread_id}/block", summary="Block or unblock a messaging sender")
+async def set_thread_block(
+    thread_id: uuid.UUID,
+    body: BlockIn,
+    request: Request,
+    user: UserContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """The operator-side silencer.
+
+    `/stop` is the customer's own switch and any `/fuvay` clears it, so it is
+    no defence against someone who is deliberately flooding the channel. This
+    one only an operator can set or lift. It expires on its own so a block set
+    during an incident does not quietly become permanent -- pass hours=0 to
+    lift it early.
+    """
+    row = await db.get(MessagingThread, thread_id)
+    if not row:
+        raise ServiceOSException("MESSAGING_THREAD_NOT_FOUND", "Messaging thread not found.", status_code=404)
+    if body.hours:
+        row.blocked_until = datetime.now(timezone.utc) + timedelta(hours=body.hours)
+        row.blocked_reason = body.reason
+    else:
+        row.blocked_until = None
+        row.blocked_reason = None
+    await db.commit()
+    logger.info("admin.messaging_threads.block",
+                thread_id=str(thread_id), actor=str(_actor(user)),
+                hours=body.hours, blocked=bool(body.hours))
+    return ok(row.to_dict(), _rid(request), "admin.messaging_threads.block")
 
 
 @router.get("/messages/recent", summary="List recent inbound webhook processing outcomes")

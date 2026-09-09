@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import { Bot, CheckCircle2, Instagram, MessageCircle, RefreshCw, ShieldCheck, Sparkles, TestTube2, UserRoundCog } from "lucide-react";
+import { Ban, Bot, CheckCircle2, Instagram, MessageCircle, RefreshCw, ShieldCheck, ShieldOff, Sparkles, TestTube2, UserRoundCog } from "lucide-react";
 import { TableSurface } from "@serviceos/design-system";
 
 import { AdminLayout } from "../../../components/layout/AdminLayout";
@@ -53,6 +53,20 @@ export default function MessagingChannelsPage() {
     } finally { setBusy(null); }
   };
 
+  // A stored block that has already run out is not a block. The API expires
+  // them on its own so an incident-time block cannot become permanent, and the
+  // row has to read the same way the gateway does.
+  const isBlocked = (thread: MessagingThreadRecord) =>
+    !!thread.blocked_until && new Date(thread.blocked_until) > new Date();
+
+  const setBlock = async (thread: MessagingThreadRecord) => {
+    setBusy(`block-${thread.id}`);
+    try {
+      await messagingChannelsApi.setBlock(thread.id, isBlocked(thread) ? 0 : 24);
+      await threads.refetch();
+    } finally { setBusy(null); }
+  };
+
   const rows = channels.data?.items ?? [];
   const conversations = threads.data?.items ?? [];
 
@@ -90,7 +104,7 @@ export default function MessagingChannelsPage() {
       </div>
 
       <div><h2 style={{ margin: "4px 0 10px", fontSize: 17 }}>Recent conversations</h2>
-        {threads.error ? <EmptyState title="Conversations unavailable" description={threads.error}/> : conversations.length === 0 ? <Card style={{ padding: 28 }}><EmptyState title="No social booking conversations yet" description="Signed webhook messages will appear here after a channel is enabled."/></Card> : <Card style={{ overflow: "hidden" }}><TableSurface density="compact" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}><thead><tr><Th>Channel</Th><Th>Customer</Th><Th>Last inbound</Th><Th>Mode</Th><Th>Sessions</Th><Th>Control</Th></tr></thead><tbody>{conversations.map(thread => <tr key={thread.id} style={{ borderTop: "1px solid var(--border)" }}><Td><Badge variant="muted">{thread.channel}</Badge></Td><Td>{thread.display_name ?? thread.channel_user_id}<div style={{ color: "var(--text-tertiary)", fontSize: 10 }}>{thread.customer_id ? "Account linked" : "Unlinked"}</div></Td><Td>{thread.last_inbound_at ? new Date(thread.last_inbound_at).toLocaleString() : "—"}</Td><Td><Badge variant={thread.human_handoff ? "warning" : thread.opted_out ? "muted" : "success"}>{thread.opted_out ? "Opted out" : thread.human_handoff ? "Human" : "Bot"}</Badge></Td><Td>{thread.session_count}</Td><Td><Btn size="xs" variant="ghost" disabled={thread.opted_out} loading={busy === `thread-${thread.id}`} onClick={() => setHandoff(thread)}>{thread.human_handoff ? <Bot size={13}/> : <UserRoundCog size={13}/>} {thread.human_handoff ? "Return to bot" : "Take over"}</Btn></Td></tr>)}</tbody></TableSurface></Card>}
+        {threads.error ? <EmptyState title="Conversations unavailable" description={threads.error}/> : conversations.length === 0 ? <Card style={{ padding: 28 }}><EmptyState title="No social booking conversations yet" description="Signed webhook messages will appear here after a channel is enabled."/></Card> : <Card style={{ overflow: "hidden" }}><TableSurface density="compact" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}><thead><tr><Th>Channel</Th><Th>Customer</Th><Th>Last inbound</Th><Th>Mode</Th><Th>Sessions</Th><Th>Control</Th></tr></thead><tbody>{conversations.map(thread => <tr key={thread.id} style={{ borderTop: "1px solid var(--border)" }}><Td><Badge variant="muted">{thread.channel}</Badge></Td><Td>{thread.display_name ?? thread.channel_user_id}<div style={{ color: "var(--text-tertiary)", fontSize: 10 }}>{thread.customer_id ? "Account linked" : "Unlinked"}</div></Td><Td>{thread.last_inbound_at ? new Date(thread.last_inbound_at).toLocaleString() : "—"}</Td><Td><Badge variant={isBlocked(thread) ? "danger" : thread.human_handoff ? "warning" : thread.opted_out ? "muted" : "success"}>{isBlocked(thread) ? "Blocked" : thread.opted_out ? "Opted out" : thread.human_handoff ? "Human" : "Bot"}</Badge>{isBlocked(thread) && <div style={{ color: "var(--text-tertiary)", fontSize: 10 }}>Until {new Date(thread.blocked_until!).toLocaleString()}</div>}</Td><Td>{thread.session_count}</Td><Td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Btn size="xs" variant="ghost" disabled={thread.opted_out || isBlocked(thread)} loading={busy === `thread-${thread.id}`} onClick={() => setHandoff(thread)}>{thread.human_handoff ? <Bot size={13}/> : <UserRoundCog size={13}/>} {thread.human_handoff ? "Return to bot" : "Take over"}</Btn><Btn size="xs" variant="ghost" loading={busy === `block-${thread.id}`} onClick={() => setBlock(thread)}>{isBlocked(thread) ? <ShieldOff size={13}/> : <Ban size={13}/>} {isBlocked(thread) ? "Unblock" : "Block 24h"}</Btn></div></Td></tr>)}</tbody></TableSurface></Card>}
       </div>
     </div>
 

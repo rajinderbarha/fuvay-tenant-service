@@ -56,7 +56,7 @@ from app.engines.home_service_booking.provider_matching import (
 )
 from app.exceptions import ServiceOSException
 from app.config import get_settings
-from app.core.security import enforce_booking_action_limits
+from app.core.security import enforce_booking_action_limits, enforce_social_draft_limit
 
 logger = structlog.get_logger("home_service.booking.service")
 utcnow = lambda: datetime.now(timezone.utc)
@@ -90,12 +90,20 @@ class HomeServiceChatbotBookingService:
         zipcode: str | None = None,
         city: str | None = None,
         channel: str = "customer_app",
+        social_identity: str | None = None,
     ) -> dict:
         """Create a new booking draft for a Home Service offering."""
         abuse_actor = str(customer_id or ai_session_id or "anonymous")
         await enforce_booking_action_limits(
             "draft", actor_id=abuse_actor, ip_address=self.ip_address
         )
+        # A chat sender gets a second, stricter cap keyed on the channel
+        # identity. The limit above keys on customer_id or the AI session id,
+        # and an unregistered chat customer has no customer_id while their
+        # session id is rotated by every /fuvay -- so on its own it resets
+        # precisely when the abuse repeats.
+        if social_identity:
+            await enforce_social_draft_limit(social_identity)
 
         # This guard intentionally lives in the shared service choke point,
         # not only the HTTP router: the AI booking tool invokes this method

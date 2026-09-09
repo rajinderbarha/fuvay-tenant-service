@@ -7746,6 +7746,8 @@ export interface MessagingThreadRecord {
   customer_id: string | null; ai_session_id: string | null; opted_out: boolean;
   human_handoff: boolean; last_inbound_at: string | null; last_outbound_at: string | null;
   session_count: number;
+  /** Operator block. Unlike opted_out, a /fuvay from the sender cannot clear it. */
+  blocked_until: string | null; blocked_reason: string | null;
 }
 export const messagingChannelsApi = {
   list: () => apiFetch<{ items: MessagingChannelStatus[] }>("/v1/admin/messaging-channels"),
@@ -7768,6 +7770,12 @@ export const messagingChannelsApi = {
   setHandoff: (threadId: string, human_handoff: boolean) =>
     apiFetch<MessagingThreadRecord>(`/v1/admin/messaging-channels/threads/${threadId}/handoff`, {
       method: "PUT", body: JSON.stringify({ human_handoff }),
+    }),
+  /** hours = 0 lifts the block. Blocks expire on their own so one set during
+   *  an incident does not quietly become permanent. */
+  setBlock: (threadId: string, hours: number, reason?: string) =>
+    apiFetch<MessagingThreadRecord>(`/v1/admin/messaging-channels/threads/${threadId}/block`, {
+      method: "PUT", body: JSON.stringify({ hours, reason: reason ?? null }),
     }),
 };
 export interface BadgeCriterionInput {

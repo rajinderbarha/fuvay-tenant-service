@@ -2269,6 +2269,7 @@ async def test_a_stopped_thread_does_not_advance_silently(monkeypatch):
     thread.id = uuid.uuid4()
     thread.opted_out = True
     thread.human_handoff = False
+    thread.blocked_until = None
     thread.last_inbound_at = None
     thread.last_options = None
     service = MessagingGatewayService(db, channel_config={})
@@ -2312,6 +2313,7 @@ async def test_instagram_fuvay_clears_old_area_and_sends_zipcode_prompt(monkeypa
     thread.last_options = ["cat|home_services"]
     thread.opted_out = False
     thread.human_handoff = False
+    thread.blocked_until = None
     thread.last_inbound_at = None
 
     service = MessagingGatewayService(db, channel_config={})
@@ -2541,6 +2543,8 @@ class _Thread:
         self.ai_session_id = None
         self.opted_out = False
         self.human_handoff = False
+        self.blocked_until = None
+        self.blocked_reason = None
         self.last_inbound_at = None
         self.last_outbound_at = None
         self.session_count = 0
@@ -2912,3 +2916,231 @@ async def test_dimension_tap_writes_the_matching_draft_column():
         flow._draft = original
 
     assert written == {"brand_id": "b-9"}
+
+
+# ── Flood controls ───────────────────────────────────────────────────────────
+# Everything below is about the cheap abuse a booking flow invites: a sender
+# who never books, but keeps the gateway working and keeps us paying Meta to
+# answer. The expensive paths are a restart (two outbound messages plus a
+# catalog read) and a reply of any kind, so each test asserts on what was SENT,
+# not merely on the returned status.
+
+def _limited_gateway(monkeypatch, thread=None, *, allow, advance_reply=None):
+    """A gateway whose rate limiter answers per limit_type.
+
+    `allow` maps a limit_type to True/False, or to an exception instance to
+    simulate the limiter itself being unavailable. Anything unnamed is allowed.
+    """
+    from app.engines.messaging_gateway import meta_client, service as service_mod
+
+    sent = []
+    advanced = []
+
+    async def _send_text(to, text, channel, config):
+        sent.append(text)
+        return {"sent": True}
+
+    async def _check(*, limit_type, **_kwargs):
+        verdict = allow.get(limit_type, True)
+        if isinstance(verdict, Exception):
+            raise verdict
+        return verdict, {}
+
+    async def _no_abuse_event(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr(meta_client, "send_text", _send_text)
+    monkeypatch.setattr(service_mod.rate_limiter, "check", _check)
+    monkeypatch.setattr(service_mod, "record_abuse_event", _no_abuse_event)
+
+    gw = service_mod.MessagingGatewayService(_FakeDB(), channel_config={})
+    thread = thread if thread is not None else _Thread()
+
+    async def _thread(_msg):
+        return thread
+
+    async def _customer(_thread):
+        return None
+
+    async def _not_limited(_thread):
+        return False
+
+    async def _advance(passed, _msg, ignore_input=False):
+        advanced.append(ignore_input)
+        return (advance_reply or "Which pincode?"), None
+
+    gw.get_or_create_thread = _thread
+    gw.resolve_customer = _customer
+    gw._rate_limited = _not_limited
+    gw._advance = _advance
+    return gw, sent, advanced
+
+
+@pytest.mark.asyncio
+async def test_a_blocked_sender_is_read_but_never_answered(monkeypatch):
+    """The operator block is the only silencer a spammer cannot lift.
+
+    /stop is theirs and any /fuvay clears it, so before this the only way to
+    stop a flood was to block the account in the Meta inbox -- outside the
+    product, and invisible to our own inbound log. The message is still
+    recorded here, on purpose: the flood has to stay visible to whoever set
+    the block.
+    """
+    from app.engines.messaging_gateway import service as service_mod
+
+    thread = _Thread(blocked_until=datetime.now(timezone.utc) + timedelta(hours=2))
+    gw, sent, advanced = _limited_gateway(monkeypatch, thread, allow={})
+
+    result = await gw.handle_inbound(_inbound("hello?"))
+
+    assert result["blocked"] is True
+    assert result["reply_sent"] is False
+    assert sent == []
+    # Never reached the flow: a block must not advance a draft either.
+    assert advanced == []
+
+
+@pytest.mark.asyncio
+async def test_a_block_that_has_run_out_lets_the_customer_back_in(monkeypatch):
+    """Blocks expire so an incident-time block does not become permanent."""
+    thread = _Thread(blocked_until=datetime.now(timezone.utc) - timedelta(minutes=1))
+    gw, sent, _ = _limited_gateway(monkeypatch, thread, allow={})
+
+    result = await gw.handle_inbound(_inbound("hi"))
+
+    assert result.get("blocked") is None
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_naive_blocked_until_does_not_break_the_webhook(monkeypatch):
+    """A timestamp read back naive must not raise.
+
+    The column is timezone-aware, but this comparison sits in the webhook
+    path -- an exception here is a non-200 to Meta, which redelivers the same
+    message forever.
+    """
+    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
+    thread = _Thread(blocked_until=naive)
+    gw, sent, _ = _limited_gateway(monkeypatch, thread, allow={})
+
+    result = await gw.handle_inbound(_inbound("hello?"))
+
+    assert result["blocked"] is True
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_a_restart_loop_is_capped_without_resetting_the_draft(monkeypatch):
+    """/fuvay is the expensive message, so it has its own cap.
+
+    A restart drops the draft, re-reads the serviceable catalog and sends two
+    outbound messages, and the per-message limit leaves room for dozens an
+    hour. When the session cap trips, the customer keeps the conversation they
+    already had -- the remembered service area in particular must survive, or
+    the limit would itself do the damage the flood was after.
+    """
+    from app.engines.messaging_gateway import service as service_mod
+
+    thread = _Thread(zipcode="140412", city="Bassi Pathana")
+    gw, sent, advanced = _limited_gateway(
+        monkeypatch, thread, allow={"booking:social_session": False})
+
+    await gw.handle_inbound(_inbound("/fuvay"))
+
+    assert sent == [service_mod.BUSY_TEXT]
+    assert advanced == []
+    assert thread.zipcode == "140412"
+    assert thread.city == "Bassi Pathana"
+
+
+@pytest.mark.asyncio
+async def test_a_restart_inside_the_cap_still_works(monkeypatch):
+    """The cap must not be so eager that an ordinary second booking trips it."""
+    thread = _Thread(zipcode="140412")
+    gw, sent, advanced = _limited_gateway(monkeypatch, thread, allow={})
+
+    await gw.handle_inbound(_inbound("/fuvay"))
+
+    assert advanced == [True]
+    assert sent and sent[0].endswith("Which pincode?")
+
+
+@pytest.mark.asyncio
+async def test_a_flooding_sender_is_told_once_and_then_ignored(monkeypatch):
+    """Dropping a flood in total silence reads as a dead bot, and a dead bot
+    gets retried harder. One notice per window costs one message; the retries
+    it prevents cost more. The notice limit is what makes it one."""
+    from app.engines.messaging_gateway import service as service_mod
+
+    gw, sent, _ = _limited_gateway(monkeypatch, allow={
+        "booking:social_message": False,
+        "booking:social_notice": True,
+    })
+    first = await gw.handle_inbound(_inbound("spam"))
+
+    assert first["rate_limited"] is True
+    assert sent == [service_mod.THROTTLE_TEXT]
+
+    # Same window, notice budget now spent: the rest of the flood is silent.
+    gw2, sent2, _ = _limited_gateway(monkeypatch, allow={
+        "booking:social_message": False,
+        "booking:social_notice": False,
+    })
+    second = await gw2.handle_inbound(_inbound("spam"))
+
+    assert second["rate_limited"] is True
+    assert second["reply_sent"] is False
+    assert sent2 == []
+
+
+@pytest.mark.asyncio
+async def test_a_limiter_outage_never_messages_the_sender(monkeypatch):
+    """When the limiter is down every message is refused -- and the notice
+    throttle is down with it. Sending here would message every customer on
+    every message for as long as Redis stayed away."""
+    from app.exceptions import ServiceOSException
+
+    gw, sent, _ = _limited_gateway(monkeypatch, allow={
+        "booking:social_message": ServiceOSException("X", "limiter down"),
+    })
+
+    result = await gw.handle_inbound(_inbound("hello"))
+
+    assert result["rate_limited"] is True
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_the_channel_ceiling_drops_a_flood_without_replying(monkeypatch):
+    """Every other limit is per sender, and an Instagram id is free to make.
+
+    At the whole-channel ceiling the traffic is no longer one sender, so
+    replying is exactly the amplification the ceiling exists to prevent.
+    """
+    gw, sent, _ = _limited_gateway(monkeypatch, allow={
+        "booking:social_channel": False,
+        "booking:social_notice": True,
+    })
+
+    result = await gw.handle_inbound(_inbound("spam"))
+
+    assert result["rate_limited"] is True
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_the_channel_ceiling_fails_open(monkeypatch):
+    """A Redis blip must not take the page down for real customers. This is a
+    backstop against a coordinated flood; failing closed on it would be a
+    worse outage than the one it guards against."""
+    from app.exceptions import ServiceOSException
+
+    gw, sent, _ = _limited_gateway(monkeypatch, allow={
+        "booking:social_channel": ServiceOSException("X", "limiter down"),
+    })
+
+    result = await gw.handle_inbound(_inbound("hi"))
+
+    assert result.get("rate_limited") is None
+    assert len(sent) == 1

@@ -105,6 +105,11 @@ MAX_OUTBOUND_CHARS = 4096
 #: A single sender may not open more than this many sessions in an hour. The
 #: agent has its own per-session turn cap (MAX_TURNS_PER_SESSION); this guards
 #: the cheaper abuse of repeatedly starting fresh sessions.
+#:
+#: The cap itself is enforced by the `booking:social_session` rate limit, which
+#: is where the (3600, 6) window actually lives -- it has to be Redis-backed to
+#: survive the restart it is counting. Keep the two in step. What is left here
+#: is the derived per-thread message ceiling below.
 MAX_SESSIONS_PER_SENDER_PER_HOUR = 6
 
 # ── In-chat pickers ──────────────────────────────────────────────────────────

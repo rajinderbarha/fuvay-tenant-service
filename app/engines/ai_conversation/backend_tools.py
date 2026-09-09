@@ -350,6 +350,10 @@ class BackendToolExecutor:
             import uuid as _uuid
 
             ai_session_id = _uuid.UUID(self.session_id) if self.session_id else None
+            # Local: messaging_gateway is the adapter layered ON TOP of this
+            # engine, so importing it at module scope would invert that.
+            from app.engines.messaging_gateway.constants import VALID_CHANNELS
+
             svc = HomeServiceChatbotBookingService(db=self.db)
             result = await svc.start_booking_draft(
                 customer_id=self.customer_id,
@@ -358,6 +362,13 @@ class BackendToolExecutor:
                 offering_slug=offering_slug,
                 zipcode=self.zipcode,
                 channel=self.channel or "customer_app",
+                # Stable across /fuvay, unlike session_id -- see
+                # `enforce_social_draft_limit`.
+                social_identity=(
+                    f"{self.channel}:{self.channel_user_id}"
+                    if self.channel in VALID_CHANNELS and self.channel_user_id
+                    else None
+                ),
             )
             # WhatsApp supplies a platform-verified sender number. Populate
             # contact fields without making the irreversible account/booking

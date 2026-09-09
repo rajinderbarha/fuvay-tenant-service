@@ -68,6 +68,19 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     "booking:confirm_ip":    (86400, 20),
     "booking:social_message": (600, 30),
     "booking:social_draft":  (3600, 5),
+    #: A social sender may open this many fresh booking conversations per hour.
+    #: `/fuvay` is the most expensive inbound message there is -- it resets the
+    #: draft, re-reads the serviceable catalog and sends TWO outbound messages
+    #: -- so the message limit above is not by itself a meaningful guard.
+    "booking:social_session": (3600, 6),
+    #: At most one "you are going too fast" reply per sender per window. The
+    #: flood itself is dropped silently; going completely quiet just makes a
+    #: real customer retry harder, so one notice is cheaper than the retries.
+    "booking:social_notice": (600, 1),
+    #: Whole-channel ceiling. Every limit above is per sender, and an Instagram
+    #: id costs nothing to create, so a handful of throwaway accounts multiply
+    #: the per-sender budget with nothing to stop them.
+    "booking:social_channel": (600, 2000),
     # Found missing during the "make it 100% working" pass -- real,
     # tested rate-limit types for account-security-sensitive actions.
     "auth:password_change":  (3600, 10),   # 10 per hour per account
@@ -109,6 +122,9 @@ DEV_RATE_LIMIT_OVERRIDES: dict[str, tuple[int, int]] = {
     "booking:confirm_ip": (86400, 2000),
     "booking:social_message": (600, 5000),
     "booking:social_draft": (3600, 500),
+    "booking:social_session": (3600, 500),
+    "booking:social_notice": (600, 500),
+    "booking:social_channel": (600, 100000),
 }
 
 
@@ -445,6 +461,33 @@ async def enforce_booking_action_limits(
             entity_type="booking_actor",
             ip_address=ip_address,
             threat_level="high" if action == "confirm" else "medium",
+        )
+        raise
+
+
+async def enforce_social_draft_limit(social_identity: str) -> None:
+    """Cap how many booking drafts one chat identity may open per hour.
+
+    The generic `booking:draft_user` limit above keys on customer_id, falling
+    back to the AI session id -- and a social session id is rotated by every
+    `/fuvay`, so for an unregistered chat sender that limit resets exactly when
+    the abuse repeats. `social_identity` is the channel-scoped sender id, which
+    a restart cannot change.
+    """
+    fail_closed = get_settings().APP_ENV in ("staging", "production")
+    try:
+        await rate_limiter.check_and_raise(
+            limit_key="booking:social:draft",
+            limit_type="booking:social_draft",
+            identifier=opaque_rate_identifier(social_identity),
+            fail_closed=fail_closed,
+        )
+    except Exception:
+        await record_abuse_event(
+            "social_draft_flood",
+            entity_id=social_identity,
+            entity_type="social_sender",
+            threat_level="medium",
         )
         raise
 
