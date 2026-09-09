@@ -405,8 +405,18 @@ function CategoryForm({
           Master Service and Job Type and are configured in each service's
           Job-Type Blueprint. */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 12, alignItems: "end" }}>
-        <IconPicker label="Icon" context="category_icon" value={form.icon_url} onChange={v => setF("icon_url", v ?? "")}/>
-        <IconPicker label="Image" context="category_icon" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
+        <div>
+          <IconPicker label="Fuvay app icon" noun="app icon" context="category_icon" value={form.icon_url} onChange={v => setF("icon_url", v ?? "")}/>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+            Square icon used in the customer app and catalog lists.
+          </p>
+        </div>
+        <div>
+          <IconPicker label="Instagram card image" noun="Instagram image" context="category_icon" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+            Public HTTPS artwork used on Instagram. Falls back to the app icon if empty.
+          </p>
+        </div>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", paddingBottom: 8 }}>
           <input type="checkbox" checked={form.tenant_selectable}
             onChange={e => setF("tenant_selectable", e.target.checked)}
@@ -501,9 +511,9 @@ export default function CategoriesPage() {
   function buildPayload(data: FormState) {
     return {
       name: data.name,
-      description: data.description || undefined,
-      icon_url: data.icon_url || undefined,
-      image_url: data.image_url || undefined,
+      description: data.description || null,
+      icon_url: data.icon_url || null,
+      image_url: data.image_url || null,
       display_order: data.display_order || 0,
       vertical_type: data.vertical_type || undefined,
       finance_model: data.finance_model || undefined,

@@ -1277,8 +1277,15 @@ class AdminCatalogService:
         if cft and cft not in VALID_CUSTOMER_FLOW_TYPES:
             raise ServiceOSException("INVALID_CUSTOMER_FLOW_TYPE",
                 f"customer_flow_type '{cft}' is not valid.", status_code=422)
+        # Artwork and optional copy are intentionally nullable: selecting
+        # "Remove" in either channel-specific picker must clear the stored
+        # asset, not return a successful no-op. Operational/classification
+        # fields keep the historical non-null guard below.
+        for field in ("description", "icon_url", "image_url", "banner_url"):
+            if field in data:
+                setattr(cat, field, data[field])
         for field in updatable:
-            if field in data and data[field] is not None:
+            if field not in {"description", "icon_url", "image_url", "banner_url"} and field in data and data[field] is not None:
                 setattr(cat, field, data[field])
         await self.db.flush()
         return self._cat_dict(cat)

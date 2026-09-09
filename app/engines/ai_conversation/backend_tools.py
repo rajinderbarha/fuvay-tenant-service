@@ -10,6 +10,7 @@ from sqlalchemy import select, and_, desc, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
+from app.exceptions import ServiceOSException
 
 logger = structlog.get_logger("ai_conversation.tools")
 
@@ -880,11 +881,39 @@ class BackendToolExecutor:
                 customer_id=self.customer_id,
                 idempotency_key=f"social:{self.session_id or self.customer_id}:{draft_id}",
                 request_id=f"social:{self.session_id or 'chat'}",
+                source_channel=self.channel,
+                source_actor_id=self.channel_user_id,
             )
             await self.db.commit()
             return {"confirmed": True, **result}
+        except ServiceOSException as exc:
+            # Expected domain rejections are safe and useful to the customer.
+            # Hiding RATE_LIMITED / duplicate / missing-detail failures behind
+            # "could not be confirmed" made the button look broken and gave
+            # neither the customer nor QA a next step.
+            logger.info(
+                "backend_tools.confirm_booking_rejected",
+                error_code=exc.error_code,
+                draft_id=draft_id,
+                channel=self.channel,
+            )
+            if exc.error_code == "RATE_LIMITED":
+                message = "Too many confirmation attempts. Please wait a little and try again."
+            elif exc.error_code in {"DUPLICATE_ACTIVE_BOOKING", "REQUIRED_FIELD_MISSING"}:
+                message = exc.detail
+                if exc.resolution:
+                    message = f"{message} {exc.resolution}"
+            else:
+                message = "The booking could not be confirmed. Review the details and try again."
+            return {"confirmed": False, "error": message, "error_code": exc.error_code}
         except Exception as exc:
-            logger.warning("backend_tools.confirm_booking_failed", error=str(exc))
+            logger.exception(
+                "backend_tools.confirm_booking_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                draft_id=draft_id,
+                channel=self.channel,
+            )
             return {"confirmed": False, "error": "The booking could not be confirmed. Review the details and try again."}
 
     # ── Sprint 17 — Coaching Appointment Draft tools ─────────────────────────

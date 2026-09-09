@@ -901,11 +901,14 @@ async def test_staging_instagram_confirmation_creates_customer_only_at_confirmat
         mark_ready_for_confirmation=AsyncMock(),
     )
 
+    finalized = {}
+
     class Finalizer:
         def __init__(self, db):
             pass
 
         async def finalize(self, **kwargs):
+            finalized.update(kwargs)
             return {"booking_number": "BK-TEST", "job_number": "JOB-TEST"}
 
     monkeypatch.setattr(
@@ -935,6 +938,58 @@ async def test_staging_instagram_confirmation_creates_customer_only_at_confirmat
     assert customer.meta["phone_verification_bypassed"] is True
     assert draft.customer_id == customer.id
     assert ai_session.customer_id == customer.id
+    assert finalized["source_channel"] == "instagram"
+    assert finalized["source_actor_id"] == "ig-scoped-customer-1"
+
+
+@pytest.mark.asyncio
+async def test_social_confirmation_returns_an_actionable_rate_limit_message(monkeypatch):
+    """An expected safety rejection must not masquerade as a broken button."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.engines.ai_conversation import backend_tools
+    from app.engines.home_service_booking import service as booking_service_module
+    from app.engines.final_records import creation_service as creation_service_module
+    from app.exceptions import ServiceOSException
+
+    draft_id = uuid.uuid4()
+    booking_service = SimpleNamespace(
+        get_booking_draft=AsyncMock(return_value={"status": "provider_matched"}),
+        mark_ready_for_confirmation=AsyncMock(),
+    )
+
+    class Finalizer:
+        def __init__(self, db):
+            pass
+
+        async def finalize(self, **kwargs):
+            raise ServiceOSException(
+                "RATE_LIMITED", "Rate limit exceeded.", status_code=429,
+            )
+
+    monkeypatch.setattr(
+        booking_service_module, "HomeServiceChatbotBookingService",
+        lambda db: booking_service,
+    )
+    monkeypatch.setattr(
+        creation_service_module, "HomeServiceFinalCreationService", Finalizer,
+    )
+
+    db = SimpleNamespace(commit=AsyncMock())
+    executor = BackendToolExecutor(
+        db, customer_id=uuid.uuid4(), session_id=str(uuid.uuid4()),
+        channel="instagram", channel_user_id="ig-sender",
+    )
+    result = await executor._tool_confirm_home_service_booking(
+        str(draft_id), "CONFIRM BOOKING",
+    )
+
+    assert result == {
+        "confirmed": False,
+        "error": "Too many confirmation attempts. Please wait a little and try again.",
+        "error_code": "RATE_LIMITED",
+    }
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

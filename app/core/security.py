@@ -68,6 +68,13 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     "booking:confirm_ip":    (86400, 20),
     "booking:social_message": (600, 30),
     "booking:social_draft":  (3600, 5),
+    # A social sender already passes message, session and draft limits before
+    # reaching confirmation. Keep confirmation protected too, but scope it to
+    # the stable channel identity instead of sharing the customer-app's very
+    # small five-per-day quota. The shared quota made normal Instagram QA (and
+    # a customer booking several services) fail with RATE_LIMITED after a few
+    # successful bookings.
+    "booking:social_confirm": (3600, 12),
     #: A social sender may open this many fresh booking conversations per hour.
     #: `/fuvay` is the most expensive inbound message there is -- it resets the
     #: draft, re-reads the serviceable catalog and sends TWO outbound messages
@@ -122,6 +129,7 @@ DEV_RATE_LIMIT_OVERRIDES: dict[str, tuple[int, int]] = {
     "booking:confirm_ip": (86400, 2000),
     "booking:social_message": (600, 5000),
     "booking:social_draft": (3600, 500),
+    "booking:social_confirm": (3600, 500),
     "booking:social_session": (3600, 500),
     "booking:social_notice": (600, 500),
     "booking:social_channel": (600, 100000),
@@ -488,6 +496,33 @@ async def enforce_social_draft_limit(social_identity: str) -> None:
             entity_id=social_identity,
             entity_type="social_sender",
             threat_level="medium",
+        )
+        raise
+
+
+async def enforce_social_confirmation_limit(social_identity: str) -> None:
+    """Rate-limit final social confirmations by the stable sender identity.
+
+    Social booking already has independent message/session/draft ceilings, so
+    reusing ``booking:confirm_user`` here double-counted the same activity and
+    coupled Instagram/WhatsApp bookings to customer-app usage. A separate key
+    preserves abuse protection without blocking legitimate multi-service
+    social bookings after five confirmations in a day.
+    """
+    fail_closed = get_settings().APP_ENV in ("staging", "production")
+    try:
+        await rate_limiter.check_and_raise(
+            limit_key="booking:social:confirm",
+            limit_type="booking:social_confirm",
+            identifier=opaque_rate_identifier(social_identity),
+            fail_closed=fail_closed,
+        )
+    except Exception:
+        await record_abuse_event(
+            "social_confirmation_flood",
+            entity_id=social_identity,
+            entity_type="social_sender",
+            threat_level="high",
         )
         raise
 

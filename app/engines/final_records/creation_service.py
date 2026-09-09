@@ -46,7 +46,10 @@ from app.engines.final_records.number_service import (
     generate_booking_number, generate_job_number,
     generate_appointment_number, generate_lead_number,
 )
-from app.core.security import enforce_booking_action_limits
+from app.core.security import (
+    enforce_booking_action_limits,
+    enforce_social_confirmation_limit,
+)
 from app.exceptions import ServiceOSException
 from app.config import get_settings
 
@@ -109,6 +112,8 @@ class HomeServiceFinalCreationService:
         idempotency_key: str | None       = None,
         request_id:      str | None       = None,
         ip_address:      str | None       = None,
+        source_channel:  str | None       = None,
+        source_actor_id: str | None       = None,
     ) -> dict:
         from app.engines.home_service_booking.models import (
             HomeServiceBookingDraft, HomeServiceBookingDraftEvent,
@@ -149,11 +154,22 @@ class HomeServiceFinalCreationService:
         if draft.status != _READY:
             raise ValueError(ERR_DRAFT_NOT_READY)
 
-        await enforce_booking_action_limits(
-            "confirm",
-            actor_id=str(draft.customer_id or customer_id or draft.ai_session_id),
-            ip_address=ip_address,
-        )
+        # Social channels have their own message/session/draft controls and a
+        # sender-scoped confirmation ceiling. Reusing the customer-app quota
+        # here made five app + Instagram bookings consume one shared budget,
+        # after which a valid Confirm tap only received the generic failure
+        # message. The sender id is page/channel scoped and stable across chat
+        # restarts, which is the correct abuse-control identity for this path.
+        if source_channel in {"instagram", "whatsapp"} and source_actor_id:
+            await enforce_social_confirmation_limit(
+                f"{source_channel}:{source_actor_id}"
+            )
+        else:
+            await enforce_booking_action_limits(
+                "confirm",
+                actor_id=str(draft.customer_id or customer_id or draft.ai_session_id),
+                ip_address=ip_address,
+            )
 
         # A new draft must not be used to duplicate an already-active booking
         # for the same customer, service, place, date, and time window. An

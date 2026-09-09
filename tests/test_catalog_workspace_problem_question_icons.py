@@ -128,3 +128,26 @@ async def test_master_service_icon_can_be_replaced_and_cleared() -> None:
     cleared = await service.update_master_service(service_id, {"icon_url": None})
     assert cleared["icon_url"] is None
     service.db.flush.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_category_channel_artwork_can_be_cleared() -> None:
+    """Both the app icon and Instagram artwork honour an explicit Remove."""
+    category_id = uuid.uuid4()
+    row = MagicMock()
+    row.id = category_id
+    row.icon_url = "https://cdn.example.com/app-square.png"
+    row.image_url = "https://cdn.example.com/instagram-landscape.png"
+
+    service = AdminCatalogService(db=MagicMock())
+    service.db.flush = AsyncMock()
+    service._load_category = AsyncMock(return_value=row)
+
+    await service.update_category(category_id, {
+        "icon_url": None,
+        "image_url": None,
+    })
+
+    assert row.icon_url is None
+    assert row.image_url is None
+    service.db.flush.assert_awaited()

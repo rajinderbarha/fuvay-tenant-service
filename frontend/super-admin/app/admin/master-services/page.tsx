@@ -74,10 +74,11 @@ type FormState = {
   service_group_id: string;
   description: string;
   icon_url: string;
+  image_url: string;
 };
 
 const BLANK: FormState = {
-  name: "", category_id: "", service_group_id: "", description: "", icon_url: "",
+  name: "", category_id: "", service_group_id: "", description: "", icon_url: "", image_url: "",
 };
 
 // ── Summary card ───────────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
   const [description, setDescription] = useState("");
   const [displayOrder, setDisplayOrder] = useState(0);
   const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [instagramImageUrl, setInstagramImageUrl] = useState<string | null>(null);
   const createAction = useAction(catalogApi.createMasterServiceV2);
 
   const groupOptions = useMemo(
@@ -172,7 +174,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
     [allGroups, categoryId]);
 
   function reset() {
-    setName(""); setCategoryId(""); setGroupId(""); setDescription(""); setDisplayOrder(0); setIconUrl(null);
+    setName(""); setCategoryId(""); setGroupId(""); setDescription(""); setDisplayOrder(0); setIconUrl(null); setInstagramImageUrl(null);
   }
 
   async function submit() {
@@ -180,6 +182,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
       service_name: name.trim(), category_id: categoryId, service_group_id: groupId,
       description: description.trim() || undefined, display_order: displayOrder,
       icon_url: iconUrl || undefined,
+      image_url: instagramImageUrl || undefined,
     });
     if (result) { reset(); onCreated(); }
   }
@@ -232,7 +235,20 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
           value={description} onChange={setDescription}/>
         <Input label="Display Order" type="number" value={String(displayOrder)}
           onChange={v => setDisplayOrder(parseInt(v, 10) || 0)}/>
-        <IconPicker label="Icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div>
+            <IconPicker label="Fuvay app icon" noun="app icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+              Square icon used in the app and internal catalog.
+            </p>
+          </div>
+          <div>
+            <IconPicker label="Instagram card image" noun="Instagram image" context="service_icon" value={instagramImageUrl} onChange={setInstagramImageUrl}/>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+              Public HTTPS artwork for Instagram. The app icon is the fallback.
+            </p>
+          </div>
+        </div>
         <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
           Job types (Repair, Installation, …), pricing behavior, and Brand/Type requirements are
           configured after creation, per job type, in this service's Job-Type Blueprint.
@@ -361,6 +377,7 @@ export default function MasterServicesPage() {
       // (MODULE-L5-56) -- pricing is tenant-owned only.
       description: data.description || null,
       icon_url: data.icon_url || null,
+      image_url: data.image_url || null,
       // Brand/Type/Issue/Checklist/Schedule/Address requirements are no
       // longer edited from this form -- they are configured per exact Job
       // Type in the Job-Type Blueprint (Dimensions/Problems & Questions/
@@ -440,6 +457,7 @@ export default function MasterServicesPage() {
       service_group_id: svc.service_group_id ?? "",
       description: svc.description ?? "",
       icon_url: svc.icon_url ?? "",
+      image_url: svc.image_url ?? "",
     });
     setEditing(svc); setModal("edit");
   }
@@ -778,8 +796,22 @@ export default function MasterServicesPage() {
           <Input label="Description" placeholder="Optional description for this service"
             value={form.description} onChange={v => setF("description", v)} />
 
-          <IconPicker label="Icon" context="service_icon" value={form.icon_url}
-            onChange={v => setF("icon_url", v ?? "")} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <IconPicker label="Fuvay app icon" noun="app icon" context="service_icon" value={form.icon_url}
+                onChange={v => setF("icon_url", v ?? "")} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+                Used in the customer app and catalog lists.
+              </p>
+            </div>
+            <div>
+              <IconPicker label="Instagram card image" noun="Instagram image" context="service_icon" value={form.image_url}
+                onChange={v => setF("image_url", v ?? "")} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+                Used in Instagram service cards; falls back to the app icon when empty.
+              </p>
+            </div>
+          </div>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="secondary" size="sm" onClick={() => setModal("none")}>Cancel</Btn>

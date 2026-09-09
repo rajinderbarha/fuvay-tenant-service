@@ -393,3 +393,45 @@ async def test_different_draft_cannot_duplicate_active_booking():
             await service.finalize(draft.id, customer_id=customer_id)
     assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
     assert exc.value.context["booking_number"] == "BK-EXISTING"
+
+
+@pytest.mark.asyncio
+async def test_social_confirmation_uses_sender_quota_not_customer_app_quota():
+    from app.engines.final_records.creation_service import HomeServiceFinalCreationService
+    from app.engines.home_service_booking.models import HomeServiceBookingDraft
+
+    draft = MagicMock(spec=HomeServiceBookingDraft)
+    draft.id = uuid.uuid4()
+    draft.customer_id = uuid.uuid4()
+    draft.ai_session_id = uuid.uuid4()
+    draft.status = "ready_for_confirmation"
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_scalars_first(draft))
+    service = HomeServiceFinalCreationService(db)
+    service.lock.check_and_raise_if_duplicate = AsyncMock(return_value=None)
+    social_limit = AsyncMock(side_effect=ServiceOSException(
+        "RATE_LIMITED", "Rate limit exceeded.", status_code=429,
+    ))
+    app_limit = AsyncMock()
+
+    with patch(
+        "app.engines.final_records.creation_service.enforce_social_confirmation_limit",
+        social_limit,
+    ), patch(
+        "app.engines.final_records.creation_service.enforce_booking_action_limits",
+        app_limit,
+    ):
+        with pytest.raises(ServiceOSException) as exc:
+            await service.finalize(
+                draft.id,
+                customer_id=draft.customer_id,
+                source_channel="instagram",
+                source_actor_id="page-scoped-sender-1",
+            )
+
+    assert exc.value.error_code == "RATE_LIMITED"
+    social_limit.assert_awaited_once_with(
+        "instagram:page-scoped-sender-1",
+    )
+    app_limit.assert_not_awaited()
