@@ -495,7 +495,7 @@ async def test_an_emergency_slot_is_recorded_as_one():
         booking.HomeServiceChatbotBookingService = original
 
     assert captured["emergency"] is True
-    assert out["applied"] is True and "Emergency slot held" in out["note"]
+    assert out["applied"] is True and "Emergency time selected" in out["note"]
 
 
 @pytest.mark.asyncio

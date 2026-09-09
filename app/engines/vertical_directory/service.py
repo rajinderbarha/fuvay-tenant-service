@@ -152,6 +152,54 @@ class VerticalStaffDirectoryService:
     derived live from ServiceJob (the canonical Home-Services job table),
     never from a second, invented availability state machine."""
 
+    async def _member_tenant_ids(self, db: AsyncSession, scope: VerticalScope) -> Any:
+        """Return tenants that genuinely belong to this vertical.
+
+        Team members do not need a second copied vertical row to become
+        visible. Their tenant membership is the authoritative vertical
+        boundary, matching the provider directory and provider 360 team tab.
+        """
+        enrolled = select(TenantVerticalEnrollment.tenant_id.label("id")).where(
+            TenantVerticalEnrollment.vertical_id == scope.vertical.id)
+        legacy = select(Tenant.id.label("id")).where(
+            Tenant.vertical == scope.vertical_key,
+            Tenant.id.notin_(select(TenantVerticalEnrollment.tenant_id)),
+        )
+        return enrolled.union(legacy)
+
+    async def _team_query(self, db: AsyncSession, scope: VerticalScope):
+        member_tenants = await self._member_tenant_ids(db, scope)
+        return (
+            select(ProviderTeamMember, StaffBusinessVertical, Tenant, User)
+            .join(Tenant, Tenant.id == ProviderTeamMember.tenant_id)
+            .outerjoin(
+                StaffBusinessVertical,
+                and_(
+                    StaffBusinessVertical.staff_id == ProviderTeamMember.id,
+                    StaffBusinessVertical.vertical_id == scope.vertical.id,
+                ),
+            )
+            .outerjoin(User, User.id == ProviderTeamMember.user_id)
+            .where(
+                ProviderTeamMember.tenant_id.in_(member_tenants),
+                ProviderTeamMember.deleted_at.is_(None),
+            )
+        )
+
+    @staticmethod
+    def _effective_verification(
+        sbv: StaffBusinessVertical | None, ptm: ProviderTeamMember, user: User | None,
+    ) -> str:
+        if sbv:
+            return sbv.verification_status
+        if not ptm.user_id:
+            return "not_started"
+        return "verified" if user and user.is_active else "access_disabled"
+
+    @staticmethod
+    def _effective_assignment(sbv: StaffBusinessVertical | None, ptm: ProviderTeamMember) -> str:
+        return sbv.assignment_status if sbv else ptm.status
+
     async def _workload_subquery(self, db: AsyncSession):
         """Per-staff active/completed job counts + next scheduled job, from
         ServiceJob.assigned_staff_id -- the same canonical execution data
@@ -165,64 +213,113 @@ class VerticalStaffDirectoryService:
                 ServiceJob.status.in_(_ACTIVE_JOB_STATUSES)).label("next_job_date"),
         ).where(ServiceJob.assigned_staff_id.isnot(None)).group_by(ServiceJob.assigned_staff_id)
 
-    def _derive_availability(self, sbv: StaffBusinessVertical, active_jobs: int) -> str:
+    async def _workloads_for_members(
+        self, db: AsyncSession, members: list[ProviderTeamMember],
+    ) -> dict[uuid.UUID, dict[str, Any]]:
+        """Aggregate jobs assigned using either historical staff id space.
+
+        Service jobs have used both ``provider_team_members.id`` and the
+        linked ``users.id`` over time. Counting only one hides real work.
+        """
+        assignment_owner: dict[uuid.UUID, uuid.UUID] = {}
+        for member in members:
+            assignment_owner[member.id] = member.id
+            if member.user_id:
+                assignment_owner[member.user_id] = member.id
+        if not assignment_owner:
+            return {}
+        wl_sub = (await self._workload_subquery(db)).subquery()
+        rows = (await db.execute(
+            select(wl_sub).where(wl_sub.c.staff_id.in_(list(assignment_owner)))
+        )).all()
+        result: dict[uuid.UUID, dict[str, Any]] = {}
+        for row in rows:
+            owner = assignment_owner.get(row.staff_id)
+            if not owner:
+                continue
+            current = result.setdefault(owner, {
+                "total_jobs": 0, "completed_jobs": 0, "active_jobs": 0, "next_job_date": None,
+            })
+            current["total_jobs"] += int(row.total_jobs or 0)
+            current["completed_jobs"] += int(row.completed_jobs or 0)
+            current["active_jobs"] += int(row.active_jobs or 0)
+            if row.next_job_date and (
+                current["next_job_date"] is None or row.next_job_date < current["next_job_date"]
+            ):
+                current["next_job_date"] = row.next_job_date
+        return result
+
+    def _derive_availability(
+        self, ptm: ProviderTeamMember, sbv: StaffBusinessVertical | None, active_jobs: int,
+    ) -> str:
         # Assignment-level state always wins over live job load -- a
         # suspended/restricted assignment is never "available" no matter
         # what ServiceJob says.
-        if sbv.assignment_status in ("suspended", "deactivated"):
+        assignment_status = self._effective_assignment(sbv, ptm)
+        if assignment_status in ("suspended", "deactivated", "inactive"):
             return "offline"
-        if sbv.assignment_status == "restricted":
+        if assignment_status == "restricted" or not ptm.can_receive_assignment:
             return "unavailable"
-        if not sbv.is_active:
+        if sbv and not sbv.is_active:
             return "offline"
         if active_jobs > 0:
             return "on_job"
-        return "available"
+        return ptm.availability_state or "available"
 
     async def list_staff(self, db: AsyncSession, scope: VerticalScope, *,
                          search: str | None = None, verification_status: str | None = None,
                          assignment_status: str | None = None, availability: str | None = None,
+                         member_type: str | None = None,
                          page: int = 1, page_size: int = 25) -> dict:
         _require_scope_domain(scope, "staff")
-        conditions = [StaffBusinessVertical.vertical_id == scope.vertical.id]
-        q = select(StaffBusinessVertical, ProviderTeamMember).join(
-            ProviderTeamMember, StaffBusinessVertical.staff_id == ProviderTeamMember.id
-        ).where(*conditions)
+        q = await self._team_query(db, scope)
         if search:
             like = f"%{search}%"
             q = q.where(ProviderTeamMember.full_name.ilike(like) | ProviderTeamMember.email.ilike(like)
-                        | ProviderTeamMember.phone.ilike(like))
+                        | ProviderTeamMember.phone.ilike(like) | Tenant.business_name.ilike(like))
+        if member_type:
+            q = q.where(func.lower(ProviderTeamMember.member_type) == member_type.lower())
         if verification_status:
-            q = q.where(StaffBusinessVertical.verification_status == verification_status)
+            effective_verification = case(
+                (StaffBusinessVertical.id.isnot(None), StaffBusinessVertical.verification_status),
+                (ProviderTeamMember.user_id.is_(None), "not_started"),
+                (User.is_active.is_(True), "verified"),
+                else_="access_disabled",
+            )
+            q = q.where(effective_verification == verification_status)
         if assignment_status:
-            q = q.where(StaffBusinessVertical.assignment_status == assignment_status)
+            q = q.where(func.coalesce(
+                StaffBusinessVertical.assignment_status, ProviderTeamMember.status,
+            ) == assignment_status)
 
         total = await db.scalar(select(func.count()).select_from(q.subquery()))
-        rows = (await db.execute(q.order_by(StaffBusinessVertical.created_at.desc())
+        rows = (await db.execute(q.order_by(ProviderTeamMember.created_at.desc())
                                  .offset((page - 1) * page_size).limit(page_size))).all()
 
-        staff_ids = [sbv.staff_id for sbv, _ in rows]
-        workload_by_staff: dict[uuid.UUID, Any] = {}
-        if staff_ids:
-            wl_sub = (await self._workload_subquery(db)).subquery()
-            wl_rows = (await db.execute(select(wl_sub).where(wl_sub.c.staff_id.in_(staff_ids)))).all()
-            workload_by_staff = {r.staff_id: r for r in wl_rows}
+        workload_by_staff = await self._workloads_for_members(db, [ptm for ptm, _, _, _ in rows])
 
         items = []
-        for sbv, ptm in rows:
-            wl = workload_by_staff.get(sbv.staff_id)
-            active_jobs = wl.active_jobs if wl else 0
-            avail = self._derive_availability(sbv, active_jobs)
+        for ptm, sbv, tenant, user in rows:
+            wl = workload_by_staff.get(ptm.id, {})
+            active_jobs = int(wl.get("active_jobs", 0))
+            avail = self._derive_availability(ptm, sbv, active_jobs)
             if availability and avail != availability:
                 continue
             items.append({
-                "staff_id": str(sbv.staff_id), "full_name": ptm.full_name, "tenant_id": str(sbv.tenant_id),
-                "designation": sbv.designation or ptm.designation, "is_active": sbv.is_active,
-                "verification_status": sbv.verification_status, "assignment_status": sbv.assignment_status,
+                "staff_id": str(ptm.id), "full_name": ptm.full_name, "tenant_id": str(ptm.tenant_id),
+                "provider_name": tenant.business_name or tenant.tenant_name,
+                "member_type": ptm.member_type, "designation": ptm.designation,
+                "is_active": (sbv.is_active if sbv else ptm.status == "active"),
+                "verification_status": self._effective_verification(sbv, ptm, user),
+                "assignment_status": self._effective_assignment(sbv, ptm),
+                "login_status": ("not_created" if not ptm.user_id else "enabled" if user and user.is_active else "disabled"),
                 "availability_status": avail,
-                "active_jobs": active_jobs, "completed_jobs": wl.completed_jobs if wl else 0,
-                "has_capabilities": bool(sbv.job_type_capabilities),
-                "updated_at": sbv.updated_at.isoformat() if sbv.updated_at else None,
+                "active_jobs": active_jobs, "completed_jobs": int(wl.get("completed_jobs", 0)),
+                "has_capabilities": bool(
+                    ptm.supported_offering_ids or ptm.supported_type_ids or ptm.supported_brand_ids
+                    or (sbv and (sbv.job_type_capabilities or sbv.service_capabilities))
+                ),
+                "updated_at": ptm.updated_at.isoformat() if ptm.updated_at else None,
             })
         # availability filter is applied post-join (derived, not stored) --
         # total/pagination reflect the pre-filter set, consistent with how
@@ -230,28 +327,35 @@ class VerticalStaffDirectoryService:
         # the filter can't be pushed into SQL without duplicating the CASE.
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
-    async def get_staff(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> tuple[StaffBusinessVertical, ProviderTeamMember]:
+    async def get_staff(
+        self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID,
+    ) -> tuple[StaffBusinessVertical | None, ProviderTeamMember, Tenant, User | None]:
         _require_scope_domain(scope, "staff")
-        row = (await db.execute(select(StaffBusinessVertical, ProviderTeamMember).join(
-            ProviderTeamMember, StaffBusinessVertical.staff_id == ProviderTeamMember.id
-        ).where(StaffBusinessVertical.staff_id == staff_id,
-                StaffBusinessVertical.vertical_id == scope.vertical.id))).first()
+        q = await self._team_query(db, scope)
+        row = (await db.execute(q.where(ProviderTeamMember.id == staff_id))).first()
         if not row:
             raise ServiceOSException("CROSS_VERTICAL_ACCESS_DENIED",
                                      f"Staff member is not assigned to vertical '{scope.vertical_key}'.", status_code=403)
-        return row
+        ptm, sbv, tenant, user = row
+        return sbv, ptm, tenant, user
 
     async def get_staff_detail(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> dict:
-        sbv, ptm = await self.get_staff(db, scope, staff_id)
-        wl_sub = (await self._workload_subquery(db)).subquery()
-        wl = (await db.execute(select(wl_sub).where(wl_sub.c.staff_id == staff_id))).first()
-        active_jobs = wl.active_jobs if wl else 0
+        sbv, ptm, tenant, user = await self.get_staff(db, scope, staff_id)
+        wl = (await self._workloads_for_members(db, [ptm])).get(ptm.id, {})
+        active_jobs = int(wl.get("active_jobs", 0))
         return {
-            **sbv.to_dict(), "full_name": ptm.full_name, "email": ptm.email, "phone": ptm.phone,
-            "employee_code": getattr(ptm, "username", None), "joined_at": ptm.created_at.isoformat() if ptm.created_at else None,
-            "availability_status": self._derive_availability(sbv, active_jobs),
-            "active_jobs": active_jobs, "completed_jobs": wl.completed_jobs if wl else 0,
-            "next_job_date": wl.next_job_date.isoformat() if wl and wl.next_job_date else None,
+            "id": str(sbv.id) if sbv else None, "staff_id": str(ptm.id), "tenant_id": str(ptm.tenant_id),
+            "vertical_id": str(scope.vertical.id), "full_name": ptm.full_name,
+            "provider_name": tenant.business_name or tenant.tenant_name,
+            "member_type": ptm.member_type, "designation": ptm.designation,
+            "email": ptm.email, "phone": ptm.phone, "employee_code": ptm.username,
+            "joined_at": ptm.created_at.isoformat() if ptm.created_at else None,
+            "verification_status": self._effective_verification(sbv, ptm, user),
+            "assignment_status": self._effective_assignment(sbv, ptm),
+            "login_status": "not_created" if not ptm.user_id else "enabled" if user and user.is_active else "disabled",
+            "availability_status": self._derive_availability(ptm, sbv, active_jobs),
+            "active_jobs": active_jobs, "completed_jobs": int(wl.get("completed_jobs", 0)),
+            "next_job_date": wl["next_job_date"].isoformat() if wl.get("next_job_date") else None,
         }
 
     async def get_capabilities(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> dict:
@@ -260,8 +364,8 @@ class VerticalStaffDirectoryService:
         named in StaffBusinessVertical.job_type_capabilities -- never a
         broad category mapping."""
         from app.engines.admin_catalog.models import JobTypeDefinition, MasterService
-        sbv, _ = await self.get_staff(db, scope, staff_id)
-        job_type_ids = [uuid.UUID(x) for x in (sbv.job_type_capabilities or []) if x]
+        sbv, ptm, _, _ = await self.get_staff(db, scope, staff_id)
+        job_type_ids = [uuid.UUID(x) for x in ((sbv.job_type_capabilities if sbv else []) or []) if x]
         job_types = []
         if job_type_ids:
             rows = (await db.execute(
@@ -274,12 +378,18 @@ class VerticalStaffDirectoryService:
                 "master_service_id": str(ms.id) if ms else None,
                 "master_service_name": ms.name if ms else None,
             } for jt, ms in rows]
-        return {"job_types": job_types, "service_capabilities": sbv.service_capabilities or []}
+        return {
+            "job_types": job_types,
+            "service_capabilities": (sbv.service_capabilities if sbv else None) or ptm.supported_offering_ids or [],
+            "supported_type_ids": ptm.supported_type_ids or [],
+            "supported_brand_ids": ptm.supported_brand_ids or [],
+        }
 
     async def get_workload(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> dict:
-        await self.get_staff(db, scope, staff_id)  # ownership check
+        _, ptm, _, _ = await self.get_staff(db, scope, staff_id)  # ownership check
+        assignment_ids = [ptm.id] + ([ptm.user_id] if ptm.user_id else [])
         jobs = (await db.execute(
-            select(ServiceJob).where(ServiceJob.assigned_staff_id == staff_id)
+            select(ServiceJob).where(ServiceJob.assigned_staff_id.in_(assignment_ids))
             .order_by(ServiceJob.scheduled_date.asc().nulls_last()).limit(50)
         )).scalars().all()
         active = [j for j in jobs if j.status in _ACTIVE_JOB_STATUSES]
@@ -290,8 +400,11 @@ class VerticalStaffDirectoryService:
         }
 
     async def get_performance(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> dict:
-        await self.get_staff(db, scope, staff_id)  # ownership check
-        jobs = (await db.execute(select(ServiceJob).where(ServiceJob.assigned_staff_id == staff_id))).scalars().all()
+        _, ptm, _, _ = await self.get_staff(db, scope, staff_id)  # ownership check
+        assignment_ids = [ptm.id] + ([ptm.user_id] if ptm.user_id else [])
+        jobs = (await db.execute(select(ServiceJob).where(
+            ServiceJob.assigned_staff_id.in_(assignment_ids)
+        ))).scalars().all()
         completed = [j for j in jobs if j.status == "completed"]
         cancelled = [j for j in jobs if j.status == "cancelled"]
         total = len(jobs) or 1
@@ -303,11 +416,11 @@ class VerticalStaffDirectoryService:
         }
 
     async def get_activity(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID, limit: int = 50) -> dict:
-        sbv, _ = await self.get_staff(db, scope, staff_id)
+        _, ptm, _, _ = await self.get_staff(db, scope, staff_id)
         rows = (await db.execute(
             select(VerticalAuditLog).where(
                 VerticalAuditLog.vertical_id == scope.vertical.id,
-                VerticalAuditLog.tenant_id == sbv.tenant_id,
+                VerticalAuditLog.tenant_id == ptm.tenant_id,
                 VerticalAuditLog.action_type.like("staff.%"),
             ).order_by(VerticalAuditLog.created_at.desc()).limit(limit)
         )).scalars().all()
@@ -319,33 +432,22 @@ class VerticalStaffDirectoryService:
 
     async def get_summary(self, db: AsyncSession, scope: VerticalScope) -> dict:
         _require_scope_domain(scope, "staff")
-        base = select(StaffBusinessVertical).where(StaffBusinessVertical.vertical_id == scope.vertical.id)
-        total = await db.scalar(select(func.count()).select_from(base.subquery()))
-        active = await db.scalar(select(func.count(StaffBusinessVertical.id)).where(
-            StaffBusinessVertical.vertical_id == scope.vertical.id, StaffBusinessVertical.assignment_status == "active"))
-        pending_verification = await db.scalar(select(func.count(StaffBusinessVertical.id)).where(
-            StaffBusinessVertical.vertical_id == scope.vertical.id,
-            StaffBusinessVertical.verification_status.in_(("not_started", "in_review", "changes_requested"))))
-        suspended = await db.scalar(select(func.count(StaffBusinessVertical.id)).where(
-            StaffBusinessVertical.vertical_id == scope.vertical.id, StaffBusinessVertical.assignment_status == "suspended"))
-        capability_incomplete = await db.scalar(select(func.count(StaffBusinessVertical.id)).where(
-            StaffBusinessVertical.vertical_id == scope.vertical.id,
-            (StaffBusinessVertical.job_type_capabilities.is_(None))))
-
-        rows = (await db.execute(select(StaffBusinessVertical.staff_id, StaffBusinessVertical.assignment_status,
-                                        StaffBusinessVertical.is_active)
-                                 .where(StaffBusinessVertical.vertical_id == scope.vertical.id))).all()
-        staff_ids = [r.staff_id for r in rows]
-        active_count_by_staff: dict[uuid.UUID, int] = {}
-        if staff_ids:
-            wl_sub = (await self._workload_subquery(db)).subquery()
-            wl_rows = (await db.execute(select(wl_sub).where(wl_sub.c.staff_id.in_(staff_ids)))).all()
-            active_count_by_staff = {r.staff_id: r.active_jobs for r in wl_rows}
-        available = assigned = unavailable = 0
-        for r in rows:
-            aj = active_count_by_staff.get(r.staff_id, 0)
-            av = self._derive_availability(
-                StaffBusinessVertical(assignment_status=r.assignment_status, is_active=r.is_active), aj)
+        rows = (await db.execute(await self._team_query(db, scope))).all()
+        workloads = await self._workloads_for_members(db, [ptm for ptm, _, _, _ in rows])
+        total = len(rows)
+        active = pending_verification = suspended = capability_incomplete = 0
+        technicians = staff_members = available = assigned = unavailable = 0
+        for ptm, sbv, _, user in rows:
+            assignment = self._effective_assignment(sbv, ptm)
+            verification = self._effective_verification(sbv, ptm, user)
+            active += int(assignment == "active")
+            pending_verification += int(verification in ("not_started", "in_review", "changes_requested"))
+            suspended += int(assignment in ("suspended", "deactivated", "inactive"))
+            technicians += int(ptm.member_type == "technician")
+            staff_members += int(ptm.member_type != "technician")
+            capability_incomplete += int(ptm.member_type == "technician" and not ptm.supported_offering_ids)
+            aj = int(workloads.get(ptm.id, {}).get("active_jobs", 0))
+            av = self._derive_availability(ptm, sbv, aj)
             if av == "available": available += 1
             elif av == "on_job": assigned += 1
             else: unavailable += 1
@@ -354,6 +456,7 @@ class VerticalStaffDirectoryService:
             "total_staff": total, "active": active, "pending_verification": pending_verification,
             "available": available, "assigned": assigned, "unavailable": unavailable,
             "capability_incomplete": capability_incomplete, "suspended": suspended,
+            "technicians": technicians, "staff_members": staff_members,
         }
 
     # ── Mutations (Super Admin review actions; never silent, always audited) ──
@@ -361,7 +464,24 @@ class VerticalStaffDirectoryService:
     async def _apply_transition(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID, *,
                                 action: str, field: str, new_value: str, reason: str,
                                 allowed_from: tuple[str, ...] | None, actor) -> dict:
-        sbv, ptm = await self.get_staff(db, scope, staff_id)
+        sbv, ptm, _, _ = await self.get_staff(db, scope, staff_id)
+        if sbv is None:
+            # The provider roster is canonical.  The vertical assignment row
+            # is an optional admin-review overlay and is created lazily only
+            # when an administrator actually records a review decision.
+            sbv = StaffBusinessVertical(
+                staff_id=ptm.id,
+                tenant_id=ptm.tenant_id,
+                vertical_id=scope.vertical.id,
+                designation=ptm.designation,
+                service_capabilities=ptm.supported_offering_ids or [],
+                is_active=ptm.status == "active",
+                verification_status="verified" if ptm.user_id else "not_started",
+                assignment_status=ptm.status,
+                availability_status=ptm.availability_state or "available",
+            )
+            db.add(sbv)
+            await db.flush()
         current = getattr(sbv, field)
         if allowed_from is not None and current not in allowed_from:
             raise ServiceOSException(
@@ -373,8 +493,14 @@ class VerticalStaffDirectoryService:
         setattr(sbv, field, new_value)
         if field == "assignment_status" and new_value in ("suspended", "deactivated", "restricted"):
             sbv.is_active = False
+            # Enforcement must affect the roster read by matching/dispatch,
+            # not only an admin-only overlay table.
+            ptm.status = "inactive"
+            ptm.can_receive_assignment = False
         elif field == "assignment_status" and new_value == "active":
             sbv.is_active = True
+            ptm.status = "active"
+            ptm.can_receive_assignment = True
         after = {field: new_value}
         await db.flush()
         await record_platform_audit(

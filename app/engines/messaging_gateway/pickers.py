@@ -405,7 +405,11 @@ async def _apply_slot(
             draft_id=draft_id, customer_id=customer_id,
             date_iso=date_iso, time_window=window, emergency=emergency,
         )
-        held = "Emergency slot held" if emergency else "Booked"
+        # Choosing a time on WhatsApp/Instagram updates the draft only.  It
+        # neither reserves provider capacity nor creates a booking; only the
+        # later confirmation/finalization step does that.  Do not tell the
+        # customer the slot is held or booked before that point.
+        held = "Emergency time selected" if emergency else "Time selected"
         return {"applied": True,
                 "note": f"{held} for {_day_label(date_iso)}, {window}.",
                 "page": 0}

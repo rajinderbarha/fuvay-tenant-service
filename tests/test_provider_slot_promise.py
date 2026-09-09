@@ -145,18 +145,39 @@ async def _transactional_capacity_fixture():
         await db.close()
 
 
-async def _insert_live_job(db, tenant_id, day, window) -> uuid.UUID:
-    """A capacity-consuming job in a specific slot."""
+async def _insert_live_job(
+    db, tenant_id, day, window, *, draft_status: str = "confirmed",
+) -> uuid.UUID:
+    """A projected job with real draft -> booking -> job lineage."""
     from sqlalchemy import text
-    jid = uuid.uuid4()
+    jid, booking_id, draft_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    ids = (await db.execute(text(
+        "SELECT (SELECT id FROM service_categories LIMIT 1) category_id, "
+        "(SELECT id FROM master_services LIMIT 1) offering_id"
+    ))).first()
+    await db.execute(text(
+        "INSERT INTO home_service_booking_drafts "
+        "(id, category_id, offering_id, selected_tenant_id, status, created_at, updated_at) "
+        "VALUES (:id, :category_id, :offering_id, :tenant_id, :status, now(), now())"
+    ), {"id": draft_id, "category_id": ids.category_id, "offering_id": ids.offering_id,
+        "tenant_id": tenant_id, "status": draft_status})
+    await db.execute(text(
+        "INSERT INTO service_bookings "
+        "(id, booking_number, draft_id, tenant_id, category_id, offering_id, status, "
+        " assignment_status, created_at, updated_at) "
+        "VALUES (:id, :number, :draft_id, :tenant_id, :category_id, :offering_id, "
+        " 'pending_assignment', 'unassigned', now(), now())"
+    ), {"id": booking_id, "number": f"SLOTBOOK-{str(booking_id)[:8]}",
+        "draft_id": draft_id, "tenant_id": tenant_id,
+        "category_id": ids.category_id, "offering_id": ids.offering_id})
     await db.execute(text(
         "INSERT INTO service_jobs (id, job_number, booking_id, tenant_id, category_id, offering_id,"
         " scheduled_date, scheduled_time_window, status, assignment_status, created_at, updated_at)"
-        " VALUES (:i,:n,:b,:t,"
-        " (SELECT id FROM service_categories LIMIT 1),(SELECT id FROM master_services LIMIT 1),"
-        " :d,:w,'pending_assignment','unassigned',now(),now())"),
-        {"i": jid, "n": f"SLOTTEST-{str(jid)[:8]}", "b": uuid.uuid4(),
-         "t": tenant_id, "d": day, "w": window})
+        " VALUES (:id,:number,:booking_id,:tenant_id,:category_id,:offering_id,"
+        " :day,:window,'pending_assignment','unassigned',now(),now())"),
+        {"id": jid, "number": f"SLOTTEST-{str(jid)[:8]}", "booking_id": booking_id,
+         "tenant_id": tenant_id, "category_id": ids.category_id,
+         "offering_id": ids.offering_id, "day": day, "window": window})
     return jid
 
 
@@ -166,7 +187,18 @@ async def _cleanup_jobs(db, ids):
         return
     await db.rollback()
     async with db.begin():
+        lineage = (await db.execute(text(
+            "SELECT sj.booking_id, sb.draft_id FROM service_jobs sj "
+            "LEFT JOIN service_bookings sb ON sb.id=sj.booking_id "
+            "WHERE sj.id = ANY(:ids)"
+        ), {"ids": ids})).fetchall()
+        booking_ids = [row.booking_id for row in lineage if row.booking_id]
+        draft_ids = [row.draft_id for row in lineage if row.draft_id]
         await db.execute(text("DELETE FROM service_jobs WHERE id = ANY(:ids)"), {"ids": ids})
+        if booking_ids:
+            await db.execute(text("DELETE FROM service_bookings WHERE id = ANY(:ids)"), {"ids": booking_ids})
+        if draft_ids:
+            await db.execute(text("DELETE FROM home_service_booking_drafts WHERE id = ANY(:ids)"), {"ids": draft_ids})
 
 
 # ── Pure slot maths ─────────────────────────────────────────────────────────
@@ -267,6 +299,45 @@ async def test_cancelled_jobs_do_not_consume_capacity():
         assert await slot_has_capacity(
             db, tenant_id=GURAMRIT_TENANT_ID, day=day, time_window=window,
         ) is True
+    finally:
+        await _cleanup_jobs(db, made)
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_requests_do_not_consume_capacity_until_confirmed():
+    """A preferred slot selected in chat is not booked until final confirm.
+
+    This covers every channel because web, Instagram and WhatsApp all create
+    the same HomeServiceBookingDraft before finalization.
+    """
+    from app.engines.home_service_booking.provider_slot_service import _booked_counts
+    from sqlalchemy import text
+
+    db = await _get_db()
+    made = []
+    try:
+        # Isolated from whichever weekdays/hours the shared demo provider is
+        # configured with today: this regression targets the booking counter.
+        day = dt.date(2099, 1, 5)
+        window = "09:00-11:00"
+        jid = await _insert_live_job(
+            db, GURAMRIT_TENANT_ID, day, window,
+            draft_status="ready_for_confirmation",
+        )
+        made.append(jid)
+        await db.commit()
+
+        assert (await _booked_counts(db, GURAMRIT_TENANT_ID, day)).get(window, 0) == 0
+
+        await db.execute(text(
+            "UPDATE home_service_booking_drafts SET status='confirmed' "
+            "WHERE id=(SELECT sb.draft_id FROM service_jobs sj "
+            "JOIN service_bookings sb ON sb.id=sj.booking_id WHERE sj.id=:job_id)"
+        ), {"job_id": jid})
+        await db.commit()
+
+        assert (await _booked_counts(db, GURAMRIT_TENANT_ID, day)).get(window, 0) == 1
     finally:
         await _cleanup_jobs(db, made)
         await db.close()

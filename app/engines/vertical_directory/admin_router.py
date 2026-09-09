@@ -67,6 +67,7 @@ async def list_staff(
     request: Request, search: str | None = Query(None),
     verification_status: str | None = Query(None),
     assignment_status: str | None = Query(None), availability: str | None = Query(None),
+    member_type: str | None = Query(None),
     page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     scope: VerticalScope = Depends(require_vertical_domain_scope("staff", "view")),
@@ -74,6 +75,7 @@ async def list_staff(
     data = await _staff.list_staff(
         db, scope, search=search, verification_status=verification_status,
         assignment_status=assignment_status, availability=availability,
+        member_type=member_type,
         page=page, page_size=page_size,
     )
     return ok(data, _rid(request))

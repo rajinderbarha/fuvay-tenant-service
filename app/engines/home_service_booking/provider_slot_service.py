@@ -183,17 +183,30 @@ async def _is_closed(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date) -> bo
 
 
 async def _booked_counts(db: AsyncSession, tenant_id: uuid.UUID, day: dt.date, exclude_job_id: uuid.UUID | None = None) -> dict[str, int]:
-    """How many live jobs the provider already holds per time window that day.
+    """How many *confirmed* jobs occupy each time window that day.
 
-    Cancelled/failed jobs must not consume capacity -- otherwise a day of
-    cancellations would permanently block a provider's calendar.
+    A saved request is demand, not a reservation.  In particular, Instagram
+    and WhatsApp drafts may already contain a preferred date/window while the
+    customer is still answering questions.  Capacity is consumed only after
+    that draft reaches the canonical ``confirmed`` state and has been
+    converted to its ServiceBooking/ServiceJob records.  Requiring that
+    lineage here also prevents incomplete or orphaned job projections from
+    making every customer-facing slot look booked.
+
+    Cancelled/failed/rejected bookings or jobs release capacity -- otherwise
+    a day of cancellations would permanently block a provider's calendar.
     """
     rows = (await db.execute(text(
-        "SELECT scheduled_time_window, COUNT(*) AS n FROM service_jobs "
-        "WHERE tenant_id=:tid AND scheduled_date=:d "
-        "AND (CAST(:exclude_id AS uuid) IS NULL OR id <> CAST(:exclude_id AS uuid)) "
-        "AND status NOT IN ('cancelled','failed','rejected') "
-        "GROUP BY scheduled_time_window"
+        "SELECT sj.scheduled_time_window, COUNT(*) AS n "
+        "FROM service_jobs sj "
+        "JOIN service_bookings sb ON sb.id = sj.booking_id "
+        "JOIN home_service_booking_drafts d ON d.id = sb.draft_id "
+        "WHERE sj.tenant_id=:tid AND sj.scheduled_date=:d "
+        "AND (CAST(:exclude_id AS uuid) IS NULL OR sj.id <> CAST(:exclude_id AS uuid)) "
+        "AND d.status = 'confirmed' "
+        "AND sb.status NOT IN ('cancelled','failed','rejected') "
+        "AND sj.status NOT IN ('cancelled','failed','rejected') "
+        "GROUP BY sj.scheduled_time_window"
     ), {"tid": str(tenant_id), "d": day, "exclude_id": str(exclude_job_id) if exclude_job_id else None})).fetchall()
     return {r._mapping["scheduled_time_window"]: int(r._mapping["n"]) for r in rows}
 

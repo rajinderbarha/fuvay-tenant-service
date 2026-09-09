@@ -59,6 +59,7 @@ async def hs_vertical_id(admin_token):
 async def staff_fixture(pg, hs_vertical_id):
     tenant_id = uuid.uuid4()
     staff_id = uuid.uuid4()
+    unprojected_staff_id = uuid.uuid4()
     category = await pg.fetchrow("SELECT id FROM service_categories LIMIT 1")
     cat_id = category["id"]
 
@@ -71,19 +72,27 @@ async def staff_fixture(pg, hs_vertical_id):
         "can_receive_assignment, password_generated, created_at, updated_at) "
         "VALUES ($1,$2,$3,'technician','Consolidation Test Staff',$4,true,false, now(), now())",
         staff_id, tenant_id, cat_id, "active")
+    # This is the real production shape: provider setup writes the canonical
+    # roster but does not create the optional staff_business_verticals review
+    # overlay. The admin directory must still show this staff member.
+    await pg.execute(
+        "INSERT INTO provider_team_members (id, tenant_id, category_id, member_type, full_name, status, "
+        "can_receive_assignment, password_generated, created_at, updated_at) "
+        "VALUES ($1,$2,$3,'staff','Unprojected Office Staff','active',false,false, now(), now())",
+        unprojected_staff_id, tenant_id, cat_id)
     await pg.execute(
         "INSERT INTO staff_business_verticals (id, staff_id, tenant_id, vertical_id, is_active, "
         "verification_status, assignment_status, availability_status, created_at, updated_at) "
         "VALUES (gen_random_uuid(),$1,$2,$3,true,'not_started','pending','unavailable', now(), now())",
         staff_id, tenant_id, uuid.UUID(hs_vertical_id))
 
-    yield {"tenant_id": tenant_id, "staff_id": staff_id}
+    yield {"tenant_id": tenant_id, "staff_id": staff_id, "unprojected_staff_id": unprojected_staff_id}
 
     await pg.execute("DELETE FROM platform_audit_logs WHERE entity_id IN "
                       "(SELECT id::text FROM staff_business_verticals WHERE staff_id = $1)", staff_id)
     await pg.execute("DELETE FROM vertical_audit_logs WHERE tenant_id = $1", tenant_id)
     await pg.execute("DELETE FROM staff_business_verticals WHERE staff_id = $1", staff_id)
-    await pg.execute("DELETE FROM provider_team_members WHERE id = $1", staff_id)
+    await pg.execute("DELETE FROM provider_team_members WHERE id = ANY($1::uuid[])", [staff_id, unprojected_staff_id])
     await pg.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
 
 
@@ -122,6 +131,32 @@ class TestRootCauseFix:
         assert body["success"] is True
         assert "items" in body["data"] and "total" in body["data"]
 
+    async def test_provider_roster_member_without_vertical_overlay_is_visible(self, admin, staff_fixture):
+        r = await admin.get("/v1/admin/verticals/home-services/staff", params={"page_size": 100})
+        assert r.status_code == 200, r.text
+        rows = {item["staff_id"]: item for item in r.json()["data"]["items"]}
+        row = rows[str(staff_fixture["unprojected_staff_id"])]
+        assert row["member_type"] == "staff"
+        assert row["provider_name"].startswith("HS Staff Consolidation Tenant")
+        assert row["assignment_status"] == "active"
+
+    async def test_role_filter_separates_technicians_and_staff(self, admin, staff_fixture):
+        r = await admin.get(
+            "/v1/admin/verticals/home-services/staff",
+            params={"member_type": "technician", "page_size": 100},
+        )
+        assert r.status_code == 200, r.text
+        rows = r.json()["data"]["items"]
+        assert str(staff_fixture["staff_id"]) in [item["staff_id"] for item in rows]
+        assert all(item["member_type"] == "technician" for item in rows)
+
+    async def test_unprojected_roster_member_detail_opens(self, admin, staff_fixture):
+        sid = staff_fixture["unprojected_staff_id"]
+        r = await admin.get(f"/v1/admin/verticals/home-services/staff/{sid}")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["member_type"] == "staff"
+        assert r.json()["data"]["provider_name"].startswith("HS Staff Consolidation Tenant")
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. SUMMARY USES REAL DATA (never zero-on-failure)
@@ -135,6 +170,8 @@ class TestSummary:
         data = r.json()["data"]
         assert data["total_staff"] >= 1
         assert data["pending_verification"] >= 1  # fixture staff is not_started
+        assert data["technicians"] >= 1
+        assert data["staff_members"] >= 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -142,6 +179,23 @@ class TestSummary:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestStaffActions:
+
+    async def test_suspend_real_roster_member_creates_review_overlay_and_enforces_dispatch_status(
+        self, admin, staff_fixture, pg,
+    ):
+        sid = staff_fixture["unprojected_staff_id"]
+        r = await admin.post(
+            f"/v1/admin/verticals/home-services/staff/{sid}/suspend",
+            json={"reason": "admin safety hold"},
+        )
+        assert r.status_code == 200, r.text
+        overlay = await pg.fetchrow(
+            "SELECT assignment_status FROM staff_business_verticals WHERE staff_id = $1", sid)
+        roster = await pg.fetchrow(
+            "SELECT status, can_receive_assignment FROM provider_team_members WHERE id = $1", sid)
+        assert overlay["assignment_status"] == "suspended"
+        assert roster["status"] == "inactive"
+        assert roster["can_receive_assignment"] is False
 
     async def test_verify_transitions_and_audits(self, admin, staff_fixture, pg):
         sid = staff_fixture["staff_id"]
@@ -274,6 +328,9 @@ class TestNavigationConsolidation:
             if not line.strip().startswith("//") and not line.strip().startswith("*")
         )
         assert "Add Staff" not in code_only
+        assert "Staff &amp; Technicians" in src
+        assert "member_type: memberType" in src
+        assert "Provider" in src and "Login access" in src
 
     def test_home_services_route_reuses_generic_vertical_component(self):
         import pathlib

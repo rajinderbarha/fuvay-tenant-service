@@ -17,8 +17,9 @@ import { Lock, FileText, ShieldCheck, Search, Download } from "lucide-react";
 
 type Row = Record<string, unknown>;
 
-const VERIFICATION_FILTERS = ["not_started", "in_review", "changes_requested", "verified", "rejected", "expired"];
-const ASSIGNMENT_FILTERS = ["pending", "active", "restricted", "suspended", "deactivated"];
+const VERIFICATION_FILTERS = ["not_started", "in_review", "changes_requested", "verified", "access_disabled", "rejected", "expired"];
+const ASSIGNMENT_FILTERS = ["pending", "active", "inactive", "restricted", "suspended", "deactivated"];
+const MEMBER_TYPE_FILTERS = ["technician", "staff", "manager"];
 
 function verificationVariant(v: string): "success" | "warning" | "danger" | "muted" {
   if (v === "verified") return "success";
@@ -43,15 +44,17 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
   const [search, setSearch] = useState("");
   const [verificationStatus, setVerificationStatus] = useState<string | undefined>(undefined);
   const [assignmentStatus, setAssignmentStatus] = useState<string | undefined>(undefined);
+  const [memberType, setMemberType] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
 
   const listApi = useApi(useCallback(
     () => verticalDirectoryApi.listStaff(vertical, {
       search: search || undefined,
       verification_status: verificationStatus, assignment_status: assignmentStatus,
+      member_type: memberType,
       page_size: 25,
     }),
-    [vertical, search, verificationStatus, assignmentStatus]));
+    [vertical, search, verificationStatus, assignmentStatus, memberType]));
   const summaryApi = useApi(useCallback(() => verticalDirectoryApi.staffSummary(vertical), [vertical]));
 
   const rows = (listApi.data?.items ?? []) as Row[];
@@ -77,18 +80,18 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{verticalLabel} Staff</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{verticalLabel} Staff &amp; Technicians</h1>
               <Badge variant="muted" size="sm"><Lock size={10} style={{ marginRight: 4, verticalAlign: -1 }}/>{verticalLabel} only</Badge>
             </div>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-              Review staff explicitly assigned to {verticalLabel} work.
+              Review every provider-managed staff member and paid-seat technician in {verticalLabel}.
             </p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="ghost" size="sm" onClick={doExport}><Download size={14} style={{ marginRight: 4 }}/>Export</Btn>
             <Btn variant="ghost" size="sm" onClick={() => setSelected(selected)}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
-            <Btn variant="primary" size="sm" onClick={() => setVerificationStatus("in_review")}>
-              <ShieldCheck size={14} style={{ marginRight: 4 }}/>Review Verifications
+            <Btn variant="primary" size="sm" onClick={() => setMemberType("technician")}>
+              <ShieldCheck size={14} style={{ marginRight: 4 }}/>Show Technicians
             </Btn>
           </div>
         </div>
@@ -96,15 +99,15 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: "var(--radius-lg)",
           background: "var(--info-bg, rgba(59,130,246,0.08))", border: "1px solid var(--info-border, rgba(59,130,246,0.3))", marginBottom: 16 }}>
           <p style={{ fontSize: 12, color: "var(--info-text, #0f6b60)", margin: 0 }}>
-            Providers add and manage staff. Platform admins verify identity, capabilities and {verticalLabel} readiness.
+            This directory uses the same provider roster as tenant setup, dispatch and technician-seat enforcement.
           </p>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 16 }}>
           {[
-            ["Total Staff", s?.total_staff], ["Active", s?.active], ["Pending Verification", s?.pending_verification],
-            ["Available", s?.available], ["Assigned", s?.assigned], ["Unavailable", s?.unavailable],
-            ["Capability Incomplete", s?.capability_incomplete], ["Suspended", s?.suspended],
+            ["Total Team", s?.total_staff], ["Technicians", s?.technicians], ["Staff & Managers", s?.staff_members],
+            ["Active", s?.active], ["Available", s?.available], ["Assigned", s?.assigned],
+            ["Setup Incomplete", s?.capability_incomplete], ["Inactive / Suspended", s?.suspended],
           ].map(([label, value]) => (
             <div key={label as string} style={{ padding: "10px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
@@ -129,8 +132,13 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
           </div>
           <select value={verificationStatus ?? ""} onChange={e => setVerificationStatus(e.target.value || undefined)}
             style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
-            <option value="">All verification</option>
+            <option value="">All login / review states</option>
             {VERIFICATION_FILTERS.map(v => <option key={v} value={v}>{v.replace(/_/g, " ")}</option>)}
+          </select>
+          <select value={memberType ?? ""} onChange={e => setMemberType(e.target.value || undefined)}
+            style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
+            <option value="">All roles</option>
+            {MEMBER_TYPE_FILTERS.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
           <select value={assignmentStatus ?? ""} onChange={e => setAssignmentStatus(e.target.value || undefined)}
             style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
@@ -152,14 +160,14 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                 <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading staff…</div>
               ) : rows.length === 0 ? (
                 <div style={{ padding: 32, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
-                  No staff explicitly assigned to {verticalLabel} yet.
+                  No staff or technicians have been added by {verticalLabel} providers yet.
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-                        {["Staff", "Designation", "Verification", "Availability", "Status", "Updated"].map(h => (
+                        {["Team member", "Provider", "Role", "Login access", "Availability", "Status", "Updated"].map(h => (
                           <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
                         ))}
                       </tr>
@@ -170,8 +178,9 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                           style={{ borderBottom: "1px solid var(--border)", cursor: "pointer",
                             background: selected === row.staff_id ? "var(--surface-sunken)" : "transparent" }}>
                           <td style={{ padding: "9px 14px", fontWeight: 600 }}>{row.full_name as string}</td>
-                          <td style={{ padding: "9px 14px" }}>{(row.designation as string) ?? "—"}</td>
-                          <td style={{ padding: "9px 14px" }}><Badge variant={verificationVariant(row.verification_status as string)} size="sm">{(row.verification_status as string)?.replace(/_/g, " ")}</Badge></td>
+                          <td style={{ padding: "9px 14px" }}>{(row.provider_name as string) ?? "—"}</td>
+                          <td style={{ padding: "9px 14px" }}><Badge variant={(row.member_type as string) === "technician" ? "success" : "muted"} size="sm">{(row.member_type as string)?.replace(/_/g, " ")}</Badge></td>
+                          <td style={{ padding: "9px 14px" }}><Badge variant={verificationVariant(row.verification_status as string)} size="sm">{(row.login_status as string)?.replace(/_/g, " ")}</Badge></td>
                           <td style={{ padding: "9px 14px" }}><Badge variant={availabilityVariant(row.availability_status as string)} size="sm">{(row.availability_status as string)?.replace(/_/g, " ")}</Badge></td>
                           <td style={{ padding: "9px 14px" }}><Badge variant={assignmentVariant(row.assignment_status as string)} size="sm">{row.assignment_status as string}</Badge></td>
                           <td style={{ padding: "9px 14px", color: "var(--text-tertiary)" }}>{row.updated_at ? new Date(row.updated_at as string).toLocaleDateString() : "—"}</td>
@@ -249,7 +258,10 @@ function StaffInspector({ vertical, verticalLabel, staffId, onClose, onChanged }
 
       {tab === "overview" && d && (
         <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <Row label="Provider" value={(d.provider_name as string) ?? "—"}/>
+          <Row label="Role" value={((d.member_type as string) ?? "staff").replace(/_/g, " ")}/>
           <Row label="Designation" value={(d.designation as string) ?? "—"}/>
+          <Row label="Login access" value={((d.login_status as string) ?? "not created").replace(/_/g, " ")}/>
           <Row label="Employee code" value={(d.employee_code as string) ?? "—"}/>
           <Row label="Availability" value={(d.availability_status as string)?.replace(/_/g, " ")}/>
           <Row label="Active jobs" value={String(d.active_jobs ?? 0)}/>

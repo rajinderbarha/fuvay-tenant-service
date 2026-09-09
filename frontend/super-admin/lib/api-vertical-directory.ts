@@ -64,7 +64,7 @@ export const verticalDirectoryApi = {
   // ── Staff ───────────────────────────────────────────────────────────────
   listStaff: <T = DirRow>(vertical: string, params?: {
     search?: string; verification_status?: string; assignment_status?: string;
-    availability?: string; page?: number; page_size?: number;
+    availability?: string; member_type?: string; page?: number; page_size?: number;
   }) => apiFetch<T>(`${_vdBase(vertical)}/staff${_vdQuery(params)}`),
   staffSummary: <T = DirRow>(vertical: string) =>
     apiFetch<T>(`${_vdBase(vertical)}/staff/summary`),
