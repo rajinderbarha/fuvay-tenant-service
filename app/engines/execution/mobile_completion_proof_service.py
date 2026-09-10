@@ -34,6 +34,28 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _proof_view(proof: CompletionProof) -> dict:
+    """Serialize a proof with its photo lists always present as lists.
+
+    `before_photo_ids` / `after_photo_ids` are nullable JSONB with no server
+    default, so a proof that has never had a photo attached carries SQL NULL
+    and the generic `to_dict()` hands that straight to the client as `null`.
+    The mobile Evidence grid types them as arrays and maps over them on
+    render, so the whole completion screen died on
+    "Cannot read property 'map' of null" -- for every job reaching completion
+    without photos, which is the common case now that evidence is optional.
+
+    An absent list is an empty list. Normalizing here rather than at the one
+    call site that crashed covers the mutation responses too, which return the
+    same shape and would have reintroduced the null on the next save.
+    """
+    return {
+        **proof.to_dict(),
+        "before_photo_ids": list(proof.before_photo_ids or []),
+        "after_photo_ids": list(proof.after_photo_ids or []),
+    }
+
+
 class MobileCompletionProofService:
     async def _resolve_staff_member_id(self, db: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
@@ -157,7 +179,7 @@ class MobileCompletionProofService:
         return {
             "job": {"job_id": str(job.id), "job_reference": job.job_number, "workflow_status": job.status, "is_terminal": is_terminal},
             "work_summary": work_summary,
-            "proof": proof.to_dict(),
+            "proof": _proof_view(proof),
             "definition": {"final_checks": final_checks["items"], "customer_handover_required": True},
             "parts_used": parts,
             "readiness": {
@@ -184,7 +206,7 @@ class MobileCompletionProofService:
             proof.final_service_notes = final_service_notes
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def add_evidence(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID, category: str, file_id: str) -> dict:
         if category not in ("before", "after"):
@@ -200,7 +222,7 @@ class MobileCompletionProofService:
         setattr(proof, field, current)
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def remove_evidence(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID, category: str, file_id: str) -> dict:
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
@@ -212,7 +234,7 @@ class MobileCompletionProofService:
         setattr(proof, field, current)
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def submit(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
@@ -234,7 +256,7 @@ class MobileCompletionProofService:
             request_id=None, notify_customer=True,
         )
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def request_handover(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
@@ -246,7 +268,7 @@ class MobileCompletionProofService:
             proof.handover_requested_at = _now()
             db.add(proof)
             await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def send_reminder(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
@@ -260,7 +282,7 @@ class MobileCompletionProofService:
         proof.handover_last_reminder_at = _now()
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def acknowledge_handover(self, db: AsyncSession, customer_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         """Customer-side counterpart to request_handover -- found genuinely
@@ -279,7 +301,7 @@ class MobileCompletionProofService:
         proof.handover_status = "acknowledged"
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)
 
     async def get_customer_handover(self, db: AsyncSession, customer_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         """Return the customer-safe handover state without creating a proof.
@@ -308,4 +330,4 @@ class MobileCompletionProofService:
         proof.handover_status = "customer_unavailable"
         db.add(proof)
         await db.commit()
-        return proof.to_dict()
+        return _proof_view(proof)

@@ -1,4 +1,5 @@
-"""The technician's job flow, walked end to end the way the mobile app walks it.Every step here is driven by the SAME thing the app is driven by:
+"""The technician's job flow, walked end to end the way the mobile app walks it.
+Every step here is driven by the SAME thing the app is driven by:
 `next_required_action.key` from GET .../mobile-detail. The app maps that key to
 an endpoint and calls it. So the property this file protects is narrow and
 exact:
@@ -780,6 +781,58 @@ async def test_a_quote_gated_job_is_handed_the_estimate_step_not_a_dead_stop():
                 estimate = await client.get(
                     f"/v1/staff/service-jobs/{job_id}/mobile-estimate", headers=headers)
                 assert estimate.status_code == 200, estimate.text[:300]
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
+async def test_a_proof_with_no_photos_sends_empty_lists_not_null():
+    """`before_photo_ids` / `after_photo_ids` are nullable JSONB with no server
+    default, so a proof that never had a photo attached holds SQL NULL and the
+    generic `to_dict()` handed that to the client as `null`.
+
+    The mobile Evidence grid types them as arrays and maps over them on render,
+    so the completion screen died with "Cannot read property 'map' of null" and
+    took the error boundary with it -- for any job completing without photos,
+    which is now the normal case since the evidence items were made optional.
+
+    Every response carrying a proof is checked, not just the one that crashed:
+    the mutations return the same shape and would put the null straight back.
+    """
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=False, quote_approval_required=False)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+        await db.execute(text("UPDATE service_jobs SET status='work_done' WHERE id=:jid"), {"jid": job_id})
+        await db.commit()
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                # The read the screen makes on open -- this is the one that crashed.
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof",
+                    headers=headers)).json()["data"]
+                proof = detail["proof"]
+                assert proof["before_photo_ids"] == [], proof["before_photo_ids"]
+                assert proof["after_photo_ids"] == [], proof["after_photo_ids"]
+
+                # Nothing has been attached, so this is a genuinely empty proof.
+                assert detail["parts_used"] == [] or isinstance(detail["parts_used"], list)
+                assert isinstance(detail["definition"]["final_checks"], list)
+
+                # And a mutation must not hand the null back.
+                saved = (await client.put(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof/draft",
+                    headers=headers,
+                    json={"resolution_summary": "Replaced the capacitor."})).json()["data"]
+                assert saved["before_photo_ids"] == []
+                assert saved["after_photo_ids"] == []
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             await _cleanup(db, ids)
