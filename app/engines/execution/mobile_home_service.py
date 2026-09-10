@@ -47,14 +47,12 @@ async def _customer_already_contacted(db: AsyncSession, job_id: uuid.UUID) -> bo
     CONNECTS (see masked_calling.service._record_customer_contacted), so there
     is one definition of "contacted" shared by the platform call and the manual
     log-it endpoint -- and a ring-out satisfies neither.
+
+    Delegates to that one definition, which lives beside the endpoint that
+    writes the event.
     """
-    from sqlalchemy import text as _sa_text
-    from app.engines.execution.constants import EV_CUSTOMER_CONTACTED
-    row = (await db.execute(_sa_text(
-        "SELECT 1 FROM service_job_execution_events "
-        "WHERE job_id=:jid AND event_type=:et LIMIT 1"
-    ), {"jid": str(job_id), "et": EV_CUSTOMER_CONTACTED})).fetchone()
-    return row is not None
+    from app.engines.execution.home_service_service import customer_already_contacted
+    return await customer_already_contacted(db, job_id)
 
 
 def _select_current_job(jobs: list[dict]) -> dict | None:

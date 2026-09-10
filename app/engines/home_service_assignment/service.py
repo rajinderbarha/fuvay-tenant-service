@@ -1520,9 +1520,16 @@ def _next_required_action(
         action_type, action_label = "start-service", "Start Service"
     allowed = True
     blocked_message = None
-    if status == "inspection_done" and not work_start_status.get("can_start_work", True):
+    # The work-start gate applies wherever `start-service` is what we offer,
+    # not only after an inspection. Skipping the inspection step above moved
+    # `start-service` onto `reached_site` too, and offering it there as allowed
+    # while the gate still refuses hands the technician a button that 409s.
+    if action_type == "start-service" and not work_start_status.get("can_start_work", True):
         allowed = False
-        blocked_message = "This job cannot start work yet -- an approval or quote step is still pending."
+        blocked_message = (
+            work_start_status.get("start_work_block_message")
+            or "This job cannot start work yet -- an approval or quote step is still pending."
+        )
 
     return {
         "action_type": action_type, "action_label": action_label,

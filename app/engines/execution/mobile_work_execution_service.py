@@ -94,6 +94,11 @@ class MobileWorkExecutionService:
         job, _ = await self._get_assigned_job(db, user_id, tenant_id, job_id)
         approved_scope = await self._approved_scope(db, job)
         checklist = await self._checklist(db, job)
+        # Whether this job's blueprint gates work on an approved estimate at
+        # all. Without it the screen showed every fixed-price job "Work cannot
+        # start until the customer approves the current estimate" beside an
+        # enabled Start work button -- a blocker that was never true for them.
+        work_start_status = await _exec_svc.get_work_start_status(db, job)
 
         session = await _session_svc.get(db, job.id)
         session_dict = session.to_dict() if session else None
@@ -140,6 +145,7 @@ class MobileWorkExecutionService:
                 "workflow_status": job.status, "is_terminal": is_terminal,
             },
             "approved_scope": approved_scope,
+            "estimate_approval_required": work_start_status.get("quote_approval_required"),
             "work_session": session_dict,
             "checklist": checklist,
             "parts": parts,

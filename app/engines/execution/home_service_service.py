@@ -58,6 +58,26 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def customer_already_contacted(db: AsyncSession, job_id) -> bool:
+    """Whether the provider has logged the required first customer call.
+
+    Presence of a real `customer_contacted` execution event -- never inferred
+    from status or elapsed time, so the "call the customer first" step can only
+    be satisfied by actually doing it.
+
+    Lives here, beside `log_customer_contacted` which writes the event, so
+    every technician projection answers the question the same way. They
+    disagreed before: the Home screen asked and the mobile Job Detail screen
+    did not, so Home offered "Call Customer & Confirm Requirements" while the
+    screen that button opens offered "Start Traveling" for the same job.
+    """
+    row = (await db.execute(_sa_text(
+        "SELECT 1 FROM service_job_execution_events "
+        "WHERE job_id=:jid AND event_type=:et LIMIT 1"
+    ), {"jid": str(job_id), "et": EV_CUSTOMER_CONTACTED})).fetchone()
+    return row is not None
+
+
 class HomeServiceJobExecutionService:
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -286,7 +306,15 @@ class HomeServiceJobExecutionService:
             result["start_work_block_code"] = ERR_JOB_TYPE_CONTEXT_UNRESOLVED
             result["start_work_block_message"] = MSG_JOB_TYPE_CONTEXT_UNRESOLVED
             return result
-        result["inspection_required"] = bool(workflow.inspection_required)
+        # A workflow whose price is only knowable after diagnosis inspects by
+        # definition, so the structural pricing behavior counts too -- the same
+        # reasoning `requires_quote_approval` below already applies. Without
+        # this, a blueprint with the boolean unset but `inspection_required`
+        # pricing skipped straight to `start-service`, which the work-start
+        # gate then refuses for want of an approved quote.
+        result["inspection_required"] = bool(workflow.inspection_required) or (
+            getattr(workflow, "pricing_behavior", None) == "inspection_required"
+        )
         requires_quote_approval = bool(workflow.quote_approval_required) or (
             getattr(workflow, "pricing_behavior", None)
             in {"inspection_required", "custom_quote"}
