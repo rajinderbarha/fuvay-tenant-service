@@ -243,7 +243,7 @@ function MasterServiceCreateModal({ open, onClose, onCreated, catOptions, allGro
             </p>
           </div>
           <div>
-            <IconPicker label="Instagram card image" noun="Instagram image" context="service_icon" value={instagramImageUrl} onChange={setInstagramImageUrl}/>
+            <IconPicker label="Instagram card image" noun="Instagram image" context="instagram_card_image" value={instagramImageUrl} onChange={setInstagramImageUrl}/>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
               Public HTTPS artwork for Instagram. The app icon is the fallback.
             </p>
@@ -805,7 +805,7 @@ export default function MasterServicesPage() {
               </p>
             </div>
             <div>
-              <IconPicker label="Instagram card image" noun="Instagram image" context="service_icon" value={form.image_url}
+              <IconPicker label="Instagram card image" noun="Instagram image" context="instagram_card_image" value={form.image_url}
                 onChange={v => setF("image_url", v ?? "")} />
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
                 Used in Instagram service cards; falls back to the app icon when empty.

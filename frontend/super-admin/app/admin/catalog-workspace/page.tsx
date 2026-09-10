@@ -1105,6 +1105,9 @@ function ProblemsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChange
           {issues.map(i => (
             <div key={i.mapping_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {i.issue_type?.icon_url && (
+                  <img src={i.issue_type.icon_url} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", border: "1px solid var(--border)" }}/>
+                )}
                 <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{i.name}</span>
                 {i.is_common && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--brand)", color: "white" }}>Common</span>}
                 {i.is_default && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--surface)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>Default</span>}
@@ -1134,6 +1137,8 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
+  const [newIconUrl, setNewIconUrl] = useState<string | null>(null);
+  const [newInstagramImageUrl, setNewInstagramImageUrl] = useState<string | null>(null);
   const searchApi = useApi(
     useCallback(() => catalogWorkspaceApi.listIssueTypesV2({ search: search.trim() || undefined }), [search]),
     [search],
@@ -1153,12 +1158,16 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
     const code = (newCode.trim() || newName.trim()).toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 60);
     const created = await createAction.execute({
       name: newName.trim(), code, master_service_id: masterServiceId,
+      icon_url: newIconUrl, image_url: newInstagramImageUrl,
     });
     if (!created) { onError(); return; }
     const issueId = String((created as { id?: string }).id ?? "");
     if (!issueId) { onError(); return; }
     const attached = await addAction.execute(masterServiceId, { issue_type_id: issueId, job_type_id: jobTypeId });
-    if (attached) { setNewName(""); setNewCode(""); setShowCreate(false); onAdded(); } else onError();
+    if (attached) {
+      setNewName(""); setNewCode(""); setNewIconUrl(null); setNewInstagramImageUrl(null);
+      setShowCreate(false); onAdded();
+    } else onError();
   }
 
   return (
@@ -1195,6 +1204,16 @@ function AddProblemPicker({ masterServiceId, jobTypeId, existingIssueIds, onAdde
             style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", marginBottom: 6, boxSizing: "border-box" }}/>
           <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="Code (optional, auto-generated from name)"
             style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-primary)", marginBottom: 8, boxSizing: "border-box" }}/>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, marginBottom: 10 }}>
+            <div>
+              <IconPicker label="Fuvay app icon" noun="problem app icon" context="issue_type_image" value={newIconUrl} onChange={setNewIconUrl}/>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "5px 0 0" }}>Used in the app and catalog lists.</p>
+            </div>
+            <div>
+              <IconPicker label="Instagram card image" noun="Instagram problem image" context="instagram_card_image" value={newInstagramImageUrl} onChange={setNewInstagramImageUrl}/>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "5px 0 0" }}>Public HTTPS artwork; falls back to the app icon.</p>
+            </div>
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={createAndAttach} disabled={!newName.trim() || createAction.loading || addAction.loading}
               style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--brand)", background: "var(--brand)", color: "#fff", cursor: "pointer" }}>

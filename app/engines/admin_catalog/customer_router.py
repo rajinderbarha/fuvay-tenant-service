@@ -64,10 +64,22 @@ async def _resolve_canonical_flow_flags(db: AsyncSession, service_id: uuid.UUID)
 def _rid(r): return getattr(r.state, "request_id", "—")
 
 
+def _app_catalog(payload):
+    """Remove Instagram-only artwork from public/mobile API responses."""
+    if isinstance(payload, dict):
+        cleaned = {key: _app_catalog(value) for key, value in payload.items() if key != "image_url"}
+        if cleaned.get("logo_url") and not cleaned.get("icon_url"):
+            cleaned["icon_url"] = cleaned["logo_url"]
+        return cleaned
+    if isinstance(payload, list):
+        return [_app_catalog(value) for value in payload]
+    return payload
+
+
 @router.get("/categories", response_model=ApiResponse[dict],
             summary="List active service categories (public)")
 async def public_list_categories(r: Request, s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_categories(is_active=True), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.list_categories(is_active=True)), _rid(r), ENGINE_ID)
 
 
 @router.get("/services", response_model=ApiResponse[dict],
@@ -76,14 +88,14 @@ async def public_list_services(r: Request,
                                 category_id: uuid.UUID | None = Query(None),
                                 job_type: str | None = Query(None),
                                 s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_master_services(category_id=category_id, job_type=job_type, is_active=True), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.list_master_services(category_id=category_id, job_type=job_type, is_active=True)), _rid(r), ENGINE_ID)
 
 
 @router.get("/services/{service_id}", response_model=ApiResponse[dict],
             summary="Get active master service detail (public)")
 async def public_get_service(service_id: uuid.UUID, r: Request,
                               s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.get_master_service(service_id), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.get_master_service(service_id)), _rid(r), ENGINE_ID)
 
 
 @router.get("/brands", response_model=ApiResponse[dict],
@@ -91,7 +103,7 @@ async def public_get_service(service_id: uuid.UUID, r: Request,
 async def public_list_brands(r: Request,
                               category_id: uuid.UUID | None = Query(None),
                               s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_brands(category_id=category_id, is_active=True), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.list_brands(category_id=category_id, is_active=True)), _rid(r), ENGINE_ID)
 
 
 @router.get("/service-types", response_model=ApiResponse[dict],
@@ -99,7 +111,7 @@ async def public_list_brands(r: Request,
 async def public_list_service_types(r: Request,
                                      category_id: uuid.UUID | None = Query(None),
                                      s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_service_types(category_id=category_id, is_active=True), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.list_service_types(category_id=category_id, is_active=True)), _rid(r), ENGINE_ID)
 
 
 @router.get("/issue-types", response_model=ApiResponse[dict],
@@ -108,9 +120,9 @@ async def public_list_issue_types(r: Request,
                                    category_id: uuid.UUID | None = Query(None),
                                    master_service_id: uuid.UUID | None = Query(None),
                                    s: AdminCatalogService = Depends(_svc)):
-    return ok(await s.list_issue_types(category_id=category_id,
-                                        master_service_id=master_service_id,
-                                        is_active=True), _rid(r), ENGINE_ID)
+    return ok(_app_catalog(await s.list_issue_types(category_id=category_id,
+                                                     master_service_id=master_service_id,
+                                                     is_active=True)), _rid(r), ENGINE_ID)
 
 
 @router.get("/service-options", response_model=ApiResponse[dict],

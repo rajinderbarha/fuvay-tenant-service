@@ -140,10 +140,10 @@ async def list_serviceable_offerings(
                 "name": r.service_name,
                 "job_type": r.job_type,
                 "description": r.description,
-                # Customer-facing artwork is catalog content, not provider or
-                # pricing data. Instagram can render the same imagery as the
-                # customer app without advertising a pre-match price.
-                "image_url": r.image_url,
+                # Customer APIs expose the compact app icon only. The separate
+                # Instagram card image is resolved inside the Instagram
+                # webhook path and never leaks into the mobile app contract.
+                "image_url": r.icon_url,
                 "icon_url": r.icon_url,
                 "requires_address": r.requires_address,
                 "requires_schedule": r.requires_schedule,

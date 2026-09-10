@@ -543,6 +543,78 @@ async def test_problem_tool_prefers_admin_uploaded_artwork():
     assert result["problems"][0]["image_url"] == "https://cdn.example/custom-problem.png"
 
 
+@pytest.mark.asyncio
+async def test_problem_tool_prefers_instagram_image_over_app_icon():
+    draft = SimpleNamespace(offering_id=uuid.uuid4())
+    problem = SimpleNamespace(
+        id=uuid.uuid4(), name="AC not cooling", description="Weak cooling",
+        icon_url="https://cdn.example/app-icon.png",
+        image_url="https://cdn.example/instagram-card.png",
+    )
+
+    class DB:
+        async def get(self, model, record_id):
+            return draft
+
+        async def execute(self, statement):
+            return type("R", (), {"all": lambda _self: [problem]})()
+
+    result = await BackendToolExecutor(DB(), None, channel="instagram")._tool_get_service_problems(str(uuid.uuid4()))
+    assert result["problems"][0]["image_url"] == "https://cdn.example/instagram-card.png"
+
+
+@pytest.mark.asyncio
+async def test_problem_tool_does_not_expose_instagram_image_outside_instagram():
+    draft = SimpleNamespace(offering_id=uuid.uuid4())
+    problem = SimpleNamespace(
+        id=uuid.uuid4(), name="AC not cooling", description="Weak cooling",
+        icon_url="https://cdn.example/app-icon.png",
+        image_url="https://cdn.example/instagram-card.png",
+    )
+
+    class DB:
+        async def get(self, model, record_id):
+            return draft
+
+        async def execute(self, statement):
+            return type("R", (), {"all": lambda _self: [problem]})()
+
+    result = await BackendToolExecutor(DB(), None, channel="customer_app")._tool_get_service_problems(str(uuid.uuid4()))
+    assert result["problems"][0]["image_url"] == "https://cdn.example/app-icon.png"
+
+
+@pytest.mark.asyncio
+async def test_offering_tool_resolves_social_image_only_for_instagram(monkeypatch):
+    from app.engines.home_service_booking import offering_catalog_service
+
+    offering_id = uuid.uuid4()
+    app_icon = "https://res.cloudinary.com/fuvay/image/upload/app-icon.png"
+    social_image = "https://res.cloudinary.com/fuvay/image/upload/instagram-card.png"
+
+    async def catalog(*_args, **_kwargs):
+        return {
+            "category_id": str(uuid.uuid4()),
+            "offerings": [{
+                "id": str(offering_id), "slug": "ac-repair", "name": "AC Repair",
+                "icon_url": app_icon, "image_url": app_icon,
+            }],
+            "total": 1,
+        }
+
+    monkeypatch.setattr(offering_catalog_service, "list_serviceable_offerings", catalog)
+
+    class DB:
+        async def execute(self, statement):
+            row = SimpleNamespace(id=offering_id, image_url=social_image, icon_url=app_icon)
+            return type("R", (), {"all": lambda _self: [row]})()
+
+    customer_result = await BackendToolExecutor(DB(), None, channel="customer_app")._tool_get_category_offerings("ac")
+    instagram_result = await BackendToolExecutor(DB(), None, channel="instagram")._tool_get_category_offerings("ac")
+
+    assert customer_result["offerings"][0]["image_url"] == app_icon
+    assert instagram_result["offerings"][0]["image_url"] == social_image
+
+
 class _Category:
     """The fields `_category_step` reads off a ServiceCategory row."""
 

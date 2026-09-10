@@ -26,6 +26,7 @@ from app.engines.admin_catalog.models import (
     ServiceIssueMapping, ServiceOptionMapping,
     TenantServiceType, ServiceBlueprintVersion, MasterServiceJobType, ServiceJobWorkflow,
 )
+from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.engines.tenant_engine.models import Tenant
 from app.exceptions import ServiceOSException, NotFoundException
 
@@ -1919,7 +1920,8 @@ class AdminCatalogService:
         st = ServiceType(
             category_id=cat_id, name=name, slug=slug,
             description=data.get("description"),
-            icon_url=data.get("icon_url"),
+            icon_url=cloudinary_catalog_url(data.get("icon_url"), "icon_url"),
+            image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             is_active=True,
         )
         self.db.add(st)
@@ -1937,6 +1939,10 @@ class AdminCatalogService:
             st.slug = _slugify(st.name)
         if "description" in data:
             st.description = data["description"]
+        if "icon_url" in data:
+            st.icon_url = cloudinary_catalog_url(data["icon_url"], "icon_url")
+        if "image_url" in data:
+            st.image_url = cloudinary_catalog_url(data["image_url"], "image_url")
         await self.db.flush()
         return self._type_dict(st)
 
@@ -1985,7 +1991,7 @@ class AdminCatalogService:
         return {
             "type_id": str(t.id), "category_id": str(t.category_id) if t.category_id else None,
             "name": t.name, "slug": t.slug, "description": t.description,
-            "icon_url": t.icon_url, "is_active": t.is_active,
+            "icon_url": t.icon_url, "image_url": t.image_url, "is_active": t.is_active,
         }
 
     # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -2016,7 +2022,8 @@ class AdminCatalogService:
         cat_id = uuid.UUID(str(data["category_id"])) if data.get("category_id") else None
         brand = Brand(
             category_id=cat_id, name=name, slug=slug,
-            logo_url=data.get("logo_url"),
+            logo_url=cloudinary_catalog_url(data.get("logo_url"), "logo_url"),
+            image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             description=data.get("description"),
             is_active=True,
         )
@@ -2038,7 +2045,7 @@ class AdminCatalogService:
     def _brand_dict(self, b: Brand) -> dict:
         return {
             "brand_id": str(b.id), "category_id": str(b.category_id) if b.category_id else None,
-            "name": b.name, "slug": b.slug, "logo_url": b.logo_url,
+            "name": b.name, "slug": b.slug, "logo_url": b.logo_url, "image_url": b.image_url,
             "description": b.description, "is_active": b.is_active,
         }
 
@@ -2936,7 +2943,8 @@ class AdminCatalogService:
             category_id=cat_id, master_service_id=svc_id,
             code=code, name=name, slug=slug,
             description=data.get("description"),
-            icon_url=data.get("icon_url"),
+            icon_url=cloudinary_catalog_url(data.get("icon_url"), "icon_url"),
+            image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             severity=severity,
             is_active=bool(data.get("is_active", True)),
             display_order=int(data.get("display_order", 0) or 0),
@@ -2950,9 +2958,12 @@ class AdminCatalogService:
     async def update_issue_type(self, issue_type_id: uuid.UUID, data: dict) -> dict:
         row = await self._load_issue_type(issue_type_id)
         old = row.to_dict()
-        for field in ("name", "description", "icon_url", "severity", "is_active", "display_order"):
-            if field in data and (data[field] is not None or field == "icon_url"):
+        for field in ("name", "description", "severity", "is_active", "display_order"):
+            if field in data and data[field] is not None:
                 setattr(row, field, data[field])
+        for field in ("icon_url", "image_url"):
+            if field in data:
+                setattr(row, field, cloudinary_catalog_url(data[field], field))
         if "code" in data and data["code"]:
             row.code = str(data["code"]).strip().upper()
         await self.db.flush()

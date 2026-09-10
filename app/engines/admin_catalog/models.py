@@ -447,6 +447,7 @@ class ServiceType(ServiceOSBase):
     slug:             Mapped[str]              = mapped_column(String(200), nullable=False)
     description:      Mapped[str | None]      = mapped_column(Text, nullable=True)
     icon_url:         Mapped[str | None]      = mapped_column(String(500), nullable=True)
+    image_url:        Mapped[str | None]      = mapped_column(String(500), nullable=True)
     is_active:        Mapped[bool]            = mapped_column(Boolean, default=True, nullable=False)
     deleted_at:       Mapped[datetime|None]   = mapped_column(DateTime(timezone=True), nullable=True)
     # Enterprise fields (migration 076)
@@ -533,6 +534,7 @@ class Brand(ServiceOSBase):
     updated_by_user_id:     Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # Pre-34D fields kept
     logo_url:               Mapped[str | None]       = mapped_column(String(500), nullable=True)
+    image_url:              Mapped[str | None]       = mapped_column(String(500), nullable=True)
     description:            Mapped[str | None]       = mapped_column(Text, nullable=True)
     is_active:              Mapped[bool]             = mapped_column(Boolean, default=True, nullable=False)
     deleted_at:             Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
@@ -554,6 +556,7 @@ class Brand(ServiceOSBase):
             "is_global":            self.is_global,
             "display_order":        self.display_order,
             "logo_url":             self.logo_url,
+            "image_url":            self.image_url,
             "description":          self.description,
             "is_active":            self.is_active,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
@@ -1121,6 +1124,7 @@ class MasterIssueType(ServiceOSBase):
     slug:                 Mapped[str]              = mapped_column(String(200), nullable=False)
     description:          Mapped[str | None]      = mapped_column(Text, nullable=True)
     icon_url:             Mapped[str | None]      = mapped_column(String(500), nullable=True)
+    image_url:            Mapped[str | None]      = mapped_column(String(500), nullable=True)
     severity:             Mapped[str]              = mapped_column(String(20), nullable=False, default="medium")
     is_active:            Mapped[bool]            = mapped_column(Boolean, default=True, nullable=False)
     display_order:        Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
@@ -1144,6 +1148,7 @@ class MasterIssueType(ServiceOSBase):
             "slug":                 self.slug,
             "description":          self.description,
             "icon_url":             self.icon_url,
+            "image_url":            self.image_url,
             "severity":             self.severity,
             "is_active":            self.is_active,
             "customer_visible":     self.customer_visible,

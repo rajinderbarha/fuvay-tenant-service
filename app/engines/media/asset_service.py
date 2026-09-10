@@ -40,7 +40,7 @@ MAX_PAGE_SIZE = 100
 # Postgres on every open.
 ICON_LIBRARY_CONTEXTS = {
     "category_icon", "service_icon", "brand_logo",
-    "issue_type_image",
+    "issue_type_image", "instagram_card_image",
     "checklist_icon", "global_service_icon", "home_campaign_artwork",
     "banner_artwork",
 }

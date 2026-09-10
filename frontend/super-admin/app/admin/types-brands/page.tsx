@@ -372,6 +372,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     display_order:    initial?.display_order ?? 0,
   });
   const [iconUrl, setIconUrl] = useState<string | null>(initial?.icon_url ?? null);
+  const [instagramImageUrl, setInstagramImageUrl] = useState<string | null>(initial?.image_url ?? null);
   // Only auto-fill slug for brand-new records, and only until the user
   // edits Slug by hand.
   const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
@@ -381,7 +382,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     typesApi.update(initial!.type_id, d), [initial]));
 
   async function handleSave() {
-    const payload = { ...form, icon_url: iconUrl || undefined };
+    const payload = { ...form, icon_url: iconUrl, image_url: instagramImageUrl };
     const res = initial
       ? await updateAction.execute(payload)
       : await createAction.execute(payload);
@@ -425,7 +426,20 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
           {F("Slug (auto-generated, editable)", "slug")}
         </div>
         {F("Description", "description", "textarea")}
-        <IconPicker label="Icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:14 }}>
+          <div>
+            <IconPicker label="Fuvay app icon" noun="app icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>
+            <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"6px 0 0" }}>
+              Square icon used in the app and internal catalog.
+            </p>
+          </div>
+          <div>
+            <IconPicker label="Instagram card image" noun="Instagram image" context="instagram_card_image" value={instagramImageUrl} onChange={setInstagramImageUrl}/>
+            <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"6px 0 0" }}>
+              Public HTTPS artwork for Instagram. The app icon is the fallback.
+            </p>
+          </div>
+        </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Type Family</label>
@@ -1066,6 +1080,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
     website_url:      initial?.website_url ?? "",
   });
   const [logoUrl, setLogoUrl] = useState<string | null>(initial?.logo_url ?? null);
+  const [instagramImageUrl, setInstagramImageUrl] = useState<string | null>(initial?.image_url ?? null);
   // Same auto-slug-from-name UX as the Service Type form, stops once the
   // user edits Slug by hand.
   const [slugTouched, setSlugTouched] = useState(!!initial?.slug);
@@ -1074,7 +1089,7 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
   const updateAction = useAction(useCallback((d:object) => catalogApi.updateBrand(initial!.brand_id, d), [initial]));
 
   async function handleSave() {
-    const payload = { ...form, logo_url: logoUrl };
+    const payload = { ...form, logo_url: logoUrl, image_url: instagramImageUrl };
     const res = initial ? await updateAction.execute(payload) : await createAction.execute(payload);
     if (res) onSaved();
   }
@@ -1112,7 +1127,20 @@ function BrandFormModal({ title, initial, onClose, onSaved }:
             style={{ borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
               color:"var(--text-primary)", fontSize:13, padding:"8px 10px", resize:"vertical" }}/>
         </div>
-        <IconPicker label="Brand logo" noun="brand logo" context="brand_logo" shape="circle" value={logoUrl} onChange={setLogoUrl}/>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:14 }}>
+          <div>
+            <IconPicker label="Fuvay app icon" noun="brand app icon" context="brand_logo" shape="circle" value={logoUrl} onChange={setLogoUrl}/>
+            <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"6px 0 0" }}>
+              Compact brand icon used in the app and internal catalog.
+            </p>
+          </div>
+          <div>
+            <IconPicker label="Instagram card image" noun="Instagram image" context="instagram_card_image" value={instagramImageUrl} onChange={setInstagramImageUrl}/>
+            <p style={{ fontSize:11, color:"var(--text-tertiary)", margin:"6px 0 0" }}>
+              Public HTTPS artwork for Instagram. The app icon is the fallback.
+            </p>
+          </div>
+        </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
             <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Status</label>

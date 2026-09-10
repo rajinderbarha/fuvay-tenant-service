@@ -147,6 +147,9 @@ function UploadTab({ context, maxMb, onSelect }: { context: IconLibraryContext; 
       const asset: MediaAsset = await iconLibraryApi.upload(file, context);
       const url = asset.public_url || asset.preview_url;
       if (!url) throw new Error("Upload succeeded but no URL was returned.");
+      if (asset.storage_driver !== "cloudinary" || !url.startsWith("https://res.cloudinary.com/")) {
+        throw new Error("Catalog artwork must be stored in Cloudinary. Check the Cloudinary configuration and try again.");
+      }
       onSelect(url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed.");
@@ -189,7 +192,10 @@ function UploadTab({ context, maxMb, onSelect }: { context: IconLibraryContext; 
 
 function ExistingTab({ context, onSelect }: { context: IconLibraryContext; onSelect: (url: string) => void }) {
   const lib = useApi(useCallback(() => iconLibraryApi.list(context), [context]));
-  const items = lib.data?.items ?? [];
+  const items = (lib.data?.items ?? []).filter(asset =>
+    asset.storage_driver === "cloudinary" &&
+    String(asset.public_url || asset.preview_url || "").startsWith("https://res.cloudinary.com/")
+  );
 
   if (lib.loading) return <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Loading…</p>;
   if (items.length === 0) {

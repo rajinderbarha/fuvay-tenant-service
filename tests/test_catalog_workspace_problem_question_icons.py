@@ -7,8 +7,40 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.engines.admin_catalog.admin_router import list_service_issue_mappings
+from app.engines.admin_catalog.customer_router import _app_catalog
+from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.engines.admin_catalog.question_service import CatalogQuestionService
 from app.engines.admin_catalog.service import AdminCatalogService
+from app.exceptions import ServiceOSException
+
+
+def test_catalog_artwork_api_accepts_only_cloudinary_delivery_urls() -> None:
+    url = "https://res.cloudinary.com/fuvay/image/upload/catalog/app-icon.png"
+    assert cloudinary_catalog_url(url, "icon_url") == url
+    assert cloudinary_catalog_url(None, "icon_url") is None
+
+    with pytest.raises(ServiceOSException) as exc_info:
+        cloudinary_catalog_url("https://unrelated.example/icon.png", "icon_url")
+
+    assert exc_info.value.error_code == "CATALOG_MEDIA_CLOUDINARY_REQUIRED"
+
+
+def test_public_catalog_strips_instagram_images_but_keeps_app_icons() -> None:
+    result = _app_catalog({
+        "types": [{
+            "icon_url": "https://res.cloudinary.com/fuvay/image/upload/app.png",
+            "image_url": "https://res.cloudinary.com/fuvay/image/upload/instagram.png",
+        }],
+    })
+
+    assert result == {"types": [{"icon_url": "https://res.cloudinary.com/fuvay/image/upload/app.png"}]}
+
+    brand = _app_catalog({
+        "logo_url": "https://res.cloudinary.com/fuvay/image/upload/brand.png",
+        "image_url": "https://res.cloudinary.com/fuvay/image/upload/brand-instagram.png",
+    })
+    assert brand["icon_url"] == brand["logo_url"]
+    assert "image_url" not in brand
 
 
 @pytest.mark.asyncio
@@ -57,8 +89,8 @@ async def test_question_icon_is_retired_from_writes_and_responses() -> None:
 
 
 @pytest.mark.asyncio
-async def test_problem_icon_can_be_replaced_and_returned() -> None:
-    """Admin artwork is persisted for customer and Instagram problem cards."""
+async def test_problem_app_icon_and_instagram_image_can_be_saved_separately() -> None:
+    """Compact app artwork and social card artwork must not overwrite each other."""
     issue_id = uuid.uuid4()
     row = MagicMock()
     row.id = issue_id
@@ -69,22 +101,30 @@ async def test_problem_icon_can_be_replaced_and_returned() -> None:
     row.severity = "medium"
     row.is_active = True
     row.display_order = 0
-    row.icon_url = "https://cdn.example.com/legacy-problem.png"
+    row.icon_url = "https://res.cloudinary.com/fuvay/image/upload/legacy-problem.png"
+    row.image_url = None
     row.to_dict.side_effect = lambda: {
         "id": str(issue_id),
         "name": row.name,
         "icon_url": row.icon_url,
+        "image_url": row.image_url,
     }
     service = AdminCatalogService(db=MagicMock())
     service.db.flush = AsyncMock()
     service._load_issue_type = AsyncMock(return_value=row)
 
     result = await service.update_issue_type(
-        issue_id, {"name": "AC not cooling", "icon_url": "https://cdn.example.com/new.png"}
+        issue_id, {
+            "name": "AC not cooling",
+            "icon_url": "https://res.cloudinary.com/fuvay/image/upload/app-icon.png",
+            "image_url": "https://res.cloudinary.com/fuvay/image/upload/instagram-card.png",
+        }
     )
 
-    assert row.icon_url == "https://cdn.example.com/new.png"
-    assert result["icon_url"] == "https://cdn.example.com/new.png"
+    assert row.icon_url == "https://res.cloudinary.com/fuvay/image/upload/app-icon.png"
+    assert row.image_url == "https://res.cloudinary.com/fuvay/image/upload/instagram-card.png"
+    assert result["icon_url"] == "https://res.cloudinary.com/fuvay/image/upload/app-icon.png"
+    assert result["image_url"] == "https://res.cloudinary.com/fuvay/image/upload/instagram-card.png"
 
 
 @pytest.mark.asyncio

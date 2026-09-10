@@ -37,7 +37,7 @@ export default function IssueTypesPage() {
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<IssueType34E | null>(null);
-  const [form, setForm] = useState({ name: "", code: "", description: "", icon_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false });
+  const [form, setForm] = useState({ name: "", code: "", description: "", icon_url: "", image_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -73,12 +73,12 @@ export default function IssueTypesPage() {
     setSaving(true);
     setFormError("");
     try {
-      const payload = { ...form, name: form.name.trim(), code: form.code.trim(), description: form.description.trim(), icon_url: form.icon_url || null, vertical_type: form.vertical_type.trim(), severity_default: form.severity } as Parameters<typeof serviceOptionApi.createIssueType>[0];
+      const payload = { ...form, name: form.name.trim(), code: form.code.trim(), description: form.description.trim(), icon_url: form.icon_url || null, image_url: form.image_url || null, vertical_type: form.vertical_type.trim(), severity_default: form.severity } as Parameters<typeof serviceOptionApi.createIssueType>[0];
       if (editing) await serviceOptionApi.updateIssueType(editing.id, payload);
       else await serviceOptionApi.createIssueType(payload);
       setShowCreate(false);
       setEditing(null);
-      setForm({ name: "", code: "", description: "", icon_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false });
+      setForm({ name: "", code: "", description: "", icon_url: "", image_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false });
       setActionMessage(editing ? "Issue type updated." : "Issue type created.");
       await load();
     } catch (error) {
@@ -107,7 +107,7 @@ export default function IssueTypesPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--layout-page-gap)" }}>
       <PageHeader eyebrow="Catalog" context="Service setup" title="Issue Types" description={`${total.toLocaleString()} problem categories available to booking flows.`}
-        actions={<Btn onClick={() => { setEditing(null); setForm({ name: "", code: "", description: "", icon_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false }); setFormError(""); setShowCreate(true); }}><Plus size={14} /> New issue type</Btn>} />
+        actions={<Btn onClick={() => { setEditing(null); setForm({ name: "", code: "", description: "", icon_url: "", image_url: "", severity: "medium", vertical_type: "", requires_photo: false, requires_description: false }); setFormError(""); setShowCreate(true); }}><Plus size={14} /> New issue type</Btn>} />
 
       <div style={{ display: "flex", gap: "var(--layout-control-gap)", alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", maxWidth: 440 }}><Input placeholder="Search name, code, or description" value={search} onChange={setSearch} icon={<Search />} /></div>
@@ -126,7 +126,7 @@ export default function IssueTypesPage() {
           { key: "requires_photo", label: "Evidence", render: (value, row) => <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{value ? "Photo" : row.requires_description ? "Description" : "None"}</span> },
           { key: "status", label: "Status", render: value => <Badge variant={statusVariant(String(value))}>{String(value).replace(/_/g, " ")}</Badge> },
           { key: "id", label: "Actions", render: (_, row) => <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
-            <Btn size="xs" variant="ghost" onClick={() => { setEditing(row); setForm({ name: row.name, code: row.code, description: row.description ?? "", icon_url: row.icon_url ?? "", severity: row.severity, vertical_type: row.vertical_type ?? "", requires_photo: row.requires_photo, requires_description: row.requires_description }); setFormError(""); setShowCreate(true); }}><Pencil size={12} />Edit</Btn>
+            <Btn size="xs" variant="ghost" onClick={() => { setEditing(row); setForm({ name: row.name, code: row.code, description: row.description ?? "", icon_url: row.icon_url ?? "", image_url: row.image_url ?? "", severity: row.severity, vertical_type: row.vertical_type ?? "", requires_photo: row.requires_photo, requires_description: row.requires_description }); setFormError(""); setShowCreate(true); }}><Pencil size={12} />Edit</Btn>
             {row.status !== "active" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:activate`} onClick={() => changeStatus(row, "activate")}><CheckCircle2 size={12} />Activate</Btn>}
             {row.status === "active" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:deactivate`} onClick={() => changeStatus(row, "deactivate")}><PauseCircle size={12} />Deactivate</Btn>}
             {row.status !== "archived" && <Btn size="xs" variant="ghost" loading={actionBusy === `${row.id}:archive`} onClick={() => changeStatus(row, "archive")}><Archive size={12} />Archive</Btn>}
@@ -142,7 +142,16 @@ export default function IssueTypesPage() {
             <Input label="Code" value={form.code} onChange={value => setForm(current => ({ ...current, code: value }))} placeholder="not_cooling" hint="Leave blank to generate from the name." />
           </div>
           <Textarea label="Description" value={form.description} onChange={value => setForm(current => ({ ...current, description: value }))} rows={3} />
-          <IconPicker label="Customer and Instagram card image" noun="problem image" context="issue_type_image" value={form.icon_url} onChange={value => setForm(current => ({ ...current, icon_url: value ?? "" }))} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
+            <div>
+              <IconPicker label="Fuvay app icon" noun="problem app icon" context="issue_type_image" value={form.icon_url} onChange={value => setForm(current => ({ ...current, icon_url: value ?? "" }))} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>Square icon used in the app and internal catalog.</p>
+            </div>
+            <div>
+              <IconPicker label="Instagram card image" noun="Instagram problem image" context="instagram_card_image" value={form.image_url} onChange={value => setForm(current => ({ ...current, image_url: value ?? "" }))} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>Public HTTPS artwork for Instagram. The app icon is the fallback.</p>
+            </div>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--space-4)" }}>
             <Select label="Default severity" value={form.severity} onChange={value => setForm(current => ({ ...current, severity: value }))} options={SEVERITIES.map(value => ({ value, label: value }))} />
             <Input label="Vertical type" value={form.vertical_type} onChange={value => setForm(current => ({ ...current, vertical_type: value }))} placeholder="home_service" />

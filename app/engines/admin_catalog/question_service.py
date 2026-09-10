@@ -235,7 +235,8 @@ class CatalogQuestionService:
                 return []
             if dim.legacy_source == "service_types":
                 rows = (await self.db.execute(
-                    select(ServiceType.id, ServiceType.slug, ServiceType.name)
+                    select(ServiceType.id, ServiceType.slug, ServiceType.name,
+                           ServiceType.icon_url)
                     .join(ServiceTypeMapping, ServiceTypeMapping.type_id == ServiceType.id)
                     .where(
                         ServiceTypeMapping.service_id == qn.master_service_id,
@@ -246,10 +247,14 @@ class CatalogQuestionService:
                     )
                     .order_by(ServiceTypeMapping.display_order, ServiceType.display_order, ServiceType.name)
                 )).all()
-                return [{"id": str(i), "code": slug, "label": name} for i, slug, name in rows]
+                # Customer/app APIs receive only the compact app icon. The
+                # Instagram image is read exclusively by the webhook renderer.
+                return [{"id": str(i), "code": slug, "label": name,
+                         "icon_url": icon_url}
+                        for i, slug, name, icon_url in rows]
             if dim.legacy_source == "brands":
                 rows = (await self.db.execute(
-                    select(Brand.id, Brand.slug, Brand.name)
+                    select(Brand.id, Brand.slug, Brand.name, Brand.logo_url)
                     .join(BrandMapping, BrandMapping.brand_id == Brand.id)
                     .where(
                         BrandMapping.service_id == qn.master_service_id,
@@ -260,7 +265,9 @@ class CatalogQuestionService:
                     )
                     .order_by(BrandMapping.display_order, Brand.display_order, Brand.name)
                 )).all()
-                return [{"id": str(i), "code": slug, "label": name} for i, slug, name in rows]
+                return [{"id": str(i), "code": slug, "label": name,
+                         "icon_url": logo_url}
+                        for i, slug, name, logo_url in rows]
             from app.engines.admin_catalog.models import CatalogDimensionValue
             rows = (await self.db.execute(
                 select(CatalogDimensionValue).where(

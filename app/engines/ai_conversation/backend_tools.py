@@ -152,6 +152,35 @@ class BackendToolExecutor:
             # still surfaced as bookable to a 140412 customer.
             from app.engines.home_service_booking.offering_catalog_service import list_serviceable_offerings
             result = await list_serviceable_offerings(self.db, category_slug, self.zipcode)
+            if self.channel == "instagram" and result.get("offerings"):
+                # The shared customer catalog deliberately returns only app
+                # icons. Resolve social artwork here, at the Instagram webhook
+                # boundary, so `MasterService.image_url` cannot populate any
+                # mobile/customer API response.
+                from app.engines.admin_catalog.models import MasterService
+                offering_ids = [
+                    uuid.UUID(str(item["id"])) for item in result["offerings"]
+                    if item.get("id")
+                ]
+                social_rows = (await self.db.execute(
+                    select(MasterService.id, MasterService.image_url, MasterService.icon_url)
+                    .where(MasterService.id.in_(offering_ids))
+                )).all()
+                social_by_id = {
+                    str(row.id): (
+                        row.image_url
+                        if str(row.image_url or "").startswith("https://")
+                        else row.icon_url
+                    )
+                    for row in social_rows
+                }
+                result = {
+                    **result,
+                    "offerings": [
+                        {**item, "image_url": social_by_id.get(str(item["id"]), item.get("icon_url"))}
+                        for item in result["offerings"]
+                    ],
+                }
             if search and result.get("offerings"):
                 needle = search.lower()
                 result = {**result, "offerings": [o for o in result["offerings"] if needle in (o["name"] or "").lower()]}
@@ -502,7 +531,7 @@ class BackendToolExecutor:
 
             rows = (await self.db.execute(
                 select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description,
-                       MasterIssueType.icon_url)
+                       MasterIssueType.icon_url, MasterIssueType.image_url)
                 .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
                 .where(
                     ServiceIssueMapping.master_service_id == draft.offering_id,
@@ -518,10 +547,13 @@ class BackendToolExecutor:
                         "id": str(r.id),
                         "name": r.name,
                         "description": r.description,
-                        # Admin artwork wins; the generated family card keeps
-                        # older problems visual until a custom image is added.
+                        # Instagram artwork is selected only inside an
+                        # Instagram webhook execution. Every other API/channel
+                        # receives the compact app icon (or generated fallback).
                         "image_url": (
-                            getattr(r, "icon_url", None)
+                            getattr(r, "image_url", None)
+                            if self.channel == "instagram" and str(getattr(r, "image_url", None) or "").startswith("https://")
+                            else getattr(r, "icon_url", None)
                             if str(getattr(r, "icon_url", None) or "").startswith("https://")
                             else problem_card_image(r.name)
                         ),

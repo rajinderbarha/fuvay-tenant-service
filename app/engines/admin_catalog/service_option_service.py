@@ -28,6 +28,7 @@ from app.engines.admin_catalog.models import (
     JobTypeDefinition,
     TenantService,
 )
+from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 
 _VALID_STATUSES = {"active", "inactive", "archived", "deprecated", "pending_review", "rejected"}
 
@@ -419,6 +420,8 @@ class ServiceOptionService:
             name=name,
             slug=slug,
             description=body.get("description"),
+            icon_url=cloudinary_catalog_url(body.get("icon_url"), "icon_url"),
+            image_url=cloudinary_catalog_url(body.get("image_url"), "image_url"),
             severity=body.get("severity_default", body.get("severity", "medium")),
             is_active=True,
             display_order=body.get("display_order", 0),
@@ -441,10 +444,13 @@ class ServiceOptionService:
         if not it:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue type not found")
         old = _issue_payload(it)
-        for field in ("name", "description", "icon_url", "vertical_type", "metadata_json",
+        for field in ("name", "description", "vertical_type", "metadata_json",
                       "requires_photo", "requires_description", "customer_visible", "display_order"):
             if field in body:
                 setattr(it, field, body[field])
+        for field in ("icon_url", "image_url"):
+            if field in body:
+                setattr(it, field, cloudinary_catalog_url(body[field], field))
         if "severity_default" in body:
             it.severity = body["severity_default"]
         elif "severity" in body:
@@ -1193,6 +1199,7 @@ class ServiceOptionService:
                 "issue_type_id":        str(it.id),
                 "name":                 it.name,
                 "code":                 it.code,
+                "icon_url":             it.icon_url,
                 "severity":             mapping.severity_override or it.severity,
                 "is_common":            mapping.is_common,
                 "requires_photo":       mapping.requires_photo,
