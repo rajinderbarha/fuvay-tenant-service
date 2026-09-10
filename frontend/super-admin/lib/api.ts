@@ -1669,6 +1669,7 @@ export interface Brand34D {
   normalized_name?: string;
   alias_names?: string[];
   logo_url?: string;
+  image_url?: string;
   description?: string;
   website_url?: string;
   country_of_origin?: string;
@@ -1726,6 +1727,7 @@ export interface BrandTemplate34D {
 export interface MasterIssueType {
   id: string; category_id: string | null; master_service_id: string | null;
   code: string; name: string; slug: string; description?: string;
+  icon_url?: string | null; image_url?: string | null;
   severity: "low" | "medium" | "high" | "critical";
   customer_visible?: boolean; requires_photo?: boolean; requires_description?: boolean;
   is_active: boolean; display_order: number; status?: string;
@@ -1760,7 +1762,7 @@ export const masterDataApi = {
   },
   getIssueType: (id: string) =>
     apiFetch<MasterIssueType>(`/v1/admin/issue-types/${id}`),
-  createIssueType: (data: { name: string; code: string; severity?: string; category_id?: string; master_service_id?: string; description?: string; icon_url?: string | null; display_order?: number; customer_visible?: boolean; requires_photo?: boolean; requires_description?: boolean; status?: string }) =>
+  createIssueType: (data: { name: string; code: string; severity?: string; category_id?: string; master_service_id?: string; description?: string; icon_url?: string | null; image_url?: string | null; display_order?: number; customer_visible?: boolean; requires_photo?: boolean; requires_description?: boolean; status?: string }) =>
     apiFetch<MasterIssueType>("/v1/admin/issue-types", { method: "POST", body: JSON.stringify(data) }),
   updateIssueType: (id: string, data: Partial<MasterIssueType>) =>
     apiFetch<MasterIssueType>(`/v1/admin/issue-types/${id}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -3243,6 +3245,7 @@ export const profilePhotoApi = {
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
   | "issue_type_image"
+  | "instagram_card_image"
   | "checklist_icon" | "global_service_icon" | "home_campaign_artwork"
   | "banner_artwork";
 
@@ -3723,15 +3726,15 @@ export interface MasterService {
   requires_issue_type?:boolean; requires_schedule?:boolean; requires_address?:boolean;
   service_group_id?:string|null; image_url?:string|null; icon_url?:string|null; display_order?:number; is_active:boolean; created_at?:string; updated_at?:string|null; deleted_at?:string|null;
 }
-export interface ServiceTypeRow { type_id:string; category_id:string; name:string; slug:string; description?:string|null; is_active:boolean; icon_url?:string|null; }
-export interface BrandRow { brand_id:string; name:string; slug:string; category_id?:string|null; logo_url?:string|null; is_active:boolean; }
+export interface ServiceTypeRow { type_id:string; category_id:string; name:string; slug:string; description?:string|null; is_active:boolean; icon_url?:string|null; image_url?:string|null; }
+export interface BrandRow { brand_id:string; name:string; slug:string; category_id?:string|null; logo_url?:string|null; image_url?:string|null; is_active:boolean; }
 
 // â”€â”€ Types & Brands Enterprise (Sprint 76) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface ServiceTypeMaster {
   type_id:string; name:string; code?:string|null; slug:string; description?:string|null;
   type_family?:string|null; customer_visible:boolean; status:string; display_order:number;
   is_active:boolean; category_count:number; service_count:number; mapping_count:number;
-  created_at:string; updated_at:string; deleted_at?:string|null; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null;
+  created_at:string; updated_at:string; deleted_at?:string|null; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null; image_url?:string|null;
 }
 export interface ServiceTypeMapRecord {
   mapping_id:string; type_id:string; category_id?:string|null; service_group_id?:string|null;
@@ -6858,6 +6861,7 @@ export interface IssueType34E {
   slug: string;
   description?: string;
   icon_url?: string | null;
+  image_url?: string | null;
   severity: string;
   is_active: boolean;
   display_order: number;
@@ -9917,6 +9921,7 @@ export interface CatalogQuestionItem {
 export interface CatalogIssueTypeMapping {
   mapping_id: string; issue_type_id: string; name: string;
   is_common: boolean; is_default: boolean; customer_visible: boolean;
+  issue_type?: Pick<IssueType34E, "id" | "name" | "code" | "icon_url" | "image_url">;
 }
 // Service Option Mapping â€” exact Job-Type scoping (migration 169). No
 // monetary field here; price is tenant-owned per mapping.

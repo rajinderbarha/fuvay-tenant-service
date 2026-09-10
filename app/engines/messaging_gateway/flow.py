@@ -1657,7 +1657,7 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
 #: platform would let a customer pick one nobody services.
 _DIMENSION_VALUE_SQL = {
     "type": """
-        SELECT st.id, st.name, st.icon_url AS image_url
+        SELECT st.id, st.name, COALESCE(st.image_url, st.icon_url) AS image_url
           FROM master_service_types mst
           JOIN service_types st ON st.id = mst.service_type_id
          WHERE mst.master_service_id = :service
@@ -1668,7 +1668,7 @@ _DIMENSION_VALUE_SQL = {
          ORDER BY st.display_order, st.name
     """,
     "brand": """
-        SELECT b.id, b.name, b.logo_url AS image_url
+        SELECT b.id, b.name, COALESCE(b.image_url, b.logo_url) AS image_url
           FROM master_service_brands msb
           JOIN brands b ON b.id = msb.brand_id
          WHERE msb.master_service_id = :service

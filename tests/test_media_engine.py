@@ -290,6 +290,28 @@ async def test_storage_routes_images_to_cloudinary_and_documents_to_override(mon
     get_settings.cache_clear()
 
 
+@pytest.mark.asyncio
+async def test_catalog_artwork_cannot_fall_back_to_local_storage(monkeypatch):
+    from app.config import get_settings
+    from app.engines.media.storage import MediaStorageService
+    from app.exceptions import ServiceOSException
+
+    monkeypatch.setenv("FILE_STORAGE_DRIVER", "local")
+    monkeypatch.setenv("CLOUDINARY_CLOUD_NAME", "")
+    monkeypatch.setenv("CLOUDINARY_API_KEY", "")
+    monkeypatch.setenv("CLOUDINARY_API_SECRET", "")
+    get_settings.cache_clear()
+    svc = MediaStorageService()
+
+    with pytest.raises(ServiceOSException) as exc_info:
+        await svc.store_file(
+            b"image", "image.png", "image/png", "instagram_card_image", "owner"
+        )
+
+    assert exc_info.value.error_code == "CATALOG_MEDIA_REQUIRES_CLOUDINARY"
+    get_settings.cache_clear()
+
+
 # ── 4. MediaAsset Model ───────────────────────────────────────────────────────
 
 def test_media_asset_model_fields():

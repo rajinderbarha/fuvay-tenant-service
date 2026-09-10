@@ -412,7 +412,7 @@ function CategoryForm({
           </p>
         </div>
         <div>
-          <IconPicker label="Instagram card image" noun="Instagram image" context="category_icon" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
+          <IconPicker label="Instagram card image" noun="Instagram image" context="instagram_card_image" value={form.image_url} onChange={v => setF("image_url", v ?? "")}/>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
             Public HTTPS artwork used on Instagram. Falls back to the app icon if empty.
           </p>

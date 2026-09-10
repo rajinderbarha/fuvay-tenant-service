@@ -37,6 +37,7 @@ from app.engines.admin_catalog.models import (
     TenantServiceBrand,
     TenantSupportedBrand,
 )
+from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.exceptions import NotFoundException, ServiceOSException
 
 logger = structlog.get_logger("brand_service")
@@ -308,7 +309,8 @@ class BrandService:
             is_global=bool(data.get("is_global", True)),
             display_order=int(data.get("display_order", 0)),
             metadata_json=data.get("metadata_json"),
-            logo_url=data.get("logo_url"),
+            logo_url=cloudinary_catalog_url(data.get("logo_url"), "logo_url"),
+            image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             description=data.get("description"),
             is_active=data.get("status", "active") == "active",
             category_id=cat_id,
@@ -335,7 +337,9 @@ class BrandService:
             raise ServiceOSException("LIFECYCLE_ENDPOINT_REQUIRED",
                 "Use the activate, deactivate, retire, restore, or merge action for status changes.", status_code=409)
         if "logo_url" in data:
-            b.logo_url = data["logo_url"]
+            b.logo_url = cloudinary_catalog_url(data["logo_url"], "logo_url")
+        if "image_url" in data:
+            b.image_url = cloudinary_catalog_url(data["image_url"], "image_url")
         if "description" in data:
             b.description = data["description"]
         if "website_url" in data:
@@ -1191,6 +1195,7 @@ class BrandService:
                 "name": b.name,
                 "display_name": b.display_name or b.name,
                 "logo_url": b.logo_url,
+                "icon_url": b.logo_url,
                 "provider_count": provider_count,
                 "is_popular": provider_count >= 3,
             })
@@ -1286,6 +1291,7 @@ class BrandService:
             "normalized_name": b.normalized_name,
             "alias_names": b.alias_names_json or [],
             "logo_url": b.logo_url,
+            "image_url": b.image_url,
             "description": b.description,
             "website_url": b.website_url,
             "country_of_origin": b.country_of_origin,

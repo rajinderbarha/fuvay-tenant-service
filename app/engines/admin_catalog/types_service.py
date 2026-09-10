@@ -13,6 +13,7 @@ from app.engines.admin_catalog.models import (
     ServiceCategory, ServiceGroup, MasterService, MasterServiceType, MasterServiceBrand,
     TenantServiceType, MasterDataAuditLog,
 )
+from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.exceptions import ServiceOSException, NotFoundException
 
 logger = structlog.get_logger("types_service")
@@ -51,6 +52,7 @@ class TypesService:
             "display_order":    t.display_order,
             "is_active":        t.is_active,
             "icon_url":         t.icon_url,
+            "image_url":        t.image_url,
             "category_count":   mc.get("categories", 0),
             "service_count":    mc.get("services", 0),
             "mapping_count":    mc.get("total", 0),
@@ -238,7 +240,8 @@ class TypesService:
         t = ServiceType(
             name=name, slug=slug, code=code,
             description=data.get("description"),
-            icon_url=data.get("icon_url"),
+            icon_url=cloudinary_catalog_url(data.get("icon_url"), "icon_url"),
+            image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             type_family=data.get("type_family"),
             customer_visible=data.get("customer_visible", True),
             status=data.get("status", "active"),
@@ -267,9 +270,12 @@ class TypesService:
             raise NotFoundException("ServiceType", str(type_id))
 
         old_name, old_code = t.name, t.code
-        for field in ("name", "code", "description", "icon_url", "type_family", "display_order"):
+        for field in ("name", "code", "description", "type_family", "display_order"):
             if field in data:
                 setattr(t, field, data[field])
+        for field in ("icon_url", "image_url"):
+            if field in data:
+                setattr(t, field, cloudinary_catalog_url(data[field], field))
         if "customer_visible" in data:
             t.customer_visible = data["customer_visible"]
         if "status" in data and data["status"] != t.status:

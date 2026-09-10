@@ -28,6 +28,17 @@ StorageDriver = Literal["local", "cloudinary", "s3_compatible", "cloudflare_r2"]
 
 UPLOADS_DIR = pathlib.Path("uploads")  # relative to working dir; create if missing
 
+# Public catalog artwork is rendered by Meta's servers and mobile/web clients,
+# so a process-local `/uploads/...` URL is never a valid durable result. These
+# picker contexts therefore always go to Cloudinary, irrespective of the
+# default file-storage driver used for other media.
+CLOUDINARY_ONLY_CONTEXTS = {
+    "category_icon", "service_icon", "brand_logo", "issue_type_image",
+    "instagram_card_image",
+    "checklist_icon", "global_service_icon", "home_campaign_artwork",
+    "banner_artwork",
+}
+
 
 @dataclass
 class StoredFile:
@@ -123,6 +134,17 @@ class MediaStorageService:
         driver = self._driver if is_image_or_video else self._document_driver
         pinned = self._driver_pinned if is_image_or_video else self._document_driver_pinned
         cloudinary_creds = await self._resolve_cloudinary_credentials()
+        if media_context in CLOUDINARY_ONLY_CONTEXTS:
+            if not cloudinary_creds:
+                from app.exceptions import ServiceOSException
+                raise ServiceOSException(
+                    "CATALOG_MEDIA_REQUIRES_CLOUDINARY",
+                    "Catalog icons and artwork require Cloudinary storage. Configure and enable Cloudinary in Notification & Provider Settings.",
+                    status_code=503,
+                )
+            return await self._store_cloudinary(
+                file_bytes, stored_name, media_context, owner_id, checksum, cloudinary_creds
+            )
         # The admin-configured Cloudinary channel overrides an auto-selected
         # "local" default the moment it's saved, tested and enabled -- no
         # restart, no env vars needed. An operator's EXPLICIT FILE_STORAGE_
