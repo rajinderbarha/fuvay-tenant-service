@@ -651,6 +651,13 @@ async def send_options(
             image_url = str(row.get("image_url") or "").strip()
             if image_url.startswith("https://"):
                 element["image_url"] = image_url
+            elif image_url:
+                # Meta fetches card artwork from its own servers and accepts
+                # only public https. A local-disk upload served over plain http
+                # would be dropped here and the card would render blank with no
+                # error anywhere — so say which row lost its picture and why.
+                logger.warning("messaging_gateway.card.artwork_not_https",
+                               option_id=row.get("id"), url=image_url)
             elements.append(element)
         return await _post(url, token, {
             "recipient": {"id": to},
