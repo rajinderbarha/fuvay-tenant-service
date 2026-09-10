@@ -487,3 +487,89 @@ async def test_completion_proof_state_is_read_from_the_proof_not_from_job_status
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
+async def test_a_job_type_with_no_inspection_checklist_can_still_finish_inspecting():
+    """A missing checklist is a configuration gap, not a dead end.
+
+    On the live catalog every "Repair" job type requires an inspection and
+    none of them has an inspection checklist mapped, so every repair job hit
+    this. The screen said "No inspection checklist configured" and offered
+    nothing else, while `complete-inspection` itself was perfectly willing:
+    its gate enforces REQUIRED mappings and there were none to enforce. The
+    job sat on `inspection_started` with no action anywhere able to move it.
+    """
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=True, quote_approval_required=False)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+        # Nothing maps a checklist to this blueprint -- the real situation.
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                for key in ("accept", "call-customer", "on-the-way", "reached-site", "start-inspection"):
+                    response = await client.post(
+                        f"/v1/staff/service-jobs/{job_id}/{_endpoint_for(key)}", headers=headers)
+                    assert response.status_code == 200, f"{key}: {response.text[:200]}"
+
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-inspection", headers=headers)).json()["data"]
+
+                # Still honest that the checklist is missing...
+                assert detail["definition_status"] == "UNAVAILABLE"
+                assert detail["instance"] is None
+                assert detail["sections"] == []
+                # ...but no longer a dead end.
+                assert detail["readiness"]["can_complete"] is True
+                assert "complete_inspection" in detail["allowed_actions"]
+
+                # And the action it offers genuinely works.
+                response = await client.post(
+                    f"/v1/staff/service-jobs/{job_id}/complete-inspection", headers=headers)
+                assert response.status_code == 200, response.text[:300]
+                status = (await db.execute(
+                    text("SELECT status FROM service_jobs WHERE id=:jid"), {"jid": job_id})).scalar_one()
+                assert status == "inspection_done"
+
+                # The job carries on rather than stopping here.
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-detail", headers=headers)).json()["data"]
+                assert detail["next_required_action"]["key"] == "start-service"
+                assert detail["next_required_action"]["allowed"] is True
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
+async def test_a_terminal_job_is_not_offered_a_phantom_inspection_to_complete():
+    """The allowance above is scoped to live jobs -- a cancelled or completed
+    job must not sprout a completable inspection out of a missing checklist."""
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=True, quote_approval_required=False)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+        await db.execute(text("UPDATE service_jobs SET status='cancelled' WHERE id=:jid"), {"jid": job_id})
+        await db.commit()
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-inspection", headers=headers)).json()["data"]
+                assert detail["definition_status"] == "UNAVAILABLE"
+                assert detail["readiness"]["can_complete"] is False
+                assert detail["allowed_actions"] == []
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            await _cleanup(db, ids)
