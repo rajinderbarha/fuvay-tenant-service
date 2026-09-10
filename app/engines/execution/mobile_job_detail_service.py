@@ -84,7 +84,9 @@ def _fail_not_found() -> ServiceOSException:
 class TechnicianJobDetailService:
     async def get_detail(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         from app.engines.final_records.models import ServiceJob, ServiceBooking
-        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        from app.engines.execution.home_service_service import (
+            HomeServiceJobExecutionService, customer_already_contacted,
+        )
         from app.engines.home_service_assignment.service import _next_required_action
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 
@@ -97,7 +99,14 @@ class TechnicianJobDetailService:
             raise ServiceOSException("ENTITY_NOT_ASSIGNED", "This job is not assigned to you.", status_code=403)
 
         work_start_status = await HomeServiceJobExecutionService().get_work_start_status(db, job)
-        next_action = _next_required_action(job.status, work_start_status)
+        # Same `customer_contacted` input the Home projection uses. This screen
+        # omitted it and took the default True, so the screen reached by tapping
+        # Home's "Call Customer & Confirm Requirements" showed a different next
+        # action than the button that opened it.
+        next_action = _next_required_action(
+            job.status, work_start_status,
+            customer_contacted=await customer_already_contacted(db, job.id),
+        )
 
         booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
         customer_alias = _customer_alias(booking.customer_id if booking else None)
@@ -282,7 +291,7 @@ class TechnicianJobDetailService:
 
     async def _build_requirements(self, db: AsyncSession, job) -> dict:
         from app.engines.quote_checklist.models import ServiceJobChecklistItem, ServiceJobQuote
-        from app.engines.execution.models import PartsRequest, ServiceJobMediaUpload
+        from app.engines.execution.models import PartsRequest, ServiceJobMediaUpload, CompletionProof
         from app.engines.invoice_payment.models import ServicePaymentRecord
 
         checklist_items = (await db.execute(
@@ -309,6 +318,15 @@ class TechnicianJobDetailService:
             .order_by(ServicePaymentRecord.created_at.desc()).limit(1)
         )).scalars().first()
 
+        # The real proof row, not an inference from job status. `work_done`
+        # means the WORK is finished; it says nothing about whether the proof
+        # has been captured and submitted, and reading it as "submitted" sent
+        # the technician past the capture step to a payment screen that then
+        # refused with COMPLETION_PROOF_NOT_SUBMITTED.
+        proof = (await db.execute(
+            select(CompletionProof).where(CompletionProof.job_id == job.id)
+        )).scalars().first()
+
         return {
             "checklist": {
                 "required": checklist_total > 0, "total_items": checklist_total,
@@ -330,7 +348,8 @@ class TechnicianJobDetailService:
                 "route_key": "PARTS_REQUEST",
             },
             "completion_proof": {
-                "required": True, "state": "submitted" if job.status in ("work_done", "completed") else "not_submitted",
+                "required": True,
+                "state": proof.status if proof else "not_submitted",
                 "route_key": "COMPLETION_PROOF",
             },
             "payment_confirmation": {

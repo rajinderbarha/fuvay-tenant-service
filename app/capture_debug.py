@@ -43,6 +43,15 @@ class CaptureDebugMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         started = time.time()
+
+        # Request body — cached on the request so downstream handlers still read it.
+        req_body = ""
+        try:
+            raw = await request.body()
+            req_body = raw.decode("utf-8")[:MAX_BODY_CHARS]
+        except Exception:
+            req_body = "<unreadable request body>"
+
         try:
             response = await call_next(request)
         except Exception as exc:
@@ -52,6 +61,7 @@ class CaptureDebugMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "query": str(request.url.query),
                 "status": "EXCEPTION",
+                "request_body": req_body,
                 "error": repr(exc),
                 "traceback": traceback.format_exc()[-4000:],
             })
@@ -74,6 +84,7 @@ class CaptureDebugMiddleware(BaseHTTPMiddleware):
             "path": request.url.path,
             "query": str(request.url.query),
             "status": response.status_code,
+            "request_body": req_body,
             "body": text[:MAX_BODY_CHARS],
             "truncated": len(text) > MAX_BODY_CHARS,
         })

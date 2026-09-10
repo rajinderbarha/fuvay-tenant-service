@@ -177,14 +177,21 @@ class TechnicianMobileJobsService:
     async def _build_result_row(self, db: AsyncSession, job_row: dict) -> dict:
         from app.engines.final_records.models import ServiceJob, ServiceBooking
         from app.engines.admin_catalog.models import MasterOffering
-        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        from app.engines.execution.home_service_service import (
+            HomeServiceJobExecutionService, customer_already_contacted,
+        )
         from app.engines.home_service_assignment.service import _next_required_action
         from sqlalchemy import select
         from app.engines.invoice_payment.models import ServicePaymentRecord
 
         job = await db.get(ServiceJob, uuid.UUID(job_row["id"]))
         work_start_status = await HomeServiceJobExecutionService().get_work_start_status(db, job)
-        next_action = _next_required_action(job.status, work_start_status)
+        # Same input as Home and Job Detail -- one job must not advertise three
+        # different next actions depending on which list it is read from.
+        next_action = _next_required_action(
+            job.status, work_start_status,
+            customer_contacted=await customer_already_contacted(db, job.id),
+        )
 
         service_label = None
         if job.offering_id:

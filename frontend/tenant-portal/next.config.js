@@ -4,6 +4,13 @@ const nextConfig = {
   // Keep generated AI-agent instruction files out of the application workspace.
   agentRules: false,
 
+  // Allow the dev server to be reached through a dev tunnel / LAN host.
+  // Next 16 otherwise blocks cross-origin requests to internal dev endpoints.
+  allowedDevOrigins: [
+    "4nv24pn4-3001.inc1.devtunnels.ms",
+    "*.devtunnels.ms",
+  ],
+
   env: {
     // Expose API URL to the browser bundle.
     // Set NEXT_PUBLIC_API_URL at build time in CI/CD for each environment.

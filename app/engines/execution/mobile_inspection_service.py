@@ -65,13 +65,30 @@ class MobileInspectionService:
 
         mappings = await checklist_svc.get_applicable_mappings(db, job, phase=_INSPECTION_PHASE)
         if not mappings:
+            # No inspection checklist is mapped for this job type. That is a
+            # configuration gap, not a reason the technician cannot finish
+            # inspecting: `complete_inspection`'s own gate
+            # (GATE_BEFORE_INSPECTION_COMPLETE) enforces REQUIRED mappings, and
+            # with none it has nothing to enforce and lets the transition
+            # through. Reporting `can_complete: False` here contradicted that
+            # and left the job parked on `inspection_started` with no action
+            # anywhere in the app that could move it.
+            #
+            # `definition_status` stays UNAVAILABLE so the screen still tells
+            # the technician the checklist is missing rather than pretending
+            # there was nothing to fill in.
+            can_complete = job.status not in _TERMINAL_STATUSES
             return {
                 "job": self._job_identity(job, service_label),
                 "customer_report": customer_report,
                 "instance": None,
                 "sections": [],
-                "readiness": {"total_required": 0, "completed_required": 0, "missing_item_ids": [], "missing_evidence_item_ids": [], "can_complete": False, "blockers": []},
-                "allowed_actions": [],
+                "readiness": {
+                    "total_required": 0, "completed_required": 0,
+                    "missing_item_ids": [], "missing_evidence_item_ids": [],
+                    "can_complete": can_complete, "blockers": [],
+                },
+                "allowed_actions": ["complete_inspection"] if can_complete else [],
                 "definition_status": "UNAVAILABLE",
             }
 

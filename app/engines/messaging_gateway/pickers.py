@@ -63,6 +63,25 @@ _RESTART_ROW = {
     "description": "Begin again from the first question.",
 }
 
+#: A carousel card is title + subtitle + button, and a card with no subtitle
+#: of its own inherits a generic "choose this service" line that is plainly
+#: wrong on a navigation card. Text lists ignore these, so they are applied
+#: only where cards are actually rendered.
+_CARD_SUBTITLES = {
+    PICK_RESTART: "Begin again from the first question.",
+    PICK_MORE: "See the rest of the list.",
+}
+
+
+def _card_subtitles(rows: list[dict]) -> list[dict]:
+    """Give the navigation rows a subtitle that matches what they do."""
+    out = []
+    for row in rows:
+        subtitle = _CARD_SUBTITLES.get(row["id"].split(PICKER_SEP, 1)[0])
+        out.append(row if row.get("description") or not subtitle
+                   else {**row, "description": subtitle})
+    return out
+
 
 def channel_capacity(channel: str) -> int:
     """How many option rows this channel can render in one message."""
@@ -328,7 +347,7 @@ def _paginate(
     picker_rows = window + ([dict(_RESTART_ROW)] if include_restart else [])
     return {
         "body": body,
-        "rows": picker_rows,
+        "rows": _card_subtitles(picker_rows) if presentation == "carousel" else picker_rows,
         "list_button": list_button,
         "section_title": section_title,
         "presentation": presentation,

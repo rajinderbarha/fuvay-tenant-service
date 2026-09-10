@@ -1473,6 +1473,25 @@ _NEXT_ACTION_BY_STATUS: dict[str, tuple[str, str] | None] = {
 }
 
 
+#: When work is blocked pending an estimate, the estimate IS the technician's
+#: next action -- not a disabled "Start Service" beside a sentence telling them
+#: to go and make one. Keyed by the block code `get_work_start_status` reports
+#: (app/engines/execution/constants.py), valued with the same route-shaped
+#: action names the rest of this map uses.
+#:
+#: Only the two the TECHNICIAN can act on are here. ESTIMATE_APPROVAL_REQUIRED
+#: waits on the customer and ESTIMATE_REJECTED needs the business, so neither
+#: becomes a technician action; both keep reporting themselves as blocked.
+_ESTIMATE_ACTION_FOR_BLOCK: dict[str, tuple[str, str]] = {
+    "ESTIMATE_REQUIRED":          ("create-estimate", "Create Estimate"),
+    "ESTIMATE_REVISION_REQUIRED": ("revise-estimate", "Send Revised Estimate"),
+}
+
+
+def _estimate_action_for(work_start_status: dict) -> tuple[str, str] | None:
+    return _ESTIMATE_ACTION_FOR_BLOCK.get(work_start_status.get("start_work_block_code"))
+
+
 def _next_required_action(
     status: str, work_start_status: dict, customer_contacted: bool = True,
 ) -> dict:
@@ -1484,6 +1503,13 @@ def _next_required_action(
     # quote_required was an unconditional dead end even after approval.
     if status == "quote_required":
         allowed = bool(work_start_status.get("can_start_work"))
+        if not allowed:
+            estimate = _estimate_action_for(work_start_status)
+            if estimate:
+                return {
+                    "action_type": estimate[0], "action_label": estimate[1],
+                    "allowed": True, "blocked_message": None,
+                }
         return {
             "action_type": "start-service",
             "action_label": "Start Service",
@@ -1520,9 +1546,22 @@ def _next_required_action(
         action_type, action_label = "start-service", "Start Service"
     allowed = True
     blocked_message = None
-    if status == "inspection_done" and not work_start_status.get("can_start_work", True):
-        allowed = False
-        blocked_message = "This job cannot start work yet -- an approval or quote step is still pending."
+    # The work-start gate applies wherever `start-service` is what we offer,
+    # not only after an inspection. Skipping the inspection step above moved
+    # `start-service` onto `reached_site` too, and offering it there as allowed
+    # while the gate still refuses hands the technician a button that 409s.
+    if action_type == "start-service" and not work_start_status.get("can_start_work", True):
+        estimate = _estimate_action_for(work_start_status)
+        if estimate:
+            # Something the technician can actually do, rather than a button
+            # they cannot press next to an instruction they cannot follow.
+            action_type, action_label = estimate
+        else:
+            allowed = False
+            blocked_message = (
+                work_start_status.get("start_work_block_message")
+                or "This job cannot start work yet -- an approval or quote step is still pending."
+            )
 
     return {
         "action_type": action_type, "action_label": action_label,
