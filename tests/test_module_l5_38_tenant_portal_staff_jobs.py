@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 API_TS = ROOT / "frontend/tenant-portal/lib/api.ts"
 JOBS_PAGE = ROOT / "frontend/tenant-portal/app/staff/jobs/page.tsx"
 DETAIL_PAGE = ROOT / "frontend/tenant-portal/app/staff/jobs/[job_id]/page.tsx"
+RUNTIME_DETAIL_PAGE = ROOT / "frontend/tenant-portal/app/staff/home-services/jobs/[job_id]/page.tsx"
 DASH_PAGE = ROOT / "frontend/tenant-portal/app/staff/dashboard/page.tsx"
 
 BASE = "http://localhost:8000"
@@ -40,18 +41,19 @@ def _live(text: str) -> str:
 
 
 def test_staff_web_pages_use_real_service_jobs_api():
-    for page in (JOBS_PAGE, DETAIL_PAGE, DASH_PAGE):
+    for page in (JOBS_PAGE, RUNTIME_DETAIL_PAGE, DASH_PAGE):
         src = _live(page.read_text(encoding="utf-8"))
         assert "homeServiceStaffJobsApi" in src, f"{page} not repointed"
         assert "staffSelfApi.getMyJobs" not in src, f"{page} still calls dead field_ops list"
         assert "staffSelfApi.getJobDetail" not in src, f"{page} still calls dead field_ops detail"
+    assert "home-services/jobs/[job_id]/page" in DETAIL_PAGE.read_text(encoding="utf-8")
 
 
 def test_detail_page_wires_real_lifecycle_actions():
-    src = DETAIL_PAGE.read_text(encoding="utf-8")
+    src = RUNTIME_DETAIL_PAGE.read_text(encoding="utf-8")
     # the disabled "not certified" placeholder actions are gone
     assert "Not certified in this phase" not in src
-    for action in ("accept", "onTheWay", "reachedSite", "startService", "complete"):
+    for action in ("accept", "customerContacted", "onTheWay", "reachedSite", "startService", "complete"):
         assert action in src
 
 

@@ -483,7 +483,13 @@ async def get_applicable_mappings(
         JobTypeChecklistMapping.usage != c.USAGE_DISABLED,
     )
     if phase is not None:
-        stmt = stmt.where(JobTypeChecklistMapping.phase == phase)
+        # Mapping phases are stored in lowercase by ``create_mapping`` while
+        # callers use the canonical (uppercase) checklist-purpose constants.
+        # Comparing the raw values made every phase-specific technician view
+        # silently look as though it had no checklist, allowing work/proof to
+        # advance without the required answers.  Normalize at this shared
+        # lookup boundary so existing rows and all callers resolve alike.
+        stmt = stmt.where(JobTypeChecklistMapping.phase == phase.strip().lower())
     mappings = (await db.execute(stmt.order_by(JobTypeChecklistMapping.display_order))).scalars().all()
     now = _now()
     context = context or {}

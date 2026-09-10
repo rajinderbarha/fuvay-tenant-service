@@ -11,15 +11,15 @@ import { homeServiceStaffJobsApi, checklistExecutionApi, type ChecklistInstanceD
 // action per status, not a free-for-all button list, so an invalid jump
 // can never be attempted from this UI (the backend also rejects it with
 // a 422 either way, per HS8/HS8B).
-const NEXT_ACTION: Record<string, { label: string; fn: keyof typeof homeServiceStaffJobsApi }> = {
-  assigned:            { label: "Accept Job",          fn: "accept" },
-  accepted:            { label: "Mark On The Way",      fn: "onTheWay" },
-  scheduled:           { label: "Mark On The Way",      fn: "onTheWay" },
-  on_the_way:          { label: "Reached Site",         fn: "reachedSite" },
-  reached_site:        { label: "Start Inspection",     fn: "startInspection" },
-  inspection_started:  { label: "Complete Inspection",  fn: "completeInspection" },
-  inspection_done:     { label: "Start Service",        fn: "startService" },
-  service_started:     { label: "Mark Work Done",        fn: "markWorkDone" },
+const ACTION_METHODS: Record<string, keyof typeof homeServiceStaffJobsApi> = {
+  "accept": "accept",
+  "call-customer": "customerContacted",
+  "on-the-way": "onTheWay",
+  "reached-site": "reachedSite",
+  "start-inspection": "startInspection",
+  "complete-inspection": "completeInspection",
+  "start-service": "startService",
+  "work-done": "markWorkDone",
 };
 
 export default function StaffHomeServiceJobDetailPage() {
@@ -36,6 +36,15 @@ export default function StaffHomeServiceJobDetailPage() {
       return fn(jobId);
     }, [jobId]),
     { onSuccess: () => { job.refetch(); } },
+  );
+
+  const [rejectReason, setRejectReason] = useState("");
+  const rejectAction = useAction(
+    useCallback(
+      () => homeServiceStaffJobsApi.reject(jobId, rejectReason.trim()),
+      [jobId, rejectReason],
+    ),
+    { onSuccess: () => { setRejectReason(""); job.refetch(); } },
   );
 
   const [partsForm, setPartsForm] = useState({ part_name: "", quantity: "1", estimated_cost: "", reason: "" });
@@ -63,9 +72,15 @@ export default function StaffHomeServiceJobDetailPage() {
   // job number, undefined status -> no action ever offered). The api client's
   // .get() type was corrected to HomeServiceJobDetail; derive the job from it.
   const j = job.data?.job;
-  const nextAction = j ? NEXT_ACTION[j.status] : undefined;
+  const requiredAction = j?.next_required_action;
+  const nextMethod = requiredAction?.action_type
+    ? ACTION_METHODS[requiredAction.action_type]
+    : undefined;
+  const nextAction = requiredAction?.allowed && nextMethod
+    ? { label: requiredAction.action_label || "Continue Job", fn: nextMethod }
+    : undefined;
   const canRequestParts = j && ["inspection_started", "inspection_done", "service_started", "quote_required"].includes(j.status);
-  const canComplete = j && ["service_started", "work_done", "quote_required"].includes(j.status);
+  const canComplete = j?.status === "work_done";
   const isCompleted = j?.status === "completed";
 
   return (
@@ -93,12 +108,40 @@ export default function StaffHomeServiceJobDetailPage() {
                     {nextAction.label}
                   </Btn>
                 ) : (
-                  <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No status action available from &quot;{j.status}&quot;.</p>
+                  <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
+                    {requiredAction?.blocked_message || j.start_work_block_message ||
+                      (j.status === "quote_required"
+                        ? "Waiting for the estimate, parts, or customer approval before work can continue."
+                        : `No status action available from "${j.status}".`)}
+                  </p>
                 )}
                 {statusAction.error && (
                   <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 8 }}>
                     {statusAction.error}{statusAction.requestId && ` — Request ID: ${statusAction.requestId}`}
                   </p>
+                )}
+                {j.status === "assigned" && (
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    <textarea
+                      placeholder="Reason for rejecting this assignment"
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      style={{ ...inputStyle, minHeight: 54 }}
+                    />
+                    <Btn
+                      variant="danger"
+                      loading={rejectAction.loading}
+                      disabled={!rejectReason.trim()}
+                      onClick={() => rejectAction.execute()}
+                    >
+                      Reject Assignment
+                    </Btn>
+                    {rejectAction.error && (
+                      <p style={{ fontSize: 12, color: "var(--danger-text)" }}>
+                        {rejectAction.error}
+                      </p>
+                    )}
+                  </div>
                 )}
               </Card>
 

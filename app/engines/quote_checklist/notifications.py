@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import uuid
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.platform_notifications.models import InAppNotification
 from app.engines.quote_checklist.models import ServiceJobQuote
+
+logger = structlog.get_logger("quote_notifications")
 
 
 async def _tenant_owner_id(db: AsyncSession, tenant_id) -> uuid.UUID | None:
@@ -61,15 +64,32 @@ async def notify_customer_quote_sent(db: AsyncSession, quote: ServiceJobQuote) -
     # A chat-originated customer may never open the native inbox. Notify the
     # same recent WhatsApp/Instagram thread best-effort; their next message is
     # answered with the customer-safe estimate and decision controls.
+    # Chat delivery is best-effort and must never share the quote transaction.
+    # A messaging-schema/API failure on the shared session leaves PostgreSQL's
+    # transaction aborted; catching that exception and then committing used to
+    # roll back the already-successful quote transition silently. Isolate chat
+    # lookup/delivery in its own session so the in-app notification and quote
+    # state remain atomic regardless of the external channel's health.
     try:
+        from app.database import get_session_factory
         from app.engines.messaging_gateway.service import notify_customer
-        await notify_customer(
-            db, quote.customer_id,
-            f"Your provider sent estimate {quote.quote_number}. "
-            "Reply here to review the itemised customer total.",
+        async with get_session_factory()() as messaging_db:
+            try:
+                await notify_customer(
+                    messaging_db, quote.customer_id,
+                    f"Your provider sent estimate {quote.quote_number}. "
+                    "Reply here to review the itemised customer total.",
+                )
+                await messaging_db.commit()
+            except Exception:
+                await messaging_db.rollback()
+                raise
+    except Exception as exc:
+        logger.warning(
+            "quote_notifications.chat_delivery_failed",
+            quote_id=str(quote.id),
+            error=str(exc),
         )
-    except Exception:
-        pass
 
 
 async def notify_provider_quote_decision(

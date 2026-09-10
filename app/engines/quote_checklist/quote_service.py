@@ -461,17 +461,16 @@ class ServiceJobQuoteService:
         old_status = q.status
         self._assert_transition(q, QS_SENT_TO_CUSTOMER)
         now = _utcnow()
-        await db.execute(
-            update(ServiceJobQuote)
-            .where(ServiceJobQuote.id == q.id)
-            .values(
-                status=QS_SENT_TO_CUSTOMER,
-                sent_to_customer_at=now,
-                customer_visible_notes=customer_notes or q.customer_visible_notes,
-                updated_at=now,
-            )
-        )
+        # Update the locked ORM row itself so the persisted transition and the
+        # representation returned after commit have one in-session source of
+        # truth. Notification delivery below is separately isolated and cannot
+        # roll this transition back.
         q.status = QS_SENT_TO_CUSTOMER
+        q.sent_to_customer_at = now
+        q.customer_visible_notes = customer_notes or q.customer_visible_notes
+        q.updated_at = now
+        db.add(q)
+        await db.flush()
         await self._sync_job_status(db, q.job_id, JS_QUOTE_REQUIRED)
         await self._log_event(
             db, q, QEV_SENT_TO_CUSTOMER, "staff", user_id,

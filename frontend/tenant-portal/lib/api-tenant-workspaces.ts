@@ -702,6 +702,7 @@ export interface HsAssignmentOptionTechnician {
   status: string;
   profile_photo_url?: string | null;
   eligibility_status: "eligible" | "blocked";
+  warnings?: string[];
   match_reasons?: string[];
   blocked_reasons?: string[];
   exclusion_reason_codes?: string[];

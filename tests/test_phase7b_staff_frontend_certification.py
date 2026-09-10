@@ -28,7 +28,7 @@ STAFF_PAGES = {
     "service_areas": FRONTEND / "app/staff/service-areas/page.tsx",
     "availability": FRONTEND / "app/staff/availability/page.tsx",
     "jobs_list": FRONTEND / "app/staff/jobs/page.tsx",
-    "jobs_detail": FRONTEND / "app/staff/jobs/[job_id]/page.tsx",
+    "jobs_detail": FRONTEND / "app/staff/home-services/jobs/[job_id]/page.tsx",
     "notifications": FRONTEND / "app/staff/notifications/page.tsx",
     "sessions": FRONTEND / "app/staff/security/sessions/page.tsx",
 }
@@ -107,7 +107,7 @@ def test_sessions_page_uses_live_session_management():
 # is obsolete; updated to assert the real lifecycle is wired instead of
 # asserting it's fictionally disabled.
 REAL_JOB_ACTIONS = [
-    "accept", "reject", "onTheWay", "reachedSite", "startInspection",
+    "accept", "reject", "customerContacted", "onTheWay", "reachedSite", "startInspection",
     "completeInspection", "startService", "markWorkDone", "complete",
 ]
 

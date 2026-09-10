@@ -229,7 +229,11 @@ ERR_PARTS_CUSTOMER_DECISION_NOT_ALLOWED = "PARTS_REQUEST_CUSTOMER_DECISION_NOT_A
 JS_COMPLETED = "completed"
 
 COMPLETABLE_JOB_STATUSES = {
-    JS_SERVICE_STARTED, JS_WORK_DONE, JS_QUOTE_REQUIRED,
+    # Completion is the terminal submission after the technician has
+    # explicitly marked the work done. Allowing service_started or
+    # quote_required here let callers skip both the operational milestone and
+    # any still-pending estimate decision.
+    JS_WORK_DONE,
 }
 
 PAYMENT_MODE_HOME_SERVICES = "customer_pays_provider_directly"

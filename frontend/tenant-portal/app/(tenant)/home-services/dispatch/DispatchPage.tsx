@@ -1823,7 +1823,9 @@ function AssignmentPanel({
                           >
                             {current
                               ? "Current assignment"
-                              : "Skill and availability verified"}
+                              : technician.warnings?.length
+                                ? `Available · ${technician.warnings.map((warning) => EXCLUSION_LABELS[warning.toUpperCase()] || warning.replace(/_/g, " ")).join(" · ")}`
+                                : "Skill and availability verified"}
                           </span>
                         </div>
                       </div>

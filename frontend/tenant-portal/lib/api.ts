@@ -4613,6 +4613,12 @@ export interface HomeServiceJobItem {
   job_type_id?: string | null; job_type_key?: string | null; job_type_label?: string | null;
   quote_approval_required?: boolean | null; quote_state?: string | null;
   can_start_work?: boolean; start_work_block_code?: string | null;
+  start_work_block_message?: string | null;
+  inspection_required?: boolean | null;
+  next_required_action?: {
+    action_type: string | null; action_label: string | null;
+    allowed: boolean; blocked_message: string | null;
+  };
 }
 export interface PartsRequestItem {
   parts_request_id: string; job_id: string; tenant_id: string; technician_id: string;
@@ -4669,6 +4675,10 @@ export const homeServiceStaffJobsApi = {
   accept: async (jobId: string) =>
     unwrapStaffJobResult<{ job_id: string; status: string }>(
       await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/accept`, { method: "POST", body: "{}" })),
+  customerContacted: (jobId: string) =>
+    apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/customer-contacted`, {
+      method: "POST", body: JSON.stringify({ notes: "Requirements confirmed with customer." }),
+    }),
   reject: async (jobId: string, reason: string) =>
     unwrapStaffJobResult<{ job_id: string; status: string }>(
       await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reason }) })),

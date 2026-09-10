@@ -217,3 +217,67 @@ async def test_eligible_staff_matches_on_tenant_service_id_not_master_service_id
 
     blocked_reasons = [r for s in result["blocked_staff"] for r in s["blocked_reasons"]]
     assert "no_matching_service_skill" not in blocked_reasons
+
+
+@pytest.mark.asyncio
+async def test_assign_validation_does_not_turn_roster_warnings_into_hard_blocks():
+    """A person shown in eligible_staff must be accepted by POST /assign.
+
+    Missing skill metadata and a missing recurring schedule are setup warnings;
+    tenant/activity/role and actual leave/outside-hours remain hard gates.
+    """
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+    from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+
+    tenant_id = uuid.uuid4()
+    job = _job(tenant_id, uuid.uuid4(), job_type_id=uuid.uuid4())
+    staff = MagicMock(spec=ProviderTeamMember)
+    staff.id = uuid.uuid4()
+    staff.tenant_id = tenant_id
+    staff.user_id = None
+    staff.status = "active"
+    staff.can_receive_assignment = True
+    staff.designation = "technician"
+    staff.member_type = "technician"
+    staff.supported_offering_ids = []
+
+    svc = HomeServiceJobAssignmentService(MagicMock())
+    svc._load_staff = AsyncMock(return_value=staff)
+
+    loaded, blocked = await svc.validate_staff_eligibility(job, staff.id)
+
+    assert loaded is staff
+    assert blocked == []
+
+
+def test_next_action_follows_fixed_price_and_quote_approval_workflows():
+    from app.engines.home_service_assignment.service import _next_required_action
+
+    fixed = _next_required_action(
+        "reached_site",
+        {"inspection_required": False, "can_start_work": True},
+    )
+    assert fixed == {
+        "action_type": "start-service",
+        "action_label": "Start Service",
+        "allowed": True,
+        "blocked_message": None,
+    }
+
+    waiting = _next_required_action(
+        "quote_required",
+        {"can_start_work": False, "start_work_block_message": "Customer approval is pending."},
+    )
+    assert waiting["action_type"] == "start-service"
+    assert waiting["allowed"] is False
+    assert waiting["blocked_message"] == "Customer approval is pending."
+
+    approved = _next_required_action("quote_required", {"can_start_work": True})
+    assert approved["action_type"] == "start-service"
+    assert approved["allowed"] is True
+
+
+def test_completion_requires_explicit_work_done_milestone():
+    from app.engines.execution.constants import COMPLETABLE_JOB_STATUSES
+
+    assert COMPLETABLE_JOB_STATUSES == {JS_WORK_DONE}

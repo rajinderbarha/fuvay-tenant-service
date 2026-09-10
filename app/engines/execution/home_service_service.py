@@ -268,6 +268,7 @@ class HomeServiceJobExecutionService:
             "job_type_id": str(job.job_type_id) if getattr(job, "job_type_id", None) else None,
             "job_type_key": None,
             "job_type_label": None,
+            "inspection_required": None,
             "quote_approval_required": None,
             "quote_state": None,
             "can_start_work": False,
@@ -285,6 +286,7 @@ class HomeServiceJobExecutionService:
             result["start_work_block_code"] = ERR_JOB_TYPE_CONTEXT_UNRESOLVED
             result["start_work_block_message"] = MSG_JOB_TYPE_CONTEXT_UNRESOLVED
             return result
+        result["inspection_required"] = bool(workflow.inspection_required)
         requires_quote_approval = bool(workflow.quote_approval_required) or (
             getattr(workflow, "pricing_behavior", None)
             in {"inspection_required", "custom_quote"}

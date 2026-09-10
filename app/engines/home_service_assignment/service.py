@@ -285,21 +285,15 @@ class HomeServiceJobAssignmentService:
         if blocked:
             return staff, blocked
 
-        if await self._job_requires_technician(job) and not is_user:
-            tenant_service_id = await self._tenant_service_id_for_job(job)
-            supported = {str(value) for value in (getattr(staff, "supported_offering_ids", None) or [])}
-            if tenant_service_id is None:
-                blocked.append("service_not_configured")
-            elif str(tenant_service_id) not in supported:
-                blocked.append("no_matching_service_skill")
-
-            has_availability = (await self.db.execute(text(
-                "SELECT 1 FROM provider_availability_rules "
-                "WHERE tenant_id=:tid AND scope_type='staff_member' "
-                "AND scope_id=:sid AND is_active=true LIMIT 1"
-            ), {"tid": str(job.tenant_id), "sid": str(staff_member_id)})).first()
-            if not has_availability:
-                blocked.append("no_availability_configured")
+        # Service-skill and missing recurring-availability configuration are
+        # advisory at dispatch time. The assignment-options read path already
+        # exposes those as warnings because customer capacity is sold from
+        # active headcount, and a provider must still be able to dispatch the
+        # visit while finishing roster metadata. The write path used to turn
+        # those same warnings back into hard blocks, so a technician displayed
+        # as "eligible" was rejected by POST /assign. Only real safety facts
+        # (wrong tenant, inactive account, non-field role, cannot receive work,
+        # leave/outside-hours) belong in `blocked` here.
 
         blocked.extend(await self._availability_block_reasons(job, staff_member_id))
         return staff, blocked
@@ -1417,9 +1411,23 @@ class HomeServiceJobAssignmentService:
         # the correct reason without recomputing it -- backend stays
         # authoritative, this is a narration of the same guard.
         from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        from app.engines.execution.models import ServiceJobExecutionEvent
+        from app.engines.execution.constants import EV_CUSTOMER_CONTACTED
         work_start_status = await HomeServiceJobExecutionService().get_work_start_status(self.db, job)
+        customer_contacted = (await self.db.execute(
+            select(ServiceJobExecutionEvent.id).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.event_type == EV_CUSTOMER_CONTACTED,
+            ).limit(1)
+        )).first() is not None
+        next_action = _next_required_action(
+            job.status,
+            work_start_status,
+            customer_contacted=customer_contacted,
+        )
         return {
-            "job":        {**job.to_dict(), **work_start_status},
+            "job":        {**job.to_dict(), **work_start_status,
+                           "next_required_action": next_action},
             "assignment": assignment.to_dict() if assignment else None,
             "booking":    _safe_booking_view(booking) if booking else None,
         }
@@ -1471,6 +1479,21 @@ def _next_required_action(
     """`customer_contacted` defaults True so every existing caller keeps its
     exact previous behaviour; callers that can determine it pass the real value
     and get the contact-first step."""
+    # Once an estimate/parts decision has cleared the authoritative work-start
+    # gate, the technician must be able to resume the same job. Previously
+    # quote_required was an unconditional dead end even after approval.
+    if status == "quote_required":
+        allowed = bool(work_start_status.get("can_start_work"))
+        return {
+            "action_type": "start-service",
+            "action_label": "Start Service",
+            "allowed": allowed,
+            "blocked_message": None if allowed else (
+                work_start_status.get("start_work_block_message")
+                or "Waiting for estimate, parts, or customer approval."
+            ),
+        }
+
     entry = _NEXT_ACTION_BY_STATUS.get(status)
     if entry is None:
         return {"action_type": None, "action_label": None, "allowed": False, "blocked_message": None}
@@ -1488,6 +1511,13 @@ def _next_required_action(
         }
 
     action_type, action_label = entry
+    # Fixed-price maintenance/installation workflows skip inspection. The
+    # static web/mobile maps previously always offered Start Inspection after
+    # arrival, while the backend correctly rejected it with
+    # INSPECTION_NOT_REQUIRED. Use the workflow projection already resolved by
+    # get_work_start_status so the offered action is executable.
+    if status == "reached_site" and work_start_status.get("inspection_required") is False:
+        action_type, action_label = "start-service", "Start Service"
     allowed = True
     blocked_message = None
     if status == "inspection_done" and not work_start_status.get("can_start_work", True):
