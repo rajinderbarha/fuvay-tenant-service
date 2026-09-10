@@ -1,6 +1,4 @@
-"""The technician's job flow, walked end to end the way the mobile app walks it.
-
-Every step here is driven by the SAME thing the app is driven by:
+"""The technician's job flow, walked end to end the way the mobile app walks it.Every step here is driven by the SAME thing the app is driven by:
 `next_required_action.key` from GET .../mobile-detail. The app maps that key to
 an endpoint and calls it. So the property this file protects is narrow and
 exact:
@@ -173,6 +171,61 @@ class TestActionVocabulary:
         as 'no inspection required'."""
         unresolved = _next_required_action("reached_site", {"can_start_work": True})
         assert unresolved["action_type"] == "start-inspection"
+
+    def test_an_estimate_that_blocks_work_becomes_the_action_to_take(self):
+        """`inspection_done` on a quote-gated job offered a DISABLED
+        "Start Service" beside "Create and send an estimate before starting
+        work." Nothing else in the app routes to the estimate builder, so that
+        was the end of the job: an instruction the technician could not follow
+        next to the only button on screen, which they could not press.
+        """
+        needs_estimate = _next_required_action("inspection_done", {
+            "can_start_work": False,
+            "start_work_block_code": "ESTIMATE_REQUIRED",
+            "start_work_block_message": "Create and send an estimate before starting work.",
+        })
+        assert needs_estimate["action_type"] == "create-estimate"
+        assert needs_estimate["allowed"] is True
+        assert needs_estimate["blocked_message"] is None
+
+        needs_revision = _next_required_action("inspection_done", {
+            "can_start_work": False,
+            "start_work_block_code": "ESTIMATE_REVISION_REQUIRED",
+        })
+        assert needs_revision["action_type"] == "revise-estimate"
+        assert needs_revision["allowed"] is True
+
+    def test_waiting_on_the_customer_stays_blocked_rather_than_becoming_busywork(self):
+        """Only the two estimate states the TECHNICIAN can act on turn into
+        actions. Waiting for the customer to approve, or a rejection that needs
+        the business, are not the technician's move and must keep saying so --
+        offering "Create Estimate" there would send them to redo work that is
+        already sitting with someone else."""
+        awaiting = _next_required_action("inspection_done", {
+            "can_start_work": False,
+            "start_work_block_code": "ESTIMATE_APPROVAL_REQUIRED",
+            "start_work_block_message": "The customer must approve the current estimate before work can start.",
+        })
+        assert awaiting["action_type"] == "start-service"
+        assert awaiting["allowed"] is False
+        assert awaiting["blocked_message"] == (
+            "The customer must approve the current estimate before work can start.")
+
+        rejected = _next_required_action("inspection_done", {
+            "can_start_work": False,
+            "start_work_block_code": "ESTIMATE_REJECTED",
+            "start_work_block_message": "The estimate was rejected. Work cannot start.",
+        })
+        assert rejected["allowed"] is False
+
+    def test_a_quote_required_job_is_also_offered_the_estimate(self):
+        """Same reasoning on the status that exists specifically for it."""
+        action = _next_required_action("quote_required", {
+            "can_start_work": False,
+            "start_work_block_code": "ESTIMATE_REQUIRED",
+        })
+        assert action["action_type"] == "create-estimate"
+        assert action["allowed"] is True
 
     def test_no_live_status_leaves_the_technician_with_nothing_to_do(self):
         """Asked of the projection itself, not of the raw table -- statuses
@@ -686,4 +739,47 @@ async def test_a_seeded_inspection_checklist_reaches_the_technician_with_its_ite
                 "DELETE FROM checklist_template_versions WHERE checklist_template_id=:tid"), {"tid": template.id})
             await db.execute(text("DELETE FROM checklist_templates WHERE id=:tid"), {"tid": template.id})
             await db.commit()
+            await _cleanup(db, ids)
+
+@pytest.mark.asyncio
+async def test_a_quote_gated_job_is_handed_the_estimate_step_not_a_dead_stop():
+    """The live shape: a blueprint that requires customer approval of a quote.
+    After inspection the technician must be given the estimate to build --
+    against real rows, through the real projection.
+    """
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=True, quote_approval_required=True)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                for key in ("accept", "call-customer", "on-the-way", "reached-site",
+                            "start-inspection", "complete-inspection"):
+                    response = await client.post(
+                        f"/v1/staff/service-jobs/{job_id}/{_endpoint_for(key)}", headers=headers)
+                    assert response.status_code == 200, f"{key}: {response.text[:200]}"
+
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-detail", headers=headers)).json()["data"]
+
+                assert detail["job"]["workflow_status"] == "inspection_done"
+                # Work is genuinely gated...
+                assert detail["blocker"] is not None
+                assert detail["blocker"]["code"] == "ESTIMATE_REQUIRED"
+                # ...and the offered action is the one that clears the gate.
+                assert detail["next_required_action"]["key"] == "create-estimate"
+                assert detail["next_required_action"]["allowed"] is True
+
+                # The estimate screen it routes to is real and serves this job.
+                estimate = await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-estimate", headers=headers)
+                assert estimate.status_code == 200, estimate.text[:300]
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
             await _cleanup(db, ids)
