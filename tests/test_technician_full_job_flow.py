@@ -573,3 +573,117 @@ async def test_a_terminal_job_is_not_offered_a_phantom_inspection_to_complete():
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
+async def test_a_seeded_inspection_checklist_reaches_the_technician_with_its_items():
+    """The Inspection screen renders `sections[].items[]`. A mapping that
+    resolves but hands back no items looks exactly like no checklist at all --
+    two buttons, nothing to fill in, and Complete permanently disabled because
+    nothing can be answered.
+
+    Mirrors the live shape exactly: a Repair job type whose blueprint inspects,
+    with one REQUIRED inspection checklist mapped to its (master service, job
+    type) link, seeded the way scripts/seed_inspection_checklists.py seeds it.
+    """
+    from app.database import get_session_factory, init_db
+    from app.engines.checklist_catalog import constants as cc
+    from app.engines.checklist_catalog import service as checklist_svc
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=True, quote_approval_required=False)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+
+        msjt_id = (await db.execute(text(
+            "SELECT id FROM master_service_job_types WHERE master_service_id=:ms AND job_type_id=:jt"
+        ), {"ms": ids["ms"], "jt": ids["jt"]})).scalar_one()
+
+        template = await checklist_svc.create_template(
+            db, name="AC Repair - Inspection", code=f"INSP-TEST-{ids['job'].hex[:6].upper()}",
+            description=None, purpose=cc.PURPOSE_INSPECTION,
+            owner_scope=cc.OWNER_SCOPE_PLATFORM, tenant_id=None, created_by_user_id=None,
+        )
+        version = await checklist_svc.get_draft_version(db, template.id)
+        section = await checklist_svc.add_section(db, version, "Checklist", display_order=0)
+        labels = [
+            "Confirmed the fault the customer reported",
+            "Power supply, plug and MCB checked",
+            "Refrigerant gas pressure checked",
+        ]
+        for index, label in enumerate(labels):
+            await checklist_svc.add_item(
+                db, section, version, item_type=cc.ITEM_TYPE_CHECKBOX,
+                label=label, is_required=True, display_order=index)
+        await checklist_svc.publish_version(db, version, published_by=None, change_summary="v1")
+        mapping = await checklist_svc.create_mapping(
+            db, master_service_job_type_id=msjt_id, service_job_workflow_id=None,
+            checklist_template_version_id=version.id, phase=cc.PURPOSE_INSPECTION,
+            usage=cc.USAGE_REQUIRED, actor=cc.ACTOR_TECHNICIAN,
+            completion_gate=cc.GATE_BEFORE_INSPECTION_COMPLETE,
+            condition_rules=None, display_order=0, created_by=None,
+        )
+        await db.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                for key in ("accept", "call-customer", "on-the-way", "reached-site", "start-inspection"):
+                    response = await client.post(
+                        f"/v1/staff/service-jobs/{job_id}/{_endpoint_for(key)}", headers=headers)
+                    assert response.status_code == 200, f"{key}: {response.text[:200]}"
+
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-inspection", headers=headers)).json()["data"]
+
+                assert detail["definition_status"] == "AVAILABLE"
+                assert detail["instance"] is not None
+
+                # The part the screen actually renders.
+                assert detail["sections"], "a resolved mapping handed back no sections"
+                rendered = [i for sec in detail["sections"] for i in sec["items"]]
+                assert [i["label"] for i in rendered] == labels, rendered
+                assert all(i["item_type"] == cc.ITEM_TYPE_CHECKBOX for i in rendered)
+
+                # Nothing answered yet, so Complete is correctly held shut...
+                assert detail["readiness"]["total_required"] == len(labels)
+                assert detail["readiness"]["completed_required"] == 0
+                assert detail["readiness"]["can_complete"] is False
+
+                # ...and answering every item opens it.
+                instance_id = detail["instance"]["instance_id"]
+                for item in rendered:
+                    response = await client.post(
+                        f"/v1/staff/service-jobs/checklist-instances/{instance_id}/responses/{item['id']}",
+                        headers=headers, json={"response_value": {"value": "yes"}, "evidence": None})
+                    assert response.status_code == 200, response.text[:300]
+
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-inspection", headers=headers)).json()["data"]
+                assert detail["readiness"]["completed_required"] == len(labels)
+                assert detail["readiness"]["can_complete"] is True
+                assert "complete_inspection" in detail["allowed_actions"]
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            await db.execute(text(
+                "DELETE FROM job_checklist_responses WHERE job_checklist_instance_id IN "
+                "(SELECT id FROM job_checklist_instances WHERE job_id=:jid)"), {"jid": job_id})
+            await db.execute(text("DELETE FROM job_checklist_instances WHERE job_id=:jid"), {"jid": job_id})
+            await db.execute(text("DELETE FROM job_type_checklist_mappings WHERE id=:mid"), {"mid": mapping.id})
+            await db.execute(text(
+                "DELETE FROM checklist_items WHERE checklist_section_id IN "
+                "(SELECT id FROM checklist_sections WHERE checklist_template_version_id IN "
+                "(SELECT id FROM checklist_template_versions WHERE checklist_template_id=:tid))"),
+                {"tid": template.id})
+            await db.execute(text(
+                "DELETE FROM checklist_sections WHERE checklist_template_version_id IN "
+                "(SELECT id FROM checklist_template_versions WHERE checklist_template_id=:tid)"),
+                {"tid": template.id})
+            await db.execute(text(
+                "DELETE FROM checklist_template_versions WHERE checklist_template_id=:tid"), {"tid": template.id})
+            await db.execute(text("DELETE FROM checklist_templates WHERE id=:tid"), {"tid": template.id})
+            await db.commit()
+            await _cleanup(db, ids)
