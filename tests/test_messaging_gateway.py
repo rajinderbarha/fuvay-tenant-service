@@ -3518,7 +3518,7 @@ async def test_only_an_explicit_command_restarts_inside_the_window(monkeypatch, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tap", ["pt|req-1|approve", "qt|q-1|approve",
                                   "tr|BK-1", "cx|BK-1", "pay|p-1|confirm",
-                                  "ho|j-1|acknowledge"])
+                                  "ho|j-1|acknowledge", "rt|b-1|5"])
 async def test_a_durable_action_tap_is_never_swallowed_by_a_welcome(monkeypatch, tap):
     """A parts approval raised at 2pm and tapped at 5pm is the normal case.
     Answering it with a welcome would approve nothing and leave the technician
@@ -3535,6 +3535,29 @@ async def test_a_durable_action_tap_is_never_swallowed_by_a_welcome(monkeypatch,
 
     # The tap reached the flow, and the booking context it refers to survives.
     assert sent == ["Approved."]
+    assert thread.zipcode == "141001"
+
+
+@pytest.mark.asyncio
+async def test_a_typed_rating_the_next_morning_is_the_rating_not_a_welcome(monkeypatch):
+    """Instagram's desktop client shows no quick replies, so the rating prompt
+    invites a typed 1-5. Hours later that number still answers the question
+    that was asked, and reaches the flow as the rating tap itself."""
+    stale = datetime.now(timezone.utc) - timedelta(hours=9)
+    thread = _Thread(zipcode="141001", last_inbound_at=stale,
+                     last_options=[f"rt|b-1|{n}" for n in range(1, 6)])
+    gw, sent = _gateway(thread, monkeypatch, lambda _t, ignore_input: "unused")
+    seen = {}
+
+    async def _advance(_passed, msg, ignore_input=False):
+        seen.update(reply_id=msg.reply_id, ignored=ignore_input)
+        return "Thank you! You rated this service 4/5 ⭐⭐⭐⭐", None
+
+    gw._advance = _advance
+    await gw.handle_inbound(_inbound("4"))
+
+    assert seen == {"reply_id": "rt|b-1|4", "ignored": False}
+    assert sent == ["Thank you! You rated this service 4/5 ⭐⭐⭐⭐"]
     assert thread.zipcode == "141001"
 
 

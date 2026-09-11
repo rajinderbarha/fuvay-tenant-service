@@ -176,12 +176,13 @@ PICK_PAYMENT = "pay"      # pay|<payment_id>|confirm / not_paid
 PICK_PHONE = "phone"      # phone|change — discard pending OTP and enter another number
 PICK_ADDON = "ao"         # ao|draft_id|price_token|action|mapping_id|quantity
 PICK_DIMENSION = "dim"    # dim|<dimension_key>|<value_id> — e.g. dim|type|<uuid>
+PICK_RATING = "rt"        # rt|<booking_id>|<1-5> — see rating_request.py
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
     PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_EMERGENCY,
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
-    PICK_DIMENSION,
+    PICK_DIMENSION, PICK_RATING,
 )
 
 #: The Job-Type Blueprint dimensions the chat can ask for, mapped to the draft
@@ -200,7 +201,13 @@ DIMENSION_DRAFT_FIELD = {
 #: after an hour those genuinely are a new conversation.
 DURABLE_ACTION_PICKS = {
     PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT,
+    PICK_RATING,
 }
+
+#: Where a finished job's "how would you rate it?" is asked. Instagram only for
+#: now; the prompt and the tap handling are channel-neutral (WhatsApp renders
+#: the same five options as a list), so adding WhatsApp is this line alone.
+RATING_REQUEST_CHANNELS = (CHANNEL_INSTAGRAM,)
 
 #: WhatsApp only allows a business-initiated message outside this window via a
 #: pre-approved template; inside it, an ordinary message is fine. Instagram

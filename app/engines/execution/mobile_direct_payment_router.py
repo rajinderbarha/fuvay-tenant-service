@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_staff_or_technician_only, UserContext
@@ -11,6 +11,7 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.engines.execution.mobile_direct_payment_service import MobileDirectPaymentService
+from app.engines.messaging_gateway.rating_request import send_rating_request
 
 router = APIRouter(prefix="/v1/staff/service-jobs", tags=["Technician Mobile Direct Payment"])
 _svc = MobileDirectPaymentService()
@@ -52,7 +53,10 @@ async def remind_mobile_direct_payment(job_id: uuid.UUID, request: Request, user
 
 
 @router.post("/{job_id}/mobile-direct-payment/finalize")
-async def finalize_mobile_direct_payment(job_id: uuid.UUID, request: Request, user: UserContext = Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
+async def finalize_mobile_direct_payment(job_id: uuid.UUID, request: Request, background_tasks: BackgroundTasks, user: UserContext = Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
     _require_tenant(user)
     data = await _svc.finalize_job(db, uuid.UUID(user.user_id), uuid.UUID(user.tenant_id), job_id, _rid(request))
+    # After the response, never inline: the Instagram send can take as long as
+    # the staff app's own timeout, and a completed job must not look failed.
+    background_tasks.add_task(send_rating_request, job_id)
     return ok(data, _rid(request), "execution")

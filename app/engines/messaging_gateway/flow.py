@@ -39,7 +39,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_AREA, PICK_AREA_CITY, PICK_CANCEL, PICK_CATEGORY, PICK_DIMENSION,
     PICK_CONFIRM, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING, PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
-    PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
+    PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -312,7 +312,7 @@ async def advance(
         kind = reply_id.partition(PICKER_SEP)[0]
         if not thread.zipcode and kind not in {
             PICK_RESTART, PICK_AREA, PICK_AREA_CITY, PICK_TRACK, PICK_CANCEL,
-            PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT,
+            PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
         }:
             # Instagram quick replies and buttons on old messages remain
             # tappable. Once a new booking has cleared its area, an old
@@ -320,7 +320,7 @@ async def advance(
             return Turn(ASK_PINCODE)
         if _is_finished(draft) and kind not in {
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
-            PICK_HANDOVER, PICK_PAYMENT,
+            PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
         }:
             # Old controls remain tappable forever. A finished draft may only
             # accept explicit post-booking actions, never stale booking input.
@@ -477,6 +477,12 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
         if following:
             following.text = f"{note}\n\n{following.text}"
             return following
+        return await _booked_menu_for(identity, thread, "", note)
+
+    if kind == PICK_RATING:
+        from app.engines.messaging_gateway import rating_request
+        booking_id, _, stars = rest.partition(PICKER_SEP)
+        note = await rating_request.record_rating(db, thread, booking_id, stars)
         return await _booked_menu_for(identity, thread, "", note)
 
     if kind == PICK_SKIP and draft:

@@ -31,7 +31,7 @@ from app.config import get_settings
 from app.core.security import (
     enforce_otp_verify_limits, opaque_rate_identifier, rate_limiter, record_abuse_event,
 )
-from app.engines.messaging_gateway import flow, meta_client, pickers
+from app.engines.messaging_gateway import flow, meta_client, pickers, rating_request
 from app.engines.messaging_gateway.constants import (
     CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
     CMD_VERIFY, COMMAND_PREFIX,
@@ -519,6 +519,10 @@ class MessagingGatewayService:
                     "That booking form has expired or no longer belongs to this "
                     "booking. Reply TIMES to see the current appointments here."
                 )
+        if not msg.reply_id:
+            # A bare 1-5 under an open rating question is that rating, and so
+            # a durable tap rather than an opener however long the gap.
+            msg.reply_id = rating_request.typed_rating(thread, msg.text)
 
         # A tapped option is customer data, and an option label could
         # legitimately read like a command ("/help" as a brand name), so a tap
