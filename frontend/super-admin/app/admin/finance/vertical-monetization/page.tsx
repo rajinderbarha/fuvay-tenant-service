@@ -127,7 +127,7 @@ export default function VerticalMonetizationPage() {
                     <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-                          {["Vertical", "Revenue Model", "Provider Charge", "Customer Fee", "Policy Source", "Status", ""].map(h => (
+                          {["Vertical", "Revenue Model", "Provider Charge", "Platform Charge", "Policy Source", "Status", ""].map(h => (
                             <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
                           ))}
                         </tr>
@@ -244,7 +244,7 @@ function PolicyDetailPanel({ row, onChanged }: { row: MonetizationPolicyRow; onC
           <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "14px 0 8px" }}>Policy summary</p>
           <SummaryRow label="Revenue model" value={current?.provider_model ?? "Not configured"}/>
           <SummaryRow label="Provider settlement" value={row.provider_charge}/>
-          <SummaryRow label="Customer fee" value={row.customer_fee}/>
+          <SummaryRow label="Platform charge" value={row.customer_fee}/>
           <SummaryRow label="Pricing ownership" value="Tenant business"/>
 
           <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "16px 0 8px" }}>Catalog impact</p>
@@ -289,7 +289,7 @@ function PolicyDetailPanel({ row, onChanged }: { row: MonetizationPolicyRow; onC
           {previewResult && (
             <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--surface-sunken)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "0 0 6px" }}>Policy Preview (₹500 example)</p>
-              <SummaryRow label="Customer platform fee" value={`₹${previewResult.customer_platform_fee}`}/>
+              <SummaryRow label="Platform charge" value={`₹${previewResult.customer_platform_fee}`}/>
               <SummaryRow label="Total payable" value={`₹${previewResult.total_payable}`}/>
               <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "6px 0 0" }}>{String(previewResult.note ?? "")}</p>
             </div>
@@ -359,13 +359,13 @@ function PolicyEditorForm({ form, setForm }: { form: DraftForm; setForm: (f: Dra
         <Field label="Credit units per job"><input type="number" value={form.provider_credit_units ?? ""} onChange={e => set("provider_credit_units", Number(e.target.value))} style={inputStyle}/></Field>
       )}
 
-      <Field label="Customer fee model">
+      <Field label="Platform charge model">
         <select value={form.customer_fee_model ?? "NONE"} onChange={e => set("customer_fee_model", e.target.value)} style={selectStyle}>
           {CUSTOMER_FEE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
       {(form.customer_fee_model === "PERCENTAGE" || form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") && (
-        <Field label="Customer fee percentage"><input type="number" value={form.customer_fee_percentage ?? ""} onChange={e => set("customer_fee_percentage", e.target.value)} style={inputStyle}/></Field>
+        <Field label="Platform charge percentage"><input type="number" value={form.customer_fee_percentage ?? ""} onChange={e => set("customer_fee_percentage", e.target.value)} style={inputStyle}/></Field>
       )}
       {form.customer_fee_model === "FIXED" && (
         <Field label="Fixed fee (minor units)"><input type="number" value={form.customer_fee_fixed_amount_minor ?? ""} onChange={e => set("customer_fee_fixed_amount_minor", Number(e.target.value))} style={inputStyle}/></Field>
@@ -411,7 +411,7 @@ function ChangeHistoryTab({ verticalKey }: { verticalKey?: string }) {
         <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-              {["Version", "Status", "Provider Model", "Customer Fee Model", "Published", ""].map(h => (
+              {["Version", "Status", "Provider Model", "Platform Charge Model", "Published", ""].map(h => (
                 <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
               ))}
             </tr>

@@ -91,7 +91,7 @@ async def deduct_customer_platform_charge_recovery(
         tenant_id=tenant_id, job_id=job_id, booking_id=booking_id,
         event_type=RECOVERY_EVENT_TYPE, credit_delta=-recovery_amount,
         balance_before=balance_before, balance_after=balance_after,
-        reason=f"Customer platform charge recovery for job {job_id} ({policy_reference})",
+        reason=f"Platform charge recovery for job {job_id} ({policy_reference})",
         request_id=request_id,
     )
     db.add(ledger)

@@ -592,16 +592,26 @@ export interface BJListResponse {
   generated_at: string;
 }
 export interface BJDetail {
-  booking: Record<string, unknown> & { customer_alias?: string; locality?: string };
+  booking: Record<string, unknown> & {
+    booking_number?: string; customer_alias?: string; locality?: string;
+    issue_summary?: string | null; customer_note?: string | null;
+    customer_photo_urls?: string[]; is_emergency?: boolean;
+    price_snapshot?: Record<string, unknown> | null;
+  };
   job: Record<string, unknown> & {
     id: string; job_number: string; scheduled_date?: string | null;
-    scheduled_time_window?: string | null;
+    scheduled_time_window?: string | null; status?: string; assignment_status?: string;
+    completion_data?: Record<string, unknown> | null;
+    warranty_days?: number | null; warranty_expires_at?: string | null;
   };
-  service_name: string | null; job_type_label: string | null;
+  service_name: string | null; job_type_label: string | null; problem_name: string | null;
+  technician: {
+    id: string; full_name: string; designation: string | null; phone: string | null;
+  } | null;
   stage: { stage: string; stage_label: string; is_terminal: boolean; next_action: BJAction | null };
   available_actions: BJAction[];
-  invoice: (Record<string, unknown> & { customer_payable_amount?: number; payment_status?: string }) | null;
-  quote: (Record<string, unknown> & { customer_payable_amount?: number; status?: string }) | null;
+  invoice: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; payment_status?: string }) | null;
+  quote: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; status?: string }) | null;
   visit_fee: string | null; open_complaint_count: number; sla: BJSla;
   workflow_stages: Array<{
     step_key: string; label: string; state: "completed" | "current" | "skipped" | "upcoming";

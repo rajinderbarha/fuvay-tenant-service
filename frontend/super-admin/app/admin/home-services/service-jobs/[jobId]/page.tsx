@@ -17,6 +17,30 @@ import { ReviewFeedbackTab } from "../../../../../components/home-services/Revie
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
+function humanize(value: unknown) {
+  if (value == null || value === "") return "—";
+  const text = String(value).replace(/_/g, " ").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "—";
+}
+
+function money(value: unknown) {
+  return formatPriceSnapshotValue("service_total", value);
+}
+
+function credits(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })} usage credits` : "—";
+}
+
+function formatAddress(snapshot: Record<string, unknown> | null | undefined) {
+  if (!snapshot) return null;
+  return [snapshot.address_line_1 ?? snapshot.address_line1 ?? snapshot.line1,
+    snapshot.address_line_2 ?? snapshot.address_line2, snapshot.locality, snapshot.landmark,
+    snapshot.city, snapshot.state, snapshot.zipcode ?? snapshot.postal_code]
+    .filter(value => typeof value === "string" && value.trim())
+    .join(", ") || null;
+}
+
 const STATUS_VARIANT: Record<string, "success" | "warning" | "muted" | "danger"> = {
   completed: "success", cancelled: "danger", failed: "danger", force_closed: "danger", voided: "muted",
   pending_assignment: "muted", assigned: "warning", accepted: "warning",
@@ -300,6 +324,12 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const priceSnapshot = (d?.price_summary ?? d?.booking?.price_snapshot ?? {}) as Record<string, any>;
   const providerSnapshot = (d?.booking?.provider_snapshot ?? {}) as Record<string, any>;
   const deduction = d?.usage_credit_deduction;
+  const platformChargeRecovery = d?.platform_charge_recovery;
+  const commissionAmount = d?.charge_summary?.commission_amount ?? (deduction ? Math.abs(deduction.credit_delta) : null);
+  const platformChargeAmount = d?.charge_summary?.platform_charge_amount
+    ?? (platformChargeRecovery ? Math.abs(platformChargeRecovery.credit_delta) : priceSnapshot.platform_fee);
+  const totalProviderDeduction = d?.charge_summary?.total_provider_credit_deduction;
+  const bookingAddress = formatAddress(d?.booking?.address_snapshot);
 
   return (
     <AdminLayout activeNav="home-services-operations">
@@ -402,11 +432,16 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
       ) : d && !(d as any).error ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: 16 }}>
           <div>
-            <Section title="Job Summary">
+            <Section title="Complete Job Details">
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <Field label="Job Number" value={d.job_number} />
                 <Field label="Status" value={<Badge variant={STATUS_VARIANT[d.status] ?? "muted"}>{d.status}</Badge>} />
-                <Field label="Assignment Status" value={d.assignment_status} />
+                <Field label="Assignment Status" value={humanize(d.assignment_status)} />
+                <Field label="Technician" value={d.technician?.full_name ?? "Unassigned"} />
+                {d.technician?.designation && <Field label="Technician Role" value={d.technician.designation} />}
+                <Field label="Scheduled Date" value={d.scheduled_date ? new Date(`${d.scheduled_date}T00:00:00`).toLocaleDateString() : "—"} />
+                <Field label="Time Window" value={d.scheduled_time_window ?? "—"} />
+                <Field label="Priority" value={d.is_emergency ? <Badge variant="danger">Emergency</Badge> : "Standard"} />
                 <Field label="City / Zipcode" value={`${d.city ?? "—"} / ${d.zipcode ?? "—"}`} />
                 <Field label="Created At" value={d.created_at ? new Date(d.created_at).toLocaleString() : "—"} />
                 <Field label="Updated At" value={d.updated_at ? new Date(d.updated_at).toLocaleString() : "—"} />
@@ -429,12 +464,19 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                 {d.sla?.minutes_overdue != null && (
                   <Field label="Overdue By" value={`${d.sla.minutes_overdue} min`} />
                 )}
+                {d.warranty_days_snapshot != null && <Field label="Warranty" value={`${d.warranty_days_snapshot} days`} />}
+                {d.warranty_expires_at && <Field label="Warranty Expires" value={new Date(d.warranty_expires_at).toLocaleDateString()} />}
+                {d.failure_reason && <Field label="Failure Reason" value={d.failure_reason} />}
               </div>
             </Section>
 
-            <Section title="Service Details">
+            <Section title="Service & Booking Details">
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                <Field label="Service" value={d.service_context?.service_name ?? "—"} />
+                <Field label="Job Type" value={d.service_context?.job_type ?? humanize(d.service_context?.legacy_job_type)} />
+                <Field label="Reported Problem" value={d.service_context?.problem_name ?? "—"} />
                 <Field label="Issue Summary" value={d.booking?.issue_summary} />
+                {d.booking?.customer_note && <Field label="Customer Note" value={d.booking.customer_note} />}
                 <Field label="Customer Total" value={
                   (priceSnapshot.customer_total ?? priceSnapshot.display_price ?? priceSnapshot.selected_price_amount) != null
                     ? formatPriceSnapshotValue("customer_total", priceSnapshot.customer_total ?? priceSnapshot.display_price ?? priceSnapshot.selected_price_amount)
@@ -444,14 +486,82 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                   <Field label="Service Amount" value={formatPriceSnapshotValue("service_total", priceSnapshot.service_total)} />
                 )}
                 {priceSnapshot.platform_fee != null && (
-                  <Field label="Platform Fee" value={formatPriceSnapshotValue("platform_fee", priceSnapshot.platform_fee)} />
+                  <Field label="Platform Charge" value={formatPriceSnapshotValue("platform_fee", priceSnapshot.platform_fee)} />
                 )}
                 <Field label="Payment Mode" value={
                   priceSnapshot.payment_mode === "customer_pays_provider_directly"
                     ? "Customer Pays Provider Directly"
                     : (priceSnapshot.payment_mode ?? "—")
                 } />
+                {priceSnapshot.payment_status && <Field label="Payment Status" value={humanize(priceSnapshot.payment_status)} />}
+                {priceSnapshot.invoice_number && <Field label="Invoice Number" value={priceSnapshot.invoice_number} />}
               </div>
+            </Section>
+
+            <Section title="Technician Estimate & Customer Approval">
+              {d.current_quote ? (
+                <>
+                  <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
+                    <Field label="Estimate Number" value={d.current_quote.quote_number} />
+                    <Field label="Version" value={d.current_quote.version_number} />
+                    <Field label="Approval Status" value={
+                      <Badge variant={d.current_quote.status === "customer_approved" ? "success" : "warning"}>
+                        {humanize(d.current_quote.status)}
+                      </Badge>
+                    } />
+                    <Field label="Sent to Customer" value={d.current_quote.sent_to_customer_at
+                      ? new Date(d.current_quote.sent_to_customer_at).toLocaleString() : "—"} />
+                    <Field label="Customer Approved At" value={d.current_quote.approved_at
+                      ? new Date(d.current_quote.approved_at).toLocaleString() : "—"} />
+                  </div>
+                  {d.current_quote.customer_visible_notes && (
+                    <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: "var(--surface-secondary)" }}>
+                      <Field label="Notes Shown to Customer" value={d.current_quote.customer_visible_notes} />
+                    </div>
+                  )}
+                  {(d.quote_items?.length ?? 0) > 0 ? (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ color: "var(--text-tertiary)", textAlign: "left", borderBottom: "1px solid var(--border)" }}>
+                            <th style={{ padding: "8px 6px" }}>Item / Service</th>
+                            <th style={{ padding: "8px 6px" }}>Type</th>
+                            <th style={{ padding: "8px 6px", textAlign: "right" }}>Qty</th>
+                            <th style={{ padding: "8px 6px", textAlign: "right" }}>Unit Price</th>
+                            <th style={{ padding: "8px 6px", textAlign: "right" }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {d.quote_items!.map(item => (
+                            <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                              <td style={{ padding: "10px 6px" }}>
+                                <strong>{item.item_name}</strong>
+                                {item.item_description && <div style={{ color: "var(--text-tertiary)", marginTop: 2 }}>{item.item_description}</div>}
+                              </td>
+                              <td style={{ padding: "10px 6px" }}>{humanize(item.item_type)}</td>
+                              <td style={{ padding: "10px 6px", textAlign: "right" }}>{item.quantity}</td>
+                              <td style={{ padding: "10px 6px", textAlign: "right" }}>{money(item.unit_price)}</td>
+                              <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 700 }}>{money(item.line_total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No technician-added estimate items were recorded.</p>
+                  )}
+                  <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginTop: 14 }}>
+                    <Field label="Labour" value={money(d.current_quote.labour_amount)} />
+                    <Field label="Parts" value={money(d.current_quote.parts_amount)} />
+                    <Field label="Services" value={money(d.current_quote.service_amount)} />
+                    <Field label="Discount" value={money(d.current_quote.discount_amount)} />
+                    <Field label="Tax" value={money(d.current_quote.tax_amount)} />
+                    <Field label="Approved Service Total" value={money(d.current_quote.total_amount)} />
+                  </div>
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No technician estimate was created for this job.</p>
+              )}
             </Section>
 
             <Section title="Completion">
@@ -472,15 +582,24 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
               )}
             </Section>
 
-            <Section title="Completed Job Deduction">
-              {deduction ? (
+            <Section title="Platform & Commission Charges">
+              {(deduction || platformChargeRecovery) ? (
                 <>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
+                    The customer pays the provider directly. Platform and commission charges are recorded separately against the provider&apos;s usage credits.
+                  </p>
                   <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
-                    <Field label="Deduction Status" value={<Badge variant="success">Deducted</Badge>} />
-                    <Field label="Deduction Credits" value={`${Math.abs(deduction.credit_delta)} usage credits`} />
-                    <Field label="Balance Before" value={deduction.balance_before} />
-                    <Field label="Balance After" value={deduction.balance_after} />
-                    <Field label="Deducted At" value={deduction.created_at ? new Date(deduction.created_at).toLocaleString() : "—"} />
+                    <Field label="Platform Charge" value={money(priceSnapshot.platform_fee ?? platformChargeAmount)} />
+                    <Field label="Platform Charge Recovery" value={credits(platformChargeAmount)} />
+                    <Field label="Commission Charge" value={credits(commissionAmount)} />
+                    <Field label="Total Provider Credit Deduction" value={credits(totalProviderDeduction)} />
+                    {platformChargeRecovery && <Field label="Platform Balance" value={`${platformChargeRecovery.balance_before} → ${platformChargeRecovery.balance_after}`} />}
+                    {deduction && <Field label="Commission Balance" value={`${deduction.balance_before} → ${deduction.balance_after}`} />}
+                    <Field label="Recorded At" value={
+                      (deduction?.created_at ?? platformChargeRecovery?.created_at)
+                        ? new Date(deduction?.created_at ?? platformChargeRecovery!.created_at).toLocaleString()
+                        : "—"
+                    } />
                   </div>
                   {d.usage_credit_deduction_duplicate_count > 0 && (
                     <p style={{ fontSize: 12, color: "var(--danger-text)" }}>
@@ -492,15 +611,15 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
                       color: "var(--brand)", textDecoration: "none", marginTop: 4 }}
                   >
-                    View exact entry in Usage Credit Ledger <ExternalLink size={12} />
+                    View job entries in Usage Credit Ledger <ExternalLink size={12} />
                   </a>
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-                  No deduction record found for this job
+                  No platform or commission charge record found for this job
                   {d.status === "completed"
-                    ? " — this completed job predates the real completion+deduction flow, or the deduction genuinely failed."
-                    : " — job is not completed yet, so no deduction is expected."}
+                    ? " — this completed job predates the current charge flow, or the charge genuinely failed."
+                    : " — job is not completed yet, so no charge is expected."}
                 </p>
               )}
             </Section>
@@ -515,6 +634,20 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                 </span>
               } />
               <Field label="Name" value={d.booking?.customer_name ?? "Not captured"} />
+              <Field label="Phone" value={d.booking?.customer_phone ?? "Not captured"} />
+              <Field label="Service Address" value={bookingAddress ?? `${d.city ?? "—"} · ${d.zipcode ?? "—"}`} />
+              {(d.booking?.customer_photo_urls?.length ?? 0) > 0 && (
+                <Field label="Customer Attachments" value={
+                  <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {d.booking!.customer_photo_urls.map((url, index) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer"
+                        style={{ color: "var(--brand)", textDecoration: "none" }}>
+                        Photo {index + 1} <ExternalLink size={11} style={{ display: "inline" }} />
+                      </a>
+                    ))}
+                  </span>
+                } />
+              )}
             </Section>
 
             <Section title="Provider">
@@ -532,11 +665,18 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
               <Field label="Tenant ID" value={
                 <span style={{ fontFamily: "monospace", fontSize: 12 }}>{d.tenant_id}</span>
               } />
+              <Field label="Assigned Technician" value={d.technician?.full_name ?? "Unassigned"} />
+              {d.technician?.phone && <Field label="Technician Phone" value={d.technician.phone} />}
+              {d.technician?.email && <Field label="Technician Email" value={d.technician.email} />}
             </Section>
 
             <Section title="Booking">
               <Field label="Booking Number" value={d.booking?.booking_number} />
               <Field label="Booking Status" value={d.booking?.status} />
+              <Field label="Preferred Visit" value={
+                [d.booking?.preferred_date, d.booking?.preferred_time_window].filter(Boolean).join(" · ") || "—"
+              } />
+              <Field label="Emergency Booking" value={d.booking?.is_emergency ? "Yes" : "No"} />
               <Field label="Booking ID" value={<span style={{ fontFamily: "monospace", fontSize: 12 }}>{d.booking_id}</span>} />
             </Section>
           </div>

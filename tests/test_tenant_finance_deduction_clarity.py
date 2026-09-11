@@ -49,11 +49,11 @@ def test_provider_policy_discloses_fee_remittance_separately() -> None:
     assert "it is not a second provider commission" in service
     assert "customer_fee_recovery_enabled: boolean" in api
     assert 'title="Job settlement deductions"' in page
-    assert "Customer platform fee remitted" in page
+    assert "Platform charge" in page
     assert "Total job deductions this month" in page
 
 
 def test_ledger_labels_identify_the_two_distinct_movements() -> None:
     service = source(SERVICE)
     assert 'EVENT_COMPLETED_JOB_DEDUCTION: "Provider commission"' in service
-    assert 'RECOVERY_EVENT_TYPE: "Customer platform fee remitted"' in service
+    assert 'RECOVERY_EVENT_TYPE: "Platform charge"' in service

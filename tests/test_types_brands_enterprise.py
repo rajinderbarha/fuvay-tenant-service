@@ -28,7 +28,13 @@ def test_mapping_directories_join_names_and_sync_runtime_tables():
 def test_retirement_is_soft_audited_guarded_and_restorable():
     types = (ROOT / "app/engines/admin_catalog/types_service.py").read_text(encoding="utf-8")
     brands = (ROOT / "app/engines/admin_catalog/brand_service.py").read_text(encoding="utf-8")
-    assert 't.deleted_at = utcnow()' in types and "SERVICE_TYPE_IN_USE" in types
+    archive_type = types.split("async def archive_type", 1)[1].split("async def restore_type", 1)[0]
+    assert 't.deleted_at = now' in archive_type
+    assert "SERVICE_TYPE_IN_USE" not in archive_type
+    assert "provider_usages_disabled" in archive_type
+    assert "TenantServiceBrand.service_type_id == type_id" in archive_type
+    assert 'mapping.status = "archived"' in archive_type
+    assert "row.is_active = False" in archive_type
     assert 'b.deleted_at = utcnow()' in brands and "BRAND_IN_USE" in brands
     assert "restore_type" in types and "restore_brand" in brands
     page = (ROOT / "frontend/super-admin/app/admin/types-brands/page.tsx").read_text(encoding="utf-8")

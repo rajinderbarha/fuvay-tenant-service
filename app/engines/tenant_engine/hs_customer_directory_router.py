@@ -85,6 +85,14 @@ async def hs_customer_payments(customer_id: uuid.UUID, r: Request,
     return ok(await s.get_customer_payments(customer_id, page=page, page_size=page_size), _rid(r), ENGINE_ID)
 
 
+@router.get("/{customer_id}/complaints", response_model=ApiResponse[dict], summary="Home Services customer complaints (Customer 360 tab)")
+async def hs_customer_complaints(customer_id: uuid.UUID, r: Request,
+                                  page: int = Query(1, ge=1),
+                                  page_size: int = Query(20, ge=1, le=100),
+                                  s: HomeServicesCustomerDirectoryService = Depends(_svc)):
+    return ok(await s.get_customer_complaints(customer_id, page=page, page_size=page_size), _rid(r), ENGINE_ID)
+
+
 @router.get("/{customer_id}/activity", response_model=ApiResponse[dict], summary="Home Services customer activity & audit (Customer 360 tab)")
 async def hs_customer_activity(customer_id: uuid.UUID, r: Request,
                                 page: int = Query(1, ge=1),

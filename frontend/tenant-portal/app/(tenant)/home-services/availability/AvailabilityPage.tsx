@@ -5,12 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { Alert, Button, PageHeader, PageShell, Skeleton } from "@serviceos/design-system";
 import { useApi } from "../../../../hooks/useApi";
-import { apiFetch } from "../../../../lib/api";
+import { apiFetch, bookingsJobsApi, type BJDetail } from "../../../../lib/api";
 import {
   AvailabilityWeekBoard,
   type AvailabilitySchedule,
   type AvailabilityTechnician,
 } from "../../../../components/availability/AvailabilityWeekBoard";
+import { AvailabilityJobDrawer } from "../../../../components/availability/AvailabilityJobDrawer";
 
 interface PlannerResponse {
   generated_at: string;
@@ -71,6 +72,7 @@ function AvailabilityPageContent() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(() => searchParams.get("staff_id"));
   const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const weekEnd = addDays(weekStart, 6);
 
   const planner = useApi(useCallback(async () => {
@@ -84,10 +86,16 @@ function AvailabilityPageContent() {
     return apiFetch<PlannerResponse>(`/v1/tenant/home-services/availability?${query}`);
   }, [weekStart, weekEnd, selectedDate]), [weekStart, weekEnd, selectedDate]);
 
+  const jobDetail = useApi<BJDetail | null>(useCallback(
+    () => selectedJobId ? bookingsJobsApi.detail(selectedJobId) : Promise.resolve(null),
+    [selectedJobId],
+  ), [selectedJobId]);
+
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
+  const selectedJobDetail = jobDetail.data?.job.id === selectedJobId ? jobDetail.data : null;
 
   const moveWeek = (direction: -1 | 1) => {
     const shift = direction * 7;
@@ -144,9 +152,26 @@ function AvailabilityPageContent() {
           onSelectDay={(staffId, date) => {
             setSelectedStaffId(staffId);
             setSelectedDate(date);
+            setSelectedJobId(null);
           }}
-          onCloseDrawer={() => setSelectedStaffId(null)}
-          onOpenJob={jobId => router.push(`/service-jobs/${jobId}`)}
+          onCloseDrawer={() => {
+            setSelectedStaffId(null);
+            setSelectedJobId(null);
+          }}
+          onOpenJob={setSelectedJobId}
+        />
+      )}
+
+      {selectedJobId && (
+        <AvailabilityJobDrawer
+          jobId={selectedJobId}
+          technicianName={planner.data?.technicians.find(item => item.id === selectedStaffId)?.full_name ?? null}
+          detail={selectedJobDetail}
+          loading={jobDetail.loading || (!selectedJobDetail && !jobDetail.error)}
+          error={jobDetail.error}
+          onClose={() => setSelectedJobId(null)}
+          onOpenDetails={() => router.push(`/home-services/bookings-jobs?job_id=${encodeURIComponent(selectedJobId)}`)}
+          onOpenDispatch={() => router.push(`/home-services/dispatch?job_id=${encodeURIComponent(selectedJobId)}`)}
         />
       )}
     </PageShell>

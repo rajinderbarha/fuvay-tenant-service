@@ -3769,7 +3769,7 @@ export const typesApi = {
   update: (id:string, data:object) => apiFetch<ServiceTypeMaster>(`/v1/admin/catalog/types/${id}`, { method:"PUT", body:JSON.stringify(data) }),
   activate:   (id:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/activate`,   { method:"POST" }),
   deactivate: (id:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/deactivate`, { method:"POST" }),
-  archive:    (id:string, reason="Retired by administrator") => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/archive`, { method:"POST", body:JSON.stringify({reason}) }),
+  archive:    (id:string, reason="Retired by administrator") => apiFetch<{type_id:string;status:string;provider_usages_disabled:number;provider_brand_links_disabled:number;catalog_mappings_archived:number;service_links_disabled:number}>(`/v1/admin/catalog/types/${id}/archive`, { method:"POST", body:JSON.stringify({reason}) }),
   restore:    (id:string, reason:string) => apiFetch<{type_id:string;status:string}>(`/v1/admin/catalog/types/${id}/restore`, { method:"POST", body:JSON.stringify({reason}) }),
   audit:      (id:string) => apiFetch<{audit_log:AuditEntry[];total:number}>(`/v1/admin/catalog/types/${id}/audit`),
   exportTypes: () => apiFetch<ServiceTypeMaster[]>("/v1/admin/catalog/types/export"),
@@ -8001,21 +8001,48 @@ export interface AdminServiceJobDetail {
   customer_id: string | null; tenant_id: string | null;
   category_id: string; offering_id: string; assigned_staff_id: string | null;
   city: string | null; zipcode: string | null;
+  scheduled_date: string | null; scheduled_time_window: string | null;
+  is_emergency: boolean;
   status: string; assignment_status: string; failure_reason: string | null;
   completion_data: Record<string, unknown> | null;
+  warranty_days_snapshot: number | null; warranty_expires_at: string | null;
   created_at: string; updated_at: string;
   booking: {
     id: string; booking_number: string; customer_name: string | null;
+    customer_phone: string | null; city: string | null; zipcode: string | null;
+    address_snapshot: Record<string, unknown> | null;
     price_snapshot: Record<string, unknown> | null;
     provider_snapshot: Record<string, unknown> | null;
-    issue_summary: string | null; status: string;
+    issue_summary: string | null; issue_details: Record<string, unknown> | null;
+    answer_snapshot: Record<string, unknown> | null;
+    customer_note: string | null; customer_photo_urls: string[];
+    preferred_date: string | null; preferred_time_window: string | null;
+    is_emergency: boolean; status: string;
+  } | null;
+  service_context: {
+    service_name: string | null; legacy_job_type: string | null;
+    job_type: string | null; problem_name: string | null;
+  };
+  technician: {
+    id: string; full_name: string; designation: string | null;
+    phone: string | null; email: string | null;
   } | null;
   price_summary: Record<string, unknown> | null;
   current_quote: ({
     quote_number: string; status: string; currency: string;
+    labour_amount: string; parts_amount: string; service_amount: string;
+    discount_amount: string; tax_amount: string;
     total_amount: string; customer_payable_amount: string;
     version_number: number; is_current: boolean;
+    customer_visible_notes: string | null; sent_to_customer_at: string | null;
+    approved_at: string | null; approved_by: string | null;
   } & Record<string, unknown>) | null;
+  quote_items: Array<{
+    id: string; quote_id: string; job_id: string; item_type: string;
+    item_name: string; item_description: string | null; quantity: string;
+    unit_price: string; line_total: string; is_required: boolean;
+    is_customer_visible: boolean; created_at: string | null;
+  }>;
   invoice: ({
     invoice_number: string; status: string; currency: string;
     total_amount: string; platform_fee_amount: string;
@@ -8023,6 +8050,11 @@ export interface AdminServiceJobDetail {
     payment_status: string;
   } & Record<string, unknown>) | null;
   usage_credit_deduction: UsageCreditLedgerEntryAdmin | null;
+  platform_charge_recovery: UsageCreditLedgerEntryAdmin | null;
+  charge_summary: {
+    commission_amount: string; platform_charge_amount: string;
+    total_provider_credit_deduction: string;
+  };
   usage_credit_deduction_duplicate_count: number;
   sla: {
     sla_status: "ON_TRACK" | "AT_RISK" | "BREACHED" | "NOT_APPLICABLE";

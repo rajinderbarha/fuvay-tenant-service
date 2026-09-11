@@ -60,6 +60,13 @@ def _positive_amount(value) -> Decimal:
     return amount if amount > 0 else Decimal("0")
 
 
+def _absolute_amount(value) -> Decimal:
+    try:
+        return abs(Decimal(str(value)))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
 def _canonical_job_price_summary(*, booking=None, quote=None, invoice=None) -> dict | None:
     """Build the authoritative amount shown in admin job details.
 
@@ -104,6 +111,27 @@ def _canonical_job_price_summary(*, booking=None, quote=None, invoice=None) -> d
         return None
     snapshot.setdefault("source", "booking_snapshot")
     return snapshot
+
+
+def _job_charge_ledger_summary(rows: list) -> dict:
+    """Separate legitimate completion charges from true duplicate rows."""
+    from app.engines.execution.usage_credit_deduction import DEDUCTION_EVENT_TYPE
+    from app.engines.vertical_monetization.customer_charge_recovery import RECOVERY_EVENT_TYPE
+
+    commission_rows = [row for row in rows if row.event_type == DEDUCTION_EVENT_TYPE]
+    platform_rows = [row for row in rows if row.event_type == RECOVERY_EVENT_TYPE]
+    commission = commission_rows[0] if commission_rows else None
+    platform = platform_rows[0] if platform_rows else None
+    commission_amount = _absolute_amount(getattr(commission, "credit_delta", None))
+    platform_amount = _absolute_amount(getattr(platform, "credit_delta", None))
+    return {
+        "commission_entry": commission,
+        "platform_charge_entry": platform,
+        "commission_amount": str(commission_amount),
+        "platform_charge_amount": str(platform_amount),
+        "total_provider_credit_deduction": str(commission_amount + platform_amount),
+        "duplicate_count": max(0, len(commission_rows) - 1) + max(0, len(platform_rows) - 1),
+    }
 
 
 # ── Bookings ──────────────────────────────────────────────────────────────────
@@ -249,7 +277,7 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
     # The original booking snapshot describes the initial visit price only.
     # Once a quote/invoice exists, expose that later record as the canonical
     # price so completed-job details do not fall back to the old inspection fee.
-    from app.engines.quote_checklist.models import ServiceJobQuote
+    from app.engines.quote_checklist.models import ServiceJobQuote, ServiceJobQuoteItem
     from app.engines.invoice_payment.models import ServiceInvoice
 
     quote_result = await db.execute(
@@ -260,6 +288,14 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
     )
     current_quote = quote_result.scalars().first()
 
+    quote_items = []
+    if current_quote is not None:
+        quote_items = (await db.execute(
+            select(ServiceJobQuoteItem)
+            .where(ServiceJobQuoteItem.quote_id == current_quote.id)
+            .order_by(ServiceJobQuoteItem.created_at.asc())
+        )).scalars().all()
+
     invoice_result = await db.execute(
         select(ServiceInvoice)
         .where(ServiceInvoice.job_id == job.id, ServiceInvoice.status != "cancelled")
@@ -269,6 +305,7 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
     invoice = invoice_result.scalars().first()
 
     data["current_quote"] = current_quote.to_dict() if current_quote else None
+    data["quote_items"] = [item.to_dict() for item in quote_items]
     data["invoice"] = invoice.to_dict() if invoice else None
     data["price_summary"] = _canonical_job_price_summary(
         booking=booking,
@@ -276,18 +313,72 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
         invoice=invoice,
     )
 
-    # Enrich with the Completed Job Deduction ledger entry for this job,
-    # if one exists — links this admin detail view directly to the exact
-    # Usage Credit Ledger row without a separate round trip.
+    # A completed job can legitimately have one commission entry and one
+    # platform-charge entry. Only repeated rows within either event are true
+    # duplicates; treating the two different charge types as duplicates made
+    # correct jobs display a false warning.
     from app.engines.tenant_engine.models import UsageCreditLedger
+    from app.engines.execution.usage_credit_deduction import DEDUCTION_EVENT_TYPE
+    from app.engines.vertical_monetization.customer_charge_recovery import RECOVERY_EVENT_TYPE
     ledger_result = await db.execute(
         select(UsageCreditLedger)
-        .where(UsageCreditLedger.job_id == job.id)
+        .where(
+            UsageCreditLedger.job_id == job.id,
+            UsageCreditLedger.event_type.in_((DEDUCTION_EVENT_TYPE, RECOVERY_EVENT_TYPE)),
+        )
         .order_by(UsageCreditLedger.created_at.desc())
     )
     ledger_rows = ledger_result.scalars().all()
-    data["usage_credit_deduction"] = ledger_rows[0].to_dict() if ledger_rows else None
-    data["usage_credit_deduction_duplicate_count"] = max(0, len(ledger_rows) - 1)
+    charge_ledger = _job_charge_ledger_summary(ledger_rows)
+    commission_entry = charge_ledger.pop("commission_entry")
+    platform_charge_entry = charge_ledger.pop("platform_charge_entry")
+    data["usage_credit_deduction"] = commission_entry.to_dict() if commission_entry else None
+    data["platform_charge_recovery"] = platform_charge_entry.to_dict() if platform_charge_entry else None
+    data["usage_credit_deduction_duplicate_count"] = charge_ledger.pop("duplicate_count")
+    data["charge_summary"] = charge_ledger
+
+    from app.engines.admin_catalog.models import MasterIssueType, MasterService, JobTypeDefinition
+    from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+
+    service_row = (await db.execute(
+        select(MasterService.service_name, MasterService.job_type)
+        .where(MasterService.id == job.offering_id)
+    )).first()
+    problem_name = None
+    if job.selected_problem_id:
+        problem_name = await db.scalar(
+            select(MasterIssueType.name).where(MasterIssueType.id == job.selected_problem_id)
+        )
+    job_type_label = None
+    if job.job_type_id:
+        job_type_label = await db.scalar(
+            select(JobTypeDefinition.label).where(JobTypeDefinition.id == job.job_type_id)
+        )
+    data["service_context"] = {
+        "service_name": service_row[0] if service_row else None,
+        "legacy_job_type": service_row[1] if service_row else None,
+        "job_type": job_type_label,
+        "problem_name": problem_name,
+    }
+
+    technician = None
+    if job.assigned_staff_id and job.tenant_id:
+        technician_row = await db.scalar(
+            select(ProviderTeamMember).where(
+                ProviderTeamMember.id == job.assigned_staff_id,
+                ProviderTeamMember.tenant_id == job.tenant_id,
+                ProviderTeamMember.deleted_at.is_(None),
+            )
+        )
+        if technician_row:
+            technician = {
+                "id": str(technician_row.id),
+                "full_name": technician_row.full_name,
+                "designation": technician_row.designation,
+                "phone": technician_row.phone,
+                "email": technician_row.email,
+            }
+    data["technician"] = technician
 
     return ok(data, _RID(r), "final_records")
 

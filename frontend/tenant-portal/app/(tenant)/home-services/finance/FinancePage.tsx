@@ -615,7 +615,7 @@ export default function HomeServicesFinancePage() {
             icon={<Wallet size={17} />} tone={data?.usage_credits.is_low_balance ? "warning" : "success"} />
           <SummaryCard label="Total job deductions this month" value={moneyCompact(kpis.credits_used_this_month)}
             sub={data?.usage_credits.deduction_breakdown
-              ? `${money(data.usage_credits.deduction_breakdown.provider_commission_this_month)} commission + ${money(data.usage_credits.deduction_breakdown.customer_fee_recovery_this_month)} customer fee remitted`
+              ? `${money(data.usage_credits.deduction_breakdown.provider_commission_this_month)} commission + ${money(data.usage_credits.deduction_breakdown.customer_fee_recovery_this_month)} platform charge`
               : `${data?.usage_credits.completed_job_deductions ?? 0} completed job(s) charged`}
             icon={<TrendingDown size={17} />} tone="info" />
           {/* Seats replaced the security deposit: headcount is bought with a
@@ -879,7 +879,7 @@ export default function HomeServicesFinancePage() {
               <Row label="Provider commission" value={money(
                 data.usage_credits.deduction_breakdown?.provider_commission_total
               )} hint="Your business's commission cost" />
-              <Row label="Customer platform fee remitted" value={money(
+              <Row label="Platform charge" value={money(
                 data.usage_credits.deduction_breakdown?.customer_fee_recovery_total
               )} hint="Collected from the customer with their direct payment, then passed to Fuvay" />
               <Row label="Total job deductions" value={money(data.usage_credits.credits_deducted_total)} />
@@ -1070,7 +1070,7 @@ export default function HomeServicesFinancePage() {
                   <div style={{ marginTop: 12, background: "var(--info-bg)", border: "1px solid var(--info-border)",
                     borderRadius: 10, padding: "11px 12px", color: "var(--info-text)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: 12.5 }}>Customer platform fee remittance</strong>
+                      <strong style={{ fontSize: 12.5 }}>Platform charge</strong>
                       <strong style={{ fontSize: 12.5 }}>{customerFeeRule(rates)}</strong>
                     </div>
                     <p style={{ fontSize: 11.5, margin: "5px 0 0", lineHeight: 1.5 }}>

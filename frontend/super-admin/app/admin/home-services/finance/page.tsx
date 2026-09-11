@@ -13,7 +13,7 @@
  * absent for Home Services (vertical_catalog's own rules comment). A
  * provider credit recovery lives under Provider Charges and is
  * never a payout. The Monetization tab configures the Home-Services-only
- * platform charge policy (customer platform charge + provider completion
+ * platform charge policy (platform charge + provider completion
  * charge) via /v1/admin/home-services/finance/monetization/* -- it reuses
  * the same VerticalMonetizationPolicyService as the generic Platform >
  * Finance > Vertical Monetization page, hardcoded server-side to
@@ -263,7 +263,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
           <SummaryCard label="Collected Directly by Providers" value={money(a.provider_collected_customer_payments)} />
           <SummaryCard label="Confirmations Pending" value={a.payment_confirmations_pending}
             tone={a.payment_confirmations_pending > 0 ? "warning" : undefined} />
-          <SummaryCard label="Customer Platform Charges Recorded" value={money(a.customer_platform_charges_recorded)} />
+          <SummaryCard label="Platform Charges Recorded" value={money(a.customer_platform_charges_recorded)} />
           <SummaryCard label="Payment Disputes" value={a.payment_disputes}
             tone={a.payment_disputes > 0 ? "danger" : undefined} onClick={() => onNavigate("financial-events")} />
         </div>
@@ -296,7 +296,7 @@ function OverviewTab({ onNavigate }: { onNavigate: (t: TabKey) => void }) {
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>How Home Services money flows</h3>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 12 }}>
           {["Customer pays provider directly", "Provider records payment", "Customer confirms payment",
-            "Customer platform charge recovered from provider credits", "Provider completion charge deducted separately",
+            "Platform charge recovered from provider credits", "Provider completion charge deducted separately",
             "Ledger entries posted"].map((step, i, arr) => (
             <span key={step} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {step}{i < arr.length - 1 && <span style={{ color: "var(--text-tertiary)" }}>→</span>}
@@ -570,7 +570,7 @@ function MonetizationTab() {
             </div>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               {current?.provider_model === "PERCENTAGE_COMMISSION"
-                ? "This is the single provider commission rate for Home Services. It is charged as a percentage of the final invoiced service value, excluding the customer platform fee."
+                ? "This is the single provider commission rate for Home Services. It is charged as a percentage of the final invoiced service value, excluding the platform charge."
                 : current?.provider_model === "COMPLETION_CREDITS"
                   ? "A fixed number of usage-credit units is deducted for each eligible completed job."
                   : current?.provider_model === "FIXED_COMPLETION_CHARGE"
@@ -623,7 +623,7 @@ function MonetizationTab() {
           <Card padding={16}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
               <p style={{ fontSize: 14, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                Customer platform charge <Badge variant={customerFeeLive ? "success" : "muted"}>{customerFeeLive ? "Live" : "Disabled"}</Badge>
+                Platform charge <Badge variant={customerFeeLive ? "success" : "muted"}>{customerFeeLive ? "Live" : "Disabled"}</Badge>
               </p>
               <Btn variant="ghost" onClick={startDraft}>Edit in Draft</Btn>
             </div>
@@ -655,7 +655,7 @@ function MonetizationTab() {
             </div>
             {previewResult && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-                <PreviewRow label="Customer platform charge" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
+                <PreviewRow label="Platform charge" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
                 <PreviewRow label="Customer pays provider directly" value={`₹${fmt(previewResult.total_payable)}`} strong />
                 <PreviewRow label="Provider-side credit deduction" value={units(previewResult.provider_charge_credit_units as string)} />
                 <PreviewRow label="Customer-charge credit recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />

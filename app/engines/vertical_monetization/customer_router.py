@@ -15,7 +15,7 @@ from app.schemas.base import ApiResponse, ok
 from app.engines.vertical_monetization.charge_service import create_payment_order_for_charge
 from app.engines.vertical_monetization.models import CustomerPlatformFeeCharge
 
-router = APIRouter(prefix="/v1/customer/monetization", tags=["Customer Platform Fee"])
+router = APIRouter(prefix="/v1/customer/monetization", tags=["Platform Charges"])
 
 
 def _rid(r: Request) -> str:

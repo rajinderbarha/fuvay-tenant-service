@@ -41,7 +41,9 @@ from app.engines.invoice_payment.models import ServiceInvoice
 from app.engines.invoice_payment.payment_service import ServicePaymentService
 from app.engines.complaints.models import CustomerComplaint
 from app.engines.quote_checklist.models import ServiceJobQuote
-from app.engines.admin_catalog.models import TenantService, MasterService, JobTypeDefinition
+from app.engines.admin_catalog.models import (
+    TenantService, MasterService, JobTypeDefinition, MasterIssueType,
+)
 from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 from app.engines.tenant_engine.customer_operational_access_policy import (
     evaluate as _access_evaluate, customer_alias as _customer_alias,
@@ -386,9 +388,38 @@ async def get_bookings_jobs_detail(
             select(JobTypeDefinition.label).where(JobTypeDefinition.id == job.job_type_id)
         )
 
+    problem_name = None
+    if job.selected_problem_id:
+        problem_name = await db.scalar(
+            select(MasterIssueType.name).where(MasterIssueType.id == job.selected_problem_id)
+        )
+
+    technician = None
+    if job.assigned_staff_id:
+        staff_row = (await db.execute(
+            select(
+                ProviderTeamMember.id,
+                ProviderTeamMember.full_name,
+                ProviderTeamMember.designation,
+                ProviderTeamMember.phone,
+            ).where(
+                ProviderTeamMember.id == job.assigned_staff_id,
+                ProviderTeamMember.tenant_id == tenant_id,
+                ProviderTeamMember.deleted_at.is_(None),
+            )
+        )).first()
+        if staff_row:
+            technician = {
+                "id": str(staff_row.id),
+                "full_name": staff_row.full_name,
+                "designation": staff_row.designation,
+                "phone": staff_row.phone,
+            }
+
     invoice = (await db.execute(
         select(ServiceInvoice).where(
             ServiceInvoice.job_id == job_id, ServiceInvoice.tenant_id == tenant_id,
+            ServiceInvoice.status != "cancelled",
         ).order_by(ServiceInvoice.created_at.desc())
     )).scalars().first()
 
@@ -447,6 +478,8 @@ async def get_bookings_jobs_detail(
         "job":     job_dict,
         "service_name": service_name,
         "job_type_label": job_type_label,
+        "problem_name": problem_name,
+        "technician": technician,
         "stage":   stage_info,
         "available_actions": compute_available_actions(job.status, job.assignment_status, has_assignee=has_assignee),
         "invoice": invoice.to_dict() if invoice else None,

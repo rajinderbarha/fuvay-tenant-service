@@ -89,7 +89,7 @@ class HomeServicesCustomerDirectoryService:
             "multi_provider_customers": "Customers with completed jobs across >= 2 distinct "
                                          "provider tenant_ids.",
             "confirmed_job_value": "Sum of ServiceInvoice.customer_payable_amount for this "
-                                    "customer's paid invoices. Not platform collection -- the "
+                                    "customer's verified or legacy-paid invoices. Not platform collection -- the "
                                     "customer pays the provider directly.",
             "payment_reliability": "Derived from canonical direct-payment reconciliation records. "
                                     "Pending confirmations are neutral; at least 3 customer decisions "
@@ -458,7 +458,8 @@ class HomeServicesCustomerDirectoryService:
             CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
         ]
         invoice_clauses = [
-            ServiceInvoice.customer_id.isnot(None), ServiceInvoice.payment_status == "paid",
+            ServiceInvoice.customer_id.isnot(None),
+            ServiceInvoice.payment_status.in_(("verified", "paid")),
         ]
         payment_clauses = [
             ServicePaymentRecord.customer_id.isnot(None),
@@ -563,7 +564,10 @@ class HomeServicesCustomerDirectoryService:
             select(ServiceJob.offering_id, func.count()).where(*service_clauses).group_by(ServiceJob.offering_id)
         )).all()
 
-        invoice_clauses = [ServiceInvoice.customer_id == customer_id, ServiceInvoice.payment_status == "paid"]
+        invoice_clauses = [
+            ServiceInvoice.customer_id == customer_id,
+            ServiceInvoice.payment_status.in_(("verified", "paid")),
+        ]
         if tenant_id:
             invoice_clauses.append(ServiceInvoice.tenant_id == tenant_id)
         confirmed_value = (await self.db.execute(
@@ -673,9 +677,47 @@ class HomeServicesCustomerDirectoryService:
             "total": total, "page": page, "page_size": page_size,
         }
 
+    # ── Customer 360 Complaints tab ───────────────────────────────────────────
+    # CustomerComplaint.customer_id and tenant_id
+    # form the customer/provider isolation boundary.
+    async def get_customer_complaints(
+        self, customer_id: uuid.UUID, *, page: int = 1, page_size: int = 20,
+        tenant_id: uuid.UUID | None = None,
+    ) -> dict:
+        """Return the customer's tenant-scoped complaint history."""
+        clauses = [CustomerComplaint.customer_id == customer_id]
+        if tenant_id:
+            clauses.append(CustomerComplaint.tenant_id == tenant_id)
+        total = (await self.db.execute(
+            select(func.count()).select_from(
+                select(CustomerComplaint).where(*clauses).subquery()
+            )
+        )).scalar() or 0
+        rows = (await self.db.execute(
+            select(CustomerComplaint).where(*clauses)
+            .order_by(CustomerComplaint.created_at.desc())
+            .offset((page - 1) * page_size).limit(page_size)
+        )).scalars().all()
+        return {
+            "items": [{
+                "complaint_id": str(c.id),
+                "complaint_number": c.complaint_number,
+                "job_id": str(c.job_id) if c.job_id else None,
+                "title": c.title,
+                "complaint_type": c.complaint_type,
+                "priority": c.priority,
+                "severity": c.severity,
+                "sla_status": c.sla_status,
+                "status": c.status,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            } for c in rows],
+            "total": int(total), "page": page, "page_size": page_size,
+        }
+
     # ── Customer 360 Payments tab ─────────────────────────────────────────────
-    # Customer pays the provider directly -- Fuvay never collects this
-    # payment. ServicePaymentRecord.customer_id already scopes correctly.
+    # Customer pays the provider directly -- Fuvay
+    # never collects this payment.
     async def get_customer_payments(self, customer_id: uuid.UUID, *, page: int = 1, page_size: int = 20,
                                      tenant_id: uuid.UUID | None = None) -> dict:
         clauses = [ServicePaymentRecord.customer_id == customer_id]

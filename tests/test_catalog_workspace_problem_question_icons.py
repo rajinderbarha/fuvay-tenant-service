@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,8 +10,10 @@ import pytest
 from app.engines.admin_catalog.admin_router import list_service_issue_mappings
 from app.engines.admin_catalog.customer_router import _app_catalog
 from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
+from app.engines.admin_catalog.brand_service import BrandService
 from app.engines.admin_catalog.question_service import CatalogQuestionService
 from app.engines.admin_catalog.service import AdminCatalogService
+from app.engines.admin_catalog.types_service import TypesService
 from app.exceptions import ServiceOSException
 
 
@@ -41,6 +44,66 @@ def test_public_catalog_strips_instagram_images_but_keeps_app_icons() -> None:
     })
     assert brand["icon_url"] == brand["logo_url"]
     assert "image_url" not in brand
+
+
+@pytest.mark.asyncio
+async def test_type_instagram_image_update_does_not_revalidate_unchanged_identity() -> None:
+    now = datetime.now(timezone.utc)
+    type_id = uuid.uuid4()
+    row = SimpleNamespace(
+        id=type_id, name="Split AC", code="SPLIT_AC", slug="split-ac",
+        description=None, type_family="appliance_type", customer_visible=True,
+        status="active", display_order=0, is_active=True, icon_url=None,
+        image_url=None, created_at=now, updated_at=now, deleted_at=None,
+    )
+    loaded = MagicMock()
+    loaded.scalar_one_or_none.return_value = row
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=loaded)
+    db.scalar = AsyncMock(side_effect=AssertionError("unchanged identity must not be revalidated"))
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    service = TypesService(db)
+    service._audit_type = AsyncMock()
+    image_url = "https://res.cloudinary.com/fuvay/image/upload/split-instagram.png"
+
+    result = await service.update_type(type_id, {
+        "name": "Split AC", "code": "SPLIT_AC", "image_url": image_url,
+    })
+
+    assert result["image_url"] == image_url
+    db.scalar.assert_not_awaited()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_brand_instagram_image_update_does_not_revalidate_unchanged_identity() -> None:
+    now = datetime.now(timezone.utc)
+    brand_id = uuid.uuid4()
+    row = SimpleNamespace(
+        id=brand_id, name="Voltas", display_name="Voltas", slug="voltas",
+        code="VOLTAS", status="active", normalized_name="voltas",
+        alias_names_json=[], logo_url=None, image_url=None, description=None,
+        website_url=None, country_of_origin="India", is_global=True,
+        display_order=0, is_active=True, category_id=None,
+        replacement_brand_id=None, created_at=now, updated_at=now,
+        deleted_at=None, updated_by_user_id=None,
+    )
+    db = MagicMock()
+    db.scalar = AsyncMock(side_effect=AssertionError("unchanged identity must not be revalidated"))
+    db.flush = AsyncMock()
+    service = BrandService(db)
+    service._load_brand = AsyncMock(return_value=row)
+    service._audit = AsyncMock()
+    image_url = "https://res.cloudinary.com/fuvay/image/upload/voltas-instagram.png"
+
+    result = await service.update_brand(brand_id, {
+        "name": "Voltas", "code": "VOLTAS", "image_url": image_url,
+    })
+
+    assert result["image_url"] == image_url
+    db.scalar.assert_not_awaited()
+    db.flush.assert_awaited_once()
 
 
 @pytest.mark.asyncio

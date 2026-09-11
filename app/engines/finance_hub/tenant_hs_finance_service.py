@@ -77,7 +77,7 @@ EVENT_TYPE_LABELS = {
     EVENT_MANUAL_CREDIT_REMOVED: "Admin credit adjustment (removed)",
     EVENT_PACKAGE_CREDIT_GRANTED: "Package credit granted",
     "activation_credit_package_purchase": "Starter credit package purchased",
-    RECOVERY_EVENT_TYPE: "Customer platform fee remitted",
+    RECOVERY_EVENT_TYPE: "Platform charge",
     "migration_adjustment": "Migration adjustment",
 }
 

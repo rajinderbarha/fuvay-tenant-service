@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.admin_catalog.models import (
     ServiceType, ServiceTypeMapping, BrandMapping, Brand,
     ServiceCategory, ServiceGroup, MasterService, MasterServiceType, MasterServiceBrand,
-    TenantServiceType, MasterDataAuditLog,
+    TenantServiceType, TenantServiceBrand, MasterDataAuditLog,
 )
 from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.exceptions import ServiceOSException, NotFoundException
@@ -285,15 +285,23 @@ class TypesService:
         # path (AdminCatalogService.create_service_type never sets `code`);
         # ServiceType.code.ilike(None) raises ArgumentError instead of
         # matching nothing, crashing every update_type call on such a row.
-        dup_conditions = [ServiceType.name.ilike(t.name)]
-        if t.code:
-            dup_conditions.append(ServiceType.code.ilike(t.code))
-        duplicate = await self.db.scalar(select(func.count(ServiceType.id)).where(
-            ServiceType.id != type_id, ServiceType.deleted_at.is_(None),
-            or_(*dup_conditions)
-        ))
-        if duplicate:
-            raise ServiceOSException("DUPLICATE", "A live service type already uses this name or code.", status_code=409)
+        identity_changed = (
+            (old_name or "").strip().casefold() != (t.name or "").strip().casefold()
+            or (old_code or "").strip().casefold() != (t.code or "").strip().casefold()
+        )
+        # Existing production data can contain legacy duplicates. A media or
+        # description-only edit must remain saveable; duplicate validation is
+        # relevant only when this request actually changes the identity.
+        if identity_changed:
+            dup_conditions = [ServiceType.name.ilike(t.name)]
+            if t.code:
+                dup_conditions.append(ServiceType.code.ilike(t.code))
+            duplicate = await self.db.scalar(select(func.count(ServiceType.id)).where(
+                ServiceType.id != type_id, ServiceType.deleted_at.is_(None),
+                or_(*dup_conditions)
+            ))
+            if duplicate:
+                raise ServiceOSException("DUPLICATE", "A live service type already uses this name or code.", status_code=409)
         t.updated_at = utcnow()
         await self._audit_type(t, "service_type.updated", f"Updated {old_name} ({old_code})")
         await self.db.commit()
@@ -323,19 +331,66 @@ class TypesService:
     async def archive_type(self, type_id: uuid.UUID, reason: str) -> dict:
         if len(reason.strip()) < 10:
             raise ServiceOSException("RETIRE_REASON_REQUIRED", "A retirement reason of at least 10 characters is required.", status_code=422)
-        in_use = await self.db.scalar(select(func.count(TenantServiceType.id)).where(
-            TenantServiceType.service_type_id == type_id, TenantServiceType.is_enabled == True))
-        if in_use:
-            raise ServiceOSException("SERVICE_TYPE_IN_USE", "This type is enabled by providers. Deactivate provider usage before retiring it.", status_code=409,
-                                     context={"provider_mappings": int(in_use)})
         t = (await self.db.execute(select(ServiceType).where(
             ServiceType.id == type_id, ServiceType.deleted_at.is_(None)))).scalar_one_or_none()
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
-        t.status = "archived"; t.is_active = False; t.deleted_at = utcnow(); t.updated_at = utcnow()
+
+        # Retirement is a controlled soft delete. Provider selections are
+        # configuration, not immutable booking history, so stale selections
+        # must not prevent an Admin from retiring a duplicate type. Disable
+        # every live reference in the same transaction while retaining the
+        # rows for existing job/audit records.
+        provider_types = (await self.db.execute(select(TenantServiceType).where(
+            TenantServiceType.service_type_id == type_id,
+            TenantServiceType.is_enabled.is_(True),
+        ))).scalars().all()
+        for row in provider_types:
+            row.is_enabled = False
+
+        provider_brands = (await self.db.execute(select(TenantServiceBrand).where(
+            TenantServiceBrand.service_type_id == type_id,
+            TenantServiceBrand.is_enabled.is_(True),
+        ))).scalars().all()
+        for row in provider_brands:
+            row.is_enabled = False
+
+        now = utcnow()
+        mappings = (await self.db.execute(select(ServiceTypeMapping).where(
+            ServiceTypeMapping.type_id == type_id,
+            ServiceTypeMapping.status != "archived",
+        ))).scalars().all()
+        for mapping in mappings:
+            mapping.status = "archived"
+            mapping.updated_at = now
+
+        service_links = (await self.db.execute(select(MasterServiceType).where(
+            MasterServiceType.service_type_id == type_id,
+            MasterServiceType.is_active.is_(True),
+        ))).scalars().all()
+        affected_service_ids = {row.master_service_id for row in service_links}
+        for row in service_links:
+            row.is_active = False
+
+        if affected_service_ids:
+            from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
+            for service_id in affected_service_ids:
+                await bump_tenant_setup_revision(self.db, service_id)
+
+        t.status = "archived"
+        t.is_active = False
+        t.deleted_at = now
+        t.updated_at = now
         await self._audit_type(t, "service_type.retired", reason)
         await self.db.commit()
-        return {"type_id": str(type_id), "status": "archived"}
+        return {
+            "type_id": str(type_id),
+            "status": "archived",
+            "provider_usages_disabled": len(provider_types),
+            "provider_brand_links_disabled": len(provider_brands),
+            "catalog_mappings_archived": len(mappings),
+            "service_links_disabled": len(service_links),
+        }
 
     async def restore_type(self, type_id: uuid.UUID, reason: str) -> dict:
         if len(reason.strip()) < 10:

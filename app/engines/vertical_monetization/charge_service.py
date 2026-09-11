@@ -89,7 +89,7 @@ async def create_charge_for_quote(
     authorize a charge (non-negotiable rule)."""
     if not is_current:
         raise ServiceOSException("PAYMENT_CONTEXT_UNRESOLVED",
-                                 "Cannot charge a customer platform fee against a superseded quote.",
+                                 "Cannot charge a platform fee against a superseded quote.",
                                  status_code=409)
     vertical_id = await _get_vertical_id(db, vertical_key)
     if not vertical_id:

@@ -48,11 +48,11 @@ function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 }
 
-function ReasonModal({title, verb, onClose, onSubmit, error, loading}:{title:string;verb:string;onClose():void;onSubmit(reason:string):Promise<void>;error?:string|null;loading:boolean}) {
+function ReasonModal({title, verb, message, onClose, onSubmit, error, loading}:{title:string;verb:string;message?:React.ReactNode;onClose():void;onSubmit(reason:string):Promise<void>;error?:string|null;loading:boolean}) {
   const [reason,setReason]=useState("");
   return <Modal open title={title} onClose={onClose}><div style={{display:"flex",flexDirection:"column",gap:12,minWidth:420}}>
     <div style={{padding:12,borderRadius:10,background:"var(--warning-bg)",color:"var(--text-secondary)",fontSize:12,lineHeight:1.5}}>
-      This action is audited. Records currently used by providers cannot be retired; resolve their usage first.
+      {message ?? "This action is audited and preserves historical records."}
     </div>
     <label style={{fontSize:12,fontWeight:700}}>Reason (minimum 10 characters)</label>
     <textarea autoFocus rows={4} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Explain why this master record is being retired…"
@@ -328,10 +328,14 @@ function ServiceTypesTab() {
       {detailItem && (
         <TypeDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
-      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire" onClose={()=>setRetireItem(null)}
+      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire"
+        message="This type will be disabled in provider service configurations and removed from active catalog mappings. Historical bookings and jobs remain unchanged."
+        onClose={()=>setRetireItem(null)}
         onSubmit={async reason=>{const done=await archiveAction.execute({id:retireItem.type_id,reason});if(done){setRetireItem(null);listRes.refetch();summaryRes.refetch();}}}
         error={archiveAction.error} loading={archiveAction.loading}/>}
-      {restoreItem && <ReasonModal title={`Restore ${restoreItem.name}`} verb="Restore as inactive" onClose={()=>setRestoreItem(null)}
+      {restoreItem && <ReasonModal title={`Restore ${restoreItem.name}`} verb="Restore as inactive"
+        message="The type will return as inactive. Review its catalog and provider configuration before activating it again."
+        onClose={()=>setRestoreItem(null)}
         onSubmit={async reason=>{const done=await restoreAction.execute({id:restoreItem.type_id,reason});if(done){setRestoreItem(null);listRes.refetch();summaryRes.refetch();}}}
         error={restoreAction.error} loading={restoreAction.loading}/>}
     </div>
@@ -1037,7 +1041,9 @@ function BrandMasterTab() {
       {detailItem && (
         <BrandDetailDrawer item={detailItem} onClose={() => setDetailItem(null)}/>
       )}
-      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire" onClose={()=>setRetireItem(null)}
+      {retireItem && <ReasonModal title={`Retire ${retireItem.name}`} verb="Retire"
+        message="This brand can be retired after any active provider usage has been resolved. Historical records are preserved."
+        onClose={()=>setRetireItem(null)}
         onSubmit={async reason=>{const done=await archiveAction.execute({id:retireItem.brand_id,reason});if(done){setRetireItem(null);listRes.refetch();summaryRes.refetch();}}}
         error={archiveAction.error} loading={archiveAction.loading}/>}
       {restoreItem && <ReasonModal title={`Restore ${restoreItem.name}`} verb="Restore as inactive" onClose={()=>setRestoreItem(null)}

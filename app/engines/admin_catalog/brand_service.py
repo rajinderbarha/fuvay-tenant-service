@@ -325,6 +325,7 @@ class BrandService:
     async def update_brand(self, brand_id: uuid.UUID, data: dict) -> dict:
         b = await self._load_brand(brand_id)
         old = self._brand_dict(b)
+        old_normalized_name, old_code = b.normalized_name, b.code
 
         if "name" in data and data["name"]:
             b.name = data["name"].strip()
@@ -356,13 +357,18 @@ class BrandService:
             b.alias_names_json = data["alias_names_json"]
         if "replacement_brand_id" in data and data["replacement_brand_id"]:
             b.replacement_brand_id = uuid.UUID(str(data["replacement_brand_id"]))
-        duplicate = await self.db.scalar(select(func.count(Brand.id)).where(
-            Brand.id != brand_id, Brand.deleted_at.is_(None),
-            or_(Brand.normalized_name == b.normalized_name,
-                and_(b.code is not None, Brand.code == b.code)),
-        ))
-        if duplicate:
-            raise ServiceOSException("BRAND_DUPLICATE", "A live brand already uses this name or code.", status_code=409)
+        identity_changed = (
+            old_normalized_name != b.normalized_name
+            or (old_code or "").casefold() != (b.code or "").casefold()
+        )
+        if identity_changed:
+            duplicate = await self.db.scalar(select(func.count(Brand.id)).where(
+                Brand.id != brand_id, Brand.deleted_at.is_(None),
+                or_(Brand.normalized_name == b.normalized_name,
+                    and_(b.code is not None, Brand.code == b.code)),
+            ))
+            if duplicate:
+                raise ServiceOSException("BRAND_DUPLICATE", "A live brand already uses this name or code.", status_code=409)
         b.updated_by_user_id = self.actor_id
 
         await self.db.flush()
