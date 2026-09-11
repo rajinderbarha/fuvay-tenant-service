@@ -1021,7 +1021,9 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
     return _booked_menu(text, rows, has_booking=bool(bookings))
 
 
-async def _parts_step(identity, thread, channel: str) -> Turn | None:
+async def _parts_step(
+    identity, thread, channel: str, booking_number: str = "",
+) -> Turn | None:
     """The oldest parts request awaiting this customer, as two taps.
 
     One at a time on purpose: each is a separate decision with its own price,
@@ -1036,6 +1038,11 @@ async def _parts_step(identity, thread, channel: str) -> Turn | None:
         logger.warning("messaging_gateway.flow.pending_parts_failed",
                        thread_id=str(getattr(thread, "id", "—")), error=str(exc))
         return None
+    if booking_number:
+        pending = [
+            part for part in pending
+            if str(part.get("booking_number") or "") == booking_number
+        ]
     if not pending:
         return None
 
@@ -1078,7 +1085,9 @@ async def _parts_step(identity, thread, channel: str) -> Turn | None:
     })
 
 
-async def _quote_step(identity, thread, channel: str) -> Turn | None:
+async def _quote_step(
+    identity, thread, channel: str, booking_number: str = "",
+) -> Turn | None:
     """Show the oldest current estimate awaiting this customer's decision."""
     if identity is None:
         return None
@@ -1088,6 +1097,11 @@ async def _quote_step(identity, thread, channel: str) -> Turn | None:
         logger.warning("messaging_gateway.flow.pending_quotes_failed",
                        thread_id=str(getattr(thread, "id", "-")), error=str(exc))
         return None
+    if booking_number:
+        pending = [
+            quote for quote in pending
+            if str(quote.get("booking_number") or "") == booking_number
+        ]
     if not pending:
         return None
 
@@ -1122,11 +1136,15 @@ async def _quote_step(identity, thread, channel: str) -> Turn | None:
         ],
         "list_button": "Choose",
         "section_title": "Estimate",
-        "presentation": "buttons",
+        "presentation": (
+            "quick_replies" if channel == CHANNEL_INSTAGRAM else "buttons"
+        ),
     })
 
 
-async def _closure_step(identity, thread, channel: str) -> Turn | None:
+async def _closure_step(
+    identity, thread, channel: str, booking_number: str = "",
+) -> Turn | None:
     """Render the customer actions that unblock staff/tenant final closure."""
     if identity is None:
         return None
@@ -1136,6 +1154,11 @@ async def _closure_step(identity, thread, channel: str) -> Turn | None:
         logger.warning("messaging_gateway.flow.pending_closure_failed",
                        thread_id=str(getattr(thread, "id", "-")), error=str(exc))
         return None
+    if booking_number:
+        pending = [
+            action for action in pending
+            if str(action.get("booking_number") or "") == booking_number
+        ]
     if not pending:
         return None
 
@@ -1238,44 +1261,51 @@ async def _cancel_step(thread, identity, rest: str, channel: str) -> Turn:
 async def _track_step(thread, identity, booking_number: str, channel: str) -> Turn:
     """Show a booking's status — or, with several open, which one.
 
-    Tapping "Track" with one live booking should answer, not ask, so the list
-    only appears when there is a genuine choice to make.
+    Tapping "Track" with one live booking should answer, not ask. With several
+    live bookings, always ask which one before surfacing approval actions: an
+    estimate for booking A must not replace the status requested for booking B.
     """
-    action = await _parts_step(identity, thread, channel)
+    bookings = await identity.live_bookings(thread)
+    if not booking_number and len(bookings) > 1:
+        rows = [
+            {"id": f"{PICK_TRACK}{PICKER_SEP}{b['number']}",
+             "title": b["service"] or b["number"], "description": _booking_line(b),
+             "image_url": b.get("image_url"),
+             "button_title": b["service"] or "Track booking"}
+            for b in bookings
+        ]
+        # Tracking needs the status/date/booking number visible for every row.
+        # Instagram quick-reply chips show only the (often duplicated) service
+        # name; generic cards retain the distinguishing subtitle even when an
+        # older service has no uploaded artwork.
+        cards = channel == CHANNEL_INSTAGRAM
+        picker = pickers._paginate(
+            rows, "Which booking?", channel, 0, kind=PICK_TRACK,
+            list_button="Choose", section_title="Your bookings",
+            presentation="carousel" if cards else "quick_replies",
+            capacity_override=MAX_IG_GENERIC_ELEMENTS if cards else None,
+        )
+        return Turn(None, picker) if picker else await _booked_menu_for(
+            identity, thread, "", NO_BOOKINGS,
+        )
+
+    if not booking_number and len(bookings) == 1:
+        booking_number = bookings[0]["number"]
+
+    action = await _parts_step(identity, thread, channel, booking_number)
     if action is None:
-        action = await _quote_step(identity, thread, channel)
+        action = await _quote_step(identity, thread, channel, booking_number)
     if action is None:
-        action = await _closure_step(identity, thread, channel)
+        action = await _closure_step(identity, thread, channel, booking_number)
     if action is not None:
         return action
     if booking_number:
         turn = await _tracked_booking_turn(identity, thread, booking_number, channel)
         return await _attach_booking_location(turn, identity, thread,
                                               booking_number, channel)
-    bookings = await identity.live_bookings(thread)
     if not bookings:
         return await _booked_menu_for(identity, thread, "", NO_BOOKINGS)
-    if len(bookings) == 1:
-        number = bookings[0]["number"]
-        turn = await _tracked_booking_turn(identity, thread, number, channel)
-        return await _attach_booking_location(turn, identity, thread, number, channel)
-    rows = [
-        {"id": f"{PICK_TRACK}{PICKER_SEP}{b['number']}",
-         "title": b["service"] or b["number"], "description": _booking_line(b),
-         "image_url": b.get("image_url"),
-         "button_title": b["service"] or "Track booking"}
-        for b in bookings
-    ]
-    cards = channel == CHANNEL_INSTAGRAM and all(
-        str(row.get("image_url") or "").startswith("https://") for row in rows
-    )
-    picker = pickers._paginate(rows, "Which booking?", channel, 0,
-                               kind=PICK_TRACK, list_button="Choose",
-                               section_title="Your bookings",
-                               presentation="carousel" if cards else "quick_replies",
-                               capacity_override=MAX_IG_GENERIC_ELEMENTS if cards else None)
-    return Turn(None, picker) if picker else await _booked_menu_for(
-        identity, thread, "", NO_BOOKINGS)
+    return await _booked_menu_for(identity, thread, "", NO_BOOKINGS)
 
 
 async def _tracked_booking_turn(identity, thread, booking_number: str,

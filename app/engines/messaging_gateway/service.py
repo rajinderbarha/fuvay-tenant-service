@@ -1092,7 +1092,9 @@ class MessagingGatewayService:
         """
         if not thread.customer_id:
             return []
-        from app.engines.final_records.models import ServiceBooking
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        from app.engines.quote_checklist.constants import QS_SENT_TO_CUSTOMER
+        from app.engines.quote_checklist.models import ServiceJobQuote
 
         from app.engines.admin_catalog.models import MasterService, ServiceCategory
 
@@ -1106,11 +1108,21 @@ class MessagingGatewayService:
                 MasterService.icon_url,
                 ServiceCategory.image_url,
                 ServiceCategory.icon_url,
+                ServiceJob.status,
+                ServiceJobQuote.status,
             )
             .join(MasterService, MasterService.id == ServiceBooking.offering_id,
                   isouter=True)
             .join(ServiceCategory, ServiceCategory.id == ServiceBooking.category_id,
                   isouter=True)
+            .join(ServiceJob, ServiceJob.booking_id == ServiceBooking.id,
+                  isouter=True)
+            .join(
+                ServiceJobQuote,
+                (ServiceJobQuote.job_id == ServiceJob.id)
+                & ServiceJobQuote.is_current.is_(True),
+                isouter=True,
+            )
             .where(ServiceBooking.customer_id == thread.customer_id,
                    ServiceBooking.status.in_(LIVE_BOOKING_STATUSES))
             .order_by(ServiceBooking.created_at.desc())
@@ -1120,7 +1132,11 @@ class MessagingGatewayService:
             {
                 "number": booking.booking_number,
                 "service": service_name or booking.booking_number,
-                "status": (booking.status or "").replace("_", " ").title(),
+                "status": (
+                    "Awaiting Approval"
+                    if quote_status == QS_SENT_TO_CUSTOMER
+                    else (job_status or booking.status or "").replace("_", " ").title()
+                ),
                 # Two bookings for the same service are only distinguishable
                 # by when the technician is due.
                 "when": (booking.preferred_date.strftime("%a %d %b")
@@ -1133,7 +1149,7 @@ class MessagingGatewayService:
             }
             for (
                 booking, service_name, service_image, service_icon,
-                category_image, category_icon,
+                category_image, category_icon, job_status, quote_status,
             ) in rows
         ]
 

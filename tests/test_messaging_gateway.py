@@ -1589,6 +1589,36 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
                                   CHANNEL_WHATSAPP, Identity(two))
     assert "BK-2" in picked.text
 
+    # A pending estimate must not hijack tracking when there is more than one
+    # booking. The customer chooses first; only the chosen booking's action is
+    # then shown.
+    class MultipleWithQuote(Identity):
+        async def pending_quotes(self, thread):
+            return [{
+                "id": "quote-1", "quote_number": "QT-1",
+                "booking_number": "BK-1", "currency": "INR", "amount": "500",
+                "items": [],
+            }]
+
+    multi = MultipleWithQuote(two)
+    choose_before_approval = await flow._track_step(
+        Thread(), multi, "", CHANNEL_INSTAGRAM,
+    )
+    assert [row["id"] for row in choose_before_approval.picker["rows"][:2]] == [
+        "tr|BK-1", "tr|BK-2",
+    ]
+    assert choose_before_approval.picker["presentation"] == "carousel"
+    assert "BK-1" in choose_before_approval.picker["rows"][0]["description"]
+    unrelated = await flow._track_step(
+        Thread(), multi, "BK-2", CHANNEL_INSTAGRAM,
+    )
+    assert "BK-2" in unrelated.text
+    approval = await flow._track_step(
+        Thread(), multi, "BK-1", CHANNEL_INSTAGRAM,
+    )
+    assert "QT-1" in approval.text
+    assert approval.picker["rows"][0]["id"] == "qt|quote-1|approve"
+
     class InstagramIdentity(Identity):
         async def booking_status_view(self, thread, booking_number=""):
             return {
@@ -1606,6 +1636,32 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
         "https://cdn.example/technician.jpg"
     )
     assert instagram_status.picker["rows"][0]["title"] == "Refresh status"
+
+
+@pytest.mark.asyncio
+async def test_live_booking_list_labels_a_sent_quote_as_awaiting_approval():
+    """The chooser must show the action the customer is actually blocking.
+
+    The booking row remains ``inspection_done`` while its current quote is
+    sent, so displaying only that raw booking status hides the approval job.
+    """
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    booking = SimpleNamespace(
+        booking_number="BK-APPROVAL", status="inspection_done",
+        preferred_date=date(2026, 9, 12),
+    )
+    result = SimpleNamespace(all=lambda: [(
+        booking, "AC Repair", "https://cdn.example/ac.jpg", None,
+        None, None, "quote_required", "sent_to_customer",
+    )])
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    thread = SimpleNamespace(customer_id=uuid.uuid4())
+
+    rows = await MessagingGatewayService(db).live_bookings(thread)
+
+    assert rows[0]["number"] == "BK-APPROVAL"
+    assert rows[0]["status"] == "Awaiting Approval"
 
 
 @pytest.mark.asyncio
@@ -3225,6 +3281,9 @@ async def test_pending_quote_is_actionable_on_both_channels():
         assert [row["title"] for row in card.picker["rows"]] == [
             "Approve estimate", "Decline estimate", "Ask for changes",
         ]
+        assert card.picker["presentation"] == (
+            "quick_replies" if channel == CHANNEL_INSTAGRAM else "buttons"
+        )
         done = await flow._navigate(
             None, None, card.picker["rows"][0]["id"], None, Thread(),
             channel, identity,
