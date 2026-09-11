@@ -12,6 +12,7 @@ from app.engines.admin_catalog.models import MasterServiceJobType, TenantService
 async def bump_tenant_setup_revision(
     db: AsyncSession, master_service_id: uuid.UUID,
     job_type_id: uuid.UUID | None = None,
+    *, affected_tenant_service_ids: set[uuid.UUID] | None = None,
 ) -> tuple[int, int]:
     """Atomically bump the rule revision and require affected tenants to review.
 
@@ -20,6 +21,12 @@ async def bump_tenant_setup_revision(
     offerings therefore return to draft in the same transaction. The tenant's
     prior selections/prices are retained; republishing only asks them to fill
     newly-required data and acknowledge the new revision.
+
+    ``affected_tenant_service_ids`` narrows that invalidation when the caller
+    knows exactly which provider configurations used the changed catalog row.
+    This matters for retiring a duplicate Type: the master-service revision is
+    global, but providers that never selected that Type remain valid and must
+    not disappear from customer/Instagram serviceability.
     """
     link_scope = [MasterServiceJobType.master_service_id == master_service_id]
     tenant_scope = [TenantService.master_service_id == master_service_id]
@@ -34,6 +41,10 @@ async def bump_tenant_setup_revision(
     )).scalars().all()
     if not revisions:
         return 0, 0
+    if affected_tenant_service_ids is not None:
+        if not affected_tenant_service_ids:
+            return int(max(revisions)), 0
+        tenant_scope.append(TenantService.id.in_(affected_tenant_service_ids))
     affected = (await db.execute(
         update(TenantService)
         .where(

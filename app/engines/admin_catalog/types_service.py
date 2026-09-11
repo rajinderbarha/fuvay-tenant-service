@@ -369,13 +369,25 @@ class TypesService:
             MasterServiceType.is_active.is_(True),
         ))).scalars().all()
         affected_service_ids = {row.master_service_id for row in service_links}
+        # Only providers that actually selected this Type need to review their
+        # setup.  The old broad revision bump returned every published offering
+        # for the linked master service to draft, including providers that had
+        # never used this duplicate Type.  That made otherwise healthy ZIP
+        # coverage vanish from both the customer app and Instagram.
+        affected_tenant_service_ids = {
+            row.tenant_service_id for row in (*provider_types, *provider_brands)
+        }
         for row in service_links:
             row.is_active = False
 
         if affected_service_ids:
             from app.engines.admin_catalog.tenant_setup_revision import bump_tenant_setup_revision
             for service_id in affected_service_ids:
-                await bump_tenant_setup_revision(self.db, service_id)
+                await bump_tenant_setup_revision(
+                    self.db,
+                    service_id,
+                    affected_tenant_service_ids=affected_tenant_service_ids,
+                )
 
         t.status = "archived"
         t.is_active = False

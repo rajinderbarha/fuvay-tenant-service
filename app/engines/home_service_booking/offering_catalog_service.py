@@ -175,7 +175,7 @@ async def list_serviceable_issues(
     makes Guramrit's real ac-service issue catalog (Not Cooling, Water
     Leakage, Noise Issue, ...) show up for 140412 once THAT tenant
     publishes it, and not before."""
-    from app.engines.admin_catalog.models import MasterService, MasterIssueType, ServiceIssueMapping
+    from app.engines.admin_catalog.models import MasterService
 
     cat = await _resolve_category(db, category_slug)
     if not cat:
@@ -226,18 +226,7 @@ async def list_serviceable_issues(
         }
 
     rows = (await db.execute(
-        select(MasterIssueType, ServiceIssueMapping, MasterService)
-        .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
-        .join(MasterService, MasterService.id == ServiceIssueMapping.master_service_id)
-        .where(
-            MasterIssueType.master_service_id.in_(serviceable_ms_ids),
-            MasterIssueType.is_active == True,  # noqa: E712
-            MasterService.id.in_(serviceable_ms_ids),
-            MasterService.is_active == True,  # noqa: E712
-            ServiceIssueMapping.status == "active",
-            ServiceIssueMapping.customer_visible == True,  # noqa: E712
-        )
-        .order_by(MasterService.display_order, MasterIssueType.display_order, MasterIssueType.name)
+        _serviceable_issue_rows_query(serviceable_ms_ids)
     )).all()
 
     def _compat(mapping) -> tuple[str, str]:
@@ -279,6 +268,34 @@ async def list_serviceable_issues(
         ),
         "issues": issues, "total": len(issues),
     }
+
+
+def _serviceable_issue_rows_query(serviceable_ms_ids):
+    """Build the canonical problem-list query for serviceable offerings.
+
+    ``service_issue_mappings.master_service_id`` is the authoritative link.
+    Older/global ``master_issue_types`` rows legitimately have a NULL
+    ``master_service_id``; requiring that denormalized legacy column to match
+    as well discarded every otherwise valid problem and made Instagram say a
+    covered PIN code was unavailable.
+    """
+    from app.engines.admin_catalog.models import (
+        MasterIssueType, MasterService, ServiceIssueMapping,
+    )
+
+    return (
+        select(MasterIssueType, ServiceIssueMapping, MasterService)
+        .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
+        .join(MasterService, MasterService.id == ServiceIssueMapping.master_service_id)
+        .where(
+            MasterIssueType.is_active == True,  # noqa: E712
+            MasterService.id.in_(serviceable_ms_ids),
+            MasterService.is_active == True,  # noqa: E712
+            ServiceIssueMapping.status == "active",
+            ServiceIssueMapping.customer_visible == True,  # noqa: E712
+        )
+        .order_by(MasterService.display_order, MasterIssueType.display_order, MasterIssueType.name)
+    )
 
 
 async def list_serviceable_issues_across_categories(

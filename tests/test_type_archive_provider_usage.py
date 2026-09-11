@@ -31,8 +31,9 @@ async def test_archive_type_disables_live_dependencies_and_preserves_rows():
         deleted_at=None,
         updated_at=None,
     )
-    provider_type = SimpleNamespace(is_enabled=True)
-    provider_brand = SimpleNamespace(is_enabled=True)
+    tenant_service_id = uuid.uuid4()
+    provider_type = SimpleNamespace(is_enabled=True, tenant_service_id=tenant_service_id)
+    provider_brand = SimpleNamespace(is_enabled=True, tenant_service_id=tenant_service_id)
     mapping = SimpleNamespace(status="active", updated_at=None)
     service_link = SimpleNamespace(master_service_id=service_id, is_active=True)
 
@@ -65,7 +66,9 @@ async def test_archive_type_disables_live_dependencies_and_preserves_rows():
     assert service_type.status == "archived"
     assert service_type.is_active is False
     assert service_type.deleted_at is not None
-    bump_revision.assert_awaited_once_with(db, service_id)
+    bump_revision.assert_awaited_once_with(
+        db, service_id, affected_tenant_service_ids={tenant_service_id}
+    )
     db.commit.assert_awaited_once()
     assert result == {
         "type_id": str(type_id),
@@ -75,6 +78,40 @@ async def test_archive_type_disables_live_dependencies_and_preserves_rows():
         "catalog_mappings_archived": 1,
         "service_links_disabled": 1,
     }
+
+
+@pytest.mark.asyncio
+async def test_archive_unused_type_does_not_draft_unrelated_provider_services():
+    """An unused duplicate Type can be retired without removing every
+    provider of the parent service from customer and Instagram discovery."""
+    type_id = uuid.uuid4()
+    service_id = uuid.uuid4()
+    service_type = SimpleNamespace(
+        id=type_id, name="Unused duplicate", status="inactive", is_active=False,
+        deleted_at=None, updated_at=None,
+    )
+    service_link = SimpleNamespace(master_service_id=service_id, is_active=True)
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        _single(service_type), _many([]), _many([]), _many([]), _many([service_link]),
+    ])
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    bump_revision = AsyncMock()
+    with patch(
+        "app.engines.admin_catalog.tenant_setup_revision.bump_tenant_setup_revision",
+        bump_revision,
+    ):
+        await TypesService(db).archive_type(
+            type_id, "Unused duplicate type is no longer needed"
+        )
+
+    bump_revision.assert_awaited_once_with(
+        db, service_id, affected_tenant_service_ids=set()
+    )
 
 
 def test_type_archive_dialog_explains_automatic_cleanup():
