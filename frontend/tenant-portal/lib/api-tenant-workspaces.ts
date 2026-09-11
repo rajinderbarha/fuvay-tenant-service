@@ -613,6 +613,11 @@ export interface BJDetail {
   invoice: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; payment_status?: string }) | null;
   quote: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; status?: string }) | null;
   visit_fee: string | null; open_complaint_count: number; sla: BJSla;
+  customer_health?: {
+    score: number; band: string; can_book: boolean;
+    advance_required_pct: number; signals: Record<string, number>;
+    computed_at: string;
+  } | null;
   workflow_stages: Array<{
     step_key: string; label: string; state: "completed" | "current" | "skipped" | "upcoming";
     requires_photo?: boolean; requires_note?: boolean;
@@ -635,6 +640,8 @@ export const bookingsJobsApi = {
    * the only money-in action a provider can take against a job. */
   confirmPayment: <T = WsPayload>(jobId: string, payload: Record<string, unknown>) =>
     apiFetch<T>(`/v1/tenant/home-services/bookings-jobs/${jobId}/confirm-payment`, post(payload)),
+  cancelJob: <T = WsPayload>(jobId: string, reason: string) =>
+    apiFetch<T>(`/v1/provider/service-jobs/${jobId}/cancel`, post({ reason })),
 };
 
 // ── Dispatch ───────────────────────────────────────────────────────────────
@@ -666,6 +673,7 @@ export interface HsDispatchJobSummary {
   minutes_until_due?: number | null;
   is_overdue?: boolean;
   has_conflict?: boolean;
+  customer_health?: { score: number; band: string; can_book: boolean } | null;
 }
 
 export interface HsDispatchTechnician {

@@ -473,6 +473,22 @@ async def get_bookings_jobs_detail(
     _stages = await resolve_job_workflow_stages(db, job, "tenant")
     _tenant_stages = to_client_stages(_stages) if _stages else []
 
+    customer_health = None
+    if job.customer_id:
+        try:
+            import inspect
+            from app.engines.platform_commerce.service import CommerceService
+            nested = db.begin_nested()
+            if inspect.iscoroutine(nested):
+                nested = await nested
+            async with nested:
+                customer_health = await CommerceService(db).recompute_customer_health(
+                    job.customer_id, tenant_id,
+                )
+        except Exception:
+            # Trust telemetry must not make the operational job drawer fail.
+            customer_health = None
+
     return ok({
         "booking": booking_dict,
         "job":     job_dict,
@@ -486,6 +502,7 @@ async def get_bookings_jobs_detail(
         "quote": quote.to_dict() if quote else None,
         "visit_fee": str(visit_fee) if visit_fee is not None else None,
         "open_complaint_count": open_complaint_count,
+        "customer_health": customer_health,
         "sla": sla,
         # The journey as the PROVIDER should see it — steps flagged
         # tenant_visible on this job's own snapshotted workflow. Empty when the

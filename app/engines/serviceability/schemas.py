@@ -7,6 +7,25 @@ from app.engines.serviceability.constants import ERR_INVALID_PIN_CODE
 
 ADDRESS_LABELS = ("Home", "Work", "Other")
 _PIN_RE = re.compile(r"^\d{6}$")
+_SPACE_RE = re.compile(r"\s+")
+
+
+def _validate_address_line(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _SPACE_RE.sub(" ", value).strip(" ,.-")
+    tokens = re.findall(r"[A-Za-z0-9]+", cleaned)
+    letters = re.sub(r"[^A-Za-z]", "", cleaned)
+    if len(cleaned) < 7 or len(tokens) < 2 or len(letters) < 4:
+        raise ValueError(
+            "Enter a complete street address, for example: House/Flat 12, Building or Street, Locality. "
+            "City and PIN code are collected separately."
+        )
+    # Reject obvious placeholder/key-smash values while allowing normal short
+    # rural and landmark-based Indian addresses.
+    if len(set(letters.lower())) < 3 or len(set(t.lower() for t in tokens)) == 1:
+        raise ValueError("Enter a valid house/building, street and locality instead of placeholder text.")
+    return cleaned
 
 
 def _validate_pin(zipcode: str | None) -> str | None:
@@ -34,6 +53,7 @@ class AddressCreate(BaseModel):
     is_default: bool = False
 
     _validate_zipcode = field_validator("zipcode")(_validate_pin)
+    _validate_line_1 = field_validator("address_line_1")(_validate_address_line)
 
     @field_validator("label")
     @classmethod
@@ -60,6 +80,7 @@ class AddressUpdate(BaseModel):
     is_default: bool | None = None
 
     _validate_zipcode = field_validator("zipcode")(_validate_pin)
+    _validate_line_1 = field_validator("address_line_1")(_validate_address_line)
 
     @field_validator("label")
     @classmethod

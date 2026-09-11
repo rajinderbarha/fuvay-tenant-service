@@ -2608,6 +2608,11 @@ export interface HomeServicesDashboardData {
     available_technicians: number;
     attention_items: number;
   };
+  provider_health: {
+    score: number | null;
+    band: string | null;
+    note: string;
+  };
   attention_queue: HomeServicesDashboardAttentionItem[];
   job_pipeline: Array<{ key: string; label: string; count: number }>;
   todays_jobs: Array<{

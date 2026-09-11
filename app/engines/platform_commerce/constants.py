@@ -37,11 +37,13 @@ CUSTOMER_ADVANCE_REQUIRED_PCT: dict[str, Decimal] = {
 
 # ── Customer health signal weights ─────────────────────────────────────────
 CUSTOMER_SIGNAL_WEIGHTS: dict[str, float] = {
-    "booking_completion_rate": 0.30,
-    "payment_reliability":     0.25,
-    "cancellation_rate":       0.20,
+    # Payment is the primary trust signal. Behavioural signals (avoidable
+    # cancellations/no-shows) matter next; tenure is context, not character.
+    "booking_completion_rate": 0.15,
+    "payment_reliability":     0.55,
+    "cancellation_rate":       0.10,
     "no_show_rate":            0.15,
-    "platform_tenure":         0.10,
+    "platform_tenure":         0.05,
 }
 
 # Default signals for new customers

@@ -70,7 +70,7 @@ def test_accepted_job_without_a_real_assignee_returns_to_dispatch():
 
     assert result["stage"] == "new"
     assert result["next_action"]["action_key"] == "assign_technician"
-    assert {action["action_key"] for action in actions} == {"assign_technician"}
+    assert {action["action_key"] for action in actions} == {"assign_technician", "cancel_job"}
 
 
 def test_closed_estimate_declined_is_terminal_and_not_completed():

@@ -46,11 +46,13 @@ class TestAllowedOverrideTargets:
         svc = AdminJobActionsService(AsyncMock())
         assert svc.get_allowed_override_targets("assigned") == ["cancelled"]
 
-    def test_terminal_status_allows_nothing(self):
+    def test_terminal_status_allows_only_explicit_recovery(self):
         from app.engines.execution.admin_job_actions import AdminJobActionsService
         svc = AdminJobActionsService(AsyncMock())
-        for status in ("completed", "cancelled", "force_closed", "voided", "failed"):
+        for status in ("completed", "force_closed", "voided"):
             assert svc.get_allowed_override_targets(status) == []
+        for status in ("cancelled", "failed"):
+            assert svc.get_allowed_override_targets(status) == ["pending_assignment"]
 
 
 class TestStatusOverride:

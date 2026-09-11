@@ -43,6 +43,7 @@ _REASON_CODE_MAP = {
     "service_not_configured":    "SERVICE_NOT_CONFIGURED",
     "no_availability_configured":"OUTSIDE_AVAILABILITY",
     "schedule_conflict":         "SCHEDULE_CONFLICT",
+    "active_job_in_progress":    "ACTIVE_JOB_IN_PROGRESS",
 }
 
 
@@ -417,11 +418,19 @@ class HomeServiceDispatchProjectionService:
         conflicting_staff = await self._conflicting_staff_ids(tenant_id, job, eligible_ids)
         eligible_out = []
         for e in raw["eligible_staff"]:
-            if uuid.UUID(e["staff_member_id"]) in conflicting_staff:
+            staff_id = uuid.UUID(e["staff_member_id"])
+            reasons: list[str] = []
+            if staff_id in conflicting_staff:
+                reasons.append("schedule_conflict")
+            if await self._assign_svc.staff_has_open_job(
+                tenant_id, staff_id, exclude_job_id=job.id,
+            ):
+                reasons.append("active_job_in_progress")
+            if reasons:
                 raw["blocked_staff"].append({
                     **e,
                     "eligibility_status": "blocked",
-                    "blocked_reasons": ["schedule_conflict"],
+                    "blocked_reasons": reasons,
                 })
                 continue
             eligible_out.append(e)
@@ -459,10 +468,27 @@ class HomeServiceDispatchProjectionService:
             elif eligible_out:
                 actions.append("assign")
 
+        customer_health = None
+        if job.customer_id:
+            try:
+                import inspect
+                from app.engines.platform_commerce.service import CommerceService
+                nested = self.db.begin_nested()
+                if inspect.iscoroutine(nested):
+                    nested = await nested
+                async with nested:
+                    customer_health = await CommerceService(self.db).recompute_customer_health(
+                        job.customer_id, tenant_id,
+                    )
+            except Exception:
+                # A stale/missing trust projection must never block dispatch.
+                customer_health = None
+
         return {
             "job_context": {
                 **self._job_summary(job, booking),
                 "master_service_name": service_name,
+                "customer_health": customer_health,
             },
             "eligible_technicians":  eligible_out,
             "excluded_technicians":  excluded_out,

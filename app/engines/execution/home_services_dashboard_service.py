@@ -437,6 +437,9 @@ def _bookability_row(coverage_row: dict, tenant_bookable: dict | None) -> dict:
 async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
     errors: list[str] = []
 
+    from app.engines.tenant_engine.health import refresh_provider_operational_health
+    await _safe(refresh_provider_operational_health(db, tid), "provider_health", errors)
+
     from app.engines.home_service_assignment.team_readiness_service import compute_team_summary, compute_service_coverage
     team_summary = await _safe(compute_team_summary(db, tid), "staff_capacity", errors) or {"counts": {}, "per_member": {}}
     coverage = await _safe(compute_service_coverage(db, tid, team_summary), "service_bookability", errors) or []
@@ -462,7 +465,7 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
 
     tenant = (await db.execute(text(
         "SELECT COALESCE(business_name, tenant_name) AS business_name, "
-        "tenant_code, city, state, zipcode, logo_url "
+        "tenant_code, city, state, zipcode, logo_url, health_score, health_band "
         "FROM tenants WHERE id=:tid"
     ), {"tid": str(tid)})).fetchone()
     today_total = (await db.execute(text(
@@ -491,6 +494,11 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
             "jobs_today": int(today_total),
             "available_technicians": max(ready - int(assigned_now), 0),
             "attention_items": sum(int(item.get("count", 0)) for item in attention),
+        },
+        "provider_health": {
+            "score": float(tenant.health_score) if tenant and tenant.health_score is not None else None,
+            "band": tenant.health_band if tenant else None,
+            "note": "Cancellations, assignment response, completed work, customer satisfaction and payment readiness contribute to this score.",
         },
         "attention_queue": attention,
         "job_pipeline": pipeline,

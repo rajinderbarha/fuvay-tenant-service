@@ -102,6 +102,30 @@ class HomeServiceJobAssignmentService:
         )
         return res.scalars().first()
 
+    async def staff_has_open_job(
+        self, tenant_id: uuid.UUID, staff_member_id: uuid.UUID,
+        *, exclude_job_id: uuid.UUID | None = None,
+    ) -> bool:
+        """Return whether this technician is already occupied by another job.
+
+        This is the per-technician counterpart to the tenant-wide WIP gate.
+        Dispatch must use the same fact as the mutation path; otherwise a busy
+        technician is rendered as eligible and POST /assign rejects the click.
+        """
+        from app.engines.final_records.models import ServiceJob
+        from app.engines.vertical_catalog.seat_enforcement import OCCUPYING_JOB_STATUSES
+
+        clauses = [
+            ServiceJob.tenant_id == tenant_id,
+            ServiceJob.assigned_staff_id == staff_member_id,
+            ServiceJob.status.in_(OCCUPYING_JOB_STATUSES),
+        ]
+        if exclude_job_id is not None:
+            clauses.append(ServiceJob.id != exclude_job_id)
+        return (await self.db.execute(
+            select(ServiceJob.id).where(and_(*clauses)).limit(1)
+        )).scalar_one_or_none() is not None
+
     async def _job_requires_technician(self, job) -> bool:
         """Resolve the technician gate from the job's snapshotted workflow.
 
@@ -507,6 +531,7 @@ class HomeServiceJobAssignmentService:
         scheduled_time_window: str | None = None,
         notes:           str | None       = None,
         request_id:      str | None       = None,
+        allow_accepted_reassignment: bool = False,
     ) -> dict:
         job = await self._load_job(job_id)
         self._validate_job_assignable(job)
@@ -518,8 +543,18 @@ class HomeServiceJobAssignmentService:
         # waits in `pending_assignment` instead of being refused -- the
         # customer never loses their slot, the provider just cannot hoard work
         # its team cannot start.
-        from app.engines.vertical_catalog.seat_enforcement import assert_wip_capacity
-        await assert_wip_capacity(self.db, tenant_id)
+        old_assignment = await self._current_assignment(job_id)
+        if old_assignment is None and not allow_accepted_reassignment:
+            from app.engines.vertical_catalog.seat_enforcement import assert_wip_capacity
+            await assert_wip_capacity(self.db, tenant_id)
+
+        # The tenant-wide gate only says that some seat is free. The selected
+        # technician must also be free. Reassignment excludes this job because
+        # replacing its owner does not consume an additional WIP slot.
+        if await self.staff_has_open_job(
+            tenant_id, staff_member_id, exclude_job_id=job_id,
+        ):
+            raise ValueError(ERR_STAFF_NOT_ELIGIBLE)
 
         # Validate staff eligibility
         staff, blocked = await self.validate_staff_eligibility(job, staff_member_id)
@@ -533,10 +568,10 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_STAFF_NOT_ELIGIBLE)
 
         # Retire old current assignment if any
-        old_assignment = await self._current_assignment(job_id)
         old_status = None
         if old_assignment:
-            if old_assignment.assignment_status == ASSIGN_STATUS_ACCEPTED:
+            if (old_assignment.assignment_status == ASSIGN_STATUS_ACCEPTED
+                    and not allow_accepted_reassignment):
                 raise ValueError(ERR_REASSIGN_NOT_ALLOWED)
             old_status = old_assignment.assignment_status
             old_assignment.is_current = False
@@ -544,14 +579,16 @@ class HomeServiceJobAssignmentService:
             await self.db.flush()
 
         # Create new assignment
+        effective_date = scheduled_date or job.scheduled_date
+        effective_window = scheduled_time_window or job.scheduled_time_window
         assignment = ServiceJobAssignment(
             job_id=job_id, booking_id=job.booking_id, tenant_id=tenant_id,
             assigned_staff_member_id=staff_member_id,
             assigned_by_user_id=actor_user_id,
             assignment_status=ASSIGN_STATUS_ASSIGNED,
             assignment_type=ASSIGN_TYPE_MANUAL,
-            scheduled_date=scheduled_date,
-            scheduled_time_window=scheduled_time_window,
+            scheduled_date=effective_date,
+            scheduled_time_window=effective_window,
             notes=notes,
             is_current=True,
         )
@@ -563,9 +600,9 @@ class HomeServiceJobAssignmentService:
         job.assigned_staff_id    = staff_member_id
         job.status               = JOB_STATUS_ASSIGNED
         job.assignment_status    = JOB_ASSIGN_ASSIGNED
-        if scheduled_date:
-            job.scheduled_date        = scheduled_date
-            job.scheduled_time_window = scheduled_time_window
+        if effective_date:
+            job.scheduled_date        = effective_date
+            job.scheduled_time_window = effective_window
         await self.db.flush()
 
         # Sync booking
@@ -589,7 +626,7 @@ class HomeServiceJobAssignmentService:
         # The notifier resolves the roster record to its authenticated user.
         await self._notify_staff_assigned(
             job=job, staff_member_id=staff_member_id, tenant_id=tenant_id,
-            scheduled_date=scheduled_date, scheduled_time_window=scheduled_time_window,
+            scheduled_date=effective_date, scheduled_time_window=effective_window,
             reassigned=bool(old_status))
 
         # Assignment is the first point a job has a date to be judged against.
@@ -602,8 +639,8 @@ class HomeServiceJobAssignmentService:
             "assigned_staff_member_id":str(staff_member_id),
             "status":                  job.status,
             "assignment_status":       job.assignment_status,
-            "scheduled_date":          scheduled_date.isoformat() if scheduled_date else None,
-            "scheduled_time_window":   scheduled_time_window,
+            "scheduled_date":          effective_date.isoformat() if effective_date else None,
+            "scheduled_time_window":   effective_window,
         }
 
     async def _notify_staff_assigned(
@@ -663,10 +700,17 @@ class HomeServiceJobAssignmentService:
     ) -> dict:
         if not reason or not reason.strip():
             raise ValueError(ERR_REASON_REQUIRED)
+        job = await self._load_job(job_id)
+        self._validate_job_assignable(job)
+        if job.status not in {
+            JOB_STATUS_PENDING_ASSIGNMENT, JOB_STATUS_ASSIGNED,
+            JOB_STATUS_ACCEPTED, JOB_STATUS_SCHEDULED, "customer_not_available",
+        }:
+            raise ValueError(ERR_REASSIGN_NOT_ALLOWED)
         return await self.assign_job(
             job_id=job_id, staff_member_id=staff_member_id,
             tenant_id=tenant_id, actor_user_id=actor_user_id,
-            request_id=request_id,
+            request_id=request_id, allow_accepted_reassignment=True,
         )
 
     async def cancel_assignment(

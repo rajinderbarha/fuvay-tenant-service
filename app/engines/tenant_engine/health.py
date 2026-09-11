@@ -184,3 +184,48 @@ async def write_health_signal(tenant_id: uuid.UUID, signal_name: str, value: flo
         return
     key = SIGNAL_REDIS_KEYS[signal_name].format(tenant_id=str(tenant_id))
     await redis.setex(key, ttl_hours * 3600, str(round(max(0.0, min(100.0, value)), 2)))
+
+
+async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
+    """Refresh cancellation/response signals from canonical job history.
+
+    Provider-initiated cancellations and 30-minute assignment timeouts are
+    intentionally distinguished from customer cancellations. A small prior
+    prevents one early incident from collapsing a new provider to zero while
+    still making every incident visibly reduce health.
+    """
+    from sqlalchemy import text
+
+    try:
+        import inspect
+        nested = db.begin_nested()
+        if inspect.iscoroutine(nested):
+            nested = await nested
+        async with nested:
+            row = (await db.execute(text("""
+                SELECT
+                  (SELECT count(*) FROM service_jobs
+                   WHERE tenant_id=:tid AND status='completed') AS completed,
+                  (SELECT count(DISTINCT job_id) FROM service_job_execution_events
+                   WHERE tenant_id=:tid AND event_type='job_cancelled'
+                     AND actor_role='provider') AS provider_cancelled,
+                  (SELECT count(DISTINCT job_id) FROM service_job_execution_events
+                   WHERE tenant_id=:tid AND event_type='provider_assignment_timeout') AS assignment_timeouts
+            """), {"tid": str(tenant_id)})).mappings().first()
+            completed = int((row or {}).get("completed") or 0)
+            cancelled = int((row or {}).get("provider_cancelled") or 0)
+            timeouts = int((row or {}).get("assignment_timeouts") or 0)
+            prior = 4
+            completion_score = round(100.0 * (completed + prior) / (completed + cancelled + prior), 2)
+            response_score = round(100.0 * prior / (timeouts + prior), 2)
+            await write_health_signal(tenant_id, "job_completion_rate", completion_score, ttl_hours=24)
+            await write_health_signal(tenant_id, "response_time", response_score, ttl_hours=24)
+            health = await compute_health_score(tenant_id, db=db)
+    except Exception as exc:  # health telemetry must never strand job cancellation
+        logger.warning("health.operational_refresh_failed", tenant_id=str(tenant_id), error=str(exc))
+        return {"updated": False}
+    return {
+        "updated": True, "score": health["score"], "band": health["band"],
+        "completion_score": completion_score, "response_score": response_score,
+        "provider_cancellations": cancelled, "assignment_timeouts": timeouts,
+    }

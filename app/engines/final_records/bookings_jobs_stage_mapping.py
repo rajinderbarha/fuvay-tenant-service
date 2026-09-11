@@ -201,5 +201,8 @@ def compute_available_actions(
     if job_status not in TERMINAL_STATUSES and not effectively_unassigned:
         actions.append({"action_key": "cancel_assignment", "label": "Cancel assignment",
                          "endpoint": "POST /v1/provider/service-jobs/{job_id}/cancel-assignment"})
+    if job_status not in TERMINAL_STATUSES:
+        actions.append({"action_key": "cancel_job", "label": "Cancel job",
+                        "endpoint": "POST /v1/provider/service-jobs/{job_id}/cancel"})
 
     return actions

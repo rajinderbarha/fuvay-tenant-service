@@ -694,8 +694,38 @@ class HomeServiceJobExecutionService:
 
         await self._set_status(db, job, JS_CANCELLED, EV_JOB_CANCELLED, user_id, actor_role, notes=reason, request_id=request_id)
         job.failure_reason = reason
+        job.assignment_status = "cancelled"
+
+        # Close the assignment record too. Previously the job became
+        # cancelled while its assignment remained current/accepted, leaving
+        # dispatch, the staff app and the booking with three different states.
+        from app.engines.home_service_assignment.models import ServiceJobAssignment
+        current_assignment = (await db.execute(
+            select(ServiceJobAssignment).where(
+                ServiceJobAssignment.job_id == job.id,
+                ServiceJobAssignment.is_current.is_(True),
+            )
+        )).scalars().first()
+        if current_assignment:
+            current_assignment.is_current = False
+            current_assignment.assignment_status = "cancelled"
+            current_assignment.cancelled_at = _now()
+            current_assignment.notes = reason
+            db.add(current_assignment)
+
+        from app.engines.final_records.models import ServiceBooking
+        booking = await db.get(ServiceBooking, job.booking_id)
+        if booking:
+            booking.status = JS_CANCELLED
+            booking.assignment_status = "cancelled"
+            booking.failure_reason = reason
+            db.add(booking)
         db.add(job)
         await db.flush()
+
+        if actor_role == "provider":
+            from app.engines.tenant_engine.health import refresh_provider_operational_health
+            await refresh_provider_operational_health(db, tenant_id)
         return job.to_dict()
 
     # ── notes / media ─────────────────────────────────────────────────────────

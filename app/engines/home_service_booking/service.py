@@ -2251,7 +2251,15 @@ class HomeServiceChatbotBookingService:
     async def _compute_missing_fields(self, draft: HomeServiceBookingDraft, offering) -> list[str]:
         """Return names of required fields not yet filled."""
         fields = await self._get_required_field_list(offering, draft)
-        return [field for field in fields if not getattr(draft, field, None)]
+        missing = [field for field in fields if not getattr(draft, field, None)]
+        if "address_snapshot" in fields and draft.address_snapshot:
+            from app.engines.serviceability.schemas import _validate_address_line
+            try:
+                _validate_address_line(draft.address_snapshot.get("address_line_1"))
+            except (AttributeError, ValueError):
+                if "address_snapshot" not in missing:
+                    missing.append("address_snapshot")
+        return missing
 
     async def _resolve_selected_tenant_price(self, draft: HomeServiceBookingDraft) -> dict | None:
         """When a specific tenant is already selected on this draft, prefer
@@ -2714,7 +2722,7 @@ class HomeServiceChatbotBookingService:
         """Load address record and copy into draft snapshot."""
         from app.engines.serviceability.models import CustomerAddress
         addr = await self.db.get(CustomerAddress, address_id)
-        if addr:
+        if addr and (draft.customer_id is None or addr.customer_id == draft.customer_id):
             draft.address_id = addr.id
             draft.city       = addr.city
             draft.zipcode    = addr.zipcode
@@ -2750,6 +2758,21 @@ class HomeServiceChatbotBookingService:
             if jt:
                 result["job_type_key"]   = jt.key
                 result["job_type_label"] = jt.label
+        if draft.customer_id:
+            from app.engines.serviceability.models import CustomerAddress
+            rows = (await self.db.execute(
+                select(CustomerAddress).where(
+                    CustomerAddress.customer_id == draft.customer_id,
+                    CustomerAddress.is_active.is_(True),
+                ).order_by(CustomerAddress.is_default.desc(), CustomerAddress.created_at.desc())
+            )).scalars().all()
+            result["address_choices"] = {
+                "saved_addresses": [address.to_dict() for address in rows],
+                "selected_address_id": str(draft.address_id) if draft.address_id else None,
+                "allow_new_address": True,
+                "new_address_action": "POST /v1/customers/me/addresses",
+                "prompt": "Choose a saved address or add a new house/flat, building/street and locality. City and PIN code are already collected separately.",
+            }
         return result
 
     async def _emit_event(

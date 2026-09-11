@@ -45,6 +45,7 @@ TERMINAL_STATUSES = {"completed", "cancelled", "failed", JS_FORCE_CLOSED, JS_VOI
 # override target exposed today is "cancelled", from any non-terminal
 # status, for jobs stuck by e.g. a technician who went silent mid-flow.
 ADMIN_OVERRIDE_TARGETS = {"cancelled"}
+ADMIN_REOPENABLE_STATUSES = {"cancelled", "failed"}
 
 EVENT_STATUS_OVERRIDDEN = "admin_status_overridden"
 EVENT_FORCE_CLOSED = "admin_force_closed"
@@ -72,6 +73,8 @@ class AdminJobActionsService:
         return job
 
     def get_allowed_override_targets(self, current_status: str) -> list[str]:
+        if current_status in ADMIN_REOPENABLE_STATUSES:
+            return ["pending_assignment"]
         if current_status in TERMINAL_STATUSES:
             return []
         return sorted(ADMIN_OVERRIDE_TARGETS)
@@ -112,14 +115,37 @@ class AdminJobActionsService:
                 detail=f"Job status changed since you last viewed it (now '{current}').",
                 status_code=409,
             )
-        if current in TERMINAL_STATUSES:
+        reopening = current in ADMIN_REOPENABLE_STATUSES and target_status == "pending_assignment"
+        if current in TERMINAL_STATUSES and not reopening:
             raise ServiceOSException(error_code="JOB_ALREADY_TERMINAL", detail=f"Job is already in a terminal status ('{current}').", status_code=409)
-        if target_status not in ADMIN_OVERRIDE_TARGETS:
+        if target_status not in ADMIN_OVERRIDE_TARGETS and not reopening:
             raise ServiceOSException(error_code="INVALID_ADMIN_OVERRIDE_TRANSITION",
                                       detail=f"'{target_status}' is not an allowed admin override target from '{current}'.", status_code=422)
 
         job.status = target_status
         job.updated_at = _now()
+        if reopening:
+            job.assigned_staff_id = None
+            job.assignment_status = "unassigned"
+            job.failure_reason = None
+            from app.engines.final_records.models import ServiceBooking
+            booking = await self.db.get(ServiceBooking, job.booking_id)
+            if booking:
+                booking.status = "pending_assignment"
+                booking.assignment_status = "unassigned"
+                booking.failure_reason = None
+                self.db.add(booking)
+            from app.engines.home_service_assignment.models import ServiceJobAssignment
+            current_assignment = (await self.db.execute(select(ServiceJobAssignment).where(
+                ServiceJobAssignment.job_id == job.id,
+                ServiceJobAssignment.is_current.is_(True),
+            ))).scalars().first()
+            if current_assignment:
+                current_assignment.is_current = False
+                current_assignment.assignment_status = "cancelled"
+                current_assignment.cancelled_at = _now()
+                current_assignment.notes = reason
+                self.db.add(current_assignment)
         self.db.add(job)
         await self.db.flush()
 

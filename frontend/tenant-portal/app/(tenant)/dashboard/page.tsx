@@ -109,6 +109,7 @@ function OperationalDashboard() {
       <SummaryCard icon={<Clock3 />} label="Jobs today" value={count(summary.jobs_today)} sub="Scheduled for today" tone="success" onClick={() => router.push("/home-services/bookings-jobs?date=today")} />
       <SummaryCard icon={<Users2 />} label="Available now" value={count(summary.available_technicians)} sub={`${count(data.staff_capacity.ready)} roster-ready · ${count(data.staff_capacity.assigned_now)} assigned`} tone="success" onClick={() => router.push("/home-services/availability")} />
       <SummaryCard icon={<ShieldAlert />} label="Needs attention" value={count(summary.attention_items)} sub="Operational actions outstanding" tone={summary.attention_items > 0 ? "warning" : "success"} onClick={() => router.push("/operations/exceptions")} />
+      <SummaryCard icon={<CheckCircle2 />} label="Provider health" value={data.provider_health.score == null ? "—" : `${Math.round(data.provider_health.score)}/100`} sub={data.provider_health.band ? `${humanize(data.provider_health.band)} health band` : "Building history"} tone={(data.provider_health.score ?? 100) < 60 ? "warning" : "success"} />
     </KpiGrid>
 
     <div className="dashboard-main-grid"><div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

@@ -14,6 +14,7 @@ import { formatPriceSnapshotValue } from "../../../../../lib/price-snapshot-form
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { usePermissions } from "../../../../../hooks/usePermissions";
 import { ReviewFeedbackTab } from "../../../../../components/home-services/ReviewFeedbackTab";
+import { TableSurface } from "@serviceos/design-system";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -93,7 +94,7 @@ function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
       alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius:"var(--radius-md)", padding: 20, width: 420, maxWidth: "90vw" }}
         onClick={e => e.stopPropagation()}>
-        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>Override Job Status</p>
+        <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px" }}>{["cancelled", "failed"].includes(currentStatus) ? "Reopen Job" : "Override Job Status"}</p>
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>New status</div>
           {targets.loading ? <Skeleton height={32} /> : (
@@ -113,7 +114,7 @@ function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
           <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Reason (required)</div>
           <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
             style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
-            placeholder="Why is this status being overridden?" />
+            placeholder={["cancelled", "failed"].includes(currentStatus) ? "Why should this job return to dispatch?" : "Why is this status being overridden?"} />
         </div>
         {override.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 10 }}>
           {override.error} {override.requestId && `(Request ID: ${override.requestId})`}
@@ -125,7 +126,7 @@ function StatusOverrideModal({ jobId, currentStatus, onClose, onDone }: {
             style={{ padding: "8px 14px", fontSize: 13, borderRadius: 6, border: "none",
               background: "var(--brand)", color: "#fff",
               opacity: (!targetStatus || !reason.trim() || override.loading) ? 0.5 : 1 }}>
-            {override.loading ? "Submitting…" : "Confirm Override"}
+            {override.loading ? "Submitting…" : ["cancelled", "failed"].includes(currentStatus) ? "Reopen Job" : "Confirm Override"}
           </button>
         </div>
       </div>
@@ -357,14 +358,6 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                   Reassign Technician
                 </button>
                 )}
-                {perm.has("admin:jobs:status_override") && (
-                <button onClick={() => setShowOverride(true)}
-                  style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
-                    border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
-                    whiteSpace: "nowrap" }}>
-                  Override Status
-                </button>
-                )}
                 {perm.has("admin:jobs:force_close") && (
                 <button onClick={() => setShowForceClose(true)}
                   style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
@@ -375,7 +368,15 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                 )}
               </>
             )}
-            {d.status !== "voided" && perm.has("admin:jobs:void") && (
+            {!['completed', 'force_closed', 'voided'].includes(d.status) && perm.has("admin:jobs:status_override") && (
+              <button onClick={() => setShowOverride(true)}
+                style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                  border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer",
+                  whiteSpace: "nowrap" }}>
+                {['cancelled', 'failed'].includes(d.status) ? 'Reopen Job' : 'Override Status'}
+              </button>
+            )}
+            {!['completed', 'cancelled', 'failed', 'force_closed', 'voided'].includes(d.status) && perm.has("admin:jobs:void") && (
               <button onClick={() => setShowVoid(true)}
                 style={{ padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 6,
                   border: "1px solid var(--danger-text, var(--danger))", color: "var(--danger-text, var(--danger))",
@@ -521,7 +522,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                   )}
                   {(d.quote_items?.length ?? 0) > 0 ? (
                     <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead>
                           <tr style={{ color: "var(--text-tertiary)", textAlign: "left", borderBottom: "1px solid var(--border)" }}>
                             <th style={{ padding: "8px 6px" }}>Item / Service</th>
@@ -545,7 +546,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </TableSurface>
                     </div>
                   ) : (
                     <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No technician-added estimate items were recorded.</p>

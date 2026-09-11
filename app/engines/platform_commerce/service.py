@@ -510,6 +510,86 @@ class CommerceService:
         return {"signal": signal, "new_score": score, "new_band": band}
 
     async def recompute_customer_health(self, cid, tid):
+        """Rebuild health from finalized jobs and direct-payment evidence.
+
+        Only customer-attributable outcomes are used. Provider cancellations
+        and provider complaints never reduce the customer score.
+        """
+        from sqlalchemy import text
+
+        row = (await self.db.execute(text("""
+            SELECT
+              count(DISTINCT sj.id) FILTER (WHERE sj.status='completed') AS completed,
+              count(DISTINCT ae.job_id) FILTER (
+                WHERE ae.event_type='customer_cancelled_booking'
+              ) AS customer_cancelled,
+              count(DISTINCT sj.id) FILTER (
+                WHERE sj.status='customer_not_available'
+              ) AS no_show,
+              min(sj.created_at) AS first_job_at
+            FROM service_jobs sj
+            LEFT JOIN service_job_assignment_events ae
+              ON ae.job_id=sj.id AND ae.tenant_id=sj.tenant_id
+            WHERE sj.customer_id=:cid AND sj.tenant_id=:tid
+        """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
+
+        payments = (await self.db.execute(text("""
+            SELECT
+              count(*) FILTER (WHERE payment_status IN ('paid','verified','collected')) AS paid,
+              count(*) FILTER (
+                WHERE payment_status IN ('failed','unpaid')
+                   OR (payment_status='pending' AND created_at < now() - interval '24 hours')
+              ) AS unpaid,
+              count(*) FILTER (
+                WHERE reminder_count > 0
+                   OR reconciliation_status IN ('needs_review','mismatch','disputed')
+              ) AS delayed
+            FROM service_payment_records
+            WHERE customer_id=:cid AND tenant_id=:tid
+        """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
+
+        completed = int(row.get("completed") or 0)
+        cancelled = int(row.get("customer_cancelled") or 0)
+        no_show = int(row.get("no_show") or 0)
+        paid = int(payments.get("paid") or 0)
+        unpaid = int(payments.get("unpaid") or 0)
+        delayed = int(payments.get("delayed") or 0)
+        prior = 4
+        payment_evidence = paid + unpaid + delayed
+        payment_reliability = (
+            100.0 if payment_evidence == 0
+            else round((paid * 100.0 + delayed * 50.0) / payment_evidence, 2)
+        )
+        first_job_at = row.get("first_job_at")
+        tenure_days = max(0, (utcnow() - first_job_at).days) if first_job_at else 0
+        signals = {
+            "booking_completion_rate": round(100.0 * (completed + prior) / (completed + cancelled + no_show + prior), 2),
+            "payment_reliability": payment_reliability,
+            "cancellation_rate": round(100.0 * (completed + prior) / (completed + cancelled + prior), 2),
+            "no_show_rate": round(100.0 * (completed + prior) / (completed + no_show + prior), 2),
+            "platform_tenure": round(50.0 + min(50.0, tenure_days / 180.0 * 50.0), 2),
+        }
+        score = round(sum(signals[k] * w for k, w in CUSTOMER_SIGNAL_WEIGHTS.items()), 2)
+        band = next(
+            (name for name, (low, _high) in sorted(
+                CUSTOMER_HEALTH_BANDS.items(), key=lambda item: item[1][0], reverse=True
+            ) if score >= low),
+            "blocked",
+        )
+        existing = (await self.db.execute(select(CustomerHealthScore).where(
+            CustomerHealthScore.customer_id == cid,
+            CustomerHealthScore.tenant_id == tid,
+        ))).scalar_one_or_none()
+        if existing is None:
+            existing = CustomerHealthScore(customer_id=cid, tenant_id=tid)
+            self.db.add(existing)
+        existing.score = Decimal(str(score))
+        existing.band = band
+        existing.signals = signals
+        existing.can_book = band != "blocked"
+        existing.advance_required_pct = CUSTOMER_ADVANCE_REQUIRED_PCT.get(band, Decimal("0.00"))
+        existing.computed_at = utcnow()
+        await self.db.flush()
         return await self.get_customer_health(cid, tid)
 
     async def get_at_risk_customers(self, tid):

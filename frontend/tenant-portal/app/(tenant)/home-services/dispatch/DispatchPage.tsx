@@ -76,6 +76,7 @@ const EXCLUSION_LABELS: Record<string, string> = {
   BRAND_UNSUPPORTED: "Brand unsupported",
   OUTSIDE_AVAILABILITY: "Working hours are not configured",
   SCHEDULE_CONFLICT: "Overlapping assignment",
+  ACTIVE_JOB_IN_PROGRESS: "Technician already has an open job",
   CAPACITY_EXCEEDED: "Capacity reached",
   OUTSIDE_COVERAGE: "Outside coverage",
   TENANT_MISMATCH: "Different business",
@@ -1706,6 +1707,10 @@ function AssignmentPanel({
                 label="Issue"
                 value={options.job_context.issue_summary || "Not supplied"}
               />
+              {options.job_context.customer_health && <Detail
+                label="Customer health"
+                value={`${Math.round(options.job_context.customer_health.score)}/100 · ${options.job_context.customer_health.band.replace(/_/g, " ")}`}
+              />}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button size="sm" variant="secondary" onClick={onOpenJob}>

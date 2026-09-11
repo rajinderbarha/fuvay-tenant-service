@@ -181,24 +181,30 @@ async def admin_list_eligible_technicians(
     user: UserContext  = Depends(require_permission(P.ADMIN_JOBS_READ)),
     db:   AsyncSession = Depends(get_db),
 ):
-    """Reads real technician users (role='technician'/'staff', is_active) scoped
-    to the job's own tenant. Deliberately queries User rather than
-    ProviderTeamMember -- see the L5-05C-001 fix in service.py for why."""
-    from app.engines.final_records.models import ServiceJob
-    from app.engines.auth.models import User
+    """Return technicians who pass the same eligibility rules as reassignment.
 
+    The old endpoint only checked ``users.is_active``. It therefore offered
+    technicians that the mutation immediately rejected for availability,
+    role or an existing open job.
+    """
+    from app.engines.final_records.models import ServiceJob
     job_row = (await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))).scalars().first()
     if not job_row:
         raise ServiceOSException(error_code="JOB_NOT_FOUND", detail="Service job not found.",
                                   status_code=404)
 
-    res = await db.execute(
-        select(User).where(
-            and_(User.tenant_id == job_row.tenant_id, User.role.in_(["technician", "staff"]),
-                 User.is_active == True)
-        )
-    )
-    technicians = [{"id": str(u.id), "full_name": u.full_name, "role": u.role} for u in res.scalars().all()]
+    svc = HomeServiceJobAssignmentService(db)
+    raw = await svc.list_eligible_staff_for_job(job_id, job_row.tenant_id)
+    technicians = []
+    for candidate in raw["eligible_staff"]:
+        staff_id = uuid.UUID(candidate["staff_member_id"])
+        if await svc.staff_has_open_job(job_row.tenant_id, staff_id, exclude_job_id=job_id):
+            continue
+        technicians.append({
+            "id": str(staff_id),
+            "full_name": candidate["name"],
+            "role": candidate["role"],
+        })
     return ok({"job_id": str(job_id), "technicians": technicians}, _RID(r), "assignment")
 
 

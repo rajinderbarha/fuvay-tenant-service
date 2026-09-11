@@ -514,6 +514,8 @@ async def select_best_provider(
     limit_candidates: int = 25,
     job_type_id: uuid.UUID | None = None,
     serialize_allocation: bool = False,
+    exclude_tenant_id: uuid.UUID | None = None,
+    exclude_tenant_ids: set[uuid.UUID] | None = None,
 ) -> dict | None:
     """Full eligibility gate + scoring + single-best selection.
 
@@ -534,6 +536,9 @@ async def select_best_provider(
     # Base candidate pool: one deterministic row per tenant. Joining raw areas
     # previously duplicated providers with multiple matching coverage rows and
     # applied an unordered LIMIT 25, making both counts and selection unstable.
+    excluded_ids = set(exclude_tenant_ids or set())
+    if exclude_tenant_id is not None:
+        excluded_ids.add(exclude_tenant_id)
     base_rows = (await db.execute(
         select(
             Tenant.id.label("tenant_id"),
@@ -548,6 +553,7 @@ async def select_best_provider(
             Tenant.status == "active",
             Tenant.vertical == "home_services",
             Tenant.suspended_at.is_(None),
+            Tenant.id.notin_(excluded_ids) if excluded_ids else True,
             # NOTE: tenants.category_id is unreliably NULL on real seeded
             # tenants (same gap found and worked around in the My Offerings
             # sprint) — vertical is the correct, populated gate; category_id
