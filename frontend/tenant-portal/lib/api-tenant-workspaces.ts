@@ -695,6 +695,7 @@ export interface HsDispatchProjection {
     capacity_used: number;
     capacity_total: number;
     conflict_count: number;
+    sla_breached_count: number;
   };
   unassigned_jobs: HsDispatchJobSummary[];
   scheduled_jobs: HsDispatchJobSummary[];

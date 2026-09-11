@@ -121,6 +121,9 @@ def test_projection_uses_canonical_status_and_bounded_queries():
     assert "ServiceJob.assigned_staff_id.is_(None)" in source
     assert "ServiceJob.assignment_status == \"unassigned\"" not in source
     assert "ServiceJob.assigned_staff_id.is_not(None)" in source
+    assert "func.coalesce" in source
+    assert 'entry.get("is_overdue")' in source
+    assert '"sla_breached_count"' in source
 
 
 def test_provider_workspace_links_stay_in_home_services():

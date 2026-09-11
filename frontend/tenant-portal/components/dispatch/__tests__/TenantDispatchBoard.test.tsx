@@ -26,6 +26,7 @@ const projection: HsDispatchProjection = {
     capacity_used: 1,
     capacity_total: 3,
     conflict_count: 0,
+    sla_breached_count: 0,
   },
   unassigned_jobs: [job],
   scheduled_jobs: [{ ...job, assigned_staff_id: "staff-1", assignment_status: "assigned" }],
@@ -53,17 +54,33 @@ describe("TenantDispatchBoard", () => {
   it("renders the supplied compact dispatch hierarchy", () => {
     render(<TenantDispatchBoard board={projection} date="2026-09-04" selectedJobId={null} onSelectJob={() => {}} />);
 
-    expect(screen.getByText("Scheduled today")).toBeInTheDocument();
+    expect(screen.getByText("Assigned today")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Needs a technician" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assigned jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /SLA breached jobs/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Technicians today" })).toBeInTheDocument();
     expect(screen.getByText("+ 2 open slots")).toBeInTheDocument();
+  });
+
+  it("surfaces overdue assigned work as an SLA breach", () => {
+    const overdue = { ...job, assigned_staff_id: "staff-1", assigned_staff_name: "Jaspreet Singh", assignment_status: "assigned", is_overdue: true, minutes_until_due: -75 };
+    render(<TenantDispatchBoard board={{
+      ...projection,
+      summary: { ...projection.summary, sla_breached_count: 1 },
+      scheduled_jobs: [overdue],
+      technician_schedule: [{ ...projection.technician_schedule[0], jobs_in_range: [overdue], jobs_today: [overdue] }],
+    }} date="2026-09-04" selectedJobId={null} onSelectJob={() => {}} />);
+
+    expect(screen.getAllByText("SLA breached").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 needs action")).toBeInTheDocument();
+    expect(screen.getAllByText("Jaspreet Singh").length).toBeGreaterThan(0);
   });
 
   it("keeps job selection connected to the assignment workspace", () => {
     const onSelectJob = vi.fn();
     render(<TenantDispatchBoard board={projection} date="2026-09-04" selectedJobId={null} onSelectJob={onSelectJob} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /JOB-0001 90m left/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /JOB-0001 90m left/i })[1]);
     expect(onSelectJob).toHaveBeenCalledWith("job-1");
   });
 

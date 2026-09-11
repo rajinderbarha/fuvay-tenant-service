@@ -183,12 +183,22 @@ class HomeServiceDispatchProjectionService:
                 func.lower(func.coalesce(ServiceJob.city, "")).like(pattern, escape="\\"),
             ))
 
+        # A booking already carries the customer's promised date before a
+        # dispatcher explicitly reschedules the resulting job.  Filtering on
+        # ServiceJob.scheduled_date alone made those valid jobs disappear even
+        # though _job_summary correctly displayed the booking date as its
+        # fallback.  Keep one effective date definition for both filtering and
+        # presentation.
+        effective_date = func.coalesce(
+            ServiceJob.scheduled_date,
+            ServiceBooking.preferred_date,
+        )
         unassigned_conditions = [
             *base_conditions,
             ServiceJob.assigned_staff_id.is_(None),
             or_(
-                ServiceJob.scheduled_date.is_(None),
-                ServiceJob.scheduled_date.between(target_date, range_end),
+                effective_date.is_(None),
+                effective_date.between(target_date, range_end),
             ),
         ]
         if technician_id:
@@ -198,8 +208,9 @@ class HomeServiceDispatchProjectionService:
         scheduled_conditions = [
             *base_conditions,
             ServiceJob.assigned_staff_id.is_not(None),
-            ServiceJob.assignment_status != "unassigned",
-            ServiceJob.scheduled_date.between(target_date, range_end),
+            # assigned_staff_id is the canonical ownership fact.  A stale
+            # denormalised assignment_status must not hide a real assignment.
+            effective_date.between(target_date, range_end),
         ]
 
         row_shape = (
@@ -221,7 +232,7 @@ class HomeServiceDispatchProjectionService:
         )).scalar_one())
         unassigned_rows = (await self.db.execute(
             row_shape.where(*unassigned_conditions)
-            .order_by(ServiceJob.scheduled_date.asc().nullslast(), ServiceJob.created_at.asc(), ServiceJob.id.asc())
+            .order_by(effective_date.asc().nullslast(), ServiceJob.created_at.asc(), ServiceJob.id.asc())
             .limit(limit).offset(offset)
         )).all()
 
@@ -238,7 +249,7 @@ class HomeServiceDispatchProjectionService:
         )).scalar_one())
         scheduled_rows = (await self.db.execute(
             row_shape.where(*scheduled_conditions)
-            .order_by(ServiceJob.scheduled_date.asc(), ServiceJob.scheduled_time_window.asc(), ServiceJob.id.asc())
+            .order_by(effective_date.asc(), ServiceJob.scheduled_time_window.asc().nullslast(), ServiceJob.id.asc())
             .limit(schedule_cap)
         )).all()
 
@@ -289,13 +300,17 @@ class HomeServiceDispatchProjectionService:
         conflict_job_ids: set[str] = set()
         for entries in by_staff.values():
             for index, first in enumerate(entries):
-                first_start = slot_start(date.fromisoformat(first["scheduled_date"]), first["scheduled_time_window"])
-                first_end = slot_end(date.fromisoformat(first["scheduled_date"]), first["scheduled_time_window"])
+                first_date = first["scheduled_date"] or first["requested_date"]
+                first_window = first["scheduled_time_window"] or first["requested_time_window"]
+                first_start = slot_start(date.fromisoformat(first_date), first_window) if first_date else None
+                first_end = slot_end(date.fromisoformat(first_date), first_window) if first_date else None
                 if not first_start or not first_end:
                     continue
                 for second in entries[index + 1:]:
-                    second_start = slot_start(date.fromisoformat(second["scheduled_date"]), second["scheduled_time_window"])
-                    second_end = slot_end(date.fromisoformat(second["scheduled_date"]), second["scheduled_time_window"])
+                    second_date = second["scheduled_date"] or second["requested_date"]
+                    second_window = second["scheduled_time_window"] or second["requested_time_window"]
+                    second_start = slot_start(date.fromisoformat(second_date), second_window) if second_date else None
+                    second_end = slot_end(date.fromisoformat(second_date), second_window) if second_date else None
                     if second_start and second_end and first_start < second_end and second_start < first_end:
                         conflict_job_ids.update((first["job_id"], second["job_id"]))
         for entry in scheduled_jobs:
@@ -328,6 +343,7 @@ class HomeServiceDispatchProjectionService:
             if t["status"] == "active" and t.get("can_receive_assignment", True)
         ]
         capacity_used = sum(1 for t in active_technicians if by_staff.get(t["staff_member_id"]))
+        sla_breached_count = sum(1 for entry in scheduled_jobs if entry.get("is_overdue"))
 
         service_rows = (await self.db.execute(
             select(MasterService.id, MasterService.service_name)
@@ -348,6 +364,7 @@ class HomeServiceDispatchProjectionService:
                 "capacity_used":        capacity_used,
                 "capacity_total":       len(active_technicians),
                 "conflict_count":       len(conflict_job_ids),
+                "sla_breached_count":   sla_breached_count,
             },
             "unassigned_jobs":     unassigned_jobs,
             "technician_schedule": technician_schedule,
