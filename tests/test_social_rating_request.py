@@ -3,7 +3,7 @@ calls are isolated."""
 import json
 import uuid
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -99,6 +99,7 @@ def test_a_typed_number_is_not_a_rating_under_any_other_list():
 class _DB:
     def __init__(self, service_name="AC Repair"):
         self.offering = NS(service_name=service_name) if service_name else None
+        self.commit = AsyncMock()
 
     async def get(self, _model, _key):
         return self.offering
@@ -131,6 +132,8 @@ def ask(monkeypatch):
     monkeypatch.setattr(rating_request, "_existing_rating", existing)
     monkeypatch.setattr(rating_request, "_reachable_thread", reachable)
     monkeypatch.setattr(rating_request.meta_client, "send_options", send_options)
+    state.warranty = AsyncMock(return_value=True)
+    monkeypatch.setattr(rating_request.warranty_delivery, "send_warranty_certificate", state.warranty)
     monkeypatch.setattr(messaging_channel_config_service, "get", AsyncMock(return_value=IG))
     return state
 
@@ -148,6 +151,30 @@ async def test_completion_asks_on_the_customers_open_instagram_thread(ask):
     # The typed-number answer only works because the options are remembered.
     assert ask.thread.last_options == [row["id"] for row in sent.rows]
     assert ask.thread.last_outbound_at is not None
+    ask.warranty.assert_awaited_once_with(
+        ANY, ask.job, ask.thread, config=IG,
+    )
+
+
+@pytest.mark.asyncio
+async def test_warranty_follows_the_successful_rating_prompt_without_waiting_for_a_rating(ask):
+    async def deliver(db, job, thread, *, config):
+        assert len(ask.sent) == 1
+        db.commit.assert_awaited_once()
+        assert thread.last_options == [row["id"] for row in ask.sent[0].rows]
+        assert ask.rated is None
+        return True
+
+    ask.warranty.side_effect = deliver
+    assert await rating_request._ask(_DB(), ask.job.id) is True
+    ask.warranty.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_warranty_failure_keeps_the_successful_rating_question_open(ask):
+    ask.warranty.return_value = False
+    assert await rating_request._ask(_DB(), ask.job.id) is True
+    assert ask.thread.last_options == [row["id"] for row in ask.sent[0].rows]
 
 
 @pytest.mark.asyncio
@@ -165,8 +192,17 @@ async def test_an_open_numbered_list_is_not_taken_over(ask):
 
 
 @pytest.mark.asyncio
-async def test_a_booking_already_rated_in_the_app_is_not_asked_again(ask):
+async def test_a_booking_already_rated_in_the_app_gets_warranty_without_another_ask(ask):
     ask.rated = 5
+    assert await rating_request._ask(_DB(), ask.job.id) is True
+    assert ask.sent == []
+    ask.warranty.assert_awaited_once_with(ANY, ask.job, ask.thread, config=IG)
+
+
+@pytest.mark.asyncio
+async def test_an_already_rated_booking_reports_a_failed_warranty_delivery(ask):
+    ask.rated = 5
+    ask.warranty.return_value = False
     assert await rating_request._ask(_DB(), ask.job.id) is False
     assert ask.sent == []
 
@@ -191,6 +227,7 @@ async def test_a_failed_send_leaves_the_thread_untouched(ask):
     ask.send_result = {"sent": False, "reason": "transport_error"}
     assert await rating_request._ask(_DB(), ask.job.id) is False
     assert ask.thread.last_options is None and ask.thread.last_outbound_at is None
+    ask.warranty.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -407,3 +444,26 @@ async def test_a_refused_completion_asks_nothing(monkeypatch):
             uuid.uuid4(), NS(state=NS(request_id="rid-1")), tasks, user=_staff(), db=AsyncMock(),
         )
     assert tasks.tasks == []
+
+
+@pytest.mark.asyncio
+async def test_tenant_portal_completion_schedules_the_same_instagram_followup(monkeypatch):
+    from fastapi import BackgroundTasks
+
+    from app.engines.execution import home_service_router as router_mod
+
+    job_id = uuid.uuid4()
+    monkeypatch.setattr(router_mod, "_staff_member_id", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(router_mod._svc, "complete_job",
+                        AsyncMock(return_value={"id": str(job_id), "status": "completed"}))
+    tasks = BackgroundTasks()
+    db = AsyncMock()
+    await router_mod.staff_complete_job(
+        job_id,
+        router_mod.CompleteJobBody(work_summary="Work completed", collected_amount=100),
+        NS(state=NS(request_id="rid-portal")), tasks, user=_staff(), db=db,
+    )
+    db.commit.assert_awaited_once()
+    assert [(task.func, task.args) for task in tasks.tasks] == [
+        (rating_request.send_rating_request, (job_id,)),
+    ]

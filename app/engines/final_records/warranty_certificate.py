@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import html
 import re
+import textwrap
 from datetime import datetime, timezone
+from io import BytesIO
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,6 +86,136 @@ async def issue_warranty_certificate(db: AsyncSession, job, booking=None) -> dic
     job.warranty_certificate_issued_at = issued_at
     await db.flush()
     return snapshot
+
+
+def render_certificate_pdf(snapshot: dict) -> bytes:
+    """Render the issued snapshot as a standalone, paginated PDF certificate.
+
+    PDF standard fonts keep this independent of server fonts or HTML renderers.
+    pypdf serializes text operands, so customer-supplied text cannot introduce
+    PDF drawing commands. The body uses Courier for predictable line wrapping.
+    """
+    from pypdf import PdfWriter
+    from pypdf.generic import (
+        ByteStringObject,
+        ContentStream,
+        DictionaryObject,
+        FloatObject,
+        NameObject,
+    )
+
+    def date_text(value) -> str:
+        if not value:
+            return "Not recorded"
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        except ValueError:
+            return _clean(value)
+
+    provider = snapshot.get("provider") or {}
+    address = snapshot.get("service_address") or ""
+    if isinstance(address, dict):
+        address = ", ".join(_clean(value) for value in address.values() if value)
+    days = snapshot.get("warranty_days")
+    statement = (
+        f"You have a warranty of {days} days on your completed service."
+        if days is not None else "Your provider warranty details are recorded below."
+    )
+    # Each block carries its font size and whether it is a section heading.
+    blocks = [
+        ("Provider Warranty Certificate", 19, True),
+        (statement, 12, True),
+        (f"Valid until: {date_text(snapshot.get('warranty_expires_at'))}", 10, False),
+        ("Service details", 12, True),
+        (f"Certificate: {_clean(snapshot.get('certificate_number'))}", 10, False),
+        (f"Job: {_clean(snapshot.get('job_number'))}", 10, False),
+        (f"Booking: {_clean(snapshot.get('booking_number'))}", 10, False),
+        (f"Service: {_clean(snapshot.get('service_name'))}", 10, False),
+        (f"Customer: {_clean(snapshot.get('customer_name'))}", 10, False),
+        (f"Service address: {_clean(address)}", 10, False),
+        (f"Work completed: {_clean(snapshot.get('work_summary'))}", 10, False),
+        (f"Issued: {date_text(snapshot.get('issued_at'))}", 10, False),
+        ("Responsible service provider", 12, True),
+        (_clean(provider.get("name")) or "Service Provider", 10, False),
+        (f"Registered address: {_clean(provider.get('registered_address'))}", 10, False),
+        (f"Phone: {_clean(provider.get('phone'))}", 10, False),
+        (f"Email: {_clean(provider.get('email'))}", 10, False),
+        (f"GST: {_clean(provider.get('gst_number'))}", 10, False),
+        ("Warranty terms", 12, True),
+    ]
+    for number, term in enumerate(snapshot.get("terms") or WARRANTY_TERMS, start=1):
+        blocks.append((f"{number}. {_clean(term)}", 10, False))
+    blocks.extend([
+        (f"Terms version: {_clean(snapshot.get('terms_version'))}", 9, False),
+        ("Keep this certificate as evidence of your provider warranty.", 9, False),
+    ])
+
+    writer = PdfWriter()
+    writer.add_metadata({
+        "/Title": f"Warranty Certificate {_clean(snapshot.get('certificate_number'))}",
+        "/Author": "Fuvay",
+    })
+    fonts = DictionaryObject({
+        NameObject(key): DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject(name),
+            NameObject("/Encoding"): NameObject("/WinAnsiEncoding"),
+        })
+        for key, name in (("/F1", "/Courier"), ("/F2", "/Courier-Bold"))
+    })
+    page_width, page_height, margin = 595, 842, 48
+    streams = []
+
+    def new_page():
+        page = writer.add_blank_page(width=page_width, height=page_height)
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): fonts})
+        stream = ContentStream(None, writer)
+        page.replace_contents(stream)
+        streams.append(stream)
+        return stream, page_height - margin
+
+    def draw_line(stream, text, size, bold, y):
+        # WinAnsi is the encoding of PDF standard fonts. Preserve any unsupported
+        # characters as explicit Unicode escapes instead of silently losing data.
+        encoded = text.encode("cp1252", errors="backslashreplace")
+        stream.operations.extend([
+            ([], b"BT"),
+            ([NameObject("/F2" if bold else "/F1"), FloatObject(size)], b"Tf"),
+            ([FloatObject(1), FloatObject(0), FloatObject(0), FloatObject(1),
+              FloatObject(margin), FloatObject(y)], b"Tm"),
+            ([ByteStringObject(encoded)], b"Tj"),
+            ([], b"ET"),
+        ])
+
+    stream, y = new_page()
+    for text, size, heading in blocks:
+        # Encode before wrapping because unsupported characters expand to escapes.
+        text = text.encode("cp1252", errors="backslashreplace").decode("cp1252")
+        width = int((page_width - 2 * margin) / (size * 0.6))
+        lines = textwrap.wrap(text, width=width, break_long_words=True) or [""]
+        leading = size * 1.5
+        if heading:
+            y -= 10
+            if y - leading * min(len(lines) + 1, 3) < margin + 25:
+                stream, y = new_page()
+        for line in lines:
+            if y < margin + 25:
+                stream, y = new_page()
+            draw_line(stream, line, size, heading, y)
+            y -= leading
+        y -= 5 if heading else 3
+
+    for number, stream in enumerate(streams, start=1):
+        draw_line(stream, f"Fuvay | Provider warranty | Page {number} of {len(streams)}", 8,
+                  False, 30)
+
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def render_certificate_html(snapshot: dict) -> str:

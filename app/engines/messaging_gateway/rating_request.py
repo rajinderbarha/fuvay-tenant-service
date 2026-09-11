@@ -1,4 +1,4 @@
-"""Ask for a 1-5 rating in Instagram chat once the technician completes the job.
+"""Ask for an Instagram rating, then send the completed service's warranty PDF.
 
 The staff app's final "Complete job" (`MobileDirectPaymentService.finalize_job`)
 schedules `send_rating_request` to run after its response. The customer taps a
@@ -8,8 +8,9 @@ keyed by booking. So a booking can be rated once, from either place, and a chat
 rating reaches the provider's reviews page and rating summaries exactly as an
 in-app one does.
 
-Nothing is stored here beyond what the review engine stores: whether a booking
-still wants a rating is simply whether it has a review yet.
+Whether a booking still wants a rating is simply whether it has a review yet.
+After the prompt is sent, warranty_delivery sends the immutable certificate
+and records its document reference and successful send on the completed job.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from sqlalchemy import or_, select
 
-from app.engines.messaging_gateway import meta_client
+from app.engines.messaging_gateway import meta_client, warranty_delivery
 from app.engines.messaging_gateway.constants import (
     CUSTOMER_SERVICE_WINDOW_HOURS, PICK_RATING, PICKER_SEP, RATING_REQUEST_CHANNELS,
 )
@@ -106,9 +107,6 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
     if target is None:
         return False
     job, booking = target
-    if await _existing_rating(db, booking.customer_id, booking.id) is not None:
-        return False  # already rated in the customer app
-
     thread = await _reachable_thread(db, booking.customer_id)
     if thread is None:
         # Instagram allows a business-initiated message only within 24 hours
@@ -123,22 +121,32 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
     if not config:
         return False
 
-    rows = rating_rows(booking.id)
-    result = await meta_client.send_options(
-        thread.channel_user_id, await _prompt(db, job, booking), rows,
-        channel=thread.channel, config=config,
-        list_button="Rate", section_title="Rate your service",
+    rating_sent = False
+    if await _existing_rating(db, booking.customer_id, booking.id) is None:
+        rows = rating_rows(booking.id)
+        result = await meta_client.send_options(
+            thread.channel_user_id, await _prompt(db, job, booking), rows,
+            channel=thread.channel, config=config,
+            list_button="Rate", section_title="Rate your service",
+        )
+        if not result.get("sent"):
+            return False
+        thread.last_outbound_at = datetime.now(timezone.utc)
+        if not thread.last_options:
+            # Only when no numbered list is open: a customer halfway through a new
+            # booking keeps their typed numbers, and can still tap a star chip.
+            thread.last_options = [row["id"] for row in rows]
+        logger.info("messaging_gateway.rating_request.sent",
+                    job_id=str(job_id), thread_id=str(thread.id))
+        # Make typed rating replies visible to the webhook while the PDF uploads.
+        await db.commit()
+        rating_sent = True
+    # The warranty follows the question; it does not depend on the customer
+    # submitting a rating. A fast in-app rating must not suppress the PDF.
+    warranty_sent = await warranty_delivery.send_warranty_certificate(
+        db, job, thread, config=config,
     )
-    if not result.get("sent"):
-        return False
-    thread.last_outbound_at = datetime.now(timezone.utc)
-    if not thread.last_options:
-        # Only when no numbered list is open: a customer halfway through a new
-        # booking keeps their typed numbers, and can still tap a star chip.
-        thread.last_options = [row["id"] for row in rows]
-    logger.info("messaging_gateway.rating_request.sent",
-                job_id=str(job_id), thread_id=str(thread.id))
-    return True
+    return rating_sent or warranty_sent
 
 
 async def record_rating(db, thread, booking_id: str, stars: str) -> str:

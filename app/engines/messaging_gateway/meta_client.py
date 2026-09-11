@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import structlog
@@ -482,6 +483,72 @@ async def send_text(
             "text": {"preview_url": False, "body": body},
         }
     return await _post(url, token, payload)
+
+
+async def send_document(
+    to: str,
+    document_url: str,
+    *,
+    channel: str = CHANNEL_INSTAGRAM,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Send a hosted PDF inside the customer's open Instagram message window.
+
+    Meta fetches the HTTPS URL; the caller must provide a reachable PDF no
+    larger than 25 MB. Instagram Login uses the singular attachment object:
+    https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/messaging-api
+    """
+    if channel != CHANNEL_INSTAGRAM:
+        return {"sent": False, "reason": "unsupported_document_channel"}
+    value = str(document_url or "").strip()
+    try:
+        parsed = urlsplit(value)
+        valid_url = (
+            parsed.scheme == "https" and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and not parsed.fragment and "\\" not in value
+            and not any(char.isspace() or ord(char) < 32 for char in value)
+        )
+        # Accessing port also validates malformed/non-numeric ports.
+        parsed.port
+    except ValueError:
+        valid_url = False
+    if not valid_url:
+        return {"sent": False, "reason": "invalid_document_url"}
+    endpoint = _endpoint(channel, config)
+    if not endpoint:
+        return {"sent": False, "reason": "channel_not_configured"}
+    url, token = endpoint
+    result = await _post(url, token, {
+        "recipient": {"id": to},
+        "message": {"attachment": {"type": "file", "payload": {"url": value}}},
+    })
+    if result.get("sent"):
+        return {**result, "delivery_mode": "attachment"}
+
+    response = result.get("response")
+    error = response.get("error") if isinstance(response, dict) else None
+    message = str(error.get("message") or "").lower() if isinstance(error, dict) else ""
+    attachment_rejected = (
+        result.get("status") == 400 and isinstance(error, dict)
+        and error.get("code") == 100
+        and any(phrase in message for phrase in (
+            "attachment", "file type", "invalid message data", "upload attachment",
+        ))
+    )
+    if not attachment_rejected:
+        # Auth, timeout, messaging-window and unrelated failures stay visible.
+        return result
+
+    body = f"Download your PDF:\n{value}"
+    if len(body.encode("utf-8")) > 1000:
+        # Splitting a signed URL into separate messages makes it unusable.
+        return result
+    logger.info("messaging_gateway.document.using_download_link", channel=channel)
+    fallback = await _post(url, token, {
+        "recipient": {"id": to}, "message": {"text": body},
+    })
+    return {**fallback, "delivery_mode": "download_link"}
 
 
 def _endpoint(channel: str, config: dict[str, Any] | None) -> tuple[str, str] | None:

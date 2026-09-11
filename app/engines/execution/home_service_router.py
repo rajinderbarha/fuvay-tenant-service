@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException
 from pydantic import BaseModel, Field
 
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from app.core.permissions import P, require_permission, require_staff_or_above_m
 from app.schemas.base import ApiResponse, ok
 from app.engines.execution.home_service_service import HomeServiceJobExecutionService
 from app.engines.execution.admin_job_actions import AdminJobActionsService
+from app.engines.messaging_gateway.rating_request import send_rating_request
 from app.exceptions import ServiceOSException
 
 _svc = HomeServiceJobExecutionService()
@@ -374,7 +375,9 @@ async def staff_list_parts_requests(job_id: uuid.UUID, r: Request, user=Depends(
 
 # HS8B — single validated completion action
 @staff_router.post("/{job_id}/complete")
-async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Request,
+                             background_tasks: BackgroundTasks,
+                             user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
     staff_id = await _staff_member_id(user, db)
     result = await _svc.complete_job(
@@ -386,6 +389,7 @@ async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Reques
         request_id=rid,
     )
     await db.commit()
+    background_tasks.add_task(send_rating_request, job_id)
     return ok(result, rid, "staff-exec-complete")
 
 
