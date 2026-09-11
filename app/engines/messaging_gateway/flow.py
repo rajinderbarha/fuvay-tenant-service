@@ -2003,18 +2003,34 @@ def _otp_step(identity, thread) -> Turn:
 
 
 def _price_block(price: dict) -> str | None:
-    """Compact, customer-only price presentation for the slot step."""
+    """Prominent, customer-only price presentation for the slot step.
+
+    Instagram does not support HTML, Markdown or selectable font sizes in a
+    message body. Bold Unicode digits provide supported visual emphasis.
+    """
     amount = str(price.get("display_price") or "").strip()
     if not amount:
         return None
+    strong_amount = amount.translate(str.maketrans(
+        "0123456789", "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
+    ))
     inspection = bool(
         price.get("requires_inspection_estimate")
         or price.get("pricing_mode") == "inspection"
     )
     if not inspection:
-        return f"💳 TOTAL PRICE\n{amount}"
+        return (
+            "━━━━━━━━━━━━━━\n"
+            f"💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n{strong_amount}\n"
+            "━━━━━━━━━━━━━━"
+        )
 
-    lines = ["🔎 VISIT & INSPECTION FEE", amount]
+    lines = [
+        "━━━━━━━━━━━━━━",
+        "🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘",
+        strong_amount,
+        "━━━━━━━━━━━━━━",
+    ]
     note = str(price.get("note") or "").strip()
     if note:
         lines.extend(["", note])

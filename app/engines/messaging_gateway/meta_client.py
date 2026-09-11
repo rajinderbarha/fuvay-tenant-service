@@ -775,9 +775,13 @@ async def send_options(
             lines.append(f"{i}. {r['title']}{suffix}")
         lines = [l for l in lines if l != ""]
         # Short, transient choices are clean quick-reply chips. Longer sets
-        # retain the numbered fallback because chips scroll off-screen and are
-        # currently unavailable in Instagram's desktop client.
-        numbered = len(rows) > 5 or any(r.get("section") for r in rows)
+        # normally retain the numbered fallback because chips scroll off-screen.
+        # Slots deliberately opt out: typing a visible number is too easy to
+        # mistake for selecting the corresponding time.
+        numbered = (
+            presentation != "slot_quick_replies"
+            and (len(rows) > 5 or any(r.get("section") for r in rows))
+        )
         joined = (text if not numbered else
                   (chr(10) + chr(10)).join([text, chr(10).join(lines)]))
         result = await _post(url, token, {

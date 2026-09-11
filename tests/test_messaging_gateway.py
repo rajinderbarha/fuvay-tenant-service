@@ -1064,7 +1064,11 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
         # Even a stale snapshot note must never leak price provenance.
         "note": "Price set by the selected service provider.",
     })
-    assert fixed == "💳 TOTAL PRICE\n₹1,499"
+    assert fixed == (
+        "━━━━━━━━━━━━━━\n"
+        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n₹𝟭,𝟰𝟵𝟵\n"
+        "━━━━━━━━━━━━━━"
+    )
     assert "provider" not in fixed.lower()
 
     inspection = flow._price_block({
@@ -1072,7 +1076,9 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
         "pricing_mode": "inspection",
         "note": "Approve the repair estimate before work starts.",
     })
-    assert inspection.startswith("🔎 VISIT & INSPECTION FEE\n₹299")
+    assert inspection.startswith(
+        "━━━━━━━━━━━━━━\n🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘\n₹𝟮𝟵𝟵"
+    )
     assert "Approve the repair estimate" in inspection
 
 
@@ -1108,8 +1114,51 @@ async def test_price_is_attached_to_the_slot_picker_not_sent_as_loose_text(monke
 
     assert turn.text is None
     assert turn.picker["body"] == (
-        "💳 TOTAL PRICE\n₹1,499\n\nPick a time that suits you:"
+        "━━━━━━━━━━━━━━\n"
+        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n₹𝟭,𝟰𝟵𝟵\n"
+        "━━━━━━━━━━━━━━\n\nPick a time that suits you:"
     )
+
+
+@pytest.mark.asyncio
+async def test_instagram_slot_picker_is_tap_only_without_numbered_fallback(monkeypatch):
+    from app.engines.messaging_gateway import pickers
+    import app.engines.home_service_booking.service as booking
+
+    class Service:
+        async def list_available_slots(self, **_kwargs):
+            return {"slots": [
+                {"date": "2026-09-12", "time_window": "09:00-11:00"},
+                {"date": "2026-09-12", "time_window": "11:30-13:30"},
+            ]}
+
+    monkeypatch.setattr(booking, "HomeServiceChatbotBookingService", lambda _db: Service())
+    monkeypatch.setattr(pickers, "_emergency_allowed", AsyncMock(return_value=False))
+
+    picker = await pickers._slot_picker(
+        None,
+        {"selected_tenant_id": "tenant-1", "required_fields": ["preferred_date"]},
+        uuid.uuid4(), None, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert picker["presentation"] == "slot_quick_replies"
+    assert picker["body"] == "Tap a time below to select it."
+    assert all(not row["id"].startswith("rs|") for row in picker["rows"])
+
+    post = AsyncMock(return_value={"sent": True})
+    monkeypatch.setattr(meta_client, "_post", post)
+    result = await meta_client.send_options(
+        "igsid-1", picker["body"], picker["rows"],
+        channel=CHANNEL_INSTAGRAM,
+        config={"access_token": "token", "instagram_account_id": "17890001"},
+        presentation=picker["presentation"],
+    )
+    payload = post.await_args.args[2]
+    assert payload["message"]["text"] == "Tap a time below to select it."
+    assert [q["payload"] for q in payload["message"]["quick_replies"]] == [
+        row["id"] for row in picker["rows"]
+    ]
+    assert result["numbered_options"] is False
 
 
 @pytest.mark.asyncio

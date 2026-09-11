@@ -225,9 +225,13 @@ async def _slot_picker(
 
     if not rows and not urgent_rows:
         return None
-    return _paginate(rows + urgent_rows, "Pick a time that suits you:", channel,
+    return _paginate(rows + urgent_rows, "Tap a time below to select it.", channel,
                      page, kind=PICK_SLOT, list_button="Pick a time",
                      section_title=_SECTION_STANDARD,
+                     presentation=(
+                         "slot_quick_replies"
+                         if channel == CHANNEL_INSTAGRAM else "quick_replies"
+                     ),
                      capacity_override=capacity_override)
 
 
@@ -314,7 +318,8 @@ def _paginate(
     # scarce carousel space, so those customers use the /fuvay command instead.
     # WhatsApp and Instagram's non-carousel pickers keep the convenient row.
     include_restart = not (
-        channel == CHANNEL_INSTAGRAM and presentation == "carousel"
+        channel == CHANNEL_INSTAGRAM
+        and presentation in {"carousel", "slot_quick_replies"}
     )
     capacity = (
         (capacity_override or channel_capacity(channel))
