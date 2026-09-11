@@ -8010,6 +8010,18 @@ export interface AdminServiceJobDetail {
     provider_snapshot: Record<string, unknown> | null;
     issue_summary: string | null; status: string;
   } | null;
+  price_summary: Record<string, unknown> | null;
+  current_quote: ({
+    quote_number: string; status: string; currency: string;
+    total_amount: string; customer_payable_amount: string;
+    version_number: number; is_current: boolean;
+  } & Record<string, unknown>) | null;
+  invoice: ({
+    invoice_number: string; status: string; currency: string;
+    total_amount: string; platform_fee_amount: string;
+    customer_payable_amount: string; credit_applied_amount: string;
+    payment_status: string;
+  } & Record<string, unknown>) | null;
   usage_credit_deduction: UsageCreditLedgerEntryAdmin | null;
   usage_credit_deduction_duplicate_count: number;
   sla: {

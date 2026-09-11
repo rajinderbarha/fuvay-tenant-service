@@ -16,6 +16,7 @@ Endpoints:
 """
 from __future__ import annotations
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, func
@@ -48,6 +49,61 @@ async def _list(db, model, filters: list, order_col, limit: int, offset: int):
     rows    = (await db.execute(q)).scalars().all()
     total   = await db.scalar(total_q)
     return rows, total or 0
+
+
+def _positive_amount(value) -> Decimal:
+    """Return a usable positive money value without trusting loose JSON data."""
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+    return amount if amount > 0 else Decimal("0")
+
+
+def _canonical_job_price_summary(*, booking=None, quote=None, invoice=None) -> dict | None:
+    """Build the authoritative amount shown in admin job details.
+
+    A booking snapshot is the price known when the customer first requested the
+    visit. It must not replace a later approved quote or final invoice.
+    """
+    if invoice is not None:
+        service_total = _positive_amount(getattr(invoice, "total_amount", None))
+        platform_fee = _positive_amount(getattr(invoice, "platform_fee_amount", None))
+        customer_total = _positive_amount(getattr(invoice, "customer_payable_amount", None))
+        if customer_total == 0:
+            customer_total = service_total + platform_fee
+        return {
+            "customer_total": str(customer_total),
+            "service_total": str(service_total),
+            "platform_fee": str(platform_fee),
+            "credit_applied": str(_positive_amount(getattr(invoice, "credit_applied_amount", None))),
+            "currency": getattr(invoice, "currency", None) or "INR",
+            "payment_mode": getattr(invoice, "payment_mode", None),
+            "payment_status": getattr(invoice, "payment_status", None),
+            "invoice_number": getattr(invoice, "invoice_number", None),
+            "source": "final_invoice",
+        }
+
+    if quote is not None:
+        service_total = _positive_amount(getattr(quote, "total_amount", None))
+        customer_total = _positive_amount(getattr(quote, "customer_payable_amount", None))
+        if customer_total == 0:
+            customer_total = service_total
+        return {
+            "customer_total": str(customer_total),
+            "service_total": str(service_total),
+            "platform_fee": str(max(customer_total - service_total, Decimal("0"))),
+            "currency": getattr(quote, "currency", None) or "INR",
+            "quote_status": getattr(quote, "status", None),
+            "version": getattr(quote, "version_number", None),
+            "source": "current_quote",
+        }
+
+    snapshot = dict(getattr(booking, "price_snapshot", None) or {})
+    if not snapshot:
+        return None
+    snapshot.setdefault("source", "booking_snapshot")
+    return snapshot
 
 
 # ── Bookings ──────────────────────────────────────────────────────────────────
@@ -189,6 +245,36 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
     )
     booking = booking_result.scalars().first()
     data["booking"] = booking.to_dict() if booking else None
+
+    # The original booking snapshot describes the initial visit price only.
+    # Once a quote/invoice exists, expose that later record as the canonical
+    # price so completed-job details do not fall back to the old inspection fee.
+    from app.engines.quote_checklist.models import ServiceJobQuote
+    from app.engines.invoice_payment.models import ServiceInvoice
+
+    quote_result = await db.execute(
+        select(ServiceJobQuote)
+        .where(ServiceJobQuote.job_id == job.id)
+        .order_by(ServiceJobQuote.is_current.desc(), ServiceJobQuote.version_number.desc())
+        .limit(1)
+    )
+    current_quote = quote_result.scalars().first()
+
+    invoice_result = await db.execute(
+        select(ServiceInvoice)
+        .where(ServiceInvoice.job_id == job.id, ServiceInvoice.status != "cancelled")
+        .order_by(ServiceInvoice.created_at.desc())
+        .limit(1)
+    )
+    invoice = invoice_result.scalars().first()
+
+    data["current_quote"] = current_quote.to_dict() if current_quote else None
+    data["invoice"] = invoice.to_dict() if invoice else None
+    data["price_summary"] = _canonical_job_price_summary(
+        booking=booking,
+        quote=current_quote,
+        invoice=invoice,
+    )
 
     # Enrich with the Completed Job Deduction ledger entry for this job,
     # if one exists — links this admin detail view directly to the exact

@@ -109,6 +109,16 @@ export interface HsCommissionRates {
   } | null;
   basis: string;
   charged_as: string;
+  /** Customer-paid fee collected by the provider and remitted to Fuvay.
+   * This is shown separately from the provider's own commission. */
+  customer_fee_recovery_enabled: boolean;
+  customer_fee_model: string | null;
+  customer_fee_percentage: string | null;
+  customer_fee_fixed_amount: string | null;
+  customer_fee_minimum: string | null;
+  customer_fee_maximum: string | null;
+  customer_fee_basis: string | null;
+  customer_fee_recovery_note: string | null;
   categories: HsCommissionCategoryRate[];
   /** Populated only when percentage commission is NOT the active model. */
   not_live_reason: string | null;

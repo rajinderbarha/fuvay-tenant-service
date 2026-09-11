@@ -562,7 +562,9 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
   const [editTitle, setEditTitle] = useState("");
   const [editText, setEditText] = useState("");
   const sla = j?.sla;
-  const priceSnapshot = (j?.booking?.price_snapshot ?? (row.amount_summary.source !== "none" ? row.amount_summary : null)) as Record<string, unknown> | null | undefined;
+  // The API resolves final invoice > current quote > original booking price.
+  // Keep the list-row amount only as a loading/legacy API fallback.
+  const priceSnapshot = (j?.price_summary ?? (row.amount_summary.source !== "none" ? row.amount_summary : null)) as Record<string, unknown> | null | undefined;
   const events = execTimeline.data ?? [];
   const bookingEvents = draftEvents.data?.events ?? [];
   const loadingDetail = row.job_id ? (job.loading || execTimeline.loading) : (draft.loading || draftEvents.loading);

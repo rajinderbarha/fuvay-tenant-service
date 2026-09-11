@@ -10,6 +10,7 @@ import { AdminLayout } from "../../../../../components/layout/AdminLayout";
 import { Card, Badge, SectionHeader, Skeleton } from "../../../../../components/shared/ui";
 import { ChevronRight, Copy, ExternalLink } from "lucide-react";
 import { finalRecordsAdminApi, adminServiceJobAssignmentApi, adminExecutionApi } from "../../../../../lib/api";
+import { formatPriceSnapshotValue } from "../../../../../lib/price-snapshot-format";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { usePermissions } from "../../../../../hooks/usePermissions";
 import { ReviewFeedbackTab } from "../../../../../components/home-services/ReviewFeedbackTab";
@@ -296,7 +297,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
   const [showVoid, setShowVoid] = useState(false);
 
   const d = job.data;
-  const priceSnapshot = (d?.booking?.price_snapshot ?? {}) as Record<string, any>;
+  const priceSnapshot = (d?.price_summary ?? d?.booking?.price_snapshot ?? {}) as Record<string, any>;
   const providerSnapshot = (d?.booking?.provider_snapshot ?? {}) as Record<string, any>;
   const deduction = d?.usage_credit_deduction;
 
@@ -434,11 +435,17 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
             <Section title="Service Details">
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <Field label="Issue Summary" value={d.booking?.issue_summary} />
-                <Field label="Selected Price" value={
-                  priceSnapshot.selected_price_amount != null
-                    ? `₹${priceSnapshot.selected_price_amount} (${priceSnapshot.selected_price_option ?? "—"})`
+                <Field label="Customer Total" value={
+                  (priceSnapshot.customer_total ?? priceSnapshot.display_price ?? priceSnapshot.selected_price_amount) != null
+                    ? formatPriceSnapshotValue("customer_total", priceSnapshot.customer_total ?? priceSnapshot.display_price ?? priceSnapshot.selected_price_amount)
                     : "—"
                 } />
+                {priceSnapshot.service_total != null && (
+                  <Field label="Service Amount" value={formatPriceSnapshotValue("service_total", priceSnapshot.service_total)} />
+                )}
+                {priceSnapshot.platform_fee != null && (
+                  <Field label="Platform Fee" value={formatPriceSnapshotValue("platform_fee", priceSnapshot.platform_fee)} />
+                )}
                 <Field label="Payment Mode" value={
                   priceSnapshot.payment_mode === "customer_pays_provider_directly"
                     ? "Customer Pays Provider Directly"

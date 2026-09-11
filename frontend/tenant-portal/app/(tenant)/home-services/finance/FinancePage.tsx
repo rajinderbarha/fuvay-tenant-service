@@ -88,6 +88,19 @@ function humanStatus(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function customerFeeRule(rates: HsCommissionRates): string {
+  if (!rates.customer_fee_recovery_enabled) return "Not charged";
+  if (rates.customer_fee_model === "FIXED") return money(rates.customer_fee_fixed_amount);
+  if (rates.customer_fee_percentage) {
+    const range = [
+      rates.customer_fee_minimum ? `minimum ${money(rates.customer_fee_minimum)}` : null,
+      rates.customer_fee_maximum ? `maximum ${money(rates.customer_fee_maximum)}` : null,
+    ].filter(Boolean).join(" · ");
+    return `${rates.customer_fee_percentage}%${range ? ` (${range})` : ""}`;
+  }
+  return humanStatus(rates.customer_fee_model ?? "Configured");
+}
+
 /* ── small presentational primitives (same visual language as dispatch) ──── */
 
 function SectionTitle({ icon, title, subtitle, actions }: {
@@ -290,8 +303,10 @@ function ActivityTable({ page, compact, onReceipt }: {
               {!compact && (
                 <td style={{ ...td(), fontFamily: "monospace", fontSize: 10.5 }}>
                   {r.related_job_id
-                    ? <Link href={`/jobs/${r.related_job_id}`} style={{ color: "var(--accent)" }}>
-                        {r.related_job_id.slice(0, 8)}
+                    ? <Link href={`/home-services/bookings-jobs?job_id=${encodeURIComponent(r.related_job_id)}`}
+                        aria-label={`Open related job ${r.related_job_id}`}
+                        style={{ color: "var(--accent)", whiteSpace: "nowrap" }}>
+                        Open job →
                       </Link>
                     : (r.related_transaction_ref ? r.related_transaction_ref.slice(0, 14) : "—")}
                 </td>
@@ -598,8 +613,10 @@ export default function HomeServicesFinancePage() {
           <SummaryCard label="Usable credits" value={moneyCompact(kpis.usable_credits)}
             sub={data?.usage_credits.is_low_balance ? "Below low-balance threshold" : "Available to spend on jobs"}
             icon={<Wallet size={17} />} tone={data?.usage_credits.is_low_balance ? "warning" : "success"} />
-          <SummaryCard label="Credits used this month" value={moneyCompact(kpis.credits_used_this_month)}
-            sub={`${data?.usage_credits.completed_job_deductions ?? 0} completed-job deduction(s) all-time`}
+          <SummaryCard label="Total job deductions this month" value={moneyCompact(kpis.credits_used_this_month)}
+            sub={data?.usage_credits.deduction_breakdown
+              ? `${money(data.usage_credits.deduction_breakdown.provider_commission_this_month)} commission + ${money(data.usage_credits.deduction_breakdown.customer_fee_recovery_this_month)} customer fee remitted`
+              : `${data?.usage_credits.completed_job_deductions ?? 0} completed job(s) charged`}
             icon={<TrendingDown size={17} />} tone="info" />
           {/* Seats replaced the security deposit: headcount is bought with a
               top-up plan rather than collateralised. */}
@@ -856,12 +873,18 @@ export default function HomeServicesFinancePage() {
               </div>
             </Card>
             <Card>
-              <SectionTitle icon={<TrendingDown size={16} />} title="Completed-job deductions"
-                subtitle="Server-calculated at completion, idempotent per job — read-only here" />
-              <Row label="Deductions posted" value={data.usage_credits.completed_job_deductions} />
-              <Row label="Total deducted" value={money(data.usage_credits.credits_deducted_total)} />
-              <Row label="Used this month" value={money(data.usage_credits.credits_used_this_month)} />
-              <Row label="Average per job" value={money(data.usage_credits.average_deduction_per_job)} />
+              <SectionTitle icon={<TrendingDown size={16} />} title="Job settlement deductions"
+                subtitle="Two separate, idempotent entries that reconcile to the wallet balance" />
+              <Row label="Completed jobs charged" value={data.usage_credits.completed_job_deductions} />
+              <Row label="Provider commission" value={money(
+                data.usage_credits.deduction_breakdown?.provider_commission_total
+              )} hint="Your business's commission cost" />
+              <Row label="Customer platform fee remitted" value={money(
+                data.usage_credits.deduction_breakdown?.customer_fee_recovery_total
+              )} hint="Collected from the customer with their direct payment, then passed to Fuvay" />
+              <Row label="Total job deductions" value={money(data.usage_credits.credits_deducted_total)} />
+              <Row label="Total this month" value={money(data.usage_credits.credits_used_this_month)} />
+              <Row label="Average total per job" value={money(data.usage_credits.average_deduction_per_job)} />
               <Row label="Reversals" value={`${data.usage_credits.reversals_count} · ${money(data.usage_credits.reversals_total)}`} />
               <Row label="Estimated jobs remaining"
                 value={data.usage_credits.estimated_jobs_remaining_calculable
@@ -1041,6 +1064,18 @@ export default function HomeServicesFinancePage() {
                   <div style={{ marginTop: 10, background: "var(--surface-sunken)", border: "1px solid var(--border)",
                     borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--text-secondary)" }}>
                     {rates.not_live_reason}
+                  </div>
+                )}
+                {rates.customer_fee_recovery_enabled && (
+                  <div style={{ marginTop: 12, background: "var(--info-bg)", border: "1px solid var(--info-border)",
+                    borderRadius: 10, padding: "11px 12px", color: "var(--info-text)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: 12.5 }}>Customer platform fee remittance</strong>
+                      <strong style={{ fontSize: 12.5 }}>{customerFeeRule(rates)}</strong>
+                    </div>
+                    <p style={{ fontSize: 11.5, margin: "5px 0 0", lineHeight: 1.5 }}>
+                      {rates.customer_fee_recovery_note}
+                    </p>
                   </div>
                 )}
                 {rates.categories.length > 0 && (

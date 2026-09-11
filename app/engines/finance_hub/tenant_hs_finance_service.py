@@ -45,6 +45,7 @@ from app.engines.vertical_catalog.finance_policy_service import (
 )
 from app.engines.vertical_catalog.home_services_setup_service import HOME_SERVICES_VERTICAL_KEY
 from app.engines.vertical_catalog.service import VerticalCatalogService
+from app.engines.vertical_monetization.customer_charge_recovery import RECOVERY_EVENT_TYPE
 
 logger = structlog.get_logger("finance_hub.tenant_hs")
 ENGINE_ID = "finance_hub"
@@ -70,13 +71,13 @@ ACTIVE_JOB_STATUSES = (
 EVENT_TYPE_LABELS = {
     EVENT_TOPUP_CREDIT_GRANTED: "Credit top-up posted",
     EVENT_TOPUP_CREDIT_REFUNDED: "Credit top-up refunded",
-    EVENT_COMPLETED_JOB_DEDUCTION: "Completed-job deduction",
+    EVENT_COMPLETED_JOB_DEDUCTION: "Provider commission",
     EVENT_CREDIT_REVERSAL: "Credit reversal",
     EVENT_MANUAL_CREDIT_ADDED: "Admin credit adjustment (added)",
     EVENT_MANUAL_CREDIT_REMOVED: "Admin credit adjustment (removed)",
     EVENT_PACKAGE_CREDIT_GRANTED: "Package credit granted",
     "activation_credit_package_purchase": "Starter credit package purchased",
-    "customer_platform_charge_recovery": "Customer platform charge recovery",
+    RECOVERY_EVENT_TYPE: "Customer platform fee remitted",
     "migration_adjustment": "Migration adjustment",
 }
 
@@ -201,28 +202,48 @@ class TenantHomeServicesFinanceService:
 
         month_start = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        used_this_month = _d((await self.db.execute(
-            select(func.coalesce(func.sum(UsageCreditLedger.credit_delta), 0)).where(
+        async def event_debits(event_type: str, *, since: datetime | None = None) -> Decimal:
+            filters = [
                 UsageCreditLedger.tenant_id == self.tenant_id,
-                UsageCreditLedger.event_type == EVENT_COMPLETED_JOB_DEDUCTION,
-                UsageCreditLedger.created_at >= month_start,
-            )
-        )).scalar())
-        used_this_month = -used_this_month  # deductions are negative deltas
+                UsageCreditLedger.event_type == event_type,
+            ]
+            if since is not None:
+                filters.append(UsageCreditLedger.created_at >= since)
+            delta = _d((await self.db.execute(
+                select(func.coalesce(func.sum(UsageCreditLedger.credit_delta), 0)).where(*filters)
+            )).scalar())
+            return max(Decimal("0"), -delta)
+
+        # A completed Home Services job can move the provider's usage-credit
+        # balance in two independently idempotent entries:
+        #   1. the provider's commission; and
+        #   2. the customer platform fee that the provider collected on
+        #      Fuvay's behalf and must remit from its usage-credit balance.
+        # The old overview reported only (1), even though the canonical
+        # balance included both. That made a correct balance look
+        # over-deducted. Keep the immutable entries separate for auditability,
+        # but reconcile every displayed total to both entries.
+        commission_this_month = await event_debits(
+            EVENT_COMPLETED_JOB_DEDUCTION, since=month_start,
+        )
+        fee_recovery_this_month = await event_debits(
+            RECOVERY_EVENT_TYPE, since=month_start,
+        )
+        used_this_month = commission_this_month + fee_recovery_this_month
 
         deductions_count = (await self.db.execute(
-            select(func.count(UsageCreditLedger.id)).where(
+            select(func.count(func.distinct(UsageCreditLedger.job_id))).where(
                 UsageCreditLedger.tenant_id == self.tenant_id,
-                UsageCreditLedger.event_type == EVENT_COMPLETED_JOB_DEDUCTION,
+                UsageCreditLedger.event_type.in_((
+                    EVENT_COMPLETED_JOB_DEDUCTION, RECOVERY_EVENT_TYPE,
+                )),
+                UsageCreditLedger.job_id.is_not(None),
             )
         )).scalar() or 0
 
-        deducted_total = -_d((await self.db.execute(
-            select(func.coalesce(func.sum(UsageCreditLedger.credit_delta), 0)).where(
-                UsageCreditLedger.tenant_id == self.tenant_id,
-                UsageCreditLedger.event_type == EVENT_COMPLETED_JOB_DEDUCTION,
-            )
-        )).scalar())
+        commission_total = await event_debits(EVENT_COMPLETED_JOB_DEDUCTION)
+        fee_recovery_total = await event_debits(RECOVERY_EVENT_TYPE)
+        deducted_total = commission_total + fee_recovery_total
 
         reversals_count = (await self.db.execute(
             select(func.count(UsageCreditLedger.id)).where(
@@ -297,6 +318,14 @@ class TenantHomeServicesFinanceService:
             "credits_used_this_month": str(used_this_month),
             "credits_deducted_total": str(deducted_total),
             "completed_job_deductions": deductions_count,
+            "deduction_breakdown": {
+                "provider_commission_this_month": str(commission_this_month),
+                "customer_fee_recovery_this_month": str(fee_recovery_this_month),
+                "total_this_month": str(used_this_month),
+                "provider_commission_total": str(commission_total),
+                "customer_fee_recovery_total": str(fee_recovery_total),
+                "total": str(deducted_total),
+            },
             "average_deduction_per_job": str(avg_deduction) if avg_deduction is not None else None,
             "estimated_jobs_remaining": estimated_jobs_remaining,
             "estimated_jobs_remaining_calculable": estimated_jobs_remaining is not None,
@@ -547,6 +576,32 @@ class TenantHomeServicesFinanceService:
             "health_snapshot": health_snapshot,
             "basis": "Percentage of the amount you collect from the customer for each completed job",
             "charged_as": "Usage credits deducted from your balance at job completion",
+            "customer_fee_recovery_enabled": bool(
+                policy and policy.customer_fee_model != "NONE"
+            ),
+            "customer_fee_model": policy.customer_fee_model if policy else None,
+            "customer_fee_percentage": (
+                str(policy.customer_fee_percentage)
+                if policy is not None and policy.customer_fee_percentage is not None else None
+            ),
+            "customer_fee_fixed_amount": (
+                str((Decimal(policy.customer_fee_fixed_amount_minor) / Decimal("100")).quantize(Decimal("0.01")))
+                if policy is not None and policy.customer_fee_fixed_amount_minor is not None else None
+            ),
+            "customer_fee_minimum": (
+                str((Decimal(policy.customer_fee_min_minor) / Decimal("100")).quantize(Decimal("0.01")))
+                if policy is not None and policy.customer_fee_min_minor is not None else None
+            ),
+            "customer_fee_maximum": (
+                str((Decimal(policy.customer_fee_max_minor) / Decimal("100")).quantize(Decimal("0.01")))
+                if policy is not None and policy.customer_fee_max_minor is not None else None
+            ),
+            "customer_fee_basis": policy.customer_fee_basis if policy else None,
+            "customer_fee_recovery_note": (
+                "The customer pays this fee to your business with the service payment. "
+                "The same amount is then remitted to Fuvay from usage credits; it is not a second provider commission."
+                if policy and policy.customer_fee_model != "NONE" else None
+            ),
             "categories": categories,
             # Honest disclosure rather than showing a percentage that is not
             # charged by the selected provider model.

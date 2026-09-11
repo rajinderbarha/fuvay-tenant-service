@@ -10,17 +10,21 @@ const MONEY_KEYS = new Set([
   "min_price",
   "platform_fee",
   "selected_price_amount",
+  "service_total",
   "service_base_price",
   "standard_price",
   "visit_fee",
+  "credit_applied",
 ]);
 
 const HUMANIZED_VALUE_KEYS = new Set([
   "city_tier",
   "payment_mode",
+  "payment_status",
   "platform_fee_model",
   "pricing_mode",
   "pricing_model",
+  "quote_status",
   "source",
 ]);
 
