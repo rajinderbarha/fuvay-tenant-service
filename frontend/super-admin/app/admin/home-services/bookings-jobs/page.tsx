@@ -518,6 +518,12 @@ function fmtMoneyLoose(v: unknown): string | null {
   if (Number.isNaN(n)) return null;
   return `₹${n.toLocaleString("en-IN")}`;
 }
+function fmtCredits(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n)
+    ? `${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })} usage credits`
+    : "—";
+}
 
 const EXECUTION_EVENT_LABEL: Record<string, string> = {
   status_change: "Status changed", booking_confirmed: "Booking confirmed",
@@ -581,6 +587,18 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
   const cleanPriceRows = allPriceRows.filter(([k, v]) =>
     !EXCLUDED_GRID_KEYS.has(k) && !(typeof v === "string" && v === priceNote));
   const customerTotal = priceSnapshot?.customer_total ?? priceSnapshot?.display_price ?? null;
+  const commissionAmount = j?.charge_summary?.commission_amount
+    ?? (j?.usage_credit_deduction ? Math.abs(j.usage_credit_deduction.credit_delta) : null);
+  const platformChargeAmount = j?.charge_summary?.platform_charge_amount
+    ?? (j?.platform_charge_recovery ? Math.abs(j.platform_charge_recovery.credit_delta) : null);
+  const totalProviderDeduction = j?.charge_summary?.total_provider_credit_deduction
+    ?? (commissionAmount != null || platformChargeAmount != null
+      ? Number(commissionAmount ?? 0) + Number(platformChargeAmount ?? 0)
+      : null);
+  const hasProviderCharges = Boolean(
+    j?.usage_credit_deduction || j?.platform_charge_recovery
+    || Number(commissionAmount ?? 0) > 0 || Number(platformChargeAmount ?? 0) > 0
+  );
   const timelineItems = row.job_id
     ? events.map(ev => ({ key: ev.id, when: ev.created_at, label: EXECUTION_EVENT_LABEL[ev.event_type] ?? (ev.new_status ? `→ ${ev.new_status.replace(/_/g, " ")}` : ev.event_type) }))
     : bookingEvents.map(ev => ({ key: ev.id, when: ev.created_at, label: ev.message || ev.event_type.replace(/_/g, " ") }));
@@ -747,6 +765,43 @@ function WorkDetailDrawer({ row, onClose }: { row: UnifiedOperationRow; onClose:
                       </div>
                     ))}
                   </div>
+                )}
+              </Card>
+            )}
+
+            {/* These are provider-side credit deductions, not part of the
+                customer's estimate.  The API has always returned both rows;
+                keeping them in a separate card prevents platform charge from
+                hiding the independently charged commission. */}
+            {row.job_id && (
+              <Card padding={16}>
+                <h3 style={{ fontSize: 11, fontWeight: 700, margin: "0 0 12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-tertiary)" }}>Platform & Commission Charges</h3>
+                {job.loading ? <Skeleton height={80} /> : hasProviderCharges ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12 }}>
+                      <span style={{ color: "var(--text-secondary)" }}>Platform charge</span>
+                      <strong style={{ color: "var(--text-primary)" }}>{fmtCredits(platformChargeAmount)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12 }}>
+                      <span style={{ color: "var(--text-secondary)" }}>Commission charge</span>
+                      <strong style={{ color: "var(--text-primary)" }}>{fmtCredits(commissionAmount)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 13 }}>
+                      <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>Total provider deduction</span>
+                      <strong style={{ color: "var(--danger-text)" }}>{fmtCredits(totalProviderDeduction)}</strong>
+                    </div>
+                    {(j?.usage_credit_deduction_duplicate_count ?? 0) > 0 && (
+                      <p style={{ margin: 0, fontSize: 11, color: "var(--danger-text)" }}>
+                        {j!.usage_credit_deduction_duplicate_count} duplicate charge entr{j!.usage_credit_deduction_duplicate_count === 1 ? "y" : "ies"} detected.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>
+                    {j?.status === "completed"
+                      ? "No platform or commission deduction is recorded for this completed job."
+                      : "Charges are recorded when the job is completed."}
+                  </p>
                 )}
               </Card>
             )}

@@ -226,7 +226,14 @@ async def notify_customer(
                 config=config,
                 list_button="Choose",
                 section_title=section_title,
-                presentation="buttons",
+                # Instagram quick replies are the same native control used by
+                # the live booking flow.  The Messenger-style button template
+                # can be accepted by Graph yet fail to surface consistently in
+                # Instagram Direct, leaving a quote marked as sent with no
+                # approval controls visible to the customer.
+                presentation=(
+                    "quick_replies" if thread.channel == "instagram" else "buttons"
+                ),
             )
         else:
             result = await meta_client.send_text(

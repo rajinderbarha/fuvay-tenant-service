@@ -2611,6 +2611,7 @@ async def test_approval_notification_uses_booking_origin_instagram_account(monke
     ) is True
 
     assert send.await_args.args[0] == "booking-account"
+    assert send.await_args.kwargs["presentation"] == "quick_replies"
     assert origin.last_options == ["q|quote-1|approve"]
     assert wrong.last_outbound_at is None
 
