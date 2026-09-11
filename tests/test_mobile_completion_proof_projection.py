@@ -179,10 +179,12 @@ async def test_completion_proof_full_lifecycle_live():
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 headers = {"Authorization": "Bearer x"}
 
-                # 1. Blocked: missing resolution summary, evidence, checklist, unresolved part.
+                # 1. Blocked: missing resolution summary, checklist, unresolved part.
+                # Photos are optional evidence and never block.
                 detail = (await client.get(f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof", headers=headers)).json()["data"]
                 assert detail["readiness"]["can_submit"] is False
-                assert set(detail["readiness"]["blockers"]) >= {"FINAL_CHECKS_INCOMPLETE", "EVIDENCE_MISSING", "PARTS_UNRESOLVED", "RESOLUTION_SUMMARY_REQUIRED"}
+                assert set(detail["readiness"]["blockers"]) == {"FINAL_CHECKS_INCOMPLETE", "PARTS_UNRESOLVED", "RESOLUTION_SUMMARY_REQUIRED"}
+                assert detail["readiness"]["missing_evidence_categories"] == []
                 submit_blocked = await client.post(f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof/submit", headers=headers)
                 assert submit_blocked.status_code == 409
 

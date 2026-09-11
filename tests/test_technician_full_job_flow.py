@@ -836,3 +836,37 @@ async def test_a_proof_with_no_photos_sends_empty_lists_not_null():
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
+async def test_a_proof_with_no_photos_is_ready_to_submit():
+    """Before/after photos are optional evidence. A technician whose upload
+    fails on site must still be able to submit proof and close the job, so a
+    proof with no photos at all carries no blocker for it."""
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=False, quote_approval_required=False)
+        job_id, tenant_id, staff_id = ids["job"], ids["tenant"], ids["staff"]
+        await db.execute(text("UPDATE service_jobs SET status='work_done' WHERE id=:jid"), {"jid": job_id})
+        await db.commit()
+        app.dependency_overrides[get_current_user] = lambda: make_technician_context(
+            str(tenant_id), user_id=str(staff_id))
+        try:
+            headers = {"Authorization": "Bearer x"}
+            proof_url = f"/v1/staff/service-jobs/{job_id}/mobile-completion-proof"
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                await client.put(f"{proof_url}/draft", headers=headers,
+                                 json={"resolution_summary": "Replaced the capacitor."})
+                detail = (await client.get(proof_url, headers=headers)).json()["data"]
+
+            assert detail["proof"]["after_photo_ids"] == []
+            assert detail["readiness"]["blockers"] == [], detail["readiness"]
+            assert detail["readiness"]["missing_evidence_categories"] == []
+            assert detail["readiness"]["can_submit"] is True
+            assert "submit_proof" in detail["allowed_actions"]
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            await _cleanup(db, ids)

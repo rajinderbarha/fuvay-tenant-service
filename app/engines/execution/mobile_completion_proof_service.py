@@ -145,10 +145,10 @@ class MobileCompletionProofService:
         unresolved_parts = [p["parts_request_id"] for p in parts if p["status"] in _PARTS_UNRESOLVED_STATUSES]
 
         missing_check_ids = [i["id"] for i in final_checks["items"] if i["is_required"] and (i["response"] is None or i["response"]["response_value"] in (None, {}, ""))]
-        missing_evidence: list[str] = []
-        if not (proof.after_photo_ids or []):
-            missing_evidence.append("after")
 
+        # Before/after photos are optional evidence, never a blocker: a
+        # technician whose photo upload fails on site must still be able to
+        # submit proof and close the job.
         blockers = []
         if not work_finished:
             blockers.append("WORK_NOT_FINISHED")
@@ -156,8 +156,6 @@ class MobileCompletionProofService:
             blockers.append("PROOF_ALREADY_SUBMITTED")
         if missing_check_ids:
             blockers.append("FINAL_CHECKS_INCOMPLETE")
-        if missing_evidence:
-            blockers.append("EVIDENCE_MISSING")
         if unresolved_parts:
             blockers.append("PARTS_UNRESOLVED")
         if not (proof.resolution_summary or "").strip():
@@ -185,7 +183,9 @@ class MobileCompletionProofService:
             "readiness": {
                 "can_submit": can_submit,
                 "missing_check_ids": missing_check_ids,
-                "missing_evidence_categories": missing_evidence,
+                # Always empty now that evidence is optional; kept because the
+                # installed mobile app reads it on every render.
+                "missing_evidence_categories": [],
                 "unresolved_parts": unresolved_parts,
                 "blockers": blockers,
             },
