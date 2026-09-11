@@ -957,18 +957,29 @@ class HomeServiceJobExecutionService:
         pre-approved template would be required, so the request simply waits
         for the customer's next message, where the chat shows it first.
         """
-        from app.engines.final_records.models import ServiceJob
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        from app.engines.messaging_gateway.constants import PICKER_SEP, PICK_PARTS
         from app.engines.messaging_gateway.service import notify_customer
 
         try:
             job = await db.get(ServiceJob, pr.job_id)
             if not job or not job.customer_id:
                 return
+            booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+            part_request_id = str(pr.id)
             await notify_customer(
                 db, job.customer_id,
                 "Your technician needs a part to finish the job: "
                 f"{pr.part_name} x {pr.quantity}. "
-                "Reply here to approve or decline it.",
+                "Approve or decline it here.",
+                rows=[
+                    {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "approve")),
+                     "title": "Approve part"},
+                    {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "decline")),
+                     "title": "Decline part"},
+                ],
+                source_ai_session_id=(booking.ai_session_id if booking else None),
+                section_title="Part approval",
             )
         except Exception as exc:  # noqa: BLE001
             import structlog

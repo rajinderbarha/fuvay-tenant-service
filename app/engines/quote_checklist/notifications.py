@@ -72,13 +72,28 @@ async def notify_customer_quote_sent(db: AsyncSession, quote: ServiceJobQuote) -
     # state remain atomic regardless of the external channel's health.
     try:
         from app.database import get_session_factory
+        from app.engines.final_records.models import ServiceBooking
+        from app.engines.messaging_gateway.constants import PICKER_SEP, PICK_QUOTE
         from app.engines.messaging_gateway.service import notify_customer
         async with get_session_factory()() as messaging_db:
             try:
+                booking = await messaging_db.get(ServiceBooking, quote.booking_id)
+                quote_id = str(quote.id)
+                amount = quote.customer_payable_amount or quote.total_amount
                 await notify_customer(
                     messaging_db, quote.customer_id,
-                    f"Your provider sent estimate {quote.quote_number}. "
-                    "Reply here to review the itemised customer total.",
+                    f"Your provider sent estimate {quote.quote_number} for "
+                    f"{quote.currency} {amount}. Review the itemised total and choose:",
+                    rows=[
+                        {"id": PICKER_SEP.join((PICK_QUOTE, quote_id, "approve")),
+                         "title": "Approve estimate"},
+                        {"id": PICKER_SEP.join((PICK_QUOTE, quote_id, "decline")),
+                         "title": "Decline estimate"},
+                        {"id": PICKER_SEP.join((PICK_QUOTE, quote_id, "revise")),
+                         "title": "Request changes"},
+                    ],
+                    source_ai_session_id=(booking.ai_session_id if booking else None),
+                    section_title="Estimate",
                 )
                 await messaging_db.commit()
             except Exception:

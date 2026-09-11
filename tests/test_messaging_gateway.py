@@ -17,7 +17,7 @@ from app.engines.messaging_gateway import meta_client, pickers
 from app.engines.messaging_gateway.constants import (
     CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, PICK_RESTART,
 )
-from app.engines.messaging_gateway.service import parse_command
+from app.engines.messaging_gateway.service import notify_customer, parse_command
 
 
 def test_signature_can_use_admin_stored_secret():
@@ -2494,6 +2494,76 @@ async def test_complete_instagram_address_is_validated_and_persisted(monkeypatch
         "address_line_1": "Flat 12, Sunrise Building, Main Road, near Bus Stand",
     }
     assert updated["address_snapshot"] == executor.fields
+
+
+@pytest.mark.asyncio
+async def test_instagram_rejects_address_that_final_booking_would_reject(monkeypatch):
+    """Punctuation must not count as the second component of an address."""
+    from app.engines.messaging_gateway import flow
+
+    class Thread:
+        channel = CHANNEL_INSTAGRAM
+        zipcode = "140412"
+        city = "Bassi Pathana"
+        customer_id = "c-1"
+
+    executor = SimpleNamespace(
+        _tool_update_home_service_draft=AsyncMock(return_value={"updated": True})
+    )
+    draft = {"id": "d-1", "address_snapshot": {}}
+
+    note, unchanged = await flow._apply_text(
+        None, Thread(), executor, "566cghh ??)", draft,
+    )
+
+    assert note == flow.BAD_ADDRESS
+    assert unchanged == draft
+    executor._tool_update_home_service_draft.assert_not_awaited()
+    assert flow._valid_address_line("566cghh ??)") is False
+
+
+@pytest.mark.asyncio
+async def test_approval_notification_uses_booking_origin_instagram_account(monkeypatch):
+    """A newer Instagram identity for the same customer must not receive it."""
+    from app.engines.messaging_gateway.config_service import (
+        messaging_channel_config_service,
+    )
+
+    origin_session_id = uuid.uuid4()
+    wrong = SimpleNamespace(
+        channel=CHANNEL_INSTAGRAM, channel_user_id="newer-account",
+        ai_session_id=uuid.uuid4(), last_options=None, last_outbound_at=None,
+    )
+    origin = SimpleNamespace(
+        channel=CHANNEL_INSTAGRAM, channel_user_id="booking-account",
+        ai_session_id=uuid.uuid4(), last_options=None, last_outbound_at=None,
+    )
+
+    result = SimpleNamespace()
+    result.scalars = lambda: SimpleNamespace(all=lambda: [wrong, origin])
+    db = SimpleNamespace(
+        execute=AsyncMock(return_value=result),
+        get=AsyncMock(return_value=SimpleNamespace(context_data={
+            "channel": CHANNEL_INSTAGRAM,
+            "channel_user_id": "booking-account",
+        })),
+    )
+    monkeypatch.setattr(
+        messaging_channel_config_service, "get",
+        AsyncMock(return_value={"instagram_account_id": "1789", "access_token": "x"}),
+    )
+    send = AsyncMock(return_value={"sent": True})
+    monkeypatch.setattr(meta_client, "send_options", send)
+
+    rows = [{"id": "q|quote-1|approve", "title": "Approve estimate"}]
+    assert await notify_customer(
+        db, uuid.uuid4(), "Choose", rows=rows,
+        source_ai_session_id=origin_session_id, section_title="Estimate",
+    ) is True
+
+    assert send.await_args.args[0] == "booking-account"
+    assert origin.last_options == ["q|quote-1|approve"]
+    assert wrong.last_outbound_at is None
 
 
 def test_whatsapp_location_pins_and_pasted_map_links_are_both_understood():

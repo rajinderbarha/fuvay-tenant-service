@@ -152,7 +152,15 @@ def _booking_progress(status: str) -> tuple[str, str]:
     return tracker, f"Step {stage} of 4"
 
 
-async def notify_customer(db: AsyncSession, customer_id, text: str) -> bool:
+async def notify_customer(
+    db: AsyncSession,
+    customer_id,
+    text: str,
+    *,
+    rows: list[dict] | None = None,
+    source_ai_session_id=None,
+    section_title: str | None = None,
+) -> bool:
     """Message a customer on the chat channel they last used, if we still may.
 
     WhatsApp allows a business-initiated message only inside 24 hours of the
@@ -171,14 +179,37 @@ async def notify_customer(db: AsyncSession, customer_id, text: str) -> bool:
     )
 
     since = datetime.now(timezone.utc) - timedelta(hours=CUSTOMER_SERVICE_WINDOW_HOURS)
-    threads = (await db.execute(
+    threads = list((await db.execute(
         select(MessagingThread)
         .where(MessagingThread.customer_id == customer_id,
                MessagingThread.opted_out.is_(False),
                MessagingThread.last_inbound_at.isnot(None),
                MessagingThread.last_inbound_at >= since)
         .order_by(MessagingThread.last_inbound_at.desc())
-    )).scalars().all()
+    )).scalars().all())
+
+    # The same verified customer can use more than one Instagram account.
+    # Approvals belong to the conversation that created the booking, not the
+    # account that happened to send the customer's latest unrelated message.
+    if source_ai_session_id:
+        source_key = str(source_ai_session_id)
+        exact = [t for t in threads if str(t.ai_session_id or "") == source_key]
+        if exact:
+            threads = exact
+        else:
+            from app.engines.ai_conversation.models import AIConversationSession
+
+            source_session = await db.get(AIConversationSession, source_ai_session_id)
+            context = dict(getattr(source_session, "context_data", None) or {})
+            source_channel = str(context.get("channel") or "")
+            source_user = str(context.get("channel_user_id") or "")
+            if source_channel and source_user:
+                # Never disclose a booking approval to a different social
+                # identity merely because its inbound timestamp is newer.
+                threads = [
+                    t for t in threads
+                    if t.channel == source_channel and t.channel_user_id == source_user
+                ]
 
     for thread in threads:
         config = await messaging_channel_config_service.get(
@@ -186,10 +217,24 @@ async def notify_customer(db: AsyncSession, customer_id, text: str) -> bool:
         )
         if not config:
             continue
-        result = await meta_client.send_text(
-            thread.channel_user_id, text, channel=thread.channel, config=config,
-        )
+        if rows:
+            result = await meta_client.send_options(
+                thread.channel_user_id,
+                text,
+                rows,
+                channel=thread.channel,
+                config=config,
+                list_button="Choose",
+                section_title=section_title,
+                presentation="buttons",
+            )
+        else:
+            result = await meta_client.send_text(
+                thread.channel_user_id, text, channel=thread.channel, config=config,
+            )
         if result.get("sent"):
+            if rows:
+                thread.last_options = [str(row.get("id") or "") for row in rows]
             thread.last_outbound_at = datetime.now(timezone.utc)
             return True
     logger.info("messaging_gateway.notify.window_closed",
@@ -383,6 +428,7 @@ class MessagingGatewayService:
             context_data={
                 "channel": thread.channel,
                 "channel_user_id": thread.channel_user_id,
+                "channel_business_id": thread.channel_business_id,
                 "display_name": thread.display_name,
             },
         )

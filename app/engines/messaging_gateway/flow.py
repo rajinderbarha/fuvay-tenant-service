@@ -876,16 +876,18 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
             return None, await _draft(db, thread)
         return None, draft
 
-    if draft and not (draft.get("address_snapshot") or {}).get("address_line_1"):
+    if draft and not _valid_address_line(
+        (draft.get("address_snapshot") or {}).get("address_line_1")
+    ):
         address = " ".join(text.split())
-        # A map link is useful at the optional location step, but it is not a
-        # deliverable postal address. Always retain a human-readable address
-        # for the customer, provider and technician surfaces.
-        if (
-            len(address) < 8
-            or len(address.split()) < 2
-            or address.lower().startswith(("http://", "https://"))
-        ):
+        # Use the booking API's canonical validation here too. The previous
+        # social-only word check counted punctuation as a word, advanced to
+        # slot selection, and then failed the final booking gate.
+        try:
+            from app.engines.serviceability.schemas import _validate_address_line
+
+            address = _validate_address_line(address) or ""
+        except ValueError:
             return BAD_ADDRESS, draft
         await executor._tool_update_home_service_draft(
             draft_id=str(draft["id"]), address_line_1=address[:255],
@@ -1415,7 +1417,9 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     if picker:  # a catalog question, or the slot grid once a provider is matched
         return Turn(None, picker)
 
-    if not (draft.get("address_snapshot") or {}).get("address_line_1"):
+    if not _valid_address_line(
+        (draft.get("address_snapshot") or {}).get("address_line_1")
+    ):
         return Turn(ASK_ADDRESS_WHATSAPP if channel == CHANNEL_WHATSAPP else ASK_ADDRESS)
 
     if not draft.get("selected_tenant_id"):
@@ -2098,6 +2102,16 @@ def _address(summary: dict, draft: dict) -> str | None:
     parts = [snapshot.get("address_line_1"), draft.get("city"), draft.get("zipcode")]
     joined = ", ".join(str(p) for p in parts if p)
     return joined or None
+
+
+def _valid_address_line(value: str | None) -> bool:
+    """Use the final booking gate's deliverable-address rule for chat steps."""
+    from app.engines.serviceability.schemas import _validate_address_line
+
+    try:
+        return bool(_validate_address_line(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _location_cta(draft: dict | None) -> dict | None:
