@@ -154,6 +154,29 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
+        # A customer can book another catalog service while one is active,
+        # but must not start a second journey for the *same* service. Keep
+        # this predicate identical to the locked confirmation-time guard.
+        if customer_id:
+            from app.engines.final_records.models import ServiceBooking
+
+            existing_booking = (await self.db.execute(
+                select(ServiceBooking).where(
+                    ServiceBooking.customer_id == customer_id,
+                    ServiceBooking.offering_id == offering.id,
+                    ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
+                ).order_by(ServiceBooking.created_at.desc()).limit(1)
+            )).scalars().first()
+            if existing_booking:
+                raise ServiceOSException(
+                    "DUPLICATE_ACTIVE_BOOKING",
+                    f"This service is already booked as {existing_booking.booking_number}.",
+                    status_code=409,
+                    resolution="Track or cancel the existing booking before booking this service again.",
+                    context={"booking_id": str(existing_booking.id),
+                             "booking_number": existing_booking.booking_number},
+                )
+
         # A category can carry orphaned/legacy MasterService rows
         # (is_active=True, but no tenant has ever actually published an
         # offering against them -- confirmed live, e.g. a leftover "AC
@@ -2588,7 +2611,7 @@ class HomeServiceChatbotBookingService:
                 "credited_when":  "customer_approves_estimate",
                 "condition":      "work_amount_exceeds_visit_fee",
                 "if_declined":    "visit_fee_only",
-            } if requires_inspection_estimate and base else None,
+            } if requires_inspection_estimate and base and consultation_fee is None else None,
             "base_price":      base,          # service and selected add-ons (provider basis)
             "service_base_price": service_base,
             "selected_addons": selected_addons,

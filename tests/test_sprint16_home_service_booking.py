@@ -323,6 +323,7 @@ class TestStartBookingDraft:
         db.execute = AsyncMock(side_effect=[
             _scalars([cat]),
             _scalars([offering]),
+            _scalars([]),            # no active booking for this offering
             # Added later this phase: start_booking_draft now independently
             # re-checks (a) at least one tenant has actually published this
             # offering, and (b) it has real problem/issue-type wiring,
@@ -334,6 +335,7 @@ class TestStartBookingDraft:
             _scalars([MagicMock()]),  # has_problems: truthy
             _scalar(0),               # active booking drafts: below cap
             _scalars([]),             # customer's default address: none found
+            _scalars([]),             # no job-type dimension rules
         ])
         db.add     = MagicMock()
         db.flush   = AsyncMock()

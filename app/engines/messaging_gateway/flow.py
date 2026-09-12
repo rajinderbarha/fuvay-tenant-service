@@ -326,8 +326,12 @@ async def advance(
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
             PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
         }:
-            # Old controls remain tappable forever. A finished draft may only
-            # accept explicit post-booking actions, never stale booking input.
+            # Old service cards remain tappable after confirmation. Treat a
+            # category/service choice as the start of another booking, which
+            # asks for the pincode again before accepting any service input.
+            # All other old controls still belong to the confirmed booking.
+            if kind in {PICK_CATEGORY, PICK_OFFERING}:
+                return await _restart(db, thread, executor, channel, identity)
             return await _booked_menu_for(identity, thread, "", ALREADY_BOOKED)
         # Two taps never touch the draft — they only choose which list to show
         # next — so they are answered directly rather than through the draft.
@@ -680,6 +684,9 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
                 return TOO_MANY_DRAFTS, DONE, None
             if error_code in {"RATE_LIMITED", "SECURITY_CONTROL_UNAVAILABLE"}:
                 return START_RATE_LIMITED, DONE, None
+            if error_code == "DUPLICATE_ACTIVE_BOOKING":
+                message = started.get("error") or "This service is already booked."
+                return message, BOOKED, None
             return START_FAILED, DONE, None
         # The area was settled before any of this; carry it onto the draft so
         # serviceability and pricing have it and the customer is not re-asked.
@@ -1939,6 +1946,9 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
             else "TOTAL PRICE"
         )
         lines.extend(["", f"💳 {price_label}", str(price["display_price"])])
+        adjustment = _visit_fee_adjustment(price)
+        if adjustment:
+            lines.append(adjustment)
     rows = [{"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Confirm booking"}]
     if price.get('social_addons_reviewed'):
         from app.engines.messaging_gateway.addons import _id
@@ -2080,10 +2090,31 @@ def _price_block(price: dict) -> str | None:
         strong_amount,
         "━━━━━━━━━━━━━━",
     ]
+    adjustment = _visit_fee_adjustment(price)
+    if adjustment:
+        lines.extend(["", adjustment])
     note = str(price.get("note") or "").strip()
+    if note:
+        # The structured, policy-backed disclosure above is the prominent
+        # one; avoid repeating the same promise from the legacy prose note.
+        note = note.replace(
+            "This visit fee is adjusted against your final bill if you continue with the service.",
+            "",
+        ).strip()
     if note:
         lines.extend(["", note])
     return "\n".join(lines)
+
+
+def _visit_fee_adjustment(price: dict) -> str | None:
+    policy = price.get("visit_fee_policy") or {}
+    if policy.get("credited_against_work"):
+        return (
+            "If you approve and continue with the repair, this visit/inspection "
+            "fee is adjusted against the final bill when the repair amount "
+            "exceeds the fee."
+        )
+    return None
 
 
 def _masked_number(identity, thread) -> str:

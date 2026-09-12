@@ -337,6 +337,7 @@ async def test_fourth_active_booking_draft_is_rejected():
     db.execute = AsyncMock(side_effect=[
         _scalars_first(category),
         _scalars_first(offering),
+        _scalars_first(None),
         _scalars_first(uuid.uuid4()),
         _scalars_first(uuid.uuid4()),
         count_result,
@@ -358,6 +359,42 @@ async def test_fourth_active_booking_draft_is_rejected():
             )
     assert exc.value.error_code == "ACTIVE_BOOKING_DRAFT_LIMIT"
     assert exc.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_same_service_is_rejected_before_starting_another_draft():
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+
+    category = MagicMock(id=uuid.uuid4(), name="AC", slug="ac")
+    offering = MagicMock(id=uuid.uuid4(), service_name="AC Repair", slug="repair")
+    existing = SimpleNamespace(id=uuid.uuid4(), booking_number="BK-EXISTING")
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        _scalars_first(category),
+        _scalars_first(offering),
+        _scalars_first(existing),
+    ])
+
+    with patch(
+        "app.dependencies.vertical_guard._load_vertical",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+    ), patch(
+        "app.engines.home_service_booking.service.enforce_booking_action_limits",
+        AsyncMock(),
+    ):
+        with pytest.raises(ServiceOSException) as exc:
+            await HomeServiceChatbotBookingService(db).start_booking_draft(
+                customer_id=uuid.uuid4(), ai_session_id=None,
+                category_slug="ac", offering_slug="repair",
+            )
+
+    assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
+    assert exc.value.context["booking_number"] == "BK-EXISTING"
+    assert db.execute.await_count == 3
+    duplicate_query = db.execute.await_args_list[2].args[0]
+    assert offering.id.hex in str(duplicate_query.compile(
+        compile_kwargs={"literal_binds": True},
+    ))
 
 
 @pytest.mark.asyncio

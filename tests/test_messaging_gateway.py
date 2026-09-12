@@ -1075,11 +1075,34 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
         "display_price": "₹299",
         "pricing_mode": "inspection",
         "note": "Approve the repair estimate before work starts.",
+        "visit_fee_policy": {"credited_against_work": True},
     })
     assert inspection.startswith(
         "━━━━━━━━━━━━━━\n🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘\n₹𝟮𝟵𝟵"
     )
     assert "Approve the repair estimate" in inspection
+    assert "adjusted against the final bill" in inspection
+
+
+@pytest.mark.asyncio
+async def test_review_shows_inspection_fee_adjustment_before_confirmation():
+    from app.engines.messaging_gateway import flow
+
+    class Executor:
+        async def _tool_get_home_service_booking_summary(self, **_kwargs):
+            return {"summary": {"booking_summary": {
+                "offering_name": "AC Repair",
+                "price_estimate": {
+                    "display_price": "₹299",
+                    "requires_inspection_estimate": True,
+                    "visit_fee_policy": {"credited_against_work": True},
+                },
+            }}}
+
+    turn = await flow._confirm_step(Executor(), {"id": "draft-1"}, SimpleNamespace())
+    assert "VISIT & INSPECTION FEE" in turn.text
+    assert "adjusted against the final bill" in turn.text
+    assert [row["id"] for row in turn.picker["rows"]][:1] == ["cf|yes"]
 
 
 @pytest.mark.asyncio
@@ -3382,8 +3405,8 @@ async def test_old_instagram_service_button_cannot_skip_zipcode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_finished_booking_rejects_old_navigation_controls(monkeypatch):
-    """Old category/area controls cannot reopen or alter a confirmed flow."""
+async def test_finished_booking_service_card_starts_a_new_booking(monkeypatch):
+    """A stale service card can start over, but cannot edit the old booking."""
     from app.engines.messaging_gateway import flow
 
     class Thread:
@@ -3400,13 +3423,30 @@ async def test_finished_booking_rejects_old_navigation_controls(monkeypatch):
     async def finished(_db, _thread):
         return {"id": "draft-1", "status": "confirmed"}
 
+    async def restart(_db, thread, _executor, _channel, _identity):
+        thread.zipcode = None
+        return flow.Turn(flow.ASK_PINCODE)
+
     monkeypatch.setattr(flow, "_draft", finished)
+    monkeypatch.setattr(flow, "_restart", restart)
     turn = await flow.advance(
         None, Thread(), text="", reply_id="cat|home_services",
         channel=CHANNEL_WHATSAPP,
     )
+    assert turn.text == flow.ASK_PINCODE
+
+    turn = await flow.advance(
+        None, Thread(), text="", reply_id="of|home_services|ac-repair",
+        channel=CHANNEL_WHATSAPP,
+    )
+    assert turn.text == flow.ASK_PINCODE
+
+    # A stale answer to the *old* booking must still be refused.
+    turn = await flow.advance(
+        None, Thread(), text="", reply_id="sl|2026-09-12|10:00-11:00",
+        channel=CHANNEL_WHATSAPP,
+    )
     assert "already confirmed" in turn.text
-    assert [row["id"] for row in turn.picker["rows"]] == ["rs|1"]
 
 
 @pytest.mark.asyncio
@@ -3618,6 +3658,30 @@ async def test_start_draft_error_keeps_domain_code(monkeypatch):
     assert result["draft_id"] is None
     assert result["error_code"] == "ACTIVE_BOOKING_DRAFT_LIMIT"
     assert result["resolution"] == "Finish or cancel one."
+
+
+@pytest.mark.asyncio
+async def test_same_service_start_error_shows_existing_booking(monkeypatch):
+    from app.engines.messaging_gateway import flow
+
+    async def abandon(_db, _thread):
+        return 0
+
+    class Executor:
+        async def _tool_start_home_service_draft(self, **_kwargs):
+            return {
+                "draft_id": None,
+                "error_code": "DUPLICATE_ACTIVE_BOOKING",
+                "error": "This service is already booked as BK-EXISTING.",
+            }
+
+    monkeypatch.setattr(flow, "abandon_social_booking_drafts", abandon)
+    note, page, draft = await flow._apply_tap(
+        None, SimpleNamespace(), Executor(), "of|ac|repair", None,
+    )
+    assert page == flow.BOOKED
+    assert draft is None
+    assert "BK-EXISTING" in note
 
 
 def test_an_uncovered_area_says_how_to_reach_a_covered_one():
