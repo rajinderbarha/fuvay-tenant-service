@@ -15,6 +15,7 @@ import { useApi, useAction } from "../../../../../hooks/useApi";
 import { usePermissions } from "../../../../../hooks/usePermissions";
 import { ReviewFeedbackTab } from "../../../../../components/home-services/ReviewFeedbackTab";
 import { TableSurface } from "@serviceos/design-system";
+import styles from "./jobDetail.module.css";
 
 function copyText(t: string) { if (typeof navigator !== "undefined") navigator.clipboard?.writeText(t).catch(() => {}); }
 
@@ -431,8 +432,8 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
       {job.loading ? (
         <Skeleton height={300} />
       ) : d && !(d as any).error ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: 16 }}>
-          <div>
+        <div className={styles.detailGrid}>
+          <div className={styles.column}>
             <Section title="Complete Job Details">
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <Field label="Job Number" value={d.job_number} />
@@ -626,7 +627,7 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
             </Section>
           </div>
 
-          <div>
+          <div className={styles.column}>
             <Section title="Customer">
               <Field label="Customer ID" value={
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "monospace", fontSize: 12 }}>
@@ -682,13 +683,13 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
             </Section>
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className={styles.fullRow}>
             <Section title="Review & Feedback">
               <ReviewFeedbackTab jobId={d.id} jobStatus={d.status} />
             </Section>
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className={styles.fullRow}>
             <Section title="Timeline & Notes">
               {(assignmentTimeline.loading || executionTimeline.loading || jobNotes.loading) ? (
                 <Skeleton height={80} />
