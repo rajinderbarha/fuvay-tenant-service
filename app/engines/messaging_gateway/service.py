@@ -1106,8 +1106,10 @@ class MessagingGatewayService:
 
         from app.engines.admin_catalog.models import MasterService, ServiceCategory
 
-        # The offering's name, not the booking number, is what a customer
-        # recognises when choosing between two open bookings.
+        # The selected problem is what distinguishes bookings within the same
+        # service (for example "AC not cooling" and "Remote control problem").
+        # Older bookings may not have an issue snapshot, so retain the offering
+        # name and booking number as progressively safer fallbacks.
         rows = (await self.db.execute(
             select(
                 ServiceBooking,
@@ -1139,7 +1141,11 @@ class MessagingGatewayService:
         return [
             {
                 "number": booking.booking_number,
-                "service": service_name or booking.booking_number,
+                "service": (
+                    str(getattr(booking, "issue_summary", None) or "").strip()
+                    or service_name
+                    or booking.booking_number
+                ),
                 "status": (
                     "Awaiting Approval"
                     if quote_status == QS_SENT_TO_CUSTOMER
@@ -1245,6 +1251,10 @@ class MessagingGatewayService:
             or getattr(category, "name", None)
             or "Home service"
         )
+        problem_name = (
+            str(getattr(booking, "issue_summary", None) or "").strip()
+            or service_name
+        )
         service_image = next((
             str(value).strip() for value in (
                 getattr(offering, "image_url", None),
@@ -1257,7 +1267,7 @@ class MessagingGatewayService:
         lines = [
             f"📋 Booking {booking.booking_number}",
             f"Status: {status}",
-            f"Service: {service_name}",
+            f"Problem: {problem_name}",
             "",
             "PROGRESS",
             progress_line,
@@ -1378,7 +1388,7 @@ class MessagingGatewayService:
             subtitle_parts.append("Assignment in progress")
         return {
             "text": chr(10).join(lines),
-            "title": f"{service_name} · {status}",
+            "title": f"{problem_name} · {status}",
             "subtitle": " · ".join(subtitle_parts),
             "image_url": card_image,
             "booking_number": booking.booking_number,

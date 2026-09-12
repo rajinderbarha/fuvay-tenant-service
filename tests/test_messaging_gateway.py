@@ -1907,7 +1907,7 @@ async def test_live_booking_list_labels_a_sent_quote_as_awaiting_approval():
 
     booking = SimpleNamespace(
         booking_number="BK-APPROVAL", status="inspection_done",
-        preferred_date=date(2026, 9, 12),
+        preferred_date=date(2026, 9, 12), issue_summary="AC not cooling",
     )
     result = SimpleNamespace(all=lambda: [(
         booking, "AC Repair", "https://cdn.example/ac.jpg", None,
@@ -1919,6 +1919,7 @@ async def test_live_booking_list_labels_a_sent_quote_as_awaiting_approval():
     rows = await MessagingGatewayService(db).live_bookings(thread)
 
     assert rows[0]["number"] == "BK-APPROVAL"
+    assert rows[0]["service"] == "AC not cooling"
     assert rows[0]["status"] == "Awaiting Approval"
 
 
@@ -1938,6 +1939,7 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
         preferred_time_window="09:00-11:00", city="Bassi Pathana",
         zipcode="140412", price_snapshot={"display_price": "₹315"},
         provider_snapshot={"provider_name": "Private Provider Name"},
+        issue_summary="Remote control problem",
     )
     job = SimpleNamespace(
         booking_id=booking_id, status="assigned", assigned_staff_id=staff_id,
@@ -1997,6 +1999,8 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
     assert "VISIT DETAILS" in view["text"]
     assert "YOUR TECHNICIAN" in view["text"]
     assert "SERVICE DETAILS" in view["text"]
+    assert "Problem: Remote control problem" in view["text"]
+    assert view["title"].startswith("Remote control problem")
     assert view["subtitle"].startswith("BK-42 · Step 2 of 4 · Assigned")
     assert "Private Provider Name" not in view["text"]
 
