@@ -82,7 +82,7 @@ async def create_charge_for_booking(
 async def create_charge_for_quote(
     db: AsyncSession, *, vertical_key: str, quote_id: uuid.UUID, quote_version: int, is_current: bool,
     job_id: uuid.UUID, tenant_id: uuid.UUID | None, customer_id: uuid.UUID | None,
-    customer_payable_amount: Decimal, source_event: str,
+    service_amount_major: Decimal, source_event: str,
 ) -> CustomerPlatformFeeCharge | None:
     """Repair/inspection services: charge computed only from the CURRENT
     approved quote version. A superseded quote can never create or
@@ -101,7 +101,7 @@ async def create_charge_for_quote(
 
     policy = await get_current_policy(db, vertical_id)
     result = calculate_customer_platform_fee(
-        policy=policy, service_subtotal_minor=to_minor(customer_payable_amount),
+        policy=policy, service_subtotal_minor=to_minor(service_amount_major),
         calculation_basis="approved_quote",
     )
     charge = CustomerPlatformFeeCharge(
@@ -109,7 +109,7 @@ async def create_charge_for_quote(
         job_id=job_id, quote_id=quote_id, quote_version=quote_version,
         policy_id=uuid.UUID(result["policy_id"]) if result["policy_id"] else None,
         policy_version=result["policy_version"], calculation_basis="approved_quote",
-        service_subtotal_minor=to_minor(customer_payable_amount),
+        service_subtotal_minor=to_minor(service_amount_major),
         chargeable_subtotal_minor=to_minor(result["chargeable_subtotal"]),
         fee_amount_minor=result["fee_amount_minor"],
         total_payable_minor=result["total_payable_minor"],

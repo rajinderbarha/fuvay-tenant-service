@@ -2652,6 +2652,10 @@ export interface HomeServicesDashboardData {
     direct_payments_pending?: number;
     direct_payments_confirmed?: number;
     usage_credit_balance?: number | null;
+    credit_warning_threshold?: number;
+    credit_booking_floor?: number;
+    low_credit?: boolean;
+    bookings_blocked_for_credit?: boolean;
     completion_deductions_today_count?: number;
     completion_deductions_today_amount?: number;
     entitled_seats?: number;

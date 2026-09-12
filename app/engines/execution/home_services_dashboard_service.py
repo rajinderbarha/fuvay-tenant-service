@@ -131,16 +131,18 @@ async def _attention_queue(
             "destination": "/home-services/team",
         })
 
-    from app.engines.usage_credits.constants import DEFAULT_LOW_USAGE_CREDIT_THRESHOLD
+    warning_threshold, _ = await _credit_thresholds(db)
     billing = (await db.execute(text(
         "SELECT credit_balance FROM tenant_billing WHERE tenant_id=:tid"
     ), {"tid": str(tid)})).fetchone()
     if billing and billing.credit_balance is not None \
-            and float(billing.credit_balance) < float(DEFAULT_LOW_USAGE_CREDIT_THRESHOLD):
+            and float(billing.credit_balance) < warning_threshold:
         items.append({
-            "key": "LOW_USAGE_CREDIT", "label": "Low usage-credit balance", "count": 1,
+            "key": "LOW_USAGE_CREDIT",
+            "label": f"Low usage-credit balance (below ₹{warning_threshold:g})",
+            "count": 1,
             "severity": "warning", "oldest_age_hours": None,
-            "destination": "/home-services/finance?tab=usage-credits",
+            "destination": "/home-services/finance?tab=topups",
         })
 
     return items
@@ -352,6 +354,30 @@ async def _customers_quality(db: AsyncSession, tid: uuid.UUID) -> dict:
     }
 
 
+async def _credit_thresholds(db: AsyncSession) -> tuple[float, float]:
+    """Return the published admin-configured warning and booking floors.
+
+    These are shared with provider matching/bookability.  Dashboard warnings
+    must not use a second hard-coded threshold or they can disappear while the
+    provider is still below the value configured by the administrator.
+    """
+    from app.engines.usage_credits.constants import DEFAULT_LOW_USAGE_CREDIT_THRESHOLD
+
+    row = (await db.execute(text(
+        "SELECT p.credit_warning_threshold, p.credit_booking_floor "
+        "FROM home_services_activation_finance_policies p "
+        "JOIN verticals v ON v.id = p.vertical_id "
+        "WHERE v.key = 'home_services' AND p.is_current = true "
+        "AND p.status = 'published' "
+        "ORDER BY p.version_number DESC LIMIT 1"
+    ))).fetchone()
+    warning = float(row.credit_warning_threshold) if row and row.credit_warning_threshold is not None \
+        else float(DEFAULT_LOW_USAGE_CREDIT_THRESHOLD)
+    floor = float(row.credit_booking_floor) if row and row.credit_booking_floor is not None \
+        else float(DEFAULT_LOW_USAGE_CREDIT_THRESHOLD)
+    return warning, floor
+
+
 async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
     invoices = (await db.execute(text(
         "SELECT payment_status, count(*) FROM service_invoices WHERE tenant_id=:tid GROUP BY payment_status"
@@ -375,11 +401,17 @@ async def _finance_snapshot(db: AsyncSession, tid: uuid.UUID) -> dict:
         "SELECT count(*) FROM provider_team_members "
         "WHERE tenant_id = :tid AND deleted_at IS NULL AND credit_suspended_at IS NOT NULL"
     ), {"tid": str(tid)})).scalar() or 0)
+    warning_threshold, booking_floor = await _credit_thresholds(db)
+    credit_balance = float(billing.credit_balance) if billing and billing.credit_balance is not None else 0.0
 
     return {
         "direct_payments_pending": inv_counts.get("pending", 0),
         "direct_payments_confirmed": inv_counts.get("collected", 0),
-        "usage_credit_balance": float(billing.credit_balance) if billing and billing.credit_balance is not None else None,
+        "usage_credit_balance": credit_balance,
+        "credit_warning_threshold": warning_threshold,
+        "credit_booking_floor": booking_floor,
+        "low_credit": credit_balance < warning_threshold,
+        "bookings_blocked_for_credit": credit_balance < booking_floor,
         "completion_deductions_today_count": int(deduction[0]) if deduction else 0,
         "completion_deductions_today_amount": float(deduction[1]) if deduction and deduction[1] is not None else 0.0,
         # The security deposit was replaced by purchased technician seats in

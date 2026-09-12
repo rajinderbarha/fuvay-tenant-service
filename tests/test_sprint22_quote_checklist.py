@@ -324,7 +324,10 @@ class TestQuoteItems:
         db.execute = AsyncMock(side_effect=[items_res, MagicMock()])
 
         with patch.object(svc, "_get_quote", AsyncMock(return_value=q)):
-            with patch.object(svc, "_log_event", AsyncMock()):
+            with patch.object(svc, "_log_event", AsyncMock()), patch.object(
+                svc, "_recalculate_with_platform_charge",
+                AsyncMock(return_value=svc._recalculate([item])),
+            ):
                 result = await svc.add_item(
                     db, str(QUOTE_ID), str(TENANT_ID),
                     "labour", "Labour charge", None,

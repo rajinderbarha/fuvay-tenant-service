@@ -2,7 +2,7 @@
 
 REAL PRODUCTION BUG these lock down: both call sites into
 vertical_monetization.charge_service were missing three REQUIRED keyword-only
-arguments (customer_id, service_amount_major/customer_payable_amount,
+arguments (customer_id, service_amount_major,
 source_event). Each call therefore raised TypeError on EVERY booking and EVERY
 quote approval -- and each is wrapped in a deliberately broad `except` (so a
 monetization misconfiguration cannot block a confirmed booking), which turned
@@ -21,13 +21,19 @@ would notice the call breaking again.
 from __future__ import annotations
 
 import inspect
+import uuid
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.engines.final_records.creation_service import _booking_service_amount
 from app.engines.quote_checklist.quote_service import _quote_payable_amount
 from app.engines.vertical_monetization.charge_service import (
     create_charge_for_booking, create_charge_for_quote,
 )
+from app.engines.quote_checklist.quote_service import ServiceJobQuoteService
 
 
 def _required_kwargs(func) -> set[str]:
@@ -129,3 +135,32 @@ def test_quote_amount_falls_back_and_never_raises_on_junk():
         customer_payable_amount = None
         total_amount = None
     assert _quote_payable_amount(Empty()) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_quote_total_includes_platform_charge_but_keeps_provider_base():
+    policy = SimpleNamespace(
+        id=uuid.uuid4(), version_number=7,
+        customer_fee_model="PERCENTAGE", customer_fee_percentage=Decimal("10"),
+        customer_fee_fixed_amount_minor=None, customer_fee_min_minor=None,
+        customer_fee_max_minor=None, collection_stage="on_completion",
+        customer_fee_refund_policy="refundable_if_job_not_started",
+    )
+    item = SimpleNamespace(item_type="service", line_total=Decimal("500"))
+    quote = SimpleNamespace(job_id=uuid.uuid4())
+    scalar = MagicMock()
+    scalar.scalar_one_or_none.return_value = None
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=scalar)
+
+    with patch(
+        "app.engines.vertical_monetization.calculation_service.get_current_policy_by_vertical_key",
+        new=AsyncMock(return_value=policy),
+    ), patch(
+        "app.engines.vertical_monetization.calculation_service.get_active_job_type_rule",
+        new=AsyncMock(return_value=None),
+    ):
+        totals = await ServiceJobQuoteService()._recalculate_with_platform_charge(db, quote, [item])
+
+    assert totals["total_amount"] == Decimal("500")
+    assert totals["customer_payable_amount"] == Decimal("550.00")

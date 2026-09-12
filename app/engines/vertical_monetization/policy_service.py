@@ -362,10 +362,20 @@ class VerticalMonetizationPolicyService:
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)
 
-        existing_draft = (await db.execute(select(VerticalMonetizationPolicy).where(
+        # Serialize draft creation per vertical.  Without this lock two admin
+        # tabs could both observe "no draft" and race to create a new version,
+        # leaving the UI reporting that a draft already existed (or later
+        # reads failing because more than one draft row was present).
+        await db.execute(select(Vertical).where(Vertical.id == v.id).with_for_update())
+        existing_drafts = (await db.execute(select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.status == "draft",
-        ))).scalar_one_or_none()
+        ).order_by(VerticalMonetizationPolicy.version_number.desc()))).scalars().all()
+        existing_draft = existing_drafts[0] if existing_drafts else None
         if existing_draft:
+            # Repair any historical duplicate drafts while retaining the most
+            # recent version and all of its child rules.
+            for stale in existing_drafts[1:]:
+                stale.status = "superseded"
             before = existing_draft.to_dict()
             for k in _DRAFT_FIELDS:
                 if k in payload:
@@ -442,17 +452,19 @@ class VerticalMonetizationPolicyService:
         than superseding, since a discarded draft has no audit value of its
         own. Publishing remains the only irreversible step."""
         v = await self._vertical(db, key)
-        draft = (await db.execute(select(VerticalMonetizationPolicy).where(
+        drafts = (await db.execute(select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.status == "draft",
-        ))).scalar_one_or_none()
-        if not draft:
+        ).order_by(VerticalMonetizationPolicy.version_number.desc()))).scalars().all()
+        if not drafts:
             raise ServiceOSException("NOT_FOUND", "No draft to discard.", status_code=404)
+        draft = drafts[0]
         draft_id = str(draft.id)
-        await db.delete(draft)
+        for pending in drafts:
+            await db.delete(pending)
         db.add(VerticalAuditLog(
             vertical_id=v.id, actor_id=actor_id, action_type="monetization.policy.discard_draft",
             before_state={"id": draft_id, "version_number": draft.version_number}, after_state=None,
-            notes="Draft discarded before publish.",
+            notes=f"Draft discarded before publish ({len(drafts)} pending version(s) removed).",
         ))
         await db.commit()
         return {"discarded": True, "draft_id": draft_id}
@@ -508,11 +520,15 @@ class VerticalMonetizationPolicyService:
         if not reason or not reason.strip():
             raise ServiceOSException("VALIDATION_ERROR", "A reason is required to publish a policy change.", status_code=422)
         v = await self._vertical(db, key)
-        draft = (await db.execute(select(VerticalMonetizationPolicy).where(
+        await db.execute(select(Vertical).where(Vertical.id == v.id).with_for_update())
+        drafts = (await db.execute(select(VerticalMonetizationPolicy).where(
             VerticalMonetizationPolicy.vertical_id == v.id, VerticalMonetizationPolicy.status == "draft",
-        ).with_for_update())).scalar_one_or_none()
-        if not draft:
+        ).order_by(VerticalMonetizationPolicy.version_number.desc()).with_for_update())).scalars().all()
+        if not drafts:
             raise ServiceOSException("NOT_FOUND", "No draft policy to publish.", status_code=404)
+        draft = drafts[0]
+        for stale in drafts[1:]:
+            stale.status = "superseded"
         errors = self._validate(draft.to_dict())
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)

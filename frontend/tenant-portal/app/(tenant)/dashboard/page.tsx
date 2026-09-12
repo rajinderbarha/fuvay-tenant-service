@@ -102,6 +102,19 @@ function OperationalDashboard() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><Badge variant={data.bookability.is_bookable ? "success" : "danger"} dot>{data.bookability.is_bookable ? "Accepting bookings" : "Bookings blocked"}</Badge><span style={{ color: "var(--text-tertiary)", fontSize: 11 }}>Updated {timeAgo(data.generated_at)}</span></div>
     </div></Card>
     {data.failed_modules.length > 0 && <Alert tone="warning" title="Some live modules are temporarily unavailable">The core dashboard is available. Refresh to retry: {data.failed_modules.map(humanize).join(", ")}.</Alert>}
+    {finance.low_credit && <Alert tone={finance.bookings_blocked_for_credit ? "danger" : "warning"}
+      title={finance.bookings_blocked_for_credit ? "Top up credits to receive new bookings" : "Your usage-credit balance is low"}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span>
+          You have {money.format(finance.usage_credit_balance ?? 0)} remaining. {finance.bookings_blocked_for_credit
+            ? `New bookings are paused below ${money.format(finance.credit_booking_floor ?? 500)}.`
+            : `Please top up before the balance reaches ${money.format(finance.credit_booking_floor ?? 500)}.`}
+          {` This notice remains until your balance is above ${money.format(finance.credit_warning_threshold ?? 500)}.`}
+        </span>
+        <Button variant="primary" size="sm" leftIcon={<CreditCard size={14} />}
+          onClick={() => router.push("/home-services/finance?tab=topups")}>Buy credits</Button>
+      </div>
+    </Alert>}
     {!data.bookability.is_bookable && bookabilityMessages.length > 0 && <Alert tone="danger" title="Customers cannot book this workspace">{bookabilityMessages.join(" · ")}</Alert>}
 
     <KpiGrid minCardWidth={180}>

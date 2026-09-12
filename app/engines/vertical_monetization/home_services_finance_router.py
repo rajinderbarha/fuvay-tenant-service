@@ -92,6 +92,13 @@ async def save_draft(r: Request, db: AsyncSession = Depends(get_db),
                      user: UserContext = Depends(get_current_user),
                      v: Vertical = Depends(_require_hs_action("draft"))):
     body = await r.json()
+    # Home Services is provider-direct settlement: the provider collects one
+    # inclusive customer total and Fuvay recovers the platform charge from
+    # usage credits when the job completes.  A configurable collection stage
+    # implied several payment paths that do not exist for this vertical and
+    # could leave a published policy in a merely "recorded" state.
+    body["collection_stage"] = "on_completion"
+    body["customer_fee_basis"] = "service_subtotal"
     data = await _svc.save_draft(db, _HS_KEY, body, actor_id=uuid.UUID(user.user_id) if user.user_id else None)
     return ok(data, _rid(r))
 

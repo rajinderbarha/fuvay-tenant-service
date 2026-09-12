@@ -357,17 +357,8 @@ const PROVIDER_CHARGE_EVENTS = [
   { value: "work_done",              label: "When the technician marks work done" },
   { value: "work_started",           label: "When the technician starts work" },
 ] as const;
-// Only `before_work_start` is enforced today -- it blocks work start until the
-// fee is paid. The others are recorded on the charge but gate nothing yet, so
-// they are labelled honestly rather than implying an enforcement that is absent.
-const COLLECTION_STAGES = [
-  { value: "before_work_start",          label: "Before work starts — blocks work until paid", enforced: true },
-  { value: "before_booking_confirmation", label: "At booking confirmation (recorded, not enforced)", enforced: false },
-  { value: "after_estimate_approval",     label: "After estimate approval (recorded, not enforced)", enforced: false },
-  { value: "on_completion",               label: "On completion (recorded, not enforced)", enforced: false },
-] as const;
 const CUSTOMER_FEE_MODELS = [
-  { value: "NONE", label: "No customer charge" },
+  { value: "NONE", label: "No platform charge" },
   { value: "PERCENTAGE", label: "Percentage added to service price" },
   { value: "FIXED", label: "Fixed amount added to service price" },
   { value: "PERCENTAGE_WITH_MIN_MAX", label: "Percentage with minimum / maximum" },
@@ -398,6 +389,28 @@ type PolicyStep = (typeof POLICY_STEPS)[number]["key"];
 
 function fmt(v: unknown): string {
   return v === null || v === undefined ? "—" : String(v);
+}
+
+function optionalWholeNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function customerPriceExample(form: Partial<MonetizationPolicy>) {
+  const servicePrice = 500;
+  let charge = 0;
+  if (form.customer_fee_model === "PERCENTAGE" || form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") {
+    const percentage = Number(form.customer_fee_percentage ?? 0);
+    charge = Number.isFinite(percentage) ? servicePrice * percentage / 100 : 0;
+    if (form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") {
+      if (form.customer_fee_min_minor != null) charge = Math.max(charge, form.customer_fee_min_minor / 100);
+      if (form.customer_fee_max_minor != null) charge = Math.min(charge, form.customer_fee_max_minor / 100);
+    }
+  } else if (form.customer_fee_model === "FIXED") {
+    charge = Number(form.customer_fee_fixed_amount_minor ?? 0) / 100;
+  }
+  return { servicePrice, charge, total: servicePrice + charge };
 }
 
 function MonetizationTab() {
@@ -464,7 +477,8 @@ function MonetizationTab() {
   function startDraft() {
     setPolicyStep("provider");
     setForm(draft ?? current ?? {
-      provider_model: "COMPLETION_CREDITS", customer_fee_model: "NONE", currency: "INR",
+      provider_model: "COMPLETION_CREDITS", customer_fee_model: "PERCENTAGE",
+      customer_fee_percentage: "10", collection_stage: "on_completion", currency: "INR",
       provider_health_adjustment_enabled: false,
       provider_health_adjustments_json: DEFAULT_HEALTH_ADJUSTMENTS,
       provider_health_score_max_age_days: 30,
@@ -603,7 +617,10 @@ function MonetizationTab() {
               {discardDraftAction.loading ? "Deleting…" : "Delete Draft"}
             </Btn>
           )}
-          <Btn variant="primary" icon={<Sparkles size={14} />} onClick={startDraft}>{draft ? "Edit Draft" : "Create Draft"}</Btn>
+          <Btn variant="primary" icon={<Sparkles size={14} />} onClick={startDraft}
+            disabled={draftApi.loading || currentApi.loading}>
+            {draftApi.loading || currentApi.loading ? "Loading Policy..." : draft ? "Edit Draft" : "Create Draft"}
+          </Btn>
         </div>
       </Card>
 
@@ -661,7 +678,7 @@ function MonetizationTab() {
               <p style={{ margin: 0, fontSize: 12, color: "var(--text-tertiary)" }}>Loading published rules…</p>
             ) : (currentRulesApi.data?.items ?? []).length === 0 ? (
               <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
-                No published Job Type overrides. Every Job Type currently inherits the default provider and customer charge policy.
+                No published Job Type overrides. Every Job Type currently inherits the default provider and platform charge policy.
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -706,7 +723,7 @@ function MonetizationTab() {
               <KV label="Recovery" value="Deducted from usage credits" />
             </div>
             <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
-              The customer pays the inclusive amount to the provider. At job completion, Fuvay recovers this customer charge from the provider&apos;s usage credits in addition to the provider-side charge.
+              The customer pays the inclusive amount to the provider. At job completion, Fuvay recovers this platform charge from the provider&apos;s usage credits in addition to the provider-side charge.
             </div>
           </Card>
         </div>
@@ -846,7 +863,7 @@ function MonetizationTab() {
           {form.provider_model === "PERCENTAGE_COMMISSION" ? (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
-                Deduct this percentage of the provider&apos;s final service price. The customer charge is calculated separately and never increases this commission base.
+                Deduct this percentage of the provider&apos;s final service price. The platform charge is calculated separately and never increases this commission base.
               </p>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Provider commission (%)</label>
               <Input placeholder="e.g. 10" value={String(form.provider_percentage ?? "")}
@@ -951,39 +968,34 @@ function MonetizationTab() {
           <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.03em", marginTop: 16, display: "block" }}>
             Customer-side charge — added to what the customer pays
           </label>
-          <select value={form.customer_fee_model ?? "NONE"} onChange={e => setForm({ ...form, customer_fee_model: e.target.value })}
+          <select value={form.customer_fee_model ?? "NONE"} onChange={e => setForm({
+            ...form,
+            customer_fee_model: e.target.value,
+            collection_stage: "on_completion",
+            customer_fee_percentage: e.target.value.startsWith("PERCENTAGE")
+              ? (form.customer_fee_percentage ?? "10") : form.customer_fee_percentage,
+          })}
             style={{ width: "100%", padding: "7px 9px", margin: "4px 0 10px" }}>
             {CUSTOMER_FEE_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           {form.customer_fee_model !== "NONE" && (
-            <>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>When to collect from the customer</label>
-              <select value={form.collection_stage ?? "after_estimate_approval"}
-                onChange={e => setForm({ ...form, collection_stage: e.target.value })}
-                style={{ width: "100%", padding: "7px 9px", margin: "4px 0 4px" }}>
-                {COLLECTION_STAGES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-              {!COLLECTION_STAGES.find(x => x.value === (form.collection_stage ?? "after_estimate_approval"))?.enforced && (
-                <p style={{ fontSize: 11, color: "var(--warning-text, var(--text-tertiary))", margin: "0 0 10px" }}>
-                  The charge is created and recorded at this stage, but nothing blocks the customer
-                  from proceeding without paying it. Only &quot;before work starts&quot; is enforced today.
-                </p>
-              )}
-            </>
+            <div style={{ padding: "10px 12px", marginBottom: 10, border: "1px solid var(--border)", borderRadius: 9, background: "var(--surface-sunken)", fontSize: 12, color: "var(--text-secondary)" }}>
+              The platform charge is automatically added to the provider&apos;s service price. The customer pays the complete amount directly to the provider.
+            </div>
           )}
           {(form.customer_fee_model === "PERCENTAGE" || form.customer_fee_model === "PERCENTAGE_WITH_MIN_MAX") && (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
                 Added on top of the provider&apos;s service price. The customer pays this inclusive total to the provider, and the same charge is recovered from provider usage credits at completion.
               </p>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Customer charge (%)</label>
-              <Input placeholder="e.g. 10" value={String(form.customer_fee_percentage ?? "")}
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Platform charge (%)</label>
+              <Input type="number" placeholder="e.g. 10" value={String(form.customer_fee_percentage ?? "")}
                 onChange={v => setForm({ ...form, customer_fee_percentage: v })} />
             </>
           )}
           {form.customer_fee_model === "FIXED" && (
             <>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Fixed customer charge (₹)</label>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Fixed platform charge (₹)</label>
               <Input placeholder="e.g. 50" value={form.customer_fee_fixed_amount_minor != null ? String(form.customer_fee_fixed_amount_minor / 100) : ""}
                 onChange={v => setForm({ ...form, customer_fee_fixed_amount_minor: v === "" ? null : Math.round(Number(v) * 100) })} />
             </>
@@ -996,6 +1008,14 @@ function MonetizationTab() {
                 onChange={v => setForm({ ...form, customer_fee_max_minor: Math.round(Number(v) * 100) })} />
             </div>
           )}
+          {form.customer_fee_model !== "NONE" && (() => {
+            const example = customerPriceExample(form);
+            return <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 12, padding: 12, borderRadius: 10, background: "var(--accent-muted, var(--surface-sunken))" }}>
+              <KV label="Provider service price" value={money(example.servicePrice)} />
+              <KV label="Platform charge" value={money(example.charge)} />
+              <KV label="Customer pays provider" value={money(example.total)} />
+            </div>;
+          })()}
 
           </section>
           <section role="tabpanel" id="policy-panel-rules" aria-labelledby="policy-tab-rules" hidden={policyStep !== "rules"}>
@@ -1047,7 +1067,7 @@ function MonetizationTab() {
                     </label>
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input type="checkbox" checked={ruleCustomerEnabled} onChange={e => setRuleCustomerEnabled(e.target.checked)} />
-                      Apply customer charge
+                      Apply platform charge
                     </label>
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input type="checkbox" checked={ruleSlaEnabled} onChange={e => setRuleSlaEnabled(e.target.checked)} />
@@ -1248,9 +1268,9 @@ function MonetizationTab() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
               <div><label style={{ fontSize: 11 }}>Customer photo retention (days)</label><Input placeholder="Never purge" value={String(form.customer_photo_retention_days ?? "")} onChange={v => setForm({ ...form, customer_photo_retention_days: v === "" ? null : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Completion proof retention (days)</label><Input placeholder="Never purge" value={String(form.completion_proof_retention_days ?? "")} onChange={v => setForm({ ...form, completion_proof_retention_days: v === "" ? null : Number(v) })} /></div>
-              <div><label style={{ fontSize: 11 }}>Low-credit reminder (hours)</label><Input placeholder="24" value={String(form.credit_reminder_hours_low ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_low: v === "" ? null : Number(v) })} /></div>
-              <div><label style={{ fontSize: 11 }}>Blocked reminder (hours)</label><Input placeholder="6" value={String(form.credit_reminder_hours_blocked ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_blocked: v === "" ? null : Number(v) })} /></div>
-              <div><label style={{ fontSize: 11 }}>Arrears reminder (hours)</label><Input placeholder="2" value={String(form.credit_reminder_hours_arrears ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_arrears: v === "" ? null : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Low-credit reminder (hours)</label><Input type="number" placeholder="24" value={String(form.credit_reminder_hours_low ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_low: optionalWholeNumber(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Blocked reminder (hours)</label><Input type="number" placeholder="6" value={String(form.credit_reminder_hours_blocked ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_blocked: optionalWholeNumber(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Arrears reminder (hours)</label><Input type="number" placeholder="2" value={String(form.credit_reminder_hours_arrears ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_arrears: optionalWholeNumber(v) })} /></div>
             </div>
           </div>
 
@@ -1312,7 +1332,7 @@ function MonetizationTab() {
                 <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "var(--surface-sunken)" }}>
                   <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700 }}>Combined completion impact</p>
                   <PreviewRow label="Provider service price" value={`₹${previewAmount}`} />
-                  <PreviewRow label="Customer charge added" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
+                  <PreviewRow label="Platform charge added" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
                   <PreviewRow label="Customer sees and pays" value={`₹${fmt(previewResult.total_payable)}`} strong />
                   <PreviewRow label="Provider-side deduction" value={units(previewResult.provider_charge_credit_units as string)} />
                   <PreviewRow label="Customer-charge recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />

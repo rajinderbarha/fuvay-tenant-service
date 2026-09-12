@@ -261,7 +261,7 @@ class TestIntegrationWiring:
                 await create_charge_for_quote(
                     db=None, vertical_key="home_services", quote_id=uuid.uuid4(), quote_version=1,
                     is_current=False, job_id=uuid.uuid4(), tenant_id=uuid.uuid4(), customer_id=uuid.uuid4(),
-                    customer_payable_amount=Decimal("500"), source_event="test",
+                    service_amount_major=Decimal("500"), source_event="test",
                 )
             assert exc.value.error_code == "PAYMENT_CONTEXT_UNRESOLVED"
         asyncio.get_event_loop().run_until_complete(run())

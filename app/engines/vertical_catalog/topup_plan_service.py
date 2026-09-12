@@ -98,18 +98,20 @@ class HomeServicesTopupPlanService:
         on VerticalMonetizationPolicyService for why this deletes rather
         than supersedes (a draft that never published has no audit value)."""
         v = await self._vertical(db, key)
-        draft = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
+        drafts = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
             HomeServicesActivationFinancePolicy.vertical_id == v.id,
             HomeServicesActivationFinancePolicy.status == "draft",
-        ))).scalar_one_or_none()
-        if not draft:
+        ).order_by(HomeServicesActivationFinancePolicy.version_number.desc()))).scalars().all()
+        if not drafts:
             raise ServiceOSException("NOT_FOUND", "No draft to discard.", status_code=404)
+        draft = drafts[0]
         draft_id = str(draft.id)
-        await db.delete(draft)
+        for pending in drafts:
+            await db.delete(pending)
         db.add(VerticalAuditLog(
             vertical_id=v.id, actor_id=actor_id, action_type="topup_plan.discard_draft",
             before_state={"id": draft_id, "version_number": draft.version_number}, after_state=None,
-            notes="Draft discarded before publish.",
+            notes=f"Draft discarded before publish ({len(drafts)} pending version(s) removed).",
         ))
         await db.commit()
         return {"discarded": True, "draft_id": draft_id}
@@ -123,11 +125,15 @@ class HomeServicesTopupPlanService:
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)
 
-        existing_draft = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
+        await db.execute(select(Vertical).where(Vertical.id == v.id).with_for_update())
+        existing_drafts = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
             HomeServicesActivationFinancePolicy.vertical_id == v.id,
             HomeServicesActivationFinancePolicy.status == "draft",
-        ))).scalar_one_or_none()
+        ).order_by(HomeServicesActivationFinancePolicy.version_number.desc()))).scalars().all()
+        existing_draft = existing_drafts[0] if existing_drafts else None
         if existing_draft:
+            for stale in existing_drafts[1:]:
+                stale.status = "retired"
             for k in _DRAFT_FIELDS:
                 if k in payload:
                     setattr(existing_draft, k, payload[k])
@@ -160,12 +166,16 @@ class HomeServicesTopupPlanService:
         if not reason or not reason.strip():
             raise ServiceOSException("VALIDATION_ERROR", "A reason is required to publish a policy change.", status_code=422)
         v = await self._vertical(db, key)
-        draft = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
+        await db.execute(select(Vertical).where(Vertical.id == v.id).with_for_update())
+        drafts = (await db.execute(select(HomeServicesActivationFinancePolicy).where(
             HomeServicesActivationFinancePolicy.vertical_id == v.id,
             HomeServicesActivationFinancePolicy.status == "draft",
-        ))).scalar_one_or_none()
-        if not draft:
+        ).order_by(HomeServicesActivationFinancePolicy.version_number.desc()).with_for_update())).scalars().all()
+        if not drafts:
             raise ServiceOSException("NOT_FOUND", "No draft top-up plan to publish.", status_code=404)
+        draft = drafts[0]
+        for stale in drafts[1:]:
+            stale.status = "retired"
         errors = self._validate(draft.to_dict())
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)

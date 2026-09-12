@@ -91,6 +91,20 @@ def _quote_payable_amount(quote) -> Decimal:
     return Decimal("0")
 
 
+def _quote_service_amount(quote) -> Decimal:
+    """Provider service value before the separately-added platform charge."""
+    raw = getattr(quote, "total_amount", None)
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+    return value if value > 0 else Decimal("0")
+
+
+def _stored_platform_fee(quote) -> Decimal:
+    return max(_quote_payable_amount(quote) - _quote_service_amount(quote), Decimal("0"))
+
+
 class ServiceJobQuoteService:
 
     # ── Helpers ────────────────────────────────────────────────────────────────
@@ -186,7 +200,13 @@ class ServiceJobQuoteService:
         data.pop("provider_internal_notes", None)
         res = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
         visible_rows = [i for i in res.scalars().all() if i.is_customer_visible]
-        data.update({k: str(v) for k, v in self._recalculate(visible_rows).items()})
+        totals = self._recalculate(visible_rows)
+        stored_fee = _stored_platform_fee(q)
+        totals["customer_payable_amount"] = totals["total_amount"] + stored_fee
+        data.update({k: str(v) for k, v in totals.items()})
+        data["platform_fee_amount"] = str(
+            totals["customer_payable_amount"] - totals["total_amount"]
+        )
         return data
 
     def _recalculate(self, items: list[ServiceJobQuoteItem]) -> dict:
@@ -208,6 +228,38 @@ class ServiceJobQuoteService:
             "total_amount":   total,
             "customer_payable_amount": total,
         }
+
+    async def _recalculate_with_platform_charge(
+        self, db: AsyncSession, quote: ServiceJobQuote,
+        items: list[ServiceJobQuoteItem],
+    ) -> dict:
+        """Keep the quote total aligned with the amount the customer pays.
+
+        ``total_amount`` remains the provider service value and commission
+        basis. ``customer_payable_amount`` adds the published platform charge,
+        matching booking prices and the invoice/payment flow.
+        """
+        totals = self._recalculate(items)
+        from app.engines.vertical_monetization.calculation_service import (
+            calculate_customer_platform_fee, get_active_job_type_rule,
+            get_current_policy_by_vertical_key, to_minor,
+        )
+
+        policy = await get_current_policy_by_vertical_key(db, "home_services")
+        if policy is not None:
+            job_type_id = (await db.execute(
+                select(ServiceJob.job_type_id).where(ServiceJob.id == quote.job_id)
+            )).scalar_one_or_none()
+            rule = await get_active_job_type_rule(db, policy.id, job_type_id)
+            if rule is not None and not rule.customer_charge_enabled:
+                policy = None
+        priced = calculate_customer_platform_fee(
+            policy=policy,
+            service_subtotal_minor=to_minor(totals["total_amount"]),
+            calculation_basis="home_services_quote_total",
+        )
+        totals["customer_payable_amount"] = Decimal(str(priced["total_payable"]))
+        return totals
 
     # ── Create quote ───────────────────────────────────────────────────────────
 
@@ -352,7 +404,7 @@ class ServiceJobQuoteService:
         # recalculate totals
         res = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
         items = list(res.scalars().all())
-        totals = self._recalculate(items)
+        totals = await self._recalculate_with_platform_charge(db, q, items)
         await db.execute(
             update(ServiceJobQuote)
             .where(ServiceJobQuote.id == q.id)
@@ -401,7 +453,7 @@ class ServiceJobQuoteService:
         item.line_total = item.quantity * item.unit_price
         await db.flush()
         res2 = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
-        totals = self._recalculate(list(res2.scalars().all()))
+        totals = await self._recalculate_with_platform_charge(db, q, list(res2.scalars().all()))
         await db.execute(
             update(ServiceJobQuote)
             .where(ServiceJobQuote.id == q.id)
@@ -435,7 +487,7 @@ class ServiceJobQuoteService:
         await db.delete(item)
         await db.flush()
         res2 = await db.execute(select(ServiceJobQuoteItem).where(ServiceJobQuoteItem.quote_id == q.id))
-        totals = self._recalculate(list(res2.scalars().all()))
+        totals = await self._recalculate_with_platform_charge(db, q, list(res2.scalars().all()))
         await db.execute(
             update(ServiceJobQuote)
             .where(ServiceJobQuote.id == q.id)
@@ -568,7 +620,7 @@ class ServiceJobQuoteService:
                 quote_id=q.id, quote_version=q.version_number, is_current=q.is_current,
                 job_id=q.job_id, tenant_id=q.tenant_id,
                 customer_id=uuid.UUID(customer_id) if customer_id else None,
-                customer_payable_amount=_quote_payable_amount(q),
+                service_amount_major=_quote_service_amount(q),
                 source_event="quote_customer_approved",
             )
         except Exception as exc:  # noqa: BLE001 -- never block a quote approval
@@ -724,7 +776,12 @@ class ServiceJobQuoteService:
             # recomputed here from ONLY the customer-visible items, so what
             # is displayed always reconciles to what is itemized.
             customer_totals = self._recalculate(rows)
+            stored_fee = _stored_platform_fee(q)
+            customer_totals["customer_payable_amount"] = customer_totals["total_amount"] + stored_fee
             data.update({k: str(v) for k, v in customer_totals.items()})
+            data["platform_fee_amount"] = str(
+                customer_totals["customer_payable_amount"] - customer_totals["total_amount"]
+            )
         data["items"] = [i.to_dict() for i in rows]
         return data
 
