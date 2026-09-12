@@ -40,7 +40,7 @@ jobs:
           overwrite: true
 
       - name: Inspect live booking data and dependencies
-        if: github.event_name == 'push' || inputs.mode == 'inspect'
+        if: (github.event_name == 'push' && github.event.head_commit.message != 'RUN_IP_TEST_BOOKING_PURGE_ONCE') || inputs.mode == 'inspect'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -79,10 +79,16 @@ jobs:
             GROUP BY table_schema, table_name
             ORDER BY table_name
             \gexec
+            SELECT u.tenant_id, u.event_type, u.credit_delta,
+                   u.balance_before, u.balance_after, b.credit_balance AS current_balance
+            FROM usage_credit_ledger u
+            JOIN tenant_billing b ON b.tenant_id = u.tenant_id
+            WHERE u.job_id IS NOT NULL OR u.booking_id IS NOT NULL
+            ORDER BY u.tenant_id, u.created_at;
             SQL
 
       - name: Delete all IP-stage booking and job transaction data
-        if: inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS'
+        if: (github.event_name == 'push' && github.event.head_commit.message == 'RUN_IP_TEST_BOOKING_PURGE_ONCE') || (inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -100,4 +106,14 @@ jobs:
               --env-file /srv/serviceos/.env.production \
               -f /srv/serviceos/docker-compose.prod.yml \
               -f /srv/serviceos/docker-compose.ip.yml \
-              exec -T postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -At -c "SELECT (SELECT count(*) FROM service_bookings), (SELECT count(*) FROM service_jobs), (SELECT count(*) FROM home_service_booking_drafts);"'
+              exec -T postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
+            SELECT 'service_bookings' AS record_type, count(*) FROM service_bookings
+            UNION ALL SELECT 'service_jobs', count(*) FROM service_jobs
+            UNION ALL SELECT 'booking_drafts', count(*) FROM home_service_booking_drafts
+            UNION ALL SELECT 'service_invoices', count(*) FROM service_invoices
+            UNION ALL SELECT 'service_invoice_items', count(*) FROM service_invoice_items
+            UNION ALL SELECT 'service_payment_records', count(*) FROM service_payment_records
+            UNION ALL SELECT 'customer_platform_fee_charges', count(*) FROM customer_platform_fee_charges
+            UNION ALL SELECT 'job_linked_usage_ledger', count(*) FROM usage_credit_ledger WHERE job_id IS NOT NULL OR booking_id IS NOT NULL
+            UNION ALL SELECT 'topup_and_manual_ledger', count(*) FROM usage_credit_ledger WHERE job_id IS NULL AND booking_id IS NULL;
+            SQL
