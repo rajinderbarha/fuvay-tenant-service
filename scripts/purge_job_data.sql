@@ -57,6 +57,18 @@ DELETE FROM booking_notes;
 -- ── Money: ONLY rows tied to a job or booking ──────────────────────────────
 -- A provider's top-ups and an admin's manual adjustments are not job data and
 -- are what their balance is built from, so they stay.
+-- Undo the net effect of removed job charges in the stored balance. Otherwise
+-- deleting their ledger rows would leave tenant_billing.credit_balance lower
+-- than the surviving top-ups and manual adjustments imply.
+UPDATE tenant_billing AS billing
+SET credit_balance = billing.credit_balance - linked.net_delta
+FROM (
+  SELECT tenant_id, SUM(credit_delta) AS net_delta
+  FROM usage_credit_ledger
+  WHERE job_id IS NOT NULL OR booking_id IS NOT NULL
+  GROUP BY tenant_id
+) AS linked
+WHERE billing.tenant_id = linked.tenant_id;
 DELETE FROM usage_credit_ledger    WHERE job_id IS NOT NULL OR booking_id IS NOT NULL;
 DELETE FROM customer_credit_ledger WHERE booking_id IS NOT NULL;
 DELETE FROM customer_service_credits WHERE booking_id IS NOT NULL OR job_id IS NOT NULL;

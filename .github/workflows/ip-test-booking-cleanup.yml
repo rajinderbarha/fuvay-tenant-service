@@ -116,4 +116,6 @@ jobs:
             UNION ALL SELECT 'customer_platform_fee_charges', count(*) FROM customer_platform_fee_charges
             UNION ALL SELECT 'job_linked_usage_ledger', count(*) FROM usage_credit_ledger WHERE job_id IS NOT NULL OR booking_id IS NOT NULL
             UNION ALL SELECT 'topup_and_manual_ledger', count(*) FROM usage_credit_ledger WHERE job_id IS NULL AND booking_id IS NULL;
+            SELECT tenant_id, credit_balance FROM tenant_billing
+            WHERE tenant_id IN (SELECT tenant_id FROM usage_credit_ledger);
             SQL
