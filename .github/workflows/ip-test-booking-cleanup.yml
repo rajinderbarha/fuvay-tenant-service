@@ -68,6 +68,17 @@ jobs:
             SELECT table_name, column_name FROM information_schema.columns
             WHERE table_schema = 'public' AND column_name IN ('booking_id', 'job_id', 'draft_id')
             ORDER BY table_name, column_name;
+            SELECT format(
+              'SELECT %L AS linked_table, count(*) FILTER (WHERE %s) AS linked_rows, count(*) AS total_rows FROM %I.%I;',
+              table_name,
+              string_agg(format('%I IS NOT NULL', column_name), ' OR '),
+              table_schema, table_name
+            )
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND column_name IN ('booking_id', 'job_id')
+            GROUP BY table_schema, table_name
+            ORDER BY table_name
+            \gexec
             SQL
 
       - name: Delete all IP-stage booking and job transaction data
