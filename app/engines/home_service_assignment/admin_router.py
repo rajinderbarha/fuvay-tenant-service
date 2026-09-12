@@ -198,7 +198,9 @@ async def admin_list_eligible_technicians(
     technicians = []
     for candidate in raw["eligible_staff"]:
         staff_id = uuid.UUID(candidate["staff_member_id"])
-        if await svc.staff_has_open_job(job_row.tenant_id, staff_id, exclude_job_id=job_id):
+        if await svc.staff_assignment_conflict_reason(
+            job_row, staff_id, exclude_job_id=job_id,
+        ):
             continue
         technicians.append({
             "id": str(staff_id),

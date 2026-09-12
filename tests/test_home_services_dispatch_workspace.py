@@ -110,6 +110,94 @@ async def test_conflict_resolution_detects_overlapping_not_only_equal_windows():
     assert db.execute.await_count == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("existing_date", "existing_window"),
+    [
+        (dt.date(2026, 9, 13), "09:00-11:00"),
+        (dt.date(2026, 9, 14), "07:00-09:00"),
+        (dt.date(2026, 9, 14), "11:00-13:00"),
+    ],
+)
+async def test_open_job_on_another_date_or_consecutive_slot_does_not_block_assignment(
+    existing_date, existing_window,
+):
+    """Regression for the live Test Provider contradiction.
+
+    Dispatch showed four open slots for the technician on 14 September but
+    excluded them merely because any other open job existed. Calendar work is
+    sequential: only an overlapping visit on the same date is a conflict.
+    """
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    tenant_id = uuid.uuid4()
+    staff_id = uuid.uuid4()
+    job = MagicMock(
+        id=uuid.uuid4(), tenant_id=tenant_id,
+        scheduled_date=dt.date(2026, 9, 14),
+        scheduled_time_window="09:00-11:00",
+    )
+    result = MagicMock()
+    result.all.return_value = [(existing_date, existing_window)]
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    reason = await HomeServiceJobAssignmentService(db).staff_assignment_conflict_reason(
+        job, staff_id, exclude_job_id=job.id,
+    )
+
+    assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_overlapping_job_still_blocks_assignment_with_precise_reason():
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    tenant_id = uuid.uuid4()
+    staff_id = uuid.uuid4()
+    job = MagicMock(
+        id=uuid.uuid4(), tenant_id=tenant_id,
+        scheduled_date=dt.date(2026, 9, 14),
+        scheduled_time_window="09:00-11:00",
+    )
+    result = MagicMock()
+    result.all.return_value = [(dt.date(2026, 9, 14), "10:30-12:00")]
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    reason = await HomeServiceJobAssignmentService(db).staff_assignment_conflict_reason(
+        job, staff_id, exclude_job_id=job.id,
+    )
+
+    assert reason == "schedule_conflict"
+
+
+@pytest.mark.asyncio
+async def test_unscheduled_job_retains_safe_open_work_fallback():
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    job = MagicMock(
+        id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        scheduled_date=None, scheduled_time_window=None,
+    )
+    service = HomeServiceJobAssignmentService(AsyncMock())
+    service.staff_has_open_job = AsyncMock(return_value=True)
+
+    reason = await service.staff_assignment_conflict_reason(
+        job, uuid.uuid4(), exclude_job_id=job.id,
+    )
+
+    assert reason == "active_job_in_progress"
+
+
+def test_assignment_mutation_uses_visit_conflict_instead_of_blanket_open_job_gate():
+    from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+
+    source = inspect.getsource(HomeServiceJobAssignmentService.assign_job)
+    assert "staff_assignment_conflict_reason" in source
+    assert "and not has_timed_slot" in source
+
+
 def test_projection_uses_canonical_status_and_bounded_queries():
     from app.engines.home_service_assignment.dispatch_service import HomeServiceDispatchProjectionService
 

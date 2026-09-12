@@ -126,6 +126,69 @@ class HomeServiceJobAssignmentService:
             select(ServiceJob.id).where(and_(*clauses)).limit(1)
         )).scalar_one_or_none() is not None
 
+    async def staff_assignment_conflict_reason(
+        self, job, staff_member_id: uuid.UUID,
+        *, exclude_job_id: uuid.UUID | None = None,
+    ) -> str | None:
+        """Return the real scheduling conflict for a proposed assignment.
+
+        An open job is not automatically a conflict. Providers routinely
+        schedule one technician for several visits on different dates or in
+        consecutive windows. The previous blanket ``staff_has_open_job`` gate
+        contradicted the availability board: it could show four open slots for
+        a technician and then reject every one because the technician had a
+        future job elsewhere on the calendar.
+
+        Timed jobs therefore conflict only when their intervals overlap on the
+        same date. If the proposed job has no usable slot, retain the safe
+        legacy rule because there is no schedule evidence with which to prove
+        that two jobs do not collide.
+        """
+        from app.engines.final_records.models import ServiceJob
+        from app.engines.vertical_catalog.seat_enforcement import OCCUPYING_JOB_STATUSES
+        from app.engines.weather.slots import slot_end, slot_start
+
+        scheduled_date = getattr(job, "scheduled_date", None)
+        scheduled_window = getattr(job, "scheduled_time_window", None)
+        target_start = slot_start(scheduled_date, scheduled_window) if scheduled_date else None
+        target_end = slot_end(scheduled_date, scheduled_window) if scheduled_date else None
+        if not target_start or not target_end:
+            return (
+                "active_job_in_progress"
+                if await self.staff_has_open_job(
+                    job.tenant_id, staff_member_id, exclude_job_id=exclude_job_id,
+                )
+                else None
+            )
+
+        clauses = [
+            ServiceJob.tenant_id == job.tenant_id,
+            ServiceJob.assigned_staff_id == staff_member_id,
+            ServiceJob.status.in_(OCCUPYING_JOB_STATUSES),
+        ]
+        if exclude_job_id is not None:
+            clauses.append(ServiceJob.id != exclude_job_id)
+        rows = (await self.db.execute(
+            select(
+                ServiceJob.scheduled_date,
+                ServiceJob.scheduled_time_window,
+            ).where(and_(*clauses))
+        )).all()
+        for other_date, other_window in rows:
+            # An older open job without a usable commitment cannot safely be
+            # placed on the calendar, so keep it as an explicit busy conflict.
+            if not other_date or not other_window:
+                return "active_job_in_progress"
+            if other_date != scheduled_date:
+                continue
+            other_start = slot_start(other_date, other_window)
+            other_end = slot_end(other_date, other_window)
+            if not other_start or not other_end:
+                return "active_job_in_progress"
+            if target_start < other_end and other_start < target_end:
+                return "schedule_conflict"
+        return None
+
     async def _job_requires_technician(self, job) -> bool:
         """Resolve the technician gate from the job's snapshotted workflow.
 
@@ -538,21 +601,30 @@ class HomeServiceJobAssignmentService:
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
 
-        # Work-in-progress gate: a tenant may hold at most one open job per
-        # technician. Blocking ASSIGNMENT rather than booking means the request
-        # waits in `pending_assignment` instead of being refused -- the
-        # customer never loses their slot, the provider just cannot hoard work
-        # its team cannot start.
+        # The legacy WIP gate counts every open job across every future date.
+        # It remains the safe fallback for an unscheduled job, but must not
+        # reject a real booked visit merely because the same technician has a
+        # different non-overlapping visit. Timed work is protected by the
+        # per-technician interval check below.
         old_assignment = await self._current_assignment(job_id)
-        if old_assignment is None and not allow_accepted_reassignment:
+        from app.engines.weather.slots import slot_end, slot_start
+        has_timed_slot = bool(
+            getattr(job, "scheduled_date", None)
+            and slot_start(job.scheduled_date, job.scheduled_time_window)
+            and slot_end(job.scheduled_date, job.scheduled_time_window)
+        )
+        if (
+            old_assignment is None
+            and not allow_accepted_reassignment
+            and not has_timed_slot
+        ):
             from app.engines.vertical_catalog.seat_enforcement import assert_wip_capacity
             await assert_wip_capacity(self.db, tenant_id)
 
-        # The tenant-wide gate only says that some seat is free. The selected
-        # technician must also be free. Reassignment excludes this job because
-        # replacing its owner does not consume an additional WIP slot.
-        if await self.staff_has_open_job(
-            tenant_id, staff_member_id, exclude_job_id=job_id,
+        # The selected technician must be free for THIS visit, not globally
+        # free of every earlier/later booking on the calendar.
+        if await self.staff_assignment_conflict_reason(
+            job, staff_member_id, exclude_job_id=job_id,
         ):
             raise ValueError(ERR_STAFF_NOT_ELIGIBLE)
 

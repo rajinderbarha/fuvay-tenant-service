@@ -439,10 +439,14 @@ class HomeServiceDispatchProjectionService:
             reasons: list[str] = []
             if staff_id in conflicting_staff:
                 reasons.append("schedule_conflict")
-            if await self._assign_svc.staff_has_open_job(
-                tenant_id, staff_id, exclude_job_id=job.id,
-            ):
-                reasons.append("active_job_in_progress")
+            # A job on another date (or a consecutive slot) is not a conflict.
+            # The old blanket open-job check disagreed with this same board's
+            # open-slot count and falsely excluded fully skilled technicians.
+            conflict_reason = await self._assign_svc.staff_assignment_conflict_reason(
+                job, staff_id, exclude_job_id=job.id,
+            )
+            if conflict_reason and conflict_reason not in reasons:
+                reasons.append(conflict_reason)
             if reasons:
                 raw["blocked_staff"].append({
                     **e,

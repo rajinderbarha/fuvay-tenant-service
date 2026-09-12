@@ -1851,8 +1851,8 @@ function AssignmentPanel({
                 })}
                 {!options.eligible_technicians.length && (
                   <Alert tone="warning">
-                    No technician currently passes skill, availability and
-                    conflict checks.
+                    No technician is available for this visit. Open Show
+                    excluded to see the exact reason.
                   </Alert>
                 )}
               </div>
