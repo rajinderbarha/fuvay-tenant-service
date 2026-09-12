@@ -258,6 +258,7 @@ async def test_failed_summary_delivery_withholds_confirmation_buttons(monkeypatc
     thread.id = uuid.uuid4()
     thread.opted_out = False
     thread.human_handoff = False
+    thread.blocked_until = None
     thread.last_options = ['old-option']
     # Mid-conversation: recent enough that this message continues the
     # thread rather than opening a new one.

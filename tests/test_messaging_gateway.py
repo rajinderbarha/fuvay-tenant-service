@@ -60,6 +60,31 @@ def test_parse_instagram_text_postback_and_skip_echo():
     assert all(item.business_id == "17890001" for item in messages)
 
 
+def test_instagram_postback_without_mid_is_processed_once():
+    """A browser/client tap may lack `postback.mid`; retries keep one ID."""
+    event = {
+        "sender": {"id": "igsid-1"},
+        "recipient": {"id": "17890001"},
+        "timestamp": 1789199000123,
+        "postback": {"title": "AC Repair", "payload": "of|ac|repair"},
+    }
+    payload = {"object": "instagram", "entry": [{
+        "id": "17890001", "messaging": [event],
+    }]}
+
+    first = meta_client.parse_inbound(payload, expected_channel=CHANNEL_INSTAGRAM)
+    retry = meta_client.parse_inbound(payload, expected_channel=CHANNEL_INSTAGRAM)
+    assert len(first) == len(retry) == 1
+    assert first[0].reply_id == "of|ac|repair"
+    assert first[0].provider_message_id.startswith("igpostback:")
+    assert first[0].provider_message_id == retry[0].provider_message_id
+
+    changed = {**event, "timestamp": event["timestamp"] + 1}
+    payload["entry"][0]["messaging"] = [changed]
+    another_tap = meta_client.parse_inbound(payload, expected_channel=CHANNEL_INSTAGRAM)
+    assert another_tap[0].provider_message_id != first[0].provider_message_id
+
+
 @pytest.mark.asyncio
 async def test_channel_specific_outbound_payloads(monkeypatch):
     calls = []
@@ -3834,6 +3859,23 @@ async def test_any_first_message_opens_the_conversation(monkeypatch, opener):
     assert sent[0].startswith(GREETING.format(name=""))
     assert "/fuvay" in sent[0]
     assert sent[0].endswith("Which pincode?")
+
+
+def test_instagram_welcome_gives_browser_guidance_without_device_guess():
+    from app.engines.messaging_gateway.service import (
+        INSTAGRAM_BROWSER_GUIDANCE, MessagingGatewayService,
+    )
+
+    gateway = MessagingGatewayService(None)
+    instagram = gateway._welcome(SimpleNamespace(
+        display_name=None, channel=CHANNEL_INSTAGRAM,
+    ))
+    whatsapp = gateway._welcome(SimpleNamespace(
+        display_name=None, channel=CHANNEL_WHATSAPP,
+    ))
+    assert INSTAGRAM_BROWSER_GUIDANCE in instagram
+    assert "Instagram mobile app" in instagram
+    assert INSTAGRAM_BROWSER_GUIDANCE not in whatsapp
 
 
 @pytest.mark.asyncio

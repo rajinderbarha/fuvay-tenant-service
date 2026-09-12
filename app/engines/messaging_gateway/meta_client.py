@@ -266,11 +266,23 @@ def _parse_instagram_inbound(payload: dict[str, Any]) -> list[InboundMessage]:
                 # Ignore every attachment-only event before it reaches flow.
                 continue
             provider_id = str(message.get("mid") or postback.get("mid") or "")
+            if (not provider_id and postback and event.get("timestamp")
+                    and postback.get("payload")):
+                # Meta can omit `mid` from a button/icebreaker postback. Hash
+                # the stable tap fields so retries retain one idempotency key.
+                fingerprint = {
+                    "business_id": business_id or recipient_id,
+                    "sender_id": sender_id,
+                    "timestamp": event["timestamp"],
+                    "postback": postback,
+                }
+                provider_id = "igpostback:" + hashlib.sha256(
+                    json.dumps(fingerprint, sort_keys=True,
+                               separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
             if not provider_id:
-                # A timestamp used to stand in here. It is not a stable id, so
-                # it defeated the `(channel, provider_message_id)` uniqueness
-                # that stops a redelivered event being replayed — every receipt
-                # looked like a brand-new message.
+                # Do not invent an id for a text message without `mid`.
+                # Receipts and malformed events must never advance booking.
                 continue
             postback_payload = str(postback.get("payload") or "").strip()
             if postback:

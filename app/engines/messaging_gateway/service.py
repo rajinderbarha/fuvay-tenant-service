@@ -58,6 +58,12 @@ GREETING = (
     "or check an existing booking. To start again at any time, send /fuvay."
 )
 
+INSTAGRAM_BROWSER_GUIDANCE = (
+    "Using Instagram in a browser? Please open this chat in the Instagram "
+    "mobile app to book. If a reply or button has not appeared, refresh the "
+    "browser chat before continuing."
+)
+
 #: Sent when the SESSION cap trips -- too many fresh conversations, not too
 #: many messages. Its wording is deliberately about starting over, because
 #: that is the only thing this limit stops the customer doing.
@@ -737,7 +743,10 @@ class MessagingGatewayService:
     def _welcome(self, thread: MessagingThread) -> str:
         """The greeting, addressed by first name when the channel gives us one."""
         name = f" {thread.display_name.split()[0]}" if thread.display_name else ""
-        return GREETING.format(name=name)
+        greeting = GREETING.format(name=name)
+        if thread.channel == "instagram":
+            return f"{greeting}\n\n{INSTAGRAM_BROWSER_GUIDANCE}"
+        return greeting
 
     async def booking_status(
         self, thread: MessagingThread, booking_number: str = "",
