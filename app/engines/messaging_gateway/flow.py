@@ -208,6 +208,10 @@ ASK_PHONE = (
     "Almost done. Send your 10-digit mobile number so we can confirm the "
     "booking and the provider can reach you — for example 9876543210."
 )
+ASK_TEST_PHONE = (
+    "Almost done. Send your 10-digit mobile number so the provider can reach "
+    "you. No SMS code is needed during this test. For example: 9876543210."
+)
 ASK_PHONE_CONFIRM = "Send the OTP to {number}? No OTP is sent until you confirm."
 ASK_OTP = (
     "Send the 6-digit OTP we just sent to {number}. "
@@ -896,9 +900,9 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
 
     if (
         identity is not None
-        and not thread.customer_id
         and thread.channel != "whatsapp"
         and draft
+        and (not thread.customer_id or instagram_phone_bypass_enabled(thread.channel))
         and (draft.get("preferred_date") or (
             draft.get('selected_tenant_id') and 'required_fields' in draft
             and 'preferred_date' not in draft['required_fields']))
@@ -906,6 +910,18 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
         # Ordered to mirror `_next_step`: the number is asked for only once
         # the booking is otherwise complete, so nothing typed here can still
         # be an address or a pincode, and this branch cannot swallow them.
+        if instagram_phone_bypass_enabled(thread.channel):
+            if draft.get("customer_phone"):
+                return None, draft
+            number = _indian_mobile(digits)
+            if not number:
+                return (BAD_PHONE if digits else None), draft
+            result = await executor._tool_update_home_service_draft(
+                draft_id=str(draft["id"]), customer_phone=number,
+            )
+            if not result.get("updated"):
+                return "We could not save that number. Please try again.", draft
+            return None, await _draft(db, thread)
         if thread.pending_phone_ciphertext:
             awaiting_confirmation = _phone_confirmation_pending(identity, thread)
             if len(digits) == 6 and not awaiting_confirmation:
@@ -948,7 +964,7 @@ async def _confirm(db, thread, executor, draft: dict):
     # Without carrying it back to the thread, the very next turn cannot look
     # the booking up — tracking a booking made seconds earlier would say there
     # is none.
-    if not thread.customer_id and getattr(executor, "customer_id", None):
+    if getattr(executor, "customer_id", None):
         thread.customer_id = executor.customer_id
     return CONFIRMED.format(number=number), BOOKED, draft
 
@@ -1464,6 +1480,9 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     # already verified the sender), but Instagram gives no number at all, and
     # asking a stranger for one as the opening question loses them before they
     # have seen a price or a slot.
+    if instagram_phone_bypass_enabled(thread.channel) and not draft.get("customer_phone"):
+        return Turn(ASK_TEST_PHONE)
+
     if (
         not thread.customer_id
         and thread.channel != "whatsapp"
@@ -2083,8 +2102,12 @@ def _indian_mobile(digits: str) -> str | None:
     must be 6-9, which is what separates a real mobile from a pincode or a
     house number typed into the wrong step.
     """
-    if len(digits) > 10:
-        digits = digits[-10:]
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 13 and digits.startswith("091"):
+        digits = digits[3:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
     if len(digits) != 10 or digits[0] not in "6789":
         return None
     return f"+91{digits}"

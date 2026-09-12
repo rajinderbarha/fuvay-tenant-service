@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     # step. The code is surfaced in-chat only outside production, allowing the
     # IP-based staging environment to finish bookings before Twilio is ready.
     MESSAGING_DEV_OTP_ENABLED: bool = False
-    # Skip Instagram's phone/OTP step only when an explicit deployment overlay
-    # enables it. Confirmation creates a stable Instagram-scoped customer.
+    # Skip Instagram's SMS OTP only when an explicit deployment overlay
+    # enables it. Still collect a contact number before confirmation; never
+    # attach an unverified number to a real customer account.
     # Keep false for the normal domain deployment.
     MESSAGING_DEV_PHONE_BYPASS_ENABLED: bool = False
     SECRET_KEY: str = "dev-secret-key-change-in-production"

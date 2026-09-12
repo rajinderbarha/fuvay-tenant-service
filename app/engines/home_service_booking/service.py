@@ -739,6 +739,12 @@ class HomeServiceChatbotBookingService:
             await self._resolve_address_snapshot(draft, uuid.UUID(str(payload["address_id"])))
             changes["address_snapshot"] = draft.address_snapshot
 
+        if "customer_phone" in changes and draft.address_snapshot:
+            draft.address_snapshot = {
+                **draft.address_snapshot,
+                "phone": draft.customer_phone,
+            }
+
         draft.status = DRAFT_STATUS_COLLECTING_DETAILS
         draft.updated_at = utcnow()
 

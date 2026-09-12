@@ -1,6 +1,7 @@
 """Sprint 15 — Backend tool executor wired to real Fuvay data (not mocked)."""
 from __future__ import annotations
 import json
+import re
 import time
 import uuid
 from typing import Any
@@ -862,13 +863,14 @@ class BackendToolExecutor:
                     if ai_session:
                         ai_session.customer_id = user.id
                 await self.db.flush()
-            elif not self.customer_id and bypass_instagram_phone:
-                # Development/staging only: Instagram provides a stable,
-                # page-scoped sender id but no phone number. Create the
-                # customer only after the sender explicitly confirms the
-                # otherwise-complete booking, so abandoned conversations do
-                # not create incomplete customer or booking records.
+            elif bypass_instagram_phone:
+                # Temporary Instagram QA mode: collect a contact number but do
+                # not treat it as OTP-verified or attach a real phone account.
+                # Only test-scoped Instagram customers can be reused by the
+                # same entered number. Disable the bypass for real traffic.
                 import hashlib
+                import hmac
+                from app.config import get_settings
 
                 sender_id = str(self.channel_user_id or "").strip()
                 if not sender_id:
@@ -879,6 +881,12 @@ class BackendToolExecutor:
                 draft_model = await self.db.get(HomeServiceBookingDraft, draft_uuid)
                 if not draft_model:
                     return {"confirmed": False, "error": "Booking draft not found."}
+                phone = str(draft_model.customer_phone or "").strip()
+                if not re.fullmatch(r"\+91[6-9]\d{9}", phone):
+                    return {
+                        "confirmed": False,
+                        "error": "Send your 10-digit mobile number before confirming the booking.",
+                    }
                 address = draft_model.address_snapshot or {}
                 if not (
                     address.get("address_line_1")
@@ -892,10 +900,46 @@ class BackendToolExecutor:
                 identity_hash = hashlib.sha256(
                     f"instagram:{sender_id}".encode("utf-8")
                 ).hexdigest()[:20]
+                phone_hash = hmac.new(
+                    get_settings().SECRET_KEY.encode("utf-8"),
+                    f"instagram-test-phone:{phone}".encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest()
                 synthetic_email = f"customer_ig_{identity_hash}@serviceos.internal"
-                user = (await self.db.execute(
+                sender_user = (await self.db.execute(
                     select(User).where(User.email == synthetic_email).limit(1)
                 )).scalars().first()
+                current_user = await self.db.get(User, self.customer_id) if self.customer_id else None
+                for existing_user in (current_user, sender_user):
+                    if existing_user and (existing_user.meta or {}).get("registration_source") == "instagram_booking_dev":
+                        old_hash = (existing_user.meta or {}).get("instagram_test_phone_hash")
+                        if old_hash and old_hash != phone_hash:
+                            return {
+                                "confirmed": False,
+                                "error": "This Instagram chat has used a different number. Contact support to change it.",
+                            }
+                if current_user and (current_user.meta or {}).get("registration_source") != "instagram_booking_dev":
+                    if current_user.phone and current_user.phone != phone:
+                        return {
+                            "confirmed": False,
+                            "error": "This chat is linked to a different verified number. Contact support to change it.",
+                        }
+                    user = current_user
+                else:
+                    user = (await self.db.execute(
+                        select(User).where(
+                            User.role == "customer",
+                            User.is_active.is_(True),
+                            User.meta["registration_source"].astext == "instagram_booking_dev",
+                            User.meta["instagram_test_phone_hash"].astext == phone_hash,
+                        ).limit(1)
+                    )).scalars().first()
+                    if not user and sender_user:
+                        user = sender_user
+                        user.meta = {
+                            **(user.meta or {}),
+                            "instagram_test_phone_hash": phone_hash,
+                        }
                 if not user:
                     user = User(
                         email=synthetic_email,
@@ -913,6 +957,7 @@ class BackendToolExecutor:
                         meta={
                             "registration_source": "instagram_booking_dev",
                             "instagram_identity_hash": identity_hash,
+                            "instagram_test_phone_hash": phone_hash,
                             "phone_verification_bypassed": True,
                         },
                     )

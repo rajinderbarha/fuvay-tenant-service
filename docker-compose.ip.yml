@@ -6,6 +6,8 @@ services:
       # when moving traffic to the normal domain deployment.
       SIGNUP_DEV_OTP_ENABLED: ${SIGNUP_DEV_OTP_ENABLED:-true}
       MESSAGING_DEV_OTP_ENABLED: ${MESSAGING_DEV_OTP_ENABLED:-true}
+      # QA only: a typed (unverified) phone can reuse Instagram test bookings.
+      # Turn this off before inviting real customers.
       MESSAGING_DEV_PHONE_BYPASS_ENABLED: ${MESSAGING_DEV_PHONE_BYPASS_ENABLED:-true}
     ports:
       - "8000:8000"
