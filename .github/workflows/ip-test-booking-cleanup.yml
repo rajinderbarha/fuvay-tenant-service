@@ -1,4 +1,5 @@
 name: IP Test Booking Cleanup
+# One-time IP-stage purge; remove this workflow after verification.
 
 on:
   push:
