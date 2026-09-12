@@ -1,0 +1,88 @@
+name: IP Test Booking Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect live records or delete all IP-stage bookings
+        required: true
+        type: choice
+        options:
+          - inspect
+          - delete
+      confirmation:
+        description: Type DELETE_ALL_IP_TEST_BOOKINGS for delete mode
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    if: inputs.mode == 'inspect' || (inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload transaction cleanup SQL
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: scripts/purge_job_data.sql
+          target: /srv/serviceos
+          overwrite: true
+
+      - name: Inspect live booking data and dependencies
+        if: inputs.mode == 'inspect'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            docker compose \
+              --env-file /srv/serviceos/.env.production \
+              -f /srv/serviceos/docker-compose.prod.yml \
+              -f /srv/serviceos/docker-compose.ip.yml \
+              exec -T postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
+            SELECT 'service_bookings' AS record_type, count(*) FROM service_bookings
+            UNION ALL SELECT 'service_jobs', count(*) FROM service_jobs
+            UNION ALL SELECT 'booking_drafts', count(*) FROM home_service_booking_drafts
+            UNION ALL SELECT 'job_quotes', count(*) FROM service_job_quotes
+            UNION ALL SELECT 'job_linked_usage_ledger', count(*) FROM usage_credit_ledger WHERE job_id IS NOT NULL OR booking_id IS NOT NULL
+            UNION ALL SELECT 'customer_platform_fee_charges', count(*) FROM customer_platform_fee_charges
+            UNION ALL SELECT 'reviews', count(*) FROM customer_reviews;
+            SELECT conrelid::regclass AS dependent_table, confrelid::regclass AS referenced_table, conname
+            FROM pg_constraint
+            WHERE contype = 'f'
+              AND confrelid IN ('service_bookings'::regclass, 'service_jobs'::regclass, 'home_service_booking_drafts'::regclass)
+            ORDER BY 1, 2;
+            SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND column_name IN ('booking_id', 'job_id', 'draft_id')
+            ORDER BY table_name, column_name;
+            SQL
+
+      - name: Delete all IP-stage booking and job transaction data
+        if: inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            docker compose \
+              --env-file /srv/serviceos/.env.production \
+              -f /srv/serviceos/docker-compose.prod.yml \
+              -f /srv/serviceos/docker-compose.ip.yml \
+              exec -T postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
+              < /srv/serviceos/scripts/purge_job_data.sql
+            docker compose \
+              --env-file /srv/serviceos/.env.production \
+              -f /srv/serviceos/docker-compose.prod.yml \
+              -f /srv/serviceos/docker-compose.ip.yml \
+              exec -T postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -At -c "SELECT (SELECT count(*) FROM service_bookings), (SELECT count(*) FROM service_jobs), (SELECT count(*) FROM home_service_booking_drafts);"'
