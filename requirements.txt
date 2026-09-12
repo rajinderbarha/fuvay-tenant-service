@@ -42,6 +42,7 @@ requests==2.32.3
 
 # ── Document Parsing ───────────────────────────────────────────────
 pypdf==5.1.0  # PDF text extraction (inventory document extraction engine)
+reportlab==5.0.1  # Branded warranty certificates and printable service documents
 
 # ── RAG Engine — real embeddings + pgvector ────────────────────────
 # MODULE-L5-51: OPENAI_API_KEY was never configured and DeepSeek has no

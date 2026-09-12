@@ -194,7 +194,7 @@ PAYMENT_HEADER = "The provider recorded a direct payment for this service."
 PAYMENT_NOTICE = "You paid the provider directly. Fuvay did not collect this money."
 PAYMENT_CONFIRM_ROW = "Yes, I paid"
 PAYMENT_NOT_PAID_ROW = "I did not pay"
-PAYMENT_CONFIRMED = "Direct payment confirmed. The provider can now close the job."
+PAYMENT_CONFIRMED = "Payment confirmed. The technician can now close the job. Once the work is completed, we will send your rating options and warranty PDF here."
 PAYMENT_MISMATCH_REPORTED = "Payment issue reported. The provider must resolve it before closing the job."
 PAYMENT_DECIDED_ALREADY = "That payment is no longer waiting for your confirmation."
 PAYMENT_NOT_PAID_WARNING = (
@@ -2015,6 +2015,7 @@ def _executor(db, thread):
         channel=thread.channel,
         channel_user_id=thread.channel_user_id,
         display_name=thread.display_name,
+        instagram_username=getattr(thread, "channel_username", None),
     )
 
 

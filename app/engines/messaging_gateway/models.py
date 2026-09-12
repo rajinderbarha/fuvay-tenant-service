@@ -55,6 +55,7 @@ class MessagingThread(ServiceOSBase):
     channel_business_id: Mapped[str] = mapped_column(String(120), nullable=False)
 
     display_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    channel_username: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     pending_customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -103,6 +104,7 @@ class MessagingThread(ServiceOSBase):
             "channel": self.channel,
             "channel_user_id": self.channel_user_id,
             "display_name": self.display_name,
+            "channel_username": self.channel_username,
             "customer_id": str(self.customer_id) if self.customer_id else None,
             "identity_link_pending": bool(self.pending_customer_id or self.pending_phone_ciphertext),
             "zipcode": self.zipcode,

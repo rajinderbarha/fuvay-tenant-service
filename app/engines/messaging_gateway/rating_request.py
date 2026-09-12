@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 
 from app.engines.messaging_gateway import meta_client, warranty_delivery
 from app.engines.messaging_gateway.constants import (
@@ -39,6 +39,7 @@ RATING_SORRY = (
 )
 RATING_ALREADY_GIVEN = "You have already rated this service {stars}/5. Thank you!"
 RATING_UNAVAILABLE = "This service can no longer be rated here."
+RATING_DELIVERY_KEY = "instagram_rating_prompt_sent_at"
 
 #: At or below this, the thank-you also offers a person to talk to.
 LOW_RATING = 2
@@ -86,6 +87,11 @@ async def send_rating_request(job_id) -> bool:
     try:
         async with get_session_factory()() as db:
             try:
+                locked = await db.scalar(text(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"
+                ), {"key": f"ig:rating:{job_id}"})
+                if not locked:
+                    return False
                 sent = await _ask(db, uuid.UUID(str(job_id)))
                 await db.commit()
                 return sent
@@ -107,7 +113,11 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
     if target is None:
         return False
     job, booking = target
-    thread = await _reachable_thread(db, booking.customer_id)
+    thread = await _reachable_thread(
+        db, booking.customer_id,
+        source_channel=getattr(booking, "source_channel", None),
+        source_actor_id=getattr(booking, "source_actor_id", None),
+    )
     if thread is None:
         # Instagram allows a business-initiated message only within 24 hours
         # of the customer's own last message, and has no template to fall
@@ -122,7 +132,14 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
         return False
 
     rating_sent = False
-    if await _existing_rating(db, booking.customer_id, booking.id) is None:
+    existing_rating = await _existing_rating(db, booking.customer_id, booking.id)
+    if existing_rating is not None and not (getattr(job, "completion_data", None) or {}).get(RATING_DELIVERY_KEY):
+        job.completion_data = {
+            **(getattr(job, "completion_data", None) or {}),
+            RATING_DELIVERY_KEY: "already_rated",
+        }
+    if (existing_rating is None
+            and not (getattr(job, "completion_data", None) or {}).get(RATING_DELIVERY_KEY)):
         rows = rating_rows(booking.id)
         result = await meta_client.send_options(
             thread.channel_user_id, await _prompt(db, job, booking), rows,
@@ -132,6 +149,10 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
         if not result.get("sent"):
             return False
         thread.last_outbound_at = datetime.now(timezone.utc)
+        job.completion_data = {
+            **(getattr(job, "completion_data", None) or {}),
+            RATING_DELIVERY_KEY: thread.last_outbound_at.isoformat(),
+        }
         if not thread.last_options:
             # Only when no numbered list is open: a customer halfway through a new
             # booking keeps their typed numbers, and can still tap a star chip.
@@ -229,7 +250,9 @@ async def _existing_rating(db, customer_id, booking_id) -> int | None:
     )).scalars().first()
 
 
-async def _reachable_thread(db, customer_id) -> MessagingThread | None:
+async def _reachable_thread(
+    db, customer_id, *, source_channel=None, source_actor_id=None,
+) -> MessagingThread | None:
     """The customer's most recent thread we may message, and whose answer we read.
 
     Opted-out, agent-owned and blocked threads are skipped: the gateway does
@@ -237,8 +260,7 @@ async def _reachable_thread(db, customer_id) -> MessagingThread | None:
     answered.
     """
     now = datetime.now(timezone.utc)
-    return (await db.execute(
-        select(MessagingThread).where(
+    predicates = [
             MessagingThread.customer_id == customer_id,
             MessagingThread.channel.in_(RATING_REQUEST_CHANNELS),
             MessagingThread.opted_out.is_(False),
@@ -247,8 +269,24 @@ async def _reachable_thread(db, customer_id) -> MessagingThread | None:
                 MessagingThread.blocked_until <= now),
             MessagingThread.last_inbound_at >= now - timedelta(
                 hours=CUSTOMER_SERVICE_WINDOW_HOURS),
-        ).order_by(MessagingThread.last_inbound_at.desc()).limit(1)
-    )).scalars().first()
+    ]
+    if source_channel and source_actor_id:
+        predicates.extend((
+            MessagingThread.channel == source_channel,
+            MessagingThread.channel_user_id == source_actor_id,
+        ))
+    result = await db.execute(
+        select(MessagingThread).where(*predicates)
+        .order_by(MessagingThread.last_inbound_at.desc())
+        .limit(1 if source_channel and source_actor_id else 2)
+    )
+    if source_channel and source_actor_id:
+        return result.scalars().first()
+    # Legacy/app bookings have no captured sender. Two eligible Instagram
+    # identities for one customer are ambiguous: fail closed, never send a
+    # rating or warranty to the last account that happened to message us.
+    candidates = result.scalars().all()
+    return candidates[0] if len(candidates) == 1 else None
 
 
 async def _prompt(db, job, booking) -> str:

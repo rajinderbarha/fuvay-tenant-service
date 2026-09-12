@@ -278,6 +278,8 @@ class MessagingGatewayService:
         if thread:
             if msg.display_name and thread.display_name != msg.display_name:
                 thread.display_name = msg.display_name
+            if msg.username and getattr(thread, "channel_username", None) != msg.username:
+                thread.channel_username = msg.username
             return thread
 
         thread = MessagingThread(
@@ -285,6 +287,7 @@ class MessagingGatewayService:
             channel_user_id=msg.from_id,
             channel_business_id=msg.business_id,
             display_name=msg.display_name,
+            channel_username=msg.username,
         )
         try:
             # Keep the inbound idempotency claim outside this savepoint. If a
@@ -303,6 +306,33 @@ class MessagingGatewayService:
                 )
             )).scalars().first()
         return thread
+
+    async def _hydrate_instagram_profile(self, thread: MessagingThread) -> None:
+        """Populate and persist the sender's public Instagram identity once."""
+        if thread.channel != "instagram":
+            return
+        if not thread.display_name or not getattr(thread, "channel_username", None):
+            profile = await meta_client.fetch_instagram_profile(
+                thread.channel_user_id, self.channel_config,
+            )
+            thread.display_name = profile.get("name") or thread.display_name
+            thread.channel_username = profile.get("username") or getattr(thread, "channel_username", None)
+        if not thread.customer_id:
+            return
+        from app.engines.auth.models import User
+
+        user = await self.db.get(User, thread.customer_id)
+        if not user:
+            return
+        profile_meta = dict(user.meta or {})
+        if getattr(thread, "channel_username", None):
+            profile_meta["instagram_username"] = thread.channel_username
+        if thread.display_name:
+            profile_meta["instagram_name"] = thread.display_name
+            user.display_name = thread.display_name
+            if user.full_name in {"Instagram Customer", "Instagram QA"}:
+                user.full_name = thread.display_name
+        user.meta = profile_meta
 
     async def resolve_customer(self, thread: MessagingThread) -> uuid.UUID | None:
         """Link the thread to a customer account by phone number.
@@ -442,6 +472,7 @@ class MessagingGatewayService:
                 "channel_user_id": thread.channel_user_id,
                 "channel_business_id": thread.channel_business_id,
                 "display_name": thread.display_name,
+                "instagram_username": getattr(thread, "channel_username", None),
             },
         )
         thread.ai_session_id = uuid.UUID(str(session["id"]))
@@ -540,6 +571,7 @@ class MessagingGatewayService:
 
         thread = await self.get_or_create_thread(msg)
         record.thread_id = thread.id
+        await self._hydrate_instagram_profile(thread)
 
         # ── Operator block ───────────────────────────────────────────────────
         # Read and recorded, but never answered. The message still lands in the
@@ -1634,11 +1666,17 @@ class MessagingGatewayService:
                 is_active=True,
                 is_verified=True,
                 onboarding_complete=False,
-                meta={"registration_source": "instagram_booking"},
+                display_name=thread.display_name,
+                meta={
+                    "registration_source": "instagram_booking",
+                    "instagram_username": getattr(thread, "channel_username", None),
+                    "instagram_name": thread.display_name,
+                },
             )
             self.db.add(user)
             await self.db.flush()
         thread.customer_id = user.id
+        await self._hydrate_instagram_profile(thread)
         thread.pending_customer_id = None
         thread.pending_phone_ciphertext = None
         thread.ai_session_id = None  # next turn gets the newly linked identity

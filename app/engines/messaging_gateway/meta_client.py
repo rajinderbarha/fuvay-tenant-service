@@ -68,6 +68,7 @@ class InboundMessage:
     #: verified the signed, draft-bound flow token.
     flow_response: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    username: str | None = None
 
 
 @dataclass
@@ -581,6 +582,45 @@ def _endpoint(channel: str, config: dict[str, Any] | None) -> tuple[str, str] | 
     if not token or not business_id:
         return None
     return f"{host}/{api_version}/{business_id}/messages", token
+
+
+async def fetch_instagram_profile(
+    user_id: str, config: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    """Resolve an Instagram-scoped sender id to its public name and username.
+
+    Instagram webhook envelopes intentionally contain only the scoped id. The
+    lookup is best-effort so a Graph outage never blocks inbound processing.
+    """
+    cfg = dict(config or {})
+    token = str(cfg.get("access_token") or _cfg("META_ACCESS_TOKEN")).strip()
+    api_version = str(cfg.get("api_version") or DEFAULT_GRAPH_API_VERSION).strip()
+    if not api_version.startswith("v"):
+        api_version = f"v{api_version}"
+    sender_id = str(user_id or "").strip()
+    if not token or not sender_id:
+        return {"name": None, "username": None}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                f"{INSTAGRAM_GRAPH_HOST}/{api_version}/{sender_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"fields": "name,username"},
+            )
+        if response.status_code >= 400:
+            logger.info("messaging_gateway.instagram_profile.unavailable",
+                        status=response.status_code)
+            return {"name": None, "username": None}
+        payload = _safe_json(response.text)
+        if not isinstance(payload, dict):
+            return {"name": None, "username": None}
+        return {
+            "name": str(payload.get("name") or "").strip() or None,
+            "username": str(payload.get("username") or "").strip().lstrip("@") or None,
+        }
+    except Exception as exc:
+        logger.info("messaging_gateway.instagram_profile.failed", error=str(exc))
+        return {"name": None, "username": None}
 
 
 async def _post(url: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:

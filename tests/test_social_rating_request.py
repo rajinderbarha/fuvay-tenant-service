@@ -121,7 +121,7 @@ def ask(monkeypatch):
     async def existing(_db, _customer_id, _booking_id):
         return state.rated
 
-    async def reachable(_db, customer_id):
+    async def reachable(_db, customer_id, **_kwargs):
         return state.thread if customer_id == state.booking.customer_id else None
 
     async def send_options(to, body, rows, **kwargs):
@@ -154,6 +154,15 @@ async def test_completion_asks_on_the_customers_open_instagram_thread(ask):
     ask.warranty.assert_awaited_once_with(
         ANY, ask.job, ask.thread, config=IG,
     )
+
+
+@pytest.mark.asyncio
+async def test_retry_does_not_send_a_second_rating_prompt(ask):
+    db = _DB()
+    assert await rating_request._ask(db, ask.job.id) is True
+    assert await rating_request._ask(db, ask.job.id) is True
+    assert len(ask.sent) == 1
+    assert ask.job.completion_data[rating_request.RATING_DELIVERY_KEY]
 
 
 @pytest.mark.asyncio
@@ -260,7 +269,7 @@ async def test_only_a_thread_that_can_answer_is_asked():
     class DB:
         async def execute(self, stmt):
             captured["stmt"] = stmt
-            return NS(scalars=lambda: NS(first=lambda: None))
+            return NS(scalars=lambda: NS(first=lambda: None, all=lambda: []))
 
     assert await rating_request._reachable_thread(DB(), uuid.uuid4()) is None
     compiled = captured["stmt"].compile(dialect=postgresql.dialect())
@@ -276,6 +285,33 @@ async def test_only_a_thread_that_can_answer_is_asked():
         assert predicate in sql
     in_lists = [list(v) for v in compiled.params.values() if isinstance(v, (list, tuple))]
     assert ["instagram"] in in_lists
+
+
+@pytest.mark.asyncio
+async def test_booking_sender_is_required_when_source_identity_was_captured():
+    captured = {}
+
+    class DB:
+        async def execute(self, stmt):
+            captured["stmt"] = stmt
+            return NS(scalars=lambda: NS(first=lambda: None, all=lambda: []))
+
+    await rating_request._reachable_thread(
+        DB(), uuid.uuid4(), source_channel="instagram", source_actor_id="igsid-booker",
+    )
+    compiled = captured["stmt"].compile(dialect=postgresql.dialect())
+    sql = " ".join(str(compiled).split())
+    assert "messaging_threads.channel_user_id =" in sql
+    assert "igsid-booker" in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_legacy_booking_with_two_instagram_accounts_is_not_guessed():
+    class DB:
+        async def execute(self, _stmt):
+            return NS(scalars=lambda: NS(all=lambda: [_thread(), _thread()]))
+
+    assert await rating_request._reachable_thread(DB(), uuid.uuid4()) is None
 
 
 # ── Answering ────────────────────────────────────────────────────────────────

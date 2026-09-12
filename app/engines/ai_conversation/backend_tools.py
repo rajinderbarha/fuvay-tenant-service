@@ -35,7 +35,8 @@ class BackendToolExecutor:
     def __init__(self, db: AsyncSession, customer_id: uuid.UUID | None,
                  session_id: str | None = None, zipcode: str | None = None,
                  channel: str | None = None, channel_user_id: str | None = None,
-                 display_name: str | None = None):
+                 display_name: str | None = None,
+                 instagram_username: str | None = None):
         self.db          = db
         self.customer_id = customer_id
         self.session_id  = session_id
@@ -50,6 +51,7 @@ class BackendToolExecutor:
         self.channel     = channel
         self.channel_user_id = channel_user_id
         self.display_name = display_name
+        self.instagram_username = instagram_username
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Dispatch a tool call and return JSON string result."""
@@ -961,11 +963,22 @@ class BackendToolExecutor:
                             "registration_source": "instagram_booking_dev",
                             "instagram_identity_hash": identity_hash,
                             "instagram_test_phone_hash": phone_hash,
+                            "instagram_username": self.instagram_username,
+                            "instagram_name": self.display_name,
                             "phone_verification_bypassed": True,
                         },
                     )
                     self.db.add(user)
                     await self.db.flush()
+                profile_meta = dict(user.meta or {})
+                if self.instagram_username:
+                    profile_meta["instagram_username"] = self.instagram_username
+                if self.display_name:
+                    profile_meta["instagram_name"] = self.display_name
+                    user.display_name = self.display_name
+                    if user.full_name in {"Instagram Customer", "Instagram QA"}:
+                        user.full_name = self.display_name
+                user.meta = profile_meta
                 self.customer_id = user.id
                 draft_model.customer_id = user.id
                 if self.session_id:

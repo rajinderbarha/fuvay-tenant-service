@@ -35,13 +35,16 @@ def job(**overrides):
     row.scheduled_date = overrides.get("scheduled_date")
     row.scheduled_time_window = overrides.get("scheduled_time_window")
     row.created_at = overrides.get("created_at", NOW - dt.timedelta(days=3))
+    row.provider_offer_started_at = overrides.get("provider_offer_started_at", row.created_at)
+    row.assigned_staff_id = overrides.get("assigned_staff_id")
     row.city = overrides.get("city", "Ludhiana")
     return row
 
 
 async def alerts_for(jobs, since=None, now=NOW):
     with patch.object(dashboard_alerts, "_load_jobs", new=AsyncMock(return_value=jobs)):
-        return await build_alerts(MagicMock(), TENANT, since=since, now=now)
+        return await build_alerts(MagicMock(), TENANT, since=since, now=now,
+                                  assignment_timeout_minutes=15)
 
 
 class TestNewJobs:
@@ -71,24 +74,29 @@ class TestNewJobs:
         assert result["new_job_total"] == 0
 
     @pytest.mark.asyncio
-    async def test_without_a_since_only_a_stated_window_counts_as_new(self):
-        # "42 new jobs!" on a first login is a backlog, not news.
+    async def test_only_unexpired_unassigned_offers_are_new(self):
         old = job(status="pending_assignment",
-                  created_at=NOW - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS + 1))
-        recent = job(status="pending_assignment", created_at=NOW - dt.timedelta(hours=1))
+                  created_at=NOW - dt.timedelta(minutes=16))
+        recent = job(status="pending_assignment", created_at=NOW - dt.timedelta(minutes=5))
         result = await alerts_for([old, recent])
         assert result["new_job_total"] == 1
 
     @pytest.mark.asyncio
-    async def test_since_is_what_stops_congratulating_twice(self):
-        arrived = job(status="pending_assignment", created_at=NOW - dt.timedelta(hours=2))
+    async def test_polling_keeps_an_actionable_offer_visible(self):
+        arrived = job(status="pending_assignment", created_at=NOW - dt.timedelta(minutes=5))
         seen_already = await alerts_for([arrived], since=NOW - dt.timedelta(minutes=30))
-        assert seen_already["new_job_total"] == 0
+        assert seen_already["new_job_total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_assigned_job_is_not_an_open_offer(self):
+        assigned = job(status="accepted", created_at=NOW - dt.timedelta(minutes=5),
+                       assigned_staff_id=uuid.uuid4())
+        assert (await alerts_for([assigned]))["new_job_total"] == 0
 
     @pytest.mark.asyncio
     async def test_newest_first(self):
         older = job(job_number="JOB-OLD", status="pending_assignment",
-                    created_at=NOW - dt.timedelta(hours=5))
+                    created_at=NOW - dt.timedelta(minutes=10))
         newer = job(job_number="JOB-NEW", status="pending_assignment",
                     created_at=NOW - dt.timedelta(minutes=5))
         result = await alerts_for([older, newer])

@@ -19,7 +19,7 @@
  * Finance > Vertical Monetization page, hardcoded server-side to
  * "home_services", never a second monetization engine.
  */
-import { useCallback, useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, FileText, GitCompare, Sparkles, CheckCircle2, Circle, ShieldCheck, Wallet, Plus, Trash2 } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
@@ -385,6 +385,16 @@ const SLA_BREACHABLE_STATUSES = [
   ["on_the_way", "On the way"], ["reached_site", "Reached site"],
   ["customer_not_available", "Customer unavailable"],
 ] as const;
+const POLICY_STEPS = [
+  { key: "provider", label: "Provider charge", description: "Choose when and how the provider is charged." },
+  { key: "customer", label: "Platform charge", description: "Configure the charge included in the customer's price." },
+  { key: "rules", label: "Job type rules", description: "Set exceptions for individual job types." },
+  { key: "sla", label: "SLA penalties", description: "Set the breach window, daily penalty, and closure rules." },
+  { key: "operations", label: "Assignment & GPS", description: "Control assignment timeouts, rescheduling, and arrival verification." },
+  { key: "trust", label: "Retention & health", description: "Manage evidence retention, reminders, and health suspension." },
+  { key: "review", label: "Review & publish", description: "Validate the draft, preview charges, and publish when ready." },
+] as const;
+type PolicyStep = (typeof POLICY_STEPS)[number]["key"];
 
 function fmt(v: unknown): string {
   return v === null || v === undefined ? "—" : String(v);
@@ -393,6 +403,8 @@ function fmt(v: unknown): string {
 function MonetizationTab() {
   const { toasts, push, remove } = useToasts();
   const [showDraftDrawer, setShowDraftDrawer] = useState(false);
+  const [policyStep, setPolicyStep] = useState<PolicyStep>("provider");
+  const policyEditorRef = useRef<HTMLDivElement>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [previewAmount, setPreviewAmount] = useState("500");
   const [previewResult, setPreviewResult] = useState<Record<string, unknown> | null>(null);
@@ -437,8 +449,20 @@ function MonetizationTab() {
   const providerStatusVariant = providerModelLive ? "success"
     : current?.provider_model === "NONE" || !current ? "muted" : "warning";
   const customerFeeLive = !!current && current.customer_fee_model !== "NONE";
+  const policyStepIndex = POLICY_STEPS.findIndex(step => step.key === policyStep);
+
+  useEffect(() => {
+    setErrors([]);
+    setPreviewResult(null);
+  }, [form]);
+
+  function goToPolicyStep(step: PolicyStep) {
+    setPolicyStep(step);
+    policyEditorRef.current?.closest<HTMLElement>('[role="dialog"]')?.scrollTo?.({ top: 0 });
+  }
 
   function startDraft() {
+    setPolicyStep("provider");
     setForm(draft ?? current ?? {
       provider_model: "COMPLETION_CREDITS", customer_fee_model: "NONE", currency: "INR",
       provider_health_adjustment_enabled: false,
@@ -446,7 +470,7 @@ function MonetizationTab() {
       provider_health_score_max_age_days: 30,
       provider_health_max_effective_percentage: "25",
       assignment_timeout_enabled: true,
-      assignment_timeout_minutes: 30,
+      assignment_timeout_minutes: 15,
       customer_reschedule_limit: 3,
       arrival_verification_enabled: true,
       arrival_radius_meters: 250,
@@ -696,7 +720,7 @@ function MonetizationTab() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
               <KV label="SLA penalty" value={current?.sla_breach_hours != null ? `${money(current.sla_penalty_amount ?? 0)} per day` : "Disabled"} />
               <KV label="SLA final day" value={current?.sla_breach_hours != null ? String(current.sla_penalty_max_days ?? 3) : "—"} />
-              <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min`} />
+              <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 15} min`} />
               <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
               <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled === false ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
               <KV label="False-arrival penalty" value={current?.false_arrival_auto_close === false ? "Close disabled" : money(current?.false_arrival_penalty_amount ?? 150)} />
@@ -760,7 +784,35 @@ function MonetizationTab() {
       </div>
 
       {showDraftDrawer && (
-        <Modal open onClose={() => setShowDraftDrawer(false)} title="Home Services Policy Draft" size="lg">
+        <Modal open onClose={() => setShowDraftDrawer(false)} title="Home Services Policy Draft" size="xl">
+          <div ref={policyEditorRef}>
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+                <strong style={{ fontSize: 15, color: "var(--text-primary)" }}>{POLICY_STEPS.find(step => step.key === policyStep)?.label}</strong>
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
+                  Step {POLICY_STEPS.findIndex(step => step.key === policyStep) + 1} of {POLICY_STEPS.length}
+                </span>
+              </div>
+              <p style={{ margin: "4px 0 14px", fontSize: 12, color: "var(--text-secondary)" }}>
+                {POLICY_STEPS.find(step => step.key === policyStep)?.description}
+              </p>
+              <div role="tablist" aria-label="Policy draft sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 6, paddingBottom: 7, borderBottom: "1px solid var(--border)" }}>
+                {POLICY_STEPS.map((step, index) => <button key={step.key} type="button" role="tab"
+                  id={`policy-tab-${step.key}`} aria-controls={`policy-panel-${step.key}`}
+                  aria-selected={policyStep === step.key} onClick={() => goToPolicyStep(step.key)}
+                  style={{ minWidth: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    padding: "8px 11px", borderRadius: 9, cursor: "pointer", fontSize: 11, fontWeight: policyStep === step.key ? 700 : 500,
+                    border: `1px solid ${policyStep === step.key ? "var(--brand, var(--accent))" : "var(--border)"}`,
+                    background: policyStep === step.key ? "var(--accent-muted, var(--surface-sunken))" : "var(--surface)",
+                    color: policyStep === step.key ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                  <span style={{ display: "inline-grid", placeItems: "center", width: 18, height: 18, borderRadius: 6,
+                    background: policyStep === step.key ? "var(--brand, var(--accent))" : "var(--surface-sunken)",
+                    color: policyStep === step.key ? "white" : "var(--text-tertiary)", fontSize: 10 }}>{index + 1}</span>
+                  {step.label}
+                </button>)}
+              </div>
+            </div>
+          <section role="tabpanel" id="policy-panel-provider" aria-labelledby="policy-tab-provider" hidden={policyStep !== "provider"}>
           <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
             Provider-side charge — deducted from the provider
           </label>
@@ -894,6 +946,8 @@ function MonetizationTab() {
             </>
           )}
 
+          </section>
+          <section role="tabpanel" id="policy-panel-customer" aria-labelledby="policy-tab-customer" hidden={policyStep !== "customer"}>
           <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.03em", marginTop: 16, display: "block" }}>
             Customer-side charge — added to what the customer pays
           </label>
@@ -943,18 +997,8 @@ function MonetizationTab() {
             </div>
           )}
 
-          {previewResult && (
-            <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700 }}>Combined completion impact</p>
-              <PreviewRow label="Provider service price" value={`₹${previewAmount}`} />
-              <PreviewRow label="Customer charge added" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
-              <PreviewRow label="Customer sees and pays" value={`₹${fmt(previewResult.total_payable)}`} strong />
-              <PreviewRow label="Provider-side deduction" value={units(previewResult.provider_charge_credit_units as string)} />
-              <PreviewRow label="Customer-charge recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />
-              <PreviewRow label="Total credits deducted when job completes" value={units(previewResult.total_credit_deduction as string)} strong />
-            </div>
-          )}
-
+          </section>
+          <section role="tabpanel" id="policy-panel-rules" aria-labelledby="policy-tab-rules" hidden={policyStep !== "rules"}>
           {(
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
               <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700 }}>Job Type charge rules</p>
@@ -1031,9 +1075,11 @@ function MonetizationTab() {
               )}
             </div>
           )}
+          </section>
           {/* ── SLA breach & penalty ──────────────────────────────────────
               Every lever here is policy rather than code, so a penalty can be
               retuned, reviewed and rolled back like a commission rate. */}
+          <section role="tabpanel" id="policy-panel-sla" aria-labelledby="policy-tab-sla" hidden={policyStep !== "sla"}>
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
               Late jobs — SLA breach &amp; penalty
@@ -1146,7 +1192,9 @@ function MonetizationTab() {
             </div>
           </div>
 
+          </section>
           {/* Operational controls */}
+          <section role="tabpanel" id="policy-panel-operations" aria-labelledby="policy-tab-operations" hidden={policyStep !== "operations"}>
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
               Assignment &amp; customer rescheduling
@@ -1160,7 +1208,7 @@ function MonetizationTab() {
               Enable automatic provider reassignment
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-              <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes)</label><Input value={String(form.assignment_timeout_minutes ?? 30)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 30 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes)</label><Input value={String(form.assignment_timeout_minutes ?? 15)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 15 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
             </div>
           </div>
@@ -1191,6 +1239,8 @@ function MonetizationTab() {
             </label>
           </div>
 
+          </section>
+          <section role="tabpanel" id="policy-panel-trust" aria-labelledby="policy-tab-trust" hidden={policyStep !== "trust"}>
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 8 }}>
               Retention &amp; credit reminders
@@ -1236,24 +1286,68 @@ function MonetizationTab() {
             </p>
           </div>
 
-          {errors.length > 0 && errors.map(e => <p key={e} style={{ fontSize: 11, color: "var(--danger-text)" }}>{e}</p>)}
-          <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-            <Btn variant="secondary" onClick={runPreview}>Validate &amp; Preview</Btn>
-            <Btn variant="secondary" onClick={saveDraft} disabled={saveDraftAction.loading}>Save Draft</Btn>
-            {draft && (
-              <Btn variant="ghost" onClick={discardDraft} disabled={discardDraftAction.loading}
-                style={{ color: "var(--danger-text)" }}>
-                {discardDraftAction.loading ? "Discarding…" : "Discard Draft"}
-              </Btn>
-            )}
+          </section>
+          <section role="tabpanel" id="policy-panel-review" aria-labelledby="policy-tab-review" hidden={policyStep !== "review"}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8, marginBottom: 16 }}>
+              {[
+                { step: "provider" as PolicyStep, label: "Provider charge", value: form.provider_model === "PERCENTAGE_COMMISSION" ? `${form.provider_percentage ?? "—"}% commission` : form.provider_model === "COMPLETION_CREDITS" ? `${form.provider_credit_units ?? "—"} credits/job` : form.provider_model === "FIXED_COMPLETION_CHARGE" ? `₹${Number(form.provider_fixed_amount_minor ?? 0) / 100}/job` : "None" },
+                { step: "customer" as PolicyStep, label: "Platform charge", value: form.customer_fee_model === "FIXED" ? `₹${Number(form.customer_fee_fixed_amount_minor ?? 0) / 100}` : form.customer_fee_model?.startsWith("PERCENTAGE") ? `${form.customer_fee_percentage ?? "—"}%` : "None" },
+                { step: "sla" as PolicyStep, label: "SLA penalty", value: form.sla_breach_hours == null ? "Disabled" : `${form.sla_penalty_type === "percentage" ? `${form.sla_penalty_percentage ?? "—"}%` : `₹${form.sla_penalty_amount ?? "—"}`} × ${form.sla_penalty_max_days ?? 3} days` },
+                { step: "operations" as PolicyStep, label: "Assignment window", value: form.assignment_timeout_enabled === false ? "Disabled" : `${form.assignment_timeout_minutes ?? 15} minutes` },
+                { step: "operations" as PolicyStep, label: "Verified arrival", value: form.arrival_verification_enabled === false ? "Disabled" : `${form.arrival_radius_meters ?? 250} m radius` },
+                { step: "trust" as PolicyStep, label: "Health suspension", value: form.health_suspension_threshold == null ? "Disabled" : `Below ${form.health_suspension_threshold}` },
+              ].map(item => <button key={`${item.step}-${item.label}`} type="button" onClick={() => goToPolicyStep(item.step)}
+                style={{ textAlign: "left", padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-sunken)", cursor: "pointer" }}>
+                <span style={{ display: "block", fontSize: 10, color: "var(--text-tertiary)", marginBottom: 5 }}>{item.label} · Edit</span>
+                <strong style={{ fontSize: 12, color: "var(--text-primary)" }}>{item.value}</strong>
+              </button>)}
+            </div>
+            <div style={{ padding: 14, border: "1px solid var(--border)", borderRadius: 10 }}>
+              <label style={{ display: "block", marginBottom: 6, fontSize: 12, fontWeight: 700 }}>Preview with a provider service price (₹)</label>
+              <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ width: 160 }}><Input value={previewAmount} onChange={setPreviewAmount} /></div>
+                <Btn variant="secondary" onClick={runPreview}>Validate &amp; Preview</Btn>
+              </div>
+              {previewResult && (
+                <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "var(--surface-sunken)" }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700 }}>Combined completion impact</p>
+                  <PreviewRow label="Provider service price" value={`₹${previewAmount}`} />
+                  <PreviewRow label="Customer charge added" value={`₹${fmt(previewResult.customer_platform_fee)}`} />
+                  <PreviewRow label="Customer sees and pays" value={`₹${fmt(previewResult.total_payable)}`} strong />
+                  <PreviewRow label="Provider-side deduction" value={units(previewResult.provider_charge_credit_units as string)} />
+                  <PreviewRow label="Customer-charge recovery" value={units(previewResult.customer_charge_recovery_credit_units as string)} />
+                  <PreviewRow label="Total credits deducted when job completes" value={units(previewResult.total_credit_deduction as string)} strong />
+                </div>
+              )}
+            </div>
+            {errors.length > 0 && <div role="alert" style={{ marginTop: 12, padding: 12, border: "1px solid var(--danger-text)", borderRadius: 10 }}>
+              <strong style={{ fontSize: 12, color: "var(--danger-text)" }}>Fix these settings before publishing</strong>
+              {errors.map(e => <p key={e} style={{ margin: "6px 0 0", fontSize: 11, color: "var(--danger-text)" }}>{e}</p>)}
+            </div>}
+            <div style={{ marginTop: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Publish reason (required)</label>
+              <Input value={reason} onChange={setReason} />
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "5px 0 0" }}>Publishing saves the current values first, then makes this policy live.</p>
+            </div>
+            {draft && <div style={{ marginTop: 14 }}><Btn variant="ghost" onClick={discardDraft} disabled={discardDraftAction.loading}
+              style={{ color: "var(--danger-text)" }}>{discardDraftAction.loading ? "Discarding…" : "Discard Draft"}</Btn></div>}
+          </section>
+          <div style={{ position: "sticky", bottom: -24, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", margin: "20px -24px -24px", padding: "14px 24px", borderTop: "1px solid var(--border)", background: "var(--surface-elevated)", boxShadow: "0 -8px 20px color-mix(in srgb, var(--surface-elevated) 90%, transparent)" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" onClick={() => goToPolicyStep(POLICY_STEPS[Math.max(0, policyStepIndex - 1)].key)} disabled={policyStepIndex === 0}>Back</Btn>
+              <Btn variant="ghost" onClick={() => setShowDraftDrawer(false)}>Close</Btn>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="secondary" onClick={saveDraft} disabled={saveDraftAction.loading}>{saveDraftAction.loading ? "Saving…" : "Save Draft"}</Btn>
+              {policyStep === "review" ? (
+                <Btn variant="primary" disabled={!reason.trim() || errors.length > 0 || publishAction.loading} onClick={confirmPublish}>
+                  {publishAction.loading ? "Publishing…" : "Publish Policy"}
+                </Btn>
+              ) : (
+                <Btn variant="primary" onClick={() => goToPolicyStep(POLICY_STEPS[policyStepIndex + 1].key)}>Next</Btn>
+              )}
+            </div>
           </div>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Publish reason (required)</label>
-          <Input value={reason} onChange={setReason} />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-            <Btn variant="ghost" onClick={() => setShowDraftDrawer(false)}>Cancel</Btn>
-            <Btn variant="primary" disabled={!reason.trim() || errors.length > 0} onClick={confirmPublish}>
-              {publishAction.loading ? "Publishing…" : "Review & Publish"}
-            </Btn>
           </div>
         </Modal>
       )}

@@ -100,7 +100,7 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     # audited policy as SLA enforcement so administrators can change runtime
     # behaviour without a code release. Defaults preserve the launch rules.
     assignment_timeout_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)

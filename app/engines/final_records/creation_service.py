@@ -287,6 +287,8 @@ class HomeServiceFinalCreationService:
             service_job_workflow_id    = draft.service_job_workflow_id,
             selected_problem_id        = draft.selected_problem_id,
             ai_session_id         = draft.ai_session_id,
+            source_channel        = source_channel if source_channel in {"instagram", "whatsapp"} else None,
+            source_actor_id       = source_actor_id if source_channel in {"instagram", "whatsapp"} else None,
             customer_name         = draft.customer_name,
             customer_phone        = draft.customer_phone,
             city                  = draft.city,

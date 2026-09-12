@@ -21,6 +21,7 @@ function pathToActiveNav(pathname: string): string {
 
 export default function AdminShellLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const fullWidth = pathname.startsWith("/admin/home-services/service-jobs/");
   // FINAL-L5-05N: single root-level enforcement point covering every
   // /admin/* route (current and future) via nav-item permission
   // inheritance -- see getRequiredPermissionForRoute in AdminLayout.tsx.
@@ -28,7 +29,7 @@ export default function AdminShellLayout({ children }: { children: React.ReactNo
   // more specific permission than their inherited nav-item default; the
   // root guard is the floor every route gets for free.
   return (
-    <AdminLayout activeNav={pathToActiveNav(pathname)}>
+    <AdminLayout activeNav={pathToActiveNav(pathname)} fullWidth={fullWidth}>
       <RequirePermission requiredPermission={getRequiredPermissionForRoute(pathname)} parentLabel="Dashboard">
         {children}
       </RequirePermission>

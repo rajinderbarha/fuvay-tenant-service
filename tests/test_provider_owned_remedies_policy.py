@@ -75,7 +75,10 @@ def test_warranty_certificate_is_downloadable_provider_evidence():
     assert "Provider &amp; Co" in html
     assert "AC &lt;Repair&gt;" in html
     assert "Provider is responsible." in html
-    assert "warranty-certificate" in source("app/engines/final_records/customer_router.py")
+    customer_router = source("app/engines/final_records/customer_router.py")
+    assert "warranty-certificate" in customer_router
+    assert 'media_type="application/pdf"' in customer_router
+    assert 'filename = f"warranty-{job.warranty_certificate_number}.pdf"' in customer_router
 
 
 @pytest.mark.asyncio
@@ -83,6 +86,7 @@ async def test_warranty_certificate_snapshot_is_issued_once_and_keeps_provider_e
     tenant = SimpleNamespace(
         legal_name="Provider Legal Pvt Ltd", business_name="Provider Trading",
         tenant_name="Provider", tenant_code="TEN-7", gst_number="GST123",
+        logo_url="https://res.cloudinary.com/provider/image/upload/logo.png",
         phone="9000000000", email="provider@example.test",
         address_line1="12 Main Road", address_line2=None, city="Ludhiana",
         district="Ludhiana", state="Punjab", zipcode="141001", country="India",
@@ -122,6 +126,7 @@ async def test_warranty_certificate_snapshot_is_issued_once_and_keeps_provider_e
     assert first is second
     assert first["provider"]["name"] == "Provider Legal Pvt Ltd"
     assert first["provider"]["gst_number"] == "GST123"
+    assert first["provider"]["logo_url"] == tenant.logo_url
     assert first["work_summary"] == "Replaced compressor"
     assert first["terms_version"] == "2026-09-01"
     assert db.flushed == 1

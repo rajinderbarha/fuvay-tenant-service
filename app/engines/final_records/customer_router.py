@@ -518,13 +518,13 @@ async def download_warranty_certificate(
             "The warranty certificate download period has ended.", status_code=410,
         )
     from app.engines.final_records.warranty_certificate import (
-        issue_warranty_certificate, render_certificate_html,
+        issue_warranty_certificate, render_certificate_pdf,
     )
     snapshot = await issue_warranty_certificate(db, job)
-    document = render_certificate_html(snapshot)
-    filename = f"warranty-{job.warranty_certificate_number}.html"
+    document = render_certificate_pdf(snapshot)
+    filename = f"warranty-{job.warranty_certificate_number}.pdf"
     return Response(
-        content=document, media_type="text/html; charset=utf-8",
+        content=document, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

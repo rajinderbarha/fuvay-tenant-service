@@ -21,6 +21,7 @@ from app.engines.home_service_assignment.constants import (
     ELIGIBLE_DESIGNATIONS,
     ERR_JOB_NOT_FOUND, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED,
     ERR_ASSIGNMENT_NOT_FOUND, ERR_ACCESS_DENIED, ERR_INVALID_STATUS,
+    ERR_PROVIDER_OFFER_EXPIRED,
     ERR_ALREADY_ASSIGNED, ERR_STAFF_NOT_FOUND, ERR_STAFF_NOT_ELIGIBLE,
     ERR_STAFF_WRONG_TENANT, ERR_STAFF_INACTIVE, ERR_ROLE_NOT_ALLOWED,
     ERR_REASON_REQUIRED, ERR_REASSIGN_NOT_ALLOWED, ERR_CANCEL_NOT_ALLOWED,
@@ -63,9 +64,12 @@ class HomeServiceJobAssignmentService:
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
-    async def _load_job(self, job_id: uuid.UUID):
+    async def _load_job(self, job_id: uuid.UUID, *, for_update: bool = False):
         from app.engines.final_records.models import ServiceJob
-        res = await self.db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
+        query = select(ServiceJob).where(ServiceJob.id == job_id)
+        if for_update:
+            query = query.with_for_update()
+        res = await self.db.execute(query)
         return res.scalars().first()
 
     async def _load_booking(self, booking_id: uuid.UUID):
@@ -437,6 +441,7 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_JOB_NOT_FOUND)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
+
         assignment = await self._current_assignment(job_id)
         return {
             "job":               job.to_dict(),
@@ -596,10 +601,26 @@ class HomeServiceJobAssignmentService:
         request_id:      str | None       = None,
         allow_accepted_reassignment: bool = False,
     ) -> dict:
-        job = await self._load_job(job_id)
+        job = await self._load_job(job_id, for_update=True)
         self._validate_job_assignable(job)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
+
+        # A provider cannot beat the sweeper by assigning after the offer has
+        # expired. Reassignments of work already owned by a technician are not
+        # new offers and remain possible through their usual controls.
+        offered_at = getattr(job, "provider_offer_started_at", None)
+        if (job.assigned_staff_id is None and job.status in
+                (JOB_STATUS_PENDING_ASSIGNMENT, JOB_STATUS_ACCEPTED) and offered_at):
+            from app.engines.vertical_monetization.runtime_operations import (
+                get_home_services_operations_policy,
+            )
+            policy = await get_home_services_operations_policy(self.db)
+            if policy.assignment_timeout_enabled:
+                if offered_at.tzinfo is None:
+                    offered_at = offered_at.replace(tzinfo=timezone.utc)
+                if _utcnow() >= offered_at + timedelta(minutes=policy.assignment_timeout_minutes):
+                    raise ValueError(ERR_PROVIDER_OFFER_EXPIRED)
 
         # The legacy WIP gate counts every open job across every future date.
         # It remains the safe fallback for an unscheduled job, but must not
@@ -772,7 +793,7 @@ class HomeServiceJobAssignmentService:
     ) -> dict:
         if not reason or not reason.strip():
             raise ValueError(ERR_REASON_REQUIRED)
-        job = await self._load_job(job_id)
+        job = await self._load_job(job_id, for_update=True)
         self._validate_job_assignable(job)
         if job.status not in {
             JOB_STATUS_PENDING_ASSIGNMENT, JOB_STATUS_ASSIGNED,

@@ -331,6 +331,7 @@ SOCIAL BOOKING CONTRACT:
             channel=social_context.get("channel"),
             channel_user_id=social_context.get("channel_user_id"),
             display_name=social_context.get("display_name"),
+            instagram_username=social_context.get("instagram_username"),
         )
 
         tools_called: list[str] = []

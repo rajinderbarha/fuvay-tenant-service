@@ -1,157 +1,65 @@
 "use client";
 import React from "react";
-import {
-  AlertTriangle, ArrowRight, BriefcaseBusiness, CalendarDays, Clock3, MapPin, PartyPopper, X,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, Bell, CalendarDays, Clock3, MapPin, PartyPopper, X } from "lucide-react";
 import type { DashboardAlert } from "../../lib/api";
 import { playAlertTone } from "../../lib/alertTone";
 
 export interface JobAlertPopupProps {
   alerts: DashboardAlert[];
-  /** Real totals can exceed the four alerts shown in this compact interruption. */
   newTotal: number;
   delayedTotal: number;
   onDismiss: () => void;
   onOpenJob: (jobId: string) => void;
   onSeeAllDelayed: () => void;
+  onOpenBoard?: () => void;
 }
 
-const TONES = {
-  success: {
-    accent: "var(--success, #10b981)", surface: "rgba(16,185,129,0.12)",
-    Icon: PartyPopper, eyebrow: "New booking", action: "Assign technician",
-  },
-  warning: {
-    accent: "var(--warning, #f59e0b)", surface: "rgba(245,158,11,0.13)",
-    Icon: AlertTriangle, eyebrow: "Needs attention", action: "Open job",
-  },
-  critical: {
-    accent: "var(--danger, #ef4444)", surface: "rgba(239,68,68,0.13)",
-    Icon: AlertTriangle, eyebrow: "Urgent action", action: "Open job",
-  },
-  info: {
-    accent: "var(--brand, #4f46e5)", surface: "rgba(79,70,229,0.11)",
-    Icon: BriefcaseBusiness, eyebrow: "Job update", action: "Open job",
-  },
-} as const;
-
-function toneOf(tone: DashboardAlert["tone"]) {
-  return TONES[tone] ?? TONES.info;
+function remaining(deadline: string | undefined, now: number): string | null {
+  if (!deadline) return null;
+  const seconds = Math.max(0, Math.ceil((new Date(deadline).getTime() - now) / 1000));
+  if (!Number.isFinite(seconds)) return null;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} left`;
 }
 
-/** The most time-sensitive customer commitment always leads. */
-function toneWeight(tone: DashboardAlert["tone"]): number {
-  return tone === "critical" ? 0 : tone === "warning" ? 1 : tone === "success" ? 2 : 3;
+function JobMeta({ alert }: { alert: DashboardAlert }) {
+  return <span className="job-alert-meta">
+    {alert.scheduled_date && <span><CalendarDays size={12} />{alert.scheduled_date}</span>}
+    {alert.scheduled_time_window && <span><Clock3 size={12} />{alert.scheduled_time_window}</span>}
+    {alert.city && <span><MapPin size={12} />{alert.city}</span>}
+  </span>;
 }
 
-function totalLabel(newTotal: number, delayedTotal: number, hiddenAlerts: number): string {
-  const parts: string[] = [];
-  if (delayedTotal > 0) parts.push(`${delayedTotal} past slot`);
-  if (newTotal > 0) parts.push(`${newTotal} new`);
-  if (hiddenAlerts > 0) parts.push(`${hiddenAlerts} more`);
-  return parts.join(" · ");
-}
-
-export function JobAlertPopup({
-  alerts, newTotal, delayedTotal, onDismiss, onOpenJob, onSeeAllDelayed,
-}: JobAlertPopupProps) {
-  const ordered = React.useMemo(
-    () => [...alerts].sort((a, b) => toneWeight(a.tone) - toneWeight(b.tone)),
-    [alerts],
-  );
-  const lead = ordered[0];
-  const leadTone = lead?.tone ?? null;
-
+export function JobAlertPopup({ alerts, newTotal, delayedTotal, onDismiss, onOpenJob, onSeeAllDelayed, onOpenBoard }: JobAlertPopupProps) {
+  const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
-    if (leadTone) playAlertTone(leadTone);
-  }, [leadTone]);
-
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const offers = alerts.filter(alert => alert.tone === "success");
+  const delayed = alerts.filter(alert => alert.tone !== "success");
+  const lead = offers[0] ?? delayed[0];
+  React.useEffect(() => { if (lead) playAlertTone(lead.tone); }, [lead?.job_id, lead?.tone]);
   if (!lead) return null;
+  const rest = [...offers.slice(lead.tone === "success" ? 1 : 0), ...delayed.slice(lead.tone === "success" ? 0 : 1)].slice(0, 4);
+  const isOffer = lead.tone === "success";
+  const hidden = Math.max(0, newTotal + delayedTotal - 1 - rest.length);
 
-  const visible = ordered.slice(0, 4);
-  const rest = visible.slice(1);
-  const tone = toneOf(lead.tone);
-  const isDelay = lead.tone === "warning" || lead.tone === "critical";
-  const hiddenAlerts = Math.max(0, newTotal + delayedTotal - visible.length);
-
-  return (
-    <div className="job-alert-backdrop" onClick={onDismiss}>
-      <style>{`
-        .job-alert-backdrop{position:fixed;inset:0;z-index:1300;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(20,18,15,.4);backdrop-filter:blur(2px);animation:job-alert-backdrop-enter .18s ease-out}.job-alert-popup{width:min(420px,94vw);max-height:calc(100vh - 48px);overflow:auto;background:var(--surface);border:1px solid color-mix(in srgb,var(--border) 78%,transparent);border-radius:22px;box-shadow:0 40px 90px -20px rgba(0,0,0,.45);animation:job-alert-enter .22s ease-out}.job-alert-head{position:relative;display:flex;flex-direction:column;gap:14px;padding:22px 22px 18px;background:linear-gradient(150deg,var(--job-alert-tint),var(--surface) 65%)}.job-alert-icon{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:var(--job-alert-accent);color:#fff;box-shadow:0 10px 22px -8px color-mix(in srgb,var(--job-alert-accent) 62%,transparent)}.job-alert-copy{display:flex;flex-direction:column;gap:5px;padding-right:16px}.job-alert-eyebrow{display:flex;align-items:center;gap:5px;margin:0;color:var(--job-alert-accent);font:700 10px/1 "IBM Plex Mono",var(--font-family-mono),monospace;letter-spacing:.1em;text-transform:uppercase}.job-alert-title{margin:0;color:var(--text-primary);font-size:19px;line-height:1.25;font-weight:700}.job-alert-message{margin:0;color:var(--text-secondary);font-size:13px;line-height:1.5}.job-alert-dismiss{position:absolute;top:16px;right:16px;display:grid;width:28px;height:28px;place-items:center;border:0;border-radius:9px;background:color-mix(in srgb,var(--surface) 65%,transparent);color:var(--text-tertiary);cursor:pointer}.job-alert-dismiss:hover{background:var(--surface);color:var(--text-primary)}.job-alert-list-wrap{display:flex;flex-direction:column;gap:9px;padding:14px 22px}.job-alert-list-title{margin:0;color:var(--text-tertiary);font:600 11px/1 "IBM Plex Mono",var(--font-family-mono),monospace;letter-spacing:.08em;text-transform:uppercase}.job-alert-list{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}.job-alert-list-button{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;padding:9px 8px;border:0;border-radius:11px;background:transparent;color:var(--text-primary);font:inherit;text-align:left;cursor:pointer}.job-alert-list-button:hover{background:var(--surface-sunken)}.job-alert-list-icon{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;background:var(--row-tone-surface);color:var(--row-tone-accent)}.job-alert-list-copy{display:flex;min-width:0;flex-direction:column;gap:3px}.job-alert-list-label{overflow:hidden;color:var(--text-primary);font:600 13px/1.2 "IBM Plex Mono",var(--font-family-mono),monospace;text-overflow:ellipsis;white-space:nowrap}.job-alert-list-meta{display:flex;align-items:center;gap:6px;color:var(--text-tertiary);font-size:11px;line-height:1.3}.job-alert-list-meta span{display:inline-flex;align-items:center;gap:4px}.job-alert-late{padding:5px 7px;border-radius:7px;background:var(--row-tone-surface);color:var(--row-tone-accent);font-size:10px;font-weight:700;white-space:nowrap}.job-alert-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 22px;border-top:1px solid var(--border)}.job-alert-total{color:var(--text-tertiary);font-size:12px;font-weight:500}.job-alert-actions{display:flex;gap:8px}.job-alert-button{display:inline-flex;min-height:40px;align-items:center;justify-content:center;gap:6px;padding:0 15px;border-radius:11px;font:600 13px/1 inherit;cursor:pointer}.job-alert-button-secondary{border:1px solid var(--border);background:var(--surface);color:var(--text-secondary)}.job-alert-button-primary{border:1px solid transparent;background:var(--job-alert-accent);color:#fff}.job-alert-button:focus-visible,.job-alert-dismiss:focus-visible,.job-alert-list-button:focus-visible{outline:2px solid var(--focus-ring,var(--brand));outline-offset:2px}@keyframes job-alert-backdrop-enter{from{opacity:0}to{opacity:1}}@keyframes job-alert-enter{from{opacity:0;transform:translateY(10px) scale(.975)}to{opacity:1;transform:none}}@media(max-width:560px){.job-alert-backdrop{align-items:flex-end;padding:12px}.job-alert-popup{width:100%;max-height:calc(100vh - 24px);border-radius:20px}.job-alert-head{padding:20px 18px 16px}.job-alert-list-wrap{padding:14px 18px}.job-alert-footer{align-items:stretch;flex-direction:column;padding:14px 18px}.job-alert-actions{display:grid;grid-template-columns:1fr 1fr}.job-alert-button:only-child{grid-column:1/-1}.job-alert-button{width:100%}}@media(prefers-reduced-motion:reduce){.job-alert-backdrop,.job-alert-popup{animation:none}}
-      `}</style>
-
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-live={isDelay ? "assertive" : "polite"}
-        aria-labelledby="job-alert-title"
-        aria-describedby="job-alert-message"
-        className="job-alert-popup"
-        onClick={event => event.stopPropagation()}
-        style={{
-          "--job-alert-accent": tone.accent,
-          "--job-alert-tint": tone.surface,
-        } as React.CSSProperties}
-      >
-        <div className="job-alert-head">
-          <button type="button" onClick={onDismiss} aria-label="Dismiss job alert" className="job-alert-dismiss">
-            <X size={15} />
-          </button>
-          <div className="job-alert-icon" aria-hidden="true"><tone.Icon size={22} /></div>
-          <div className="job-alert-copy">
-            <p className="job-alert-eyebrow"><span>{tone.eyebrow}</span><span aria-hidden="true">·</span><span>New job alert</span></p>
-            <h2 id="job-alert-title" className="job-alert-title">{lead.title}</h2>
-            <p id="job-alert-message" className="job-alert-message">{lead.message}</p>
-          </div>
-        </div>
-
-        {rest.length > 0 && (
-          <div className="job-alert-list-wrap">
-            <p className="job-alert-list-title">{rest.some(alert => alert.lateness_label) ? "Also past slot" : "More job alerts"}</p>
-            <ul className="job-alert-list" aria-label="Other job alerts">
-              {rest.map(alert => {
-                const rowTone = toneOf(alert.tone);
-                return <li key={`${alert.job_id}:${alert.tone}`}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenJob(alert.job_id)}
-                    className="job-alert-list-button"
-                    style={{
-                      "--row-tone-accent": rowTone.accent,
-                      "--row-tone-surface": rowTone.surface,
-                    } as React.CSSProperties}
-                  >
-                    <span className="job-alert-list-icon" aria-hidden="true"><rowTone.Icon size={14} /></span>
-                    <span className="job-alert-list-copy">
-                      <span className="job-alert-list-label">{alert.label}</span>
-                      <span className="job-alert-list-meta">
-                        {alert.scheduled_date && <span><CalendarDays size={11} />{alert.scheduled_date}</span>}
-                        {alert.scheduled_time_window && <span><Clock3 size={11} />{alert.scheduled_time_window}</span>}
-                        {!alert.scheduled_date && !alert.scheduled_time_window && alert.city && <span><MapPin size={11} />{alert.city}</span>}
-                      </span>
-                    </span>
-                    {alert.lateness_label && <span className="job-alert-late">{alert.lateness_label}</span>}
-                  </button>
-                </li>;
-              })}
-            </ul>
-          </div>
-        )}
-
-        <div className="job-alert-footer">
-          <span className="job-alert-total">{totalLabel(newTotal, delayedTotal, hiddenAlerts)}</span>
-          <div className="job-alert-actions">
-            {delayedTotal > 1 && (
-              <button type="button" onClick={onSeeAllDelayed} className="job-alert-button job-alert-button-secondary">
-                See all delayed
-              </button>
-            )}
-            <button type="button" onClick={() => onOpenJob(lead.job_id)} className="job-alert-button job-alert-button-primary">
-              {tone.action}<ArrowRight size={13} />
-            </button>
-          </div>
-        </div>
-      </aside>
-    </div>
-  );
+  return <div className="job-alert-backdrop" onClick={onDismiss}>
+    <style>{`
+      .job-alert-backdrop{position:fixed;inset:0;z-index:1300;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(18,27,29,.55);backdrop-filter:blur(5px)}
+      .job-alert-popup{width:min(880px,96vw);max-height:calc(100vh - 48px);overflow:auto;border-radius:24px;background:#fff;color:#172622;box-shadow:0 38px 100px rgba(0,0,0,.38);font-family:inherit}
+      .job-alert-top{display:flex;align-items:center;gap:13px;padding:18px 22px;border-bottom:1px solid #e7ece9}.job-alert-bell{display:grid;place-items:center;width:40px;height:40px;flex:none;border-radius:13px;background:#e9f6f3;color:#0e685f}.job-alert-heading{flex:1;min-width:0}.job-alert-heading h2{margin:0;font-size:18px;line-height:1.2;font-weight:800}.job-alert-heading p{margin:3px 0 0;color:#718078;font-size:12px}.job-alert-close{display:grid;place-items:center;width:34px;height:34px;flex:none;border:1px solid #e8e1d8;border-radius:12px;background:white;color:#69736d;cursor:pointer}
+      .job-alert-feature{display:flex;align-items:center;gap:18px;padding:22px;background:#f2faf8}.job-alert-feature-icon{display:grid;place-items:center;width:53px;height:53px;flex:none;border-radius:17px;background:#0d675d;color:#fff;box-shadow:0 8px 17px rgba(13,103,93,.22)}.job-alert-feature-copy{flex:1;min-width:0}.job-alert-eyebrow{margin:0 0 4px;color:#0d675d;font:800 10px/1.2 monospace;letter-spacing:.08em;text-transform:uppercase}.job-alert-feature h3{margin:0 0 8px;font-size:23px;line-height:1.15;font-weight:850;letter-spacing:-.025em}.job-alert-feature p{margin:8px 0 0;color:#57675f;font-size:12px}
+      .job-alert-meta{display:flex;flex-wrap:wrap;gap:7px;color:#737c78;font-size:11px}.job-alert-meta>span{display:inline-flex;align-items:center;gap:4px;padding:5px 8px;border:1px solid #e7e4de;border-radius:99px;background:#fff}.job-alert-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;flex:none;padding:0 20px;border:0;border-radius:13px;background:#0d675d;color:#fff;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 9px 17px rgba(13,103,93,.15)}
+      .job-alert-queue{padding:20px 22px 18px}.job-alert-section-label{display:flex;align-items:center;gap:9px;margin:0 0 12px;color:#6a716e;font:800 11px/1.2 monospace;letter-spacing:.06em;text-transform:uppercase}.job-alert-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:50%;background:#f5eadc;color:#76592d}.job-alert-list{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}.job-alert-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid #f3c5b1;border-radius:14px;background:#fff6f1}.job-alert-row.offer{border-color:#bfdfd2;background:#f2faf6}.job-alert-row-icon{display:grid;place-items:center;width:29px;height:29px;flex:none;border-radius:9px;background:#fff;color:#bb6842}.job-alert-row.offer .job-alert-row-icon{color:#0e685f}.job-alert-row-copy{flex:1;min-width:0}.job-alert-row-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:800}.job-alert-row-copy .job-alert-meta{margin-top:4px}.job-alert-row-copy .job-alert-meta>span{padding:0;border:0;background:none}.job-alert-time{padding:5px 9px;border-radius:99px;background:#fff;color:#a45636;font-size:11px;font-weight:800;white-space:nowrap}.job-alert-row.offer .job-alert-time{color:#0d675d}.job-alert-row-button{min-height:36px;padding:0 15px;border:1px solid #ddd9d2;border-radius:10px;background:#fff;color:#303835;font-size:12px;font-weight:700;cursor:pointer}
+      .job-alert-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;border-top:1px solid #ebe9e4}.job-alert-footer span{color:#777e7a;font-size:12px}.job-alert-actions{display:flex;gap:8px}.job-alert-secondary,.job-alert-board{min-height:40px;padding:0 15px;border-radius:11px;font-size:12px;font-weight:700;cursor:pointer}.job-alert-secondary{border:1px solid #e2ddd5;background:#fff;color:#4b5751}.job-alert-board{border:1px solid #292827;background:#292827;color:#fff}.job-alert-popup button:focus-visible{outline:3px solid #67b7ac;outline-offset:2px}
+      @media(max-width:700px){.job-alert-backdrop{align-items:flex-end;padding:8px}.job-alert-popup{width:100%;max-height:calc(100vh - 16px);border-radius:20px}.job-alert-feature{align-items:flex-start;flex-wrap:wrap;padding:18px}.job-alert-feature-copy{min-width:calc(100% - 75px)}.job-alert-feature h3{font-size:20px}.job-alert-primary{width:100%}.job-alert-row{flex-wrap:wrap}.job-alert-row-copy{min-width:calc(100% - 50px)}.job-alert-time{margin-left:40px}.job-alert-footer{align-items:stretch;flex-direction:column}.job-alert-actions{display:grid;grid-template-columns:1fr 1fr}}
+    `}</style>
+    <aside className="job-alert-popup" role="dialog" aria-modal="true" aria-labelledby="job-alert-heading" onClick={event => event.stopPropagation()}>
+      <header className="job-alert-top"><span className="job-alert-bell" aria-hidden="true"><Bell size={18} /></span><div className="job-alert-heading"><h2 id="job-alert-heading">Job alerts</h2><p>New bookings and jobs still waiting for a technician</p></div><button className="job-alert-close" type="button" aria-label="Dismiss job alert" onClick={onDismiss}><X size={17} /></button></header>
+      <section className="job-alert-feature"><span className="job-alert-feature-icon" aria-hidden="true">{isOffer ? <PartyPopper size={22} /> : <AlertTriangle size={22} />}</span><div className="job-alert-feature-copy"><div className="job-alert-eyebrow">{isOffer ? "Newest booking" : "Needs attention"}</div><h3>{lead.label}</h3><JobMeta alert={lead} /><p>{isOffer ? `Assign a technician before this offer expires${remaining(lead.assignment_deadline_at, now) ? ` · ${remaining(lead.assignment_deadline_at, now)}` : ""}.` : lead.message}</p></div><button className="job-alert-primary" type="button" onClick={() => onOpenJob(lead.job_id)}>{isOffer ? "Assign technician" : "Open job"}<ArrowRight size={16} /></button></section>
+      {rest.length > 0 && <section className="job-alert-queue"><h3 className="job-alert-section-label">Waiting for assignment <span className="job-alert-count">{newTotal + delayedTotal - 1}</span></h3><ul className="job-alert-list">{rest.map(alert => <li key={`${alert.job_id}:${alert.tone}`} className={`job-alert-row${alert.tone === "success" ? " offer" : ""}`}><span className="job-alert-row-icon" aria-hidden="true"><AlertTriangle size={15} /></span><span className="job-alert-row-copy"><strong>{alert.label}</strong><JobMeta alert={alert} /></span>{(alert.lateness_label || alert.assignment_deadline_at) && <span className="job-alert-time">{alert.lateness_label || remaining(alert.assignment_deadline_at, now)}</span>}<button className="job-alert-row-button" type="button" onClick={() => onOpenJob(alert.job_id)}>{alert.tone === "success" ? "Assign" : "Open"}</button></li>)}</ul></section>}
+      <footer className="job-alert-footer"><span>{hidden > 0 ? `${hidden} more on the bookings board` : isOffer ? "Closing this alert will remind you in 30 seconds while the offer is open." : `${delayedTotal} delayed job${delayedTotal === 1 ? "" : "s"}`}</span><div className="job-alert-actions"><button className="job-alert-secondary" type="button" onClick={onDismiss}>Dismiss</button><button className="job-alert-board" type="button" onClick={onOpenBoard ?? onSeeAllDelayed}>Open bookings board</button></div></footer>
+    </aside>
+  </div>;
 }

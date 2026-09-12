@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 @dataclass(frozen=True)
 class HomeServicesOperationsPolicy:
     assignment_timeout_enabled: bool = True
-    assignment_timeout_minutes: int = 30
+    assignment_timeout_minutes: int = 15
     customer_reschedule_limit: int = 3
     arrival_verification_enabled: bool = True
     arrival_radius_meters: int = 250

@@ -355,15 +355,23 @@ function isNavItemPermitted(
   return perms.includes("*") || perms.includes(item.requiredPermission);
 }
 
-export function AdminLayout({ children, activeNav }: { children: React.ReactNode; activeNav?: string }) {
+export function AdminLayout({ children, activeNav, fullWidth = false }: {
+  children: React.ReactNode;
+  activeNav?: string;
+  fullWidth?: boolean;
+}) {
   const alreadyMounted = useContext(AdminShellCtx);
   // If already inside an AdminLayout (route-level wraps page-level), skip shell render.
   if (alreadyMounted) return <AdminShellCtx.Provider value={true}>{children}</AdminShellCtx.Provider>;
 
-  return <AdminShellInner activeNav={activeNav}>{children}</AdminShellInner>;
+  return <AdminShellInner activeNav={activeNav} fullWidth={fullWidth}>{children}</AdminShellInner>;
 }
 
-function AdminShellInner({ children, activeNav }: { children: React.ReactNode; activeNav?: string }) {
+function AdminShellInner({ children, activeNav, fullWidth }: {
+  children: React.ReactNode;
+  activeNav?: string;
+  fullWidth: boolean;
+}) {
   const { theme, toggle } = useTheme();
   const tour = useTour();
   // Admin sidebar always stays expanded -- no collapse toggle (per explicit
@@ -585,7 +593,7 @@ function AdminShellInner({ children, activeNav }: { children: React.ReactNode; a
         <TopNav theme={theme} onToggleTheme={toggle} onLogout={handleLogout}/>
         <main id="admin-main-content" className="admin-main" tabIndex={-1} style={{ flex: 1, overflowY: "auto", padding: "var(--layout-content-padding-block) var(--layout-content-padding-inline)", position: "relative",
           background: "var(--bg-gradient)", outline: "none" }}>
-          <div className="admin-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
+          <div className="admin-content" style={{ maxWidth: fullWidth ? "none" : 1440, width: "100%", margin: "0 auto" }}>
             <Breadcrumbs/>
             {children}
           </div>

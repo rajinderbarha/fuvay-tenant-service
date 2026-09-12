@@ -46,6 +46,8 @@ class ServiceBooking(ServiceOSBase):
     service_job_workflow_id:    Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     selected_problem_id:        Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     ai_session_id:         Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_channel:        Mapped[str | None]       = mapped_column(String(20), nullable=True)
+    source_actor_id:       Mapped[str | None]       = mapped_column(String(120), nullable=True)
     customer_name:         Mapped[str | None]       = mapped_column(String(200), nullable=True)
     customer_phone:        Mapped[str | None]       = mapped_column(String(30),  nullable=True)
     city:                  Mapped[str | None]       = mapped_column(String(100), nullable=True)
@@ -163,10 +165,9 @@ class ServiceJob(ServiceOSBase):
     status:                 Mapped[str]              = mapped_column(String(40), nullable=False, default="pending_assignment")
     assignment_status:      Mapped[str]              = mapped_column(String(30), nullable=False, default="unassigned")
     failure_reason:         Mapped[str | None]       = mapped_column(Text(), nullable=True)
-    # HS8B — single validated completion action's payload (work summary,
-    # collected amount, payment mode, photo ids, technician note). Never
-    # mutated by anything except POST .../complete. HS9 reads this to
-    # perform usage-credit deduction — this sprint only prepares it.
+    provider_offer_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=utcnow)
+    # HS8B — completion payload (work summary, amount, photos, note), plus
+    # idempotent post-completion Instagram rating/warranty delivery markers.
     completion_data:        Mapped[dict | None]      = mapped_column(JSONB, nullable=True)
     # Immutable warranty contract captured when work completes. Reading the
     # live TenantService later would let a provider shorten an existing job's
@@ -218,6 +219,7 @@ class ServiceJob(ServiceOSBase):
             "address_snapshot":      self.address_snapshot,
             "status":                self.status,
             "assignment_status":     self.assignment_status,
+            "provider_offer_started_at": self.provider_offer_started_at.isoformat() if self.provider_offer_started_at else None,
             "failure_reason":        self.failure_reason,
             "completion_data":       self.completion_data,
             "warranty_days":         self.warranty_days_snapshot,

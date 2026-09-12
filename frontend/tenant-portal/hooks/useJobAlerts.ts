@@ -4,11 +4,11 @@ import { serviceJobAssignmentApi, type DashboardAlert } from "../lib/api";
 
 /** How often the dashboard asks. A new job should surface while the provider is still
  * looking at the screen, not on their next visit. */
-const POLL_MS = 60_000;
+const POLL_MS = 10_000;
+const OFFER_SNOOZE_MS = 30_000;
 
-/** Which alerts this browser has already interrupted about. Kept in sessionStorage, not
- * localStorage: a provider who closes the tab and comes back tomorrow SHOULD be told
- * again that a job is still late -- it is still late. Within one sitting, once is enough. */
+/** Delayed-job alerts are remembered for this session; unassigned offers are
+ * only snoozed for 30 seconds and must reappear until action is taken. */
 const SEEN_KEY = "fuvay.dashboard.alerts.seen";
 
 function readSeen(): Set<string> {
@@ -39,23 +39,18 @@ function alertKey(alert: DashboardAlert): string {
 }
 
 export interface JobAlertsState {
-  /** Alerts not yet shown in this session. Empty means no popup. */
+  /** Alerts due to interrupt now. Empty means no popup. */
   pending: DashboardAlert[];
   newTotal: number;
   delayedTotal: number;
-  /** Marks everything currently pending as seen and closes the popup. */
+  /** Snoozes offers briefly and marks delayed alerts seen this session. */
   dismiss: () => void;
 }
 
 /**
  * Feeds the dashboard's interrupting popup.
  *
- * Two things it deliberately does NOT do:
- *
- *  - It does not re-interrupt for an alert already shown this session. A popup that
- *    reappears on every poll is an obstacle, and a provider learns to dismiss it without
- *    reading -- which is exactly how the delay alerts stop working.
- *  - It never asks the server to raise notifications on a background poll
+ * It deliberately does not ask the server to raise notifications on a background poll
  *    (`notify: false`). The GET raises `job.delayed` as a side effect, and a page left
  *    open overnight should not be what decides when a provider is notified. The first
  *    load of the dashboard does raise them, because that is a person actually arriving.
@@ -65,6 +60,7 @@ export function useJobAlerts(): JobAlertsState {
   const [newTotal, setNewTotal] = useState(0);
   const [delayedTotal, setDelayedTotal] = useState(0);
   const seenRef = useRef<Set<string>>(new Set());
+  const snoozedOffersRef = useRef<Map<string, number>>(new Map());
   const sinceRef = useRef<string | null>(null);
   const firstLoadRef = useRef(true);
 
@@ -85,7 +81,9 @@ export function useJobAlerts(): JobAlertsState {
       setDelayedTotal(res.delayed_total ?? 0);
 
       const all = [...(res.delayed_jobs ?? []), ...(res.new_jobs ?? [])];
-      setPending(all.filter(alert => !seenRef.current.has(alertKey(alert))));
+      setPending(all.filter(alert => alert.tone === "success"
+        ? (snoozedOffersRef.current.get(alert.job_id) ?? 0) <= Date.now()
+        : !seenRef.current.has(alertKey(alert))));
     } catch {
       // Silent: alerts are an addition to the dashboard, and a failed poll must not
       // replace a working page with an error. The counts simply stay as they were.
@@ -101,7 +99,13 @@ export function useJobAlerts(): JobAlertsState {
   const dismiss = useCallback(() => {
     setPending(current => {
       const seen = new Set(seenRef.current);
-      for (const alert of current) seen.add(alertKey(alert));
+      for (const alert of current) {
+        if (alert.tone === "success") {
+          snoozedOffersRef.current.set(alert.job_id, Date.now() + OFFER_SNOOZE_MS);
+        } else {
+          seen.add(alertKey(alert));
+        }
+      }
       seenRef.current = seen;
       writeSeen(seen);
       return [];

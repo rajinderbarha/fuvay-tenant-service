@@ -31,9 +31,8 @@ from app.engines.platform_notifications.constants import (
 TONE_CELEBRATE = SEV_SUCCESS
 TONE_URGENT = SEV_WARNING
 
-# How far back "new" reaches when the client does not say when it last looked. Long
-# enough to catch a job that arrived while the dashboard was closed over lunch, short
-# enough that reopening the page tomorrow does not congratulate anyone for yesterday.
+# Retained for callers that import this historical constant. Actionable offers
+# now use the configured assignment deadline, not a generic age window.
 NEW_JOB_WINDOW_HOURS = 12
 
 # The dashboard interrupts with a popup; a queue of them is not an interruption, it is an
@@ -50,6 +49,7 @@ async def _load_jobs(db: AsyncSession, tenant_id: uuid.UUID):
             ServiceJob.id, ServiceJob.job_number, ServiceJob.status,
             ServiceJob.scheduled_date, ServiceJob.scheduled_time_window,
             ServiceJob.created_at, ServiceJob.city,
+            ServiceJob.assigned_staff_id, ServiceJob.provider_offer_started_at,
         ).where(ServiceJob.tenant_id == tenant_id)
     )).all()
 
@@ -65,43 +65,48 @@ async def build_alerts(
     tenant_id: uuid.UUID,
     since: dt.datetime | None = None,
     now: dt.datetime | None = None,
+    assignment_timeout_minutes: int | None = None,
 ) -> dict:
     """The dashboard's alerts, newest-and-worst first.
 
-    `since` is when this dashboard last looked. Passing it is what stops a provider being
-    congratulated twice for the same job every time they refresh; without it, a stated
-    window is used rather than "everything", because "42 new jobs!" on a first login is
-    not news, it is a backlog.
+    `since` remains in the response contract, but an unassigned provider offer
+    stays visible on every poll until assigned or expired. The browser may
+    snooze the popup briefly without hiding the actual work.
 
     Delayed jobs are ranked by how late they are, so the worst is the one that gets seen.
     """
     moment = now or dt.datetime.now(dt.timezone.utc)
-    cutoff = since or (moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS))
-
     jobs = await _load_jobs(db, tenant_id)
+    timeout_enabled = True
+    if assignment_timeout_minutes is None:
+        from app.engines.vertical_monetization.runtime_operations import get_home_services_operations_policy
+        policy = await get_home_services_operations_policy(db)
+        assignment_timeout_minutes = policy.assignment_timeout_minutes
+        timeout_enabled = policy.assignment_timeout_enabled
 
     new_jobs = []
     delayed = []
     for job in jobs:
-        created = job.created_at
-        if created is not None:
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=dt.timezone.utc)
-            # Any job that ARRIVED recently and is still live counts as new.
-            #
-            # This used to require `pending_assignment`, which made the whole feature
-            # silent on this platform: bookings come in already `accepted`, so a service
-            # booked from the customer app produced no popup at all -- verified live, the
-            # newest three bookings were all "accepted" within minutes of being made and
-            # `new_job_total` was 0. Arrival is the news, not the assignment state; the
-            # only exclusions are jobs already finished or cancelled, where congratulating
-            # anyone would be absurd.
-            if created > cutoff and str(job.status or "").lower() not in urgency_rules.TERMINAL_STATUSES:
+        offered = job.provider_offer_started_at or job.created_at
+        if offered is not None:
+            if offered.tzinfo is None:
+                offered = offered.replace(tzinfo=dt.timezone.utc)
+            deadline = offered + dt.timedelta(minutes=assignment_timeout_minutes)
+            # This is an actionable offer, not every recently created job. It
+            # remains visible on every poll until staff is assigned or the
+            # server expires the offer; a dismiss only snoozes the popup.
+            window_open = (deadline > moment if timeout_enabled
+                           else offered > moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS))
+            if (job.assigned_staff_id is None and job.status in ("pending_assignment", "accepted")
+                    and window_open):
                 new_jobs.append({
                     "job_id": str(job.id),
                     "label": _job_label(job),
                     "city": job.city,
-                    "created_at": created.isoformat(),
+                    "created_at": offered.isoformat(),
+                    "assignment_deadline_at": deadline.isoformat() if timeout_enabled else None,
+                    "scheduled_date": job.scheduled_date.isoformat() if job.scheduled_date else None,
+                    "scheduled_time_window": job.scheduled_time_window,
                     "tone": TONE_CELEBRATE,
                     "title": "New job received",
                     "message": f"{_job_label(job)} just came in. Assign a technician to get started.",

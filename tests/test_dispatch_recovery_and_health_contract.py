@@ -30,8 +30,8 @@ def test_provider_can_cancel_any_non_terminal_job():
     assert compute_available_actions("cancelled", "cancelled", has_assignee=False) == []
 
 
-def test_provider_timeout_contract_is_thirty_minutes_and_excludes_attempts():
-    assert TIMEOUT_MINUTES == 30
+def test_provider_timeout_contract_is_fifteen_minutes_and_excludes_attempts():
+    assert TIMEOUT_MINUTES == 15
     assert set(ELIGIBLE_STATUSES) == {"pending_assignment", "accepted"}
     assert "exclude_tenant_ids" in inspect.signature(select_best_provider).parameters
 

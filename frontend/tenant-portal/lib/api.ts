@@ -3324,6 +3324,7 @@ export interface DashboardAlert {
   scheduled_date?: string | null;
   scheduled_time_window?: string | null;
   created_at?: string;
+  assignment_deadline_at?: string;
 }
 
 export interface DashboardAlerts {

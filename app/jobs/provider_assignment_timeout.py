@@ -13,7 +13,7 @@ from app.engines.final_records.models import ServiceBooking, ServiceJob
 
 logger = structlog.get_logger("jobs.provider_assignment_timeout")
 # Backwards-compatible documented fallback; runtime uses the published policy.
-TIMEOUT_MINUTES = 30
+TIMEOUT_MINUTES = 15
 INTERVAL_SECONDS = 60
 ELIGIBLE_STATUSES = ("pending_assignment", "accepted")
 
@@ -83,8 +83,8 @@ async def sweep(db, *, limit: int = 50) -> dict:
             # rows can say "accepted" while still having no real assignee.
             ServiceJob.assigned_staff_id.is_(None),
             ServiceJob.tenant_id.isnot(None),
-            ServiceJob.updated_at <= cutoff,
-        ).order_by(ServiceJob.updated_at.asc()).with_for_update(skip_locked=True).limit(limit)
+            ServiceJob.provider_offer_started_at <= cutoff,
+        ).order_by(ServiceJob.provider_offer_started_at.asc()).with_for_update(skip_locked=True).limit(limit)
     )).scalars().all())
     reassigned = closed = 0
     for job in jobs:
@@ -118,6 +118,7 @@ async def sweep(db, *, limit: int = 50) -> dict:
             job.status = "pending_assignment"
             job.assignment_status = "unassigned"
             job.failure_reason = None
+            job.provider_offer_started_at = datetime.now(timezone.utc)
             booking = await db.get(ServiceBooking, job.booking_id)
             if booking:
                 booking.tenant_id = new_tenant_id
@@ -160,6 +161,22 @@ async def run_once() -> dict:
     async with get_session_factory()() as db:
         result = await sweep(db)
         await db.commit()
+        unnotified = list((await db.execute(
+            select(ServiceJob.id).join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id).where(
+                ServiceJob.status == "cancelled",
+                ServiceJob.failure_reason.like("Closed because no alternative provider%"),
+                ServiceJob.updated_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+                ServiceBooking.source_channel == "instagram",
+                ServiceBooking.source_actor_id.isnot(None),
+                ~select(ServiceJobExecutionEvent.id).where(
+                    ServiceJobExecutionEvent.job_id == ServiceJob.id,
+                    ServiceJobExecutionEvent.event_type == "customer_assignment_cancelled_notified",
+                ).exists(),
+            ).order_by(ServiceJob.updated_at.desc()).limit(50)
+        )).scalars().all())
+        from app.engines.messaging_gateway.booking_updates import send_assignment_cancelled
+        for job_id in unnotified:
+            await send_assignment_cancelled(job_id)
         return result
 
 
