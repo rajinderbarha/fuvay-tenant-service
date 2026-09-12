@@ -3875,6 +3875,7 @@ def test_instagram_welcome_gives_browser_guidance_without_device_guess():
     ))
     assert INSTAGRAM_BROWSER_GUIDANCE in instagram
     assert "Instagram mobile app" in instagram
+    assert "refresh" not in instagram.lower()
     assert INSTAGRAM_BROWSER_GUIDANCE not in whatsapp
 
 

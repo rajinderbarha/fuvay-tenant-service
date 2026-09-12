@@ -59,9 +59,8 @@ GREETING = (
 )
 
 INSTAGRAM_BROWSER_GUIDANCE = (
-    "Using Instagram in a browser? Please open this chat in the Instagram "
-    "mobile app to book. If a reply or button has not appeared, refresh the "
-    "browser chat before continuing."
+    "For the best booking experience, please use this chat in the Instagram "
+    "mobile app."
 )
 
 #: Sent when the SESSION cap trips -- too many fresh conversations, not too
