@@ -225,6 +225,18 @@ def test_provider_workspace_links_stay_in_home_services():
     assert "router.push(`/service-jobs/${selectedJobId}`)" not in dispatch_page
 
 
+def test_bookings_workspace_resyncs_external_staff_status_changes():
+    bookings_page = (
+        ROOT / "frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs/BookingsJobsPage.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert "const LIVE_REFRESH_MS = 15_000" in bookings_page
+    assert 'window.setInterval(refreshVisibleData, LIVE_REFRESH_MS)' in bookings_page
+    assert 'window.addEventListener("focus", refreshVisibleData)' in bookings_page
+    assert 'document.addEventListener("visibilitychange", refreshWhenVisible)' in bookings_page
+    assert "list.loading && !list.data" in bookings_page
+
+
 def test_provider_acceptance_does_not_fabricate_a_technician_assignment():
     from app.engines.final_records.creation_service import HomeServiceFinalCreationService
 

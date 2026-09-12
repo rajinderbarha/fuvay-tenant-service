@@ -19,6 +19,7 @@ import { BookingsLifecycleBoard } from "../../../../components/bookings/Bookings
 
 const PAGE_PATH = "/home-services/bookings-jobs";
 const PAGE_SIZES = [25, 50, 100];
+const LIVE_REFRESH_MS = 15_000;
 const LIFECYCLE_STAGES = ["new", "assignment", "scheduled", "on_the_way", "inspection", "estimate_approval", "in_progress", "payment", "completed"];
 const PROVIDER_ACTIONS = new Set(["assign_technician", "confirm_schedule", "schedule", "reschedule", "create_estimate", "send_estimate", "confirm_payment"]);
 
@@ -102,6 +103,28 @@ function BookingsJobsWorkspace() {
     if (page > lastPage) updateParams({ page: String(lastPage), job_id: null });
   }, [list.data?.total, page, pageSize, updateParams]);
 
+  // A technician can advance the job from the staff app while this workspace
+  // remains open. Keep the list and open drawer on the same lifecycle snapshot
+  // so a payment-ready job cannot remain displayed under "Awaiting estimate".
+  useEffect(() => {
+    const refreshVisibleData = () => {
+      if (document.visibilityState !== "visible") return;
+      list.refetch();
+      if (selectedJobId) detail.refetch();
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshVisibleData();
+    };
+    const timer = window.setInterval(refreshVisibleData, LIVE_REFRESH_MS);
+    window.addEventListener("focus", refreshVisibleData);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisibleData);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [detail.refetch, list.refetch, selectedJobId]);
+
   function submitSearch(event: React.FormEvent) { event.preventDefault(); updateFilter("search", searchDraft.trim()); }
   function exportCurrentPage() {
     if (!items.length) return;
@@ -152,7 +175,7 @@ function BookingsJobsWorkspace() {
         </div>
       </div>
       {showFilters && <AdvancedFilters data={list.data} values={{ offeringId, jobTypeId, technicianId, assignment, sla, complaint, dateFrom, dateTo, sort }} onChange={updateFilter} onDateChange={(key, value) => updateParams({ [key]: value || null, date: null, page: null, job_id: null })} />}
-      {list.loading ? <div style={{ padding: 16, display: "grid", gap: 8 }}>{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} height={94} />)}</div> : items.length === 0 ? <EmptyResults filtered={hasAnyFilter} onClear={clearFilters} /> : viewMode === "cards" ? <div className="bj-card-list">{items.map(row => <JobCard key={row.service_job_id} row={row} selected={selectedJobId === row.service_job_id} onOpen={() => updateParams({ job_id: row.service_job_id })} />)}</div> : <BookingsLifecycleBoard items={items} selectedJobId={selectedJobId} onOpen={jobId => updateParams({ job_id: jobId })} />}
+      {list.loading && !list.data ? <div style={{ padding: 16, display: "grid", gap: 8 }}>{Array.from({ length: 7 }, (_, i) => <Skeleton key={i} height={94} />)}</div> : items.length === 0 ? <EmptyResults filtered={hasAnyFilter} onClear={clearFilters} /> : viewMode === "cards" ? <div className="bj-card-list">{items.map(row => <JobCard key={row.service_job_id} row={row} selected={selectedJobId === row.service_job_id} onOpen={() => updateParams({ job_id: row.service_job_id })} />)}</div> : <BookingsLifecycleBoard items={items} selectedJobId={selectedJobId} onOpen={jobId => updateParams({ job_id: jobId })} />}
       <Pagination page={page} pageSize={pageSize} total={list.data?.total ?? 0} alwaysShow
         pageSizes={PAGE_SIZES} onPageSize={size => updateParams({ page_size: String(size), page: null, job_id: null })}
         onPage={p => updateParams({ page: String(p), job_id: null })} itemLabel="jobs" />
