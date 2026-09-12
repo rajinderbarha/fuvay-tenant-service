@@ -53,6 +53,12 @@ async def find_bookable_home_service_providers(
     results: list[dict] = []
     seen_tenant_ids: set[uuid.UUID] = set()
 
+    async def has_live_credit(tenant_id: uuid.UUID) -> bool:
+        # Visibility is a projection and may lag the latest ledger movement.
+        # Provider discovery must use the same live floor as final matching.
+        from app.engines.vertical_catalog.seat_enforcement import get_credit_state
+        return not (await get_credit_state(db, tenant_id))["below_floor"]
+
     # ── 1. Zipcode-exact matches first ────────────────────────────────────────
     if strip_zip:
         rows = (await db.execute(
@@ -75,11 +81,11 @@ async def find_bookable_home_service_providers(
                 TenantServiceArea.zipcode == strip_zip,
             )
             .order_by(Tenant.health_score.desc(), Tenant.rating_average.desc())
-            .limit(limit)
+            .limit(max(limit * 3, 50))
         )).all()
 
         for row in rows:
-            if row.tenant_id not in seen_tenant_ids:
+            if row.tenant_id not in seen_tenant_ids and await has_live_credit(row.tenant_id):
                 seen_tenant_ids.add(row.tenant_id)
                 results.append(_make_option(row, match_type="zipcode"))
 
@@ -106,11 +112,12 @@ async def find_bookable_home_service_providers(
                 func.lower(TenantServiceArea.city) == norm_city,
             )
             .order_by(Tenant.health_score.desc(), Tenant.rating_average.desc())
-            .limit(remaining + len(seen_tenant_ids))   # over-fetch to account for dedup
+            .limit(max((remaining + len(seen_tenant_ids)) * 3, 50))
         )).all()
 
         for row in city_rows:
-            if row.tenant_id not in seen_tenant_ids and len(results) < limit:
+            if (row.tenant_id not in seen_tenant_ids and len(results) < limit
+                    and await has_live_credit(row.tenant_id)):
                 seen_tenant_ids.add(row.tenant_id)
                 results.append(_make_option(row, match_type="city"))
 

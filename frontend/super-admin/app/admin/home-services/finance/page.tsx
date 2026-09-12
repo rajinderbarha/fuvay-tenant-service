@@ -345,6 +345,7 @@ const PROVIDER_MODELS = [
   { value: "NONE", label: "No provider charge" },
   { value: "PERCENTAGE_COMMISSION", label: "Percentage commission" },
   { value: "COMPLETION_CREDITS", label: "Fixed credits per completed job" },
+  { value: "FIXED_COMPLETION_CHARGE", label: "Fixed amount per completed job" },
 ] as const;
 // WHEN the provider is charged. Each value is a real lifecycle hook that
 // attempts the deduction, so an admin can only pick a moment the runtime
@@ -378,6 +379,12 @@ const HEALTH_ADJUSTMENT_BANDS = [
 const DEFAULT_HEALTH_ADJUSTMENTS: Record<string, number> = {
   platinum: 0, gold: 0, silver: 2, watchlist: 5, at_risk: 8, blocked: 10,
 };
+const SLA_BREACHABLE_STATUSES = [
+  ["pending_assignment", "Pending assignment"], ["assigned", "Assigned"],
+  ["accepted", "Accepted"], ["scheduled", "Scheduled"],
+  ["on_the_way", "On the way"], ["reached_site", "Reached site"],
+  ["customer_not_available", "Customer unavailable"],
+] as const;
 
 function fmt(v: unknown): string {
   return v === null || v === undefined ? "—" : String(v);
@@ -396,6 +403,8 @@ function MonetizationTab() {
   const [ruleCredits, setRuleCredits] = useState("");
   const [ruleProviderEnabled, setRuleProviderEnabled] = useState(true);
   const [ruleCustomerEnabled, setRuleCustomerEnabled] = useState(true);
+  const [ruleSlaEnabled, setRuleSlaEnabled] = useState(true);
+  const [ruleSlaAmount, setRuleSlaAmount] = useState("");
 
   const currentApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getCurrent(), []));
   const draftApi = useApi(useCallback(() => homeServicesFinanceMonetizationApi.getDraft(), []));
@@ -436,6 +445,16 @@ function MonetizationTab() {
       provider_health_adjustments_json: DEFAULT_HEALTH_ADJUSTMENTS,
       provider_health_score_max_age_days: 30,
       provider_health_max_effective_percentage: "25",
+      assignment_timeout_enabled: true,
+      assignment_timeout_minutes: 30,
+      customer_reschedule_limit: 3,
+      arrival_verification_enabled: true,
+      arrival_radius_meters: 250,
+      arrival_location_max_age_seconds: 120,
+      arrival_max_accuracy_meters: 100,
+      false_arrival_auto_close: true,
+      false_arrival_penalty_amount: 150,
+      false_arrival_health_weight: 3,
     });
     setErrors([]); setPreviewResult(null);
     setShowDraftDrawer(true);
@@ -491,11 +510,30 @@ function MonetizationTab() {
     else push(discardDraftAction.error ?? "Failed to discard draft.", "danger");
   }
 
+  function selectJobTypeRule(jobTypeId: string) {
+    setRuleJobTypeId(jobTypeId);
+    const existing = draftRulesApi.data?.items?.find(
+      (rule: MonetizationJobTypeRule) => rule.job_type_id === jobTypeId,
+    );
+    setRuleCredits(existing?.provider_charge_model === "FIXED_CREDITS"
+      ? String(existing.provider_charge_credit_units ?? "") : "");
+    setRuleProviderEnabled(existing?.provider_charge_enabled ?? true);
+    setRuleCustomerEnabled(existing?.customer_charge_enabled ?? true);
+    setRuleSlaEnabled(existing?.sla_penalty_enabled ?? true);
+    setRuleSlaAmount(existing?.sla_penalty_amount != null
+      ? String(existing.sla_penalty_amount) : "");
+  }
+
   async function saveJobTypeRule() {
     if (!draft?.id || !ruleJobTypeId) return;
     const parsedCredits = ruleCredits.trim() === "" ? null : Number(ruleCredits);
     if (parsedCredits != null && (!Number.isFinite(parsedCredits) || parsedCredits < 0)) {
       push("Fixed credit override must be zero or greater.", "warning");
+      return;
+    }
+    const parsedSlaAmount = ruleSlaAmount.trim() === "" ? null : Number(ruleSlaAmount);
+    if (parsedSlaAmount != null && (!Number.isFinite(parsedSlaAmount) || parsedSlaAmount < 0)) {
+      push("SLA penalty override must be zero or greater.", "warning");
       return;
     }
     const selectedJobType = jobTypesApi.data?.items?.find((item: CatalogJobType) => item.id === ruleJobTypeId);
@@ -510,12 +548,15 @@ function MonetizationTab() {
       provider_chargeable_event: providerChargeableEvent,
       customer_charge_enabled: ruleCustomerEnabled,
       customer_charge_basis: "booking_price_snapshot",
+      sla_penalty_enabled: ruleSlaEnabled,
+      sla_penalty_amount: parsedSlaAmount == null ? null : String(parsedSlaAmount),
       status: "active",
     });
     if (saved) {
       draftRulesApi.refetch();
       setRuleJobTypeId(""); setRuleCredits("");
       setRuleProviderEnabled(true); setRuleCustomerEnabled(true);
+      setRuleSlaEnabled(true); setRuleSlaAmount("");
       push("Job Type rule saved to this draft.");
     } else {
       push(saveRuleAction.error ?? "Could not save the Job Type rule.", "danger");
@@ -611,6 +652,7 @@ function MonetizationTab() {
                         Provider {rule.provider_charge_enabled ? (rule.provider_charge_model === "FIXED_CREDITS" ? `${rule.provider_charge_credit_units} fixed credits` : "inherits default") : "disabled"}
                         {" · "}Trigger {rule.provider_chargeable_event === "consultation_completed" ? "consultation completed" : "job completed"}
                         {" · "}Customer {rule.customer_charge_enabled ? "enabled" : "disabled"}
+                        {" · "}SLA {rule.sla_penalty_enabled === false ? "disabled" : rule.sla_penalty_amount != null ? `₹${rule.sla_penalty_amount}/day` : "inherits default"}
                       </span>
                       <Badge variant={rule.status === "active" ? "success" : "muted"}>{rule.status}</Badge>
                     </div>
@@ -646,6 +688,20 @@ function MonetizationTab() {
         </div>
 
         <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
+          <Card padding={16}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Operational rules</p>
+              <Btn variant="ghost" onClick={startDraft}>Edit in Draft</Btn>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+              <KV label="SLA penalty" value={current?.sla_breach_hours != null ? `${money(current.sla_penalty_amount ?? 0)} per day` : "Disabled"} />
+              <KV label="SLA final day" value={current?.sla_breach_hours != null ? String(current.sla_penalty_max_days ?? 3) : "—"} />
+              <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min`} />
+              <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
+              <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled === false ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
+              <KV label="False-arrival penalty" value={current?.false_arrival_auto_close === false ? "Close disabled" : money(current?.false_arrival_penalty_amount ?? 150)} />
+            </div>
+          </Card>
           <Card padding={16}>
             <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>Calculation preview</p>
             <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Service amount</label>
@@ -704,7 +760,7 @@ function MonetizationTab() {
       </div>
 
       {showDraftDrawer && (
-        <Modal open onClose={() => setShowDraftDrawer(false)} title="Create Draft — Home Services Monetization" size="md">
+        <Modal open onClose={() => setShowDraftDrawer(false)} title="Home Services Policy Draft" size="lg">
           <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
             Provider-side charge — deducted from the provider
           </label>
@@ -810,7 +866,7 @@ function MonetizationTab() {
               </div>
             </>
           ) : null}
-          {["COMPLETION_CREDITS", "PERCENTAGE_COMMISSION"].includes(form.provider_model ?? "") && (
+          {form.provider_model === "COMPLETION_CREDITS" && (
             <>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
                 Deduct the same fixed number of usage credits whenever an eligible job is completed. Add Job Type rules below when some work types need a different fixed deduction.
@@ -818,6 +874,23 @@ function MonetizationTab() {
               <label style={{ fontSize: 12, fontWeight: 600 }}>Default fixed credit deduction</label>
               <Input placeholder="e.g. 100 credits" value={String(form.provider_credit_units ?? "")}
                 onChange={v => setForm({ ...form, provider_credit_units: v === "" ? null : Number(v) })} />
+            </>
+          )}
+          {form.provider_model === "FIXED_COMPLETION_CHARGE" && (
+            <>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
+                Deduct this fixed amount from provider usage credits at the selected lifecycle event.
+              </p>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Fixed provider deduction (₹)</label>
+              <Input
+                placeholder="e.g. 100"
+                value={form.provider_fixed_amount_minor != null
+                  ? String(form.provider_fixed_amount_minor / 100) : ""}
+                onChange={v => setForm({
+                  ...form,
+                  provider_fixed_amount_minor: v === "" ? null : Math.round(Number(v) * 100),
+                })}
+              />
             </>
           )}
 
@@ -894,7 +967,7 @@ function MonetizationTab() {
                 </div>
               ) : (
                 <>
-                  <select value={ruleJobTypeId} onChange={e => setRuleJobTypeId(e.target.value)}
+                  <select value={ruleJobTypeId} onChange={e => selectJobTypeRule(e.target.value)}
                     disabled={jobTypesApi.loading || !!jobTypesApi.error}
                     style={{ width: "100%", padding: "7px 9px", marginBottom: 8 }}>
                     <option value="">
@@ -916,6 +989,13 @@ function MonetizationTab() {
                     value={ruleCredits}
                     onChange={setRuleCredits}
                   />
+                  <div style={{ marginTop: 8 }}>
+                    <Input
+                      placeholder="Daily SLA penalty override (blank uses policy default)"
+                      value={ruleSlaAmount}
+                      onChange={setRuleSlaAmount}
+                    />
+                  </div>
                   <div style={{ display: "flex", gap: 16, margin: "10px 0", flexWrap: "wrap", fontSize: 12 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input type="checkbox" checked={ruleProviderEnabled} onChange={e => setRuleProviderEnabled(e.target.checked)} />
@@ -924,6 +1004,10 @@ function MonetizationTab() {
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input type="checkbox" checked={ruleCustomerEnabled} onChange={e => setRuleCustomerEnabled(e.target.checked)} />
                       Apply customer charge
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input type="checkbox" checked={ruleSlaEnabled} onChange={e => setRuleSlaEnabled(e.target.checked)} />
+                      Apply SLA penalty
                     </label>
                   </div>
                   <Btn variant="secondary" size="sm" disabled={!ruleJobTypeId || saveRuleAction.loading} onClick={saveJobTypeRule}>
@@ -936,6 +1020,7 @@ function MonetizationTab() {
                         return (
                           <div key={rule.job_type_id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
                             <span><strong>{jt?.label ?? rule.job_type_id}</strong><br />Provider {rule.provider_charge_enabled ? (rule.provider_charge_model === "FIXED_CREDITS" ? `${rule.provider_charge_credit_units} fixed credits` : "inherits default") : "disabled"} · Trigger {rule.provider_chargeable_event === "consultation_completed" ? "consultation completed" : "job completed"} · Customer {rule.customer_charge_enabled ? "enabled" : "disabled"}</span>
+                            <span style={{ whiteSpace: "nowrap" }}>SLA {rule.sla_penalty_enabled === false ? "disabled" : rule.sla_penalty_amount ? `₹${rule.sla_penalty_amount}/day` : "inherits default"}</span>
                             <Badge variant={rule.status === "active" ? "success" : "muted"}>{rule.status}</Badge>
                           </div>
                         );
@@ -967,7 +1052,10 @@ function MonetizationTab() {
               <div style={{ flex: 1 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>Penalty type</label>
                 <select value={form.sla_penalty_type ?? "fixed"}
-                  onChange={e => setForm({ ...form, sla_penalty_type: e.target.value })}
+                  onChange={e => setForm({
+                    ...form,
+                    sla_penalty_type: e.target.value as "fixed" | "percentage",
+                  })}
                   style={{ width: "100%", padding: "7px 9px", marginTop: 4 }}>
                   <option value="fixed">Fixed amount</option>
                   <option value="percentage">Percentage of job value</option>
@@ -1001,22 +1089,49 @@ function MonetizationTab() {
               </div>
             )}
 
-            <div style={{ marginTop: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum penalty debt (₹)</label>
-              <Input placeholder="e.g. 500" value={String(form.sla_penalty_debt_cap ?? "")}
-                onChange={v => setForm({ ...form, sla_penalty_debt_cap: v === "" ? null : Number(v) })} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Charge for (days)</label>
+                <Input placeholder="3" value={String(form.sla_penalty_max_days ?? 3)}
+                  onChange={v => setForm({ ...form, sla_penalty_max_days: v === "" ? 3 : Number(v) })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum penalty debt (₹)</label>
+                <Input placeholder="e.g. 500" value={String(form.sla_penalty_debt_cap ?? "")}
+                  onChange={v => setForm({ ...form, sla_penalty_debt_cap: v === "" ? null : Number(v) })} />
+              </div>
+            </div>
+            <div>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-                A penalty may take a balance negative — a provider already at zero would
-                otherwise face no penalty at all. This is how far that can go before
-                further penalties stop being charged.
+                The fixed amount is deducted once every 24 hours. The job closes after
+                the final day. The debt limit still prevents an unlimited negative balance.
               </p>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Statuses that can breach</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 6 }}>
+                {SLA_BREACHABLE_STATUSES.map(([status, label]) => {
+                  const selected = form.sla_breachable_statuses
+                    ?? SLA_BREACHABLE_STATUSES.map(([value]) => value);
+                  return <label key={status} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                    <input type="checkbox" checked={selected.includes(status)} onChange={e => {
+                      const next = e.target.checked
+                        ? [...new Set([...selected, status])]
+                        : selected.filter(value => value !== status);
+                      setForm({ ...form, sla_breachable_statuses: next });
+                    }} />
+                    {label}
+                  </label>;
+                })}
+              </div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={form.sla_auto_cancel !== false}
                   onChange={e => setForm({ ...form, sla_auto_cancel: e.target.checked })} />
-                Cancel the job so the customer can rebook
+                Close after the final breached day — Cancel the job so the customer can rebook
               </label>
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={!!form.sla_penalty_to_customer}
@@ -1031,7 +1146,64 @@ function MonetizationTab() {
             </div>
           </div>
 
-          {/* ── Health suspension ─────────────────────────────────────────── */}
+          {/* Operational controls */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+              Assignment &amp; customer rescheduling
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              Reassign an unstaffed job after the timeout; if no eligible alternative exists, close it.
+            </p>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={form.assignment_timeout_enabled !== false}
+                onChange={e => setForm({ ...form, assignment_timeout_enabled: e.target.checked })} />
+              Enable automatic provider reassignment
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes)</label><Input value={String(form.assignment_timeout_minutes ?? 30)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 30 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+              Verified technician arrival
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              Controls the GPS evidence required before a technician can claim arrival.
+            </p>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={form.arrival_verification_enabled !== false}
+                onChange={e => setForm({ ...form, arrival_verification_enabled: e.target.checked })} />
+              Require verified GPS arrival
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              <div><label style={{ fontSize: 11 }}>Allowed radius (metres)</label><Input value={String(form.arrival_radius_meters ?? 250)} onChange={v => setForm({ ...form, arrival_radius_meters: v === "" ? 250 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum GPS age (seconds)</label><Input value={String(form.arrival_location_max_age_seconds ?? 120)} onChange={v => setForm({ ...form, arrival_location_max_age_seconds: v === "" ? 120 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum GPS error (metres)</label><Input value={String(form.arrival_max_accuracy_meters ?? 100)} onChange={v => setForm({ ...form, arrival_max_accuracy_meters: v === "" ? 100 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>False-arrival penalty (₹)</label><Input value={String(form.false_arrival_penalty_amount ?? 150)} onChange={v => setForm({ ...form, false_arrival_penalty_amount: v === "" ? 150 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>False-arrival health weight</label><Input value={String(form.false_arrival_health_weight ?? 3)} onChange={v => setForm({ ...form, false_arrival_health_weight: v === "" ? 3 : Number(v) })} /></div>
+            </div>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+              <input type="checkbox" checked={form.false_arrival_auto_close !== false}
+                onChange={e => setForm({ ...form, false_arrival_auto_close: e.target.checked })} />
+              Close the job and charge the penalty when verified location is outside the radius
+            </label>
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 8 }}>
+              Retention &amp; credit reminders
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              <div><label style={{ fontSize: 11 }}>Customer photo retention (days)</label><Input placeholder="Never purge" value={String(form.customer_photo_retention_days ?? "")} onChange={v => setForm({ ...form, customer_photo_retention_days: v === "" ? null : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Completion proof retention (days)</label><Input placeholder="Never purge" value={String(form.completion_proof_retention_days ?? "")} onChange={v => setForm({ ...form, completion_proof_retention_days: v === "" ? null : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Low-credit reminder (hours)</label><Input placeholder="24" value={String(form.credit_reminder_hours_low ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_low: v === "" ? null : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Blocked reminder (hours)</label><Input placeholder="6" value={String(form.credit_reminder_hours_blocked ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_blocked: v === "" ? null : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Arrears reminder (hours)</label><Input placeholder="2" value={String(form.credit_reminder_hours_arrears ?? "")} onChange={v => setForm({ ...form, credit_reminder_hours_arrears: v === "" ? null : Number(v) })} /></div>
+            </div>
+          </div>
+
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
               Health suspension

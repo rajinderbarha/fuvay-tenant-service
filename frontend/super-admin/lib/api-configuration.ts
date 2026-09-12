@@ -180,6 +180,37 @@ export interface MonetizationPolicy {
   provider_health_score_max_age_days?: number;
   provider_health_max_effective_percentage?: string;
 
+  sla_breach_hours?: number | null;
+  sla_penalty_amount?: number | null;
+  sla_penalty_to_customer?: boolean;
+  sla_penalty_debt_cap?: number | null;
+  sla_auto_cancel?: boolean;
+  sla_notify_provider?: boolean;
+  sla_penalty_type?: "fixed" | "percentage";
+  sla_penalty_percentage?: number | string | null;
+  sla_penalty_min?: number | null;
+  sla_penalty_max?: number | null;
+  sla_breachable_statuses?: string[] | null;
+  sla_penalty_max_days?: number;
+  assignment_timeout_enabled?: boolean;
+  assignment_timeout_minutes?: number;
+  customer_reschedule_limit?: number;
+  arrival_verification_enabled?: boolean;
+  arrival_radius_meters?: number;
+  arrival_location_max_age_seconds?: number;
+  arrival_max_accuracy_meters?: number;
+  false_arrival_auto_close?: boolean;
+  false_arrival_penalty_amount?: number;
+  false_arrival_health_weight?: number;
+  health_suspension_threshold?: number | null;
+  health_suspension_days?: number | null;
+  health_reinstatement_score?: number | null;
+  customer_photo_retention_days?: number | null;
+  completion_proof_retention_days?: number | null;
+  credit_reminder_hours_low?: number | null;
+  credit_reminder_hours_blocked?: number | null;
+  credit_reminder_hours_arrears?: number | null;
+
   customer_fee_model: string;
   customer_fee_percentage: string | null;
   customer_fee_fixed_amount_minor: number | null;

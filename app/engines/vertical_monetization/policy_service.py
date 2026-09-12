@@ -38,7 +38,13 @@ _DRAFT_FIELDS = {
     "sla_breach_hours", "sla_penalty_amount", "sla_penalty_to_customer",
     "sla_penalty_debt_cap", "sla_auto_cancel", "sla_notify_provider",
     "sla_penalty_type", "sla_penalty_percentage", "sla_penalty_min",
-    "sla_penalty_max", "sla_breachable_statuses",
+    "sla_penalty_max", "sla_breachable_statuses", "sla_penalty_max_days",
+    # Assignment, rescheduling and verified-arrival enforcement.
+    "assignment_timeout_enabled", "assignment_timeout_minutes",
+    "customer_reschedule_limit", "arrival_verification_enabled",
+    "arrival_radius_meters", "arrival_location_max_age_seconds",
+    "arrival_max_accuracy_meters", "false_arrival_auto_close",
+    "false_arrival_penalty_amount", "false_arrival_health_weight",
     # Health: when a provider is stopped, for how long, and what they come back at.
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
     # Media retention: how long each kind of job photo is kept.
@@ -281,6 +287,55 @@ class VerticalMonetizationPolicyService:
                     )
         decimal_field("sla_penalty_amount", minimum=Decimal("0"))
         decimal_field("sla_penalty_debt_cap", minimum=Decimal("0"))
+        max_days = payload.get("sla_penalty_max_days", 3)
+        if max_days not in (None, ""):
+            try:
+                numeric_max_days = Decimal(str(max_days))
+                if (
+                    not numeric_max_days.is_finite()
+                    or numeric_max_days != numeric_max_days.to_integral_value()
+                ):
+                    raise ValueError
+                if int(numeric_max_days) < 1 or int(numeric_max_days) > 30:
+                    errors.append("sla_penalty_max_days must be between 1 and 30")
+            except (TypeError, ValueError, ArithmeticError):
+                errors.append("sla_penalty_max_days must be an integer")
+        bounded_whole_numbers = {
+            "assignment_timeout_minutes": (1, 1440),
+            "customer_reschedule_limit": (0, 20),
+            "arrival_radius_meters": (25, 5000),
+            "arrival_location_max_age_seconds": (15, 3600),
+            "arrival_max_accuracy_meters": (5, 1000),
+            "customer_photo_retention_days": (1, 3650),
+            "completion_proof_retention_days": (1, 3650),
+            "credit_reminder_hours_low": (1, 720),
+            "credit_reminder_hours_blocked": (1, 720),
+            "credit_reminder_hours_arrears": (1, 720),
+        }
+        for name, (minimum, maximum) in bounded_whole_numbers.items():
+            raw = payload.get(name)
+            if raw in (None, ""):
+                continue
+            try:
+                numeric = Decimal(str(raw))
+                if not numeric.is_finite() or numeric != numeric.to_integral_value():
+                    raise ValueError
+                value = int(numeric)
+                if value < minimum or value > maximum:
+                    errors.append(f"{name} must be between {minimum} and {maximum}")
+            except (TypeError, ValueError, ArithmeticError):
+                errors.append(f"{name} must be a whole number")
+        decimal_field("false_arrival_penalty_amount", minimum=Decimal("0"))
+        decimal_field(
+            "false_arrival_health_weight", minimum=Decimal("0"), maximum=Decimal("20")
+        )
+        for name in (
+            "assignment_timeout_enabled", "arrival_verification_enabled",
+            "false_arrival_auto_close", "sla_auto_cancel",
+            "sla_notify_provider", "sla_penalty_to_customer",
+        ):
+            if name in payload and not isinstance(payload[name], bool):
+                errors.append(f"{name} must be true or false")
         threshold = decimal_field("health_suspension_threshold", minimum=Decimal("0"), maximum=Decimal("100"))
         reinstate = decimal_field("health_reinstatement_score", minimum=Decimal("0"), maximum=Decimal("100"))
 
@@ -364,6 +419,8 @@ class VerticalMonetizationPolicyService:
                     provider_charge_model=r.provider_charge_model,
                     provider_charge_credit_units=r.provider_charge_credit_units,
                     provider_chargeable_event=r.provider_chargeable_event,
+                    sla_penalty_enabled=r.sla_penalty_enabled,
+                    sla_penalty_amount=r.sla_penalty_amount,
                     status=r.status,
                 ))
                 cloned += 1
@@ -541,6 +598,19 @@ class VerticalMonetizationPolicyService:
                 "provider_charge_credit_units is required for a FIXED_CREDITS Job Type rule",
                 status_code=422,
             )
+        if "sla_penalty_amount" in payload and payload["sla_penalty_amount"] not in (None, ""):
+            try:
+                sla_amount = Decimal(str(payload["sla_penalty_amount"]))
+            except Exception:
+                raise ServiceOSException(
+                    "VALIDATION_ERROR", "sla_penalty_amount must be numeric", status_code=422,
+                )
+            if not sla_amount.is_finite() or sla_amount < 0:
+                raise ServiceOSException(
+                    "VALIDATION_ERROR",
+                    "sla_penalty_amount must be a finite amount of zero or greater",
+                    status_code=422,
+                )
         existing = (await db.execute(select(MonetizationJobTypeRule).where(
             MonetizationJobTypeRule.policy_id == policy_id, MonetizationJobTypeRule.job_type_id == job_type_id,
         ))).scalar_one_or_none()

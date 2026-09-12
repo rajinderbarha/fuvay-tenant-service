@@ -232,7 +232,24 @@ class TestPolicyLifecycle:
         d = await admin.post("/v1/admin/home-services/finance/monetization/draft", json={
             "provider_model": "COMPLETION_CREDITS", "provider_credit_units": 8,
             "customer_fee_model": "NONE", "change_summary": "version bump test",
+            "sla_penalty_max_days": 3,
+            "assignment_timeout_enabled": True,
+            "assignment_timeout_minutes": 30,
+            "customer_reschedule_limit": 3,
+            "arrival_verification_enabled": True,
+            "arrival_radius_meters": 250,
+            "arrival_location_max_age_seconds": 120,
+            "arrival_max_accuracy_meters": 100,
+            "false_arrival_auto_close": True,
+            "false_arrival_penalty_amount": 150,
+            "false_arrival_health_weight": 3,
+            "customer_photo_retention_days": 30,
+            "completion_proof_retention_days": 365,
+            "credit_reminder_hours_low": 24,
+            "credit_reminder_hours_blocked": 6,
+            "credit_reminder_hours_arrears": 2,
         })
+        assert d.status_code == 200, d.text
         draft = d.json()["data"]
         pub = await admin.post("/v1/admin/home-services/finance/monetization/publish",
                                json={"reason": "version bump"})
@@ -240,6 +257,12 @@ class TestPolicyLifecycle:
         published = pub.json()["data"]
         assert published["id"] == draft["id"]
         assert published["is_current"] is True
+        assert published["assignment_timeout_minutes"] == 30
+        assert published["customer_reschedule_limit"] == 3
+        assert published["arrival_radius_meters"] == 250
+        assert published["false_arrival_penalty_amount"] == 150.0
+        assert published["customer_photo_retention_days"] == 30
+        assert published["credit_reminder_hours_arrears"] == 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -260,9 +283,12 @@ class TestJobTypeRules:
 
         r = await admin.put(
             f"/v1/admin/home-services/finance/monetization/policies/{policy_id}/job-type-rules/{job_type_id}",
-            json={"customer_charge_enabled": False, "provider_charge_credit_units": "0"})
+            json={"customer_charge_enabled": False, "provider_charge_credit_units": "0",
+                  "sla_penalty_enabled": True, "sla_penalty_amount": "50"})
         assert r.status_code == 200, r.text
         assert r.json()["data"]["customer_charge_enabled"] is False
+        assert r.json()["data"]["sla_penalty_enabled"] is True
+        assert r.json()["data"]["sla_penalty_amount"] == "50"
 
         listed = await admin.get(f"/v1/admin/home-services/finance/monetization/policies/{policy_id}/job-type-rules")
         assert any(x["job_type_id"] == job_type_id for x in listed.json()["data"]["items"])

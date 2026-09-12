@@ -257,9 +257,14 @@ class TestHomeServiceExecution:
         assert job.status == "on_the_way"
 
     async def test_mark_reached_site(self, svc):
+        from unittest.mock import patch
         job = _mock_job(status="on_the_way")
         db = _db_returning(job, None)
-        await svc.mark_reached_site(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
+        with patch(
+            "app.engines.execution.arrival_verification.verify_arrival",
+            AsyncMock(return_value={"verified": True, "distance_meters": 10}),
+        ):
+            await svc.mark_reached_site(db, JOB_ID, TENANT_ID, STAFF_ID, USER_ID)
         assert job.status == "reached_site"
 
     async def test_start_inspection(self, svc):

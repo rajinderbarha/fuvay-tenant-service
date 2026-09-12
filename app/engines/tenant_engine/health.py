@@ -189,7 +189,7 @@ async def write_health_signal(tenant_id: uuid.UUID, signal_name: str, value: flo
 async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
     """Refresh cancellation/response signals from canonical job history.
 
-    Provider-initiated cancellations and 30-minute assignment timeouts are
+    Provider-initiated cancellations and assignment timeouts are
     intentionally distinguished from customer cancellations. A small prior
     prevents one early incident from collapsing a new provider to zero while
     still making every incident visibly reduce health.
@@ -202,6 +202,10 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
         if inspect.iscoroutine(nested):
             nested = await nested
         async with nested:
+            from app.engines.vertical_monetization.runtime_operations import (
+                get_home_services_operations_policy,
+            )
+            operations_policy = await get_home_services_operations_policy(db)
             row = (await db.execute(text("""
                 SELECT
                   (SELECT count(*) FROM service_jobs
@@ -211,12 +215,18 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
                      AND actor_role='provider') AS provider_cancelled,
                   (SELECT count(DISTINCT job_id) FROM service_job_execution_events
                    WHERE tenant_id=:tid AND event_type='provider_assignment_timeout') AS assignment_timeouts
+                  ,(SELECT count(DISTINCT job_id) FROM service_job_execution_events
+                   WHERE tenant_id=:tid AND event_type='false_arrival_detected') AS false_arrivals
             """), {"tid": str(tenant_id)})).mappings().first()
             completed = int((row or {}).get("completed") or 0)
             cancelled = int((row or {}).get("provider_cancelled") or 0)
             timeouts = int((row or {}).get("assignment_timeouts") or 0)
+            false_arrivals = int((row or {}).get("false_arrivals") or 0)
             prior = 4
-            completion_score = round(100.0 * (completed + prior) / (completed + cancelled + prior), 2)
+            false_arrival_weight = float(operations_policy.false_arrival_health_weight)
+            completion_score = round(
+                100.0 * (completed + prior)
+                / (completed + cancelled + (false_arrivals * false_arrival_weight) + prior), 2)
             response_score = round(100.0 * prior / (timeouts + prior), 2)
             await write_health_signal(tenant_id, "job_completion_rate", completion_score, ttl_hours=24)
             await write_health_signal(tenant_id, "response_time", response_score, ttl_hours=24)
@@ -228,4 +238,6 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
         "updated": True, "score": health["score"], "band": health["band"],
         "completion_score": completion_score, "response_score": response_score,
         "provider_cancellations": cancelled, "assignment_timeouts": timeouts,
+        "false_arrivals": false_arrivals,
+        "false_arrival_health_weight": false_arrival_weight,
     }

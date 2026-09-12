@@ -29,7 +29,7 @@ from app.engines.home_service_assignment.constants import (
     ERR_BOOKING_NOT_FOUND, ERR_RESCHEDULE_NOT_ALLOWED,
     ERR_RESCHEDULE_LIMIT_REACHED, ERR_STALE_VERSION, ERR_SLOT_UNAVAILABLE,
     ERR_INVALID_REASON, ERR_PAST_DATE,
-    CUSTOMER_CANCELLABLE_JOB_STATUSES, MAX_RESCHEDULE_COUNT,
+    CUSTOMER_CANCELLABLE_JOB_STATUSES,
     CUSTOMER_CANCELLATION_REASONS, CANCELLATION_REASON_REQUIRES_DETAIL,
     TRACKING_ACTIVE_JOB_STATUSES, LOCATION_STALE_SECONDS,
     ERR_LOCATION_NOT_TRACKABLE, ERR_LOCATION_INVALID_COORDS,
@@ -870,7 +870,7 @@ class HomeServiceJobAssignmentService:
         self, booking_id: uuid.UUID, customer_id: uuid.UUID,
     ) -> dict:
         """Server-authoritative eligibility read — the mobile app must not
-        reproduce CUSTOMER_CANCELLABLE_JOB_STATUSES/MAX_RESCHEDULE_COUNT
+        reproduce the backend cancellation states or reschedule limit
         client-side; it only renders what this returns."""
         booking, job = await self._load_booking_and_job(booking_id, customer_id)
         if not job:
@@ -891,11 +891,19 @@ class HomeServiceJobAssignmentService:
         else:
             cancel_block_reason = None if state_eligible else "booking_not_in_cancellable_state"
 
-        remaining_reschedules = max(0, MAX_RESCHEDULE_COUNT - (job.reschedule_count or 0))
-        can_reschedule = state_eligible and workflow_allows_reschedule and remaining_reschedules > 0
+        from app.engines.vertical_monetization.runtime_operations import (
+            get_home_services_operations_policy,
+        )
+        max_reschedule_count = (
+            await get_home_services_operations_policy(self.db)
+        ).customer_reschedule_limit
+        remaining_reschedules = max(0, max_reschedule_count - (job.reschedule_count or 0))
+        from app.engines.home_service_assignment.constants import CUSTOMER_RESCHEDULABLE_JOB_STATUSES
+        reschedule_state_eligible = job.status in CUSTOMER_RESCHEDULABLE_JOB_STATUSES
+        can_reschedule = reschedule_state_eligible and workflow_allows_reschedule and remaining_reschedules > 0
         if not workflow_allows_reschedule:
             reschedule_block_reason = "service_policy_disallows_reschedule"
-        elif not state_eligible:
+        elif not reschedule_state_eligible:
             reschedule_block_reason = "booking_not_in_reschedulable_state"
         elif remaining_reschedules <= 0:
             reschedule_block_reason = "reschedule_limit_reached"
@@ -913,7 +921,7 @@ class HomeServiceJobAssignmentService:
             "can_reschedule": can_reschedule,
             "reschedule_block_reason": reschedule_block_reason,
             "remaining_reschedule_allowance": remaining_reschedules,
-            "max_reschedule_allowance": MAX_RESCHEDULE_COUNT,
+            "max_reschedule_allowance": max_reschedule_count,
             "requires_provider_approval": False,
             "cancellation_fee": None,
             "cancellation_cutoff": None,
@@ -1034,6 +1042,41 @@ class HomeServiceJobAssignmentService:
             old_value={"status": old_job_status}, new_value={"status": JOB_STATUS_CANCELLED},
             reason=reason, request_id=request_id,
         )
+        if reason == "provider_asked_to_cancel_or_pay_direct":
+            # Treat this as an anti-circumvention report, not an automatic
+            # conviction. Preserve evidence and alert platform admins for
+            # review; ordinary customer cancellations do neither.
+            from app.engines.execution.models import ServiceJobExecutionEvent
+            self.db.add(ServiceJobExecutionEvent(
+                booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+                actor_user_id=customer_id, actor_role="customer",
+                event_type="off_platform_solicitation_reported",
+                old_status=old_job_status, new_status=JOB_STATUS_CANCELLED,
+                notes=(detail or "Customer reports the provider asked them to cancel or pay directly."),
+                request_id=request_id,
+            ))
+            try:
+                from app.engines.auth.models import User
+                from app.engines.platform_notifications.models import InAppNotification
+                admins = (await self.db.execute(select(User.id).where(
+                    User.role.in_(("super_admin", "platform_admin")),
+                    User.is_active.is_(True),
+                ))).scalars().all()
+                for admin_id in admins:
+                    self.db.add(InAppNotification(
+                        user_id=admin_id, tenant_id=job.tenant_id,
+                        notification_type="off_platform_solicitation_reported",
+                        title="Possible off-platform solicitation",
+                        body=(f"Customer reported this on booking {booking.booking_number}. "
+                              "Review the masked-call record and job timeline."),
+                        action_url=f"/admin/home-services/service-jobs/{job.id}",
+                        action_label="Review job", source_record_type="service_jobs",
+                        source_record_id=job.id, severity="critical",
+                    ))
+            except Exception:
+                # The immutable report above is the authority; notification is
+                # best-effort and must never block the customer's cancellation.
+                pass
         await self._notify_booking_change(
             booking=booking, job=job, title="Booking cancelled by customer",
             body=f"The customer cancelled booking {booking.booking_number}. Reason: {reason}",
@@ -1086,9 +1129,16 @@ class HomeServiceJobAssignmentService:
                         "scheduled_time_window": scheduled_time_window,
                         "version": self._version_of(job)}
 
-        if job.status not in CUSTOMER_CANCELLABLE_JOB_STATUSES:
+        from app.engines.home_service_assignment.constants import CUSTOMER_RESCHEDULABLE_JOB_STATUSES
+        if job.status not in CUSTOMER_RESCHEDULABLE_JOB_STATUSES:
             raise ValueError(ERR_RESCHEDULE_NOT_ALLOWED)
-        if (job.reschedule_count or 0) >= MAX_RESCHEDULE_COUNT:
+        from app.engines.vertical_monetization.runtime_operations import (
+            get_home_services_operations_policy,
+        )
+        max_reschedule_count = (
+            await get_home_services_operations_policy(self.db)
+        ).customer_reschedule_limit
+        if (job.reschedule_count or 0) >= max_reschedule_count:
             raise ValueError(ERR_RESCHEDULE_LIMIT_REACHED)
         self._check_version(job, expected_version)
 
@@ -1102,6 +1152,7 @@ class HomeServiceJobAssignmentService:
                 raise ValueError(ERR_SLOT_UNAVAILABLE)
 
         old_date = job.scheduled_date.isoformat() if job.scheduled_date else None
+        old_status = job.status
         job.scheduled_date = scheduled_date
         job.scheduled_time_window = scheduled_time_window
         job.reschedule_count = (job.reschedule_count or 0) + 1
@@ -1109,6 +1160,15 @@ class HomeServiceJobAssignmentService:
         # markers belong to the previous schedule and must not suppress them.
         job.reminder_24h_sent_at = None
         job.reminder_1h_sent_at = None
+        if old_status == "reached_site":
+            job.status = JOB_STATUS_SCHEDULED
+            job.arrival_verified_at = None
+            job.arrival_distance_meters = None
+            booking.status = JOB_STATUS_SCHEDULED
+            assignment = await self._current_assignment(job.id)
+            if assignment:
+                assignment.scheduled_date = scheduled_date
+                assignment.scheduled_time_window = scheduled_time_window
         job.updated_at = _utcnow()
         booking.preferred_date = scheduled_date
         booking.preferred_time_window = scheduled_time_window
@@ -1437,6 +1497,12 @@ class HomeServiceJobAssignmentService:
             or job.scheduled_time_window != scheduled_time_window
         )
         if moving_slot:
+            # A provider/technician cannot move a customer-promised visit on
+            # their own. The customer can apply the change from the existing
+            # customer reschedule flow, which is the approval record.
+            if job.scheduled_date is not None or job.scheduled_time_window:
+                from app.engines.home_service_assignment.constants import ERR_CUSTOMER_APPROVAL_REQUIRED
+                raise ValueError(ERR_CUSTOMER_APPROVAL_REQUIRED)
             from sqlalchemy import text as capacity_sql
             await self.db.execute(
                 capacity_sql("SELECT pg_advisory_xact_lock(hashtextextended(:capacity_key, 0))"),

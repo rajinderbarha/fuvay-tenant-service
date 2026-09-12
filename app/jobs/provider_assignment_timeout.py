@@ -1,4 +1,4 @@
-"""Escalate provider-owned jobs that remain without a technician for 30 minutes."""
+"""Escalate provider-owned jobs that exceed the admin-set assignment window."""
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +12,7 @@ from app.engines.execution.models import ServiceJobExecutionEvent
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 
 logger = structlog.get_logger("jobs.provider_assignment_timeout")
+# Backwards-compatible documented fallback; runtime uses the published policy.
 TIMEOUT_MINUTES = 30
 INTERVAL_SECONDS = 60
 ELIGIBLE_STATUSES = ("pending_assignment", "accepted")
@@ -66,7 +67,14 @@ async def _find_replacement(db, job: ServiceJob) -> tuple[uuid.UUID, dict] | Non
 
 
 async def sweep(db, *, limit: int = 50) -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=TIMEOUT_MINUTES)
+    from app.engines.vertical_monetization.runtime_operations import (
+        get_home_services_operations_policy,
+    )
+    policy = await get_home_services_operations_policy(db)
+    if not policy.assignment_timeout_enabled:
+        return {"examined": 0, "reassigned": 0, "closed": 0, "disabled": True}
+    timeout_minutes = policy.assignment_timeout_minutes
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
     jobs = list((await db.execute(
         select(ServiceJob).where(
             ServiceJob.status.in_(ELIGIBLE_STATUSES),
@@ -95,7 +103,7 @@ async def sweep(db, *, limit: int = 50) -> dict:
             booking_id=job.booking_id, job_id=job.id, tenant_id=old_tenant_id,
             actor_role="platform", event_type="provider_assignment_timeout",
             old_status=job.status,
-            notes=f"No technician was assigned within {TIMEOUT_MINUTES} minutes.",
+            notes=f"No technician was assigned within {timeout_minutes} minutes.",
             request_id="job:provider_assignment_timeout",
         )
         if replacement:
@@ -119,7 +127,10 @@ async def sweep(db, *, limit: int = 50) -> dict:
                 db.add(booking)
             reassigned += 1
         else:
-            reason = "Closed because no alternative provider was available after 30 minutes without a technician assignment."
+            reason = (
+                "Closed because no alternative provider was available after "
+                f"{timeout_minutes} minutes without a technician assignment."
+            )
             event.new_status = "cancelled"
             event.notes = reason
             event.event_metadata = {"outcome": "closed_no_alternative_provider"}
@@ -138,7 +149,10 @@ async def sweep(db, *, limit: int = 50) -> dict:
         await db.flush()
         from app.engines.tenant_engine.health import refresh_provider_operational_health
         await refresh_provider_operational_health(db, old_tenant_id)
-    return {"examined": len(jobs), "reassigned": reassigned, "closed": closed}
+    return {
+        "examined": len(jobs), "reassigned": reassigned, "closed": closed,
+        "assignment_timeout_minutes": timeout_minutes,
+    }
 
 
 async def run_once() -> dict:

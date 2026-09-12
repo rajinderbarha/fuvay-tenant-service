@@ -79,6 +79,7 @@ ERR_STALE_VERSION                = "JOB_ASSIGNMENT_STALE_VERSION"
 ERR_SLOT_UNAVAILABLE             = "JOB_ASSIGNMENT_SLOT_UNAVAILABLE"
 ERR_INVALID_REASON               = "JOB_ASSIGNMENT_INVALID_REASON"
 ERR_PAST_DATE                    = "JOB_ASSIGNMENT_PAST_DATE"
+ERR_CUSTOMER_APPROVAL_REQUIRED   = "JOB_RESCHEDULE_CUSTOMER_APPROVAL_REQUIRED"
 
 # MODULE-L5-29: a customer may cancel/reschedule its own booking only before
 # real work has begun — once a quote is approved or an invoice is issued the
@@ -86,6 +87,13 @@ ERR_PAST_DATE                    = "JOB_ASSIGNMENT_PAST_DATE"
 # complaint/refund conversation instead of a bare self-service cancel.
 CUSTOMER_CANCELLABLE_JOB_STATUSES = {
     "pending_assignment", "assigned", "accepted", "scheduled",
+}
+
+# A customer can approve moving a visit after the technician has verified
+# arrival. Cancellation remains blocked at that point, but rescheduling is a
+# distinct action and returns the technician to a fresh scheduled visit.
+CUSTOMER_RESCHEDULABLE_JOB_STATUSES = {
+    *CUSTOMER_CANCELLABLE_JOB_STATUSES, "reached_site",
 }
 
 # CANCEL-RESCHEDULE-FOUNDATION policy decisions (resolved 2026-08-02):
@@ -101,7 +109,8 @@ MAX_RESCHEDULE_COUNT = 3
 # returns this list so the mobile app never has to hardcode/guess it.
 CUSTOMER_CANCELLATION_REASONS = {
     "changed_mind", "found_another_provider", "price_concern",
-    "schedule_conflict", "no_longer_needed", "other",
+    "schedule_conflict", "no_longer_needed",
+    "provider_asked_to_cancel_or_pay_direct", "other",
 }
 CANCELLATION_REASON_REQUIRES_DETAIL = {"other"}
 

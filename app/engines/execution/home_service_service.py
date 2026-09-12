@@ -515,9 +515,11 @@ class HomeServiceJobExecutionService:
     async def mark_reached_site(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        from app.engines.execution.arrival_verification import verify_arrival
+        arrival = await verify_arrival(db, job=job, staff_member_id=staff_member_id)
         await self._set_status(db, job, JS_REACHED_SITE, EV_REACHED_SITE, user_id, "staff", request_id=request_id)
         await db.flush()
-        return job.to_dict()
+        return {**job.to_dict(), "arrival_verification": arrival}
 
     async def start_inspection(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
@@ -529,7 +531,18 @@ class HomeServiceJobExecutionService:
                 "This fixed-price service does not require an inspection. Start the work instead.",
                 status_code=409,
             )
+        if not job.arrival_verified_at:
+            raise ServiceOSException(
+                "ARRIVAL_VERIFICATION_REQUIRED",
+                "Verified arrival at the customer address is required before inspection.",
+                status_code=409,
+            )
         await self._set_status(db, job, JS_INSPECTION_STARTED, EV_INSPECTION_STARTED, user_id, "staff", request_id=request_id)
+        from app.engines.execution.sla_breach_service import stop_sla
+        await stop_sla(db, job.id)
+        job.sla_due_at = None
+        job.sla_next_penalty_at = None
+        job.sla_stopped_at = _now()
         await db.flush()
         return job.to_dict()
 
@@ -546,6 +559,12 @@ class HomeServiceJobExecutionService:
     async def start_service(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        if not job.arrival_verified_at:
+            raise ServiceOSException(
+                "ARRIVAL_VERIFICATION_REQUIRED",
+                "Verified arrival at the customer address is required before work starts.",
+                status_code=409,
+            )
         # Estimate-approval gate is the pre-existing, independent authority
         # for work start (_set_status -> _assert_quote_approval_satisfied).
         # A required pre-work checklist gate complements it and never
@@ -554,6 +573,13 @@ class HomeServiceJobExecutionService:
         from app.engines.checklist_catalog.constants import GATE_BEFORE_WORK_START
         await assert_gate_satisfied(db, job, GATE_BEFORE_WORK_START)
         await self._set_status(db, job, JS_SERVICE_STARTED, EV_SERVICE_STARTED, user_id, "staff", request_id=request_id)
+        # Fixed-price workflows legitimately skip inspection; verified work
+        # start is therefore also an SLA stop point.
+        from app.engines.execution.sla_breach_service import stop_sla
+        await stop_sla(db, job.id)
+        job.sla_due_at = None
+        job.sla_next_penalty_at = None
+        job.sla_stopped_at = _now()
         await db.flush()
         # Offer this moment to the monetization policy. It charges only if
         # `work_started` is the configured event; otherwise nothing is written

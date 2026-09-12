@@ -20,6 +20,7 @@ from app.engines.home_service_assignment.constants import (
     ERR_STAFF_NOT_ELIGIBLE, ERR_REASSIGN_NOT_ALLOWED, ERR_CANCEL_NOT_ALLOWED,
     ERR_INVALID_STATUS, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED,
     ERR_ASSIGNMENT_NOT_FOUND, ERR_SLOT_UNAVAILABLE,
+    ERR_CUSTOMER_APPROVAL_REQUIRED,
 )
 
 router = APIRouter(
@@ -45,6 +46,7 @@ _MESSAGES = {
     ERR_JOB_COMPLETED:         "Job is already completed.",
     ERR_ASSIGNMENT_NOT_FOUND:  "No active assignment found.",
     ERR_SLOT_UNAVAILABLE:      "That slot is no longer available. Choose another open slot.",
+    ERR_CUSTOMER_APPROVAL_REQUIRED: "The customer must approve any change to an existing visit slot.",
 }
 
 
@@ -65,6 +67,7 @@ _ERR_STATUS = {
     ERR_JOB_CANCELLED:        409,
     ERR_JOB_COMPLETED:        409,
     ERR_SLOT_UNAVAILABLE:     409,
+    ERR_CUSTOMER_APPROVAL_REQUIRED: 409,
 }
 
 

@@ -217,6 +217,8 @@ export interface MonetizationJobTypeRule {
   provider_charge_model: "INHERIT" | "FIXED_CREDITS";
   provider_charge_credit_units: string | null;
   provider_chargeable_event: "job_completed" | "consultation_completed";
+  sla_penalty_enabled?: boolean;
+  sla_penalty_amount?: string | null;
   status: "active" | "inactive";
 }
 

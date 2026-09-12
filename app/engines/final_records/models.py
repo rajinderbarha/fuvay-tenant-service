@@ -182,6 +182,16 @@ class ServiceJob(ServiceOSBase):
     reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
     reminder_24h_sent_at:   Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     reminder_1h_sent_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_due_at:             Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_breached_at:        Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_penalty_charged:    Mapped[Decimal | None]   = mapped_column(Numeric(12, 2), nullable=True)
+    sla_penalty_waived_at:  Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_enforcement_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_next_penalty_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_penalty_day_count:  Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    sla_stopped_at:         Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    arrival_verified_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    arrival_distance_meters: Mapped[Decimal | None]  = mapped_column(Numeric(10, 2), nullable=True)
     # Copied from the booking at creation so the provider's dashboard can sort
     # urgent work first without joining back to the booking on every query.
     is_emergency:           Mapped[bool]             = mapped_column(Boolean, nullable=False, default=False)
@@ -216,6 +226,14 @@ class ServiceJob(ServiceOSBase):
             "warranty_certificate_issued_at": (self.warranty_certificate_issued_at.isoformat()
                                                 if self.warranty_certificate_issued_at else None),
             "reschedule_count":      self.reschedule_count,
+            "sla_due_at":            self.sla_due_at.isoformat() if self.sla_due_at else None,
+            "sla_next_penalty_at":   self.sla_next_penalty_at.isoformat() if self.sla_next_penalty_at else None,
+            "sla_penalty_day_count": self.sla_penalty_day_count,
+            "sla_penalty_charged":   float(self.sla_penalty_charged or 0),
+            "sla_active":            bool(self.sla_next_penalty_at and not self.sla_stopped_at),
+            "arrival_verified_at":   self.arrival_verified_at.isoformat() if self.arrival_verified_at else None,
+            "arrival_distance_meters": (float(self.arrival_distance_meters)
+                                         if self.arrival_distance_meters is not None else None),
             "created_at":            self.created_at.isoformat() if self.created_at else None,
             "updated_at":            self.updated_at.isoformat() if self.updated_at else None,
         }

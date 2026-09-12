@@ -2,9 +2,9 @@
 
 One sweep, one job at a time:
 
-  1. the customer is released -- the job is cancelled so they can rebook
-     immediately, which is the whole point of acting on a breach;
-  2. the provider is charged the admin-set penalty;
+  1. the provider is charged the admin-set amount once per breached day;
+  2. after the configured final day the customer is released and the job is
+     cancelled so they can rebook;
   3. if the admin chose to, that same amount is issued to the customer as
      service credit, spendable on their next booking;
   4. health takes the hit, and a provider who falls through the threshold is
@@ -54,6 +54,7 @@ async def _policy(db: AsyncSession):
         "       p.sla_auto_cancel, p.sla_notify_provider, p.sla_penalty_type, "
         "       p.sla_penalty_percentage, p.sla_penalty_min, p.sla_penalty_max, "
         "       p.sla_breachable_statuses, "
+        "       p.sla_penalty_max_days, "
         "       p.health_suspension_threshold, p.health_suspension_days, "
         "       p.health_reinstatement_score "
         "FROM vertical_monetization_policies p "
@@ -78,7 +79,12 @@ def compute_due_at(scheduled_date: dt.date | None, breach_hours: int | None) -> 
 
 
 async def stamp_due_at(db: AsyncSession, job_id: uuid.UUID) -> dt.datetime | None:
-    """Set `sla_due_at` from the job's scheduled date and the live policy."""
+    """Set the SLA from the promised slot and enroll only now/future actions.
+
+    Migration 355 intentionally leaves old jobs unenrolled. Stamping happens
+    on a new assignment or an approved schedule change, which is the safe
+    point to start the new daily financial rule.
+    """
     policy = await _policy(db)
     if policy is None or not policy.sla_breach_hours:
         return None
@@ -89,9 +95,21 @@ async def stamp_due_at(db: AsyncSession, job_id: uuid.UUID) -> dt.datetime | Non
     due = compute_due_at(row.scheduled_date, policy.sla_breach_hours)
     if due is not None:
         await db.execute(text(
-            "UPDATE service_jobs SET sla_due_at = :due, updated_at = now() WHERE id = :id"
+            "UPDATE service_jobs SET sla_due_at = :due, "
+            "sla_enforcement_started_at = COALESCE(sla_enforcement_started_at, now()), "
+            "sla_next_penalty_at = :due, sla_stopped_at = NULL, updated_at = now() "
+            "WHERE id = :id"
         ), {"due": due, "id": str(job_id)})
     return due
+
+
+async def stop_sla(db: AsyncSession, job_id: uuid.UUID) -> None:
+    """Stop future SLA charges once verified field work has begun."""
+    await db.execute(text(
+        "UPDATE service_jobs SET sla_stopped_at = COALESCE(sla_stopped_at, now()), "
+        "sla_due_at = NULL, sla_next_penalty_at = NULL, updated_at = now() "
+        "WHERE id = :id"
+    ), {"id": str(job_id)})
 
 
 def resolve_penalty(policy, *, job_value: Decimal | None,
@@ -142,7 +160,8 @@ async def _job_type_override(db: AsyncSession, *, policy_id, job_type_id):
 
 
 async def _charge_penalty(db: AsyncSession, *, tenant_id, job_id, amount: Decimal,
-                          cap: Decimal | None) -> Decimal:
+                          cap: Decimal | None, day_number: int = 1,
+                          source: str = "sla_breach") -> Decimal:
     """Withdraw the penalty from the provider ONLY -- nothing reaches the customer.
 
     Allowed to take a balance negative: a provider already at zero would
@@ -150,6 +169,14 @@ async def _charge_penalty(db: AsyncSession, *, tenant_id, job_id, amount: Decima
     it is most needed. `cap` is how far into debt a provider may be driven, so
     repeated breaches cannot spiral into a balance they can never clear.
     """
+    idem = f"{source}:{job_id}:day:{day_number}"
+    existing = (await db.execute(text(
+        "SELECT credit_delta FROM usage_credit_ledger "
+        "WHERE tenant_id=:t AND idempotency_key=:k LIMIT 1"
+    ), {"t": str(tenant_id), "k": idem})).first()
+    if existing is not None:
+        return abs(Decimal(str(existing.credit_delta or 0)))
+
     balance = Decimal(str((await db.execute(text(
         "SELECT COALESCE(credit_balance, 0) FROM tenant_billing "
         "WHERE tenant_id = :t FOR UPDATE"), {"t": str(tenant_id)})).scalar() or 0))
@@ -168,16 +195,20 @@ async def _charge_penalty(db: AsyncSession, *, tenant_id, job_id, amount: Decima
     ), {"b": after, "t": str(tenant_id)})
     await db.execute(text(
         "INSERT INTO usage_credit_ledger (tenant_id, job_id, event_type, credit_delta, "
-        "  balance_before, balance_after, deduction_source, reason) "
-        "VALUES (:t, :j, 'sla_breach_penalty', :d, :before, :after, 'sla_breach', :r)"
+        "  balance_before, balance_after, deduction_source, reason, idempotency_key, "
+        "  source_type, source_id, reason_code, actor_role) "
+        "VALUES (:t, :j, 'sla_breach_penalty', :d, :before, :after, :source, :r, :k, "
+        "  'service_job', :source_id, 'sla_breach', 'system')"
     ), {"t": str(tenant_id), "j": str(job_id), "d": float(-charge),
         "before": float(balance), "after": float(after),
-        "r": f"SLA breach penalty for job {job_id}"})
+        "source": source, "source_id": str(job_id), "k": idem,
+        "r": f"SLA breach day {day_number} penalty for job {job_id}"})
     return charge
 
 
 async def _penalise_and_compensate(db: AsyncSession, *, tenant_id, customer_id,
-                                   booking_id, job_id, amount: Decimal) -> Decimal:
+                                   booking_id, job_id, amount: Decimal,
+                                   day_number: int = 1) -> Decimal:
     """Take the penalty from the provider AND give it to the customer.
 
     One call, because `issue_provider_funded_customer_credit` already does both
@@ -194,7 +225,7 @@ async def _penalise_and_compensate(db: AsyncSession, *, tenant_id, customer_id,
         tenant_id=tenant_id,
         customer_id=customer_id,
         amount=amount,
-        reference_type="sla_breach",
+        reference_type=f"sla_breach_day_{day_number}",
         reference_id=job_id,
         reason=f"Service level breach on job {job_id}",
         actor_id=None,
@@ -319,7 +350,7 @@ async def _revoke_unspent_customer_credit(db: AsyncSession, *, job_id: uuid.UUID
     """Take back only what the customer has not already used."""
     rows = (await db.execute(text(
         "SELECT id, remaining_amount FROM customer_service_credits "
-        "WHERE reference_type = 'sla_breach' AND reference_id = :j "
+        "WHERE reference_type LIKE 'sla_breach%' AND reference_id = :j "
         "  AND status = 'active' FOR UPDATE"), {"j": str(job_id)})).fetchall()
     revoked = Decimal("0")
     for row in rows:
@@ -334,104 +365,118 @@ async def _revoke_unspent_customer_credit(db: AsyncSession, *, job_id: uuid.UUID
 
 
 async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
-    """Act on every job past its SLA, then reinstate anyone whose suspension
-    has run out. Safe to run repeatedly and safe to run late."""
+    """Charge each breached day and close the job after the final charge.
+
+    Rows are locked and each ledger movement has a day-specific idempotency
+    key, so overlapping schedulers and retries cannot double-charge a day.
+    """
     policy = await _policy(db)
     if policy is None:
         return {"breached": 0, "penalised": 0, "compensated": 0,
                 "suspended": 0, "reinstated": 0, "reason": "no_published_policy"}
 
     cap = Decimal(str(policy.sla_penalty_debt_cap)) if policy.sla_penalty_debt_cap is not None else None
-
-    # Which statuses can breach is admin policy, falling back to the code
-    # default so an unset policy behaves as before.
+    max_days = max(1, min(30, int(policy.sla_penalty_max_days or 3)))
     statuses = policy.sla_breachable_statuses or list(BREACHABLE_STATUSES)
     if not isinstance(statuses, list) or not statuses:
         statuses = list(BREACHABLE_STATUSES)
 
     due = (await db.execute(text(
         "SELECT j.id, j.tenant_id, j.booking_id, j.customer_id, j.status, j.job_type_id, "
-        "       COALESCE(i.total_amount, 0) AS job_value "
+        "       j.sla_penalty_day_count, COALESCE(j.sla_penalty_charged, 0) AS charged_so_far, "
+        "       COALESCE((SELECT i.total_amount FROM service_invoices i "
+        "                 WHERE i.job_id=j.id AND i.status<>'cancelled' "
+        "                 ORDER BY i.created_at DESC LIMIT 1), 0) AS job_value "
         "FROM service_jobs j "
-        "LEFT JOIN service_invoices i ON i.job_id = j.id "
-        "WHERE j.sla_due_at IS NOT NULL AND j.sla_breached_at IS NULL "
-        "  AND j.sla_due_at <= now() AND j.status = ANY(:statuses) "
-        "ORDER BY j.sla_due_at LIMIT :lim FOR UPDATE OF j SKIP LOCKED"
-    ), {"statuses": statuses, "lim": limit})).fetchall()
+        "WHERE j.sla_enforcement_started_at IS NOT NULL AND j.sla_stopped_at IS NULL "
+        "  AND j.sla_next_penalty_at IS NOT NULL AND j.sla_next_penalty_at <= now() "
+        "  AND j.sla_penalty_day_count < :max_days AND j.status = ANY(:statuses) "
+        "ORDER BY j.sla_next_penalty_at LIMIT :lim FOR UPDATE OF j SKIP LOCKED"
+    ), {"statuses": statuses, "max_days": max_days, "lim": limit})).fetchall()
 
     breached = penalised = compensated = 0
     for job in due:
-        # 1. Release the customer first, if the admin wants breaches to cancel.
-        #    Everything after this is about money and none of it should delay
-        #    letting them rebook. With auto-cancel off the breach is still
-        #    recorded and still costs -- the job simply stays open.
-        if policy.sla_auto_cancel:
-            await db.execute(text(
-                "UPDATE service_jobs SET status = 'cancelled', sla_breached_at = now(), "
-                "  updated_at = now() WHERE id = :id"), {"id": str(job.id)})
-        else:
-            await db.execute(text(
-                "UPDATE service_jobs SET sla_breached_at = now(), updated_at = now() "
-                "WHERE id = :id"), {"id": str(job.id)})
+        # Final-day closure writes status = 'cancelled'; days one and two stay open.
+        day_number = int(job.sla_penalty_day_count or 0) + 1
+        final_day = day_number >= max_days
         breached += 1
 
         enabled, override = await _job_type_override(
             db, policy_id=policy.id, job_type_id=job.job_type_id)
         penalty = resolve_penalty(
-            policy,
-            job_value=Decimal(str(job.job_value or 0)) or None,
+            policy, job_value=Decimal(str(job.job_value or 0)) or None,
             job_type_override=override,
         ) if enabled else Decimal("0")
 
-        # 2. The penalty. Exactly ONE of these runs: the compensating path
-        #    already debits the provider, so running both would charge twice
-        #    for a single breach.
         taken = Decimal("0")
         if penalty > 0:
             if policy.sla_penalty_to_customer and job.customer_id is not None:
                 try:
                     taken = await _penalise_and_compensate(
                         db, tenant_id=job.tenant_id, customer_id=job.customer_id,
-                        booking_id=job.booking_id, job_id=job.id, amount=penalty)
+                        booking_id=job.booking_id, job_id=job.id, amount=penalty,
+                        day_number=day_number)
                     if taken > 0:
                         compensated += 1
                 except Exception as exc:  # noqa: BLE001
-                    # Compensation failed; still charge the provider, so a
-                    # customer-side problem cannot let a breach go unpenalised.
                     logger.warning("sla_breach.compensation_failed",
                                    job_id=str(job.id), error=str(exc))
                     taken = await _charge_penalty(
                         db, tenant_id=job.tenant_id, job_id=job.id,
-                        amount=penalty, cap=cap)
+                        amount=penalty, cap=cap, day_number=day_number)
             else:
                 taken = await _charge_penalty(
-                    db, tenant_id=job.tenant_id, job_id=job.id, amount=penalty, cap=cap)
+                    db, tenant_id=job.tenant_id, job_id=job.id,
+                    amount=penalty, cap=cap, day_number=day_number)
             if taken > 0:
                 penalised += 1
 
-        if taken > 0:
-            await db.execute(text(
-                "UPDATE service_jobs SET sla_penalty_charged = :a WHERE id = :id"
-            ), {"a": taken, "id": str(job.id)})
-            if policy.sla_notify_provider:
-                await _notify_provider(db, job=job, amount=taken,
-                                       cancelled=bool(policy.sla_auto_cancel))
+        await db.execute(text(
+            "UPDATE service_jobs SET sla_breached_at=COALESCE(sla_breached_at, now()), "
+            "sla_penalty_day_count=:day, sla_penalty_charged=:charged, "
+            "sla_next_penalty_at=CASE WHEN :final THEN NULL "
+            "  ELSE sla_next_penalty_at + interval '1 day' END, "
+            "sla_stopped_at=CASE WHEN :final THEN now() ELSE sla_stopped_at END, "
+            "updated_at=now() WHERE id=:id"
+        ), {"day": day_number, "charged": Decimal(str(job.charged_so_far or 0)) + taken,
+            "final": final_day, "id": str(job.id)})
 
-        # 3. Tell the customer. Cancelling silently would be worse than a late
-        #    job: the point of acting on a breach is that they can rebook, and
-        #    they cannot do that if nobody tells them the slot is gone.
-        if policy.sla_auto_cancel:
-            await _notify_customer(db, job=job, compensated=bool(
-                policy.sla_penalty_to_customer and taken > 0), amount=taken)
+        if taken > 0 and policy.sla_notify_provider:
+            await _notify_provider(db, job=job, amount=taken,
+                                   cancelled=bool(final_day and policy.sla_auto_cancel))
+
+        if final_day:
+            if policy.sla_auto_cancel:
+                await _close_breached_job(db, job_id=job.id, booking_id=job.booking_id)
+                await _notify_customer(db, job=job, compensated=bool(
+                    policy.sla_penalty_to_customer and taken > 0), amount=taken)
 
         logger.info("sla_breach.actioned", job_id=str(job.id), tenant_id=str(job.tenant_id),
-                    penalty_taken=float(taken),
+                    penalty_taken=float(taken), day_number=day_number, final_day=final_day,
                     compensated_customer=bool(policy.sla_penalty_to_customer and taken > 0))
 
     suspended = await _apply_health_suspensions(db, policy)
     reinstated = await reinstate_due(db, policy)
     return {"breached": breached, "penalised": penalised, "compensated": compensated,
             "suspended": suspended, "reinstated": reinstated}
+
+
+async def _close_breached_job(db: AsyncSession, *, job_id, booking_id,
+                              reason: str = "SLA breached for three consecutive days") -> None:
+    """Close job, booking and current assignment as one transaction."""
+    await db.execute(text(
+        "UPDATE service_jobs SET status='cancelled', assignment_status='cancelled', "
+        "failure_reason=:reason, updated_at=now() WHERE id=:id"
+    ), {"id": str(job_id), "reason": reason})
+    await db.execute(text(
+        "UPDATE service_bookings SET status='cancelled', assignment_status='cancelled', "
+        "failure_reason=:reason, updated_at=now() WHERE id=:id"
+    ), {"id": str(booking_id), "reason": reason})
+    await db.execute(text(
+        "UPDATE service_job_assignments SET is_current=false, assignment_status='cancelled', "
+        "cancelled_at=now(), notes=:reason, updated_at=now() "
+        "WHERE job_id=:id AND is_current=true"
+    ), {"id": str(job_id), "reason": reason})
 
 
 async def _apply_health_suspensions(db: AsyncSession, policy) -> int:

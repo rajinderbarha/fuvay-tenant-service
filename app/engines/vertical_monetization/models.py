@@ -94,6 +94,25 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     sla_penalty_min:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     sla_penalty_max:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     sla_breachable_statuses: Mapped[list | None]    = mapped_column(JSONB, nullable=True)
+    sla_penalty_max_days:    Mapped[int]            = mapped_column(Integer, default=3, nullable=False)
+
+    # Home Services operational controls. They live on the same versioned,
+    # audited policy as SLA enforcement so administrators can change runtime
+    # behaviour without a code release. Defaults preserve the launch rules.
+    assignment_timeout_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)
+    arrival_location_max_age_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    arrival_max_accuracy_meters: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    false_arrival_auto_close: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    false_arrival_penalty_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("150"), nullable=False,
+    )
+    false_arrival_health_weight: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), default=Decimal("3"), nullable=False,
+    )
 
     # ── Health suspension: when a provider is stopped, and what they return at
     health_suspension_threshold: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
@@ -165,6 +184,17 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "sla_penalty_min": float(self.sla_penalty_min) if self.sla_penalty_min is not None else None,
             "sla_penalty_max": float(self.sla_penalty_max) if self.sla_penalty_max is not None else None,
             "sla_breachable_statuses": self.sla_breachable_statuses,
+            "sla_penalty_max_days": self.sla_penalty_max_days,
+            "assignment_timeout_enabled": self.assignment_timeout_enabled,
+            "assignment_timeout_minutes": self.assignment_timeout_minutes,
+            "customer_reschedule_limit": self.customer_reschedule_limit,
+            "arrival_verification_enabled": self.arrival_verification_enabled,
+            "arrival_radius_meters": self.arrival_radius_meters,
+            "arrival_location_max_age_seconds": self.arrival_location_max_age_seconds,
+            "arrival_max_accuracy_meters": self.arrival_max_accuracy_meters,
+            "false_arrival_auto_close": self.false_arrival_auto_close,
+            "false_arrival_penalty_amount": float(self.false_arrival_penalty_amount),
+            "false_arrival_health_weight": float(self.false_arrival_health_weight),
             "health_suspension_threshold": float(self.health_suspension_threshold) if self.health_suspension_threshold is not None else None,
             "health_suspension_days": self.health_suspension_days,
             "health_reinstatement_score": float(self.health_reinstatement_score) if self.health_reinstatement_score is not None else None,

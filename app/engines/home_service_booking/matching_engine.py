@@ -872,6 +872,15 @@ async def _passes_full_eligibility_gate(
             return False, "INSUFFICIENT_USAGE_CREDITS"
         return False, "NOT_BOOKABLE_CANONICAL_STATUS"
 
+    # Money moves independently of the cached visibility projection. Read the
+    # canonical balance at the actual matching decision so a provider whose
+    # latest deduction took them below the Rs.500 policy floor cannot receive
+    # one more job during the interval before visibility refreshes.
+    from app.engines.vertical_catalog.seat_enforcement import get_credit_state
+    credit_state = await get_credit_state(db, tenant_id)
+    if credit_state["below_floor"]:
+        return False, "INSUFFICIENT_USAGE_CREDITS"
+
     # 2. Normalized per-area service/type/brand coverage (HS5B).
     #    Requires at least one active service area covering this exact
     #    service (+ type + brand, when given) for this tenant.
