@@ -1,6 +1,10 @@
 name: IP Test Booking Cleanup
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ip-test-booking-cleanup.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -20,7 +24,7 @@ permissions:
 
 jobs:
   cleanup:
-    if: inputs.mode == 'inspect' || (inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS')
+    if: github.event_name == 'push' || inputs.mode == 'inspect' || (inputs.mode == 'delete' && inputs.confirmation == 'DELETE_ALL_IP_TEST_BOOKINGS')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +40,7 @@ jobs:
           overwrite: true
 
       - name: Inspect live booking data and dependencies
-        if: inputs.mode == 'inspect'
+        if: github.event_name == 'push' || inputs.mode == 'inspect'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
