@@ -1594,6 +1594,48 @@ async def test_social_confirmation_returns_an_actionable_rate_limit_message(monk
 
 
 @pytest.mark.asyncio
+async def test_social_confirmation_preserves_duplicate_context(monkeypatch):
+    from app.engines.ai_conversation import backend_tools
+    from app.engines.final_records import creation_service as creation_service_module
+    from app.engines.home_service_booking import service as booking_service_module
+    from app.exceptions import ServiceOSException
+
+    booking_service = SimpleNamespace(
+        get_booking_draft=AsyncMock(return_value={"status": "provider_matched"}),
+        mark_ready_for_confirmation=AsyncMock(),
+    )
+
+    class Finalizer:
+        def __init__(self, _db):
+            pass
+
+        async def finalize(self, **_kwargs):
+            raise ServiceOSException(
+                "DUPLICATE_ACTIVE_BOOKING",
+                "You already have booking BK-OLD open for this problem.",
+                status_code=409,
+                context={"booking_number": "BK-OLD", "confirmation_required": True},
+            )
+
+    monkeypatch.setattr(
+        booking_service_module, "HomeServiceChatbotBookingService",
+        lambda _db: booking_service,
+    )
+    monkeypatch.setattr(
+        creation_service_module, "HomeServiceFinalCreationService", Finalizer,
+    )
+    result = await BackendToolExecutor(
+        SimpleNamespace(commit=AsyncMock()), customer_id=uuid.uuid4(),
+        session_id=str(uuid.uuid4()), channel="instagram", channel_user_id="ig-1",
+    )._tool_confirm_home_service_booking(
+        str(uuid.uuid4()), "CONFIRM BOOKING",
+    )
+
+    assert result["error_code"] == "DUPLICATE_ACTIVE_BOOKING"
+    assert result["context"]["booking_number"] == "BK-OLD"
+
+
+@pytest.mark.asyncio
 async def test_the_number_and_the_code_are_read_at_the_right_moment():
     """The number and its code are typed, so each must be recognised only at
     the step that is waiting for it — and a code must never be mistaken for a
@@ -3707,6 +3749,72 @@ async def test_same_service_start_error_shows_existing_booking(monkeypatch):
     assert page == flow.BOOKED
     assert draft is None
     assert "BK-EXISTING" in note
+
+
+@pytest.mark.asyncio
+async def test_same_problem_booking_requires_yes_then_allows_confirmation(monkeypatch):
+    from app.engines.messaging_gateway import flow
+
+    draft = {"id": "draft-1", "status": "ready_for_confirmation"}
+
+    class Thread:
+        customer_id = None
+        zipcode = "140001"
+        city = "Patiala"
+        ai_session_id = "session-1"
+        channel = CHANNEL_INSTAGRAM
+        channel_user_id = "igsid-1"
+        display_name = None
+
+    class Executor:
+        customer_id = None
+
+        async def _tool_confirm_home_service_booking(
+            self, *, draft_id, confirmation_phrase, allow_duplicate=False,
+        ):
+            if not allow_duplicate:
+                return {
+                    "confirmed": False,
+                    "error_code": "DUPLICATE_ACTIVE_BOOKING",
+                    "error": "You already have booking BK-OLD open for this problem.",
+                }
+            return {"confirmed": True, "booking_number": "BK-NEW"}
+
+    async def current(_db, _thread):
+        return draft
+
+    abandoned = []
+
+    async def abandon(_db, _thread):
+        abandoned.append(str(draft["id"]))
+        return 1
+
+    monkeypatch.setattr(flow, "_draft", current)
+    monkeypatch.setattr(flow, "_executor", lambda _db, _thread: Executor())
+    monkeypatch.setattr(flow, "abandon_social_booking_drafts", abandon)
+
+    warning = await flow.advance(
+        None, Thread(), text="", reply_id="cf|yes",
+        channel=CHANNEL_INSTAGRAM,
+    )
+    assert "BK-OLD" in warning.text
+    assert warning.picker["body"] == flow.DUPLICATE_PROMPT
+    assert [row["id"] for row in warning.picker["rows"]] == [
+        "dup|draft-1|yes", "dup|draft-1|no",
+    ]
+
+    declined = await flow.advance(
+        None, Thread(), text="", reply_id="dup|draft-1|no",
+        channel=CHANNEL_INSTAGRAM,
+    )
+    assert declined.text.startswith(flow.DUPLICATE_DECLINED)
+    assert abandoned == ["draft-1"]
+
+    confirmed = await flow.advance(
+        None, Thread(), text="", reply_id="dup|draft-1|yes",
+        channel=CHANNEL_INSTAGRAM,
+    )
+    assert "BK-NEW" in confirmed.text
 
 
 def test_an_uncovered_area_says_how_to_reach_a_covered_one():

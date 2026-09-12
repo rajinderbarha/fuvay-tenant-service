@@ -323,7 +323,6 @@ class TestStartBookingDraft:
         db.execute = AsyncMock(side_effect=[
             _scalars([cat]),
             _scalars([offering]),
-            _scalars([]),            # no active booking for this offering
             # Added later this phase: start_booking_draft now independently
             # re-checks (a) at least one tenant has actually published this
             # offering, and (b) it has real problem/issue-type wiring,

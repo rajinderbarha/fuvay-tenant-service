@@ -162,6 +162,7 @@ PICK_CATEGORY = "cat"     # cat|<category_slug>
 PICK_OFFERING = "of"      # of|<category_slug>|<offering_slug>
 PICK_PROBLEM = "pb"       # pb|<issue_type_id>
 PICK_CONFIRM = "cf"       # cf|yes / cf|no
+PICK_DUPLICATE = "dup"    # dup|<draft_id>|yes/no — explicit same-problem rebooking
 PICK_EMERGENCY = "em"     # em|on / em|off — switch between the two slot lists
 PICK_RESTART = "rs"       # rs|1 — abandon this booking and start a new one
 PICK_TRACK = "tr"         # tr|<booking_number> — where has my booking got to
@@ -179,7 +180,8 @@ PICK_DIMENSION = "dim"    # dim|<dimension_key>|<value_id> — e.g. dim|type|<uu
 PICK_RATING = "rt"        # rt|<booking_id>|<1-5> — see rating_request.py
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
-    PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_EMERGENCY,
+    PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_DUPLICATE,
+    PICK_EMERGENCY,
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
     PICK_DIMENSION, PICK_RATING,

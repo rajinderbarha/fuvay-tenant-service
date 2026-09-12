@@ -37,7 +37,8 @@ from app.engines.messaging_gateway.constants import (
     CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, CONFIRM_PHRASE, DIMENSION_DRAFT_FIELD,
     MAX_IG_GENERIC_ELEMENTS,
     PICK_AREA, PICK_AREA_CITY, PICK_CANCEL, PICK_CATEGORY, PICK_DIMENSION,
-    PICK_CONFIRM, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING, PICK_PROBLEM,
+    PICK_CONFIRM, PICK_DUPLICATE, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING,
+    PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
     PICK_TRACK, PICK_ADDON,
@@ -126,6 +127,8 @@ CONFIRMED = "Booking confirmed. Your booking number is {number}. We will message
 #: rather than silently doing nothing, or appearing to work.
 ALREADY_BOOKED = "This booking is already confirmed, so it cannot be changed here."
 CONFIRM_FAILED = "That booking could not be completed: {reason}"
+DUPLICATE_PROMPT = "Do you still want to book this same problem again?"
+DUPLICATE_DECLINED = "No new booking was created."
 BOOKED_OPTIONS = "Your booking is with us. What would you like to do?"
 #: Header for the same menu when nothing is open — "your booking is with us"
 #: over a menu that can only book a new one reads as a booking that exists.
@@ -230,6 +233,7 @@ _YES, _NO = "yes", "no"
 #: exists, so the customer is offered what to do with it.
 DONE = -1
 BOOKED = -2
+DUPLICATE_CONFIRM = -3
 
 
 class Turn:
@@ -340,6 +344,19 @@ async def advance(
         if direct is not None:
             return direct
         note, page, draft = await _apply_tap(db, thread, executor, reply_id, draft)
+        if page == DUPLICATE_CONFIRM:
+            return Turn(note, {
+                "body": DUPLICATE_PROMPT,
+                "rows": [
+                    {"id": PICKER_SEP.join((PICK_DUPLICATE, str(draft["id"]), _YES)),
+                     "title": "Yes, book again"},
+                    {"id": PICKER_SEP.join((PICK_DUPLICATE, str(draft["id"]), _NO)),
+                     "title": "No, keep existing"},
+                ],
+                "list_button": "Choose",
+                "section_title": "Duplicate booking",
+                "presentation": "buttons",
+            })
         if note and page == BOOKED:
             # The booking exists now: offer the things a customer with one
             # actually wants, rather than ending the conversation.
@@ -737,6 +754,18 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
             return RESTARTED, 0, None
         return await _confirm(db, thread, executor, draft)
 
+    if kind == PICK_DUPLICATE:
+        expected_draft_id, _, decision = rest.partition(PICKER_SEP)
+        if expected_draft_id != str(draft["id"]):
+            return "That duplicate-booking confirmation is no longer current.", 0, draft
+        if decision == _YES:
+            return await _confirm(
+                db, thread, executor, draft, allow_duplicate=True,
+            )
+        await abandon_social_booking_drafts(db, thread)
+        reset_booking_state(thread)
+        return DUPLICATE_DECLINED, BOOKED, draft
+
     return None, 0, draft
 
 
@@ -955,14 +984,20 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
     return None, draft
 
 
-async def _confirm(db, thread, executor, draft: dict):
+async def _confirm(
+    db, thread, executor, draft: dict, *, allow_duplicate: bool = False,
+):
     from app.engines.messaging_gateway.addons import needs_review
     if needs_review(draft):
         return 'Review your add-ons and the updated total before confirming.', 0, draft
     result = await executor._tool_confirm_home_service_booking(
         draft_id=str(draft["id"]), confirmation_phrase=CONFIRM_PHRASE,
+        allow_duplicate=allow_duplicate,
     )
     if not result.get("confirmed"):
+        if result.get("error_code") == "DUPLICATE_ACTIVE_BOOKING":
+            warning = result.get("error") or "This problem is already booked."
+            return warning, DUPLICATE_CONFIRM, draft
         return CONFIRM_FAILED.format(
             reason=result.get("error") or "please check the details and try again."
         ), DONE, draft

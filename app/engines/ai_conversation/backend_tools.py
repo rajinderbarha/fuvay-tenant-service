@@ -775,7 +775,10 @@ class BackendToolExecutor:
             logger.warning("backend_tools.booking_summary_failed", error=str(exc))
             return {"summary": None, "error": "Unable to prepare the booking summary right now."}
 
-    async def _tool_confirm_home_service_booking(self, draft_id: str, confirmation_phrase: str) -> dict:
+    async def _tool_confirm_home_service_booking(
+        self, draft_id: str, confirmation_phrase: str,
+        allow_duplicate: bool = False,
+    ) -> dict:
         """Create final records only after an exact explicit confirmation phrase."""
         if " ".join((confirmation_phrase or "").upper().split()) != "CONFIRM BOOKING":
             return {"confirmed": False, "error": "Ask the customer to reply exactly CONFIRM BOOKING first."}
@@ -982,6 +985,7 @@ class BackendToolExecutor:
                 request_id=f"social:{self.session_id or 'chat'}",
                 source_channel=self.channel,
                 source_actor_id=self.channel_user_id,
+                allow_duplicate=allow_duplicate,
             )
             await self.db.commit()
             return {"confirmed": True, **result}
@@ -998,13 +1002,24 @@ class BackendToolExecutor:
             )
             if exc.error_code == "RATE_LIMITED":
                 message = "Too many confirmation attempts. Please wait a little and try again."
-            elif exc.error_code in {"DUPLICATE_ACTIVE_BOOKING", "REQUIRED_FIELD_MISSING"}:
+            elif exc.error_code == "DUPLICATE_ACTIVE_BOOKING":
+                # The chat flow renders the explicit Yes/No question next.
+                # Repeating that instruction inside the warning is noisy.
+                message = exc.detail
+            elif exc.error_code == "REQUIRED_FIELD_MISSING":
                 message = exc.detail
                 if exc.resolution:
                     message = f"{message} {exc.resolution}"
             else:
                 message = "The booking could not be confirmed. Review the details and try again."
-            return {"confirmed": False, "error": message, "error_code": exc.error_code}
+            response = {
+                "confirmed": False,
+                "error": message,
+                "error_code": exc.error_code,
+            }
+            if exc.context:
+                response["context"] = exc.context
+            return response
         except Exception as exc:
             logger.exception(
                 "backend_tools.confirm_booking_failed",

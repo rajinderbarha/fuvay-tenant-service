@@ -154,29 +154,6 @@ class HomeServiceChatbotBookingService:
                 status_code=422,
             )
 
-        # A customer can book another catalog service while one is active,
-        # but must not start a second journey for the *same* service. Keep
-        # this predicate identical to the locked confirmation-time guard.
-        if customer_id:
-            from app.engines.final_records.models import ServiceBooking
-
-            existing_booking = (await self.db.execute(
-                select(ServiceBooking).where(
-                    ServiceBooking.customer_id == customer_id,
-                    ServiceBooking.offering_id == offering.id,
-                    ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
-                ).order_by(ServiceBooking.created_at.desc()).limit(1)
-            )).scalars().first()
-            if existing_booking:
-                raise ServiceOSException(
-                    "DUPLICATE_ACTIVE_BOOKING",
-                    f"This service is already booked as {existing_booking.booking_number}.",
-                    status_code=409,
-                    resolution="Track or cancel the existing booking before booking this service again.",
-                    context={"booking_id": str(existing_booking.id),
-                             "booking_number": existing_booking.booking_number},
-                )
-
         # A category can carry orphaned/legacy MasterService rows
         # (is_active=True, but no tenant has ever actually published an
         # offering against them -- confirmed live, e.g. a leftover "AC
@@ -508,6 +485,7 @@ class HomeServiceChatbotBookingService:
         additional_issue_ids: list[str] | None = None,
         service_group_slug: str | None = None,
         master_service_id: uuid.UUID | None = None,
+        allow_duplicate: bool = False,
     ) -> dict:
         """Canonical issue-selection operation (Phase 7): validates the
         issue(s) against the SAME real, zipcode-serviceable list bootstrap
@@ -590,27 +568,30 @@ class HomeServiceChatbotBookingService:
                 )
 
         primary = matched_list[0]
-        # Stop a second journey as soon as the customer selects a problem for
-        # a service that is already active. Waiting until the final Confirm
-        # button made customers complete the entire flow before learning that
-        # they had duplicated an existing request.
+        # Warn only for the exact same problem. Different AC requests can map
+        # to one master service (for example repair and installation intents),
+        # so offering-level dedupe incorrectly blocked legitimate bookings.
+        existing_booking = None
         if customer_id:
             from app.engines.final_records.models import ServiceBooking
+            problem_id = uuid.UUID(str(primary["id"]))
             existing_booking = (await self.db.execute(
                 select(ServiceBooking).where(
                     ServiceBooking.customer_id == customer_id,
-                    ServiceBooking.offering_id == uuid.UUID(primary["master_service_id"]),
+                    ServiceBooking.selected_problem_id == problem_id,
                     ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
                 ).order_by(ServiceBooking.created_at.desc()).limit(1)
             )).scalars().first()
-            if existing_booking:
+            if existing_booking and not allow_duplicate:
                 raise ServiceOSException(
                     "DUPLICATE_ACTIVE_BOOKING",
-                    f"This service is already booked as {existing_booking.booking_number}.",
+                    f"You already have booking {existing_booking.booking_number} open for this problem.",
                     status_code=409,
-                    resolution="Track or cancel the existing booking before booking this service again.",
+                    resolution="Confirm that you still want to book the same problem again.",
                     context={"booking_id": str(existing_booking.id),
-                             "booking_number": existing_booking.booking_number},
+                             "booking_number": existing_booking.booking_number,
+                             "confirmation_required": True,
+                             "duplicate_scope": "same_problem"},
                 )
         draft_dict = await self.start_booking_draft(
             customer_id=customer_id, ai_session_id=ai_session_id,
@@ -632,6 +613,19 @@ class HomeServiceChatbotBookingService:
                 "issue_summary": " + ".join(m["label"] for m in matched_list),
             },
         )
+
+        if allow_duplicate and existing_booking:
+            # Only this explicit, server-handled confirmation can set the
+            # override. It survives summary rebuilds and is rechecked by the
+            # final creation service under the transaction lock.
+            draft = await self._require_draft(draft_id, customer_id)
+            draft.booking_summary = {
+                **(draft.booking_summary or {}),
+                "duplicate_booking_override": True,
+                "duplicate_problem_id": primary["id"],
+            }
+            draft.updated_at = utcnow()
+            await self.db.commit()
 
         if len(matched_list) > 1:
             draft = await self._require_draft(draft_id, customer_id)

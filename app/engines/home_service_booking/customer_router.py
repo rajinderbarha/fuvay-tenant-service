@@ -156,6 +156,7 @@ async def select_assistant_bootstrap_issue(
         additional_issue_ids=body.get("additional_issue_ids"),
         service_group_slug=body.get("service_group_slug"),
         master_service_id=(uuid.UUID(body["master_service_id"]) if body.get("master_service_id") else None),
+        allow_duplicate=body.get("allow_duplicate") is True,
     )
     # Real bug fixed here: this endpoint returns the FIRST question of the
     # flow, but presentation was only wired into get_question_flow and

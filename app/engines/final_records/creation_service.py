@@ -24,7 +24,7 @@ import uuid
 import logging
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import and_, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime, timezone
@@ -114,6 +114,7 @@ class HomeServiceFinalCreationService:
         ip_address:      str | None       = None,
         source_channel:  str | None       = None,
         source_actor_id: str | None       = None,
+        allow_duplicate: bool             = False,
     ) -> dict:
         from app.engines.home_service_booking.models import (
             HomeServiceBookingDraft, HomeServiceBookingDraftEvent,
@@ -171,31 +172,50 @@ class HomeServiceFinalCreationService:
                 ip_address=ip_address,
             )
 
-        # One customer may have only one active booking for a service. Lock on
-        # that stable identity so two different drafts (or two devices) cannot
-        # race through confirmation with different slots.
-        has_booking_identity = bool(draft.customer_id and draft.offering_id)
+        # Duplicate intent is the exact selected problem, not the broad master
+        # service. Several legitimate AC intents can share one offering. A
+        # problem-less legacy/direct booking falls back to the offering.
+        duplicate_identity = draft.selected_problem_id or draft.offering_id
+        has_booking_identity = bool(draft.customer_id and duplicate_identity)
         if has_booking_identity and get_settings().APP_ENV in ("staging", "production"):
-            duplicate_key = f"{draft.customer_id}:{draft.offering_id}"
+            duplicate_key = f"{draft.customer_id}:{duplicate_identity}"
             await self.db.execute(
                 sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"booking-confirm:{duplicate_key}"},
             )
         if has_booking_identity:
+            duplicate_scope = (
+                ServiceBooking.selected_problem_id == draft.selected_problem_id
+                if draft.selected_problem_id
+                else and_(
+                    ServiceBooking.offering_id == draft.offering_id,
+                    ServiceBooking.selected_problem_id.is_(None),
+                )
+            )
             duplicate = (await self.db.execute(
                 select(ServiceBooking).where(
                     ServiceBooking.customer_id == draft.customer_id,
-                    ServiceBooking.offering_id == draft.offering_id,
+                    duplicate_scope,
                     ServiceBooking.status.notin_(("completed", "cancelled", "failed")),
                 ).order_by(ServiceBooking.created_at.desc()).limit(1)
             )).scalars().first()
-            if isinstance(duplicate, ServiceBooking):
+            draft_summary = draft.booking_summary or {}
+            stored_override = bool(
+                draft_summary.get("duplicate_booking_override")
+                and str(draft_summary.get("duplicate_problem_id") or "")
+                == str(draft.selected_problem_id or "")
+            )
+            duplicate_override = bool(allow_duplicate or stored_override)
+            if isinstance(duplicate, ServiceBooking) and not duplicate_override:
                 raise ServiceOSException(
                     "DUPLICATE_ACTIVE_BOOKING",
-                    f"This service is already booked as {duplicate.booking_number}.",
+                    f"You already have booking {duplicate.booking_number} open for this problem.",
                     status_code=409,
-                    resolution="Track or cancel the existing booking before booking this service again.",
-                    context={"booking_id": str(duplicate.id), "booking_number": duplicate.booking_number},
+                    resolution="Confirm that you still want to book the same problem again.",
+                    context={"booking_id": str(duplicate.id),
+                             "booking_number": duplicate.booking_number,
+                             "confirmation_required": True,
+                             "duplicate_scope": "same_problem"},
                 )
 
         # HOME-SERVICES-RUNTIME-SAFETY Phase 2A.2 (spec section 8): finalize()

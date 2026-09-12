@@ -337,7 +337,6 @@ async def test_fourth_active_booking_draft_is_rejected():
     db.execute = AsyncMock(side_effect=[
         _scalars_first(category),
         _scalars_first(offering),
-        _scalars_first(None),
         _scalars_first(uuid.uuid4()),
         _scalars_first(uuid.uuid4()),
         count_result,
@@ -362,42 +361,6 @@ async def test_fourth_active_booking_draft_is_rejected():
 
 
 @pytest.mark.asyncio
-async def test_same_service_is_rejected_before_starting_another_draft():
-    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
-
-    category = MagicMock(id=uuid.uuid4(), name="AC", slug="ac")
-    offering = MagicMock(id=uuid.uuid4(), service_name="AC Repair", slug="repair")
-    existing = SimpleNamespace(id=uuid.uuid4(), booking_number="BK-EXISTING")
-    db = MagicMock()
-    db.execute = AsyncMock(side_effect=[
-        _scalars_first(category),
-        _scalars_first(offering),
-        _scalars_first(existing),
-    ])
-
-    with patch(
-        "app.dependencies.vertical_guard._load_vertical",
-        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
-    ), patch(
-        "app.engines.home_service_booking.service.enforce_booking_action_limits",
-        AsyncMock(),
-    ):
-        with pytest.raises(ServiceOSException) as exc:
-            await HomeServiceChatbotBookingService(db).start_booking_draft(
-                customer_id=uuid.uuid4(), ai_session_id=None,
-                category_slug="ac", offering_slug="repair",
-            )
-
-    assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
-    assert exc.value.context["booking_number"] == "BK-EXISTING"
-    assert db.execute.await_count == 3
-    duplicate_query = db.execute.await_args_list[2].args[0]
-    assert offering.id.hex in str(duplicate_query.compile(
-        compile_kwargs={"literal_binds": True},
-    ))
-
-
-@pytest.mark.asyncio
 async def test_different_draft_cannot_duplicate_active_booking():
     from app.engines.final_records.creation_service import HomeServiceFinalCreationService
     from app.engines.final_records.models import ServiceBooking
@@ -410,6 +373,8 @@ async def test_different_draft_cannot_duplicate_active_booking():
     draft.ai_session_id = uuid.uuid4()
     draft.status = "ready_for_confirmation"
     draft.offering_id = uuid.uuid4()
+    draft.selected_problem_id = uuid.uuid4()
+    draft.booking_summary = None
     draft.zipcode = "140001"
     draft.preferred_date = date(2026, 9, 4)
     draft.preferred_time_window = "10:00-11:00"
@@ -430,10 +395,14 @@ async def test_different_draft_cannot_duplicate_active_booking():
             await service.finalize(draft.id, customer_id=customer_id)
     assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
     assert exc.value.context["booking_number"] == "BK-EXISTING"
+    duplicate_query = db.execute.await_args_list[1].args[0]
+    assert draft.selected_problem_id.hex in str(duplicate_query.compile(
+        compile_kwargs={"literal_binds": True},
+    ))
 
 
 @pytest.mark.asyncio
-async def test_issue_selection_stops_duplicate_active_service_before_draft_creation():
+async def test_issue_selection_warns_only_for_same_active_problem():
     from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
 
     customer_id = uuid.uuid4()
@@ -448,8 +417,9 @@ async def test_issue_selection_stops_duplicate_active_service_before_draft_creat
     service = HomeServiceChatbotBookingService(db)
     service.start_booking_draft = AsyncMock()
 
+    issue_id = uuid.uuid4()
     issue = {
-        "id": "ac-not-cooling",
+        "id": str(issue_id),
         "label": "AC not cooling",
         "selection_mode": "compatible",
         "compatibility_group": "ac-repair",
@@ -472,7 +442,53 @@ async def test_issue_selection_stops_duplicate_active_service_before_draft_creat
     assert exc.value.error_code == "DUPLICATE_ACTIVE_BOOKING"
     assert exc.value.status_code == 409
     assert exc.value.context["booking_number"] == "BK-ACTIVE"
+    assert exc.value.context["confirmation_required"] is True
+    duplicate_query = db.execute.await_args.args[0]
+    assert issue_id.hex in str(duplicate_query.compile(
+        compile_kwargs={"literal_binds": True},
+    ))
     service.start_booking_draft.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_issue_selection_allows_confirmed_same_problem_rebooking():
+    from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+    from app.engines.home_service_booking.question_flow_service import QuestionFlowService
+
+    customer_id = uuid.uuid4()
+    offering_id = uuid.uuid4()
+    issue_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+    existing = SimpleNamespace(id=uuid.uuid4(), booking_number="BK-ACTIVE")
+    draft = SimpleNamespace(booking_summary=None, updated_at=None)
+    db = MagicMock(commit=AsyncMock())
+    db.execute = AsyncMock(return_value=_scalars_first(existing))
+    service = HomeServiceChatbotBookingService(db)
+    service.start_booking_draft = AsyncMock(return_value={"id": str(draft_id)})
+    service.update_draft_fields = AsyncMock(return_value={"updated": True})
+    service._require_draft = AsyncMock(return_value=draft)
+    issue = {
+        "id": str(issue_id), "label": "AC not cooling",
+        "selection_mode": "compatible", "compatibility_group": "ac-repair",
+        "master_service_id": str(offering_id),
+        "master_service_slug": "ac-repair",
+    }
+
+    with patch(
+        "app.engines.home_service_booking.offering_catalog_service.list_serviceable_issues",
+        AsyncMock(return_value={"issues": [issue]}),
+    ), patch.object(
+        QuestionFlowService, "get_current_question", AsyncMock(return_value={}),
+    ):
+        result = await service.select_issue(
+            customer_id=customer_id, ai_session_id=None,
+            category_slug="ac", zipcode="140001", issue_id=str(issue_id),
+            allow_duplicate=True,
+        )
+
+    assert result["draft_id"] == str(draft_id)
+    assert draft.booking_summary["duplicate_booking_override"] is True
+    assert draft.booking_summary["duplicate_problem_id"] == str(issue_id)
 
 
 @pytest.mark.asyncio
