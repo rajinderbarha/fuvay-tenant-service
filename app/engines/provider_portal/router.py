@@ -54,6 +54,23 @@ DESIGNATIONS_BY_MEMBER_TYPE = {
 settings = get_settings()
 
 
+def _minutes_until_requested_at(requested_at: str, tenant_timezone: str | None) -> float:
+    """Return notice time without mixing local wall time and UTC datetimes.
+
+    Booking slots are represented as naive wall-clock values throughout the
+    Home Services matching pipeline. Explicitly-offset timestamps remain
+    absolute instants, so they are compared with an aware UTC ``now``.
+    """
+    requested = datetime.fromisoformat(str(requested_at).replace("Z", "+00:00"))
+    if requested.tzinfo is None:
+        from app.engines.home_service_booking.provider_slot_service import _tenant_now
+
+        current = _tenant_now({"timezone": tenant_timezone})
+    else:
+        current = datetime.now(timezone.utc)
+    return (requested - current).total_seconds() / 60
+
+
 def _validate_designation(member_type: str, value: Any) -> str | None:
     designation = str(value or "").strip()
     if not designation:
@@ -2386,17 +2403,16 @@ async def get_tenant_home_services_matching_inputs(
         text("SELECT * FROM tenant_booking_window_settings WHERE tenant_id=:tid"), {"tid": str(tenant_id)})).fetchone()
     if requested_at and bw:
         try:
-            from datetime import datetime, timezone as dt_timezone
-            dt = datetime.fromisoformat(requested_at.replace("Z", "+00:00"))
-            now = datetime.now(dt_timezone.utc)
-            minutes_notice = (dt - now).total_seconds() / 60
+            minutes_notice = _minutes_until_requested_at(
+                requested_at, getattr(bw, "timezone", None)
+            )
             if minutes_notice < bw.minimum_notice_minutes:
                 booking_window_valid = False
                 blocking_reasons.append({"code": "BELOW_MINIMUM_NOTICE", "message": "Requested time is inside the minimum notice window."})
             if minutes_notice > bw.maximum_advance_booking_days * 24 * 60:
                 booking_window_valid = False
                 blocking_reasons.append({"code": "BEYOND_ADVANCE_BOOKING_WINDOW", "message": "Requested time is beyond the maximum advance booking window."})
-        except ValueError:
+        except (TypeError, ValueError):
             pass
 
     # bookability (HS4B)
