@@ -575,7 +575,7 @@ export interface BJItem {
   assigned_staff_id: string | null; assigned_staff_name: string | null;
   assignment_status: string; status: string; stage: string; stage_label: string;
   is_active: boolean; is_terminal: boolean; next_action: BJAction | null;
-  available_actions: BJAction[]; sla: BJSla | null;
+  available_actions: BJAction[]; offer_expired?: boolean; sla: BJSla | null;
   open_complaint_count: number; created_at: string | null; updated_at: string | null;
 }
 export interface BJListResponse {
@@ -610,6 +610,7 @@ export interface BJDetail {
   } | null;
   stage: { stage: string; stage_label: string; is_terminal: boolean; next_action: BJAction | null };
   available_actions: BJAction[];
+  offer_expired?: boolean;
   invoice: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; payment_status?: string }) | null;
   quote: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; status?: string }) | null;
   visit_fee: string | null; open_complaint_count: number; sla: BJSla;
@@ -672,6 +673,7 @@ export interface HsDispatchJobSummary {
   service_due_at?: string | null;
   minutes_until_due?: number | null;
   is_overdue?: boolean;
+  offer_expired?: boolean;
   has_conflict?: boolean;
   customer_health?: { score: number; band: string; can_book: boolean } | null;
 }

@@ -602,14 +602,17 @@ class HomeServiceJobAssignmentService:
         allow_accepted_reassignment: bool = False,
     ) -> dict:
         job = await self._load_job(job_id, for_update=True)
-        self._validate_job_assignable(job)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
+        self._validate_job_assignable(job)
 
         # A provider cannot beat the sweeper by assigning after the offer has
         # expired. Reassignments of work already owned by a technician are not
         # new offers and remain possible through their usual controls.
-        offered_at = getattr(job, "provider_offer_started_at", None)
+        offered_at = (
+            getattr(job, "provider_offer_started_at", None)
+            or getattr(job, "created_at", None)
+        )
         if (job.assigned_staff_id is None and job.status in
                 (JOB_STATUS_PENDING_ASSIGNMENT, JOB_STATUS_ACCEPTED) and offered_at):
             from app.engines.vertical_monetization.runtime_operations import (

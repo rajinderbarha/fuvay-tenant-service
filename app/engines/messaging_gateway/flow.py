@@ -32,6 +32,9 @@ from urllib.parse import quote_plus
 import structlog
 from sqlalchemy import func, select, text
 
+from app.engines.complaints.constants import (
+    HOME_SERVICE_PROVIDER_COMPLAINT_OPTIONS as COMPLAINT_TYPES,
+)
 from app.engines.messaging_gateway import pickers
 from app.engines.messaging_gateway.constants import (
     CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP, CONFIRM_PHRASE, DIMENSION_DRAFT_FIELD,
@@ -253,20 +256,6 @@ class Turn:
 # are shown again.  The few pickers that intentionally sit beside a typed
 # answer (currently OTP) opt out with ``allow_text``.
 TAP_AN_OPTION = "Please tap one of the options shown below to continue."
-
-COMPLAINT_TYPES = (
-    ("service_quality", "Poor work quality"),
-    ("technician_behavior", "Technician behaviour"),
-    ("late_arrival", "Late arrival"),
-    ("no_show", "Technician did not come"),
-    ("overcharging", "Overcharging"),
-    ("payment_issue", "Payment issue"),
-    ("warranty_claim", "Warranty problem"),
-    ("property_damage", "Property damage"),
-    ("service_not_completed", "Work not completed"),
-    ("other", "Another problem"),
-)
-
 
 def _requires_option_tap(turn: Turn) -> bool:
     return bool(turn.picker) and not bool(turn.picker.get("allow_text"))
@@ -1168,12 +1157,13 @@ async def _complaint_step(
         if bookings:
             rows.append({
                 "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
-                "title": "Report a new problem",
-                "description": "Choose the completed service",
+                "title": "Report a service issue",
+                "description": "Handled directly by the provider",
             })
         if not rows:
             return Turn(
-                "There is no completed or eligible service on this account for a complaint. "
+                "There is no eligible service issue on this account. This option becomes available "
+                "after the technician starts the service. "
                 "If you still need help, send /human."
             )
         picker = pickers._paginate(
@@ -1186,7 +1176,8 @@ async def _complaint_step(
         bookings = await identity.complaint_bookings(thread)
         if not bookings:
             return Turn(
-                "No recent service is eligible for a new complaint. "
+                "No service is eligible for a new complaint yet. This option becomes available "
+                "after the technician starts the service. "
                 "An existing open complaint must be resolved before the same issue is filed again."
             )
         if len(bookings) == 1:
@@ -1230,7 +1221,8 @@ async def _complaint_step(
         await identity.begin_social_complaint(thread, state, complaint_type)
         return Turn(
             "Please describe what happened, including the important details. "
-            "Your next message will be sent to the provider as the complaint description."
+            "Your next message will be sent directly to the provider, who is responsible "
+            "for responding and resolving this complaint."
         )
 
     if action == "case":

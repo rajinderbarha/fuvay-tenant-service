@@ -1,11 +1,8 @@
-"""MODULE-L5-02 bug #40 — complaint admin notifications.
+"""Provider and customer notifications for directly resolved complaints.
 
-The complaints engine never created a single in-app notification. When the AI
-settlement escalates a case to admin manual review (its whole over-cap /
-no-money path), or the SLA engine pushes a stalled complaint onto the admin
-queue, the admin was never told — they would only find out by happening to look
-at the list. This adds targeted notifications to every super_admin, reusing the
-same InAppNotification the compliance SLA job uses.
+Platform admins monitor aggregate SLA and quality signals, but the provider
+responds to the customer and owns the resolution. No complaint is routed to
+an admin adjudication queue by these helpers.
 """
 from __future__ import annotations
 

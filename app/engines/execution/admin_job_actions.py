@@ -128,6 +128,10 @@ class AdminJobActionsService:
             job.assigned_staff_id = None
             job.assignment_status = "unassigned"
             job.failure_reason = None
+            # A reopened job is a new provider offer. Reusing the old clock
+            # makes it instantly expire; reusing its timeout event makes the
+            # sweeper skip it indefinitely.
+            job.provider_offer_started_at = _now()
             from app.engines.final_records.models import ServiceBooking
             booking = await self.db.get(ServiceBooking, job.booking_id)
             if booking:

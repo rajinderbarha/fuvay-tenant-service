@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.engines.execution.models import ServiceJobExecutionEvent
 from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -83,8 +83,14 @@ async def sweep(db, *, limit: int = 50) -> dict:
             # rows can say "accepted" while still having no real assignee.
             ServiceJob.assigned_staff_id.is_(None),
             ServiceJob.tenant_id.isnot(None),
-            ServiceJob.provider_offer_started_at <= cutoff,
-        ).order_by(ServiceJob.provider_offer_started_at.asc()).with_for_update(skip_locked=True).limit(limit)
+            # Jobs created before provider_offer_started_at was introduced
+            # have a NULL offer clock. The dashboard already uses created_at
+            # for those rows; the sweeper must use the same fallback or they
+            # remain assignable-looking forever despite a missed deadline.
+            func.coalesce(ServiceJob.provider_offer_started_at, ServiceJob.created_at) <= cutoff,
+        ).order_by(
+            func.coalesce(ServiceJob.provider_offer_started_at, ServiceJob.created_at).asc()
+        ).with_for_update(skip_locked=True).limit(limit)
     )).scalars().all())
     reassigned = closed = 0
     for job in jobs:
@@ -95,6 +101,11 @@ async def sweep(db, *, limit: int = 50) -> dict:
             ServiceJobExecutionEvent.job_id == job.id,
             ServiceJobExecutionEvent.tenant_id == old_tenant_id,
             ServiceJobExecutionEvent.event_type == "provider_assignment_timeout",
+            # Admin may reopen a cancelled job with a fresh offer clock.
+            # A timeout from the previous offer must not suppress this one.
+            ServiceJobExecutionEvent.created_at >= (
+                job.provider_offer_started_at or job.created_at
+            ),
         ).limit(1))
         if seen:
             continue

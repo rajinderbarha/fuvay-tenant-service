@@ -77,7 +77,7 @@ export default function AdminSupportQueuePage() {
       <PageShell>
         <PageHeader
           title="Tenant Support"
-          description="Fuvay support queue — tenant businesses asking the platform for help. Customer service complaints live under Home Services → Complaints."
+          description="Fuvay support queue for provider requests to the platform. Customer service complaints are resolved directly by the provider; admins monitor quality and SLA signals."
           actions={<Btn variant="secondary" size="sm" onClick={() => void load()}>Refresh</Btn>}
         />
 

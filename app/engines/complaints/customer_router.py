@@ -58,6 +58,29 @@ class CreateJobRefundIn(BaseModel):
     reason:           str
     requested_amount: Decimal
 
+
+@customer_complaint_router.get("/options")
+async def complaint_options(
+    r: Request = None,
+    _u: UserContext = Depends(require_customer),
+):
+    """Canonical Home Services complaint choices for customer clients.
+
+    Mobile and social clients must render this list rather than preserving the
+    retired timing, payment, warranty, or generic issue choices locally.
+    """
+    from app.engines.complaints.constants import HOME_SERVICE_PROVIDER_COMPLAINT_OPTIONS
+
+    rid = getattr(r.state, "request_id", "-") if r else "-"
+    return ok({
+        "handled_by": "provider",
+        "available_after": "service_started",
+        "options": [
+            {"value": value, "label": label}
+            for value, label in HOME_SERVICE_PROVIDER_COMPLAINT_OPTIONS
+        ],
+    }, rid, "complaint.options")
+
 # ── Eligibility check ─────────────────────────────────────────────────────────
 @customer_complaint_router.get("/check-eligible")
 async def check_eligible(

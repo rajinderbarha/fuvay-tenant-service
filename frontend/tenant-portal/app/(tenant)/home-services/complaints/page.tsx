@@ -8,9 +8,9 @@
  * endpoint supports, had no tabs, and never paged (a fixed first 20 with no
  * way to reach case 21). Every control below maps 1:1 to a query parameter
  * verified against the live API. Case actions are deliberately limited to what
- * the tenant can actually do (reply, propose resolution) — complaint status is
- * admin-mediated in this engine and there is no tenant transition endpoint, so
- * the workspace explains that rather than rendering buttons that cannot work.
+ * the provider can actually do (reply and propose a resolution). The complaint
+ * is provider-owned. Platform admins monitor policy, SLA and health signals but
+ * do not adjudicate these cases.
  */
 import React, { useCallback, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -123,7 +123,7 @@ function ComplaintsPageInner() {
   return (
     <PageShell>
       <PageHeader eyebrow="" title="Complaints & resolution center"
-        description="Resolve customer issues with complete job context, clear ownership and SLA control."
+        description="Provider-owned service complaints with complete job context and SLA accountability."
         actions={<Btn variant="secondary" icon={<RefreshCw size={14}/>} onClick={() => queue.refetch()}>Refresh</Btn>} />
       <style jsx global>{`
         .complaints-workspace { display:flex;flex-direction:column;gap:20px; }

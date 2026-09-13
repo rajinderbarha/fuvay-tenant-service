@@ -13,6 +13,8 @@ from app.engines.complaints.constants import (
     ERR_COMPLAINT_INVALID_RECORD_TYPE, ERR_COMPLAINT_RECORD_NOT_FOUND,
     ERR_COMPLAINT_NOT_ELIGIBLE, ERR_COMPLAINT_WINDOW_EXPIRED,
     ERR_COMPLAINT_DUPLICATE_OPEN, ERR_COMPLAINT_ACCESS_DENIED,
+    ERR_COMPLAINT_TYPE_NOT_SUPPORTED,
+    HOME_SERVICE_PROVIDER_COMPLAINT_TYPES, HOME_SERVICE_WORK_STARTED_STATUSES,
 )
 from app.engines.complaints.models import CustomerComplaint, ComplaintPolicy
 
@@ -51,14 +53,40 @@ class ComplaintEligibilityService:
             return {"eligible": False, "reason": "Not the customer for this record.",
                     "reason_code": ERR_COMPLAINT_ACCESS_DENIED}
 
+        if record_type in {RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB, RECORD_SERVICE_INVOICE}:
+            if complaint_type and complaint_type not in HOME_SERVICE_PROVIDER_COMPLAINT_TYPES:
+                return {
+                    "eligible": False,
+                    "reason": "This issue type is handled by an automated or dedicated workflow.",
+                    "reason_code": ERR_COMPLAINT_TYPE_NOT_SUPPORTED,
+                }
+            if not await self._home_service_work_started(
+                db, record_type=record_type, record_id=record_id, record=record,
+            ):
+                return {
+                    "eligible": False,
+                    "reason": "Report an issue becomes available after the technician starts the service.",
+                    "reason_code": ERR_COMPLAINT_NOT_ELIGIBLE,
+                }
+
         policy = await self.get_complaint_policy(db, category_id, tenant_id)
         window_hours = policy.complaint_window_hours if policy else 168
 
-        created_at = getattr(record, "created_at", None)
-        if created_at:
-            if isinstance(created_at, datetime) and created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
-            age = datetime.now(timezone.utc) - created_at
+        window_anchor = getattr(record, "created_at", None)
+        if record_type in {RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB, RECORD_SERVICE_INVOICE}:
+            # A booking may be scheduled days after creation. The complaint
+            # window starts when work ends, not when the customer booked it;
+            # while service is actively running, it must not expire at all.
+            if status in {"in_progress", "service_started", "work_done"}:
+                window_anchor = None
+            else:
+                updated_at = getattr(record, "updated_at", None)
+                if isinstance(updated_at, datetime):
+                    window_anchor = updated_at
+        if isinstance(window_anchor, datetime):
+            if window_anchor.tzinfo is None:
+                window_anchor = window_anchor.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - window_anchor
             if age > timedelta(hours=window_hours):
                 return {"eligible": False, "reason": f"Complaint window of {window_hours}h has expired.",
                         "reason_code": ERR_COMPLAINT_WINDOW_EXPIRED}
@@ -78,6 +106,56 @@ class ComplaintEligibilityService:
             "reason_code": None,
             "policy":   policy.to_dict() if policy else None,
         }
+
+    async def _home_service_work_started(
+        self,
+        db: AsyncSession,
+        *,
+        record_type: str,
+        record_id: uuid.UUID,
+        record,
+    ) -> bool:
+        """Prove that the provider has actually started work.
+
+        Current post-start states are enough for the common path. Event history
+        preserves eligibility when a started job subsequently moves back to a
+        quote-required state or is cancelled after work began.
+        """
+        status = str(getattr(record, "status", "") or "").lower()
+        if status not in HOME_SERVICE_WORK_STARTED_STATUSES and status not in {
+            "quote_required", "cancelled", "failed", "issued", "overdue",
+        }:
+            return False
+        # An executing job's current state is sufficient, but a booking may
+        # have been administratively changed without a technician ever working.
+        if record_type == RECORD_SERVICE_JOB and status in {
+            "in_progress", "service_started", "work_done",
+        }:
+            return True
+
+        from sqlalchemy import text
+
+        if record_type == RECORD_SERVICE_JOB:
+            job_id = record_id
+        elif record_type == RECORD_SERVICE_INVOICE:
+            job_id = getattr(record, "job_id", None)
+            if not job_id:
+                return False
+        else:
+            job_id = (await db.execute(text(
+                "SELECT id FROM service_jobs WHERE booking_id = :booking_id "
+                "ORDER BY created_at DESC LIMIT 1"
+            ), {"booking_id": str(record_id)})).scalar_one_or_none()
+            if not job_id:
+                return False
+
+        started = (await db.execute(text(
+            "SELECT 1 FROM service_job_execution_events "
+            "WHERE job_id = :job_id "
+            "AND (event_type = 'service_started' OR new_status = 'service_started') "
+            "LIMIT 1"
+        ), {"job_id": str(job_id)})).scalar_one_or_none()
+        return bool(started)
 
     async def get_complaint_policy(
         self,

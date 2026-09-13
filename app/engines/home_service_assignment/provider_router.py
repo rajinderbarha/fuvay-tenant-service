@@ -47,7 +47,7 @@ _MESSAGES = {
     ERR_ASSIGNMENT_NOT_FOUND:  "No active assignment found.",
     ERR_SLOT_UNAVAILABLE:      "That slot is no longer available. Choose another open slot.",
     ERR_CUSTOMER_APPROVAL_REQUIRED: "The customer must approve any change to an existing visit slot.",
-    ERR_PROVIDER_OFFER_EXPIRED: "The assignment window has expired. This job is being offered to another provider.",
+    ERR_PROVIDER_OFFER_EXPIRED: "The assignment window has expired. This job is no longer available for assignment.",
 }
 
 

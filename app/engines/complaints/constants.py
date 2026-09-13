@@ -8,6 +8,7 @@ ERR_COMPLAINT_DUPLICATE_OPEN         = "COMPLAINT_DUPLICATE_OPEN"
 ERR_COMPLAINT_INVALID_RECORD_TYPE    = "COMPLAINT_INVALID_RECORD_TYPE"
 ERR_COMPLAINT_RECORD_NOT_FOUND       = "COMPLAINT_RECORD_NOT_FOUND"
 ERR_COMPLAINT_TYPE_REQUIRED          = "COMPLAINT_TYPE_REQUIRED"
+ERR_COMPLAINT_TYPE_NOT_SUPPORTED     = "COMPLAINT_TYPE_NOT_SUPPORTED"
 ERR_COMPLAINT_DESCRIPTION_REQUIRED   = "COMPLAINT_DESCRIPTION_REQUIRED"
 ERR_COMPLAINT_INVALID_TRANSITION     = "COMPLAINT_INVALID_STATUS_TRANSITION"
 ERR_COMPLAINT_REASON_REQUIRED        = "COMPLAINT_REASON_REQUIRED"
@@ -89,6 +90,28 @@ COMPLAINT_TYPES = {
     "wrong_information", "appointment_issue", "agent_issue", "other",
 }
 
+# Home Services complaints are resolved directly by the provider. Keep this
+# customer-facing intake deliberately narrow: operational timing/no-show
+# problems are already detected by the assignment and SLA engines, while
+# warranty and payment each have their own dedicated workflows.
+HOME_SERVICE_PROVIDER_COMPLAINT_OPTIONS = (
+    ("service_quality", "Service quality issue"),
+    ("technician_behavior", "Technician behaviour"),
+    ("property_damage", "Property damage"),
+)
+HOME_SERVICE_PROVIDER_COMPLAINT_TYPES = {
+    key for key, _label in HOME_SERVICE_PROVIDER_COMPLAINT_OPTIONS
+}
+
+# A Home Services complaint becomes available only once actual service work
+# has started. These states prove that directly without needing event history;
+# the eligibility service additionally checks for a prior service_started event
+# so a job that later moved to quote_required/cancelled remains reportable.
+HOME_SERVICE_WORK_STARTED_STATUSES = {
+    "in_progress", "service_started", "work_done", "completed",
+    "invoice_issued", "payment_collected", "paid",
+}
+
 # ── Requested resolutions ─────────────────────────────────────────────────────
 REQUESTED_RESOLUTIONS = {
     "rework", "refund", "callback", "apology",
@@ -123,10 +146,9 @@ VALID_RECORD_TYPES = {
 
 # ── Eligible statuses per record type ─────────────────────────────────────────
 ELIGIBLE_STATUSES: dict[str, set[str]] = {
-    # Operational complaints such as late arrival, no-show, behaviour, and
-    # payment disputes can happen before completion. Keep every canonical live
-    # Home Services state eligible so the customer can ask for help while the
-    # event is still actionable, not only after the job has ended.
+    # This is the broad status vocabulary a record may occupy after work has
+    # started. ComplaintEligibilityService applies the stricter work-start
+    # proof before allowing a Home Services complaint.
     RECORD_SERVICE_BOOKING:      {
         "pending_assignment", "assigned", "accepted", "scheduled",
         "on_the_way", "reached_site", "in_progress", "inspection_started",

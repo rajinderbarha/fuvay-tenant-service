@@ -273,6 +273,17 @@ function DispatchWorkspace() {
     ),
     dependencies,
   );
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") board.refetch();
+    };
+    const timer = window.setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [board.refetch]);
   const loadOptions = useCallback(async (jobId: string) => {
     setOptionsLoading(true);
     setOptionsError(null);
@@ -361,6 +372,7 @@ function DispatchWorkspace() {
       setReason("");
       await Promise.all([board.refetch(), loadOptions(selectedJobId)]);
     } catch (error) {
+      await Promise.all([board.refetch(), loadOptions(selectedJobId)]);
       setOptionsError(
         error instanceof ServiceOSError
           ? error.message
@@ -1660,6 +1672,11 @@ function AssignmentPanel({
         {error && <Alert tone="danger">{error}</Alert>}
         {options && (
           <>
+            {options.job_context.offer_expired && (
+              <Alert tone="warning">
+                The assignment window has expired. This job is no longer available to assign.
+              </Alert>
+            )}
             <div>
               <div
                 style={{
@@ -1837,7 +1854,7 @@ function AssignmentPanel({
                       <Button
                         size="sm"
                         variant={current ? "secondary" : "primary"}
-                        disabled={current || actionLoading}
+                        disabled={current || actionLoading || !options.available_actions.includes(options.current_assignment ? "reassign" : "assign")}
                         onClick={() => onAssign(technician)}
                       >
                         {current

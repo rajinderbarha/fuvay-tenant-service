@@ -274,6 +274,7 @@ class RefundRequestService:
             title="Refund requested for completed service",
             request_id=request_id,
             commit=False,
+            internal_refund_request=True,
         )
         try:
             return await self.create_refund_request_from_complaint(

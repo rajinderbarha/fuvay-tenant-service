@@ -119,6 +119,7 @@ class ComplaintService:
         requested_resolution: str | None = None,
         title: str | None = None,
         commit: bool = True,
+        internal_refund_request: bool = False,
         request_id: str = "—",
     ) -> CustomerComplaint:
         # MODULE-L5-02 bug #25: the customer who files a complaint has no tenant
@@ -144,9 +145,15 @@ class ComplaintService:
         # docs/workflow-rearchitecture/phase-02a-slice-02f10a/
         # complaint-eligibility-contract.md). Raises before any
         # CustomerComplaint row is constructed.
+        # The dedicated refund endpoint creates a provider-owned case as its
+        # backing record. It is not a selectable "Report an issue" category;
+        # only that internal path may bypass the three public type choices.
+        if internal_refund_request and complaint_type != "refund_request":
+            raise ValueError(ERR_COMPLAINT_NOT_ELIGIBLE)
         eligibility = await self._eligibility.check_eligible(
             db, customer_id, record_type, record_id,
-            complaint_type=complaint_type, category_id=category_id,
+            complaint_type=None if internal_refund_request else complaint_type,
+            category_id=category_id,
         )
         if not eligibility["eligible"]:
             raise ValueError(eligibility["reason_code"] or ERR_COMPLAINT_NOT_ELIGIBLE)

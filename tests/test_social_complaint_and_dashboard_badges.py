@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import uuid
 
 import pytest
@@ -64,6 +64,28 @@ def test_complaint_is_a_known_durable_social_action():
 
 
 @pytest.mark.asyncio
+async def test_customer_complaint_options_are_provider_owned_and_canonical():
+    from app.engines.complaints.customer_router import (
+        complaint_options, customer_complaint_router,
+    )
+
+    response = await complaint_options(r=None, _u=SimpleNamespace())
+    assert response.data == {
+        "handled_by": "provider",
+        "available_after": "service_started",
+        "options": [
+            {"value": "service_quality", "label": "Service quality issue"},
+            {"value": "technician_behavior", "label": "Technician behaviour"},
+            {"value": "property_damage", "label": "Property damage"},
+        ],
+    }
+    paths = [route.path for route in customer_complaint_router.routes]
+    assert paths.index("/v1/customer/complaints/options") < paths.index(
+        "/v1/customer/complaints/{complaint_id}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_instagram_complaint_selects_booking_then_type_then_description():
     identity = FakeComplaintIdentity()
     thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
@@ -72,8 +94,16 @@ async def test_instagram_complaint_selects_booking_then_type_then_description():
         thread, identity, "new", CHANNEL_INSTAGRAM,
     )
     assert choose_type.picker
-    ids = [row["id"] for row in choose_type.picker["rows"]]
-    assert "cmp|type|service_quality" in ids
+    ids = [
+        row["id"] for row in choose_type.picker["rows"]
+        if row["id"].startswith("cmp|type|")
+    ]
+    assert ids == [
+        "cmp|type|service_quality",
+        "cmp|type|technician_behavior",
+        "cmp|type|property_damage",
+    ]
+    assert not any("late_arrival" in item or "no_show" in item for item in ids)
     assert identity.state["booking_number"] == "BK-20260913-000001"
 
     describe = await flow._complaint_step(
@@ -148,38 +178,147 @@ def test_only_unresolved_complaints_feed_quality_rate():
     assert 'write_health_signal(\n                tenant_id, "customer_satisfaction"' in operational
 
 
-def test_active_home_service_records_are_complaint_eligible():
-    """Late arrival and no-show must be reportable before job completion."""
+def test_home_service_complaints_start_with_actual_work():
+    """Pre-work timing is automatic; customer complaints begin with service."""
     from app.engines.complaints.constants import (
-        ELIGIBLE_STATUSES, RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB,
+        HOME_SERVICE_PROVIDER_COMPLAINT_TYPES,
+        HOME_SERVICE_WORK_STARTED_STATUSES,
     )
 
-    for status in ("pending_assignment", "assigned", "scheduled", "on_the_way"):
-        assert status in ELIGIBLE_STATUSES[RECORD_SERVICE_BOOKING]
-        assert status in ELIGIBLE_STATUSES[RECORD_SERVICE_JOB]
-    for status in ("reached_site", "inspection_started", "service_started", "work_done"):
-        assert status in ELIGIBLE_STATUSES[RECORD_SERVICE_JOB]
+    assert HOME_SERVICE_PROVIDER_COMPLAINT_TYPES == {
+        "service_quality", "technician_behavior", "property_damage",
+    }
+    assert "service_started" in HOME_SERVICE_WORK_STARTED_STATUSES
+    assert "completed" in HOME_SERVICE_WORK_STARTED_STATUSES
+    assert "assigned" not in HOME_SERVICE_WORK_STARTED_STATUSES
+    assert "on_the_way" not in HOME_SERVICE_WORK_STARTED_STATUSES
+    assert "inspection_started" not in HOME_SERVICE_WORK_STARTED_STATUSES
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("record_type", "status"),
-    (("service_booking", "assigned"), ("service_job", "on_the_way")),
-)
-async def test_active_home_service_complaint_passes_canonical_eligibility(record_type, status):
+async def test_pre_work_home_service_complaint_is_not_eligible():
     from app.engines.complaints.eligibility_service import ComplaintEligibilityService
 
     customer_id = uuid.uuid4()
     service = ComplaintEligibilityService()
     service._fetch_record = AsyncMock(return_value=SimpleNamespace(
-        status=status, customer_id=customer_id, created_at=datetime.now(timezone.utc),
+        status="on_the_way", customer_id=customer_id, created_at=datetime.now(timezone.utc),
     ))
+    service._home_service_work_started = AsyncMock(return_value=False)
     service._customer_owns_record = AsyncMock(return_value=True)
-    service.get_complaint_policy = AsyncMock(return_value=None)
-    service.check_duplicate_open_complaint = AsyncMock(return_value=False)
 
     result = await service.check_eligible(
-        AsyncMock(), customer_id, record_type, uuid.uuid4(),
-        complaint_type="late_arrival",
+        AsyncMock(), customer_id, "service_job", uuid.uuid4(),
+        complaint_type="service_quality",
+    )
+    assert result["eligible"] is False
+    assert "after the technician starts" in result["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["service_started", "completed"])
+async def test_booking_age_does_not_expire_a_newly_started_service_issue(status):
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    customer_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    svc = ComplaintEligibilityService()
+    svc._fetch_record = AsyncMock(return_value=SimpleNamespace(
+        status=status, customer_id=customer_id,
+        created_at=now - timedelta(days=20),
+        updated_at=now - timedelta(hours=1),
+    ))
+    svc._home_service_work_started = AsyncMock(return_value=True)
+    svc._customer_owns_record = AsyncMock(return_value=True)
+    svc.get_complaint_policy = AsyncMock(return_value=None)
+    svc.check_duplicate_open_complaint = AsyncMock(return_value=False)
+
+    result = await svc.check_eligible(
+        AsyncMock(), customer_id, "service_job", uuid.uuid4(),
+        complaint_type="property_damage",
     )
     assert result["eligible"] is True
+
+
+@pytest.mark.asyncio
+async def test_retired_late_arrival_choice_is_rejected_by_backend():
+    from app.engines.complaints.constants import ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    customer_id = uuid.uuid4()
+    service = ComplaintEligibilityService()
+    service._fetch_record = AsyncMock(return_value=SimpleNamespace(
+        status="service_started", customer_id=customer_id,
+        created_at=datetime.now(timezone.utc),
+    ))
+
+    result = await service.check_eligible(
+        AsyncMock(), customer_id, "service_job", uuid.uuid4(),
+        complaint_type="late_arrival",
+    )
+    assert result["eligible"] is False
+    assert result["reason_code"] == ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+
+
+@pytest.mark.asyncio
+async def test_invoice_record_cannot_reintroduce_retired_issue_choices():
+    from app.engines.complaints.constants import ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    customer_id = uuid.uuid4()
+    svc = ComplaintEligibilityService()
+    svc._fetch_record = AsyncMock(return_value=SimpleNamespace(
+        status="paid", customer_id=customer_id, job_id=uuid.uuid4(),
+        created_at=datetime.now(timezone.utc),
+    ))
+    svc._customer_owns_record = AsyncMock(return_value=True)
+    result = await svc.check_eligible(
+        AsyncMock(), customer_id, "service_invoice", uuid.uuid4(),
+        complaint_type="late_arrival",
+    )
+    assert result["reason_code"] == ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+
+
+@pytest.mark.asyncio
+async def test_work_start_proof_rejects_pre_work_and_admin_closed_jobs():
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    svc = ComplaintEligibilityService()
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.execute.return_value.scalar_one_or_none.return_value = None
+    job_id = uuid.uuid4()
+    assert not await svc._home_service_work_started(
+        db, record_type="service_job", record_id=job_id,
+        record=SimpleNamespace(status="on_the_way"),
+    )
+    db.execute.assert_not_awaited()
+    assert not await svc._home_service_work_started(
+        db, record_type="service_job", record_id=job_id,
+        record=SimpleNamespace(status="completed"),
+    )
+    db.execute.assert_awaited_once()
+
+    db.execute.return_value.scalar_one_or_none.return_value = 1
+    assert await svc._home_service_work_started(
+        db, record_type="service_job", record_id=job_id,
+        record=SimpleNamespace(status="completed"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_dedicated_refund_can_create_backing_case_without_public_refund_choice():
+    from app.engines.complaints.complaint_service import ComplaintService
+
+    svc = ComplaintService()
+    svc._eligibility.check_eligible = AsyncMock(return_value={
+        "eligible": False, "reason_code": "COMPLAINT_NOT_ELIGIBLE",
+    })
+    with pytest.raises(ValueError, match="COMPLAINT_NOT_ELIGIBLE"):
+        await svc.create_complaint(
+            AsyncMock(), uuid.uuid4(), category_id=uuid.uuid4(),
+            record_type="service_job", record_id=uuid.uuid4(),
+            complaint_type="refund_request", description="Refund for job",
+            internal_refund_request=True,
+        )
+    assert svc._eligibility.check_eligible.await_args.kwargs["complaint_type"] is None

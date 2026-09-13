@@ -850,16 +850,14 @@ class MessagingGatewayService:
     async def complaint_bookings(self, thread: MessagingThread) -> list[dict]:
         """Recent service records against which this customer may complain.
 
-        The eligibility engine remains authoritative. A completed job is preferred
+        The eligibility engine remains authoritative. A work-started job is preferred
         over its booking because that preserves technician/job context for rework,
-        warranty, and provider investigation.
+        damage, and provider investigation.
         """
         if not thread.customer_id:
             return []
         from app.engines.admin_catalog.models import MasterService
-        from app.engines.complaints.constants import (
-            ELIGIBLE_STATUSES, RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB,
-        )
+        from app.engines.complaints.constants import RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB
         from app.engines.complaints.eligibility_service import ComplaintEligibilityService
         from app.engines.final_records.models import ServiceBooking, ServiceJob
 
@@ -875,21 +873,21 @@ class MessagingGatewayService:
             job = (await self.db.execute(
                 select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
             )).scalars().first()
-            record_type = None
-            record_id = None
-            status = ""
-            if job and str(job.status or "").lower() in ELIGIBLE_STATUSES[RECORD_SERVICE_JOB]:
-                record_type, record_id, status = RECORD_SERVICE_JOB, job.id, str(job.status)
-            elif str(booking.status or "").lower() in ELIGIBLE_STATUSES[RECORD_SERVICE_BOOKING]:
-                record_type, record_id, status = RECORD_SERVICE_BOOKING, booking.id, str(booking.status)
-            if not record_type:
+            selected = None
+            candidates = (
+                [(RECORD_SERVICE_JOB, job.id, str(job.status))] if job else []
+            ) + [(RECORD_SERVICE_BOOKING, booking.id, str(booking.status))]
+            for record_type, record_id, status in candidates:
+                check = await eligibility.check_eligible(
+                    self.db, thread.customer_id, record_type, record_id,
+                    category_id=booking.category_id,
+                )
+                if check.get("eligible"):
+                    selected = (record_type, record_id, status)
+                    break
+            if selected is None:
                 continue
-            check = await eligibility.check_eligible(
-                self.db, thread.customer_id, record_type, record_id,
-                category_id=booking.category_id,
-            )
-            if not check.get("eligible"):
-                continue
+            record_type, record_id, status = selected
             offering = await self.db.get(MasterService, booking.offering_id)
             result.append({
                 "record_type": record_type,

@@ -72,7 +72,7 @@ SESSION_IDLE_TIMEOUT_HOURS = 1
 
 HELP_TEXT = (
     "I can book a home service, track an existing booking, or help you report "
-    "a problem with completed work.\n\n"
+    "a service issue after work has started.\n\n"
     "Everything is a tap — just choose from the options I show you. "
     "Send /fuvay at any time to start over, or /complaint for help with a service."
 )

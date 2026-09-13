@@ -106,6 +106,7 @@ class TestEligibilityContract:
 
     async def test_window_expired_returns_reason_code(self):
         svc = ComplaintEligibilityService()
+        svc._home_service_work_started = AsyncMock(return_value=True)
         db = _mock_db()
         cid = _uuid()
         old_created = datetime.now(timezone.utc) - timedelta(hours=200)
@@ -121,6 +122,7 @@ class TestEligibilityContract:
 
     async def test_within_window_is_eligible(self):
         svc = ComplaintEligibilityService()
+        svc._home_service_work_started = AsyncMock(return_value=True)
         db = _mock_db()
         cid = _uuid()
         recent = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -137,6 +139,7 @@ class TestEligibilityContract:
 
     async def test_duplicate_open_complaint_returns_reason_code(self):
         svc = ComplaintEligibilityService()
+        svc._home_service_work_started = AsyncMock(return_value=True)
         db = _mock_db()
         cid = _uuid()
         recent = datetime.now(timezone.utc) - timedelta(hours=1)
