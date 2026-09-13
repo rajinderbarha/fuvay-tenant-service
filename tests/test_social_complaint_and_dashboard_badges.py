@@ -252,6 +252,122 @@ async def test_social_menu_separates_old_case_tracking_from_new_issue_permission
     assert flow.REPORT_ISSUE_ROW not in rows
 
 
+@pytest.mark.asyncio
+async def test_new_booking_menu_cannot_inherit_old_complaint_or_warranty():
+    """A prior completed job must not advertise remedies for today's booking."""
+    class Identity:
+        async def live_bookings(self, _thread):
+            return [{"number": "BK-NEW", "service": "AC repair", "status": "Assigned"}]
+
+        async def cancel_options(self, _thread, _number):
+            return {"can_cancel": True}
+
+        async def complaint_cases(self, _thread):
+            return []
+
+        async def complaint_bookings(self, _thread):
+            return [{"booking_number": "BK-OLD", "status": "completed"}]
+
+        async def warranty_menu_available(self, _thread, booking_number=None):
+            return booking_number in (None, "BK-OLD")
+
+    thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
+    for booking_number in ("", "BK-NEW"):
+        turn = await flow._booked_menu_for(
+            Identity(), thread, booking_number, "Booking confirmed")
+        titles = {row["title"] for row in turn.picker["rows"]}
+        assert flow.TRACK_ROW in titles
+        assert flow.REPORT_ISSUE_ROW not in titles
+        assert flow.WARRANTY_ROW not in titles
+
+
+@pytest.mark.asyncio
+async def test_issue_appears_for_inspected_booking_and_warranty_only_for_completed_one():
+    class Identity:
+        async def live_bookings(self, _thread):
+            return [{"number": "BK-ACTIVE", "service": "AC repair", "status": "Inspection started"}]
+
+        async def cancel_options(self, _thread, _number):
+            return {"can_cancel": False}
+
+        async def complaint_cases(self, _thread):
+            return []
+
+        async def complaint_bookings(self, _thread):
+            return [{"booking_number": "BK-ACTIVE", "status": "inspection_started"}]
+
+        async def warranty_menu_available(self, _thread, booking_number=None):
+            return booking_number == "BK-COMPLETE"
+
+    thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
+    active = await flow._booked_menu_for(
+        Identity(), thread, "BK-ACTIVE", "Inspection started")
+    active_titles = {row["title"] for row in active.picker["rows"]}
+    assert flow.REPORT_ISSUE_ROW in active_titles
+    assert flow.WARRANTY_ROW not in active_titles
+
+    completed = await flow._booked_menu_for(
+        Identity(), thread, "BK-COMPLETE", "Job completed")
+    completed_titles = {row["title"] for row in completed.picker["rows"]}
+    assert flow.REPORT_ISSUE_ROW not in completed_titles
+    assert flow.WARRANTY_ROW in completed_titles
+
+
+@pytest.mark.asyncio
+async def test_instagram_issue_catalog_requires_verified_on_site_arrival():
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    booking = SimpleNamespace(id=uuid.uuid4())
+    job = SimpleNamespace(status="inspection_started", arrival_verified_at=None)
+    booking_rows = MagicMock()
+    booking_rows.scalars.return_value.all.return_value = [booking]
+    job_rows = MagicMock()
+    job_rows.scalars.return_value.first.return_value = job
+    service = MessagingGatewayService.__new__(MessagingGatewayService)
+    service.db = MagicMock()
+    service.db.execute = AsyncMock(side_effect=[booking_rows, job_rows])
+
+    assert await service.complaint_bookings(
+        SimpleNamespace(customer_id=uuid.uuid4())) == []
+    assert service.db.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_confirmed_booking_number_is_carried_into_its_action_menu(monkeypatch):
+    from app.engines.messaging_gateway import addons
+
+    monkeypatch.setattr(addons, "needs_review", lambda _draft: False)
+    executor = SimpleNamespace(
+        customer_id=uuid.uuid4(),
+        _tool_confirm_home_service_booking=AsyncMock(return_value={
+            "confirmed": True, "booking_number": "BK-JUST-BOOKED",
+        }),
+    )
+    thread = SimpleNamespace(customer_id=None)
+    note, page, menu_draft = await flow._confirm(
+        None, thread, executor, {"id": "draft-1", "status": "collecting"})
+    assert page == flow.BOOKED
+    assert "BK-JUST-BOOKED" in note
+    assert menu_draft["_confirmed_booking_number"] == "BK-JUST-BOOKED"
+    assert thread.customer_id == executor.customer_id
+
+
+@pytest.mark.asyncio
+async def test_warranty_menu_matches_the_completed_booking_not_an_older_claim():
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    service = MessagingGatewayService.__new__(MessagingGatewayService)
+    service.warranty_cases = AsyncMock(return_value=[
+        {"booking_number": "BK-OLD", "claim_id": "claim-1"},
+    ])
+    service.warranty_jobs = AsyncMock(return_value=[
+        {"booking_number": "BK-OLD", "job_id": "job-1"},
+    ])
+    thread = SimpleNamespace(customer_id=uuid.uuid4())
+    assert not await service.warranty_menu_available(thread, "BK-NEW")
+    assert await service.warranty_menu_available(thread, "BK-OLD")
+
+
 def test_completed_service_uses_warranty_for_quality_but_keeps_incident_types():
     booking = _booking() | {
         "complaint_types": ["technician_behavior", "property_damage"],

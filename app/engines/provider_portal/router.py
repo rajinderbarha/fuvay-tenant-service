@@ -422,7 +422,10 @@ async def activate_team_member_account(
     if not active_member or account.account_status != "active" or (account.meta or {}).get("provider_access_disabled"):
         raise ServiceOSException("INVALID_ACTIVATION_TOKEN", invalid_message, status_code=400)
 
-    password_errors = validate_password_strength(new_password, account.full_name, account.email)
+    from app.engines.security.policy_runtime import password_policy
+    minimum_length, _ = await password_policy(db)
+    password_errors = validate_password_strength(
+        new_password, account.full_name, account.email, min_length=minimum_length)
     if password_errors:
         raise ServiceOSException("WEAK_PASSWORD", password_errors[0], status_code=422)
 

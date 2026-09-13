@@ -414,7 +414,10 @@ async def advance(
             # Do not append the service-location CTA here: confirmation is the
             # end of booking, and showing an address action now looks like a
             # new location question. Location/address is collected beforehand.
-            return await _booked_menu_for(identity, thread, "", note)
+            return await _booked_menu_for(
+                identity, thread,
+                str((draft or {}).get("_confirmed_booking_number") or ""), note,
+            )
         if note and page == DONE:
             return Turn(note)
     elif (text or "").strip():
@@ -1069,7 +1072,12 @@ async def _confirm(
     # is none.
     if getattr(executor, "customer_id", None):
         thread.customer_id = executor.customer_id
-    return CONFIRMED.format(number=number), BOOKED, draft
+    # Keep the newly created booking number for this response only. The
+    # post-confirmation menu must be scoped to THIS job, even when the same
+    # linked customer has older completed/complaint-eligible services.
+    return CONFIRMED.format(number=number), BOOKED, {
+        **draft, "_confirmed_booking_number": number,
+    }
 
 
 # ── Asking the next question ─────────────────────────────────────────────────
@@ -1118,6 +1126,7 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
             logger.warning("messaging_gateway.flow.live_bookings_failed",
                            thread_id=str(getattr(thread, "id", "—")), error=str(exc))
 
+    live_numbers = {str(booking.get("number") or "") for booking in bookings}
     if bookings:
         rows.append({"id": f"{PICK_TRACK}{PICKER_SEP}", "title": TRACK_ROW})
         # A named booking is offered for cancellation only if the server still
@@ -1144,7 +1153,17 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
                     "id": PICKER_SEP.join((PICK_COMPLAINT, "cases")),
                     "title": TRACK_COMPLAINT_ROW,
                 })
-            if eligible_services:
+            # A fresh booking must not inherit the complaint eligibility of
+            # an older job on the same customer account. For a generic menu
+            # with several live bookings, ask the customer to track the
+            # intended booking first instead of guessing which one they mean.
+            issue_booking_number = booking_number or (
+                bookings[0]["number"] if len(bookings) == 1 else None
+            )
+            if issue_booking_number and any(
+                str(service.get("booking_number") or "") == str(issue_booking_number)
+                for service in eligible_services
+            ):
                 rows.append({
                     "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
                     "title": REPORT_ISSUE_ROW,
@@ -1157,7 +1176,18 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
 
         try:
             warranty_available = getattr(identity, "warranty_menu_available", None)
-            if warranty_available is not None and await warranty_available(thread):
+            # Warranty belongs to completed work, never to an active booking
+            # merely because this customer has an older covered job. A
+            # completed booking selected explicitly can still show support;
+            # with no live bookings the general warranty entry is available.
+            show_warranty = False
+            if warranty_available is not None:
+                if booking_number:
+                    if booking_number not in live_numbers:
+                        show_warranty = await warranty_available(thread, booking_number)
+                elif not bookings:
+                    show_warranty = await warranty_available(thread)
+            if show_warranty:
                 rows.append({
                     "id": f"{PICK_WARRANTY}{PICKER_SEP}",
                     "title": WARRANTY_ROW,

@@ -139,12 +139,138 @@ function AuditLogsTab({ refreshKey }: { refreshKey: number }) {
 function JsonPanel({ title, value }: { title: string; value: Record<string, unknown> | null }) { return <div className={styles.jsonPanel}><strong>{title}</strong><pre>{value ? JSON.stringify(value, null, 2) : "No state captured"}</pre></div>; }
 
 const POLICY_META: Record<string, { label: string; group: string; unit?: string; impact: string; icon: React.ReactNode }> = {
-  mfa_required_super_admin: { label: "Super Admin MFA", group: "Identity protection", impact: "Requires MFA for the highest-privilege accounts after every active account is enrolled.", icon: <Fingerprint size={18} /> }, mfa_required_platform_admin: { label: "Delegated admin MFA", group: "Identity protection", impact: "Requires MFA for scoped administrators after every active account is enrolled.", icon: <Fingerprint size={18} /> }, failed_login_threshold: { label: "Temporary lock threshold", group: "Authentication defence", impact: "Failed attempts allowed before a temporary account lock.", icon: <ShieldAlert size={18} /> }, auto_lock_threshold: { label: "Security lock threshold", group: "Authentication defence", impact: "Failed attempts before a long-term security lock.", icon: <Ban size={18} /> }, session_max_lifetime_minutes: { label: "Maximum session lifetime", group: "Session controls", unit: "minutes", impact: "Absolute maximum lifetime for newly issued sessions.", icon: <Clock3 size={18} /> }, idle_timeout_minutes: { label: "Idle timeout", group: "Session controls", unit: "minutes", impact: "Refresh is denied after this period of inactivity.", icon: <Laptop size={18} /> }, max_concurrent_sessions: { label: "Concurrent session limit", group: "Session controls", unit: "sessions", impact: "Revokes a user's oldest sessions after a successful sign-in.", icon: <MonitorSmartphone size={18} /> }, ip_block_auto_expiry_default_days: { label: "Default network block", group: "Network controls", unit: "days", impact: "Default duration when no custom block expiry is supplied.", icon: <Network size={18} /> }, export_audit_retention_days: { label: "Audit export retention", group: "Evidence retention", unit: "days", impact: "Caps how far back synchronous security exports may read.", icon: <ScrollText size={18} /> },
+  mfa_required_super_admin: { label: "Super Admin MFA", group: "Identity protection", impact: "Requires MFA for the highest-privilege accounts after every active account is enrolled.", icon: <Fingerprint size={18} /> },
+  mfa_required_platform_admin: { label: "Delegated admin MFA", group: "Identity protection", impact: "Requires MFA for scoped administrators after every active account is enrolled.", icon: <Fingerprint size={18} /> },
+  failed_login_threshold: { label: "Temporary lock threshold", group: "Authentication defence", impact: "Failed attempts before a temporary account lock.", icon: <ShieldAlert size={18} /> },
+  auto_lock_threshold: { label: "Security lock threshold", group: "Authentication defence", impact: "Failed attempts before a long-term security lock.", icon: <Ban size={18} /> },
+  temporary_lockout_minutes: { label: "Temporary lock duration", group: "Authentication defence", unit: "minutes", impact: "How long a temporary account lock lasts after the failed-login threshold.", icon: <Clock3 size={18} /> },
+  password_min_length: { label: "Minimum password length", group: "Password governance", unit: "characters", impact: "Applied when passwords are created or changed, including registration and team activation.", icon: <Key size={18} /> },
+  password_history_count: { label: "Password reuse prevention", group: "Password governance", unit: "passwords", impact: "How many prior passwords cannot be reused during a password change or reset.", icon: <LockKeyhole size={18} /> },
+  session_max_lifetime_minutes: { label: "Maximum session lifetime", group: "Session controls", unit: "minutes", impact: "Absolute maximum lifetime for newly issued sessions and tokens.", icon: <Clock3 size={18} /> },
+  idle_timeout_minutes: { label: "Idle timeout", group: "Session controls", unit: "minutes", impact: "Refresh is denied after this period of inactivity.", icon: <Laptop size={18} /> },
+  max_concurrent_sessions: { label: "Concurrent session limit", group: "Session controls", unit: "sessions", impact: "Revokes a user's oldest sessions after a successful sign-in.", icon: <MonitorSmartphone size={18} /> },
+  access_token_lifetime_minutes: { label: "Access-token lifetime", group: "Session controls", unit: "minutes", impact: "Caps newly issued bearer tokens; existing tokens expire at their original time.", icon: <Key size={18} /> },
+  refresh_token_lifetime_days: { label: "Refresh-token lifetime", group: "Session controls", unit: "days", impact: "Caps newly issued refresh tokens; never exceeds the session lifetime.", icon: <RefreshCw size={18} /> },
+  ip_block_auto_expiry_default_days: { label: "Default network block", group: "Network controls", unit: "days", impact: "Default duration when no custom block expiry is supplied.", icon: <Network size={18} /> },
+  export_audit_retention_days: { label: "Audit export lookback", group: "Evidence retention", unit: "days", impact: "Caps how far back synchronous security exports may read; it does not delete audit records.", icon: <ScrollText size={18} /> },
 };
 
 function PoliciesTab({ refreshKey }: { refreshKey: number }) {
-  const perm = usePermissions(); const policies = useApi(useCallback(() => securityAdminApi.getPolicies(), []), [refreshKey]); const [editing, setEditing] = useState<SecurityPolicy | null>(null); const [value, setValue] = useState(""); const [reason, setReason] = useState(""); const updateAction = useAction(useCallback((key: string, v: unknown, r: string) => securityAdminApi.updatePolicy(key, v, r), []));
-  function open(p: SecurityPolicy) { setEditing(p); setValue(String(p.policy_value)); setReason(""); } async function save() { if (!editing) return; const parsed = editing.value_type === "boolean" ? value === "true" : Number(value); const result = await updateAction.execute(editing.policy_key, parsed, reason.trim()); if (result) { setEditing(null); policies.refetch(); } }
-  const grouped = useMemo(() => { const map: Record<string, SecurityPolicy[]> = {}; for (const p of policies.data?.policies ?? []) { const group = POLICY_META[p.policy_key]?.group ?? "Other controls"; (map[group] ??= []).push(p); } return map; }, [policies.data]);
-  return <div className={styles.stack}><div className={styles.policyIntro}><div><ShieldCheck size={24} /><div><h2>Runtime security policy</h2><p>Changes are validated, applied to authentication and security operations, and written to the immutable audit trail.</p></div></div><Badge variant="success">Runtime enforced</Badge></div><ErrorBanner message={policies.error} />{policies.loading ? <Skeleton height={460} /> : (policies.data?.policies.length ?? 0) === 0 ? <EmptyState icon={<AlertTriangle size={24} />} title="Security policy is not initialized" description="Apply the latest database migration to install the protected defaults." /> : <div className={styles.policyGroups}>{Object.entries(grouped).map(([group, items]) => <section key={group} className={styles.policyGroup}><header><h3>{group}</h3><span>{items.length} control{items.length === 1 ? "" : "s"}</span></header>{items.map(p => { const meta = POLICY_META[p.policy_key]; const enabled = p.value_type === "boolean" ? Boolean(p.policy_value) : null; return <article className={styles.policyRow} key={p.id}><span className={styles.policyIcon}>{meta?.icon ?? <SlidersHorizontal size={18} />}</span><div className={styles.policyCopy}><strong>{meta?.label ?? humanize(p.policy_key)}</strong><p>{meta?.impact ?? p.description}</p><small>{p.updated_reason ? `Last change: ${p.updated_reason}` : "Protected platform default"} · {formatDate(p.updated_at)}</small></div><div className={styles.policyValue}>{p.value_type === "boolean" ? <Badge variant={enabled ? "success" : "muted"}>{enabled ? "Enabled" : "Disabled"}</Badge> : <><strong>{String(p.policy_value)}</strong><span>{meta?.unit}</span></>}{perm.has("security:policies:update") && <Btn size="xs" variant="secondary" onClick={() => open(p)}>Edit</Btn>}</div></article>; })}</section>)}</div>}<Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Update ${POLICY_META[editing.policy_key]?.label ?? humanize(editing.policy_key)}` : "Update policy"}>{editing && <div className={styles.modalStack}><div className={styles.infoNotice}><Shield size={18} /><span>{POLICY_META[editing.policy_key]?.impact ?? editing.description}</span></div>{editing.value_type === "boolean" ? <Select label="Policy state" value={value} onChange={setValue} options={[{ value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} /> : <Input label={`Value${POLICY_META[editing.policy_key]?.unit ? ` (${POLICY_META[editing.policy_key].unit})` : ""}`} value={value} onChange={v => setValue(v.replace(/\D/g, ""))} hint={editing.minimum !== null ? `Allowed range: ${editing.minimum}–${editing.maximum}` : undefined} required />}<Textarea label="Change reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this control changing?" required /><ErrorBanner message={updateAction.error} /><div className={styles.modalActions}><Btn variant="ghost" onClick={() => setEditing(null)}>Cancel</Btn><Btn loading={updateAction.loading} disabled={reason.trim().length < 8 || (editing.value_type === "number" && !value)} onClick={save}>Apply policy</Btn></div></div>}</Modal></div>;
+  const perm = usePermissions();
+  const policies = useApi(useCallback(() => securityAdminApi.getPolicies(), []), [refreshKey]);
+  const [editing, setEditing] = useState<SecurityPolicy | null>(null);
+  const [value, setValue] = useState("");
+  const [reason, setReason] = useState("");
+  const [query, setQuery] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const updateAction = useAction(useCallback(
+    (key: string, v: unknown, r: string) => securityAdminApi.updatePolicy(key, v, r), []
+  ));
+
+  function open(p: SecurityPolicy) {
+    setEditing(p);
+    setValue(String(p.policy_value));
+    setReason("");
+  }
+  async function save() {
+    if (!editing) return;
+    const parsed = editing.value_type === "boolean" ? value === "true" : Number(value);
+    const result = await updateAction.execute(editing.policy_key, parsed, reason.trim());
+    if (result) {
+      setEditing(null);
+      policies.refetch();
+    }
+  }
+
+  const all = policies.data?.policies ?? [];
+  const groups = Array.from(new Set(all.map(p => POLICY_META[p.policy_key]?.group ?? "Other controls"))).sort();
+  const filtered = all.filter(p => {
+    const meta = POLICY_META[p.policy_key];
+    const group = meta?.group ?? "Other controls";
+    const text = `${meta?.label ?? p.policy_key} ${meta?.impact ?? p.description ?? ""} ${group}`.toLowerCase();
+    return (!selectedGroup || group === selectedGroup) && text.includes(query.trim().toLowerCase());
+  });
+  const grouped = filtered.reduce<Record<string, SecurityPolicy[]>>((map, p) => {
+    const group = POLICY_META[p.policy_key]?.group ?? "Other controls";
+    (map[group] ??= []).push(p);
+    return map;
+  }, {});
+  const recommended = all.filter(p => p.is_recommended).length;
+  const customized = all.filter(p => !p.is_default).length;
+  const mfaEnabled = all.filter(p => p.policy_key.startsWith("mfa_required_") && p.policy_value === true).length;
+
+  return <div className={styles.stack}>
+    <div className={styles.policyIntro}>
+      <div><ShieldCheck size={24} /><div>
+        <h2>Runtime security policy</h2>
+        <p>Validated controls, role-protected edits, and a reason-bearing audit trail.</p>
+      </div></div>
+      <Badge variant="success">Runtime enforced</Badge>
+    </div>
+    <ErrorBanner message={policies.error} />
+    {policies.loading ? <Skeleton height={460} /> : all.length === 0
+      ? <EmptyState icon={<AlertTriangle size={24} />} title="Security policy is not initialized" description="Apply the latest database migration to install the protected defaults." />
+      : <>
+        <div className={styles.policyMetrics}>
+          <SummaryCard label="Runtime controls" value={String(all.length)} sub="persisted and validated" icon={<SlidersHorizontal size={18} />} />
+          <SummaryCard label="At recommendation" value={`${recommended}/${all.length}`} sub="guidance, not an automatic change" icon={<ShieldCheck size={18} />} />
+          <SummaryCard label="Customized" value={String(customized)} sub="different from deployment default" icon={<Key size={18} />} />
+          <SummaryCard label="MFA scopes enabled" value={String(mfaEnabled)} sub="of available role scopes" icon={<Fingerprint size={18} />} />
+        </div>
+        <div className={styles.toolbar}>
+          <div className={styles.searchBox}><Search size={15} /><Input value={query} onChange={setQuery} placeholder="Find a security control" /></div>
+          <Select value={selectedGroup} onChange={setSelectedGroup} options={[{ value: "", label: "All control groups" }, ...groups.map(group => ({ value: group, label: group }))]} />
+          {(query || selectedGroup) && <Btn size="sm" variant="ghost" onClick={() => { setQuery(""); setSelectedGroup(""); }}>Clear</Btn>}
+        </div>
+        {filtered.length === 0 ? <EmptyState icon={<Search size={24} />} title="No matching controls" description="Try a different search or group." />
+          : <div className={styles.policyGroups}>
+            {Object.entries(grouped).map(([group, items]) => <section key={group} className={styles.policyGroup}>
+              <header><h3>{group}</h3><span>{items.length} control{items.length === 1 ? "" : "s"}</span></header>
+              {items.map(p => {
+                const meta = POLICY_META[p.policy_key];
+                return <article className={styles.policyRow} key={p.id}>
+                  <span className={styles.policyIcon}>{meta?.icon ?? <SlidersHorizontal size={18} />}</span>
+                  <div className={styles.policyCopy}>
+                    <strong>{meta?.label ?? humanize(p.policy_key)}</strong>
+                    <p>{meta?.impact ?? p.description}</p>
+                    <small>{p.updated_reason ? `Last change: ${p.updated_reason}` : "Protected platform default"} · {formatDate(p.updated_at)}</small>
+                    <small>{p.is_recommended ? "At recommended value" : `Recommended: ${String(p.recommended_value)}${meta?.unit ? ` ${meta.unit}` : ""}`}</small>
+                  </div>
+                  <div className={styles.policyValue}>
+                    {p.value_type === "boolean"
+                      ? <Badge variant={p.policy_value ? "success" : "muted"}>{p.policy_value ? "Enabled" : "Disabled"}</Badge>
+                      : <><strong>{String(p.policy_value)}</strong><span>{meta?.unit}</span></>}
+                    {perm.has("security:policies:update") && <Btn size="xs" variant="secondary" onClick={() => open(p)}>Edit</Btn>}
+                  </div>
+                </article>;
+              })}
+            </section>)}
+          </div>}
+        <div className={styles.infoNotice}><Shield size={18} /><span>
+          Changes to token and session lifetimes affect newly issued credentials. Existing tokens retain their original expiry; revoke sessions separately if immediate removal is required. The audit export lookback does not delete evidence.
+        </span></div>
+      </>}
+    <Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Update ${POLICY_META[editing.policy_key]?.label ?? humanize(editing.policy_key)}` : "Update policy"}>
+      {editing && <div className={styles.modalStack}>
+        <div className={styles.infoNotice}><Shield size={18} /><span>{POLICY_META[editing.policy_key]?.impact ?? editing.description}</span></div>
+        {editing.value_type === "boolean"
+          ? <Select label="Policy state" value={value} onChange={setValue} options={[{ value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} />
+          : <Input label={`Value${POLICY_META[editing.policy_key]?.unit ? ` (${POLICY_META[editing.policy_key].unit})` : ""}`}
+              value={value} onChange={v => setValue(v.replace(/\D/g, ""))}
+              hint={editing.minimum !== null ? `Allowed range: ${editing.minimum}–${editing.maximum}` : undefined} required />}
+        {editing.recommended_value !== undefined && !editing.is_recommended &&
+          <Btn size="sm" variant="secondary" onClick={() => setValue(String(editing.recommended_value))}>
+            Use recommended value ({String(editing.recommended_value)})
+          </Btn>}
+        <Textarea label="Change reason" value={reason} onChange={setReason} rows={3} placeholder="Why is this control changing?" required />
+        <ErrorBanner message={updateAction.error} />
+        <div className={styles.modalActions}>
+          <Btn variant="ghost" onClick={() => setEditing(null)}>Cancel</Btn>
+          <Btn loading={updateAction.loading}
+            disabled={reason.trim().length < 8 || (editing.value_type === "number" && (!value || Number(value) < (editing.minimum ?? 0) || Number(value) > (editing.maximum ?? Infinity)))}
+            onClick={save}>Apply policy</Btn>
+        </div>
+      </div>}
+    </Modal>
+  </div>;
 }

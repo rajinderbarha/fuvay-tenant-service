@@ -46,12 +46,47 @@ POLICY_RULES = {
     "mfa_required_platform_admin": (bool, None, None),
     "failed_login_threshold": (int, 3, 20),
     "auto_lock_threshold": (int, 5, 50),
+    "temporary_lockout_minutes": (int, 5, 1440),
     "session_max_lifetime_minutes": (int, 15, 43200),
     "idle_timeout_minutes": (int, 5, 1440),
     "max_concurrent_sessions": (int, 1, 100),
+    "access_token_lifetime_minutes": (int, 5, 480),
+    "refresh_token_lifetime_days": (int, 1, 30),
+    "password_min_length": (int, 8, 64),
+    "password_history_count": (int, 1, 24),
     "api_key_max_expiry_days": (int, 1, 730),
     "ip_block_auto_expiry_default_days": (int, 1, 365),
     "export_audit_retention_days": (int, 30, 3650),
+}
+
+POLICY_DEFAULTS = {
+    "mfa_required_super_admin": False,
+    "mfa_required_platform_admin": False,
+    "failed_login_threshold": 5,
+    "auto_lock_threshold": 10,
+    "temporary_lockout_minutes": 15,
+    "session_max_lifetime_minutes": 1440,
+    "idle_timeout_minutes": 30,
+    "max_concurrent_sessions": 10,
+    "access_token_lifetime_minutes": 480,
+    "refresh_token_lifetime_days": 7,
+    "password_min_length": 8,
+    "password_history_count": 5,
+    "api_key_max_expiry_days": 365,
+    "ip_block_auto_expiry_default_days": 30,
+    "export_audit_retention_days": 365,
+}
+
+# Recommendations are deliberately separate from migration-safe defaults. This
+# lets an operator harden the platform explicitly, with a reason and audit row,
+# instead of a deployment silently changing authentication behaviour.
+POLICY_RECOMMENDED = {
+    **POLICY_DEFAULTS,
+    "mfa_required_super_admin": True,
+    "mfa_required_platform_admin": True,
+    "access_token_lifetime_minutes": 60,
+    "max_concurrent_sessions": 5,
+    "password_min_length": 12,
 }
 
 
@@ -712,6 +747,10 @@ class SecurityAdminService:
             item["minimum"] = rule[1] if rule else None
             item["maximum"] = rule[2] if rule else None
             item["enforcement"] = "runtime"
+            item["default_value"] = POLICY_DEFAULTS.get(item["policy_key"])
+            item["recommended_value"] = POLICY_RECOMMENDED.get(item["policy_key"])
+            item["is_default"] = item["policy_value"] == item["default_value"]
+            item["is_recommended"] = item["policy_value"] == item["recommended_value"]
         return {"policies": items}
 
     async def _policy_value(self, policy_key: str, default):
@@ -744,16 +783,22 @@ class SecurityAdminService:
             warning = int(await self._policy_value("failed_login_threshold", 5))
             if value <= warning:
                 raise ServiceOSException("VALIDATION_ERROR", "Auto-lock threshold must be higher than warning threshold.")
-        if value is True and policy_key in ("mfa_required_super_admin", "mfa_required_platform_admin"):
-            roles = ("super_admin",) if policy_key == "mfa_required_super_admin" else (
-                "admin_operations", "admin_finance", "admin_support", "admin_security", "admin_readonly")
+        mfa_roles = {
+            "mfa_required_super_admin": ("super_admin",),
+            "mfa_required_platform_admin": (
+                "admin_operations", "admin_finance", "admin_support",
+                "admin_security", "admin_readonly",
+            ),
+        }
+        if value is True and policy_key in mfa_roles:
+            roles = mfa_roles[policy_key]
             missing_r = await self.db.execute(select(func.count(User.id)).where(
                 User.role.in_(roles), User.is_active.is_(True), User.is_mfa_enabled.is_(False)))
             missing = int(missing_r.scalar_one_or_none() or 0)
             if missing:
                 raise ServiceOSException(
                     "VALIDATION_ERROR",
-                    f"MFA cannot be required yet: {missing} active administrator account(s) are not enrolled.")
+                    f"MFA cannot be required yet: {missing} active account(s) in this role scope are not enrolled.")
         r = await self.db.execute(select(SecurityPolicy).where(SecurityPolicy.policy_key == policy_key))
         p = r.scalar_one_or_none()
         if not p: raise NotFoundException("SecurityPolicy", policy_key)
@@ -765,5 +810,9 @@ class SecurityAdminService:
                            before={"value": before}, after={"value": value, "reason": reason})
         result = p.to_dict()
         result.update({"value_type": "boolean" if isinstance(value, bool) else "number",
-                       "minimum": minimum, "maximum": maximum, "enforcement": "runtime"})
+                       "minimum": minimum, "maximum": maximum, "enforcement": "runtime",
+                       "default_value": POLICY_DEFAULTS.get(policy_key),
+                       "recommended_value": POLICY_RECOMMENDED.get(policy_key),
+                       "is_default": value == POLICY_DEFAULTS.get(policy_key),
+                       "is_recommended": value == POLICY_RECOMMENDED.get(policy_key)})
         return result

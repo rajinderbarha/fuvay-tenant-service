@@ -715,7 +715,7 @@ class CommerceService:
         job = job_r.scalar_one_or_none()
         if not job or job.customer_id != cid:
             raise NotFoundException("Job", str(job_id))
-        if job.status not in ("completed", "work_done", "invoice_issued", "paid"):
+        if job.status != "completed":
             raise ServiceOSException(
                 "WARRANTY_JOB_NOT_COMPLETED", "Warranty claims are available only after job completion.", status_code=409,
             )

@@ -8237,6 +8237,8 @@ export interface SecurityPolicy {
   created_at: string; updated_at: string;
   value_type: "boolean" | "number"; minimum: number | null; maximum: number | null;
   enforcement: "runtime";
+  default_value: boolean | number | null; recommended_value: boolean | number | null;
+  is_default: boolean; is_recommended: boolean;
 }
 
 export const securityAdminApi = {

@@ -48,10 +48,19 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 _SPECIAL_CHARS = set(r"""!@#$%^&*()_+-=[]{}|;':",.<>?/`~\\""")
 
-def validate_password_strength(password: str, user_name: str = "", user_email: str = "") -> list[str]:
+def validate_password_strength(
+    password: str,
+    user_name: str = "",
+    user_email: str = "",
+    *,
+    min_length: int = 8,
+) -> list[str]:
     errors = []
-    if len(password) < 8:
-        errors.append("PASSWORD_TOO_SHORT: Password must be at least 8 characters.")
+    min_length = max(8, min(int(min_length), 64))
+    if len(password) < min_length:
+        errors.append(
+            f"PASSWORD_TOO_SHORT: Password must be at least {min_length} characters."
+        )
     if not any(c.isupper() for c in password):
         errors.append("PASSWORD_REQUIRES_UPPERCASE: Password must contain at least one uppercase letter.")
     if not any(c.islower() for c in password):
@@ -85,12 +94,18 @@ def create_access_token(
     onboarding_complete: bool,
     enabled_engines: list[str],
     extra_claims: dict | None = None,
+    *,
+    expires_minutes: int | None = None,
+    expires_at: datetime | None = None,
 ) -> tuple[str, str]:
     """Returns (token, jti)"""
     s = _settings()
     jti = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
-    exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    lifetime = ACCESS_TOKEN_EXPIRE_MINUTES if expires_minutes is None else int(expires_minutes)
+    exp = now + timedelta(minutes=max(1, lifetime))
+    if expires_at is not None:
+        exp = min(exp, expires_at)
     aud = AUDIENCE.get(role, "serviceos:customer")
     payload = {
         "sub": user_id,

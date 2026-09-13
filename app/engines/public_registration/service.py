@@ -115,7 +115,10 @@ class RegistrationService:
 
         if password != password_confirm:
             raise ServiceOSException("PASSWORD_MISMATCH", "Passwords do not match.", status_code=422)
-        errors = validate_password_strength(password, full_name, email_n)
+        from app.engines.security.policy_runtime import password_policy
+        minimum_length, _ = await password_policy(self.db)
+        errors = validate_password_strength(
+            password, full_name, email_n, min_length=minimum_length)
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors), status_code=422)
 
@@ -495,6 +498,8 @@ class RegistrationService:
                 tenant_id=tenant.id, email=pending.email, phone=pending.mobile,
                 full_name=pending.full_name, role="tenant_owner",
                 hashed_password=pending.hashed_password,
+                password_history=[pending.hashed_password],
+                password_changed_at=utcnow(),
                 is_active=True, is_verified=True,
                 force_password_change=False,
             )
@@ -593,20 +598,30 @@ class RegistrationService:
             pending.tos_privacy_accepted = True
             pending.marketing_consent = marketing_consent
 
-            # Auto-login
+            # Auto-login uses the same absolute session cap as normal sign-in.
+            from app.engines.security.policy_runtime import security_policy_value
+            session_minutes = int(await security_policy_value(
+                self.db, "session_max_lifetime_minutes", 1440))
             session = UserSession(
                 user_id=owner.id, tenant_id=tenant.id, device_id="signup", device_name="Signup",
                 device_type="web", ip_address=self.ip_address, user_agent=self.user_agent,
                 is_approved=True,
+                expires_at=utcnow() + timedelta(minutes=max(15, min(session_minutes, 43200))),
             )
             self.db.add(session)
             await self.db.flush()
 
+            access_minutes = int(await security_policy_value(
+                self.db, "access_token_lifetime_minutes", 480))
+            refresh_days = int(await security_policy_value(
+                self.db, "refresh_token_lifetime_days", REFRESH_TOKEN_EXPIRE_DAYS))
             access_token, jti = create_access_token(
                 user_id=str(owner.id), email=owner.email, role=owner.role,
                 tenant_id=str(tenant.id), tenant_name=tenant.tenant_name, plan_type=tenant.plan_type,
                 session_id=str(session.id), device_id=session.device_id,
                 is_mfa_enabled=False, onboarding_complete=False, enabled_engines=[],
+                expires_minutes=max(5, min(access_minutes, 480)),
+                expires_at=session.expires_at,
             )
             family = RefreshTokenFamily(user_id=owner.id, session_id=session.id)
             self.db.add(family)
@@ -614,7 +629,10 @@ class RegistrationService:
             raw_refresh, refresh_jti, hashed_refresh = create_refresh_token()
             self.db.add(RefreshToken(
                 family_id=family.id, user_id=owner.id, jti=refresh_jti, hashed_token=hashed_refresh,
-                expires_at=utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+                expires_at=min(
+                    utcnow() + timedelta(days=max(1, min(refresh_days, 30))),
+                    session.expires_at,
+                ),
             ))
 
             await self.db.commit()
@@ -652,20 +670,30 @@ class RegistrationService:
         # A completion response may be lost after the transaction commits.
         # Replaying the same idempotency key must therefore issue a fresh,
         # usable session rather than returning a token-less partial result.
+        from app.engines.security.policy_runtime import security_policy_value
+        session_minutes = int(await security_policy_value(
+            self.db, "session_max_lifetime_minutes", 1440))
         session = UserSession(
             user_id=owner.id, tenant_id=tenant.id, device_id="signup-replay",
             device_name="Signup replay", device_type="web",
             ip_address=self.ip_address, user_agent=self.user_agent,
             is_approved=True,
+            expires_at=utcnow() + timedelta(minutes=max(15, min(session_minutes, 43200))),
         )
         self.db.add(session)
         await self.db.flush()
+        access_minutes = int(await security_policy_value(
+            self.db, "access_token_lifetime_minutes", 480))
+        refresh_days = int(await security_policy_value(
+            self.db, "refresh_token_lifetime_days", REFRESH_TOKEN_EXPIRE_DAYS))
         access_token, _ = create_access_token(
             user_id=str(owner.id), email=owner.email, role=owner.role,
             tenant_id=str(tenant.id), tenant_name=tenant.tenant_name,
             plan_type=tenant.plan_type, session_id=str(session.id),
             device_id=session.device_id, is_mfa_enabled=False,
             onboarding_complete=False, enabled_engines=[],
+            expires_minutes=max(5, min(access_minutes, 480)),
+            expires_at=session.expires_at,
         )
         family = RefreshTokenFamily(user_id=owner.id, session_id=session.id)
         self.db.add(family)
@@ -674,7 +702,10 @@ class RegistrationService:
         self.db.add(RefreshToken(
             family_id=family.id, user_id=owner.id, jti=refresh_jti,
             hashed_token=hashed_refresh,
-            expires_at=utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+            expires_at=min(
+                utcnow() + timedelta(days=max(1, min(refresh_days, 30))),
+                session.expires_at,
+            ),
         ))
         await self.db.commit()
         return {

@@ -29,7 +29,7 @@ from app.core.security import (
 from app.engines.auth.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES, BACKUP_CODE_COUNT,
     MAX_FAILED_LOGIN_ATTEMPTS, LOCKOUT_MINUTES, HARD_LOCKOUT_ATTEMPTS,
-    OTP_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, PASSWORD_HISTORY_COUNT,
+    OTP_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
     REDIS_BLACKLIST_PREFIX, REDIS_IMPERSONATION_PREFIX, REDIS_MFA_CHALLENGE_PREFIX,
     AUDIENCE, LOGIN_EVENT_PUBLIC_MAP, LOGIN_EVENT_UNKNOWN_LABEL, LOGIN_EVENT_UNKNOWN_OUTCOME,
 )
@@ -39,6 +39,7 @@ from app.engines.auth.models import (
     ApiKey, OTPRecord, AuthAuditLog, LoginEvent,
 )
 from app.engines.tenant_engine.models import Tenant
+from app.engines.security.policy_runtime import password_policy, security_policy_value
 from app.engines.auth.utils import (
     hash_password, verify_password, validate_password_strength,
     create_access_token, create_refresh_token, create_mfa_challenge_token,
@@ -307,11 +308,11 @@ class AuthService:
         v = await self.redis.get(f"{REDIS_FAILED_ATTEMPTS_PREFIX}{email.lower()}")
         return int(v) if v else 0
 
-    async def _increment_failed(self, email: str) -> int:
+    async def _increment_failed(self, email: str, lockout_minutes: int = LOCKOUT_MINUTES) -> int:
         from app.engines.auth.constants import REDIS_FAILED_ATTEMPTS_PREFIX
         key = f"{REDIS_FAILED_ATTEMPTS_PREFIX}{email.lower()}"
         c = await self.redis.incr(key)
-        await self.redis.expire(key, LOCKOUT_MINUTES * 60)
+        await self.redis.expire(key, max(5, min(int(lockout_minutes), 1440)) * 60)
         return c
 
     async def _clear_failed(self, email: str) -> None:
@@ -320,20 +321,13 @@ class AuthService:
 
     async def _security_policy_value(self, key: str, default: Any) -> Any:
         """Resolve a runtime Security workspace policy with a safe fallback."""
-        try:
-            from app.engines.security.models import SecurityPolicy
-            result = await self.db.execute(select(SecurityPolicy.policy_value_json).where(
-                SecurityPolicy.policy_key == key))
-            value = result.scalar_one_or_none()
-            return default if value is None else value
-        except Exception:
-            return default
+        return await security_policy_value(self.db, key, default)
 
     async def _session_expires_at(self) -> datetime:
         minutes = int(await self._security_policy_value("session_max_lifetime_minutes", 1440))
         return utcnow() + timedelta(minutes=max(15, min(minutes, 43200)))
 
-    async def _ensure_required_admin_mfa(self, user: User) -> None:
+    async def _ensure_required_role_mfa(self, user: User) -> None:
         if user.role == "super_admin":
             policy_key = "mfa_required_super_admin"
         elif user.role.startswith("admin_"):
@@ -343,9 +337,29 @@ class AuthService:
         if bool(await self._security_policy_value(policy_key, False)) and not user.is_mfa_enabled:
             raise ServiceOSException(
                 "MFA_ENROLLMENT_REQUIRED",
-                "Multi-factor authentication is required for this administrator account.",
-                resolution="Ask a Super Admin to complete MFA enrollment before enabling this policy.",
+                "Multi-factor authentication is required for this account.",
+                resolution="Complete MFA enrollment before signing in again.",
             )
+
+    async def _password_controls(self) -> tuple[int, int]:
+        return await password_policy(self.db)
+
+    async def _token_lifetimes(self, session: UserSession) -> tuple[int, datetime]:
+        access_minutes = int(await self._security_policy_value(
+            "access_token_lifetime_minutes", ACCESS_TOKEN_EXPIRE_MINUTES))
+        refresh_days = int(await self._security_policy_value(
+            "refresh_token_lifetime_days", REFRESH_TOKEN_EXPIRE_DAYS))
+        access_minutes = max(5, min(access_minutes, 480))
+        refresh_days = max(1, min(refresh_days, 30))
+        now = utcnow()
+        refresh_expires = now + timedelta(days=refresh_days)
+        if session.expires_at:
+            refresh_expires = min(refresh_expires, session.expires_at)
+            remaining_minutes = max(
+                1, int((session.expires_at - now).total_seconds() + 59) // 60
+            )
+            access_minutes = min(access_minutes, remaining_minutes)
+        return access_minutes, refresh_expires
 
     async def _enforce_concurrent_session_limit(self, user_id: uuid.UUID) -> None:
         """Revoke the oldest sessions after every successful authentication."""
@@ -401,6 +415,7 @@ class AuthService:
         if user.role == "staff":
             staff_perms = await self._get_staff_permissions(user.id)
 
+        access_minutes, refresh_expires = await self._token_lifetimes(session)
         access_token, jti = create_access_token(
             user_id=str(user.id),
             email=user.email,
@@ -421,6 +436,8 @@ class AuthService:
                 "access_scope": getattr(user, "access_scope", None),
                 **(extra_claims or {}),
             },
+            expires_minutes=access_minutes,
+            expires_at=session.expires_at,
         )
 
         # Refresh token family
@@ -434,7 +451,7 @@ class AuthService:
             user_id=user.id,
             jti=refresh_jti,
             hashed_token=hashed_refresh,
-            expires_at=utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+            expires_at=refresh_expires,
         )
         self.db.add(rt)
 
@@ -580,17 +597,20 @@ class AuthService:
             "failed_login_threshold", MAX_FAILED_LOGIN_ATTEMPTS))
         hard_threshold = int(await self._security_policy_value(
             "auto_lock_threshold", HARD_LOCKOUT_ATTEMPTS))
+        temporary_lockout_minutes = int(await self._security_policy_value(
+            "temporary_lockout_minutes", LOCKOUT_MINUTES))
+        temporary_lockout_minutes = max(5, min(temporary_lockout_minutes, 1440))
 
         # Verify password
         if not verify_password(password, user.hashed_password or ""):
-            count = await self._increment_failed(email)
+            count = await self._increment_failed(email, temporary_lockout_minutes)
             if count >= hard_threshold:
                 user.locked_until = utcnow() + timedelta(days=365)
                 await self._audit("account.locked_permanent", "warning", actor_id=user.id)
                 await self._publish_event("auth.account_locked", str(user.id),
                                            {"reason": "too_many_attempts", "count": count})
             elif count >= warning_threshold:
-                user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+                user.locked_until = utcnow() + timedelta(minutes=temporary_lockout_minutes)
                 await self._audit("account.locked_temp", "warning", actor_id=user.id)
             user.last_failed_login_at = utcnow()
             await self._audit("login.failed", "failure", actor_id=user.id,
@@ -613,8 +633,8 @@ class AuthService:
         user.locked_until = None
         user.last_login_at = utcnow()
 
-        # MFA policy is enforced on every administrator login path.
-        await self._ensure_required_admin_mfa(user)
+        # Role-scoped MFA policy is enforced on every login path.
+        await self._ensure_required_role_mfa(user)
         if user.is_mfa_enabled:
             challenge = create_mfa_challenge_token(str(user.id), user.email)
             await self._audit("login.mfa_required", "pending", actor_id=user.id,
@@ -842,7 +862,7 @@ class AuthService:
         if not user.is_active:
             raise ServiceOSException("UNAUTHORIZED", "Account is deactivated.")
 
-        await self._ensure_required_admin_mfa(user)
+        await self._ensure_required_role_mfa(user)
         if user.is_mfa_enabled:
             challenge = create_mfa_challenge_token(str(user.id), user.email)
             await self._audit("login.mfa_required", "pending", actor_id=user.id,
@@ -943,7 +963,7 @@ class AuthService:
         if not user.is_active:
             raise ServiceOSException("UNAUTHORIZED", "Account is deactivated.")
 
-        await self._ensure_required_admin_mfa(user)
+        await self._ensure_required_role_mfa(user)
         if user.is_mfa_enabled:
             challenge = create_mfa_challenge_token(str(user.id), user.email)
             await self._audit("login.mfa_required", "pending", actor_id=user.id,
@@ -1244,13 +1264,14 @@ class AuthService:
         session.last_active_at = utcnow()
 
         # Issue new refresh token in same family
+        access_minutes, refresh_expires = await self._token_lifetimes(session)
         raw_new, new_jti, hashed_new = create_refresh_token()
         self.db.add(RefreshToken(
             family_id=rt.family_id,
             user_id=user.id,
             jti=new_jti,
             hashed_token=hashed_new,
-            expires_at=utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+            expires_at=refresh_expires,
         ))
 
         # New access token
@@ -1267,6 +1288,8 @@ class AuthService:
                           "full_name": user.full_name, "is_verified": user.is_verified,
                           "permission_overrides": staff_perms,
                           "access_scope": getattr(user, "access_scope", None)},
+            expires_minutes=access_minutes,
+            expires_at=session.expires_at,
         )
         return {"access_token": access_token, "refresh_token": raw_new}
 
@@ -1669,19 +1692,21 @@ class AuthService:
             raise NotFoundException("User", str(user_id))
         if not verify_password(current_password, user.hashed_password or ""):
             raise ServiceOSException("UNAUTHORIZED", "Current password is incorrect.")
-        errors = validate_password_strength(new_password, user.full_name, user.email)
+        minimum_length, history_limit = await self._password_controls()
+        errors = validate_password_strength(
+            new_password, user.full_name, user.email, min_length=minimum_length)
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors))
         new_hash = hash_password(new_password)
         history = user.password_history or []
-        for old_hash in history:
+        for old_hash in history[:history_limit]:
             if verify_password(new_password, old_hash):
                 raise ServiceOSException(
                     "VALIDATION_ERROR",
-                    f"Cannot reuse any of your last {PASSWORD_HISTORY_COUNT} passwords.",
+                    f"Cannot reuse any of your last {history_limit} passwords.",
                 )
         user.hashed_password = new_hash
-        user.password_history = ([new_hash] + history)[:PASSWORD_HISTORY_COUNT]
+        user.password_history = ([new_hash] + history)[:history_limit]
         user.password_changed_at = utcnow()
         user.force_password_change = False
         user.password_reset_required = False
@@ -1838,19 +1863,21 @@ class AuthService:
         if not user or not user.is_active:
             raise ServiceOSException("PASSWORD_RESET_CODE_INVALID", "Invalid or expired reset code.", status_code=400)
 
-        errors = validate_password_strength(new_password, user.full_name, user.email)
+        minimum_length, history_limit = await self._password_controls()
+        errors = validate_password_strength(
+            new_password, user.full_name, user.email, min_length=minimum_length)
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors))
         history = user.password_history or []
-        for old_hash in history:
+        for old_hash in history[:history_limit]:
             if verify_password(new_password, old_hash):
                 raise ServiceOSException(
                     "VALIDATION_ERROR",
-                    f"Cannot reuse any of your last {PASSWORD_HISTORY_COUNT} passwords.",
+                    f"Cannot reuse any of your last {history_limit} passwords.",
                 )
         new_hash = hash_password(new_password)
         user.hashed_password = new_hash
-        user.password_history = ([new_hash] + history)[:PASSWORD_HISTORY_COUNT]
+        user.password_history = ([new_hash] + history)[:history_limit]
         user.password_changed_at = utcnow()
         user.force_password_change = False
         user.password_reset_required = False
@@ -1893,21 +1920,23 @@ class AuthService:
                 resolution="Enter the password that was last set for your account.",
             )
 
-        errors = validate_password_strength(new_password, user.full_name, user.email)
+        minimum_length, history_limit = await self._password_controls()
+        errors = validate_password_strength(
+            new_password, user.full_name, user.email, min_length=minimum_length)
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", errors[0])
 
         new_hash = hash_password(new_password)
         history = user.password_history or []
-        for old_hash in history:
+        for old_hash in history[:history_limit]:
             if verify_password(new_password, old_hash):
                 raise ServiceOSException(
                     "PASSWORD_SAME_AS_OLD",
-                    f"Cannot reuse any of your last {PASSWORD_HISTORY_COUNT} passwords.",
+                    f"Cannot reuse any of your last {history_limit} passwords.",
                 )
 
         user.hashed_password = new_hash
-        user.password_history = ([new_hash] + history)[:PASSWORD_HISTORY_COUNT]
+        user.password_history = ([new_hash] + history)[:history_limit]
         user.password_changed_at = utcnow()
         user.force_password_change = False
         user.password_reset_required = False
@@ -2107,11 +2136,12 @@ class AuthService:
             raise NotFoundException("User", str(target_user_id))
         self._can_admin_manage_user(admin, target)
 
-        # Generate a strong temporary password: 12 chars, meets all policy requirements
+        # Temporary credentials also honor the runtime password minimum.
+        minimum_length, history_limit = await self._password_controls()
         import string as _string
         alphabet = _string.ascii_letters + _string.digits + "!@#$%^&*"
         while True:
-            temp_pw = "".join(secrets.choice(alphabet) for _ in range(14))
+            temp_pw = "".join(secrets.choice(alphabet) for _ in range(max(14, minimum_length)))
             # Ensure it meets policy
             if (any(c.isupper() for c in temp_pw) and any(c.islower() for c in temp_pw)
                     and any(c.isdigit() for c in temp_pw)
@@ -2119,7 +2149,9 @@ class AuthService:
                 break
 
         target.hashed_password = hash_password(temp_pw)
-        target.password_history = ([hash_password(temp_pw)] + (target.password_history or []))[:PASSWORD_HISTORY_COUNT]
+        target.password_history = (
+            [target.hashed_password] + (target.password_history or [])
+        )[:history_limit]
         target.force_password_change = True
         target.password_reset_required = True
         target.temporary_password_active = True
@@ -2322,11 +2354,15 @@ class AuthService:
             except Exception:
                 pass
 
-        errors = validate_password_strength(password, user.full_name, user.email)
+        minimum_length, _ = await self._password_controls()
+        errors = validate_password_strength(
+            password, user.full_name, user.email, min_length=minimum_length)
         if errors:
             raise ServiceOSException("VALIDATION_ERROR", "; ".join(errors))
 
         user.hashed_password = hash_password(password)
+        user.password_history = [user.hashed_password]
+        user.password_changed_at = utcnow()
         user.is_verified = True
         user.force_password_change = False
         user.meta = {k: v for k, v in user.meta.items() if k not in ("invite_token", "invite_expires")}

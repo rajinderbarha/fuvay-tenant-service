@@ -878,6 +878,15 @@ class MessagingGatewayService:
             job = (await self.db.execute(
                 select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
             )).scalars().first()
+            # A booking or technician assignment alone is not proof of an
+            # on-site service. New jobs must have verified arrival before
+            # their provider-owned issue entry can appear. Completed legacy
+            # jobs retain their incident path when older arrival evidence was
+            # never recorded.
+            if not job or (
+                not job.arrival_verified_at and str(job.status).lower() != "completed"
+            ):
+                continue
             selected = None
             candidates = (
                 [(RECORD_SERVICE_JOB, job.id, str(job.status))] if job else []
@@ -988,7 +997,7 @@ class MessagingGatewayService:
             .join(MasterService, MasterService.id == ServiceJob.offering_id)
             .where(
                 ServiceBooking.customer_id == thread.customer_id,
-                ServiceJob.status.in_(("work_done", "completed", "invoice_issued", "paid")),
+                ServiceJob.status == "completed",
                 ServiceJob.warranty_expires_at.is_not(None),
             )
             .order_by(ServiceJob.updated_at.desc())
@@ -1012,8 +1021,21 @@ class MessagingGatewayService:
             })
         return result
 
-    async def warranty_menu_available(self, thread: MessagingThread) -> bool:
-        return bool(await self.warranty_cases(thread) or await self.warranty_jobs(thread))
+    async def warranty_menu_available(
+        self, thread: MessagingThread, booking_number: str | None = None,
+    ) -> bool:
+        cases = await self.warranty_cases(thread)
+        if booking_number:
+            if any(
+                str(item.get("booking_number") or "") == booking_number
+                for item in cases
+            ):
+                return True
+            return any(
+                str(item.get("booking_number") or "") == booking_number
+                for item in await self.warranty_jobs(thread)
+            )
+        return bool(cases or await self.warranty_jobs(thread))
 
     async def begin_social_warranty(
         self, thread: MessagingThread, job: dict, claim_type: str | None = None,
