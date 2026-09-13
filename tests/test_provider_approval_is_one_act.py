@@ -96,6 +96,29 @@ class TestTheTenantSideStillReadsAsVerified:
         src = inspect.getsource(router._evaluate_provider_bookability)
         assert "REQUIRED_DOCUMENT_ACTION_NEEDED" in src
 
+    def test_trust_quality_accepts_the_canonical_approved_status(self):
+        from app.engines.trust_quality.service import _is_tenant_verified
+
+        assert _is_tenant_verified("approved") is True
+        assert _is_tenant_verified("verified") is True
+        assert _is_tenant_verified("pending") is False
+
+    def test_batch_recalculation_uses_the_same_verification_contract(self):
+        from app.engines.trust_quality import recalculation
+
+        src = inspect.getsource(recalculation.gather_metrics_bulk)
+        assert '_is_tenant_verified(row["verification_status"])' in src
+
+
+class TestSecureProviderDocumentPreview:
+    def test_signed_remote_files_use_the_access_checked_delivery_resolver(self):
+        from app.engines.media import admin_router
+
+        src = inspect.getsource(admin_router.resolve_signed_media)
+        assert "MediaAssetService(db=db, actor=u)" in src
+        assert "get_remote_url_for_serve(media_id)" in src
+        assert "if asset.public_url" not in src
+
 
 class TestTheAdminDocumentWorkflowIsGone:
     """Approving verifies the documents, so reviewing each one is redundant."""

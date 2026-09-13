@@ -329,6 +329,7 @@ async def resolve_signed_media(
     authenticated (the token proves which file, not who can access anything).
     """
     from app.engines.media.admin_service import MediaLibraryAdminService
+    from app.engines.media.asset_service import MediaAssetService
     from app.engines.media.models import MediaAsset
     from sqlalchemy import select
     import uuid as _uuid
@@ -348,25 +349,23 @@ async def resolve_signed_media(
     await svc._log_audit(media_id, f"signed_{purpose}_accessed",
                          {"token": token[:12] + "...", "purpose": purpose})
 
+    # Resolve through the canonical media service so private Cloudinary files
+    # can be served from their protected storage key after the admin access
+    # check.  Private uploads intentionally do not persist ``public_url``;
+    # requiring that field made every provider document preview return 404.
+    asset_service = MediaAssetService(db=db, actor=u)
     if asset.storage_driver == "local":
-        from app.engines.media.storage import MediaStorageService
-        storage = MediaStorageService()
-        path = storage.get_local_path(asset.storage_key)
-        if path and path.exists():
-            import mimetypes
-            from fastapi.responses import FileResponse
-            content_disposition = "inline" if purpose == "preview" else "attachment"
-            return FileResponse(
-                path=str(path),
-                media_type=asset.mime_type or "application/octet-stream",
-                headers={
-                    "Content-Disposition": f'{content_disposition}; filename="{asset.file_name_original}"'
-                },
-            )
+        from fastapi.responses import FileResponse
+        path, mime_type = await asset_service.get_local_file_for_serve(media_id)
+        content_disposition = "inline" if purpose == "preview" else "attachment"
+        return FileResponse(
+            path=str(path),
+            media_type=mime_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'{content_disposition}; filename="{asset.file_name_original}"'
+            },
+        )
 
     from fastapi.responses import RedirectResponse
-    if asset.public_url:
-        return RedirectResponse(url=asset.public_url)
-
-    from fastapi.responses import JSONResponse
-    return JSONResponse({"error": "File not available"}, status_code=404)
+    delivery_url, _ = await asset_service.get_remote_url_for_serve(media_id)
+    return RedirectResponse(url=delivery_url, status_code=302)

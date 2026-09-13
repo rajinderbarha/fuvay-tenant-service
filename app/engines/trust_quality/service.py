@@ -41,6 +41,17 @@ _JOB_CANCELLED_STATUSES = ("cancelled", "voided")
 # trustworthy enough to put a target into a band. See _calc_score.
 _MIN_HEALTH_COVERAGE_PERCENT = 50.0
 
+# Tenant onboarding stores the successful business-verification decision as
+# ``approved``.  A few older/imported rows use ``verified`` for the same
+# terminal state, so every Trust & Quality path must accept both spellings.
+# Keeping this in one helper prevents the live single-target calculation and
+# the batched recalculation worker from drifting apart again.
+_VERIFIED_TENANT_STATUSES = frozenset({"approved", "verified"})
+
+
+def _is_tenant_verified(status: object) -> bool:
+    return str(status or "").strip().lower() in _VERIFIED_TENANT_STATUSES
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -1369,7 +1380,7 @@ class TrustQualityService:
                        address_line1, city, state, zipcode, business_type
                   FROM tenants WHERE id = :target_id
             """), {"target_id": str(target_id)})).mappings().one_or_none()
-            verified = bool(tenant and tenant["verification_status"] == "verified")
+            verified = bool(tenant and _is_tenant_verified(tenant["verification_status"]))
             m["document_verified"] = verified
             m["owner_verified"] = verified
             m["document_verification_score"] = 100.0 if verified else 0.0

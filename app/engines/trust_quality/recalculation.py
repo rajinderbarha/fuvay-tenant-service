@@ -40,7 +40,8 @@ from app.engines.trust_quality.models import (
 )
 from app.engines.trust_quality.service import (
     _JOB_CANCELLED_STATUSES, _JOB_DONE_STATUSES, _TARGET_SOURCE_SQL,
-    FIXED_BADGE_BY_KEY, FIXED_BADGE_KEYS, _evaluate_operator, calc_health_score,
+    FIXED_BADGE_BY_KEY, FIXED_BADGE_KEYS, _evaluate_operator,
+    _is_tenant_verified, calc_health_score,
 )
 
 log = structlog.get_logger("trust_quality.recalculation")
@@ -345,7 +346,7 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             t = _key(row["target_key"])
             if t not in out:
                 continue
-            verified = row["verification_status"] == "verified"
+            verified = _is_tenant_verified(row["verification_status"])
             out[t]["document_verified"] = verified
             out[t]["owner_verified"] = verified
             out[t]["document_verification_score"] = 100.0 if verified else 0.0
