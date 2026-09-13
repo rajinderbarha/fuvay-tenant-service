@@ -117,8 +117,9 @@ def test_completeness_is_the_eleven_documented_checks():
         assert f'("{key}"' in PROFILE_SERVICE, f"completeness check {key} missing"
 
 
-def test_rating_counts_only_published_reviews():
-    assert "status = 'published'" in PROFILE_SERVICE
+def test_rating_counts_only_canonical_public_reviews():
+    assert "status = 'approved'" in PROFILE_SERVICE
+    assert "visibility = 'public'" in PROFILE_SERVICE
 
 
 def test_documents_are_current_versions_only():

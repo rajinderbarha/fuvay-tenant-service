@@ -2431,10 +2431,21 @@ async def _verified_contact(db, thread) -> dict:
     from app.engines.auth.models import User
 
     user = await db.get(User, thread.customer_id)
-    if user is None or not user.phone:
+    if user is None:
         return {}
-    return {"customer_phone": user.phone,
-            "customer_name": user.full_name or thread.display_name or "Customer"}
+    # A verified phone can legitimately be linked to more than one Instagram
+    # account.  The booking name must describe the conversation that created
+    # it, not the mutable shared User row (which may contain the name from a
+    # different Instagram account).
+    customer_name = (
+        thread.channel_username
+        if thread.channel == "instagram" and thread.channel_username
+        else thread.display_name or user.full_name or "Customer"
+    )
+    contact = {"customer_name": customer_name}
+    if user.phone:
+        contact["customer_phone"] = user.phone
+    return contact
 
 
 async def _problem_name(db, executor, draft: dict, issue_type_id: str) -> str | None:

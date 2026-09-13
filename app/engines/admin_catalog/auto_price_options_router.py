@@ -116,11 +116,13 @@ async def admin_matching_diagnostics(
     brand_id = uuid.UUID(str(body["brand_id"])) if body.get("brand_id") else None
     job_type_id = uuid.UUID(str(body["job_type_id"])) if body.get("job_type_id") else None
     requested_at = body.get("requested_at")  # HS6B — optional; enables break/holiday/booking-window checks
+    requested_time_window = body.get("requested_time_window")
 
     match = await select_best_provider(
         db, category_id=category_id, offering_id=master_service_id,
         city=city, zipcode=zipcode, offering_type_id=offering_type_id, brand_id=brand_id,
-        requested_at=requested_at, job_type_id=job_type_id,
+        requested_at=requested_at, requested_time_window=requested_time_window,
+        job_type_id=job_type_id,
     )
 
     result = {

@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from app.engines.final_records.operations_service import (
     map_job_stage, map_draft_stage, JOB_STAGE_MAP, COMPLETED_STAGES,
     DRAFT_ACTIVE_STATUSES, DRAFT_MATCHING_STATUSES, DRAFT_EXCEPTION_STATUSES,
+    _source_customer_name,
 )
 from app.engines.execution.constants import JOB_TRANSITIONS
 
@@ -46,6 +47,43 @@ async def admin(admin_token):
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestStageMapping:
+
+    def test_social_booking_uses_originating_instagram_username(self):
+        from types import SimpleNamespace
+
+        session_id = uuid.uuid4()
+        source = SimpleNamespace(
+            ai_session_id=session_id,
+            source_channel="instagram",
+            source_actor_id="gameland-scoped-id",
+        )
+        gameland = SimpleNamespace(
+            channel_username="gameland", display_name="Game Land",
+        )
+        assert _source_customer_name(
+            source,
+            "Name from a different linked account",
+            {session_id: gameland},
+            {},
+        ) == "gameland"
+
+    def test_historical_social_booking_falls_back_to_immutable_actor(self):
+        from types import SimpleNamespace
+
+        source = SimpleNamespace(
+            ai_session_id=uuid.uuid4(),
+            source_channel="instagram",
+            source_actor_id="gameland-scoped-id",
+        )
+        gameland = SimpleNamespace(
+            channel_username="gameland", display_name="Game Land",
+        )
+        assert _source_customer_name(
+            source,
+            "Previous account",
+            {},
+            {("instagram", "gameland-scoped-id"): gameland},
+        ) == "gameland"
 
     def test_every_real_job_status_is_mapped(self):
         """Every status that appears anywhere in the real JOB_TRANSITIONS

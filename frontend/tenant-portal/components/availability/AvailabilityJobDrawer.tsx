@@ -175,9 +175,9 @@ export function AvailabilityJobDrawer({
                 )}
               </Card>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+              <div style={{ display: "grid", gridTemplateColumns: detail.stage.is_terminal ? "1fr" : "1fr 1fr", gap: 9 }}>
                 <Button variant="secondary" size="sm" onClick={onOpenDetails} rightIcon={<ChevronRight size={14} />}>Full job details</Button>
-                <Button variant="primary" size="sm" onClick={onOpenDispatch} rightIcon={<ChevronRight size={14} />}>Manage in dispatch</Button>
+                {!detail.stage.is_terminal && <Button variant="primary" size="sm" onClick={onOpenDispatch} rightIcon={<ChevronRight size={14} />}>Manage in dispatch</Button>}
               </div>
             </>
           )}

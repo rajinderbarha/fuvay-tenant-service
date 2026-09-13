@@ -1126,14 +1126,17 @@ class HomeServiceChatbotBookingService:
         # the provider's current local time and returns the earliest real slot.
         pricing_draft = await self._require_draft(draft_id, customer_id) if draft_id else None
         requested_at = None
+        requested_time_window = None
         if pricing_draft and pricing_draft.preferred_date and pricing_draft.preferred_time_window:
-            requested_start = str(pricing_draft.preferred_time_window).split("-", 1)[0].strip()
+            requested_time_window = str(pricing_draft.preferred_time_window).strip()
+            requested_start = requested_time_window.split("-", 1)[0].strip()
             requested_at = f"{pricing_draft.preferred_date.isoformat()}T{requested_start}"
 
         match = await select_best_provider(
             self.db, category_id=category_id, offering_id=master_service_id,
             city=city, zipcode=zipcode, offering_type_id=offering_type_id, brand_id=brand_id,
             job_type_id=job_type_id, requested_at=requested_at,
+            requested_time_window=requested_time_window,
             serialize_allocation=True,
         )
 
@@ -1203,6 +1206,7 @@ class HomeServiceChatbotBookingService:
                         "city": city,
                         "zipcode": zipcode,
                         "requested_at": requested_at,
+                        "requested_time_window": requested_time_window,
                         "candidate_count": match.get("candidate_count", 0),
                         "eligible_count": len(candidate_features),
                         "excluded_providers": match.get("excluded_providers", []),

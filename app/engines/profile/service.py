@@ -208,12 +208,14 @@ class ProfileService:
             "active_technicians": counts.active_technicians or 0,
         }
 
-        # Only published reviews count. A rating shown to the provider that includes
-        # withheld or pending reviews is not the rating a customer would see.
+        # The canonical customer_reviews engine calls its public state
+        # `approved` (visibility=`public`). `published` belongs to the retired
+        # legacy review engine and made every provider profile show 0 reviews.
         rating = (await self.db.execute(text("""
             SELECT COALESCE(AVG(overall_rating), 0) AS avg, COUNT(*) AS total
             FROM customer_reviews
-            WHERE tenant_id = CAST(:tid AS uuid) AND status = 'published'
+            WHERE tenant_id = CAST(:tid AS uuid)
+              AND status = 'approved' AND visibility = 'public'
         """), {"tid": tid})).fetchone()
         data["rating"] = {
             "average_rating": round(float(rating.avg or 0), 1),

@@ -40,7 +40,7 @@ export default function AdminReviewPoliciesPage() {
       <Toaster toasts={toasts} onRemove={id => setToasts(p => p.filter(t => t.id !== id))} />
 
       <SectionHeader eyebrow="Trust & quality" title="Review Policies"
-        description="Configure moderation rules and eligibility settings for reviews." icon={<Shield />}
+        description="Customer ratings publish immediately. Configure replies, editing and exception handling." icon={<Shield />}
         actions={<Btn variant="ghost" onClick={refetch}><RefreshCw size={14} /> Refresh</Btn>} />
 
       {loading ? (
@@ -71,8 +71,6 @@ export default function AdminReviewPoliciesPage() {
                 <Btn size="sm" variant="ghost" onClick={() => {
                   setEditing(p.id);
                   setEditData({
-                    auto_approve_enabled: p.auto_approve_enabled,
-                    require_admin_moderation: p.require_admin_moderation,
                     allow_provider_reply: p.allow_provider_reply,
                     require_reply_moderation: p.require_reply_moderation,
                     allow_review_edit: p.allow_review_edit,
@@ -84,8 +82,6 @@ export default function AdminReviewPoliciesPage() {
               {editing === p.id ? (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   {[
-                    ["auto_approve_enabled", "Auto Approve"],
-                    ["require_admin_moderation", "Require Moderation"],
                     ["allow_provider_reply", "Allow Provider Reply"],
                     ["require_reply_moderation", "Moderate Replies"],
                     ["allow_review_edit", "Allow Edit"],
@@ -118,8 +114,8 @@ export default function AdminReviewPoliciesPage() {
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-tertiary)", flexWrap: "wrap" }}>
-                  <span>Auto-approve: {p.auto_approve_enabled ? "Yes" : "No"}</span>
-                  <span>Moderation: {p.require_admin_moderation ? "Required" : "Optional"}</span>
+                  <span>Customer ratings: Published immediately</span>
+                  <span>Moderation: Flagged exceptions only</span>
                   <span>Provider Reply: {p.allow_provider_reply ? "Allowed" : "Disabled"}</span>
                   <span>Edit Window: {p.edit_window_hours}h</span>
                 </div>

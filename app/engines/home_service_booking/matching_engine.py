@@ -366,6 +366,40 @@ def _parse_requested_at(value: str | None):
         return None
 
 
+def _select_matching_slot(
+    available_slots: list[dict],
+    requested_at: str | None,
+    requested_time_window: str | None,
+) -> dict | None:
+    """Pick the slot that makes a provider eligible for this request.
+
+    With no prior customer choice, the earliest live picker slot is the
+    provider's capacity signal. With a prior choice, only that exact slot may
+    make the provider eligible; a later opening must never substitute for it.
+    """
+    requested_datetime = _parse_requested_at(requested_at)
+    if requested_datetime and requested_time_window:
+        requested_date = requested_datetime.date().isoformat()
+        requested_window = str(requested_time_window).strip()
+        return next(
+            (
+                slot for slot in available_slots
+                if slot.get("date") == requested_date
+                and str(slot.get("time_window") or "").strip() == requested_window
+            ),
+            None,
+        )
+    if requested_datetime:
+        return next(
+            (
+                slot for slot in available_slots
+                if _parse_requested_at(slot.get("starts_at")) == requested_datetime
+            ),
+            None,
+        )
+    return available_slots[0] if available_slots else None
+
+
 async def _recent_allocation_counts(
     db: AsyncSession, tenant_ids: set[uuid.UUID], *, offering_id: uuid.UUID,
     city: str, zipcode: str | None, days: int = 7,
@@ -511,6 +545,7 @@ async def select_best_provider(
     offering_type_id: uuid.UUID | None = None,
     brand_id: uuid.UUID | None = None,
     requested_at: str | None = None,
+    requested_time_window: str | None = None,
     limit_candidates: int = 25,
     job_type_id: uuid.UUID | None = None,
     serialize_allocation: bool = False,
@@ -671,17 +706,41 @@ async def select_best_provider(
             })
             continue
         # Capacity is a hard feasibility gate, not something quality can
-        # compensate for. The provider is scored only after a real slot exists.
+        # compensate for. Use the exact same list the customer-facing picker
+        # uses, so matching cannot show a provider whose picker is empty.
+        #
+        # When a channel captured a slot before matching, require that exact
+        # date/window. Previously `requested_at` was passed as `from_datetime`
+        # to the slot walker. The walker correctly treats `from_datetime` as
+        # "now" and adds the provider's notice period, which meant a future
+        # requested slot was skipped and the provider could be accepted only
+        # because it had a *later* slot.
         from app.engines.home_service_booking.provider_slot_service import (
-            find_earliest_available_slot,
+            booking_window_settings, list_available_slots, _tenant_now,
         )
-        from_datetime = _parse_requested_at(requested_at)
-        earliest_slot = await find_earliest_available_slot(
-            db,
-            tenant_id=tid,
-            from_datetime=from_datetime,
-            master_service_id=offering_id,
-            job_type_id=job_type_id,
+        slot_settings = await booking_window_settings(db, tid)
+        slot_now = _tenant_now(slot_settings)
+        requested_datetime = _parse_requested_at(requested_at)
+        exact_slot_requested = bool(requested_datetime)
+        search_days = None
+        offered_days = 1
+        if exact_slot_requested:
+            search_days = (requested_datetime.date() - slot_now.date()).days + 1
+            offered_days = max(1, search_days)
+
+        available_slots = []
+        if search_days is None or search_days > 0:
+            available_slots = await list_available_slots(
+                db,
+                tenant_id=tid,
+                from_datetime=slot_now,
+                search_days=search_days,
+                max_days=offered_days,
+                master_service_id=offering_id,
+                job_type_id=job_type_id,
+            )
+        earliest_slot = _select_matching_slot(
+            available_slots, requested_at, requested_time_window,
         )
         if earliest_slot is None:
             excluded += 1

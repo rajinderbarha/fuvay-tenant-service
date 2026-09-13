@@ -452,13 +452,27 @@ async def _apply_slot(
         return {"applied": True,
                 "note": f"{held} for {_day_label(date_iso)}, {window}.",
                 "page": 0}
-    except Exception as exc:
-        # `select_promised_slot` deliberately re-checks live capacity rather
-        # than trusting the list the customer was looking at.
-        logger.info("messaging_gateway.picker.slot_unavailable",
-                    draft_id=str(draft_id), error=str(exc))
+    except ValueError as exc:
+        # Only the explicit capacity/timing result means the slot was taken.
+        # The old catch-all told customers this for ownership, database and
+        # summary errors too, even though the slot remained available and a
+        # second tap then worked.
+        if str(exc) == "SLOT_NO_LONGER_AVAILABLE":
+            logger.info("messaging_gateway.picker.slot_unavailable",
+                        draft_id=str(draft_id), error=str(exc))
+            return {"applied": False,
+                    "note": "That time has just been taken. Here are the times still open:",
+                    "page": 0}
+        logger.warning("messaging_gateway.picker.slot_rejected",
+                       draft_id=str(draft_id), error=str(exc))
         return {"applied": False,
-                "note": "That time has just been taken. Here are the times still open:",
+                "note": "We couldn't select that time. Please choose a time shown below.",
+                "page": 0}
+    except Exception as exc:
+        logger.exception("messaging_gateway.picker.slot_failed",
+                         draft_id=str(draft_id), error=str(exc))
+        return {"applied": False,
+                "note": "We couldn't select that time right now. Please try again.",
                 "page": 0}
 
 

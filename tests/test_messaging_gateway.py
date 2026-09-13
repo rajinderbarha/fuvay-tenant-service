@@ -1451,7 +1451,7 @@ async def test_staging_instagram_requires_phone_before_confirmation(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_staging_instagram_same_phone_reuses_only_test_customer(monkeypatch):
+async def test_staging_instagram_same_phone_keeps_different_senders_separate(monkeypatch):
     from app.config import get_settings
     from app.engines.ai_conversation import backend_tools
     from app.engines.auth.models import User
@@ -1505,6 +1505,8 @@ async def test_staging_instagram_same_phone_reuses_only_test_customer(monkeypatc
             return Result(existing if self.queries == 2 else None)
 
         def add(self, row):
+            if isinstance(row, User) and row.id is None:
+                row.id = uuid.uuid4()
             self.added.append(row)
 
         async def flush(self):
@@ -1523,7 +1525,8 @@ async def test_staging_instagram_same_phone_reuses_only_test_customer(monkeypatc
             pass
 
         async def finalize(self, **kwargs):
-            assert kwargs["customer_id"] == existing.id
+            assert kwargs["customer_id"] is not None
+            assert kwargs["customer_id"] != existing.id
             return {"booking_number": "BK-TEST"}
 
     monkeypatch.setattr(backend_tools, "instagram_phone_bypass_enabled", lambda channel: True)
@@ -1534,13 +1537,16 @@ async def test_staging_instagram_same_phone_reuses_only_test_customer(monkeypatc
     executor = BackendToolExecutor(
         db, customer_id=None, session_id=str(session_id),
         channel="instagram", channel_user_id="a-different-ig-sender",
+        instagram_username="gameland",
     )
     result = await executor._tool_confirm_home_service_booking(str(draft_id), "CONFIRM BOOKING")
 
     assert result["confirmed"] is True
-    assert db.added == []
-    assert draft.customer_id == existing.id
-    assert session.customer_id == existing.id
+    assert len(db.added) == 1
+    assert draft.customer_id == db.added[0].id
+    assert draft.customer_id != existing.id
+    assert draft.customer_name == "gameland"
+    assert session.customer_id == draft.customer_id
 
 
 @pytest.mark.asyncio

@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.engines.customer_reviews.constants import (
-    STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_HIDDEN,
+    STATUS_APPROVED, STATUS_REJECTED, STATUS_HIDDEN,
     STATUS_DELETED, STATUS_FLAGGED,
-    VISIBILITY_PRIVATE, VISIBILITY_PUBLIC, VISIBILITY_HIDDEN,
+    VISIBILITY_PUBLIC, VISIBILITY_HIDDEN,
     REPLY_PENDING, REPLY_APPROVED, REPLY_REJECTED,
     FLAG_STATUS_OPEN, FLAG_STATUS_RESOLVED,
     ACTOR_CUSTOMER, ACTOR_PROVIDER, ACTOR_ADMIN, ACTOR_SYSTEM,
@@ -74,9 +74,12 @@ class ReviewService:
         if not result["eligible"]:
             raise ValueError(ERR_REVIEW_NOT_ELIGIBLE)
 
-        policy = await self._get_policy(db, tenant_id)
-        initial_status    = STATUS_APPROVED if (policy and policy.auto_approve_enabled) else STATUS_PENDING
-        initial_visibility = VISIBILITY_PUBLIC if initial_status == STATUS_APPROVED else VISIBILITY_PRIVATE
+        # Customer ratings are trusted publication events.  They appear on the
+        # provider profile immediately; admin moderation is exception-only
+        # (flag/hide/restore), never a mandatory approval queue.
+        initial_status = STATUS_APPROVED
+        initial_visibility = VISIBILITY_PUBLIC
+        approved_at = datetime.now(timezone.utc)
 
         review = CustomerReview(
             review_number    = _num(),
@@ -98,6 +101,7 @@ class ReviewService:
             status           = initial_status,
             visibility       = initial_visibility,
             submitted_at     = datetime.now(timezone.utc),
+            approved_at      = approved_at,
         )
         # Stamp record-specific FK
         if record_type == RECORD_TYPE_SERVICE_BOOKING:
@@ -120,8 +124,7 @@ class ReviewService:
         await notify_provider_new_review(db, review)
         await db.commit()
 
-        if initial_status == STATUS_APPROVED:
-            await self._trigger_aggregation(db, review)
+        await self._trigger_aggregation(db, review)
 
         return review
 
@@ -137,7 +140,7 @@ class ReviewService:
         review = await self._get_review(db, review_id)
         if str(review.customer_id) != str(customer_id):
             raise ValueError(ERR_PERMISSION_DENIED)
-        if review.status in (STATUS_DELETED, STATUS_REJECTED):
+        if review.status in (STATUS_DELETED, STATUS_REJECTED, STATUS_HIDDEN, STATUS_FLAGGED):
             raise ValueError(ERR_REVIEW_NOT_EDITABLE)
 
         policy = await self._get_policy(db, review.tenant_id)
@@ -159,12 +162,17 @@ class ReviewService:
             raise ValueError(ERR_REVIEW_INVALID_RATING)
 
         review.edited_at = datetime.now(timezone.utc)
-        review.status    = STATUS_PENDING
-        review.visibility = VISIBILITY_PRIVATE
+        # Editing a normal review must not reintroduce an admin approval step.
+        # Moderated reviews are rejected above so editing cannot bypass a flag
+        # or an admin hide action.
+        review.status = STATUS_APPROVED
+        review.visibility = VISIBILITY_PUBLIC
+        review.approved_at = review.approved_at or datetime.now(timezone.utc)
         await db.flush()
         await self._log_event(db, review.id, review.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_REVIEW_EDITED, old, updates, request_id)
         await db.commit()
+        await self._trigger_aggregation(db, review)
         return review
 
     # ── Admin: approve review ─────────────────────────────────────────────────
@@ -613,16 +621,11 @@ class ReviewService:
     async def create_policy(self, db: AsyncSession, data: dict) -> ReviewPolicy:
         """Create a review policy.
 
-        The admin API exposed list/get/patch but NO create, and
-        `review_policies` ships empty -- so there was never a row to patch.
-        `_get_policy` therefore always resolved to None, which makes
-        `submit_review` fall back to STATUS_PENDING, so EVERY review a customer
-        ever wrote stayed pending and private until an admin approved it
-        one by one. Auto-approval could not be switched on at all, because the
-        row that carries the flag could not be brought into existence.
+        Publication is always immediate. Policies configure editing, provider
+        replies and media limits; moderation remains exception-driven.
         """
         editable = [
-            "category_id", "tenant_id", "auto_approve_enabled", "require_admin_moderation",
+            "category_id", "tenant_id",
             "allow_provider_reply", "require_reply_moderation", "allow_review_edit",
             "edit_window_hours", "min_rating", "max_rating", "allow_media",
             "max_media_count", "is_active",
@@ -630,6 +633,8 @@ class ReviewService:
         policy = ReviewPolicy(
             policy_key=data["policy_key"],
             policy_name=data["policy_name"],
+            auto_approve_enabled=True,
+            require_admin_moderation=False,
             **{k: data[k] for k in editable if k in data and data[k] is not None},
         )
         db.add(policy)
@@ -648,12 +653,16 @@ class ReviewService:
         self, db: AsyncSession, policy_id: uuid.UUID, updates: dict
     ) -> ReviewPolicy:
         p = await self.get_policy(db, policy_id)
-        allowed = ["auto_approve_enabled","require_admin_moderation","allow_provider_reply",
-                   "require_reply_moderation","allow_review_edit","edit_window_hours",
+        allowed = ["allow_provider_reply", "require_reply_moderation",
+                   "allow_review_edit", "edit_window_hours",
                    "min_rating","max_rating","allow_media","max_media_count","is_active"]
         for k in allowed:
             if k in updates:
                 setattr(p, k, updates[k])
+        # These legacy fields remain in the response/schema for compatibility,
+        # but customer reviews no longer require admin publication approval.
+        p.auto_approve_enabled = True
+        p.require_admin_moderation = False
         await db.commit()
         return p
 

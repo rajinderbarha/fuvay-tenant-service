@@ -12,6 +12,7 @@ import {
   type AvailabilityTechnician,
 } from "../../../../components/availability/AvailabilityWeekBoard";
 import { AvailabilityJobDrawer } from "../../../../components/availability/AvailabilityJobDrawer";
+import { dispatchUrlForAvailabilityJob } from "./availabilityNavigation";
 
 interface PlannerResponse {
   generated_at: string;
@@ -171,7 +172,7 @@ function AvailabilityPageContent() {
           error={jobDetail.error}
           onClose={() => setSelectedJobId(null)}
           onOpenDetails={() => router.push(`/home-services/bookings-jobs?job_id=${encodeURIComponent(selectedJobId)}`)}
-          onOpenDispatch={() => router.push(`/home-services/dispatch?job_id=${encodeURIComponent(selectedJobId)}`)}
+          onOpenDispatch={() => router.push(dispatchUrlForAvailabilityJob(selectedDate, selectedJobId))}
         />
       )}
     </PageShell>

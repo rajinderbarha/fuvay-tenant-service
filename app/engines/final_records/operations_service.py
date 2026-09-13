@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 from app.engines.final_records.sla_summary import attach_sla, DEFAULT_SLA_MINUTES
 from app.engines.home_service_booking.models import HomeServiceBookingDraft
+from app.engines.messaging_gateway.models import MessagingThread
 from app.engines.quote_checklist.models import ServiceJobQuote
 
 # ── Draft (pre-confirmation) statuses shown as work — matches
@@ -218,6 +219,25 @@ async def _batch_lookup(db: AsyncSession, model, ids: set[uuid.UUID]) -> dict[uu
         return {}
     rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars().all()
     return {r.id: r for r in rows}
+
+
+def _source_customer_name(
+    source: Any,
+    fallback: str | None,
+    threads_by_session: dict[uuid.UUID, MessagingThread],
+    threads_by_actor: dict[tuple[str, str], MessagingThread],
+) -> str | None:
+    """Project the name from the social identity that created this record."""
+    session_id = getattr(source, "ai_session_id", None)
+    thread = threads_by_session.get(session_id) if session_id else None
+    if thread is None:
+        channel = str(getattr(source, "source_channel", None) or "")
+        actor_id = str(getattr(source, "source_actor_id", None) or "")
+        if channel and actor_id:
+            thread = threads_by_actor.get((channel, actor_id))
+    if thread is not None:
+        return thread.channel_username or thread.display_name or fallback
+    return fallback
 
 
 def _amount_summary(booking: ServiceBooking | None, quote: ServiceJobQuote | None) -> dict:
@@ -500,6 +520,43 @@ async def list_operations(
                 | {d.customer_id for d in drafts if d.customer_id})
     users_by_id = await _batch_lookup(db, User, user_ids)
 
+    # A customer may link multiple Instagram accounts to one verified phone.
+    # User.full_name is account-level and mutable, whereas the source actor on
+    # each booking is immutable.  Resolve the originating conversation in one
+    # batch so both historical and newly-created rows show the correct sender.
+    social_bookings = [
+        booking for booking in bookings_by_id.values()
+        if booking.source_channel in {"instagram", "whatsapp"}
+        and booking.source_actor_id
+    ]
+    source_session_ids = {
+        source.ai_session_id for source in [*social_bookings, *drafts]
+        if source.ai_session_id
+    }
+    source_actor_filters = [
+        and_(
+            MessagingThread.channel == booking.source_channel,
+            MessagingThread.channel_user_id == booking.source_actor_id,
+        )
+        for booking in social_bookings
+    ]
+    source_thread_filters = list(source_actor_filters)
+    if source_session_ids:
+        source_thread_filters.append(MessagingThread.ai_session_id.in_(source_session_ids))
+    source_threads = (await db.execute(
+        select(MessagingThread)
+        .where(or_(*source_thread_filters))
+        .order_by(MessagingThread.updated_at.desc())
+    )).scalars().all() if source_thread_filters else []
+    source_thread_by_session: dict[uuid.UUID, MessagingThread] = {}
+    source_thread_by_actor: dict[tuple[str, str], MessagingThread] = {}
+    for thread in source_threads:
+        if thread.ai_session_id:
+            source_thread_by_session.setdefault(thread.ai_session_id, thread)
+        source_thread_by_actor.setdefault(
+            (thread.channel, thread.channel_user_id), thread,
+        )
+
     offering_ids = {j.offering_id for j in jobs} | {d.offering_id for d in drafts}
     services_by_id = await _batch_lookup(db, MasterService, offering_ids)
 
@@ -530,7 +587,12 @@ async def list_operations(
             "booking_id": str(j.booking_id), "job_id": str(j.id),
             "booking_number": booking.booking_number if booking else None,
             "customer_id": str(j.customer_id) if j.customer_id else None,
-            "customer_name": customer.full_name if customer else (booking.customer_name if booking else None),
+            "customer_name": _source_customer_name(
+                booking,
+                booking.customer_name or (customer.full_name if customer else None),
+                source_thread_by_session,
+                source_thread_by_actor,
+            ) if booking else (customer.full_name if customer else None),
             "customer_contact_summary": _mask_phone(customer.phone if customer else (booking.customer_phone if booking else None)),
             "master_service": service.service_name if service else None,
             "job_type": job_type.label if job_type else None,
@@ -569,7 +631,11 @@ async def list_operations(
             "draft_id": str(d.id),
             "booking_id": None, "job_id": None, "booking_number": None,
             "customer_id": str(d.customer_id) if d.customer_id else None,
-            "customer_name": customer.full_name if customer else d.customer_name,
+            "customer_name": _source_customer_name(
+                d, d.customer_name or (customer.full_name if customer else None),
+                source_thread_by_session,
+                source_thread_by_actor,
+            ),
             "customer_contact_summary": _mask_phone(customer.phone if customer else d.customer_phone),
             "master_service": service.service_name if service else None,
             "job_type": job_type.label if job_type else None,

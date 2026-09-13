@@ -34,6 +34,7 @@ import uuid
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.final_records.bookings_jobs_stage_mapping import TERMINAL_STATUSES
 
 # Reason codes — exact vocabulary from spec section 8.
 R_BUSINESS_CLOSED = "BUSINESS_CLOSED"
@@ -54,11 +55,6 @@ LEAVE_REASONS = {R_STAFF_TIME_OFF, R_ON_TIME_OFF}
 R_DAILY_CAPACITY_EXCEEDED = "DAILY_CAPACITY_EXCEEDED"
 R_CONCURRENT_CAPACITY_EXCEEDED = "CONCURRENT_CAPACITY_EXCEEDED"
 R_TIMEZONE_CONTEXT_INVALID = "TIMEZONE_CONTEXT_INVALID"
-
-# Job statuses that consume capacity (non-terminal — mirrors JOB_TRANSITIONS
-# terminal set in app/engines/execution/constants.py: completed/cancelled/
-# failed/closed_estimate_declined do NOT consume capacity).
-_TERMINAL_STATUSES = {"completed", "cancelled", "failed", "closed_estimate_declined"}
 
 DEFAULT_TIMEZONE = "Asia/Kolkata"
 
@@ -480,7 +476,7 @@ async def resolve_staff_day(
     # Committed work must remain visible even when a later availability rule closes the
     # day. Those are the assignments an operator has to move, not records to hide.
     assignments = await _fetch_assignments(db, tenant_id, staff_id, target_date)
-    active_assignments = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
+    active_assignments = [a for a in assignments if a["status"] not in TERMINAL_STATUSES]
     result["assignments_today"] = [
         {
             "job_id": str(a["id"]),
@@ -489,7 +485,7 @@ async def resolve_staff_day(
             "time_window": a["scheduled_time_window"],
             "service_name": a.get("service_name"),
         }
-        for a in assignments
+        for a in active_assignments
     ]
 
     def unavailable_result() -> dict:
@@ -613,11 +609,11 @@ async def resolve_staff_day(
 
     # Step 9 — existing assignments (capacity-consuming = non-terminal status).
     assignments = await _fetch_assignments(db, tenant_id, staff_id, target_date)
-    active_assignments = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
+    active_assignments = [a for a in assignments if a["status"] not in TERMINAL_STATUSES]
     result["assignments_today"] = [
         {"job_id": str(a["id"]), "job_number": a["job_number"], "status": a["status"],
          "time_window": a["scheduled_time_window"], "service_name": a.get("service_name")}
-        for a in assignments
+        for a in active_assignments
     ]
 
     # Step 10 — concurrent capacity, measured as jobs actually running AT ONCE.
@@ -717,7 +713,7 @@ async def preview_staff_pattern_change(
     while d <= end:
         if (d.isoweekday() % 7) == day_of_week:
             assignments = await _fetch_assignments(db, tenant_id, staff_id, d)
-            active = [a for a in assignments if a["status"] not in _TERMINAL_STATUSES]
+            active = [a for a in assignments if a["status"] not in TERMINAL_STATUSES]
             if active:
                 reasons_for_date: list[str] = []
                 if not proposed_is_active:

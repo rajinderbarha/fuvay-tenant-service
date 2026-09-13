@@ -54,17 +54,30 @@ describe("AvailabilityJobDrawer", () => {
     expect(screen.getByText("30 days")).toBeInTheDocument();
   });
 
-  it("provides full-detail, dispatch and close actions", () => {
+  it("keeps completed jobs in full details but out of Dispatch", () => {
     const onClose = vi.fn();
     const onOpenDetails = vi.fn();
     const onOpenDispatch = vi.fn();
     render(<AvailabilityJobDrawer jobId="job-1" technicianName={null} detail={detail} loading={false} error={null} onClose={onClose} onOpenDetails={onOpenDetails} onOpenDispatch={onOpenDispatch} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Full job details" }));
-    fireEvent.click(screen.getByRole("button", { name: "Manage in dispatch" }));
+    expect(screen.queryByRole("button", { name: "Manage in dispatch" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Close job details" }));
     expect(onOpenDetails).toHaveBeenCalledOnce();
-    expect(onOpenDispatch).toHaveBeenCalledOnce();
+    expect(onOpenDispatch).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("allows an active scheduled job to be managed in Dispatch", () => {
+    const onOpenDispatch = vi.fn();
+    const activeDetail = {
+      ...detail,
+      job: { ...detail.job, status: "scheduled" },
+      stage: { ...detail.stage, stage: "scheduled", stage_label: "Scheduled", is_terminal: false },
+    } satisfies BJDetail;
+    render(<AvailabilityJobDrawer jobId="job-1" technicianName={null} detail={activeDetail} loading={false} error={null} onClose={vi.fn()} onOpenDetails={vi.fn()} onOpenDispatch={onOpenDispatch} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage in dispatch" }));
+    expect(onOpenDispatch).toHaveBeenCalledOnce();
   });
 });

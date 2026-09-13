@@ -751,9 +751,23 @@ class BackendToolExecutor:
                 date_iso=date, time_window=time_window, emergency=emergency,
             )
             return {"selected": True, **result}
+        except ValueError as exc:
+            logger.warning("backend_tools.select_slot_rejected", error=str(exc))
+            if str(exc) == "SLOT_NO_LONGER_AVAILABLE":
+                return {
+                    "selected": False,
+                    "error": "That slot is no longer available. Please choose another.",
+                }
+            return {
+                "selected": False,
+                "error": "Please choose one of the available times shown.",
+            }
         except Exception as exc:
-            logger.warning("backend_tools.select_slot_failed", error=str(exc))
-            return {"selected": False, "error": "That slot is no longer available. Please choose another."}
+            logger.exception("backend_tools.select_slot_failed", error=str(exc))
+            return {
+                "selected": False,
+                "error": "Unable to select that time right now. Please try again.",
+            }
 
     async def _tool_get_home_service_booking_summary(self, draft_id: str) -> dict:
         """Build the real customer-safe summary before explicit confirmation."""
@@ -915,7 +929,20 @@ class BackendToolExecutor:
                     select(User).where(User.email == synthetic_email).limit(1)
                 )).scalars().first()
                 current_user = await self.db.get(User, self.customer_id) if self.customer_id else None
-                for existing_user in (current_user, sender_user):
+                # An entered phone is deliberately *not* verified in this
+                # temporary Instagram test mode.  It therefore cannot be used
+                # to merge two different Instagram senders into one customer;
+                # doing so exposed one account's name and bookings in another
+                # account.  Reuse is sender-scoped through synthetic_email.
+                current_identity_matches = bool(
+                    current_user
+                    and (current_user.meta or {}).get("instagram_identity_hash")
+                    == identity_hash
+                )
+                for existing_user in (
+                    current_user if current_identity_matches else None,
+                    sender_user,
+                ):
                     if existing_user and (existing_user.meta or {}).get("registration_source") == "instagram_booking_dev":
                         old_hash = (existing_user.meta or {}).get("instagram_test_phone_hash")
                         if old_hash and old_hash != phone_hash:
@@ -931,16 +958,8 @@ class BackendToolExecutor:
                         }
                     user = current_user
                 else:
-                    user = (await self.db.execute(
-                        select(User).where(
-                            User.role == "customer",
-                            User.is_active.is_(True),
-                            User.meta["registration_source"].astext == "instagram_booking_dev",
-                            User.meta["instagram_test_phone_hash"].astext == phone_hash,
-                        ).limit(1)
-                    )).scalars().first()
-                    if not user and sender_user:
-                        user = sender_user
+                    user = sender_user
+                    if user:
                         user.meta = {
                             **(user.meta or {}),
                             "instagram_test_phone_hash": phone_hash,
@@ -979,6 +998,15 @@ class BackendToolExecutor:
                     if user.full_name in {"Instagram Customer", "Instagram QA"}:
                         user.full_name = self.display_name
                 user.meta = profile_meta
+                # Freeze the exact social account on the draft.  ServiceBooking
+                # copies this value at finalization, so later messages from a
+                # linked account cannot rename historical bookings.
+                draft_model.customer_name = (
+                    self.instagram_username
+                    or self.display_name
+                    or draft_model.customer_name
+                    or "Instagram Customer"
+                )
                 self.customer_id = user.id
                 draft_model.customer_id = user.id
                 if self.session_id:

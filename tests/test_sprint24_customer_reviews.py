@@ -264,13 +264,12 @@ class TestSprint24ReviewService:
 
         with patch.object(svc._eligibility, "check_eligible",
                           AsyncMock(return_value={"eligible": True, "reason": None, "record": {}})), \
-             patch.object(svc, "_get_policy", AsyncMock(return_value=None)), \
              patch.object(svc, "_log_event", AsyncMock()), \
-             patch.object(svc, "_trigger_aggregation", AsyncMock()), \
+             patch.object(svc, "_trigger_aggregation", AsyncMock()) as aggregate, \
              patch("app.engines.customer_reviews.notifications.notify_provider_new_review", AsyncMock()), \
              patch("app.engines.customer_reviews.review_service.CustomerReview") as MockCR:
             instance = MagicMock()
-            instance.status = "pending"
+            instance.status = "approved"
             instance.id     = _uuid()
             instance.tenant_id = _uuid()
             instance.staff_member_id = None
@@ -278,7 +277,10 @@ class TestSprint24ReviewService:
 
             result = await svc.submit_review(db, _uuid(), _uuid(), "service_job", _uuid(), 5,
                                              review_text="Great!")
-            assert result.status == "pending"
+            assert result.status == "approved"
+            assert MockCR.call_args.kwargs["visibility"] == "public"
+            assert MockCR.call_args.kwargs["approved_at"] is not None
+            aggregate.assert_awaited_once_with(db, instance)
             db.add.assert_called_once()
 
     # ── Approve review ────────────────────────────────────────────────────────

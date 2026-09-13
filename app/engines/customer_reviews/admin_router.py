@@ -397,8 +397,9 @@ class CreateReviewPolicyIn(BaseModel):
     """Strict body for policy creation.
 
     `policy_key`/`policy_name` are the only NOT NULL columns without a default;
-    everything else falls back to the model defaults, which are the safe
-    (moderated) settings.
+    customer ratings always publish immediately. The two legacy publication
+    fields remain accepted for client compatibility but are normalized by the
+    service to auto-approve/no mandatory moderation.
     """
     model_config = ConfigDict(extra="forbid")
     policy_key: str = Field(..., min_length=1, max_length=80)
@@ -425,13 +426,7 @@ async def create_policy(
     u: UserContext = Depends(require_super_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a review policy.
-
-    Real gap closed: this resource had list/get/patch but no create, and the
-    table ships empty -- so there was nothing to patch, `_get_policy` always
-    resolved to None, and every submitted review stayed `pending`/private
-    forever because auto-approval could not be turned on.
-    """
+    """Create an editing/reply policy; review publication stays automatic."""
     p = await _svc.create_policy(db, body.model_dump(exclude_none=True))
     return ok(p.to_dict(), _rid(r), "admin.policy.created")
 
